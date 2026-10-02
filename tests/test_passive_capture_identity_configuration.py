@@ -44,7 +44,7 @@ def test_bootstrap_pins_durable_platform_identity_without_enabling_history() -> 
 
     document = configured.required_document(ACCOUNT_ID)
 
-    assert document.config_revision == BOOTSTRAP_CONFIG_REVISION == "config-10"
+    assert document.config_revision == BOOTSTRAP_CONFIG_REVISION == "config-11"
     assert document.history_acquisition.enabled is False
     assert document.history_acquisition.consent_revision is None
     assert document.history_acquisition.authorized_platform_creator_id == PLATFORM_ID
@@ -73,7 +73,7 @@ def test_history_revocation_keeps_platform_pin_for_passive_capture() -> None:
         )
     )
 
-    assert published.config_revision == "config-11"
+    assert published.config_revision == "config-12"
     assert published.history_acquisition.enabled is False
     assert published.history_acquisition.consent_revision is None
     assert published.history_acquisition.authorized_platform_creator_id == PLATFORM_ID
@@ -114,7 +114,7 @@ def test_missing_durable_platform_identity_fails_closed() -> None:
         authority(repository, platform_id=None)
 
 
-def test_existing_config_9_advances_to_account_bound_config_10(
+def test_existing_config_9_advances_to_account_bound_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
@@ -143,7 +143,7 @@ def test_existing_config_9_advances_to_account_bound_config_10(
     current = configured.required_document(ACCOUNT_ID)
 
     assert repository.document(ACCOUNT_ID, "config-9") is not None
-    assert current.config_revision == "config-10"
+    assert current.config_revision == BOOTSTRAP_CONFIG_REVISION
     assert current.history_acquisition.authorized_platform_creator_id == PLATFORM_ID
 
 

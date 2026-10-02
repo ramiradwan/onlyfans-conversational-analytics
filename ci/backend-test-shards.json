@@ -187,11 +187,15 @@
     "tests/test_bounded_publication.py": 4,
     "tests/test_build_extension_identity.py": 3,
     "tests/test_build_windows.py": 1,
+    "tests/test_canonical_migration_lineages.py": 3,
     "tests/test_canonical_repository_contract.py": 3,
     "tests/test_capability_license_persistence.py": 2,
+    "tests/test_catchup_ledger.py": 1,
+    "tests/test_catchup_rpc.py": 3,
     "tests/test_changed_graph_read_order.py": 1,
     "tests/test_compact_graph.py": 2,
     "tests/test_companion_analysis_readiness_rpc.py": 1,
+    "tests/test_companion_onboarding_progress.py": 3,
     "tests/test_companion_pairing_persistence.py": 1,
     "tests/test_config_identity_sqlite_migration.py": 2,
     "tests/test_content_write_order.py": 1,
@@ -235,6 +239,7 @@
     "tests/test_historical_analytics_retention.py": 4,
     "tests/test_history_api.py": 1,
     "tests/test_history_v2.py": 2,
+    "tests/test_hosted_origin_resolution.py": 2,
     "tests/test_incremental_conversation_integrity.py": 1,
     "tests/test_incremental_enrichment_units.py": 3,
     "tests/test_incremental_graph_units.py": 4,
@@ -245,6 +250,7 @@
     "tests/test_integrity_verification_bounds.py": 3,
     "tests/test_json_validation_header.py": 1,
     "tests/test_licensed_analytics_pipeline.py": 4,
+    "tests/test_live_socket_capture_policy.py": 2,
     "tests/test_local_database_encryption.py": 3,
     "tests/test_managed_recovery_publication.py": 4,
     "tests/test_membership_insert_plan.py": 2,
@@ -255,6 +261,7 @@
     "tests/test_persisted_membership_handoff.py": 2,
     "tests/test_predecessor_graph_handoff.py": 4,
     "tests/test_prefix_update_attribution.py": 1,
+    "tests/test_private_file_memory.py": 2,
     "tests/test_projection_activation.py": 1,
     "tests/test_projection_backup_restore_retention.py": 2,
     "tests/test_projection_currentness.py": 4,
@@ -431,6 +438,18 @@
       {
         "selector": "tests/test_targeted_visibility_benchmark.py::test_atomic_status_replaces_non_evidence_sidecar",
         "reason": "Atomic replacement of an existing status file must work with Windows filesystem semantics."
+      },
+      {
+        "selector": "tests/test_companion_onboarding_progress.py",
+        "reason": "Persistent companion authentication and configuration readiness on Windows SQLite."
+      },
+      {
+        "selector": "tests/test_hosted_origin_resolution.py",
+        "reason": "Windows subprocess composition and bundled release paths/environment precedence."
+      },
+      {
+        "selector": "tests/test_private_file_memory.py",
+        "reason": "Mandatory Windows native private-file ACL memory regression; intentionally also covered by production boot."
       }
     ],
     "analytics": [
@@ -465,6 +484,18 @@
       {
         "selector": "tests/test_sqlite_projection_store.py",
         "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_http_projection_failure_is_sanitized_and_recovery_is_coalesced",
+        "reason": "Windows file sharing and scheduler-owned WAL handles must permit deliberate fault injection while preserving HTTP sanitization and coalesced recovery."
+      },
+      {
+        "selector": "tests/test_focused_insertion_diagnostic.py::test_real_stored_validators_and_fresh_oracle_agree",
+        "reason": "Short component and validation durations need the high-resolution Windows clock while retaining real persisted-content and independent-rebuild checks."
+      },
+      {
+        "selector": "tests/test_focused_insertion_diagnostic.py::test_no_trace_installs_no_global_profiler_and_retains_outer_timing",
+        "reason": "Disabling tracing must retain high-resolution elapsed measurement on Windows without installing a global profiler."
       },
       {
         "selector": "tests/test_analytics_backend_rework.py::test_projection_shutdown_is_awaited_and_fail_closed",
@@ -573,6 +604,26 @@
       {
         "selector": "tests/test_analytics_evidence.py::test_scoped_binding_sql_interrupt_preserves_request_failure",
         "reason": "The fixed Windows SQLCipher runtime must preserve deadline and cancellation failures through the SQL progress handler and evidence binding while sharing only the original request-scope connection."
+      },
+      {
+        "selector": "tests/test_catchup_ledger.py::test_migration_seeds_latest_completed_generation",
+        "reason": "Canonical migration initializes catch-up continuity from persisted generation state."
+      },
+      {
+        "selector": "tests/test_live_socket_capture_policy.py::test_t3_upgrade_is_restart_idempotent",
+        "reason": "Canonical configuration upgrades and reopen on Windows; memory parameter retained as control."
+      },
+      {
+        "selector": "tests/test_live_socket_capture_policy.py::test_t6_pending_history_survives_restart",
+        "reason": "Persisted pending-history state survives Windows canonical reopen."
+      },
+      {
+        "selector": "tests/test_live_socket_capture_policy.py::test_t8_repeated_admission_and_restart_preserve_binding",
+        "reason": "Windows restart preserves canonical binding and admission configuration."
+      },
+      {
+        "selector": "tests/test_canonical_migration_lineages.py",
+        "reason": "Both immutable canonical migration histories upgrade, reopen and verify on Windows."
       }
     ]
   },

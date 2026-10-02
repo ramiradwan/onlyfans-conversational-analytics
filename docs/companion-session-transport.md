@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: app/api/endpoints/companion_session.py app/security/companion_session_authority.py app/security/analysis_authorization.py app/transport/companion_records.py app/transport/companion_channel.py extension/transport/companion-channel.mjs extension/transport/companion-fragments.mjs extension/runtime/companion-client.mjs -->
+<!-- CODE-VERIFY: app/api/endpoints/companion_session.py app/transport/manager.py extension/runtime/browser-surface.mjs app/security/companion_session_authority.py app/security/analysis_authorization.py app/transport/companion_records.py app/transport/companion_channel.py extension/transport/companion-channel.mjs extension/transport/companion-fragments.mjs extension/runtime/companion-client.mjs -->
 
 # Companion session transport
 
@@ -30,6 +30,8 @@ The reconstructed document is either an existing protocol v2 envelope or an RPC.
 
 Responses contain exactly `type`, the same `id`, and either `result` or a fixed payload-free `error`. Repeated RPC IDs and more than 1,024 requests in one session are refused.
 
+Hello fields remain closed. New features negotiate only through capabilities and RPCs. Agent hello accepts at most 32 capability tokens, each at most 64 characters matching `[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+`. Unknown tokens are dropped before negotiation and never echoed in responses, logs or diagnostics. Malformed tokens or no known capability reject the hello, and duplicate handling is unchanged. An unserved string RPC method returns `{"type":"rpc.response","id":<id>,"error":"unknown_method"}` without closing the channel. Its ID still counts toward replay protection and the 1,024-request limit. Exact keys, canonical UUID IDs, non-string methods, known-method failures and the ten-second timeout retain their existing refusal and close behavior.
+
 ## Encrypted operations
 
 | Method | Purpose |
@@ -40,6 +42,13 @@ Responses contain exactly `type`, the same `id`, and either `result` or a fixed 
 | `agent.config.get` | Authenticate the current Agent configuration ticket; return the immutable configuration or an ETag match. |
 | `agent.storage.unseal` | Validate the account-bound bootstrap and return the stable account storage key with this session's fresh ticket. |
 | `agent.storage.rotate` | Validate this session's reconnect and configuration credentials and reseal its bootstrap. |
+| `agent.surface.report` | After Agent authentication, record the extension's closed browser state (`schema` `ofca-browser-surface/v1`, `capture`, `site_access`, `history_permission`, `legal_review_required`) for `agent.state`, and admit the session for controls. Returns `{}`. |
+
+## Session controls
+
+Brain sends a control as a routine document with exactly `type` `session.control`, a canonical UUID `id`, and an `action` of `capture.pause`, `capture.resume`, or `companion.revoked` ([ADR 0045](adr/0045-desktop-led-extension-setup.md)). Agent refuses any other shape by closing the session, ignores a repeated `id`, and applies pause and resume through its consent controller. Brain sends controls only to sessions that have reported browser state, and `companion.revoked` only to sessions of the pin being revoked.
+
+While consent is paused from Full, Agent keeps a control-only session. It runs `agent.challenge`, `agent.authenticate`, and `agent.surface.report`, and never `agent.storage.unseal` or `agent.hello`.
 
 `agent.analysis.readiness` returns exactly `schema`, `commercial_authority`, and `analysis_admission`. It does not return CapabilityLicense bytes, license/issuance/seat/reference identifiers, grants, packages, tickets, or signing material, and evaluating readiness does not create or cache an analysis admission.
 
@@ -51,6 +60,6 @@ The identity proof uses canonical base64url low-S ES256 P1363. Its signing input
 
 Every canonical write rechecks the session's authority while holding an authentication transaction through the synchronous data commit. Revocation serializes against that check. Brain also polls idle session authority every 250 milliseconds. Grant refresh changes the references selected for the next session; references already frozen into a running session cannot be silently substituted.
 
-Bridge can revoke an account-scoped pin from Settings. Agent can forget its companion from the popup. Pairing comparison opens in a persistent extension window so switching focus to Bridge does not cancel the attempt; closing that window cancels it. Forgetting or account/consent changes abort pending work, close active sessions and prevent late results from restoring authority. A cancelled or expired pairing cannot admit a later signer or storage completion. Highest admitted pairing generations survive forgetting.
+Bridge can revoke an account-scoped pin from Settings; Brain first sends `companion.revoked`, and Agent forgets its pin if Brain then closes the session within three seconds. Agent can forget its companion from Options while Bridge cannot reach it. Pairing comparison opens in a persistent extension window so switching focus to Bridge does not cancel the attempt; closing that window cancels it. Forgetting or account/consent changes abort pending work, close active sessions and prevent late results from restoring authority. A cancelled or expired pairing cannot admit a later signer or storage completion. Highest admitted pairing generations survive forgetting.
 
 Production HTTP routes do not release Agent tickets, configuration or storage keys. The Agent socket origin serves no Bridge HTTP content and issues no cookies. The extension CSP permits the exact loopback WebSocket origin, with no local host permission. The public provisioning-identity external message is available only before pairing and carries no Full-mode credential.

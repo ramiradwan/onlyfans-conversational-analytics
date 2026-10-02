@@ -122,6 +122,8 @@ function harness(overrides = {}) {
     scheduler,
     random: () => 0.5,
     now: () => Date.parse('2026-07-18T10:05:00Z'),
+    monotonicNow: overrides.monotonicNow ?? overrides.now
+      ?? (() => Date.parse('2026-07-18T10:05:00Z')),
     idFactory: () => `90000000-0000-4000-8000-${String(id++).padStart(12, '0')}`,
     webSocketFactory: (url) => {
       const socket = new MockSocket(url);
@@ -148,6 +150,7 @@ for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
     const h = harness({ Client });
     let socket = await connectAndBind(h);
     for (const delay of [500, 1_000, 2_000, 4_000, 8_000, 300_000]) {
+      socket.retryAfterMs = delay;
       socket.drop();
       const count = h.sockets.length;
       for (let wake = 0; wake < 100; wake += 1) h.client.reconcileConnection();
@@ -171,10 +174,10 @@ test('golden Agent hello/session starts validated heartbeats', async () => {
   assert.equal(hello.payload.auth_ticket, TEST_AUTH_TICKET);
   assert.equal(hello.payload.requested_creator_account_id, TEST_ACCOUNT_ID);
   assert.equal(hello.payload.capabilities.includes('history.sync'), true);
-  assert.equal(h.scheduler.intervals[0].delay, 20_000);
+  assert.equal(h.client.heartbeatTimer.delay, 20_000);
 
   now += 20_000;
-  h.scheduler.intervals[0].handler();
+  h.scheduler.runNextTimeout();
   const heartbeat = parseAgentToBrainMessage(JSON.parse(socket.sent.at(-1)));
   assert.equal(heartbeat.type, 'agent.heartbeat');
   assert.equal(heartbeat.payload.fencing_token, 'fence-42');
@@ -188,6 +191,7 @@ test('a bootstrap pairing ticket is sent at most once when no session is establi
   first.open();
   assert.equal(JSON.parse(first.sent[0]).payload.auth_ticket, TEST_AUTH_TICKET);
 
+  first.retryAfterMs = 500;
   first.drop();
   assert.equal(h.scheduler.runNextTimeout(), 500);
   const second = h.sockets[1];
@@ -216,16 +220,17 @@ test('heartbeat activity is scoped to a bound live session and stops on disconne
   const h = harness({ onSessionLost: (event) => losses.push(event.reason) });
   h.client.start();
   const socket = h.sockets[0];
-  assert.equal(h.scheduler.intervals.length, 0);
+  assert.equal(h.client.heartbeatTimer, null);
   socket.open();
-  assert.equal(h.scheduler.intervals.length, 0);
+  assert.equal(h.client.heartbeatTimer, null);
 
   socket.receive(await fixture('agent.session'));
-  assert.equal(h.scheduler.intervals.length, 1);
-  assert.equal(h.scheduler.intervals[0].cleared, false);
+  const heartbeat = h.client.heartbeatTimer;
+  assert.ok(heartbeat);
+  assert.equal(heartbeat.cleared, false);
 
   socket.drop();
-  assert.equal(h.scheduler.intervals[0].cleared, true);
+  assert.equal(heartbeat.cleared, true);
   assert.deepEqual(losses, ['disconnected']);
 });
 
@@ -248,6 +253,58 @@ test('wake reconciliation sends one heartbeat only when the negotiated interval 
   assert.equal(socket.sent.length, initialFrames + 1);
 });
 
+for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
+  test(`${Client.name}: early and late timer jitter keeps heartbeat gaps below 26 seconds for ten minutes`, async () => {
+    let monotonic = 0;
+    const tasks = new Set();
+    const scheduler = {
+      setTimeout(handler, delay) { const task = { handler, due: monotonic + delay }; tasks.add(task); return task; },
+      clearTimeout(task) { tasks.delete(task); },
+      setInterval(handler, delay) { const task = { handler, due: monotonic + delay, interval: delay }; tasks.add(task); return task; },
+      clearInterval(task) { tasks.delete(task); },
+    };
+    const h = harness({ Client, scheduler, now: () => 1_800_000_000_000 + monotonic,
+      monotonicNow: () => monotonic });
+    const socket = await connectAndBind(h);
+    const sentAt = [monotonic];
+    const send = socket.send.bind(socket);
+    socket.send = (frame) => {
+      send(frame);
+      if (JSON.parse(frame).type === 'agent.heartbeat') sentAt.push(monotonic);
+    };
+    let tickCount = 0;
+    while (monotonic < 600_000) {
+      const task = [...tasks].sort((left, right) => left.due - right.due)[0];
+      assert.ok(task, 'heartbeat timer remains scheduled');
+      tasks.delete(task);
+      monotonic = Math.max(monotonic, task.due + (tickCount++ % 2 === 0 ? -4 : 1_000));
+      task.handler();
+      if (task.interval && !tasks.has(task)) { task.due = monotonic + task.interval; tasks.add(task); }
+    }
+    h.client.stop();
+    assert.ok(sentAt.length > 20);
+    for (let i = 1; i < sentAt.length; i += 1) {
+      assert.ok(sentAt[i] - sentAt[i - 1] <= 26_000, `heartbeat gap ${sentAt[i] - sentAt[i - 1]}ms`);
+    }
+  });
+
+  test(`${Client.name}: reconnect timer uses the companion circuit delay without a second counter`, async () => {
+    const h = harness({ Client, reconnectAuthTicket: 'stored-ticket' });
+    const first = await connectAndBind(h);
+    first.retryAfterMs = 1_700;
+    first.drop();
+    assert.equal(h.scheduler.runNextTimeout(), 1_700);
+    const second = h.sockets.at(-1);
+    second.open();
+    second.receive(await fixture('agent.session'));
+    second.retryAfterMs = 2_300;
+    second.drop();
+    assert.equal(h.scheduler.runNextTimeout(), 2_300);
+    assert.equal(h.client.reconnectAttempt, undefined);
+    h.client.stop();
+  });
+}
+
 test('connection drop rotates and persists reconnect auth separately from config auth', async () => {
   const persisted = [];
   const configBindings = [];
@@ -265,6 +322,7 @@ test('connection drop rotates and persists reconnect auth separately from config
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(persisted, ['agent-reconnect-ticket-42']);
   assert.deepEqual(configBindings, ['agent-config-ticket-42']);
+  first.retryAfterMs = 500;
   first.drop();
   assert.equal(h.scheduler.timeouts.find((task) => !task.cleared).delay, 500);
   h.scheduler.runNextTimeout();
@@ -507,7 +565,8 @@ for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
   test(`${Client.name}: the session deadline clears on acceptance and expires a stalled handshake`, async () => {
     const h = harness({ Client });
     await connectAndBind(h);
-    assert.equal(h.scheduler.timeouts.filter((task) => !task.cleared).length, 0);
+    assert.equal(h.scheduler.timeouts.filter((task) => !task.cleared).length, 1);
+    assert.equal(h.client.heartbeatTimer.delay, 20_000);
     h.client.stop();
     const stalled = harness({ Client });
     stalled.client.start();
@@ -549,4 +608,56 @@ for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
     assert.equal(h.client.identity.lastAcknowledgedSourceSeq, 10);
     h.client.stop();
   });
+}
+
+for (const Client of [AgentWebSocketClient, ReadOnlyAgentWebSocketClient]) {
+  for (const [label, retryDelay, wakeAt, admittedChannel] of [
+    ['paired channel while circuit cools', 300_000, 1_000, true],
+    ['expired circuit on an early timer wake', 16_000, 16_001, false],
+    ['expired circuit on a late timer wake', 300_000, 301_000, false],
+  ]) {
+    test(`${Client.name}: ${label} admits within two seconds of wake`, async () => {
+      let time = 0;
+      let channelAdmitted = false;
+      const tasks = new Set();
+      const scheduler = {
+        setTimeout(handler, delay) {
+          const task = { handler, due: time + delay };
+          tasks.add(task);
+          return task;
+        },
+        clearTimeout(task) { tasks.delete(task); },
+      };
+      const sockets = [];
+      const factory = (url) => {
+        const socket = new MockSocket(url);
+        sockets.push({ socket, openedAt: time });
+        return socket;
+      };
+      factory.retryAfterMs = async () => (channelAdmitted ? 0 : Math.max(0, retryDelay - time));
+      const h = harness({ Client, scheduler, webSocketFactory: factory,
+        reconnectAuthTicket: 'stored-ticket', monotonicNow: () => time });
+      h.client.start();
+      const first = sockets[0].socket;
+      first.open();
+      first.receive(await fixture('agent.session'));
+      first.retryAfterMs = retryDelay;
+      first.drop();
+      time = Math.min(retryDelay, wakeAt) - 1;
+      h.client.reconcileConnection();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(sockets.length, 1, 'no attempt before the circuit deadline');
+      time = wakeAt;
+      channelAdmitted = admittedChannel;
+      h.client.reconcileConnection();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(sockets.length, 2, 'the wake opens the socket');
+      sockets[1].socket.open();
+      sockets[1].socket.receive(await fixture('agent.session'));
+      assert.notEqual(h.client.session, null, 'the new socket binds a session');
+      assert.ok(sockets[1].openedAt - wakeAt <= 2_000);
+      assert.ok([...tasks].every((task) => task.due !== retryDelay), 'old reconnect timer is cleared');
+      h.client.stop();
+    });
+  }
 }

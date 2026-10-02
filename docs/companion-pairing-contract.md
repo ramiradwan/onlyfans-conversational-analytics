@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: app/security/installation_key.py app/security/grant_verifier.py app/security/hosted_grants.py contracts/grant-profile-v1 contracts/production/grant-profile-v1/trust-set.json extension/runtime/companion-agent-identity.mjs extension/runtime/companion-pairing-store.mjs extension/transport/pairing-contract.mjs extension/transport/companion-noise-session.mjs extension/qualification/snow-wasm-spike/src/lib.rs -->
+<!-- CODE-VERIFY: app/security/companion_pairing.py app/security/installation_key.py app/security/grant_verifier.py app/security/hosted_grants.py contracts/grant-profile-v1 contracts/production/grant-profile-v1/trust-set.json extension/runtime/companion-agent-identity.mjs extension/runtime/companion-pairing-store.mjs extension/transport/pairing-contract.mjs extension/transport/companion-noise-session.mjs extension/qualification/snow-wasm-spike/src/lib.rs -->
 
 # Companion pairing contract
 
@@ -83,10 +83,10 @@ Pairing uses the WebSocket path `/ws/agent/pairing` on the local Brain origin. M
 3. Brain → Agent `pair.offer`: `pairing_id`, `generation`, `creator_account_id`, `brain_noise_key`, `brain_nonce`, `installation_jwk`, `installation_grant`, `creator_account_binding`, `brain_proof`. Brain sends the offer only for the first request in an open window. A second request cancels the window and both sockets close.
 4. Agent verifies the offer under "Agent checks" and stores the pending pairing. Agent → Brain `pair.confirm`: `pairing_id`, `agent_proof`. Agent displays the comparison code.
 5. Brain verifies `agent_proof` against the transcript it computed. Bridge displays the comparison code, the Agent identity key thumbprint, and the creator account.
-6. The operator confirms or declines in Bridge before the window expires. Brain → Agent `pair.result`: `pairing_id` and `outcome`, where `outcome` is `confirmed`, `declined`, `expired`, or `cancelled`. This message is a hint only. Agent treats a pairing as complete only after the session step below.
+6. The operator confirms or declines in Bridge before the window expires. When Bridge reads the extension's code through the desktop port ([ADR 0045](adr/0045-desktop-led-extension-setup.md)), it confirms with `agent_comparison_code`. Brain compares that code with its own in constant time, declines the window on a mismatch, and records `browser_verified` on the pin. Otherwise the pin records `operator_compared`. Brain → Agent `pair.result`: `pairing_id` and `outcome`, where `outcome` is `confirmed`, `declined`, `expired`, or `cancelled`. This message is a hint only. Agent treats a pairing as complete only after the session step below.
 7. On `confirmed`, Agent opens a session using the pending pins. Brain admits a KK handshake only from the confirmed Agent Noise key. Agent commits its pin once the handshake, both fixed session confirmations, and the session authorization succeed.
 
-Each message step has a 10-second deadline. The wait for the operator is bounded by the window. Agent needs an open popup to pair, and closing it cancels the pending pairing.
+Each message step has a 10-second deadline. The wait for the operator is bounded by the window. An attempt is owned by the extension setup page or the desktop port that started it, and closing the owner cancels the pending pairing.
 
 ## Agent checks
 

@@ -1,5 +1,5 @@
 const PLATFORM_ORIGIN = 'https://onlyfans.com';
-const PLATFORM_SOCKET = 'wss://ws2.onlyfans.com/ws3/';
+const PLATFORM_SOCKET = 'wss://ws2.onlyfans.com/ws3/17';
 const BRAIN_ORIGIN = 'http://bridge.localhost:17871';
 
 export const SYNTHETIC = Object.freeze({
@@ -22,6 +22,8 @@ export const SYNTHETIC = Object.freeze({
   offlinePeerId: 'fixture-peer-offline',
   offlineMessageId: 'fixture-message-offline',
   offlineText: 'Synthetic offline peer observation',
+  ownEchoMessageId: 'fixture-own-echo',
+  ownEchoText: 'Synthetic own reply',
 });
 
 const SYNTHETIC_PAGE = `<!doctype html>
@@ -32,6 +34,7 @@ const SYNTHETIC_PAGE = `<!doctype html>
     <script>
       (() => {
         globalThis.fixtureDocumentToken = crypto.randomUUID();
+        globalThis.fixtureSocketFrames = 0;
         const allowedReads = new Set([
           '/api2/v2/users/me',
           '/api2/v2/chats',
@@ -55,6 +58,7 @@ const SYNTHETIC_PAGE = `<!doctype html>
           }
           const socket = new WebSocket('${PLATFORM_SOCKET}');
           globalThis.fixtureSocket = socket;
+          socket.addEventListener('message', () => { globalThis.fixtureSocketFrames += 1; });
           socket.addEventListener('open', () => resolve(true), { once: true });
           socket.addEventListener('error', () => reject(new Error('Synthetic socket failed')), {
             once: true,
@@ -87,6 +91,30 @@ export class SyntheticPlatform {
     this.unexpectedRequests = [];
     this.openSockets = new Set();
     this.websocketFramesSent = 0;
+    this.requestCounts = { history_list: 0, history_messages: 0, catchup_list: 0,
+      catchup_messages: 0, canary_list: 0, identity: 0 };
+    this.catchupChats = new Map();
+  }
+
+  seedCatchup(chatId, messageId, sentAt) {
+    const items = this.catchupChats.get(chatId) ?? [];
+    items.unshift({ id: messageId, chat_id: chatId, sender_platform_user_id: chatId,
+      text: 'Synthetic catch-up message', sent_at: sentAt, direction: 'inbound' });
+    this.catchupChats.set(chatId, items);
+  }
+
+  readCatchupPage(request, category) {
+    if (!Object.hasOwn(this.requestCounts, category)) throw new Error('Unknown synthetic request class');
+    this.requestCounts[category]++;
+    if (request.operation === 'identity') return { success: true, operation: 'identity', data: { id: SYNTHETIC.creatorId } };
+    const inventory = request.operation === 'conversations';
+    if (!inventory && request.operation !== 'message-page') throw new Error('Unexpected synthetic operation');
+    const items = inventory ? [...this.catchupChats].map(([id, messages]) => ({ id, platform_user_id: id,
+      display_name: null, updated_at: messages[0].sent_at })) : this.catchupChats.get(request.parameters.conversationId);
+    const cursor = request.parameters?.query?.cursor ?? null;
+    if (!items || cursor !== null) throw new Error('Unexpected synthetic continuation');
+    return { success: true, operation: request.operation, data: { items: structuredClone(items),
+      continuation: null, boundary: inventory ? 'inventory_end' : 'history_start' } };
   }
 
   async install(context) {
@@ -198,6 +226,28 @@ export class SyntheticPlatform {
         chatUserId: SYNTHETIC.messageOnlyPeerId,
       },
     });
+  }
+
+  sendOwnMessageEcho() {
+    this.#sendFrame({
+      api2_chat_message: {
+        id: SYNTHETIC.ownEchoMessageId,
+        text: SYNTHETIC.ownEchoText,
+        createdAt: `${this.activityDay}T08:07:00Z`,
+        toUser: { id: SYNTHETIC.chatId },
+        responseType: 'message',
+        giphyId: null, lockedText: false, isFree: true, price: 0, isMediaReady: true,
+        mediaCount: 0, media: [], previews: [], isTip: false, isReportedByMe: false,
+        isCouplePeopleMedia: false, queueId: null,
+      },
+    });
+  }
+
+  sendPauseProbe(id) {
+    this.#sendFrame({ new_message: {
+      id, text: 'Synthetic pause probe', createdAt: `${this.activityDay}T08:06:00Z`,
+      fromUser: { id: SYNTHETIC.chatId }, chatUserId: SYNTHETIC.chatId,
+    } });
   }
 
   sendOfflineMessageOnlyPeer() {

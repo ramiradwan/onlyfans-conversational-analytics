@@ -155,7 +155,10 @@ test('hooked identity responses bind the observed account to the current documen
     async fetch() {
       return new Response(JSON.stringify(identityBody));
     },
-    postMessage(message, targetOrigin) { posts.push({ message: structuredClone(message), targetOrigin }); },
+    postMessage(message, targetOrigin) {
+      if (message.type === 'ofca.capture.control') return;
+      posts.push({ message: structuredClone(message), targetOrigin });
+    },
     addEventListener(type, listener) {
       if (type === 'message') pageListeners.push(listener);
     },
@@ -180,8 +183,8 @@ test('hooked identity responses bind the observed account to the current documen
         lastError: null,
         onMessage: { addListener() {} },
         sendMessage(message, callback) {
-          if (message.type === 'ofca.capture.context.query') {
-            callback({ ok: true, consent_epoch: CONSENT.consent_epoch });
+          if (message.type === 'ofca.capture.state.query') {
+            callback({ ok: true, mode: 'full', consent_epoch: CONSENT.consent_epoch });
             return;
           }
           const listener = h.internalListeners[0];

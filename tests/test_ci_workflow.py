@@ -436,6 +436,53 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
         _assert_windows_tier_b_qualification(broken)
 
 
+def test_windows_hang_diagnostics_do_not_terminate_tests_or_raise_job_limits() -> None:
+    jobs = _jobs(_workflow_document())
+    expected_limits = {"windows-platform-contract": 20, "analytics-windows-contract": 20,
+                       "windows-full-regression": 60, "analytics-scale-qualification": 45}
+    execution_lanes = set()
+    for name, minutes in expected_limits.items():
+        job = jobs[name]
+        assert job["timeout-minutes"] == minutes
+        assert job["env"]["CI_PYTEST_LIVE_PROGRESS"] == "1"
+        for step in _steps(job):
+            environment = step.get("env", {})
+            if "CI_TEST_LANE" not in environment:
+                continue
+            options = shlex.split(environment["PYTEST_ADDOPTS"])
+            if "--collect-only" in str(step.get("run", "")):
+                assert not any("faulthandler_" in option for option in options)
+                continue
+            execution_lanes.add(environment["CI_TEST_LANE"])
+            assert "faulthandler_timeout=120" in options
+            assert "faulthandler_exit_on_timeout=false" in options
+            assert step.get("continue-on-error", False) is False
+        upload = next(step for step in _steps(job) if step.get("name") == "Retain backend timing and selection")
+        assert upload["if"] == "always()"
+        assert upload["with"]["path"] == "artifacts/ci-tests/"
+    assert execution_lanes == {
+        "windows-platform-contract", "windows-production-boot", "windows-persistence-general",
+        "windows-persistence-deletion", "windows-persistence-smoke", "analytics-windows-contract",
+        "windows-full-regression", "analytics-scale-qualification",
+    }
+
+
+def test_partial_persistence_evidence_retains_available_profiles_and_source_receipt() -> None:
+    steps = _steps(_jobs(_workflow_document())["windows-platform-contract"])
+    copy = next(step for step in steps if step.get("name") == "Preserve persistence evidence filenames")
+    assert copy["if"] == "always()"
+    command = copy["run"]
+    assert 'foreach ($profile in @("general", "deletion", "smoke"))' in command
+    assert command.index("Test-Path -LiteralPath $source -PathType Leaf") < command.index("Copy-Item")
+    assert 'tier-b-$profile-junit.xml' in command
+    assert "Write-Warning" in command
+    receipt = next(step for step in steps if step.get("name") == "Record Windows persistence CI source")
+    assert receipt["if"] == "always()"
+    upload = next(step for step in steps if step.get("name") == "Retain Windows persistence evidence")
+    assert upload["if"] == "always()"
+    assert upload["with"]["if-no-files-found"] == "error"
+
+
 def test_the_frontend_is_built_before_the_backend_tests_run() -> None:
     """Moving pytest ahead of the frontend build turns the named check red.
 

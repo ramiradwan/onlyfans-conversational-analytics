@@ -84,6 +84,14 @@ describe('Bridge protocol v2', () => {
     expect(parsed.payload.required_config_revision).toBeNull();
   });
 
+  it('accepts a companion change notice that carries no pairing details', () => {
+    const notice = fixture('companion.state');
+    const parsed = parseBrainToBridgeMessage(notice);
+    expect(parsed.type).toBe('companion.state');
+    expect(isBrainToBridgeMessage({ ...notice, payload: { ...notice.payload, comparison_code: '123456' } })).toBe(false);
+    expect(isBrainToBridgeMessage({ ...notice, payload: { ...notice.payload, revision: -1 } })).toBe(false);
+  });
+
   it('accepts dimension-only next-revision deltas with the locked coverage vocabulary', () => {
     const snapshot = fixture('state.snapshot');
     const delta = {

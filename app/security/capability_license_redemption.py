@@ -158,7 +158,7 @@ class CapabilityLicenseRedemptionClient:
         challenge_response = self._request(
             _PROOF_PATH,
             {
-                "profile": _PROOF_PROFILE,
+                "profile": _CONTINUATION_PROFILE,
                 "continuation": continuation,
                 "organization_id": organization_id,
                 "installation_id": installation_id,

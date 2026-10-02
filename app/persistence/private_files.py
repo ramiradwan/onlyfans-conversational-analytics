@@ -264,13 +264,13 @@ def _windows_acl_is_owner_only(path: Path) -> bool:
             raise ctypes.WinError(ctypes.get_last_error())
         if not dacl.value or not control.value & 0x1000:
             return False
-        acl = ctypes.cast(dacl, ctypes.POINTER(Acl)).contents
+        acl = Acl.from_address(dacl.value)
         if acl.AceCount != 1:
             return False
         ace = ctypes.c_void_p()
         if not get_ace(dacl, 0, ctypes.byref(ace)):
             raise ctypes.WinError(ctypes.get_last_error())
-        header = ctypes.cast(ace, ctypes.POINTER(AceHeader)).contents
+        header = AceHeader.from_address(ace.value)
         mask = ctypes.c_uint32.from_address(ace.value + 4).value
         ace_sid = ctypes.c_void_p(ace.value + 8)
         return bool(

@@ -1,11 +1,15 @@
 """Production native-Snow route exercised by the independent noiseprotocol peer."""
 
 import base64
+import ast
 import asyncio
 import hashlib
+import inspect
 import json
+import textwrap
 import threading
 import time
+from typing import get_args
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -23,8 +27,9 @@ from app.security.companion_pairing_proof import session_prologue
 from app.security.companion_session_authority import CompanionSessionAuthority
 from app.security.companion_session_authority import CompanionSessionError
 from app.transport import companion_channel
-from app.transport.companion_records import Assembly, document, fragments
+from app.transport.companion_records import Assembly, CompanionRecordError, document, fragments
 from app.transport.manager import InMemoryTransportManager
+from app.protocol.payloads import AgentCapability
 from test_companion_session_authority import admitted, _sign
 from test_companion_pairing_service import local
 from test_companion_pairing_proof import contract, grant_references
@@ -700,3 +705,334 @@ async def test_waiting_lease_admission_rechecks_authority_after_command_lock(rou
         await task
     assert not route.manager.active_agents
     assert not route.manager.agent_connections
+
+
+FUTURE_CAPABILITY = "future.compatibility.v1"
+FUTURE_METHOD = "future.compatibility.get"
+
+
+@pytest.fixture
+def forward_logs(caplog):
+    caplog.set_level("DEBUG")
+    yield
+    assert FUTURE_CAPABILITY not in caplog.text
+    assert FUTURE_METHOD not in caplog.text
+
+
+def _forward_hello(socket, oracle, route, capabilities, **extra):
+    authenticated = _prove(socket, oracle, route)
+    _send(socket, oracle, {
+        "type": "agent.hello",
+        "protocol_version": "2",
+        "message_id": str(uuid4()),
+        "payload": {
+            "auth_ticket": authenticated["auth_ticket"],
+            "agent_installation_id": route.snapshot.pin.agent_installation_id,
+            "requested_creator_account_id": route.local.account,
+            "capabilities": capabilities,
+            "extension_version": "2.0.5",
+            "agent_stream_id": str(uuid4()),
+            "last_acknowledged_source_seq": 0,
+            "applied_config_revision": None,
+            **extra,
+        },
+    })
+    return _receive(socket, oracle)
+
+
+@pytest.mark.parametrize("catchup", [False, True])
+def test_unknown_capability_admitted_without_negotiation(
+    route, monkeypatch, forward_logs, catchup,
+):
+    negotiated = []
+    bind = route.manager.bind_agent
+
+    async def record_bind(*args, **kwargs):
+        negotiated.append(tuple(kwargs["capabilities"]))
+        return await bind(*args, **kwargs)
+
+    monkeypatch.setattr(route.manager, "bind_agent", record_bind)
+    known = [value for value in get_args(AgentCapability)
+             if catchup or value != "history.catchup.v1"]
+    known.append("capture.chats")
+    with _client(route) as client:
+        for capabilities in (known, [*known, FUTURE_CAPABILITY]):
+            with client.websocket_connect(
+                "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}
+            ) as socket:
+                oracle = _establish(socket, route)
+                session = _forward_hello(socket, oracle, route, capabilities)
+                assert session["type"] == "agent.session"
+                assert FUTURE_CAPABILITY not in json.dumps(session)
+                sync = _receive(socket, oracle)
+                assert sync["type"] == "sync.required"
+                assert FUTURE_CAPABILITY not in json.dumps(sync)
+                assert route.manager.catchup.supported(route.local.account) is catchup
+    assert negotiated == [tuple(known), tuple(known)]
+
+
+async def _rejected_forward_hello(route, capabilities, **extra):
+    responses, closed = [], []
+
+    class Socket:
+        async def accept(self):
+            pass
+
+        async def receive_text(self):
+            return json.dumps({
+                "type": "agent.hello", "protocol_version": "2", "message_id": str(uuid4()),
+                "payload": {
+                    "auth_ticket": "invalid-ticket",
+                    "agent_installation_id": route.snapshot.pin.agent_installation_id,
+                    "requested_creator_account_id": route.local.account,
+                    "capabilities": capabilities, "extension_version": "2.0.5",
+                    "agent_stream_id": str(uuid4()), "last_acknowledged_source_seq": 0,
+                    "applied_config_revision": None,
+                    **extra,
+                },
+            })
+
+        async def send_text(self, raw):
+            responses.append(json.loads(raw))
+
+        async def close(self, code, reason):
+            closed.append(code)
+
+    await transport_ws._agent_socket(Socket())
+    assert len(responses) == 1
+    return responses[0], closed
+
+
+@pytest.mark.parametrize("capabilities", [
+    ["capture.chats", "Future.compatibility.v1"],
+    ["capture.chats", "future compatibility.v1"],
+    ["capture.chats", "f." + "a" * 63],
+    ["capture.chats", 42],
+    ["capture.chats"] * 33,
+    [FUTURE_CAPABILITY],
+    ["capture.chats", "future..v1"],
+    ["capture.chats", ".future.v1"],
+    ["capture.chats", "future.v1."],
+    ["capture.chats", "future.v1\n"],
+    ["capture.chats", "future"],
+    ["capture.chats", "future.v_1"],
+    [],
+], ids=["uppercase", "space", "long", "non-string", "too-many", "unknown-only",
+        "empty-word", "leading-dot", "trailing-dot", "newline", "undotted", "underscore", "empty"])
+@pytest.mark.asyncio
+async def test_malformed_capability_rejects_hello(route, forward_logs, capabilities, caplog):
+    response, closed = await _rejected_forward_hello(route, capabilities)
+    assert response["type"] == "protocol.error"
+    assert response["payload"]["code"] == "validation_failed"
+    assert response["payload"]["fatal"] is True
+    for token in capabilities:
+        if isinstance(token, str) and token not in get_args(AgentCapability):
+            assert token not in json.dumps(response)
+            assert token not in caplog.text
+    assert closed == [1002]
+    assert not route.manager.agent_connections
+
+
+@pytest.mark.asyncio
+async def test_hello_fields_remain_closed(route, forward_logs):
+    response, closed = await _rejected_forward_hello(route, ["capture.chats"], future=True)
+    assert response["type"] == "protocol.error"
+    assert response["payload"]["code"] == "validation_failed"
+    assert closed == [1002]
+
+
+def test_capability_token_and_count_boundaries(route, forward_logs):
+    with _client(route) as client, client.websocket_connect(
+        "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}
+    ) as socket:
+        oracle = _establish(socket, route)
+        response = _forward_hello(socket, oracle, route, ["capture.chats"] * 31 + ["f." + "a" * 62])
+        assert response["type"] == "agent.session"
+
+
+def _forward_request(socket, oracle, method, identifier=None, **extra):
+    identifier = identifier or str(uuid4())
+    _send(socket, oracle, {
+        "type": "rpc.request", "id": identifier, "method": method, "params": {}, **extra,
+    })
+    return identifier
+
+
+def test_unknown_method_keeps_same_channel(route, forward_logs):
+    with _client(route) as client, client.websocket_connect(
+        "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}
+    ) as socket:
+        oracle = _establish(socket, route)
+        session = _forward_hello(socket, oracle, route, ["capture.chats"])
+        assert session["type"] == "agent.session"
+        assert _receive(socket, oracle)["type"] == "sync.required"
+        identifier = _forward_request(socket, oracle, FUTURE_METHOD)
+        assert _receive(socket, oracle) == {
+            "type": "rpc.response", "id": identifier, "error": "unknown_method",
+        }
+        result = _rpc(socket, oracle, "agent.config.get", {
+            "operation": "agent.config.get", "protocol_version": "2",
+            "auth_ticket": session["payload"]["config_auth_ticket"],
+            "agent_installation_id": route.snapshot.pin.agent_installation_id,
+            "creator_account_id": route.local.account,
+            "current_etag": None, "current_config_revision": None,
+            "supported_config_schema_versions": ["2"],
+        })
+        assert result["status"] == 200
+
+
+def test_surface_report_reaches_session_dispatch(route):
+    report = {
+        "schema": "ofca-browser-surface/v1",
+        "capture": "active",
+        "site_access": "granted",
+        "history_permission": "granted",
+        "legal_review_required": False,
+    }
+    with _client(route) as client, client.websocket_connect(
+        "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}
+    ) as socket:
+        oracle = _establish(socket, route)
+        _prove(socket, oracle, route)
+        assert _rpc(socket, oracle, "agent.surface.report", report) == {}
+        surface = route.manager.browser_surface(route.local.account)
+        assert surface is not None
+        assert {key: surface[key] for key in report if key != "schema"} == {
+            key: value for key, value in report.items() if key != "schema"
+        }
+    assert route.manager.browser_surface(route.local.account) is None
+
+
+def test_served_methods_cover_dispatch_handlers():
+    handled = set()
+    for handler in (companion_session.SessionRPC.call, companion_session._serve):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(handler)))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Compare) or len(node.ops) != 1:
+                continue
+            selector = node.left
+            is_method = isinstance(selector, ast.Name) and selector.id == "method"
+            is_request_method = (
+                isinstance(selector, ast.Subscript)
+                and isinstance(selector.value, ast.Name)
+                and selector.value.id == "value"
+                and isinstance(selector.slice, ast.Constant)
+                and selector.slice.value == "method"
+            )
+            if not (is_method or is_request_method):
+                continue
+            if isinstance(node.ops[0], ast.Eq):
+                literals = [node.comparators[0]]
+            elif isinstance(node.ops[0], ast.In):
+                literals = node.comparators[0].elts
+            else:
+                continue
+            for literal in literals:
+                assert isinstance(literal, ast.Constant)
+                assert isinstance(literal.value, str)
+                handled.add(literal.value)
+    assert handled
+    assert companion_session.SessionRPC.METHODS == handled
+
+
+@pytest.mark.parametrize("failure", ["known", "timeout", "non-string"])
+def test_rpc_failures_still_refuse_and_close(route, monkeypatch, forward_logs, failure):
+    with _client(route) as client, client.websocket_connect(
+        "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}
+    ) as socket:
+        oracle = _establish(socket, route)
+        _prove(socket, oracle, route)
+        if failure == "timeout":
+            timeout = asyncio.timeout
+            deadlines = []
+            expired = []
+
+            def expire_dispatch(delay):
+                if not deadlines and asyncio.current_task().get_coro().__name__ == "dispatch":
+                    deadlines.append(delay)
+                    deadline = timeout(0)
+                    expired.append(deadline)
+                    return deadline
+                return timeout(delay)
+
+            monkeypatch.setattr(companion_session.asyncio, "timeout", expire_dispatch)
+        method = 42 if failure == "non-string" else "agent.config.get"
+        identifier = _forward_request(socket, oracle, method)
+        assert _receive(socket, oracle) == {
+            "type": "rpc.response", "id": identifier, "error": "session_request_refused",
+        }
+        with pytest.raises(WebSocketDisconnect) as closed:
+            socket.receive_bytes()
+        assert closed.value.code == 1008
+        if failure == "timeout":
+            assert deadlines == [10]
+            assert expired[0].expired()
+
+
+def test_unknown_method_id_cannot_be_repeated(route, forward_logs):
+    with _client(route) as client, client.websocket_connect(
+        "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}
+    ) as socket:
+        oracle = _establish(socket, route)
+        identifier = _forward_request(socket, oracle, FUTURE_METHOD)
+        assert _receive(socket, oracle) == {
+            "type": "rpc.response", "id": identifier, "error": "unknown_method",
+        }
+        _forward_request(socket, oracle, "agent.challenge", identifier)
+        with pytest.raises(WebSocketDisconnect) as closed:
+            _receive(socket, oracle)
+        assert closed.value.code == 1008
+
+
+@pytest.mark.parametrize("extra", [{"unexpected": True}, {"id": "invalid"}])
+def test_unknown_method_retains_request_validation(route, forward_logs, extra):
+    with _client(route) as client, client.websocket_connect(
+        "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}
+    ) as socket:
+        oracle = _establish(socket, route)
+        _forward_request(socket, oracle, FUTURE_METHOD, **extra)
+        with pytest.raises(WebSocketDisconnect) as closed:
+            _receive(socket, oracle)
+        assert closed.value.code == 1008
+
+
+@pytest.mark.asyncio
+async def test_unknown_methods_count_toward_session_limit(monkeypatch, forward_logs):
+    inbound = asyncio.Queue()
+    replies = asyncio.Queue()
+    closed = []
+
+    async def idle(*args, **kwargs):
+        await asyncio.Future()
+
+    async def close(code):
+        closed.append(code)
+
+    monkeypatch.setattr(transport_ws, "_agent_socket", idle)
+    channel = SimpleNamespace(
+        authority=SimpleNamespace(current_policy=lambda: None),
+        websocket=SimpleNamespace(client=None),
+        receive=inbound.get, send=replies.put, close=close, watch_authority=idle,
+    )
+    task = asyncio.create_task(companion_session._serve(channel, SimpleNamespace()))
+    try:
+        for _ in range(1_024):
+            identifier = str(uuid4())
+            await inbound.put({
+                "type": "rpc.request", "id": identifier,
+                "method": FUTURE_METHOD, "params": {},
+            })
+            assert await asyncio.wait_for(replies.get(), 2) == {
+                "type": "rpc.response", "id": identifier, "error": "unknown_method",
+            }
+        await inbound.put({
+            "type": "rpc.request", "id": str(uuid4()),
+            "method": "agent.challenge", "params": {},
+        })
+        with pytest.raises(CompanionRecordError):
+            await asyncio.wait_for(task, 2)
+        assert closed == [1008]
+        assert replies.empty()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

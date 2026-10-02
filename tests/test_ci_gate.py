@@ -233,6 +233,80 @@ def test_missing_teardown_and_phase_failures_fail_even_with_zero_exit_code():
         gate.validate_report(report, gate.SPECS[report["lane"]])
 
 
+def _with_subtests():
+    report = _reports()["analytics-windows-contract"]
+    node = report["selected"][0]
+    children = [dict(report["reports"][1], subtest={
+        "index": index, "msg": "same context", "kwargs": {"value": "'same'"},
+    }) for index in (1, 2)]
+    report["reports"][1:1] = children
+    return report, children
+
+
+def test_explicit_subtests_allow_repeated_context_but_keep_one_parent_call():
+    report, _ = _with_subtests()
+    assert gate.validate_report(report, gate.SPECS[report["lane"]]) == {
+        report["selected"][0]: "executed",
+    }
+    report["reports"].append(copy.deepcopy(report["reports"][-2]))
+    with pytest.raises(gate.GateError, match="duplicate pytest phase"):
+        gate.validate_report(report, gate.SPECS[report["lane"]])
+
+
+@pytest.mark.parametrize("child", [
+    None,
+    {"index": 0, "msg": None, "kwargs": {}},
+    {"index": 2, "msg": None, "kwargs": {}},
+    {"index": True, "msg": None, "kwargs": {}},
+    {"index": 1, "msg": [], "kwargs": {}},
+    {"index": 1, "msg": None, "kwargs": []},
+    {"index": 1, "msg": None, "kwargs": {"value": 123}},
+    {"index": 1, "msg": None, "kwargs": {}, "extra": "unexpected"},
+])
+def test_malformed_or_missing_subtest_identity_is_rejected(child):
+    report, children = _with_subtests()
+    children[0]["subtest"] = child
+    with pytest.raises(gate.GateError, match="subtest identity"):
+        gate.validate_report(report, gate.SPECS[report["lane"]])
+
+
+def test_duplicated_subtest_identity_is_rejected():
+    report, children = _with_subtests()
+    children[1]["subtest"]["index"] = 1
+    with pytest.raises(gate.GateError, match="duplicate subtest identity"):
+        gate.validate_report(report, gate.SPECS[report["lane"]])
+
+
+@pytest.mark.parametrize("outcome", ["failed", "skipped"])
+def test_failed_or_skipped_subtest_cannot_hide_behind_successful_parent(outcome):
+    report, children = _with_subtests()
+    children[0].update(outcome=outcome, skip_reason="child unavailable")
+    with pytest.raises(gate.GateError, match="failed|subtest did not pass"):
+        gate.validate_report(report, gate.SPECS[report["lane"]])
+
+
+def test_subtest_must_be_a_call_and_cannot_supply_the_parent_call():
+    report, children = _with_subtests()
+    children[0]["when"] = "setup"
+    with pytest.raises(gate.GateError, match="subtest did not pass its call"):
+        gate.validate_report(report, gate.SPECS[report["lane"]])
+    report, _ = _with_subtests()
+    report["reports"] = [phase for phase in report["reports"]
+                         if phase["when"] != "call" or "subtest" in phase]
+    with pytest.raises(gate.GateError, match="without a call outcome"):
+        gate.validate_report(report, gate.SPECS[report["lane"]])
+
+
+def test_subtests_cannot_make_a_skipped_parent_look_executed():
+    report, _ = _with_subtests()
+    _skip(report, report["selected"][0], "parent unavailable")
+    for phase in report["reports"]:
+        if "subtest" in phase:
+            phase["outcome"] = "passed"
+    with pytest.raises(gate.GateError, match="no successful parent call"):
+        gate.validate_report(report, gate.SPECS[report["lane"]])
+
+
 def test_explicit_profile_selection_and_skip_are_mandatory():
     reports = _reports()
     lane = "backend-fast-brain-general"

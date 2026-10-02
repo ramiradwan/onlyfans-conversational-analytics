@@ -325,6 +325,8 @@
       "id": "canonical-persistence",
       "path_patterns": [
         "app/persistence/history.py",
+        "app/persistence/catchup.py",
+        "app/persistence/catchup_events.py",
         "app/persistence/database.py",
         "app/persistence/migrations.py",
         "app/persistence/deletion_operations.py",
@@ -1312,7 +1314,8 @@
           "app/persistence/database.py",
           "app/persistence/migrations.py",
           "app/persistence/sql/**",
-          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/persistence/sql/0010_analytics_source_tokens.sql",
+          "app/persistence/sql/legacy_analytics_v9/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
           "app/persistence/json_header.py",
           "app/analytics/catalog_cache.py"
@@ -1323,7 +1326,8 @@
         "path_patterns": [
           "app/persistence/history.py",
           "app/transport/manager.py",
-          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/persistence/sql/0010_analytics_source_tokens.sql",
+          "app/persistence/sql/legacy_analytics_v9/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
           "app/analytics/catalog_cache.py"
         ]
@@ -1366,7 +1370,8 @@
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
           "app/analytics/scheduling.py",
-          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/persistence/sql/0010_analytics_source_tokens.sql",
+          "app/persistence/sql/legacy_analytics_v9/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
           "app/analytics/generation_reference.py",
           "app/analytics/compact_graph.py",
@@ -1531,7 +1536,8 @@
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
           "app/analytics/scheduling.py",
-          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/persistence/sql/0010_analytics_source_tokens.sql",
+          "app/persistence/sql/legacy_analytics_v9/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
           "app/analytics/sql/0007_projection_query_metadata.sql",
           "app/analytics/generation_reference.py",
@@ -1595,7 +1601,8 @@
           "app/analytics/source_snapshot.py",
           "app/analytics/sql/0006_conversation_fragments.sql",
           "app/analytics/scheduling.py",
-          "app/persistence/sql/0009_analytics_source_tokens.sql",
+          "app/persistence/sql/0010_analytics_source_tokens.sql",
+          "app/persistence/sql/legacy_analytics_v9/0009_analytics_source_tokens.sql",
           "app/analytics/source_tokens.py",
           "app/analytics/generation_reference.py",
           "app/analytics/projection_encoding.py",

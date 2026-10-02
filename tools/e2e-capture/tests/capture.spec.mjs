@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
+import playwrightExpect from '../node_modules/playwright/lib/matchers/expect.js';
 
 import {
   PROVISIONING_IDENTITY_STORAGE_KEY,
@@ -31,7 +32,7 @@ import {
 } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { readSqliteProof } from '../lib/sqlite-proof.mjs';
-
+import { buildStableConnectionDiagnostic, buildWorkerRecoveryDiagnostic, logWorkerRecoveryCheckpoint, redactStableConnectionAssertionError, withoutReportedExpectStep } from '../lib/stable-connection-diagnostic.mjs';
 const IDENTITY_PATH = '/api2/v2/users/me';
 const CHATS_PATH = '/api2/v2/chats';
 const MESSAGES_PATH = `/api2/v2/chats/${SYNTHETIC.chatId}/messages`;
@@ -69,26 +70,8 @@ async function waitForExtensionState(
       latest = await extensionState(worker);
       return predicate(latest);
     }, { message, timeout: timeoutMs }).toBe(true);
-  } catch (error) {
-    let identityContext = null;
-    let identityReadError = null;
-    try {
-      identityContext = await worker.evaluate(async (storageKey) => {
-        const stored = await chrome.storage.session.get([storageKey]);
-        return stored[storageKey] ?? null;
-      }, PROVISIONING_IDENTITY_STORAGE_KEY);
-    } catch (identityError) {
-      identityReadError = identityError instanceof Error
-        ? identityError.message
-        : String(identityError);
-    }
-    const identityDiagnostic = identityReadError === null
-      ? `Provisioning identity context: ${JSON.stringify(identityContext)}`
-      : `Provisioning identity context read failed: ${identityReadError}`;
-    throw new Error(
-      `${message}\nLast extension state: ${JSON.stringify(latest)}\n${identityDiagnostic}`,
-      { cause: error },
-    );
+  } catch {
+    throw new Error(`${message}\nworker-recovery-diagnostic: ${JSON.stringify(buildWorkerRecoveryDiagnostic(latest))}`);
   }
   return latest;
 }
@@ -543,15 +526,51 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
 
     await test.step('a stable connection resets persisted recovery history through normal UI polling', async () => {
+      const watcher = watchExtensionWorkers(context);
+      let statusPolls = 0;
+      let lastStatusPollAt = null;
+      let popupClosedAt = null;
+      let summary = null;
       const recoveryPopup = await openPopup(context, extensionId(worker), pageErrors);
       try {
-        await expect.poll(async () => {
-          await recoveryPopup.evaluate(() => chrome.runtime.sendMessage({ type: 'ofca.ui.status' }));
-          return worker.evaluate(async () => (await chrome.storage.local.get(['companion_recovery_v1']))
-            .companion_recovery_v1?.attempts);
-        }, { timeout: 75_000, intervals: [1_000] }).toBe(0);
-      } finally { await recoveryPopup.close(); }
-      expect((await readBrainSummary(context)).connectionToken).toBe(initialConnection);
+        try {
+          await expect.poll(async () => {
+            statusPolls++;
+            lastStatusPollAt = Date.now();
+            await recoveryPopup.evaluate(() => chrome.runtime.sendMessage({ type: 'ofca.ui.status' }));
+            return worker.evaluate(async () => (await chrome.storage.local.get(['companion_recovery_v1']))
+              .companion_recovery_v1?.attempts);
+          }, { timeout: 75_000, intervals: [1_000] }).toBe(0);
+        } finally {
+          await recoveryPopup.close();
+          popupClosedAt = Date.now();
+        }
+        summary = await readBrainSummary(context);
+        withoutReportedExpectStep(() => expect(summary.connectionToken).toBe(initialConnection), playwrightExpect);
+      } catch (error) {
+        redactStableConnectionAssertionError(error, summary?.connectionToken, initialConnection);
+        const liveWorker = context.serviceWorkers().find((candidate) =>
+          candidate.url().endsWith('/background.js'));
+        let state = null;
+        let stateError = null;
+        try { state = liveWorker ? await extensionState(liveWorker) : null; }
+        catch (failure) { stateError = failure; }
+        const diagnostic = JSON.stringify(buildStableConnectionDiagnostic({
+          at: Date.now(), statusPolls, lastStatusPollAt, popupClosedAt,
+          workerStartsDuringStep: watcher.creations.length,
+          originalWorkerAlive: liveWorker === worker,
+          brain: summary === null ? null : {
+            status: summary.agentStatus,
+            lastHeartbeatAt: summary.lastHeartbeatAt,
+            connectionPresent: summary.connectionToken !== null,
+          },
+          extension: state,
+          stateError,
+        }));
+        console.error(`stable-connection-diagnostic: ${diagnostic}`);
+        await test.info().attach('stable-connection-diagnostic', { contentType: 'application/json', body: diagnostic });
+        throw error;
+      } finally { watcher.stop(); }
     });
 
     let pendingEncryptedOutbox;
@@ -627,6 +646,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         { timeoutMs: 60_000 },
       );
       expect(recovered.heartbeatTimerPresent).toBe(true);
+      logWorkerRecoveryCheckpoint('replay', recovered, brain.sessionFailures());
       expect(recovered.workerInstanceId).not.toBe(oldWorkerInstanceId);
 
       const replayed = await waitForBrain(
@@ -720,6 +740,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         'The second replacement worker did not resume cleanly at acknowledgment 8.',
       );
       expect(replacement.workerInstanceId).not.toBe(oldWorkerInstanceId);
+      logWorkerRecoveryCheckpoint('replacement', replacement, brain.sessionFailures());
       const rebound = await waitForBrain(
         context,
         (candidate) => (
@@ -796,6 +817,7 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         { timeoutMs: Math.max(20_000, cooldownRemaining + 60_000) },
       );
       expect(alarmReplacement.workerInstanceId).not.toBe(oldWorkerInstanceId);
+      logWorkerRecoveryCheckpoint('alarm', alarmReplacement, brain.sessionFailures());
       const recovered = await waitForBrain(
         context,
         (candidate) => (
@@ -881,6 +903,9 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
       expect(finalState.outbox.pendingEntries).toBe(0);
       platform.assertFailClosed();
     });
+  } catch (error) {
+    console.error(`Brain session failures ${JSON.stringify(brain?.sessionFailures() ?? [])}`);
+    throw error;
   } finally {
     await context?.close().catch(() => undefined);
     await brain?.stop().catch(() => undefined);

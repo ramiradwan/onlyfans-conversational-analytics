@@ -43,6 +43,7 @@ def test_fixture_separates_append_and_actual_tied_insertion():
 
 
 @pytest.mark.parametrize('operation', ['append', 'insert'])
+@pytest.mark.windows_compat
 def test_real_stored_validators_and_fresh_oracle_agree(fixture, operation):
     raw, previous, db = fixture
     trace = focused.Attribution()
@@ -74,6 +75,7 @@ def test_oracle_runs_again_for_each_sample(fixture):
     assert oracle.call_count == 2
 
 
+@pytest.mark.windows_compat
 def test_no_trace_installs_no_global_profiler_and_retains_outer_timing(fixture):
     import sys
     raw, previous, db = fixture

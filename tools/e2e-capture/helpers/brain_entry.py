@@ -17,12 +17,13 @@ sys.path[:0] = [str(PRODUCT_ROOT), str(HELPER_ROOT)]
 
 import uvicorn  # noqa: E402
 
-from app.api.endpoints import companion_pairing  # noqa: E402
+from app.api.endpoints import companion_pairing, companion_session  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
 from app.persistence.auth import SQLiteAuthenticationStore  # noqa: E402
 from app.security.companion_pairing import CompanionPairingService  # noqa: E402
 from pairing_fixture import SyntheticPairingAuthority  # noqa: E402
+from session_diagnostics import install_session_diagnostics  # noqa: E402
 
 
 SYNTHETIC_PROVIDER_NAME = "E2E Synthetic Installation Key Provider"
@@ -38,6 +39,7 @@ def _e2e_pairing_service() -> CompanionPairingService:
 
 
 companion_pairing.companion_pairing_service = _e2e_pairing_service
+install_session_diagnostics(companion_session)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import secrets
 import threading
 from collections.abc import Callable
@@ -14,8 +13,13 @@ from typing import Protocol
 from uuid import UUID
 
 from app.core.config import settings
+from app.core.customer_release import (
+    HOSTED_ORIGIN_ENVIRONMENT_VARIABLE,
+    resolve_hosted_api_origin,
+)
 from app.persistence.auth import (
     AuthenticationStore,
+    CompanionSessionBinding,
     OnboardingMilestone,
     SQLiteAuthenticationStore,
 )
@@ -30,7 +34,6 @@ from app.security.installation_key import (
 )
 
 
-HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
 _RETRY_INTERVAL_SECONDS = 30
 _MAX_RETRY_DELAY_SECONDS = 3_600
 
@@ -77,6 +80,19 @@ class OnboardingProgressCoordinator:
             self.mark(milestone)
         try:
             self.flush()
+        except Exception:
+            return
+
+    def reconcile(
+        self, *, session: CompanionSessionBinding | None = None,
+        current_configuration: bool = False,
+    ) -> None:
+        """Observe missing companion facts without changing existing outbox rows."""
+        try:
+            self._open_store().reconcile_onboarding_progress(
+                observed_at=self._now(), session=session,
+                current_configuration=current_configuration,
+            )
         except Exception:
             return
 
@@ -132,6 +148,7 @@ class OnboardingProgressCoordinator:
                 continue
 
     async def start(self) -> None:
+        await asyncio.to_thread(self.reconcile)
         if self._retry_task is None or self._retry_task.done():
             self._retry_task = asyncio.create_task(
                 self._retry_loop(), name="onboarding-progress-outbox"
@@ -187,7 +204,7 @@ def configured_runtime_onboarding_progress() -> OnboardingProgressCoordinator:
 
     return durable_onboarding_progress(
         open_store,
-        hosted_origin=os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""),
+        hosted_origin=resolve_hosted_api_origin(),
     )
 
 

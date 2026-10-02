@@ -40,7 +40,7 @@ def test_populated_canonical_upgrade_preserves_exact_source_identity(tmp_path):
         assert db.execute('PRAGMA user_version').fetchone()[0] == 8
         assert db.execute('SELECT text FROM account_messages').fetchone()[0] == 'Thanks pricing'
     with database.read() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 9
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 10
         assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
         assert source._identity_cache.token(db, ACCOUNT) is not None
     assert source.read_identity(ACCOUNT) == expected

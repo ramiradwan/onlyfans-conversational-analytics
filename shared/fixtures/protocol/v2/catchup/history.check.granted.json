@@ -1,0 +1,12 @@
+{
+  "result": "granted",
+  "check_id": "70000000-0000-4000-8000-000000000001",
+  "kind": "catch_up",
+  "gap_epoch": 1,
+  "uncertain_since": "2026-09-29T00:00:00Z",
+  "granted_at": "2026-09-29T00:00:00Z",
+  "blind": false,
+  "page_budget": 200,
+  "lease_expires_at": "2026-09-29T00:05:00Z",
+  "resume": false
+}

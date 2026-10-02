@@ -11,6 +11,9 @@ from pathlib import Path
 
 import pytest
 
+# Subtests became part of pytest itself in pytest 9.
+SubtestReport = getattr(pytest, "SubtestReport", None)
+
 
 def pytest_addoption(parser):
     group = parser.getgroup("backend-ci")
@@ -35,19 +38,60 @@ class Evidence:
         self.deselected = []
         self.reports = []
         self.collection_errors = []
+        self.progress_stream = None
+        self.progress_sequence = 0
 
-    def payload(self, exit_code):
+    def lane(self):
         lane = self.config.getoption("ci_lane") or "legacy"
         shard = self.config.getoption("ci_shard")
         if lane == "integration" and shard is not None:
             lane = f"analytics-integration-{shard}"
+        return os.environ.get("CI_TEST_LANE") or lane
+
+    def output_directory(self):
+        return Path(self.config.getoption("ci_output_dir") or Path("artifacts/ci-tests") / self.lane())
+
+    def start_progress(self):
+        try:
+            output = self.output_directory()
+            output.mkdir(parents=True, exist_ok=True)
+            self.progress_stream = (output / "progress.jsonl").open("w", encoding="utf-8")
+            self.progress("session_start", source_commit=os.environ.get("PRODUCT_SHA", ""),
+                          workflow_run_id=os.environ.get("GITHUB_RUN_ID", ""),
+                          run_attempt=os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+                          job_id=os.environ.get("GITHUB_JOB", "local"), lane=self.lane(), pid=os.getpid())
+        except OSError as error:
+            print(f"Could not open optional CI progress journal: {error}", file=sys.stderr)
+
+    def progress(self, event, **fields):
+        if self.progress_stream is None:
+            return
+        self.progress_sequence += 1
+        entry = dict(sequence=self.progress_sequence, elapsed_seconds=round(time.monotonic() - self.start, 6),
+                     event=event, **fields)
+        try:
+            self.progress_stream.write(json.dumps(entry) + "\n")
+            self.progress_stream.flush()
+        except OSError as error:
+            self.close_progress()
+            print(f"Could not write optional CI progress journal: {error}", file=sys.stderr)
+
+    def close_progress(self):
+        stream, self.progress_stream = self.progress_stream, None
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    def payload(self, exit_code):
         return {
             "schema": "ci-test-report/v1",
             "source_commit": os.environ.get("PRODUCT_SHA", ""),
             "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
             "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
             "job_id": os.environ.get("GITHUB_JOB", "local"),
-            "lane": os.environ.get("CI_TEST_LANE") or lane,
+            "lane": self.lane(),
             "platform": platform.system(),
             "python": platform.python_version(),
             "pytest": pytest.__version__,
@@ -110,6 +154,36 @@ def pytest_deselected(items):
 class ReportCollector:
     def __init__(self, evidence):
         self.evidence = evidence
+        self.subtest_counts = {}
+
+    def pytest_runtest_logstart(self, nodeid, location):
+        self.evidence.progress("test_start", nodeid=nodeid)
+        # File progress is always retained. Console breadcrumbs are enabled in
+        # hosted Windows jobs, where a hard timeout can prevent artifact upload.
+        if os.environ.get("CI_PYTEST_LIVE_PROGRESS") == "1":
+            print(f"[ci-progress] start {nodeid}", file=sys.__stdout__ or sys.stdout, flush=True)
+
+    def pytest_runtest_logfinish(self, nodeid, location):
+        self.evidence.progress("test_finish", nodeid=nodeid)
+
+    def _phase(self, item, when):
+        self.evidence.progress("phase_start", nodeid=item.nodeid, when=when)
+        try:
+            yield
+        finally:
+            self.evidence.progress("phase_finish", nodeid=item.nodeid, when=when)
+
+    @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+    def pytest_runtest_setup(self, item):
+        yield from self._phase(item, "setup")
+
+    @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+    def pytest_runtest_call(self, item):
+        yield from self._phase(item, "call")
+
+    @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+    def pytest_runtest_teardown(self, item):
+        yield from self._phase(item, "teardown")
 
     def pytest_runtest_logreport(self, report):
         skip_reason = None
@@ -117,7 +191,7 @@ class ReportCollector:
             skip_reason = getattr(report, "wasxfail", None)
             if not skip_reason:
                 skip_reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else str(report.longrepr)
-        self.evidence.reports.append({
+        phase = {
             "nodeid": report.nodeid,
             "when": report.when,
             "outcome": report.outcome,
@@ -125,7 +199,18 @@ class ReportCollector:
             "wasxfail": getattr(report, "wasxfail", None),
             "skip_reason": skip_reason,
             "detail": str(report.longrepr) if report.failed or report.skipped else "",
-        })
+        }
+        if SubtestReport is not None and isinstance(report, SubtestReport):
+            index = self.subtest_counts.get(report.nodeid, 0) + 1
+            self.subtest_counts[report.nodeid] = index
+            phase["subtest"] = {
+                "index": index,
+                "msg": report.context.msg,
+                # Pytest already converts each context value to a safe repr.
+                "kwargs": dict(report.context.kwargs),
+            }
+        self.evidence.reports.append(phase)
+        self.evidence.progress("phase_report", **{key: value for key, value in phase.items() if key != "detail"})
 
     def pytest_collectreport(self, report):
         if report.failed:
@@ -133,14 +218,34 @@ class ReportCollector:
 
 
 def pytest_sessionstart(session):
+    session.config._ci_evidence.start_progress()
     session.config.pluginmanager.register(ReportCollector(session.config._ci_evidence), "ci-phase-collector")
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_collection(session):
+    evidence = session.config._ci_evidence
+    evidence.progress("collection_start")
+    try:
+        yield
+    finally:
+        evidence.progress("collection_finish", collected=len(evidence.collected), selected=len(evidence.selected))
+
+
+def pytest_unconfigure(config):
+    evidence = getattr(config, "_ci_evidence", None)
+    if evidence is not None:
+        evidence.close_progress()
 
 
 def summary(payload):
     outcomes = {}
+    priority = {"passed": 0, "skipped": 1, "failed": 2}
     for report in payload["reports"]:
         previous = outcomes.get(report["nodeid"])
-        if report["outcome"] == "failed" or previous != "failed" and (report["when"] == "call" or report["outcome"] == "skipped"):
+        if (report["when"] == "call" or report["outcome"] in {"failed", "skipped"}) and (
+            previous is None or priority[report["outcome"]] > priority[previous]
+        ):
             outcomes[report["nodeid"]] = report["outcome"]
     counts = {name: sum(value == name for value in outcomes.values()) for name in ("passed", "failed", "skipped")}
     lines = [f"# Backend: {payload['lane']}", "", f"{len(payload['selected'])} selected · {len(payload['deselected'])} deselected · "
@@ -153,6 +258,8 @@ def summary(payload):
         if report["outcome"] != "failed":
             continue
         lines.extend([f"**{report['when']} failure:** `{report['nodeid']}`", "", "```text", report["detail"][-6000:], "```", ""])
+        if "subtest" in report:
+            lines.extend(["Subtest context: `" + json.dumps(report["subtest"], sort_keys=True) + "`", ""])
         if (payload["selection_profile"] or payload["profile"]) and Path(__file__).with_name("test_backend.py").is_file():
             command = f'python tools/test_backend.py stateful --profile {payload["selection_profile"] or payload["profile"]} -- "{report["nodeid"]}" -vv'
         else:
@@ -174,11 +281,10 @@ def summary(payload):
 def pytest_sessionfinish(session, exitstatus):
     yield
     evidence = session.config._ci_evidence
+    evidence.progress("session_finish", exit_code=int(exitstatus))
+    evidence.close_progress()
     payload = evidence.payload(exitstatus)
-    directory = session.config.getoption("ci_output_dir")
-    if not directory:
-        directory = str(Path("artifacts/ci-tests") / payload["lane"])
-    output = Path(directory)
+    output = evidence.output_directory()
     output.mkdir(parents=True, exist_ok=True)
     temporary = output / "report.json.tmp"
     temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import json
 import re
 import secrets
@@ -189,14 +190,52 @@ class CompanionPairingService:
         return {**self._public(pin), "state": "revoked"}
 
     @_boundary
-    def confirm(self, policy: RuntimePolicy, pairing_id: str, version: int) -> dict:
+    def confirm(
+        self,
+        policy: RuntimePolicy,
+        pairing_id: str,
+        version: int,
+        agent_comparison_code: str | None = None,
+    ) -> dict:
+        """Commit an operator confirmation.
+
+        With ``agent_comparison_code`` the code was read from the extension over
+        the browser's extension channel, so Brain compares it here instead of
+        relying on the operator's eyes. A mismatch ends the attempt.
+        """
         identity = self._identity(policy)
+        identifier = _decode(pairing_id, 32)
+        method = "operator_compared"
+        if agent_comparison_code is not None:
+            if not isinstance(agent_comparison_code, str) or not re.fullmatch(
+                r"[0-9]{6}", agent_comparison_code
+            ):
+                raise CompanionPairingError("pairing_message_invalid")
+            window = self.persistence.authorized_record(identity.session_id, identifier)
+            if (
+                not isinstance(window, CompanionPairingWindow)
+                or window.state is not CompanionPairingState.AWAITING_CONFIRMATION
+                or window.version != version
+            ):
+                raise CompanionPairingError()
+            expected = proof.comparison_code(window.pairing_digest)
+            if not hmac.compare_digest(expected, agent_comparison_code):
+                # Another endpoint answered this window. Fail closed and end it.
+                self.persistence.cancel_authorized_window(
+                    identifier,
+                    expected_version=version,
+                    session_id=identity.session_id,
+                    decline=True,
+                )
+                raise CompanionPairingError("pairing_proof_refused")
+            method = "browser_verified"
         pin = self.persistence.confirm_and_admit(
-            _decode(pairing_id, 32),
+            identifier,
             expected_version=version,
             confirmation_principal_id=identity.principal_id,
             confirmation_session_id=identity.session_id,
             confirmed_at=self._now(),
+            confirmation_method=method,
         )
         return self._public(pin)
 

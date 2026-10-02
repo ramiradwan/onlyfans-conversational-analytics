@@ -1,0 +1,32 @@
+{
+  "operation": "capture.state.report",
+  "protocol_version": "2",
+  "auth_ticket": "agent-config-ticket-42",
+  "agent_installation_id": "20000000-0000-4000-8000-000000000001",
+  "creator_account_id": "dev-creator-account",
+  "worker_instance_id": "70000000-0000-4000-8000-000000000001",
+  "report_seq": 1,
+  "observing": true,
+  "reason": "ok",
+  "tabs": {
+    "armed": 1,
+    "frozen": 0,
+    "discarded": 0
+  },
+  "page_socket_open": true,
+  "drops_since_last": {
+    "expired": 0,
+    "rejected": 0
+  },
+  "requests_since_last": {
+    "canary_list": 1,
+    "catchup_list": 0,
+    "catchup_messages": 0,
+    "history_list": 0,
+    "history_messages": 0,
+    "identity": 0,
+    "retries": 0
+  },
+  "utc_day": "2026-09-29",
+  "automatic_pages_today": 1
+}

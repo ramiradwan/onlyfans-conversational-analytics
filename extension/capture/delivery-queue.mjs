@@ -1,5 +1,60 @@
+import { PAGE_CONTROL_STATUS_TYPE, PAGE_CONTROL_VERSION } from './envelopes.mjs';
 import { CAPTURE_LIMITS, utf8Bytes } from './limits.mjs';
 export { CAPTURE_LIMITS, fitsUtf8, utf8Bytes } from './limits.mjs';
+
+const dropState = globalThis[Symbol.for('ofca.capture.queue.drops')] ??= {
+  counts: { document: globalThis.crypto?.randomUUID?.() ?? 'document', expired: 0, rejected: 0 },
+  reporting: false,
+};
+const queueDrops = dropState.counts;
+const pageState = globalThis[Symbol.for('ofca.capture.page-state')] ??= {
+  installed: false,
+  signature: null,
+  notifications: Object.create(null),
+};
+function notifyWorker(type) {
+  const state = pageState.notifications[type] ??= { timer: null, pending: false };
+  const send = () => {
+    try { void globalThis.chrome.runtime.sendMessage({ type })?.catch(() => {}); } catch {}
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      if (!state.pending) return;
+      state.pending = false;
+      send();
+    }, 1_000);
+  };
+  if (state.timer !== null) {
+    state.pending = true;
+    return;
+  }
+  send();
+}
+if (!pageState.installed && globalThis.window?.addEventListener && globalThis.chrome?.runtime?.sendMessage) {
+  pageState.installed = true;
+  const pageOrigin = globalThis.window.location?.origin;
+  globalThis.window.addEventListener('message', (event) => {
+    if (event.source !== globalThis.window || event.origin !== pageOrigin) return;
+    const envelope = event.data;
+    const status = envelope?.type === PAGE_CONTROL_STATUS_TYPE && envelope.version === PAGE_CONTROL_VERSION
+      ? envelope.status : null;
+    if (!status || typeof status !== 'object' || Array.isArray(status)
+      || Object.keys(status).length !== 4
+      || !['identity', 'preview', 'full'].includes(status.mode)
+      || typeof status.active !== 'boolean' || typeof status.forwarding !== 'boolean'
+      || typeof status.ws2_socket_open !== 'boolean') return;
+    const signature = JSON.stringify([
+      status.mode, status.active, status.forwarding, status.ws2_socket_open,
+    ]);
+    if (pageState.signature !== null && pageState.signature !== signature) {
+      notifyWorker('ofca.capture.state.changed');
+    }
+    pageState.signature = signature;
+  });
+}
+function reportDrop(reason) {
+  queueDrops[reason]++;
+  notifyWorker('ofca.capture.queue.changed');
+}
 
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -15,9 +70,17 @@ export class CaptureDeliveryQueue {
   constructor({ send, now = Date.now, random = Math.random,
     maxEntries = CAPTURE_LIMITS.queueEntries, maxBytes = CAPTURE_LIMITS.queueBytes,
     attemptTimeoutMs = 5_000,
+    onDrop = reportDrop,
   }) {
     if (typeof send !== 'function') throw new TypeError('Capture delivery sender is required');
     Object.assign(this, { send, now, random, maxEntries, maxBytes, attemptTimeoutMs });
+    this.onDrop = onDrop;
+    if (!dropState.reporting && globalThis.chrome?.runtime?.onMessage) {
+      dropState.reporting = true;
+      chrome.runtime.onMessage.addListener((request, sender, respond) => {
+        if (request?.type === 'ofca.capture.queue.status') respond({ ...queueDrops });
+      });
+    }
     this.entries = [];
     this.bytes = 0;
     this.processing = null;
@@ -28,9 +91,11 @@ export class CaptureDeliveryQueue {
     this.controller.signal.throwIfAborted();
     const bytes = utf8Bytes(JSON.stringify(delivery));
     if (bytes > CAPTURE_LIMITS.envelopeBytes) {
+      this.onDrop('rejected');
       throw Object.assign(new Error('capture_delivery_too_large'), { code: 'capture_delivery_too_large' });
     }
     if (this.entries.length >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
+      this.onDrop('rejected');
       throw Object.assign(new Error('delivery_queue_full'), { code: 'delivery_queue_full' });
     }
     const result = new Promise((resolve, reject) => {
@@ -53,7 +118,10 @@ export class CaptureDeliveryQueue {
     while (this.entries.length > 0 && !this.controller.signal.aborted) {
       const item = this.entries[0];
       try { item.resolve(await this.#deliver(item.delivery, this.controller.signal)); }
-      catch (error) { item.reject(error); }
+      catch (error) {
+        if (!this.controller.signal.aborted) this.onDrop(error?.code === 'delivery_expired' ? 'expired' : 'rejected');
+        item.reject(error);
+      }
       finally {
         if (this.entries[0] === item) {
           this.entries.shift();

@@ -44,6 +44,7 @@ BRAIN_TO_BRIDGE = {
     "presence.state",
     "agent.state",
     "system.state",
+    "companion.state",
 }
 
 
@@ -70,7 +71,7 @@ VALID_FIXTURES = sorted(path for path in FIXTURE_ROOT.glob("*.json"))
 
 @pytest.mark.parametrize("fixture", VALID_FIXTURES, ids=lambda path: path.stem)
 def test_every_operation_has_a_valid_golden_fixture(fixture: Path) -> None:
-    assert len(VALID_FIXTURES) == 25
+    assert len(VALID_FIXTURES) == 26
     assert parse_valid_fixture(fixture) is not None
 
 
@@ -115,3 +116,28 @@ def test_role_specific_unions_reject_wrong_role_messages() -> None:
     bridge_hello = (FIXTURE_ROOT / "bridge.hello.json").read_text(encoding="utf-8")
     with pytest.raises(ValidationError):
         AGENT_TO_BRAIN_ADAPTER.validate_json(bridge_hello)
+
+
+@pytest.mark.parametrize("fixture", sorted((FIXTURE_ROOT / "catchup").glob("*.json")), ids=lambda path: path.stem)
+def test_catchup_and_old_shape_fixtures(fixture):
+    import json
+    from app.protocol.config import (
+        CaptureStateReportRequest, CaptureStateReportResponse,
+        HistoryCheckBeginRequest, HistoryCheckBeginResponse,
+    )
+    document = fixture.read_text(encoding="utf-8")
+    value = json.loads(document)
+    kind = value.get("type", "")
+    if kind in AGENT_TO_BRAIN:
+        adapter = AGENT_TO_BRAIN_ADAPTER
+    elif kind in BRAIN_TO_AGENT:
+        adapter = BRAIN_TO_AGENT_ADAPTER
+    elif kind in BRIDGE_TO_BRAIN:
+        adapter = BRIDGE_TO_BRAIN_ADAPTER
+    elif kind in BRAIN_TO_BRIDGE:
+        adapter = BRAIN_TO_BRIDGE_ADAPTER
+    else:
+        model = {"capture.state.report": CaptureStateReportRequest,
+                 "history.check.begin": HistoryCheckBeginRequest}.get(value.get("operation"))
+        adapter = TypeAdapter(model or (HistoryCheckBeginResponse if "result" in value else CaptureStateReportResponse))
+    assert adapter.validate_json(document) is not None

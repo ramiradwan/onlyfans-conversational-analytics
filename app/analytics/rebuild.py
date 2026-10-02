@@ -23,7 +23,7 @@ from app.persistence.migrations import (
     Migration,
     MigrationError,
     MigrationRunner,
-    load_migration_catalog,
+    resolve_migration_catalog,
 )
 
 
@@ -322,7 +322,7 @@ class ReadOnlyCanonicalDatabase:
                     "The canonical database failed integrity validation.",
                 )
 
-            catalog = load_migration_catalog()
+            catalog = resolve_migration_catalog(connection)
             rows = connection.execute(
                 """
                 SELECT version, name, checksum
@@ -330,9 +330,10 @@ class ReadOnlyCanonicalDatabase:
                 ORDER BY version
                 """
             ).fetchall()
-            versions = [int(row["version"]) for row in rows]
+            versions = [row["version"] for row in rows]
             if (
                 not versions
+                or any(type(version) is not int for version in versions)
                 or versions != list(range(1, len(versions) + 1))
                 or len(versions) > len(catalog)
             ):
@@ -342,7 +343,7 @@ class ReadOnlyCanonicalDatabase:
                 )
             for row, migration in zip(rows, catalog, strict=False):
                 if (
-                    int(row["version"]) != migration.version
+                    row["version"] != migration.version
                     or str(row["name"]) != migration.name
                     or str(row["checksum"]) != migration.checksum
                 ):

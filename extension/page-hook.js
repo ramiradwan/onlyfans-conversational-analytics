@@ -12,6 +12,7 @@ import {
   CAPTURE_PROTOCOL_VERSION,
   PAGE_CONTROL_MESSAGE_TYPE,
   PAGE_CONTROL_VERSION,
+  PAGE_CONTROL_STATUS_TYPE,
   PREVIEW_MESSAGE_TYPE,
   PREVIEW_PROTOCOL_VERSION,
   PROVISIONING_IDENTITY_MESSAGE_TYPE,
@@ -33,6 +34,8 @@ import {
   const xhrUrls = new WeakMap();
   const socketListeners = new Set();
   let active = true;
+  let forwarding = mode !== 'full';
+  let captureGeneration = 0;
   let creatorPlatformUserId = null;
   let lastConfirmedCreatorId = null;
   let socketAccountGeneration = 0;
@@ -51,7 +54,7 @@ import {
   }
 
   function postPageMessage(message) {
-    if (!active) return;
+    if (!active || !forwarding) return;
     try {
       window.postMessage(message, targetOrigin);
     } catch (_error) {
@@ -80,6 +83,7 @@ import {
   }
 
   function postPreview(observation, ownership) {
+    if (!forwarding || ownership.captureGeneration !== captureGeneration) return;
     if (observation === null) return;
     if (ownership.previewGeneration !== previewGeneration) return;
     if (previewCreatorId === null) {
@@ -138,12 +142,16 @@ import {
       creatorPlatformUserId,
       pageEpoch,
       previewGeneration,
+      captureGeneration,
+      forwarding,
     });
   }
 
   function ownershipIsCurrent(ownership) {
     return ownership?.creatorPlatformUserId === creatorPlatformUserId
-      && ownership?.pageEpoch === pageEpoch;
+      && ownership?.pageEpoch === pageEpoch
+      && ownership?.forwarding === true
+      && ownership?.captureGeneration === captureGeneration;
   }
 
   function replaceCreatorIdentity(nextId, updatePreview = true, confirmed = true) {
@@ -161,7 +169,7 @@ import {
       }
       previewCreatorId = normalized;
       if (normalized !== null) {
-        for (const observation of pendingPreview.splice(0)) postPreview(observation, { previewGeneration });
+        for (const observation of pendingPreview.splice(0)) postPreview(observation, { previewGeneration, captureGeneration });
       }
     }
     if (normalized !== creatorPlatformUserId) {
@@ -266,6 +274,7 @@ import {
   }
 
   function emitRecords(resource, pathname, body, sourceEventType, ownership) {
+    if (!forwarding || !ownership.forwarding || ownership.captureGeneration !== captureGeneration) return;
     if (mode === 'identity') return;
     if (mode === 'full' && (!ownershipIsCurrent(ownership)
       || ownership.creatorPlatformUserId === null)) return;
@@ -336,6 +345,7 @@ import {
       if (identitySequence !== null && identitySequence === identityRequestSequence) {
         replaceCreatorIdentity(null, true, response.status === 401 || response.status === 403);
       }
+      if (!ownership.forwarding || ownership.captureGeneration !== captureGeneration) return;
       postDiagnostic('http.response', _error?.message === 'capture_response_too_large'
         ? 'capture_too_large' : 'invalid_json', url.pathname);
     }
@@ -400,7 +410,7 @@ import {
           const socketGeneration = socketAccountGeneration;
           let socketCreatorId = creatorPlatformUserId;
           const listener = (event) => {
-            if (!active || typeof event.data !== 'string'
+            if (!active || !forwarding || typeof event.data !== 'string'
               || socketGeneration !== socketAccountGeneration) return;
             const currentCreator = mode === 'preview' ? previewCreatorId : creatorPlatformUserId;
             if (currentCreator === null && mode === 'full') return;
@@ -435,6 +445,8 @@ import {
                   frame,
                   ownership.creatorPlatformUserId,
                 ),
+                ownEchoCreatorId: socketCreatorId === ownership.creatorPlatformUserId
+                  ? socketCreatorId : null,
               });
               if (record === null) continue;
               postObservation({
@@ -448,8 +460,11 @@ import {
               });
             }
           };
+          const statusListener = () => postStatus();
           socket.addEventListener('message', listener);
-          socketListeners.add({ socket, listener });
+          socket.addEventListener('open', statusListener);
+          socket.addEventListener('close', statusListener);
+          socketListeners.add({ socket, listener, statusListener });
         }
         return socket;
       },
@@ -507,6 +522,7 @@ import {
           if (identitySequence !== null && identitySequence === identityRequestSequence) {
             replaceCreatorIdentity(null, true, this.status === 401 || this.status === 403);
           }
+          if (!ownership.forwarding || ownership.captureGeneration !== captureGeneration) return;
           postDiagnostic('http.response', _error?.message === 'capture_response_too_large'
         ? 'capture_too_large' : 'invalid_json', url.pathname);
         }
@@ -541,6 +557,7 @@ import {
   function stop() {
     if (!active) return;
     active = false;
+    forwarding = false;
     pendingPreview.length = 0;
     previewCreatorId = null;
     if (installedFetch !== null && window.fetch === installedFetch) window.fetch = originalFetch;
@@ -553,8 +570,10 @@ import {
     if (XMLHttpRequest.prototype.send === installedXhrSend) {
       XMLHttpRequest.prototype.send = originalXhrSend;
     }
-    for (const { socket, listener } of socketListeners) {
+    for (const { socket, listener, statusListener } of socketListeners) {
       socket.removeEventListener?.('message', listener);
+      socket.removeEventListener?.('open', statusListener);
+      socket.removeEventListener?.('close', statusListener);
     }
     socketListeners.clear();
     window.removeEventListener('message', controlListener);
@@ -567,6 +586,13 @@ import {
     delete globalThis.__OFCA_PAGE_HOOK_CONTROLLER__;
   }
 
+  function postStatus() {
+    window.postMessage({ type: PAGE_CONTROL_STATUS_TYPE, version: PAGE_CONTROL_VERSION,
+      status: { mode, active, forwarding, ws2_socket_open: [...socketListeners].some(
+        ({ socket }) => socket.readyState === 1,
+      ) } }, targetOrigin);
+  }
+
   function controlListener(event) {
     if (event.source !== window || event.origin !== targetOrigin) return;
     const message = event.data;
@@ -575,16 +601,24 @@ import {
       || Object.keys(message).length !== 3
       || message.type !== PAGE_CONTROL_MESSAGE_TYPE
       || message.version !== PAGE_CONTROL_VERSION
-      || !['stop', 'refresh_identity'].includes(message.action)
+      || !['stop', 'pause', 'resume', 'status', 'refresh_identity'].includes(message.action)
     ) return;
     if (message.action === 'stop') stop();
+    else if (message.action === 'status') postStatus();
+    else if (message.action === 'pause') {
+      forwarding = false;
+      captureGeneration += 1;
+      previewGeneration += 1;
+      pendingPreview.length = 0;
+    } else if (message.action === 'resume') forwarding = active;
     // A readiness probe before the profile response is not evidence of sign-out.
     // Navigation already removes the worker's old document context.
-    else if (creatorPlatformUserId !== null) {
+    else if (forwarding && creatorPlatformUserId !== null) {
       postProvisioningIdentity({ creator_account_id: creatorPlatformUserId });
     }
   }
 
   window.addEventListener('message', controlListener);
   globalThis.__OFCA_PAGE_HOOK_CONTROLLER__ = Object.freeze({ mode, stop });
+  if (mode === 'full') postStatus();
 })();

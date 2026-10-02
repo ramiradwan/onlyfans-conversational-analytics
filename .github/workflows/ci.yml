@@ -393,6 +393,8 @@ jobs:
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
     timeout-minutes: 20
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -467,6 +469,7 @@ jobs:
           CI_TEST_LANE: windows-platform-contract
           CI_REPORT_DIR: artifacts/ci-tests/windows-platform-contract
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-platform-contract/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane windows-platform-contract
       - name: Test Windows production boot
         run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
@@ -474,13 +477,14 @@ jobs:
           CI_TEST_LANE: windows-production-boot
           CI_REPORT_DIR: artifacts/ci-tests/windows-production-boot
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-production-boot/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
       - name: Test Windows persistent SQLCipher general profile
         env:
           HYPOTHESIS_PROFILE: tier_b_general
           CI_TEST_LANE: windows-persistence-general
           CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-general
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-general/junit.xml
-            --ci-profile=tier_b_general
+            --ci-profile=tier_b_general -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral --junitxml=artifacts/ci-tests/windows-persistence-general/junit.xml -vv
       - name: Test Windows persistent SQLCipher deletion profile
@@ -489,7 +493,7 @@ jobs:
           CI_TEST_LANE: windows-persistence-deletion
           CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-deletion
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-deletion/junit.xml
-            --ci-profile=tier_b_deletion
+            --ci-profile=tier_b_deletion -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion --junitxml=artifacts/ci-tests/windows-persistence-deletion/junit.xml -vv
       - name: Test Windows persistent SQLCipher smoke profile
@@ -498,17 +502,23 @@ jobs:
           CI_TEST_LANE: windows-persistence-smoke
           CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-smoke
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml
-            --ci-profile=windows_persistence_smoke
+            --ci-profile=windows_persistence_smoke -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml -vv
       - name: Preserve persistence evidence filenames
         if: always()
         shell: pwsh
         run: |-
-          Copy-Item -LiteralPath "artifacts/ci-tests/windows-persistence-general/junit.xml" -Destination "$env:RUNNER_TEMP\tier-b-general-junit.xml"
-          Copy-Item -LiteralPath "artifacts/ci-tests/windows-persistence-deletion/junit.xml" -Destination "$env:RUNNER_TEMP\tier-b-deletion-junit.xml"
-          Copy-Item -LiteralPath "artifacts/ci-tests/windows-persistence-smoke/junit.xml" -Destination "$env:RUNNER_TEMP\tier-b-smoke-junit.xml"
+          foreach ($profile in @("general", "deletion", "smoke")) {
+            $source = "artifacts/ci-tests/windows-persistence-$profile/junit.xml"
+            if (Test-Path -LiteralPath $source -PathType Leaf) {
+              Copy-Item -LiteralPath $source -Destination "$env:RUNNER_TEMP\tier-b-$profile-junit.xml"
+            } else {
+              Write-Warning "Persistence evidence missing for $profile; no JUnit result will be fabricated."
+            }
+          }
       - name: Record Windows persistence CI source
+        if: always()
         shell: pwsh
         run: |
           $payload = [ordered]@{
@@ -545,6 +555,8 @@ jobs:
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
     timeout-minutes: 20
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -612,6 +624,7 @@ jobs:
           CI_TEST_LANE: analytics-windows-contract
           CI_REPORT_DIR: artifacts/ci-tests/analytics-windows-contract
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-windows-contract/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane analytics-windows-contract
       - name: Retain backend timing and selection
         if: always()
@@ -626,6 +639,8 @@ jobs:
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -693,6 +708,7 @@ jobs:
           CI_TEST_LANE: windows-full-regression
           CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py --lane windows-full-regression
       - name: Retain backend timing and selection
         if: always()
@@ -708,6 +724,8 @@ jobs:
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
     timeout-minutes: 45
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -775,6 +793,7 @@ jobs:
           CI_TEST_LANE: analytics-scale-qualification
           CI_REPORT_DIR: artifacts/ci-tests/analytics-scale-qualification
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-scale-qualification/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: python tools/test_backend.py scale -- --ignore=tests/test_packaged_runtime.py --ignore=tests/test_installation_key.py
       - name: Retain backend timing and selection
         if: always()

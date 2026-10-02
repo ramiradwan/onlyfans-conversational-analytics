@@ -282,6 +282,9 @@ export class BridgeWebSocketService {
       case 'system.state':
         this.store.setSystem(message.payload);
         return;
+      case 'companion.state':
+        this.store.setCompanion(message.payload);
+        return;
       default: {
         const exhaustive: never = message;
         return exhaustive;

@@ -6,6 +6,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 import { PRODUCT_ROOT, pythonExecutable } from './paths.mjs';
+import { createSessionFailureCollector } from './stable-connection-diagnostic.mjs';
 
 const BRAIN_HOST = '127.0.0.1';
 export const BRAIN_PORT = 17_871;
@@ -102,6 +103,7 @@ export class BrainProcess {
     this.environmentOverrides = environmentOverrides;
     this.child = null;
     this.output = [];
+    this.failureCollector = createSessionFailureCollector();
   }
 
   async start() {
@@ -142,12 +144,9 @@ export class BrainProcess {
       },
     );
     this.child = child;
-    const remember = (chunk) => {
-      this.output.push(String(chunk));
-      if (this.output.length > 80) this.output.splice(0, this.output.length - 80);
-    };
+    const remember = chunk => this.rememberOutput(chunk);
     child.stdout.on('data', remember);
-    child.stderr.on('data', remember);
+    child.stderr.on('data', chunk => this.rememberOutput(chunk, false));
 
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
@@ -182,5 +181,15 @@ export class BrainProcess {
 
   recentOutput() {
     return this.output.join('').trim();
+  }
+
+  rememberOutput(chunk, sessionOutput = true) {
+    this.output.push(String(chunk));
+    if (this.output.length > 80) this.output.splice(0, this.output.length - 80);
+    if (sessionOutput) this.failureCollector.append(chunk);
+  }
+
+  sessionFailures() {
+    return this.failureCollector.snapshot();
   }
 }

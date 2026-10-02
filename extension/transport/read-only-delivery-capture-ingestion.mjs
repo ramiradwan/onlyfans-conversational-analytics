@@ -41,6 +41,10 @@ export class DeliveryCaptureIngestionService {
       guard.signal?.throwIfAborted();
       guard.assertCurrent?.();
       const transport = admittedTransport ?? await this.runtime.wake();
+      if (transport?.retryAfterMs !== undefined) {
+        this.diagnostics.record('companion_recovery_backoff', mapped.eventType);
+        return { ok: false, code: 'companion_recovery_backoff', retryable: true };
+      }
       guard.assertCurrent?.();
       if (!captureIsEnabled(this.runtime.configuration?.activeDocument, mapped.resource, mapped.sourcePath)) {
         this.diagnostics.record('capture_disabled', mapped.eventType);
@@ -67,9 +71,10 @@ export class DeliveryCaptureIngestionService {
     } catch (error) {
       const permanent = ['delivery_id_conflict', 'delivery_expired', 'capture_disabled',
         'stale_capture_context', 'account_mismatch', 'identity_required'];
-      const code = permanent.includes(error?.code) ? error.code : 'enqueue_failed';
+      const code = error?.code === 'companion_recovery_backoff'
+        ? error.code : permanent.includes(error?.code) ? error.code : 'enqueue_failed';
       this.diagnostics.record(code, mapped.eventType);
-      return { ok: false, code, retryable: code === 'enqueue_failed' };
+      return { ok: false, code, retryable: code === 'enqueue_failed' || code === 'companion_recovery_backoff' };
     }
   }
 }

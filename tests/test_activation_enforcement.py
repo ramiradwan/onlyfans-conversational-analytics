@@ -64,6 +64,7 @@ UNGATED_SURFACES: dict[str, str] = {
     "WEBSOCKET /ws/bridge": "activation is enforced inside transport_manager.authenticate",
     "WEBSOCKET /ws/agent/pairing": "activation is enforced by the companion socket origin gate",
     "GET /api/v1/companion/pins": "activation is enforced in the bounded Bridge policy adapter",
+    "POST /api/v1/companion/browser/capture": "activation is enforced in the bounded Bridge policy adapter",
     "GET /api/v1/companion/pairings/{pairing_id}": "activation is enforced in the bounded Bridge policy adapter",
     "POST /api/v1/companion/pairings": "activation is enforced in the bounded Bridge policy adapter",
     "POST /api/v1/companion/pairings/{pairing_id}/cancel": "activation is enforced in the bounded Bridge policy adapter",

@@ -161,6 +161,7 @@ const mockPairingApi: CompanionPairingApi = {
     state: action === 'confirm' ? 'admitted' : action === 'decline' ? 'declined' : 'cancelled',
     version: version + 1,
   }),
+  confirmVerified: async (_pairingId, version) => pairingStatus({ state: 'admitted', version: version + 1 }),
 };
 
 const mockActivationApi: CapabilityLicenseApi = {

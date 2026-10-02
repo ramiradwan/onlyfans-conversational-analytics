@@ -146,6 +146,63 @@ class CoverageGenerationClosed(StrictModel):
     closed_at: Timestamp
 
 
+class CheckTargetHead(StrictModel):
+    message_id: NonEmptyString | None = None
+    sent_at: Timestamp | None = None
+
+
+class CheckHead(StrictModel):
+    chat_id: NonEmptyString
+    head_message_id: NonEmptyString | None = None
+    head_sent_at: Timestamp | None = None
+
+
+class CheckCounts(StrictModel):
+    list: NonNegativeInt
+    messages: NonNegativeInt
+    probes: NonNegativeInt
+
+
+class CheckChatReconciled(StrictModel):
+    type: Literal["check.chat_reconciled"]
+    generation_id: UUID
+    chat_id: NonEmptyString
+    target_head: CheckTargetHead
+    reached: Literal["boundary", "history_start"]
+    final_source_seq: NonNegativeInt
+
+
+class CheckInventoryClosed(StrictModel):
+    type: Literal["check.inventory_closed"]
+    generation_id: UUID
+    strategy: Literal["timestamp", "probe", "mixed"]
+    scanned: NonNegativeInt
+    changed: NonNegativeInt
+    movers: NonNegativeInt
+
+
+class CheckCompleted(StrictModel):
+    type: Literal["check.completed"]
+    generation_id: UUID
+    kind: Literal["catch_up", "canary"]
+    final_source_seq: NonNegativeInt
+    pages_read: NonNegativeInt
+    counts: CheckCounts
+    heads: Annotated[list[CheckHead], Field(max_length=100)] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def canary_heads_only(self):
+        if self.kind != "canary" and "heads" in self.model_fields_set:
+            raise ValueError("heads are only valid for canaries")
+        return self
+
+
+class CheckAbandoned(StrictModel):
+    type: Literal["check.abandoned"]
+    generation_id: UUID
+    reason: Literal["account_changed", "authorization_changed", "paused", "cursor_invalid", "retry_exhausted", "storage_lost"]
+
+
 CoverageEvidence = Annotated[
     Union[
         CoverageGenerationStarted,
@@ -154,6 +211,10 @@ CoverageEvidence = Annotated[
         CoverageConversationHistoryStarted,
         CoverageConversationHeadReconciled,
         CoverageGenerationClosed,
+        CheckChatReconciled,
+        CheckInventoryClosed,
+        CheckCompleted,
+        CheckAbandoned,
     ],
     Field(discriminator="type"),
 ]
@@ -233,6 +294,22 @@ class LiveFreshness(StrictModel):
     reason: str | None
 
 
+class CatchupFreshness(StrictModel):
+    status: Literal["paused", "checking", "never_checked", "behind", "current"]
+    reason: Literal[
+        "user_paused", "consent_needed", "extension_offline", "no_onlyfans_tab",
+        "onlyfans_sleeping", "account_changed", "applying_settings", "capture_off",
+        "extension_outdated", "catch_up", "canary", "awaiting_check", "daily_cap",
+        "check_incomplete", "not_observing",
+    ] | None
+    gap_epoch: NonNegativeInt
+    uncertain_since: Timestamp | None
+    check_id: UUID | None
+    last_closed_at: Timestamp | None
+    observing_since: Timestamp | None
+    evaluated_at: Timestamp
+
+
 class AnalyticsRange(StrictModel):
     start: Timestamp | None
     end: Timestamp | None
@@ -303,6 +380,11 @@ class LiveFreshnessReplaceChange(StrictModel):
     live_freshness: LiveFreshness
 
 
+class CatchupFreshnessReplaceChange(StrictModel):
+    type: Literal["catchup_freshness.replace"]
+    catchup_freshness: CatchupFreshness
+
+
 StateChange = Annotated[
     Union[
         ConversationUpsertChange,
@@ -314,6 +396,7 @@ StateChange = Annotated[
         CoverageReplaceChange,
         ProjectionReplaceChange,
         LiveFreshnessReplaceChange,
+        CatchupFreshnessReplaceChange,
     ],
     Field(discriminator="type"),
 ]

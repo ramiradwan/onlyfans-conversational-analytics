@@ -530,6 +530,7 @@ def test_pipeline_rejects_a_graph_reader_outside_atomic_projection_store() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.windows_compat
 @pytest.mark.parametrize("failure_mode", ["deleted", "graph_tamper"])
 async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
     tmp_path: Path,
@@ -572,50 +573,56 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         pipeline=pipeline,
         scheduler=scheduler,
     )
-    await scheduler.start(recover=True)
-    initial = await scheduler.wait(payload.creator_account_id)
-    assert initial.availability is AvailabilityStatus.AVAILABLE
-
-    build_count = 0
-    original_build = pipeline._build
-
-    def counted_build(*args, **kwargs):
-        nonlocal build_count
-        build_count += 1
-        return original_build(*args, **kwargs)
-
-    monkeypatch.setattr(pipeline, "_build", counted_build)
-    if failure_mode == "deleted":
-        projection_path.unlink()
-    else:
-        database = stores.projections.database
-        assert database is not None
-        with database.transaction() as connection:
-            connection.execute("DROP TRIGGER graph_node_building_update")
-            connection.execute(
-                """
-                UPDATE graph_nodes SET properties_json='{"character_count":999}'
-                WHERE node_id=(SELECT MIN(node_id) FROM graph_nodes)
-                """
-            )
-
-    recovery_entered = threading.Event()
     release_recovery = threading.Event()
-    recovery_timeout_seconds = 15
-    original_ensure_ready = stores.projections.ensure_ready
-
-    def paused_recovery() -> None:
-        recovery_entered.set()
-        # The coroutine's finally block owns this release. A worker-side
-        # deadline would turn host scheduling delay into a recovery failure.
-        release_recovery.wait()
-        original_ensure_ready()
-
-    monkeypatch.setattr(stores.projections, "ensure_ready", paused_recovery)
-    monkeypatch.setattr(insights_service, "analytics_runtime", lambda source=None: runtime)
-    bind_session(payload.creator_account_id)
-    responses = []
     try:
+        await scheduler.start(recover=True)
+        initial = await scheduler.wait(payload.creator_account_id)
+        assert initial.availability is AvailabilityStatus.AVAILABLE
+
+        build_count = 0
+        original_build = pipeline._build
+
+        def counted_build(*args, **kwargs):
+            nonlocal build_count
+            build_count += 1
+            return original_build(*args, **kwargs)
+
+        monkeypatch.setattr(pipeline, "_build", counted_build)
+        if failure_mode == "deleted":
+            database = stores.projections.database
+            assert database is not None
+            # Release only the idle WAL anchor so Windows permits deliberate
+            # file loss; keep the scheduler/store identity for HTTP recovery.
+            database.release_wal_anchor()
+            assert database.open_connection_count(projection_path) == 0
+            projection_path.unlink()
+        else:
+            database = stores.projections.database
+            assert database is not None
+            with database.transaction() as connection:
+                connection.execute("DROP TRIGGER graph_node_building_update")
+                connection.execute(
+                    """
+                    UPDATE graph_nodes SET properties_json='{"character_count":999}'
+                    WHERE node_id=(SELECT MIN(node_id) FROM graph_nodes)
+                    """
+                )
+
+        recovery_entered = threading.Event()
+        recovery_timeout_seconds = 15
+        original_ensure_ready = stores.projections.ensure_ready
+
+        def paused_recovery() -> None:
+            recovery_entered.set()
+            # The coroutine's finally block owns this release. A worker-side
+            # deadline would turn host scheduling delay into a recovery failure.
+            release_recovery.wait()
+            original_ensure_ready()
+
+        monkeypatch.setattr(stores.projections, "ensure_ready", paused_recovery)
+        monkeypatch.setattr(insights_service, "analytics_runtime", lambda source=None: runtime)
+        bind_session(payload.creator_account_id)
+        responses = []
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://testserver"
         ) as client:

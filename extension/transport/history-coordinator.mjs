@@ -1,3 +1,4 @@
+import { AcquisitionAllowance } from './acquisition-allowance.mjs';
 import { MAX_PAGE_LIMIT, MAX_CURSOR_LENGTH, SAFE_CURSOR, SIGNING_FAILURE_CODES,
   SIGNING_VALIDATION_CODES, publicSigningError } from 'local-authenticated-read-connector/browser-signing';
 import {
@@ -201,6 +202,7 @@ export class HistoryAcquisitionCoordinator {
     }
     if (!signer?.read) throw new Error('History coordinator requires a one-page signer');
     this.outbox = outbox;
+    this.allowance = new AcquisitionAllowance({ outbox, clock });
     this.signer = signer;
     this.configuration = configuration;
     this.session = session;
@@ -340,10 +342,12 @@ export class HistoryAcquisitionCoordinator {
       ) {
         openInventory = await this.#startGeneration(authorization, signal, attempt);
       } else {
+        await this.allowance.historyPending(false);
         return { status: 'current', pages: 0 };
       }
     }
 
+    await this.allowance.historyPending(true);
     const budget = authorization.policy.pages_per_wake;
     let pages = 0;
     while (pages < budget) {
@@ -369,6 +373,7 @@ export class HistoryAcquisitionCoordinator {
       }
       if (inventory.phase === 'inventory') {
         if (this.#deferred(inventory)) break;
+        if (!await this.allowance.reserve('history_list', budget, { retry: (inventory.retry_count ?? 0) > 0 })) break;
         await this.#readInventoryPage(inventory, authorization, signal, attempt);
         pages += 1;
       } else {
@@ -378,6 +383,7 @@ export class HistoryAcquisitionCoordinator {
           signal,
         );
         if (conversations.next !== undefined) {
+          if (!await this.allowance.reserve('history_messages', budget, { retry: (conversations.next.retry_count ?? 0) > 0 })) break;
           await this.#readConversationPage(conversations.next, authorization, signal, attempt);
           pages += 1;
         } else if (conversations.hasPending) {
@@ -546,6 +552,7 @@ export class HistoryAcquisitionCoordinator {
     const expected = this.#authorization();
     if (expected === null) throw new Error('History acquisition is not authorized');
     this.#assertActive(signal, expected);
+    await this.allowance.reserve('identity', policy.pages_per_wake);
     const identity = await this.#readSigner({
       operation: 'identity',
       parameters: {},

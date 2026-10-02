@@ -16,6 +16,14 @@ from tests.test_shared_conversation_pages import counts
 pytestmark = [pytest.mark.ci_tier('integration')]
 
 
+@pytest.fixture(autouse=True)
+def page_fallback(monkeypatch):
+    # Exercise the page fallback instead of the optional complete-unit caches.
+    # Keep every fragment/page capacity unchanged, including limits tested below.
+    monkeypatch.setattr('app.analytics.conversation_reuse.MAX_GRAPH_UNITS', 0)
+    monkeypatch.setattr('app.analytics.conversation_reuse.MAX_ENRICHMENT_UNITS', 0)
+
+
 @pytest.fixture
 def fixture(tmp_path):
     value = make_fixture(tmp_path)

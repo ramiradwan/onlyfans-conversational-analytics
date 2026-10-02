@@ -165,6 +165,53 @@ test('capture is absent before consent and optional site access', async () => {
   assert.equal(Object.hasOwn(h.local, CONSENT_STORAGE_KEY), false);
 });
 
+test('capture notifications require the exact trusted content envelope and are throttled', async () => {
+  let time = 0;
+  let nextTimer = 0;
+  const timers = new Map();
+  const scheduler = {
+    setTimeout(callback, delay) {
+      const id = ++nextTimer;
+      timers.set(id, { callback, at: time + delay });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    tick(ms) {
+      const end = time + ms;
+      while (true) {
+        const due = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due || due[1].at > end) break;
+        time = due[1].at;
+        timers.delete(due[0]);
+        due[1].callback();
+      }
+      time = end;
+    },
+  };
+  let reports = 0;
+  const h = harness({ scheduler, now: () => new Date(time), runtime: {
+    async start() {}, async suspend() {},
+    history: { requestCaptureStateReport() { reports++; } },
+  } });
+  h.controller.register();
+  const listener = h.chromeApi.runtime.onMessage.listeners[0];
+  const trusted = { id: 'synthetic-extension-id', frameId: 0, url: 'https://onlyfans.com/chats' };
+  const stateChanged = { type: 'ofca.capture.state.changed' };
+  const queueChanged = { type: 'ofca.capture.queue.changed' };
+  listener(stateChanged, { ...trusted, url: 'https://untrusted.example/' }, () => assert.fail('no response'));
+  listener({ ...stateChanged, extra: true }, trusted, () => assert.fail('no response'));
+  assert.equal(reports, 0);
+  listener(stateChanged, trusted, () => assert.fail('no response'));
+  assert.equal(reports, 1, 'the leading notification requests a report immediately');
+  for (let i = 0; i < 100; i++) {
+    listener(i % 2 ? stateChanged : queueChanged, trusted, () => assert.fail('no response'));
+    scheduler.tick(100);
+  }
+  scheduler.tick(5_000);
+  assert.ok(reports > 0);
+  assert.ok(reports <= 3, `expected at most three reports, got ${reports}`);
+});
+
 test('preview can be enabled, paused, resumed, and fully deleted without a local service', async () => {
   const h = harness();
   h.permissionState.onlyFans = true;
@@ -366,3 +413,36 @@ test('invalidation during saved-pairing check skips scheduling without rejecting
   assert.equal(h.controller.phase, 'paused');
   assert.equal(scheduler.timers.size, 0);
 });
+
+for (const change of ['removed', 'created', 'updated', 'replaced']) {
+  test(`tab ${change} reports observation changes without a runtime wake`, async () => {
+    const h = harness();
+    for (const name of ['onRemoved', 'onCreated', 'onUpdated', 'onReplaced']) h.chromeApi.tabs[name] = event();
+    h.controller.state = { mode: 'full' };
+    h.controller.phase = 'full';
+    h.controller.captureScope = { isOpen: true };
+    h.chromeApi.tabs.sendMessage = async (_id, value) => value.action === 'status'
+      ? { mode: 'full', active: true, forwarding: true, ws2_socket_open: true }
+      : { document: 'fixture-document', expired: 0, rejected: 0 };
+    const reports = [];
+    h.controller.runtime.configuration = { activeDocument: { history_acquisition: { enabled: true } } };
+    h.controller.runtime.history = { async requestCaptureStateReport() {
+      reports.push(await h.controller.captureState());
+    } };
+    assert.equal((await h.controller.captureState()).observing, true);
+    h.controller.register();
+    if (change === 'removed') h.onlyFansTabs.length = 0;
+    else if (change === 'updated') h.onlyFansTabs[0].frozen = true;
+    else if (change === 'created') h.onlyFansTabs.push({ id: 8, discarded: true });
+    else h.chromeApi.tabs.sendMessage = async () => ({ mode: 'full', active: true, forwarding: true, ws2_socket_open: false });
+    const source = h.chromeApi.tabs[`on${change[0].toUpperCase()}${change.slice(1)}`];
+    for (const listener of source.listeners) listener(7, { frozen: true });
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(reports.length, 1);
+    assert.equal(h.counters.starts, 0);
+    if (change === 'created') assert.equal(reports[0].tabs.discarded, 1);
+    else assert.equal(reports[0].observing, false);
+    if (change === 'removed') assert.equal(reports[0].reason, 'no_onlyfans_tab');
+    if (change === 'replaced') assert.equal(reports[0].page_socket_open, false);
+  });
+}

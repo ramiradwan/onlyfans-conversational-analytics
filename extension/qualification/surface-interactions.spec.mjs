@@ -58,17 +58,52 @@ test('losing runtime access hides the old comparison and offers recovery', async
   await expect(page.locator('#retry-runtime')).toBeEnabled();
 });
 
-for (const surface of ['popup', 'options']) {
-  test(`${surface} uses pause and resume commands without changing the selected mode`, async ({ page }) => {
-    await renderSurfaceState(page, { ...SURFACE_STATES.preview, surface });
-    await page.locator('#pause').click();
-    await expect(page.locator('#mode-label')).toHaveText('Analytics paused');
-    await page.locator(surface === 'popup' ? '#journey-primary' : '#pause').click();
-    await expect(page.locator('#mode-label')).toHaveText('Preview on');
-    expect((await calls(page)).filter((call) => call.type === 'ofca.ui.transition').map((call) => call.mode))
-      .toEqual(['pause', 'resume']);
+test('popup uses pause and resume commands without changing the selected mode', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.preview, surface: 'popup' });
+  await page.locator('#pause').click();
+  await expect(page.locator('#mode-label')).toHaveText('Analytics paused');
+  await page.locator('#journey-primary').click();
+  await expect(page.locator('#mode-label')).toHaveText('Preview on');
+  expect((await calls(page)).filter((call) => call.type === 'ofca.ui.transition').map((call) => call.mode))
+    .toEqual(['pause', 'resume']);
+});
+
+test('while the desktop app controls this browser, the popup explains where pause moved', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.desktop_controlled);
+  await expect(page.locator('#pause')).toBeHidden();
+  await expect(page.locator('#desktop-control-note')).toBeVisible();
+});
+
+test('the popup shows no desktop pause note while it owns pause itself', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_ready);
+  await expect(page.locator('#desktop-control-note')).toBeHidden();
+});
+
+test('the compact setup window for the desktop app shows only its task', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.pairing_required, hash: 'desktop' });
+  await expect(page.locator('main')).toHaveAttribute('data-handoff', /active|complete/);
+  await expect(page.locator('#open-options')).toBeHidden();
+});
+
+test('while the desktop app controls a paused browser, resume points to the desktop app', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.desktop_controlled_paused);
+  await expect(page.locator('#journey-primary')).toHaveText('Resume in the desktop app');
+  await page.locator('#journey-primary').click();
+  expect((await calls(page)).filter((call) => call.type === 'ofca.ui.transition')).toEqual([]);
+  expect((await calls(page)).filter((call) => call.type === 'tab').map((call) => new URL(call.url).pathname)).toEqual(['/settings']);
+});
+
+for (const [name, visible] of [['connection', true], ['connection_desktop_controlled', false]]) {
+  test(`options ${visible ? 'offers' : 'leaves to the desktop app'} forgetting the connection (${name})`, async ({ page }) => {
+    await renderSurfaceState(page, SURFACE_STATES[name]);
+    await expect(page.locator('#forget-companion')).toBeVisible({ visible });
   });
 }
+
+test('options offers no second pause control', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.preview, surface: 'options' });
+  await expect(page.locator('#pause')).toHaveCount(0);
+});
 
 test('setup progress names the current navigation item through agreement and mode selection', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.software_activation);

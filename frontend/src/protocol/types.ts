@@ -21,6 +21,7 @@ export interface RawMessage {
 }
 
 export type CoverageEvidence =
+  | CheckEvidence
   | {
       type: 'generation.started';
       generation_id: UUID;
@@ -139,6 +140,7 @@ export interface AnalyticsView {
 }
 
 export type StateChange =
+  | { type: 'catchup_freshness.replace'; catchup_freshness: CatchupFreshness }
   | { type: 'conversation.upsert'; conversation: ConversationSummary }
   | { type: 'conversation.delete'; conversation_id: string }
   | {
@@ -164,7 +166,7 @@ export interface LastPresenceObservation {
 }
 
 export interface CapabilityStatus {
-  capability: 'capture.chats' | 'capture.messages' | 'capture.presence' | 'history.sync' | 'command.message.send';
+  capability: 'capture.chats' | 'capture.messages' | 'capture.presence' | 'history.sync' | 'history.catchup.v1' | 'command.message.send';
   status: 'active' | 'degraded' | 'unsupported';
   detail: string | null;
 }
@@ -213,7 +215,7 @@ export interface AgentHelloPayload {
     | 'capture.chats'
     | 'capture.messages'
     | 'capture.presence'
-    | 'history.sync'
+    | 'history.sync' | 'history.catchup.v1'
     | 'command.message.send'
   )[];
   extension_version: string;
@@ -245,7 +247,7 @@ export interface BridgeHelloPayload {
   auth_ticket: string;
   bridge_session_id: UUID;
   requested_creator_account_id: string;
-  capabilities: ('state.snapshot' | 'state.delta' | 'presence.state' | 'message.page')[];
+  capabilities: ('state.snapshot' | 'state.delta' | 'presence.state' | 'message.page' | 'state.catchup_freshness')[];
   client_version: string;
   last_view_revision: number | null;
 }
@@ -332,6 +334,7 @@ export type IngestSnapshotPayload =
     });
 
 export interface IngestDeltaPayload {
+  check_id?: UUID | null;
   connection_id: UUID;
   fencing_token: string;
   creator_account_id: string;
@@ -375,6 +378,7 @@ export interface IngestRejectedPayload {
 }
 
 export interface StateSnapshotPayload {
+  catchup_freshness?: CatchupFreshness;
   creator_account_id: string;
   view_revision: number;
   generated_at: IsoDateTime;
@@ -385,11 +389,11 @@ export interface StateSnapshotPayload {
   live_freshness: LiveFreshness;
 }
 
-export interface StateDeltaPayload {
+export interface StateDeltaPayload<Catchup extends boolean = false> {
   creator_account_id: string;
   view_revision: number;
   committed_at: IsoDateTime;
-  changes: StateChange[];
+  changes: (Catchup extends true ? StateChange : Exclude<StateChange, {type: 'catchup_freshness.replace'}>)[];
 }
 
 export interface StateResyncPayload {
@@ -430,6 +434,16 @@ export interface AgentStatePayload {
   applied_history_settings_revision: number | null;
   last_heartbeat_at: IsoDateTime | null;
   degraded_reason: string | null;
+  /** The extension's own state from its open session; null while none is open. */
+  browser: BrowserSurfacePayload | null;
+}
+
+export interface BrowserSurfacePayload {
+  capture: 'active' | 'paused' | 'off';
+  site_access: 'granted' | 'needs_approval' | 'reload_required';
+  history_permission: 'granted' | 'missing';
+  legal_review_required: boolean;
+  reported_at: IsoDateTime;
 }
 
 export interface SystemStatePayload {
@@ -438,6 +452,13 @@ export interface SystemStatePayload {
   readiness: 'ready' | 'degraded' | 'unavailable';
   updated_at: IsoDateTime;
   detail: string | null;
+}
+
+/** Change notice only; pairing details are read through the authenticated pairing API. */
+export interface CompanionStatePayload {
+  creator_account_id: string;
+  revision: number;
+  changed_at: IsoDateTime;
 }
 
 export interface ProtocolErrorPayload {
@@ -514,12 +535,13 @@ export type IngestDeltaMessage = Envelope<'ingest.delta', IngestDeltaPayload>;
 export type IngestAckMessage = Envelope<'ingest.ack', IngestAckPayload>;
 export type IngestRejectedMessage = Envelope<'ingest.rejected', IngestRejectedPayload>;
 export type StateSnapshotMessage = Envelope<'state.snapshot', StateSnapshotPayload>;
-export type StateDeltaMessage = Envelope<'state.delta', StateDeltaPayload>;
+export type StateDeltaMessage<Catchup extends boolean = false> = Envelope<'state.delta', StateDeltaPayload<Catchup>>;
 export type StateResyncMessage = Envelope<'state.resync', StateResyncPayload>;
 export type PresenceObservedMessage = Envelope<'presence.observed', PresenceObservedPayload>;
 export type PresenceStateMessage = Envelope<'presence.state', PresenceStatePayload>;
 export type AgentStateMessage = Envelope<'agent.state', AgentStatePayload>;
 export type SystemStateMessage = Envelope<'system.state', SystemStatePayload>;
+export type CompanionStateMessage = Envelope<'companion.state', CompanionStatePayload>;
 export type ProtocolErrorMessage = Envelope<'protocol.error', ProtocolErrorPayload>;
 export type ConfigAvailableMessage = Envelope<'config.available', ConfigAvailablePayload>;
 export type ConfigAppliedMessage = Envelope<'config.applied', ConfigAppliedPayload>;
@@ -530,7 +552,7 @@ export type CommandResultAckMessage = Envelope<'command.result.ack', CommandResu
 export type AgentToBrainMessage = AgentHelloMessage | AgentHeartbeatMessage | IngestSnapshotMessage | IngestDeltaMessage | PresenceObservedMessage | ConfigAppliedMessage | CommandResultMessage;
 export type BrainToAgentMessage = AgentSessionMessage | SyncRequiredMessage | IngestAckMessage | IngestRejectedMessage | ProtocolErrorMessage | ConfigAvailableMessage | CommandExecuteMessage | CommandResultAckMessage;
 export type BridgeToBrainMessage = BridgeHelloMessage | StateResyncMessage;
-export type BrainToBridgeMessage = BridgeSessionMessage | StateSnapshotMessage | StateDeltaMessage | PresenceStateMessage | AgentStateMessage | SystemStateMessage | ProtocolErrorMessage;
+export type BrainToBridgeMessage<Catchup extends boolean = false> = BridgeSessionMessage | StateSnapshotMessage | StateDeltaMessage<Catchup> | PresenceStateMessage | AgentStateMessage | SystemStateMessage | CompanionStateMessage | ProtocolErrorMessage;
 
 export interface AgentConfigGetRequest {
   operation: 'agent.config.get';
@@ -609,3 +631,42 @@ export interface UpdateHistorySettingsRequest {
   request_interval_ms: number;
   retry_limit: number;
 }
+
+export interface CatchupFreshness {
+  status: 'paused' | 'checking' | 'never_checked' | 'behind' | 'current';
+  reason: 'user_paused' | 'consent_needed' | 'extension_offline' | 'no_onlyfans_tab' |
+    'onlyfans_sleeping' | 'account_changed' | 'applying_settings' | 'capture_off' |
+    'extension_outdated' | 'catch_up' | 'canary' | 'awaiting_check' | 'daily_cap' | 'check_incomplete' | 'not_observing' | null;
+  gap_epoch: number; uncertain_since: IsoDateTime | null; check_id: UUID | null;
+  last_closed_at: IsoDateTime | null; observing_since: IsoDateTime | null; evaluated_at: IsoDateTime;
+}
+export interface CheckHead { chat_id: string; head_message_id?: string | null; head_sent_at?: IsoDateTime | null }
+export interface CheckCounts { list: number; messages: number; probes: number }
+export type CheckEvidence =
+  | {type: 'check.chat_reconciled'; generation_id: UUID; chat_id: string; target_head: {message_id?: string | null; sent_at?: IsoDateTime | null}; reached: 'boundary' | 'history_start'; final_source_seq: number}
+  | {type: 'check.inventory_closed'; generation_id: UUID; strategy: 'timestamp' | 'probe' | 'mixed'; scanned: number; changed: number; movers: number}
+  | {type: 'check.completed'; generation_id: UUID; kind: 'catch_up'; final_source_seq: number; pages_read: number; counts: CheckCounts}
+  | {type: 'check.completed'; generation_id: UUID; kind: 'canary'; final_source_seq: number; pages_read: number; counts: CheckCounts; heads?: CheckHead[]}
+  | {type: 'check.abandoned'; generation_id: UUID; reason: 'account_changed' | 'authorization_changed' | 'paused' | 'cursor_invalid' | 'retry_exhausted' | 'storage_lost'};
+export interface CatchupRequest {
+  protocol_version: '2'; auth_ticket: string; agent_installation_id: UUID; creator_account_id: string;
+}
+export interface CaptureStateReportRequest extends CatchupRequest {
+  operation: 'capture.state.report'; worker_instance_id: UUID; report_seq: number; observing: boolean;
+  reason: 'ok' | 'capture_off' | 'consent_needed' | 'no_onlyfans_tab' | 'tab_frozen' | 'tab_discarded' |
+    'hook_not_armed' | 'reload_required' | 'page_socket_closed' | 'account_mismatch' | 'storage_locked' | 'paused';
+  tabs: {armed: number; frozen: number; discarded: number}; page_socket_open: boolean;
+  drops_since_last: {expired: number; rejected: number};
+  requests_since_last: {canary_list: number; catchup_list: number; catchup_messages: number; history_list: number; history_messages: number; identity: number; retries: number};
+  utc_day: string; automatic_pages_today: number;
+}
+export interface CaptureStateReportResponse { acknowledged_seq: number }
+export interface HistoryCheckBeginRequest extends CatchupRequest {
+  operation: 'history.check.begin'; request_id: UUID; worker_instance_id: UUID;
+  trigger: 'admission' | 'tab_runnable' | 'observing' | 'alarm' | 'renew'; config_revision: string;
+  head_evidence: 'none' | 'timestamp' | 'full'; active_check_id: UUID | null;
+}
+export type HistoryCheckBeginResponse = {result: 'not_needed'} |
+  {result: 'deferred'; retry_after_seconds: number; reason: 'grant_interval' | 'daily_cap' | 'not_runnable' | 'history_incomplete' | 'check_active'} |
+  {result: 'granted'; check_id: UUID; kind: 'catch_up' | 'canary'; gap_epoch: number; uncertain_since: IsoDateTime | null;
+   granted_at: IsoDateTime; blind: boolean; page_budget: number; lease_expires_at: IsoDateTime; resume: boolean};

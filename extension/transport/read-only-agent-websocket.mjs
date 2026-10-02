@@ -1,5 +1,4 @@
 import { LOCAL_SERVICE_WS } from './local-service-endpoints.mjs';
-import { connectionRetryDelay, CONNECTION_STABLE_MS, CONNECTION_ATTEMPT_LIMIT } from '../runtime/recovery-backoff.mjs';
 import {
   READ_ONLY_CAPABILITIES,
   parseAgentToBrainMessage,
@@ -22,8 +21,6 @@ function safeCloseCode(code) {
 const defaultScheduler = {
   setTimeout: (handler, delay) => setTimeout(handler, delay),
   clearTimeout: (handle) => clearTimeout(handle),
-  setInterval: (handler, delay) => setInterval(handler, delay),
-  clearInterval: (handle) => clearInterval(handle),
 };
 
 const noOp = () => {};
@@ -65,10 +62,7 @@ export class ReadOnlyAgentWebSocketClient {
     this.webSocketFactory = options.webSocketFactory;
     this.scheduler = options.scheduler ?? defaultScheduler;
     this.idFactory = options.idFactory ?? (() => crypto.randomUUID());
-    this.random = options.random ?? Math.random;
-    this.now = options.now ?? (() => Date.now());
-    this.reconnectBaseMs = options.reconnectBaseMs ?? 500;
-    this.reconnectMaxMs = options.reconnectMaxMs ?? 30_000;
+    this.monotonicNow = options.monotonicNow ?? (() => performance.now());
     this.persistence = options.persistence ?? {};
     this.outbox = options.outbox ?? null;
     this.onSession = options.onSession ?? noOp;
@@ -87,8 +81,6 @@ export class ReadOnlyAgentWebSocketClient {
     this.heartbeatTimer = null;
     this.heartbeatIntervalMs = null;
     this.lastHeartbeatSentAt = null;
-    this.reconnectAttempt = 0;
-    this.sessionStartedAt = null;
     this.stopped = true;
     this.reconnectAllowed = true;
     this.syncRequired = false;
@@ -128,7 +120,19 @@ export class ReadOnlyAgentWebSocketClient {
 
   ensureConnected() {
     this.signal?.throwIfAborted();
-    if (this.stopped || !this.reconnectAllowed || this.reconnectTimer !== null) return;
+    if (this.stopped || !this.reconnectAllowed) return;
+    if (this.reconnectTimer !== null) {
+      const timer = this.reconnectTimer;
+      if (typeof this.webSocketFactory.retryAfterMs === 'function') {
+        void Promise.resolve().then(() => this.webSocketFactory.retryAfterMs()).then((delay) => {
+          if (delay !== 0 || this.reconnectTimer !== timer || this.stopped || !this.reconnectAllowed) return;
+          if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
+          this.clearReconnect();
+          this.openSocket();
+        }).catch(() => undefined);
+      }
+      return;
+    }
     if (this.socket && [CONNECTING, OPEN].includes(this.socket.readyState)) return;
     this.clearReconnect();
     this.openSocket();
@@ -151,7 +155,6 @@ export class ReadOnlyAgentWebSocketClient {
 
   stop() {
     this.connectionAbort.abort(new Error('agent_stopped'));
-    this.sessionStartedAt = null;
     this.clearSessionDeadline();
     this.stopped = true;
     this.reconnectAllowed = false;
@@ -230,6 +233,7 @@ export class ReadOnlyAgentWebSocketClient {
             event_id: item.event_id,
             source_seq: item.source_seq,
             acquisition_origin: item.acquisition_origin ?? 'passive',
+            ...(item.check_id === undefined ? {} : { check_id: item.check_id }),
             change: item.change,
             agent_installation_id: this.identity.agentInstallationId,
             agent_stream_id: this.identity.agentStreamId,
@@ -262,7 +266,12 @@ export class ReadOnlyAgentWebSocketClient {
       applied_config_revision: this.identity.appliedConfigRevision,
       health: this.health(),
     });
-    if (sent) this.lastHeartbeatSentAt = this.now();
+    if (sent) {
+      this.lastHeartbeatSentAt = this.monotonicNow();
+      this.scheduleHeartbeat();
+      // History pages can commit without a passive capture event to trigger delivery.
+      void this.flushOutbox().catch((error) => this.onValidationError(error));
+    }
     return sent;
   }
 
@@ -271,7 +280,7 @@ export class ReadOnlyAgentWebSocketClient {
       this.heartbeatIntervalMs === null
       || (
         this.lastHeartbeatSentAt !== null
-        && this.now() - this.lastHeartbeatSentAt < this.heartbeatIntervalMs
+        && this.monotonicNow() - this.lastHeartbeatSentAt < this.heartbeatIntervalMs
       )
     ) return false;
     return this.sendHeartbeat();
@@ -412,16 +421,15 @@ export class ReadOnlyAgentWebSocketClient {
     ))
       .catch((error) => {
         if (controls.signal.aborted) return;
-        this.reconnectAllowed = false;
+        this.reconnectAllowed = error?.code === 'companion_session_refused'
+          && ['rpc_capacity', 'rpc_backlog'].includes(error?.diagnostic?.cause);
         this.onValidationError(error);
         this.socket?.close(safeCloseCode(1011), 'Agent reconnect credential could not be stored');
       });
     this.configClient?.bindSessionAuthorization?.(session.config_auth_ticket);
     this.sentSourceSeqs.clear();
     this.syncRequired = session.resume_action === 'snapshot_required';
-    this.sessionStartedAt = this.now();
     this.startHeartbeat(session.lease.heartbeat_interval_seconds * 1000);
-    this.lastHeartbeatSentAt = this.now();
     this.onSession(session);
     if (
       this.configClient !== null
@@ -613,8 +621,19 @@ export class ReadOnlyAgentWebSocketClient {
 
   startHeartbeat(delay) {
     this.clearHeartbeat();
-    this.heartbeatIntervalMs = delay;
-    this.heartbeatTimer = this.scheduler.setInterval(() => this.sendHeartbeatIfDue(), delay);
+    this.heartbeatIntervalMs = Math.min(delay, 25_000);
+    this.lastHeartbeatSentAt = this.monotonicNow();
+    this.scheduleHeartbeat();
+  }
+
+  scheduleHeartbeat() {
+    if (this.heartbeatTimer !== null) this.scheduler.clearTimeout(this.heartbeatTimer);
+    if (this.heartbeatIntervalMs === null) return;
+    const remaining = this.lastHeartbeatSentAt + this.heartbeatIntervalMs - this.monotonicNow();
+    this.heartbeatTimer = this.scheduler.setTimeout(() => {
+      this.heartbeatTimer = null;
+      if (!this.sendHeartbeatIfDue()) this.scheduleHeartbeat();
+    }, Math.max(1, remaining));
   }
 
   forceReconnect(reason = 'Agent session must be renewed') {
@@ -633,10 +652,6 @@ export class ReadOnlyAgentWebSocketClient {
 
   handleClose(socket) {
     if (this.socket !== socket) return;
-    if (this.sessionStartedAt !== null && this.now() - this.sessionStartedAt >= CONNECTION_STABLE_MS) {
-      this.reconnectAttempt = 0;
-    }
-    this.sessionStartedAt = null;
     this.connectionAbort.abort(new Error('agent_disconnected'));
     this.clearSessionDeadline();
     this.socket = null;
@@ -644,20 +659,15 @@ export class ReadOnlyAgentWebSocketClient {
     this.configClient?.clearSessionAuthorization?.();
     this.onSessionLost({ reason: 'disconnected' });
     this.clearHeartbeat();
-    if (!this.stopped && this.reconnectAllowed) this.scheduleReconnect();
+    if (!this.stopped && this.reconnectAllowed) this.scheduleReconnect(socket.retryAfterMs);
   }
 
-  scheduleReconnect() {
+  scheduleReconnect(retryAfterMs = 0) {
     if (this.reconnectTimer !== null) return;
-    this.reconnectAttempt += 1;
-    const delay = connectionRetryDelay(this.reconnectAttempt, this.random, this.reconnectBaseMs, this.reconnectMaxMs);
     this.reconnectTimer = this.scheduler.setTimeout(() => {
       this.reconnectTimer = null;
-      if (!this.stopped && this.reconnectAllowed) {
-        if (this.reconnectAttempt >= CONNECTION_ATTEMPT_LIMIT) this.reconnectAttempt = 0;
-        this.openSocket();
-      }
-    }, delay);
+      if (!this.stopped && this.reconnectAllowed) this.openSocket();
+    }, Math.max(0, retryAfterMs ?? 0));
   }
 
   clearReconnect() {
@@ -666,7 +676,7 @@ export class ReadOnlyAgentWebSocketClient {
   }
 
   clearHeartbeat() {
-    if (this.heartbeatTimer !== null) this.scheduler.clearInterval(this.heartbeatTimer);
+    if (this.heartbeatTimer !== null) this.scheduler.clearTimeout(this.heartbeatTimer);
     this.heartbeatTimer = null;
     this.heartbeatIntervalMs = null;
     this.lastHeartbeatSentAt = null;

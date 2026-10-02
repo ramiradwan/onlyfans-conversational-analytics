@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.persistence.catchup_events import capture_authority_change
+
 import hashlib
 import json
 import re
@@ -642,6 +644,12 @@ class AuthenticationStore(Protocol):
         occurred_at: datetime,
     ) -> OnboardingProgressEvent | None: ...
 
+    def reconcile_onboarding_progress(
+        self, *, observed_at: datetime,
+        session: CompanionSessionBinding | None = None,
+        current_configuration: bool = False,
+    ) -> None: ...
+
     def due_onboarding_progress(
         self, *, now: datetime
     ) -> tuple[OnboardingProgressEvent, ...]: ...
@@ -743,6 +751,7 @@ class SQLiteAuthenticationStore:
         if cursor.rowcount != 1:
             raise AuthenticationStateError("Authorization epoch update failed")
 
+    @capture_authority_change
     def reserve_installation_key(
         self, reservation: InstallationKeyReservation
     ) -> InstallationKeyReservation:
@@ -779,6 +788,7 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _installation_key_reservation(row)
 
+    @capture_authority_change
     def activate_installation_key(
         self, reference: InstallationKeyReference
     ) -> None:
@@ -840,6 +850,7 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _installation_key_reference(row)
 
+    @capture_authority_change
     def register_webauthn_credential(self, credential: WebAuthnCredential) -> None:
         if credential.signature_count < 0:
             raise ValueError("signature_count must be non-negative")
@@ -952,6 +963,7 @@ class SQLiteAuthenticationStore:
     def record_verified_grant(self, grant: VerifiedGrantReference) -> None:
         self.record_verified_grants((grant,))
 
+    @capture_authority_change
     def record_verified_grants(
         self, grants: tuple[VerifiedGrantReference, ...]
     ) -> None:
@@ -964,6 +976,7 @@ class SQLiteAuthenticationStore:
                 self._insert_verified_grant(connection, grant)
             self._increment_authorization_epoch(connection)
 
+    @capture_authority_change
     def record_verified_grant_and_approve_provisioning_candidate(
         self,
         grant: VerifiedGrantReference,
@@ -1012,6 +1025,7 @@ class SQLiteAuthenticationStore:
             return False
         return True
 
+    @capture_authority_change
     def replace_verified_grant(
         self, previous_reference_id: str, grant: VerifiedGrantReference,
         *, expected: VerifiedGrantReference | None = None,
@@ -1062,6 +1076,14 @@ class SQLiteAuthenticationStore:
                 ):
                     raise AuthenticationStateError("Verified grant replacement context is stale")
             self._insert_verified_grant(connection, grant)
+            connection.execute(
+                """
+                UPDATE authorized_account_binding_grants
+                SET grant_reference_id = ?
+                WHERE grant_reference_id = ?
+                """,
+                (grant.reference_id, previous_reference_id),
+            )
             self._revoke_in_transaction(
                 connection,
                 RevocationKey(
@@ -1079,6 +1101,7 @@ class SQLiteAuthenticationStore:
                 ):
                     raise AuthenticationStateError("Verified grant replacement context is stale")
 
+    @capture_authority_change
     def apply_hosted_grant_denial(
         self, expected: VerifiedGrantReference, denial: VerifiedGrantDenial
     ) -> Literal["applied", "already_applied", "stale"]:
@@ -1340,6 +1363,7 @@ class SQLiteAuthenticationStore:
             RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
         )
 
+    @capture_authority_change
     def register_agent_pairing(self, pairing: AgentPairing) -> None:
         grants = _unique(pairing.grant_reference_ids)
         with self.database.transaction() as connection:
@@ -1380,6 +1404,7 @@ class SQLiteAuthenticationStore:
             )
             self._increment_authorization_epoch(connection)
 
+    @capture_authority_change
     def activate_agent_pairing(
         self, policy: RuntimePolicy, pairing_id: str
     ) -> bool:
@@ -2241,6 +2266,7 @@ class SQLiteAuthenticationStore:
             commercial_authority=authority,
         )
 
+    @capture_authority_change
     def revoke(self, key: RevocationKey, *, reason: str | None = None) -> int:
         with self.database.transaction() as connection:
             version = self._revoke_in_transaction(connection, key, reason=reason)
@@ -2689,6 +2715,7 @@ class SQLiteAuthenticationStore:
                 "Required verified grant reference types are missing"
             )
 
+    @capture_authority_change
     def record_verified_capability_license(
         self, reference: VerifiedCapabilityLicenseReference
     ) -> None:
@@ -3121,6 +3148,7 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _provisioning_candidate(row)
 
+    @capture_authority_change
     def approve_provisioning_candidate(
         self, association_request_id: str, *, resolved_at: datetime
     ) -> bool:
@@ -3471,6 +3499,164 @@ class SQLiteAuthenticationStore:
             ).fetchone()
         return None if row is None else _onboarding_progress_event(row)
 
+    @staticmethod
+    def _companion_progress_pairing(
+        connection: sqlite3.Connection,
+        claim: ClaimSubmission,
+        now: datetime,
+        *,
+        pairing_id: str | None = None,
+    ) -> sqlite3.Row | None:
+        """Find an admitted pin for the exact consumed claim and approved binding."""
+        instant = _time_text(now)
+        pairings = connection.execute(
+            """
+            SELECT pairing.* FROM agent_pairings AS pairing
+            JOIN authorized_account_bindings AS binding
+              ON binding.creator_account_id = pairing.creator_account_id
+             AND binding.installation_id = pairing.installation_id
+            JOIN provisioning_candidates AS candidate
+              ON candidate.association_request_id = binding.association_request_id
+             AND candidate.creator_account_id = binding.creator_account_id
+             AND candidate.installation_id = binding.installation_id
+            JOIN installation_key_reference AS installation_key
+              ON installation_key.singleton = 1
+             AND installation_key.activated_at IS NOT NULL
+             AND installation_key.installation_key_id = pairing.companion_installation_key_id
+             AND installation_key.installation_key_jkt = pairing.companion_installation_key_jkt
+            WHERE candidate.state = 'approved'
+              AND candidate.onboarding_transaction_id = ?
+              AND candidate.organization_id = ?
+              AND candidate.installation_id = ?
+              AND pairing.installation_id = ?
+              AND pairing.companion_organization_id = ?
+              AND binding.revoked_at IS NULL
+              AND pairing.revoked_at IS NULL
+              AND pairing.pairing_generation IS NOT NULL
+              AND pairing.pairing_digest IS NOT NULL
+              AND pairing.confirmed_at IS NOT NULL
+              AND pairing.confirmation_principal_id IS NOT NULL
+              AND pairing.confirmation_session_id IS NOT NULL
+              AND pairing.protected_brain_noise_static_private_key IS NOT NULL
+              AND pairing.principal_id = 'agent:' || pairing.agent_installation_id
+              AND (? IS NULL OR pairing.pairing_id = ?)
+              AND NOT EXISTS (
+                  SELECT 1 FROM auth_revocation_state AS scope
+                  WHERE scope.revoked_at IS NOT NULL AND (
+                      (scope.scope_type = 'agent_pairing' AND scope.scope_id = pairing.pairing_id)
+                      OR (scope.scope_type = 'installation' AND scope.scope_id IN (pairing.installation_id, pairing.agent_installation_id))
+                      OR (scope.scope_type = 'creator_account' AND scope.scope_id = pairing.creator_account_id)
+                      OR (scope.scope_type = 'principal' AND scope.scope_id = pairing.principal_id)
+                  )
+              )
+            ORDER BY pairing.confirmed_at DESC
+            """,
+            (claim.onboarding_transaction_id, claim.organization_id,
+             claim.installation_id, claim.installation_id, claim.organization_id,
+             pairing_id, pairing_id),
+        ).fetchall()
+        return next(
+            (
+                pairing
+                for pairing in pairings
+                if SQLiteAuthenticationStore._companion_progress_grants_current(
+                    connection, pairing, instant
+                )
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _companion_progress_grants_current(
+        connection: sqlite3.Connection, pairing: sqlite3.Row, instant: str
+    ) -> bool:
+        """Select each pin grant as ``session_authority`` does and require it unrevoked.
+
+        The selected binding grant must also belong to the account binding.
+        """
+        for kind in AGENT_PAIRING_GRANT_TYPES:
+            grant = connection.execute(
+                "SELECT reference_id FROM verified_grant_references WHERE grant_type = ? "
+                "AND installation_id = ? AND organization_id = ? AND installation_key_id = ? "
+                "AND installation_key_jkt = ? AND issuer = ? AND subject = ? "
+                "AND creator_account_id IS ? AND compact_jws IS NOT NULL "
+                "AND revoked_at IS NULL AND valid_from <= ? AND expires_at > ? "
+                "ORDER BY verified_at DESC, reference_id DESC LIMIT 1",
+                (
+                    kind,
+                    pairing["installation_id"],
+                    pairing["companion_organization_id"],
+                    pairing["companion_installation_key_id"],
+                    pairing["companion_installation_key_jkt"],
+                    pairing["external_issuer"],
+                    pairing["external_subject"],
+                    (
+                        pairing["creator_account_id"]
+                        if kind == CREATOR_ACCOUNT_BINDING
+                        else None
+                    ),
+                    instant,
+                    instant,
+                ),
+            ).fetchone()
+            if grant is None or SQLiteAuthenticationStore._scope_is_revoked(
+                connection,
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant["reference_id"]),
+            ):
+                return False
+            if kind == CREATOR_ACCOUNT_BINDING and connection.execute(
+                "SELECT 1 FROM authorized_account_binding_grants "
+                "WHERE creator_account_id = ? AND grant_reference_id = ?",
+                (pairing["creator_account_id"], grant["reference_id"]),
+            ).fetchone() is None:
+                return False
+        return True
+
+    def _enqueue_companion_progress_in_transaction(
+        self, connection: sqlite3.Connection, milestone: OnboardingMilestone,
+        *, now: datetime, pairing_id: str | None = None,
+    ) -> None:
+        claims = connection.execute(
+            "SELECT * FROM provisioning_claim_submissions WHERE state = 'consumed'"
+        ).fetchall()
+        if len(claims) != 1:
+            return
+        claim = _claim_submission(claims[0])
+        if self._companion_progress_pairing(connection, claim, now, pairing_id=pairing_id) is None:
+            return
+        self._enqueue_onboarding_progress_in_transaction(
+            connection, milestone, event_id=_new_uuid7(now),
+            correlation_id=_new_uuid7(now), occurred_at=now, claim=claim,
+            companion=True,
+        )
+
+    def reconcile_onboarding_progress(
+        self, *, observed_at: datetime,
+        session: CompanionSessionBinding | None = None,
+        current_configuration: bool = False,
+    ) -> None:
+        """Insert absent facts observed now; existing outbox rows remain immutable.
+
+        The extension independently enforces consent, capture context and capture
+        enablement on each capture. This readiness report does not evaluate them.
+        """
+        with self.database.transaction() as connection:
+            self._enqueue_companion_progress_in_transaction(
+                connection, "account-bound", now=observed_at
+            )
+            if session is None or not current_configuration:
+                return
+            try:
+                pairing, _ = self._require_companion_session_current(
+                    connection, session, observed_at
+                )
+            except AuthenticationStateError:
+                return
+            self._enqueue_companion_progress_in_transaction(
+                connection, "first-capture-ready", now=observed_at,
+                pairing_id=str(pairing["pairing_id"]),
+            )
+
     def due_onboarding_progress(
         self, *, now: datetime
     ) -> tuple[OnboardingProgressEvent, ...]:
@@ -3500,6 +3686,7 @@ class SQLiteAuthenticationStore:
         correlation_id: str,
         occurred_at: datetime,
         claim: ClaimSubmission | None = None,
+        companion: bool = False,
     ) -> None:
         """Atomically couple a lifecycle transition to its closed outbox row."""
 
@@ -3515,7 +3702,7 @@ class SQLiteAuthenticationStore:
             if len(claims) != 1:
                 return
             claim = _claim_submission(claims[0])
-        if milestone == "account-bound":
+        if milestone == "account-bound" and not companion:
             binding = connection.execute(
                 """
                 SELECT 1
@@ -3620,6 +3807,7 @@ class SQLiteAuthenticationStore:
             ).fetchall()
         return tuple(_onboarding_progress_event(row) for row in rows)
 
+    @capture_authority_change
     def record_authorized_account_binding(
         self, binding: AuthorizedAccountBinding
     ) -> None:
@@ -3715,6 +3903,7 @@ class SQLiteAuthenticationStore:
                 for row in rows
             )
 
+    @capture_authority_change
     def revoke_authorized_account_binding(self, creator_account_id: str) -> bool:
         """Revoke one authorized account binding and its account scope."""
 

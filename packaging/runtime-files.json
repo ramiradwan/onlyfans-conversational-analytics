@@ -44,7 +44,10 @@
         "0006_launcher_session_handoff.sql": "73949dc9a268d4e887ae72175d36ba69c1c741fa27725919ef67bbf93265df42",
         "0007_creator_vault_and_deletion_barriers.sql": "1b1d34c3921c1c9c9fe375c98762f3142c18cd45ac8fa374159bfc0000c7fc9a",
         "0008_managed_deletion_operations.sql": "cb95093255705abe8ea9e253d6acb831fa363754551ba23a146235207b2442dc",
-        "0009_analytics_source_tokens.sql": "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772"
+        "0009_message_catchup.sql": "16dd7b5eabaff870a1313140123cd3081ccd50790ea1d3c3f6bf5dfadfbf7239",
+        "0010_analytics_source_tokens.sql": "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772",
+        "legacy_analytics_v9/0009_analytics_source_tokens.sql": "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772",
+        "legacy_analytics_v9/0010_message_catchup.sql": "16dd7b5eabaff870a1313140123cd3081ccd50790ea1d3c3f6bf5dfadfbf7239"
       }
     },
     {
@@ -66,7 +69,8 @@
         "0014_hosted_grant_tombstones.sql": "4a68de7af6668df805b341f967518c8c61a1d9e98c338c073493a58714099d5b",
         "0015_capability_license_authority.sql": "404689c5e258bad350210740fe2dde0c7c7dad5027b516476fb106866265a11b",
         "0016_bootstrap_recovery_v2.sql": "7abb504e996ea02a5d6a3f2f9a1f441d9f59a0f060657098e4c2f8208b070069",
-        "0017_capability_license_delivery_journal.sql": "b7f7c489ed7e16c5ae6994acf27dfd3dab9bb60d3c10eb25c74835d40c26017a"
+        "0017_capability_license_delivery_journal.sql": "b7f7c489ed7e16c5ae6994acf27dfd3dab9bb60d3c10eb25c74835d40c26017a",
+        "0018_companion_confirmation_method.sql": "436da449ede4ae0b7827349b76f5f0797578bd56bc535ba9898d783d7908ddbe"
       }
     },
     {

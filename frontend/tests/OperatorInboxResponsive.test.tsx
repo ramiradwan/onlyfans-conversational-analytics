@@ -159,6 +159,7 @@ describe('OperatorInboxView responsive master-detail flow', () => {
       applied_history_settings_revision: 1,
       last_heartbeat_at: AS_OF,
       degraded_reason: null,
+      browser: null,
     });
     const messageApi: MessageApi = { getPage: vi.fn(async () => page) };
 

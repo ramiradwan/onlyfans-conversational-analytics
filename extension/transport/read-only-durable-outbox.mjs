@@ -109,6 +109,10 @@ function materialFromEnvelope(envelope) {
 function evidenceKey(evidence) {
   const generation = assertNonEmptyString(evidence?.generation_id, 'Coverage generation_id');
   switch (evidence.type) {
+    case 'check.chat_reconciled': return `${generation}:check:chat:${assertNonEmptyString(evidence.chat_id, 'chat_id')}`;
+    case 'check.inventory_closed': return `${generation}:check:inventory`;
+    case 'check.completed': return `${generation}:check:completed`;
+    case 'check.abandoned': return `${generation}:check:abandoned`;
     case 'generation.started': return `${generation}:00:started`;
     case 'inventory.member':
       return `${generation}:10:member:${assertNonEmptyString(evidence.conversation_id, 'conversation_id')}`;
@@ -214,7 +218,17 @@ async function applyEntityChange(tx, meta, change, sourceSeq, origin) {
   return result;
 }
 
-async function appendChange(tx, meta, change, origin, eventId) {
+async function appendChange(tx, meta, change, origin, eventId, checkId = null) {
+  if (origin === 'passive' && change.type === 'message.upsert') {
+    const active = await tx.get(INGESTION_STORES.historyJobs, 'catchup:active');
+    if (active && !['completed', 'abandoned'].includes(active.phase)) {
+      active.passive_heads ??= {};
+      active.passive_heads[change.message.chat_id] = {
+        message_id: change.message.message_id, sent_at: change.message.sent_at,
+      };
+      await tx.put(INGESTION_STORES.historyJobs, active);
+    }
+  }
   const candidateSeq = meta.last_source_seq + 1;
   const merged = await applyEntityChange(tx, meta, change, candidateSeq, origin);
   if (merged.action === 'noop') return null;
@@ -222,6 +236,7 @@ async function appendChange(tx, meta, change, origin, eventId) {
     event_id: eventId,
     source_seq: candidateSeq,
     acquisition_origin: origin,
+    ...(checkId === null ? {} : { check_id: checkId }),
     change: clone(change),
   };
   await tx.put(INGESTION_STORES.outbox, item);
@@ -337,7 +352,7 @@ export class DurableIngestOutbox {
       assertCurrent();
       const committed = await this.storage.runTransaction('readwrite', [
         INGESTION_STORES.meta, INGESTION_STORES.outbox, INGESTION_STORES.chats,
-        INGESTION_STORES.messages, INGESTION_STORES.coverageEvidence,
+        INGESTION_STORES.messages, INGESTION_STORES.historyJobs, INGESTION_STORES.coverageEvidence,
         INGESTION_STORES.snapshotOverrides, INGESTION_STORES.deliveryReceipts,
       ], async (tx) => {
         assertCurrent();
@@ -384,7 +399,7 @@ export class DurableIngestOutbox {
           INGESTION_STORES.meta,
           INGESTION_STORES.outbox,
           INGESTION_STORES.chats,
-          INGESTION_STORES.messages,
+          INGESTION_STORES.messages, INGESTION_STORES.historyJobs,
           INGESTION_STORES.coverageEvidence,
           INGESTION_STORES.snapshotOverrides,
         ],
@@ -415,7 +430,7 @@ export class DurableIngestOutbox {
           INGESTION_STORES.meta,
           INGESTION_STORES.outbox,
           INGESTION_STORES.chats,
-          INGESTION_STORES.messages,
+          INGESTION_STORES.messages, INGESTION_STORES.historyJobs,
           INGESTION_STORES.coverageEvidence,
           INGESTION_STORES.snapshotOverrides,
         ],
@@ -439,6 +454,21 @@ export class DurableIngestOutbox {
     });
   }
 
+  async updateAcquisitionState(work) {
+    return this.queueMutation(() => this.storage.runTransaction('readwrite',
+      [INGESTION_STORES.meta, INGESTION_STORES.historyJobs], async tx => {
+        const meta = await tx.get(INGESTION_STORES.meta, INGESTION_META_KEY);
+        const state = await tx.get(INGESTION_STORES.historyJobs, 'catchup:control')
+          ?? { job_id: 'catchup:control', kind: 'catchup_control', schema_version: 1,
+            account_epoch: meta.account_epoch };
+        if (this.invalidated) throw new Error('Account epoch changed');
+        state.account_epoch = meta.account_epoch;
+        await work(state);
+        await tx.put(INGESTION_STORES.historyJobs, state);
+        return clone(state);
+      }));
+  }
+
   async saveHistoryJob(job, validateAuthorization = null, guard = {}) {
     assertNonEmptyString(job?.job_id, 'history job_id');
     return this.queueMutation(async () => this.storage.runTransaction(
@@ -449,9 +479,14 @@ export class DurableIngestOutbox {
         const meta = await tx.get(INGESTION_STORES.meta, INGESTION_META_KEY);
         if (job.account_epoch !== meta.account_epoch) throw new Error('History job account epoch is stale');
         if (validateAuthorization !== null) await validateAuthorization();
-        await tx.put(INGESTION_STORES.historyJobs, clone(job));
+        const saved = await tx.get(INGESTION_STORES.historyJobs, job.job_id);
+        const next = clone(job);
+        if (job.kind === 'catchup' && saved?.check_id === job.check_id) {
+          next.passive_heads = { ...next.passive_heads, ...saved.passive_heads };
+        }
+        await tx.put(INGESTION_STORES.historyJobs, next);
         if (this.invalidated) throw new Error('Account partition was invalidated');
-        return clone(job);
+        return clone(next);
       },
       guard,
     ));
@@ -624,6 +659,7 @@ export class DurableIngestOutbox {
     boundary = null,
     jobPatch = {},
     spawnJobs = [],
+    checkId = null,
     validateAuthorization = null,
     signal = null,
     assertCurrent = null,
@@ -650,22 +686,25 @@ export class DurableIngestOutbox {
           }
           const appended = [];
           for (const change of changes) {
-            const prepared = job.kind === 'inventory' && change.type === 'chat.upsert'
+            const prepared = ['inventory', 'catchup'].includes(job.kind) && change.type === 'chat.upsert'
               ? { ...change, chat: inventoryChatMaterial(
                 materialFromEnvelope(await tx.get(INGESTION_STORES.chats, change.chat.chat_id)),
                 change.chat,
               ) }
               : change;
-            const item = await appendChange(tx, meta, prepared, 'signer', this.idFactory());
+            const item = await appendChange(tx, meta, prepared, 'signer', this.idFactory(), checkId);
             if (item !== null) appended.push(item);
           }
-          for (const itemEvidence of evidence) {
+          const materialSequence = meta.last_source_seq;
+          for (const rawEvidence of evidence) {
+            const itemEvidence = typeof rawEvidence === 'function' ? rawEvidence(materialSequence, job) : rawEvidence;
             const item = await appendChange(
               tx,
               meta,
               { type: 'coverage.observed', evidence: itemEvidence },
               'signer',
               this.idFactory(),
+              checkId,
             );
             if (item !== null) appended.push(item);
           }
@@ -673,6 +712,8 @@ export class DurableIngestOutbox {
           const nextJob = {
             ...clone(job),
             ...clone(jobPatch),
+            ...(job.kind === 'catchup' ? { final_source_seq: meta.last_source_seq,
+              passive_heads: job.passive_heads ?? {} } : {}),
             cursor: nextCursor,
             boundary,
             committed_pages: (job.committed_pages ?? 0) + 1,

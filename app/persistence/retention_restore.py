@@ -36,7 +36,7 @@ from app.persistence.managed_recovery import (
     managed_recovery_is_current,
     prune_managed_recovery_files,
 )
-from app.persistence.migrations import MigrationRunner, load_migration_catalog
+from app.persistence.migrations import MigrationRunner, resolve_migration_catalog
 from app.persistence.private_files import apply_private_file_security, sync_file
 
 
@@ -508,7 +508,6 @@ def restore_migration_backup_with_deletion_barriers(
     _require_current_recovery(source, now=current_time)
     policies, barriers = _current_authority(database)
     targets = [destination] + ([] if projection_target is None else [projection_target])
-    catalog = load_migration_catalog()
     try:
         with _exclusive_targets(targets):
             source_connection = database.open_detached(source, read_only=True)
@@ -517,6 +516,7 @@ def restore_migration_backup_with_deletion_barriers(
                 apply_private_file_security(temporary)
                 source_connection.backup(staged)
                 MigrationRunner._ensure_ledger(staged)
+                catalog = resolve_migration_catalog(staged)
                 applied = MigrationRunner._validate_applied(staged, catalog)
                 for migration in catalog:
                     if migration.version not in applied:

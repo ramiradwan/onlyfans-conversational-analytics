@@ -2,7 +2,7 @@
 
 - Status: accepted
 
-<!-- CODE-VERIFY: Check source_tokens.py, canonical_source.py, pipeline.py, projection_activation.py, and migration 0009 before changing source-proof claims. -->
+<!-- CODE-VERIFY: Check source_tokens.py, canonical_source.py, pipeline.py, projection_activation.py, persistence/sql/0010_analytics_source_tokens.sql, legacy_analytics_v9/0009_analytics_source_tokens.sql, and migrations.py before changing source-proof or upgrade claims. -->
 
 ## Decision
 
@@ -21,6 +21,8 @@ Persist a small, immutable projection metadata row for question reads. Database 
 ## Consequences
 
 The canonical database gains an additive migration, a source-token table, tracking triggers, and a date index. Existing conversation records are unchanged. The analytics database gains an additive metadata table and triggers. Normal migration backup and newer-schema refusal remain required.
+
+The source-token migration originally occupied canonical version 9 on the analytics branch. After integration with main's version-9 catch-up migration, new and main-line databases apply the unchanged source-token SQL at version 10. Existing analytics-v9 databases retain their original ledger and source tokens, then apply catch-up at version 10. [ADR 0046](0046-canonical-migration-lineages.md) defines the two exact historical catalogs, full-prefix validation, backup and restore rules, and common future migrations.
 
 This narrows repeated verification work without making database tokens authoritative facts. A cold or expired identity cache may still exhaust a bounded request. Background currentness checks can populate it independently of question requests.
 

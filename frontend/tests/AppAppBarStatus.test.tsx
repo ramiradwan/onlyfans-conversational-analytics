@@ -25,6 +25,7 @@ function state(overrides: Partial<BridgeTransportState> = {}): BridgeTransportSt
       applied_history_settings_revision: 12,
       last_heartbeat_at: AS_OF,
       degraded_reason: null,
+      browser: null,
     },
     system: {
       creator_account_id: 'creator-1',

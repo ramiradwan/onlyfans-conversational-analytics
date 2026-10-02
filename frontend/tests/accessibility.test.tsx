@@ -131,6 +131,7 @@ describe('critical accessibility gates', () => {
       applied_history_settings_revision: 9,
       last_heartbeat_at: '2026-07-19T12:00:00Z',
       degraded_reason: null,
+      browser: null,
     });
     bridgeTransportStore.applySnapshot({
       creator_account_id: 'creator-1',

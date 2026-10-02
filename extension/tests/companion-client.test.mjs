@@ -10,13 +10,147 @@ const key = await crypto.subtle.importKey('jwk', fixturePrivateJwk(vector.fixtur
 const publicKey = await crypto.subtle.importKey('jwk', vector.request.agent_identity_jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
 const ACCOUNT = vector.detected_account_id;
 const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
+
+async function capacityHarness() {
+  const waits = new Map();
+  let timerId = 0, busy = true, attempts = 0;
+  const scheduler = { setTimeout(callback, delay) { const id = ++timerId; waits.set(id, { callback, delay }); return id; },
+    clearTimeout(id) { waits.delete(id); } };
+  const h = harness({ scheduler });
+  await h.client.adapter.loadBrainBinding();
+  const channel = h.channels[0], rpc = channel.rpc.bind(channel);
+  const capacity = Object.assign(new Error('companion_session_refused'), { code: 'companion_session_refused',
+    diagnostic: { cause: 'rpc_capacity', pendingRpcs: 8, abandonedRpcs: 0, queuedSends: 0 } });
+  channel.rpc = async (...args) => {
+    attempts++;
+    if (busy) throw capacity;
+    return rpc(...args);
+  };
+  return { ...h, channel, capacity, waits, get attempts() { return attempts; }, release() { busy = false; },
+    rotate(controls = {}) { return h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT,
+      authTicket: 'reconnect-fixture', configAuthTicket: 'config-fixture' }, controls); },
+    retry() {
+      const entry = [...waits].find(([, value]) => value.delay === 25);
+      assert.ok(entry, 'capacity wait is scheduled');
+      waits.delete(entry[0]); entry[1].callback();
+    } };
+}
+
+for (const invalidation of ['abort', 'binding', 'channel', 'generation']) {
+  test('credential capacity wait rejects stale work after ' + invalidation, async () => {
+    const h = await capacityHarness(), controller = new AbortController();
+    let current = true;
+    try {
+      let settled = false;
+      const rotation = h.rotate({ signal: controller.signal, assertCurrent() { assert.ok(current); } });
+      void rotation.then(() => { settled = true; }, () => { settled = true; });
+      await tick();
+      assert.equal(settled, false, 'local capacity must not fail credential persistence immediately');
+      if (invalidation === 'abort') controller.abort();
+      if (invalidation === 'binding') h.client.invalidate();
+      if (invalidation === 'channel') h.channel.close();
+      if (invalidation === 'generation') current = false;
+      h.release(); h.retry();
+      await assert.rejects(rotation);
+      assert.equal(h.attempts, 1);
+      assert.equal(h.client.credentialRotation.completed, 0);
+    } finally { h.client.invalidate(); }
+  });
+}
+
+test('credential capacity wait expires without admitting another RPC', async (t) => {
+  let time = 0;
+  t.mock.method(performance, 'now', () => time);
+  const h = await capacityHarness();
+  try {
+    let settled = false;
+    const rotation = h.rotate();
+    void rotation.then(() => { settled = true; }, () => { settled = true; });
+    await tick();
+    assert.equal(settled, false);
+    time = 10_000;
+    h.release(); h.retry();
+    await assert.rejects(rotation, error => error === h.capacity);
+    assert.equal(h.attempts, 1);
+  } finally { h.client.invalidate(); }
+});
+
+test('credential rotation never retries a dispatched refusal or ambiguous failure', async () => {
+  for (const diagnostic of [undefined, { cause: 'rpc_timeout' }, { cause: 'rpc_backlog' }, { cause: 'send_failed' }]) {
+    const h = harness();
+    try {
+      await h.client.adapter.loadBrainBinding();
+      let calls = 0;
+      const error = Object.assign(new Error('session_request_refused'), { diagnostic });
+      h.channels[0].rpc = async () => { calls++; throw error; };
+      await assert.rejects(h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT }), value => value === error);
+      assert.equal(calls, 1);
+    } finally { h.client.invalidate(); }
+  }
+});
+
+test('facade diagnostics retain closed local causes without arbitrary text', async () => {
+  for (const [input, expected] of [
+    ['Session establishment timed out', 'session_timeout'],
+    ['Agent reconnect credential could not be stored', 'credential_store_failed'],
+    ['Session identity conflict', 'identity_conflict'],
+    ['unauthorized', 'unauthorized'],
+    ['private-message-token', 'other'],
+  ]) {
+    const h = harness();
+    await h.client.adapter.loadBrainBinding();
+    const socket = h.client.webSocketFactory();
+    for (let i = 0; i < 20 && socket.readyState !== 1; i++) await tick();
+    socket.close(4008, input);
+    const closed = h.client.diagnosticEvents.find((entry) => entry.event === 'facade-close');
+    h.client.invalidate();
+    assert.equal(closed.reason, expected);
+    assert.equal(closed.code, 4008);
+    assert.doesNotMatch(JSON.stringify(h.client.diagnosticEvents), /private-message-token/);
+  }
+});
+
+test('three Full worker starts and surface signals reserve only one attempt each', async () => {
+  let time = 1_800_000_000_000, chromeApi;
+  const scheduler = { setTimeout() { return 1; }, clearTimeout() {} };
+  for (let worker = 1; worker <= 3; worker++) {
+    const h = harness({ chromeApi, now: () => time, scheduler });
+    chromeApi = h.chrome;
+    await Promise.all([h.client.adapter.loadBrainBinding(), h.client.adapter.loadBrainBinding(), h.client.ensureControl()]);
+    h.client.reportSurface({ schema: 'ofca-browser-surface/v1', capture: 'active' });
+    await h.client.ensureControl();
+    assert.equal(h.stats.networks, 1);
+    assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, worker);
+    h.client.invalidate();
+    time += 5_000;
+  }
+});
+
+test('worker wake subscriptions retain message and tab wakes plus the minute alarm', () => {
+  const h = harness();
+  let wakes = 0;
+  const alarms = [];
+  h.chrome.alarms.create = (name, options) => alarms.push({ name, options });
+  const remove = h.client.adapter.onWake(() => { wakes++; });
+  const events = [h.chrome.runtime.onStartup, h.chrome.runtime.onInstalled,
+    h.chrome.runtime.onMessage, h.chrome.tabs.onUpdated];
+  for (const source of events) source.listeners[0]();
+  assert.equal(wakes, 4);
+  assert.deepEqual(alarms, [{ name: 'ofca-agent-reconcile', options: { delayInMinutes: 1, periodInMinutes: 1 } }]);
+  h.chrome.alarms.onAlarm.listeners[0]({ name: 'unrelated' });
+  assert.equal(wakes, 4);
+  h.chrome.alarms.onAlarm.listeners[0]({ name: 'ofca-agent-reconcile' });
+  assert.equal(wakes, 5);
+  remove();
+  assert.ok([...events, h.chrome.alarms.onAlarm].every((source) => source.listeners.length === 0));
+});
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, enforcePairing = false } = {}) {
+function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
-  const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event() }, alarms: { onAlarm: event(), async create() {} } };
-  let enabled = full, account = ACCOUNT, paired = true, pairingWait;
+  const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event(), onCreated: event(), onRemoved: event() }, alarms: { onAlarm: event(), async create() {} } };
+  let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures;
   const pairingStore = {
     async identity() { return { privateKey: key }; }, async status() { return { paired }; },
     async begin() { return { requestId: 'request-one', deadline: Math.floor(Date.now() / 1000) + 300, request: vector.request }; },
@@ -24,7 +158,7 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
     async cancel() { stats.cancel++; }, async forget() { paired = false; stats.forget++; }, close() { stats.closedStores++; },
   };
   const client = createCompanionClient({ chromeApi: chrome, allowsFull: () => enabled, detectedAccountId: async () => account,
-    now, random: () => 0.5,
+    now, scheduler, random: () => 0.5,
     accountDatabaseName: async (id) => `encrypted-account-${id}`, storeFactory: async () => { stats.stores++; return pairingStore; },
     loadSnow: async () => { stats.snow++; return { SnowSession: class {}, generateStaticKeypair() { return new Uint8Array(64); } }; },
     loadTrust: async () => ({}),
@@ -49,6 +183,7 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
       const index = stats.networks, closeListeners = [], rpcCalls = [], documents = [];
       const challenge = { challenge_id: crypto.randomUUID(), challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-12T12:00:00Z' };
       const channel = { identity: { ...vector.expected.identity, pairing_id: vector.offer.pairing_id, ...(wrongPin ? { creator_account_id: 'other' } : {}) }, closed: false, rpcCalls, documents,
+        closeReason: channelCloseReason,
         close() { if (this.closed) return; this.closed = true; for (const fn of closeListeners) fn(); },
         onClose(fn) { closeListeners.push(fn); }, onMessage(fn) { this.message = fn; return () => { this.message = null; }; },
         async send(document) { documents.push(document); },
@@ -66,6 +201,10 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
           }
           if (method === 'agent.storage.rotate') return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'replacement-bootstrap' };
           if (method === 'agent.config.get') return { status: 304, etag: 'config-1', document: null };
+          if (method === 'agent.surface.report') {
+            if (remainingSurfaceFailures > 0) { remainingSurfaceFailures -= 1; throw new Error('surface_refused'); }
+            return {};
+          }
           throw new Error('test_method_missing');
         },
       };
@@ -77,6 +216,114 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
   return { client, stats, channels, chrome, setFull(value) { enabled = value; }, setAccount(value) { account = value; client.invalidate(); },
     unpair() { paired = false; }, pairingResult() { pairingWait.resolve(JSON.stringify(vector.result)); } };
 }
+
+test('tab creation and removal do not create companion runtime wake storms', () => {
+  const h = harness({ full: false });
+  let wakes = 0;
+  const stop = h.client.adapter.onWake(() => { wakes += 1; });
+  assert.equal(h.chrome.tabs.onUpdated.listeners.length, 1);
+  assert.equal(h.chrome.tabs.onCreated.listeners.length, 0);
+  assert.equal(h.chrome.tabs.onRemoved.listeners.length, 0);
+  h.chrome.tabs.onCreated.listeners.forEach((listener) => listener({ id: 1 }));
+  h.chrome.tabs.onRemoved.listeners.forEach((listener) => listener(1));
+  assert.equal(wakes, 0);
+  h.chrome.tabs.onUpdated.listeners[0](1, { status: 'complete' });
+  assert.equal(wakes, 1);
+  stop();
+});
+
+test('six admitted 15-second sessions durably reset the circuit before worker loss', async () => {
+  let time = 1_800_000_000_000;
+  const timers = new Set();
+  const scheduler = {
+    setTimeout(handler, delay) { const timer = { handler, due: time + delay }; timers.add(timer); return timer; },
+    clearTimeout(timer) { timers.delete(timer); },
+    advance(delay) {
+      time += delay;
+      for (const timer of [...timers]) if (timer.due <= time) { timers.delete(timer); timer.handler(); }
+    },
+  };
+  let h = harness({ now: () => time, scheduler });
+  for (let session = 0; session < 6; session += 1) {
+    await h.client.adapter.loadBrainBinding();
+    scheduler.advance(15_000);
+    await tick();
+    assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 0);
+    const previous = h;
+    h = harness({ chromeApi: previous.chrome, now: () => time, scheduler });
+  }
+  await h.client.adapter.loadBrainBinding();
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 1);
+  h.client.invalidate();
+});
+
+test('protocol facade reports the persisted retry time after a short session closes', async () => {
+  let time = 1_800_000_000_000;
+  const h = harness({ now: () => time });
+  await h.client.adapter.loadBrainBinding();
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 0);
+  const socket = h.client.webSocketFactory();
+  for (let poll = 0; poll < 20 && socket.readyState !== 1; poll += 1) await tick();
+  assert.equal(socket.readyState, 1);
+  h.channels[0].close();
+  for (let poll = 0; poll < 20 && socket.readyState !== 3; poll += 1) await tick();
+  assert.equal(socket.readyState, 3);
+  await tick();
+  assert.equal(socket.retryAfterMs, 1_000);
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 1_000);
+  h.client.invalidate();
+});
+
+test('a stable channel close permits an immediate reconnect when the service is ready', async () => {
+  let time = 1_800_000_000_000;
+  const timers = new Set();
+  const scheduler = {
+    setTimeout(handler, delay) { const timer = { handler, due: time + delay }; timers.add(timer); return timer; },
+    clearTimeout(timer) { timers.delete(timer); },
+  };
+  const h = harness({ now: () => time, scheduler });
+  await h.client.adapter.loadBrainBinding();
+  time += 10_000;
+  for (const timer of [...timers]) if (timer.due <= time) { timers.delete(timer); timer.handler(); }
+  await tick();
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 0);
+  h.channels[0].close();
+  await tick();
+  assert.equal(await h.client.webSocketFactory.retryAfterMs(), 0);
+  const next = await h.client.adapter.loadBrainBinding();
+  assert.ok(next);
+  assert.equal(h.channels.length, 2);
+  assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, 1);
+  h.client.invalidate();
+});
+
+test('diagnostics retain the stable reset and channel close sequence', async () => {
+  let time = 1_800_000_000_000;
+  const timers = new Set();
+  const scheduler = {
+    setTimeout(handler, delay) { const timer = { handler, due: time + delay }; timers.add(timer); return timer; },
+    clearTimeout(timer) { timers.delete(timer); },
+  };
+  const h = harness({ now: () => time, scheduler });
+  await h.client.adapter.loadBrainBinding();
+  time += 10_000;
+  for (const timer of [...timers]) if (timer.due <= time) { timers.delete(timer); timer.handler(); }
+  await tick();
+  h.channels[0].close();
+  assert.deepEqual(h.client.diagnosticEvents.map((entry) => entry.event),
+    ['connect-start', 'connect-admitted', 'circuit-reset', 'channel-close']);
+  assert.equal(h.client.diagnosticEvents.at(-1).at, time);
+  h.client.invalidate();
+});
+
+test('channel diagnostics never record unknown peer close text', async () => {
+  const h = harness({ channelCloseReason: 'private_note' });
+  await h.client.adapter.loadBrainBinding();
+  h.channels[0].close();
+  assert.equal(h.client.diagnosticEvents.at(-1).reason, 'other');
+  assert.equal(JSON.stringify(h.client.diagnosticEvents).includes('private_note'), false);
+  h.client.invalidate();
+});
 
 test('Preview and unavailable modes never initialize companion storage, crypto or networking', async () => {
   const h = harness({ full: false });
@@ -101,6 +348,42 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
     assert.equal(JSON.stringify([h.chrome.storage.local.values, h.chrome.storage.session.values]).includes('ticket'), false);
     assert.equal(JSON.stringify(await h.client.status()).includes('bootstrap'), false);
   } finally { h.client.invalidate(); }
+});
+
+test('an active Full session reports pending browser state on its authenticated channel', async () => {
+  const h = harness();
+  const surface = {
+    schema: 'ofca-browser-surface/v1',
+    capture: 'active',
+    site_access: 'granted',
+    history_permission: 'granted',
+    legal_review_required: false,
+  };
+  h.client.reportSurface(surface);
+  await h.client.adapter.loadBrainBinding();
+  await tick();
+  assert.deepEqual(
+    h.channels[0].rpcCalls.map((call) => call.method),
+    ['agent.challenge', 'agent.authenticate', 'agent.storage.unseal', 'agent.surface.report'],
+  );
+  assert.deepEqual(h.channels[0].rpcCalls.at(-1).params, surface);
+  h.client.invalidate();
+});
+
+test('an unchanged browser surface retries after a refused report', async () => {
+  const h = harness({ surfaceFailures: 1 });
+  const surface = {
+    schema: 'ofca-browser-surface/v1', capture: 'active', site_access: 'granted',
+    history_permission: 'granted', legal_review_required: false,
+  };
+  h.client.reportSurface(surface);
+  await h.client.adapter.loadBrainBinding();
+  await tick();
+  assert.equal(h.channels[0].rpcCalls.filter((call) => call.method === 'agent.surface.report').length, 1);
+  h.client.reportSurface({ ...surface });
+  await tick();
+  assert.equal(h.channels[0].rpcCalls.filter((call) => call.method === 'agent.surface.report').length, 2);
+  h.client.invalidate();
 });
 
 test('explicit confirmed pairing is not blocked by automatic reconnect cooldown', async () => {
@@ -219,7 +502,7 @@ test('setup pairing is restricted to its packaged page and disconnect cancels co
   for (let i = 0; i < 10 && !states.some((state) => state.state === 'compare'); i++) await tick();
   assert.equal(states.find((state) => state.state === 'compare').comparison_code, vector.expected.comparison_code);
   port.onDisconnect.listeners[0](); await tick(); assert.equal(h.stats.cancel, 1); assert.equal(h.stats.networks, 0);
-  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,owns_attempt,state'));
+  assert.ok(states.every((state) => Object.keys(state).sort().join() === 'comparison_code,desktop_attempt,desktop_control,owns_attempt,state'));
 });
 
 test('the transient toolbar popup can inspect status but cannot start a comparison', async () => {
@@ -304,4 +587,56 @@ test('forget is an Options-only action and acknowledgement follows reconciliatio
   gate.resolve(); await tick();
   assert.deepEqual(options.values.find((value) => value.type === 'pairing_command_result'),
     { type: 'pairing_command_result', command: 'forget', ok: true });
+});
+
+
+for (const [mode, phase, cause] of [
+  ['unbound', 'binding', 'binding_unavailable'],
+  ['refused', 'rpc', 'session_request_refused'],
+  ['malformed', 'response', 'rotation_response_invalid'],
+  ['changed', 'commit', 'binding_changed'],
+]) {
+  test('credential rotation diagnostics preserve the ' + mode + ' failure without material', async () => {
+    const h = harness();
+    const failure = Object.assign(new Error('private_message private_token'), { code: 'session_request_refused' });
+    try {
+      if (mode !== 'unbound') await h.client.adapter.loadBrainBinding();
+      if (h.channels[0]) h.channels[0].rpc = async () => {
+        if (mode === 'refused') throw failure;
+        if (mode === 'malformed') return { token: 'private_token' };
+        if (mode === 'changed') h.client.invalidate();
+        return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'private_bootstrap' };
+      };
+      await assert.rejects(h.client.adapter.saveReconnectAuthTicket({ creatorAccountId: ACCOUNT,
+        agentInstallationId: 'private_installation', authTicket: 'private_ticket', configAuthTicket: 'private_config' }),
+      error => mode !== 'refused' || error === failure);
+      const report = h.client.credentialRotation;
+      assert.equal(report.failure.phase, phase);
+      assert.equal(report.failure.cause, cause);
+      assert.equal(report.attempts, 1);
+      assert.doesNotMatch(JSON.stringify(report), /private_|sealed|ticket|bootstrap/);
+      report.failure.phase = 'private_mutation';
+      assert.equal(h.client.credentialRotation.failure.phase, phase);
+    } finally { h.client.invalidate(); }
+  });
+}
+
+test('credential rotation diagnostics retain a failure across later success and event churn', async () => {
+  const h = harness();
+  try {
+    await h.client.adapter.loadBrainBinding();
+    const rpc = h.channels[0].rpc;
+    h.channels[0].rpc = async () => { throw Object.assign(new Error('private_failure'), { name: 'private_name', code: 'private_code' }); };
+    const credential = { creatorAccountId: ACCOUNT, authTicket: 'private_ticket', configAuthTicket: 'private_config' };
+    await assert.rejects(h.client.adapter.saveReconnectAuthTicket(credential));
+    h.channels[0].rpc = rpc;
+    await h.client.adapter.saveReconnectAuthTicket(credential);
+    for (let i = 0; i < 40; i++) h.client.invalidate();
+    assert.equal(h.client.credentialRotation.attempts, 2);
+    assert.equal(h.client.credentialRotation.completed, 1);
+    assert.equal(h.client.credentialRotation.failure.phase, 'rpc');
+    assert.equal(h.client.credentialRotation.failure.cause, 'other');
+    assert.equal(h.client.credentialRotation.failure.errorName, 'other');
+    assert.doesNotMatch(JSON.stringify(h.client.credentialRotation), /private_/);
+  } finally { h.client.invalidate(); }
 });

@@ -173,6 +173,7 @@ describe('Inbox REST paging', () => {
         applied_history_settings_revision: 0,
         last_heartbeat_at: '2026-07-19T12:00:01Z',
         degraded_reason: null,
+        browser: null,
       });
     });
 

@@ -469,7 +469,12 @@ async function compileOnce(signingRule, legalBindings) {
 
   auditReadOnlyModuleGraph(Object.keys(background.metafile.inputs));
   const backgroundInputs = Object.keys(background.metafile.inputs).map((input) => input.replaceAll('\\', '/'));
-  for (const required of ['runtime/packaged-snow.mjs', 'vendor/companion-snow/ofca_snow_wasm.js']) {
+  for (const required of [
+    'runtime/packaged-snow.mjs',
+    'runtime/desktop-port.mjs',
+    'runtime/browser-surface.mjs',
+    'vendor/companion-snow/ofca_snow_wasm.js',
+  ]) {
     assert.ok(backgroundInputs.some((input) => input.endsWith(required)), `background omitted ${required}`);
   }
 

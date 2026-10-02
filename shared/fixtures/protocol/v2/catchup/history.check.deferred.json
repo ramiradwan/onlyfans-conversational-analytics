@@ -1,0 +1,5 @@
+{
+  "result": "deferred",
+  "retry_after_seconds": 60,
+  "reason": "daily_cap"
+}

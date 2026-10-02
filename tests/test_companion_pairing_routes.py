@@ -79,8 +79,8 @@ class FakeService:
         self.calls.append(("status", policy, pairing_id))
         return self.public()
 
-    def confirm(self, policy, pairing_id, version):
-        self.calls.append(("confirm", policy, pairing_id, version))
+    def confirm(self, policy, pairing_id, version, **verified):
+        self.calls.append(("confirm", policy, pairing_id, version, *verified.values()))
         return self.public()
 
     def cancel(self, policy, pairing_id, version, decline=False):
@@ -770,3 +770,82 @@ async def test_disconnect_during_result_delivery_aborts_pending_pin(monkeypatch)
     await asyncio.wait_for(routes.companion_pairing_socket(socket), timeout=2)
     assert service.aborted.is_set()
     assert socket.closed == [{"code": 1008, "reason": "pairing_state_refused"}]
+
+
+def test_confirm_forwards_a_browser_verified_code_and_announces_changes(
+    application, monkeypatch
+):
+    app, service = application
+    notices = []
+    monkeypatch.setattr(
+        routes.transport_manager,
+        "notify_companion_changed",
+        lambda account, **options: notices.append((account, options)),
+    )
+    with client_for(app) as client:
+        opened = client.post(
+            "/api/v1/companion/pairings",
+            json={"creator_account_id": "account"},
+            headers=http_headers(),
+        )
+        confirmed = client.post(
+            f"/api/v1/companion/pairings/{PAIRING_ID}/confirm",
+            json={"version": 3, "agent_comparison_code": "042917"},
+            headers=http_headers(),
+        )
+    assert opened.status_code == 201
+    assert confirmed.status_code == 200
+    assert service.calls[-1] == ("confirm", POLICY, PAIRING_ID, 3, "042917")
+    # The open schedules an expiry notice after its immediate change notice.
+    assert [account for account, _ in notices] == ["account", "account", "account"]
+    assert notices[1][1]["delay_seconds"] >= 0
+
+
+@pytest.mark.parametrize(
+    ("suffix", "body"),
+    [
+        ("confirm", {"version": 3, "agent_comparison_code": "12345"}),
+        ("confirm", {"version": 3, "agent_comparison_code": 123456}),
+        ("confirm", {"version": 3, "agent_comparison_code": "12a456"}),
+        ("cancel", {"version": 3, "agent_comparison_code": "123456"}),
+        ("confirm", {"agent_comparison_code": "123456"}),
+    ],
+    ids=["short", "number", "letters", "not-confirm", "no-version"],
+)
+def test_browser_verified_code_is_strict(application, suffix, body):
+    app, service = application
+    with client_for(app) as client:
+        response = client.post(
+            f"/api/v1/companion/pairings/{PAIRING_ID}/{suffix}",
+            json=body,
+            headers=http_headers(),
+        )
+    assert response.status_code == 400
+    assert service.calls == []
+
+
+def test_revocation_notifies_the_pin_sessions_before_it_commits(application, monkeypatch):
+    app, service = application
+    order = []
+
+    async def notify(account, action, **options):
+        order.append(("notice", account, action, options))
+        return 1
+
+    def revoke(policy, pairing_id, version):
+        order.append(("revoke", pairing_id, version))
+        return {**service.public(), "state": "revoked"}
+
+    monkeypatch.setattr(routes.transport_manager, "send_browser_control", notify)
+    monkeypatch.setattr(service, "revoke", revoke, raising=False)
+    with client_for(app) as client:
+        response = client.post(
+            f"/api/v1/companion/pins/{PAIRING_ID}/revoke",
+            json={"version": 4},
+            headers=http_headers(),
+        )
+    assert response.status_code == 200
+    assert order == [
+        ("notice", "account", "companion.revoked", {"pairing_id": PAIRING_ID}),
+        ("revoke", PAIRING_ID, 4),
+    ]

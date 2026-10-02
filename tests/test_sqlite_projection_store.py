@@ -1018,29 +1018,38 @@ async def test_deleted_projection_file_returns_unavailable_then_rebuilds_once(
         graph=stores.graph,
     )
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
-    await scheduler.start(recover=True)
-    await _wait_for_lazy_projection(scheduler, repositories)
-    await scheduler.wait("account-a")
-    build_count = 0
-    original_build = pipeline._build
+    try:
+        await scheduler.start(recover=True)
+        await _wait_for_lazy_projection(scheduler, repositories)
+        await scheduler.wait("account-a")
+        current = stores.projections.database
+        assert current is not None
+        # Windows cannot unlink the scheduler's intentionally open WAL anchor.
+        # Release only that idle handle to inject file loss while preserving the
+        # scheduler and lazy store identity state exercised by recovery below.
+        current.release_wal_anchor()
+        assert current.open_connection_count(path) == 0
+        build_count = 0
+        original_build = pipeline._build
 
-    def counted_build(*args, **kwargs):
-        nonlocal build_count
-        build_count += 1
-        return original_build(*args, **kwargs)
+        def counted_build(*args, **kwargs):
+            nonlocal build_count
+            build_count += 1
+            return original_build(*args, **kwargs)
 
-    pipeline._build = counted_build  # type: ignore[method-assign]
-    path.unlink()
-    account = history_source_for(repositories).account_read_model("account-a")
-    with pytest.raises(ProjectionStorageUnavailable):
-        await scheduler.active_projection("account-a", account)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    projection = await _wait_for_lazy_projection(scheduler, repositories)
-    assert projection.source_revision == account.view_revision
-    assert build_count == 1
-    assert stores.projections.recovery_count == 2
-    assert await scheduler.close(timeout=2)
+        pipeline._build = counted_build  # type: ignore[method-assign]
+        path.unlink()
+        account = history_source_for(repositories).account_read_model("account-a")
+        with pytest.raises(ProjectionStorageUnavailable):
+            await scheduler.active_projection("account-a", account)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        projection = await _wait_for_lazy_projection(scheduler, repositories)
+        assert projection.source_revision == account.view_revision
+        assert build_count == 1
+        assert stores.projections.recovery_count == 2
+    finally:
+        assert await scheduler.close(timeout=2)
 
 
 @pytest.mark.asyncio
@@ -1065,46 +1074,53 @@ async def test_valid_empty_projection_file_replacement_is_quarantined_and_rebuil
         graph=stores.graph,
     )
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
-    await scheduler.start(recover=True)
-    await _wait_for_lazy_projection(scheduler, repositories)
-    await scheduler.wait("account-a")
+    try:
+        await scheduler.start(recover=True)
+        await _wait_for_lazy_projection(scheduler, repositories)
+        await scheduler.wait("account-a")
+        current = stores.projections.database
+        assert current is not None
+        # Keep the live scheduler/store identity, but release its idle WAL
+        # anchor so Windows permits this deliberate external file replacement.
+        current.release_wal_anchor()
+        assert current.open_connection_count(path) == 0
 
-    build_count = 0
-    original_build = pipeline._build
+        build_count = 0
+        original_build = pipeline._build
 
-    def counted_build(*args, **kwargs):
-        nonlocal build_count
-        build_count += 1
-        return original_build(*args, **kwargs)
+        def counted_build(*args, **kwargs):
+            nonlocal build_count
+            build_count += 1
+            return original_build(*args, **kwargs)
 
-    pipeline._build = counted_build  # type: ignore[method-assign]
-    replacement_path = tmp_path / "valid-empty-replacement.sqlite3"
-    replacement = ProjectionsDatabase(replacement_path)
-    current = stores.projections.database
-    assert current is not None
-    for database in (current, replacement):
-        with database.read() as connection:
-            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    for candidate in (
-        Path(f"{path}-wal"),
-        Path(f"{path}-shm"),
-        Path(f"{replacement_path}-wal"),
-        Path(f"{replacement_path}-shm"),
-    ):
-        candidate.unlink(missing_ok=True)
-    os.replace(replacement_path, path)
+        pipeline._build = counted_build  # type: ignore[method-assign]
+        replacement_path = tmp_path / "valid-empty-replacement.sqlite3"
+        replacement = ProjectionsDatabase(replacement_path)
+        for database in (current, replacement):
+            with database.read() as connection:
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            assert database.open_connection_count(database.path) == 0
+        for candidate in (
+            Path(f"{path}-wal"),
+            Path(f"{path}-shm"),
+            Path(f"{replacement_path}-wal"),
+            Path(f"{replacement_path}-shm"),
+        ):
+            candidate.unlink(missing_ok=True)
+        os.replace(replacement_path, path)
 
-    account = history_source_for(repositories).account_read_model("account-a")
-    with pytest.raises(ProjectionStorageUnavailable):
-        await scheduler.active_projection("account-a", account)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    recovered = await _wait_for_lazy_projection(scheduler, repositories)
-    assert recovered.source_revision == account.view_revision
-    assert build_count == 1
-    assert stores.projections.recovery_count == 2
-    assert len(list(path.parent.glob(f".{path.name}.*.quarantine"))) == 1
-    assert await scheduler.close(timeout=2)
+        account = history_source_for(repositories).account_read_model("account-a")
+        with pytest.raises(ProjectionStorageUnavailable):
+            await scheduler.active_projection("account-a", account)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        recovered = await _wait_for_lazy_projection(scheduler, repositories)
+        assert recovered.source_revision == account.view_revision
+        assert build_count == 1
+        assert stores.projections.recovery_count == 2
+        assert len(list(path.parent.glob(f".{path.name}.*.quarantine"))) == 1
+    finally:
+        assert await scheduler.close(timeout=2)
 
 
 @pytest.mark.asyncio

@@ -7,17 +7,17 @@ import sys
 from pathlib import Path
 from typing import Callable, Sequence
 
-from app.core.customer_release import load_customer_release_config
+from app.core.customer_release import (
+    HOSTED_ORIGIN_ENVIRONMENT_VARIABLE as PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE,
+    load_customer_release_config,
+    resolve_hosted_api_origin,
+)
 from app.core.runtime_paths import runtime_configuration_file
 from app.core.runtime_paths import runtime_data_directory
 
 
 PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
 PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_EXTENSION_ID"
-# Development/test compatibility only. A production package binds the hosted
-# origin through app/core/customer-release.json so customer setup is not
-# dependent on a machine-specific environment variable.
-PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
 SQLCIPHER_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE = "BRAIN_SQLCIPHER_RUNTIME_REPORT_PATH"
 COMPANION_RUNTIME_REPORT_PATH_ENVIRONMENT_VARIABLE = "BRAIN_COMPANION_RUNTIME_REPORT_PATH"
 
@@ -77,9 +77,7 @@ def select_brain_application(
         from app.provisioning.launcher_handoff import save_launcher_handoff
 
         save_launcher_handoff(runtime_data_directory(data_directory), token=handoff_token, pid=os.getpid())
-    hosted_origin = customer_release.hosted_api_origin or os.environ.get(
-        PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, ""
-    )
+    hosted_origin = resolve_hosted_api_origin(customer_release)
     grant_refresh = configured_grant_refresh(
         open_store,
         hosted_origin=hosted_origin,

@@ -116,6 +116,21 @@ test('a failed bootstrap is reported and the next wake retries initialization', 
   assert.strictEqual(runtime.transport, transport);
 });
 
+test('a wake during companion cooldown returns its retry time without a startup error', async () => {
+  const failures = [];
+  const runtime = new AgentRuntime({
+    registerWakeListeners() {},
+    onStartupError(error) { failures.push(error); },
+    async initialize() {
+      throw Object.assign(new Error('cooldown'),
+        { code: 'companion_recovery_backoff', retryAfterMs: 42_000 });
+    },
+  });
+  const result = await runtime.wake();
+  assert.deepEqual(result, { retryAfterMs: 42_000 });
+  assert.deepEqual(failures, []);
+});
+
 test('a new worker runtime reconstructs durable identity and checkpoint before reconnecting', async () => {
   const stableIdentity = {
     agentInstallationId: '20000000-0000-4000-8000-000000000001',

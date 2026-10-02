@@ -167,6 +167,7 @@ def validate_report(report: dict[str, Any], spec: ReportSpec) -> dict[str, str]:
             raise GateError("collection reference unexpectedly claims executed tests")
         return {}
     by_node: dict[str, dict[str, Any]] = {node: {} for node in selected}
+    subtest_counts: Counter[str] = Counter()
     for phase in phases:
         if not isinstance(phase, dict) or phase.get("nodeid") not in selected:
             raise GateError("execution outcome has no selected test identity")
@@ -177,6 +178,20 @@ def validate_report(report: dict[str, Any], spec: ReportSpec) -> dict[str, str]:
             not isinstance(phase.get("skip_reason"), str) or not phase["skip_reason"].strip()
         ):
             raise GateError(f"{node}: skipped phase has no structured skip reason")
+        if "subtest" in phase:
+            child = phase["subtest"]
+            if (not isinstance(child, dict) or set(child) != {"index", "msg", "kwargs"}
+                    or type(child["index"]) is not int
+                    or child["index"] != subtest_counts[node] + 1
+                    or child["msg"] is not None and not isinstance(child["msg"], str)
+                    or not isinstance(child["kwargs"], dict)
+                    or any(not isinstance(k, str) or not isinstance(v, str)
+                           for k, v in child["kwargs"].items())):
+                raise GateError(f"{node}: invalid or duplicate subtest identity")
+            if when != "call" or outcome != "passed":
+                raise GateError(f"{node}: subtest did not pass its call")
+            subtest_counts[node] += 1
+            continue
         if when in by_node[node]:
             raise GateError(f"{node}: duplicate pytest phase")
         by_node[node][when] = phase
@@ -190,6 +205,9 @@ def validate_report(report: dict[str, Any], spec: ReportSpec) -> dict[str, str]:
             raise GateError(f"{node}: successful setup without a call outcome")
         if setup["outcome"] == "skipped" and call is not None:
             raise GateError(f"{node}: skipped setup with a call outcome")
+        if subtest_counts[node] and (setup["outcome"] != "passed" or call is None
+                                     or call["outcome"] != "passed"):
+            raise GateError(f"{node}: subtests have no successful parent call")
         terminal = call if call is not None else setup
         if phases_by_name["teardown"]["outcome"] != "passed":
             raise GateError(f"{node}: teardown did not pass")

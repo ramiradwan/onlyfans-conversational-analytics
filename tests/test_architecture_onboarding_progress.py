@@ -41,6 +41,15 @@ def test_each_milestone_has_the_named_non_test_production_caller() -> None:
     ]
 
 
+def test_companion_progress_has_admission_and_observation_callers() -> None:
+    pairing = (ROOT / "app/persistence/companion_pairing.py").read_text("utf-8")
+    manager = (ROOT / "app/transport/manager.py").read_text("utf-8")
+    coordinator = (ROOT / "app/provisioning/progress_reporting.py").read_text("utf-8")
+    assert 'connection, "account-bound", now=confirmed_at, pairing_id=identifier' in pairing
+    assert "await self._observe_companion_progress(" in manager
+    assert "await asyncio.to_thread(self.reconcile)" in coordinator
+
+
 def test_hosted_reporting_cannot_poll_or_import_runtime_surfaces() -> None:
     reporting_files = (
         ROOT / "app/security/hosted_grants.py",

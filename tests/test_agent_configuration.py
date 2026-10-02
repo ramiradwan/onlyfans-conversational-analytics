@@ -6,6 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -128,6 +129,7 @@ def test_bootstrap_requires_a_dependency_closed_capture_policy() -> None:
         ("chats", "/api2/v2/users/*/chats"),
         ("messages", "/api2/v2/chats/*/messages"),
         ("messages", "/ws3"),
+        ("messages", "/ws3/*"),
     }
 
 
@@ -227,7 +229,7 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
     with client.websocket_connect("/ws/bridge") as bridge:
         bridge.send_json(fixture("bridge.hello"))
         assert bridge.receive_json()["type"] == "bridge.session"
-        for _ in range(4):
+        for _ in range(5):
             bridge.receive_json()
 
         with client.websocket_connect("/__test__/agent-protocol") as agent:
@@ -305,4 +307,89 @@ def test_config_drift_stays_degraded_for_stale_report_and_clears_on_confirmation
             assert converged["payload"]["degraded_reason"] is None
             converged_readiness = bridge.receive_json()
             assert converged_readiness["type"] == "system.state"
+
+
+def test_companion_config_report_reconciles_only_valid_current_revision(monkeypatch) -> None:
+    transport_manager.reset()
+    account = DEV_ACCOUNT_ID
+    installation = uuid4()
+    authority = AgentConfigurationAuthority(InMemoryAgentConfigRepository())
+    monkeypatch.setattr(transport_manager, "config_authority", authority)
+    document = authority.required_document(account)
+    binding = SimpleNamespace(
+        principal_id="agent", creator_account_id=account,
+        agent_installation_id=str(installation),
+    )
+    calls = []
+
+    class Progress:
+        def reconcile(self, **kwargs):
+            calls.append(kwargs)
+
+        def mark(self, milestone):
+            pass
+
+    async def broadcast(*args):
+        pass
+
+    monkeypatch.setattr(transport_manager, "_onboarding_progress", Progress())
+    monkeypatch.setattr(transport_manager, "is_current_fence", lambda lease: True)
+    monkeypatch.setattr(transport_manager, "broadcast_agent_state", broadcast)
+    monkeypatch.setattr(transport_manager, "broadcast_system_state", broadcast)
+    lease = SimpleNamespace(
+        websocket=SimpleNamespace(authority=SimpleNamespace(binding=binding)),
+        creator_account_id=account,
+        principal_id="agent",
+        agent_installation_id=installation,
+        applied_config_revision=None,
+    )
+    valid = SimpleNamespace(
+        config_revision=document.config_revision, digest=document.digest,
+        outcome="applied", capabilities=(),
+    )
+    asyncio.run(transport_manager.record_config_applied(lease, valid))
+    assert calls == [{"session": binding, "current_configuration": True}]
+    calls.clear()
+    invalid = SimpleNamespace(
+        config_revision=document.config_revision, digest="wrong-digest",
+        outcome="applied", capabilities=(),
+    )
+    asyncio.run(transport_manager.record_config_applied(lease, invalid))
+    assert calls == [{"session": binding, "current_configuration": False}]
+
+
+def test_companion_echo_requires_current_validated_revision(monkeypatch) -> None:
+    calls = []
+
+    class Progress:
+        def reconcile(self, **kwargs):
+            calls.append(kwargs)
+
+    installation = uuid4()
+    binding = SimpleNamespace(
+        principal_id="agent", creator_account_id=DEV_ACCOUNT_ID,
+        agent_installation_id=str(installation),
+    )
+    monkeypatch.setattr(transport_manager, "_onboarding_progress", Progress())
+    monkeypatch.setattr(transport_manager, "is_current_fence", lambda lease: True)
+    lease = SimpleNamespace(
+        websocket=SimpleNamespace(authority=SimpleNamespace(binding=binding)),
+        principal_id="agent", creator_account_id=DEV_ACCOUNT_ID,
+        agent_installation_id=installation,
+    )
+    record = SimpleNamespace(
+        required_config_revision="current", applied_config_revision="current",
+        last_failure=None,
+    )
+    observe = getattr(transport_manager, "_observe_companion_progress", None)
+    if observe is not None:
+        asyncio.run(observe(lease, record, echoed_revision="current"))
+    assert calls == [{"session": binding, "current_configuration": True}]
+    calls.clear()
+    asyncio.run(observe(lease, record, echoed_revision="old"))
+    assert calls == [{"session": binding, "current_configuration": False}]
+    calls.clear()
+    lease.agent_installation_id = uuid4()
+    asyncio.run(observe(lease, record, echoed_revision="current"))
+    assert calls == []
 

@@ -2,6 +2,8 @@
 
 Component results measure content algorithms, never scheduler visibility or trust
 admission. The scheduled scope checks the real path at a smaller account size.
+Component durations use perf_counter to measure short Windows operations. Trace
+coordinates retain the monotonic clock shared with the outer attribution layer.
 """
 from __future__ import annotations
 
@@ -305,20 +307,20 @@ def component_sample(db, previous, raw, operation, account, trace, *, index):
     from app.analytics.conversation_enrichment_units import message_frame, analyzer_frame
     trace.phase = f"sample-{index}/{operation}"
     check = lambda: None
-    constructed_at = time.monotonic()
+    constructed_at = time.perf_counter()
     with trace.span("component.construct", previous_records=previous.header.message_count):
         candidate = construct(previous, raw, operation, account, check)
-    construct_seconds = time.monotonic()-constructed_at
+    construct_seconds = time.perf_counter()-constructed_at
     db.execute("SAVEPOINT isolated_sample")
     try:
-        stored_at = time.monotonic()
+        stored_at = time.perf_counter()
         with trace.span("component.store"):
             db.execute("INSERT INTO projection_generations VALUES ('candidate',?,'building')", (previous.header.account_ref,))
             if sql.insert_units(db, "candidate", [candidate]) != 1:
                 raise ValueError("focused_candidate_not_stored")
             persisted = sql.load_unit(db, "candidate", candidate.header.account_ref, candidate.header.conversation_ref)
-        store_seconds = time.monotonic()-stored_at
-        validated_at = time.monotonic()
+        store_seconds = time.perf_counter()-stored_at
+        validated_at = time.perf_counter()
         with trace.span("component.validate"):
             dispatcher = getattr(sql, 'validate_one_added_unit', None)
             if dispatcher is None:
@@ -329,13 +331,13 @@ def component_sample(db, previous, raw, operation, account, trace, *, index):
                 accepted, appended = path is not None, path == 'append'
             if not accepted or appended != (operation == "append"):
                 raise ValueError("focused_validation_path_differs")
-        validation_seconds = time.monotonic()-validated_at
-        transition_seconds = time.monotonic()-constructed_at
+        validation_seconds = time.perf_counter()-validated_at
+        transition_seconds = time.perf_counter()-constructed_at
         # Independent source recomputation stays outside component timing, but is
         # executed for EVERY sample and compared with actual persisted bytes.
         enabled = trace.enabled
         trace.enabled = False
-        oracle_started = time.monotonic()
+        oracle_started = time.perf_counter()
         try:
             expected = full_unit(raw, account, previous.header.retention_cutoff)
             sql._validate_unit(persisted, check=check)
@@ -348,7 +350,7 @@ def component_sample(db, previous, raw, operation, account, trace, *, index):
             construct_seconds=construct_seconds, store_seconds=store_seconds, validation_seconds=validation_seconds,
             transition_seconds=transition_seconds,
             independent_rebuild_equal=True, persisted_content_revalidated=True,
-            oracle_seconds=time.monotonic()-oracle_started,
+            oracle_seconds=time.perf_counter()-oracle_started,
             input_digest=candidate.header.input_digest, output_digest=candidate.header.canonical_digest,
             unit_id=candidate.header.unit_id)
     finally:
@@ -362,7 +364,7 @@ async def run_component(args, q, light, outer, status, manifest, result, workdir
     from tests.continuous_analytics_fixture import ACCOUNT
     clock = datetime.fromisoformat(manifest["fixture"]["evaluation_clock"])
     raw = raw_fixture(args.messages, clock)
-    prep = time.monotonic()
+    prep = time.perf_counter()
     light.atomic_status(status, "focused-component-preparation")
     previous = full_unit(raw, ACCOUNT, clock-timedelta(days=90))
     _validate_unit(previous)
@@ -373,9 +375,9 @@ async def run_component(args, q, light, outer, status, manifest, result, workdir
         previous_unit_independently_validated=True,
         analyzer_entries=0, unchanged_analyzer_cache_payload_excluded=True,
         storage="SQLCipher in-memory, real enrichment-unit migration and minimal parent tables"),
-        preparation_seconds=time.monotonic()-prep, samples=[])
+        preparation_seconds=time.perf_counter()-prep, samples=[])
     trace = Attribution(enabled=args.trace_mode != "none")
-    start = time.monotonic()
+    start = time.perf_counter()
     try:
         if trace.enabled:
             trace.install()
@@ -384,16 +386,16 @@ async def run_component(args, q, light, outer, status, manifest, result, workdir
             for operation in operations:
                 index = len(result["samples"])
                 light.atomic_status(status, "focused-component-sample", index=index, operation=operation)
-                before = time.monotonic()
+                before = time.perf_counter()
                 sample = component_sample(db, previous, mutate_raw(raw, operation), operation, ACCOUNT, trace, index=index)
-                sample["sample_with_oracle_seconds"] = time.monotonic()-before
+                sample["sample_with_oracle_seconds"] = time.perf_counter()-before
                 result["samples"].append(sample)
                 q.write_once(args.output/"samples"/f"{index:02}.json", sample)
         result["complete"] = True
     finally:
         trace.restore()
         result["attribution"] = trace.events
-        result["iteration_seconds"] = time.monotonic()-start
+        result["iteration_seconds"] = time.perf_counter()-start
         db.close()
         result["component_database_closed"] = True
         result["safety"] = dict(scheduler_used=False, publication_authority_tested=False,
@@ -434,12 +436,12 @@ async def run_update(args, q, light, outer, status, manifest, result, workdir):
         # idle, forced rebuild, recovered process-local proofs, or cold-prefix claim.
         work.add(0, "visibility-ordinary-dominant")
         result["source_before"] = work.counts()
-        prep = time.monotonic()
+        prep = time.perf_counter()
         light.atomic_status(status, "focused-update-cold-preparation")
         await direct(work, journal, resources, "cold")
         resources.start()
         await scheduler.start(recover=True)
-        result["preparation_seconds"] = time.monotonic()-prep
+        result["preparation_seconds"] = time.perf_counter()-prep
         case = "focused/"+args.focused_operation
         trace.phase = outer.phase = case
         if args.trace_mode != "none":

@@ -1,5 +1,6 @@
 import {
   ProtocolValidationError,
+  captureStateReportRequest, captureStateReportResponse, historyCheckBeginRequest, historyCheckBeginResponse,
   array,
   boolean,
   capturePolicy,
@@ -30,7 +31,7 @@ export const READ_ONLY_CAPABILITIES = Object.freeze([
 
 const healthSummary = object({ status: literal('healthy', 'degraded'), detail: nullable(string) });
 const capabilityStatus = object({
-  capability: literal(...READ_ONLY_CAPABILITIES),
+  capability: literal(...READ_ONLY_CAPABILITIES, 'history.catchup.v1'),
   status: literal('active', 'degraded', 'unsupported'),
   detail: nullable(string),
 });
@@ -104,7 +105,7 @@ const payloadValidators = {
     auth_ticket: nonEmptyString,
     agent_installation_id: uuid,
     requested_creator_account_id: nonEmptyString,
-    capabilities: array(literal(...READ_ONLY_CAPABILITIES), 1),
+    capabilities: array(literal(...READ_ONLY_CAPABILITIES, 'history.catchup.v1'), 1),
     extension_version: nonEmptyString,
     agent_stream_id: uuid,
     last_acknowledged_source_seq: integer(0),
@@ -159,7 +160,7 @@ const payloadValidators = {
     source_seq: integer(1),
     acquisition_origin: literal('passive', 'signer'),
     change: rawIngestChange,
-  }),
+  }, {check_id: nullable(uuid)}),
   'ingest.ack': object({
     connection_id: uuid,
     creator_account_id: nonEmptyString,
@@ -305,3 +306,23 @@ export function parseAgentConfigDocumentResponse(value) {
 export const isAgentConfigGetRequest = (value) => isParsedBy(parseAgentConfigGetRequest, value);
 export const isAgentConfigDocumentResponse = (value) => isParsedBy(parseAgentConfigDocumentResponse, value);
 export { ProtocolValidationError };
+
+export function parseCaptureStateReportRequest(value) {
+  captureStateReportRequest(value, '$');
+  return value;
+}
+
+export function parseCaptureStateReportResponse(value) {
+  captureStateReportResponse(value, '$');
+  return value;
+}
+
+export function parseHistoryCheckBeginRequest(value) {
+  historyCheckBeginRequest(value, '$');
+  return value;
+}
+
+export function parseHistoryCheckBeginResponse(value) {
+  historyCheckBeginResponse(value, '$');
+  return value;
+}

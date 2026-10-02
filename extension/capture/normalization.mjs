@@ -110,7 +110,7 @@ export function normalizeChatRecord(record, observedAt) {
 /** Reduce a platform message record to the exact canonical message inputs. */
 export function normalizeMessageRecord(
   record,
-  { contextChatId = null } = {},
+  { contextChatId = null, ownEchoCreatorId = null } = {},
 ) {
   if (!isRecord(record)) return null;
   const messageId = identifier(firstDefined(record, [
@@ -123,7 +123,7 @@ export function normalizeMessageRecord(
     ['chatId'],
     ['chat', 'id'],
   ])) ?? identifier(contextChatId);
-  const senderId = identifier(firstDefined(record, [
+  let senderId = identifier(firstDefined(record, [
     ['sender_platform_user_id'],
     ['senderPlatformUserId'],
     ['sender_id'],
@@ -132,6 +132,19 @@ export function normalizeMessageRecord(
     ['from_user', 'id'],
     ['sender', 'id'],
   ]));
+  let inferredOwnEcho = false;
+  if (senderId === null && identifier(ownEchoCreatorId) !== null
+    && !['sender_platform_user_id', 'senderPlatformUserId', 'sender_id', 'senderId',
+      'fromUser', 'from_user', 'sender', 'author'].some((key) => Object.hasOwn(record, key))) {
+    const recipientId = identifier(firstDefined(record, [
+      ['toUser', 'id'], ['to_user', 'id'], ['recipient', 'id'], ['recipient_id'], ['recipientId'],
+    ]));
+    if (recipientId !== null && recipientId !== identifier(ownEchoCreatorId)
+      && chatId === recipientId) {
+      senderId = identifier(ownEchoCreatorId);
+      inferredOwnEcho = true;
+    }
+  }
   const text = firstDefined(record, [['text'], ['body']]);
   const sentAt = normalizedTimestamp(firstDefined(record, [
     ['sent_at'],
@@ -140,7 +153,7 @@ export function normalizeMessageRecord(
     ['createdAt'],
     ['postedAt'],
   ]));
-  const direction = messageDirection(record, senderId);
+  const direction = inferredOwnEcho ? 'outbound' : messageDirection(record, senderId);
   if (
     messageId === null
     || chatId === null
