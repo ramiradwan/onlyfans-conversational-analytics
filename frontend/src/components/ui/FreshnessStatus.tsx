@@ -37,8 +37,22 @@ export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new D
   const id = useId();
   const phase = useSyncExternalStore(connectionGrace.subscribe, connectionGrace.getSnapshot);
   const note = connectionNote(phase);
-  const port = defaultExtensionPort();
-  useSyncExternalStore(port.subscribe, port.getState);
+  const [navigation, setNavigation] = useState<'creator' | 'setup' | null>(null);
+  useEffect(() => {
+    if (navigation === null) return;
+    const port = defaultExtensionPort();
+    let finished = false;
+    const openWhenConnected = () => {
+      const status = port.getState().status;
+      if (finished || status === 'connecting') return;
+      finished = true;
+      if (status === 'connected') port.open(navigation);
+      setNavigation(null);
+    };
+    const unsubscribe = port.subscribe(openWhenConnected);
+    openWhenConnected();
+    return unsubscribe;
+  }, [navigation]);
   const rows = snapshotUsable ? freshnessRows(freshness, now, timeZone) : [];
   const color = shown.icon === 'ring-active' ? 'brand.main' : ({ settled: 'success.main', checking: 'brand.main', unknown: 'text.disabled', attention: 'warning.main', user: 'text.secondary', error: 'error.main' })[shown.tone];
   return <>
@@ -59,7 +73,7 @@ export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new D
         <Box><Typography variant="subtitle2">{current.title}</Typography><Typography variant="body2">{current.sentence}</Typography></Box>
         <Box component="dl" sx={{ display: 'grid', gap: 1, m: 0 }}>{[...(note ? [{ label: 'Connection', value: note }] : []), ...rows].slice(0, 3).map((row) => <Box key={row.label}><Typography component="dt" variant="caption">{row.label}</Typography><Typography component="dd" variant="body2" sx={{ m: 0, fontVariantNumeric: 'tabular-nums' }}>{row.value}</Typography></Box>)}</Box>
         {current.action && <Button size="small" variant="outlined" component={current.action.destination === 'settings' ? 'a' : 'button'} href={current.action.destination === 'settings' ? '/settings#browser-extension' : undefined}
-          onClick={() => { const destination = current.action?.destination; if (destination === 'reload') window.location.reload(); else if (destination === 'creator' || destination === 'setup') port.open(destination); setAnchor(null); }} sx={{ alignSelf: 'flex-start' }}>{current.action.label}</Button>}
+          onClick={() => { const destination = current.action?.destination; if (destination === 'reload') window.location.reload(); else if (destination === 'creator' || destination === 'setup') setNavigation(destination); setAnchor(null); }} sx={{ alignSelf: 'flex-start' }}>{current.action.label}</Button>}
       </Stack>
     </Popover>
   </>;

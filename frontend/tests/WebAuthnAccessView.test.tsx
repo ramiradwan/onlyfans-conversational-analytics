@@ -172,4 +172,27 @@ describe('WebAuthn access view', () => {
     pending.resolve();
     await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
   });
+
+  it('keeps newly opened failure details until the next attempt and lets the same failure reopen', async () => {
+    const pending = deferred();
+    const failure = new Error('No passkey was selected.');
+    const login = vi.fn()
+      .mockRejectedValueOnce(failure)
+      .mockImplementationOnce(() => pending.promise.then(() => { throw failure; }));
+    const view = renderView({ enroll: vi.fn(), login });
+
+    fireEvent.click(view.signIn());
+    const alert = await readFailure();
+    expect(screen.getByRole('dialog').contains(alert)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    fireEvent.click(view.signIn());
+    expect(screen.queryByRole('button', { name: 'Show details' })).toBeNull();
+    expect(view.signIn().disabled).toBe(true);
+    pending.resolve();
+    expect((await readFailure()).textContent).toBe(alert.textContent);
+    expect(login).toHaveBeenCalledTimes(2);
+    expect(view.onAuthenticated).not.toHaveBeenCalled();
+  });
 });

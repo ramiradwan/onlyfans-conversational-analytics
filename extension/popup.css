@@ -896,7 +896,6 @@ main:has(#mode-choice:not(.hidden)) #journey-primary:hover:not(:disabled) { back
 body[data-surface="popup"] .popup-action-only {
   padding: 0; border: 0; background: transparent; box-shadow: none;
 }
-body[data-surface="popup"] .popup-action-only > :not(button) { display: none; }
 body[data-surface="popup"] #pause { margin: 0 0 12px; }
 body[data-surface="popup"] #desktop-control-note { margin: 0 0 12px; }
 #preview-metrics { border: var(--dipsy-border-thin) solid var(--dipsy-intent-surface-dominant-border); box-shadow: var(--dipsy-intent-surface-dominant-elevation); }

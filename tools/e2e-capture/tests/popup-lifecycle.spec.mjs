@@ -408,7 +408,7 @@ test('connection details open in Options and repeated entry reuses that tab', as
   try {
     await browser.set({ mode: 'full', paired: true });
     const popup = await browser.openToolbarPopup();
-    await expect.poll(() => popup.text('#journey-title')).toBe('Your analysis is ready');
+    await expect.poll(() => popup.text('#journey-title')).toBe('Ready');
     const opened = browser.context.waitForEvent('page');
     await popup.click('#open-connection');
     const options = await opened;
@@ -475,7 +475,8 @@ test('focus changes and closing an observing popup preserve pairing; closing set
     await setup.locator('#pair-companion').click();
     await expect(setup.locator('#pairing-code')).toHaveText('483 217');
     const observer = await browser.openToolbarPopup();
-    await expect.poll(() => observer.text('#journey-title')).toBe('Connection in progress');
+    await expect.poll(() => observer.text('#journey-title')).toBe('Not connected');
+    await expect.poll(() => observer.text('#journey-primary')).toBe('Continue setup');
     expect(await observer.visible('#pairing-code')).toBe(false);
     await observer.close();
     const other = await browser.context.newPage(); await other.goto('about:blank'); await other.bringToFront();
@@ -508,7 +509,7 @@ test('a confirmed connection stays in setup and readiness comes from the desktop
     expect(setup.isClosed()).toBe(false);
     expect(await browser.state()).toMatchObject({ paired: true, cancelled: 0 });
     const reopened = await browser.openToolbarPopup();
-    await expect.poll(() => reopened.text('#journey-title')).toBe('Your analysis is ready');
+    await expect.poll(() => reopened.text('#journey-title')).toBe('Ready');
     expect(await reopened.visible('#pair-companion')).toBe(false);
   } finally { await browser.close(); }
 });

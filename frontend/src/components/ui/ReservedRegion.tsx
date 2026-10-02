@@ -32,15 +32,16 @@ export function ReservedNotice({ id, notice }: { id: string; notice: NoticeConte
 }
 
 export function StatusLine({ id, text, tone = 'secondary' }: { id: string; text: string | null; tone?: 'secondary' | 'error' }) {
-  const [open, setOpen] = useState(false);
+  const [expandedText, setExpandedText] = useState<string | null>(null);
+  const open = text !== null && expandedText === text;
+  if (expandedText !== null && expandedText !== text) setExpandedText(null);
   const details = Boolean(text && text.length > 60);
-  useEffect(() => setOpen(false), [text]);
   return <><ReservedRegion id={id} size={{ xs: sizes.statusLine.narrow, sm: sizes.statusLine.wide }}>
     <Box data-region-content sx={{ display: 'flex', gap: 1, alignItems: 'baseline', visibility: text ? 'visible' : 'hidden' }}>
       <Typography variant="body2" role={tone === 'error' && !details ? 'alert' : 'status'} sx={{ lineHeight: '20px', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>{details ? 'Details available' : text || '\u00a0'}</Typography>
-      {details && <Button onClick={() => setOpen(true)} size="small" sx={{ p: 0, minWidth: 0, lineHeight: '20px' }}>Show details</Button>}
+      {details && <Button onClick={() => setExpandedText(text)} size="small" sx={{ p: 0, minWidth: 0, lineHeight: '20px' }}>Show details</Button>}
     </Box>
-  </ReservedRegion><Dialog open={open} onClose={() => setOpen(false)}><DialogTitle>Details</DialogTitle><DialogContent sx={{ maxHeight: '60vh', overflow: 'auto' }}><Typography role={tone === 'error' ? 'alert' : undefined}>{text}</Typography></DialogContent><Button onClick={() => setOpen(false)}>Close</Button></Dialog></>;
+  </ReservedRegion><Dialog open={open} onClose={() => setExpandedText(null)}><DialogTitle>Details</DialogTitle><DialogContent sx={{ maxHeight: '60vh', overflow: 'auto' }}><Typography role={tone === 'error' ? 'alert' : undefined}>{text}</Typography></DialogContent><Button onClick={() => setExpandedText(null)}>Close</Button></Dialog></>;
 }
 
 export function ReservedValue({ id, value }: { id: string; value: number | null | undefined }) {
