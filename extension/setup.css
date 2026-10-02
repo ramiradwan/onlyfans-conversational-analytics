@@ -82,3 +82,28 @@ dialog::backdrop { background: color-mix(in oklch, var(--dipsy-color-text) 35%, 
 /* The compact window the desktop app opens shows only its one task. */
 main[data-handoff="active"] #open-options,
 main[data-handoff="complete"] #open-options { display: none; }
+
+.reserved-rail { height: 52px; margin-bottom: 24px; }
+.reserved-rail #setup-progress { margin: 0; }
+.reserved-rail #setup-progress button { display: block; height: 52px; min-height: 52px; line-height: 16px; }
+.extension-stage { height: 520px; overflow-y: auto; scrollbar-gutter: stable; }
+.extension-stage > [data-region-content] { min-height: 100%; display: flow-root; }
+.options-frame { height: 480px; overflow-y: auto; scrollbar-gutter: stable; margin-bottom: 24px; }
+.options-frame section { margin-bottom: 0; }
+.options-frame:first-of-type { height: 320px; }
+#setup-progress li.hidden { display: block !important; visibility: hidden; }
+.extension-stage #review-notice { height: 48px; margin: 0; }
+.extension-stage #back-current { height: 40px; margin: 0; }
+.extension-stage #review-notice.hidden,
+.extension-stage #back-current.hidden { display: block !important; visibility: hidden; }
+.extension-stage { position: relative; }
+.extension-stage #loading { position: absolute; top: 0; left: 0; margin: 0; }
+body[data-surface="options"] .section-heading { display: grid; grid-template-columns: minmax(0, 1fr) 9em; min-height: 80px; }
+body[data-surface="options"] .section-heading .status-line { width: 9em; }
+body[data-surface="options"] .connection-grid div { display: grid; grid-template-columns: minmax(0, 1fr) 9em; min-height: 48px; }
+body[data-surface="options"] .connection-grid dd { text-align: left; }
+body[data-surface="options"] #brain-status { min-height: 72px; }
+body[data-surface="options"] .settings-row p { min-height: 72px; }
+body[data-surface="options"] .settings-row button.hidden { display: inline-flex !important; visibility: hidden; }
+body[data-surface="options"] .settings-row.hidden { display: flex !important; visibility: hidden; }
+@media (max-width: 600px) { .extension-stage { height: 640px; } .options-frame { height: 600px; } }

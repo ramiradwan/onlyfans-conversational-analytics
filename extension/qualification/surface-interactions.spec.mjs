@@ -2,6 +2,16 @@ import { test, expect } from '@playwright/test';
 import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
 const calls = (page) => page.evaluate(() => window.__surfaceFixture.calls);
 
+test('Preview keeps its status and Full review action visible in the reserved frames', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.preview);
+  await expect(page.locator('#journey-title')).toBeVisible();
+  await expect(page.locator('#journey-title')).toHaveText('Ready');
+  await expect(page.locator('#journey-primary')).toBeVisible();
+  await page.locator('#journey-primary').click();
+  expect((await calls(page)).filter((call) => call.type === 'ofca.ui.open-surface'))
+    .toEqual([{ type: 'ofca.ui.open-surface', surface: 'setup', section: 'full' }]);
+});
+
 test('loading setup never records approvals or requests browser access', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.software_activation);
   await expect(page.locator('#terms-accepted')).not.toBeChecked();

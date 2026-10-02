@@ -23,7 +23,7 @@ export async function assertNumericTypography(page, viewport) {
     const baseline = (element) => {
       const marker = document.createElement('span');
       marker.style.cssText = 'display:inline-block;width:0;height:0;padding:0;margin:0';
-      element.appendChild(marker);
+      (element.querySelector('[data-region-content]') ?? element).appendChild(marker);
       const y = marker.getBoundingClientRect().top;
       marker.remove();
       return y;

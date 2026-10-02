@@ -168,7 +168,7 @@ test('invalid setup-code input is rejected immediately and never fetched', async
     await controller.submitClaim({ preventDefault() {} });
     assert.equal(fetchCalls.length, 1, `invalid package was fetched: ${expectedMessage}`);
   }
-  assert.equal(elements.claimPackageCount.textContent, '1,400+ / 1,400 characters');
+  assert.equal(elements.claimPackageCount.textContent, '');
 });
 
 test('surrounding setup-code whitespace is accepted and the exact trimmed value is submitted', async () => {
@@ -185,7 +185,7 @@ test('surrounding setup-code whitespace is accepted and the exact trimmed value 
 
   assert.equal(fetchCalls.length, 1);
   assert.deepEqual(JSON.parse(fetchCalls[0][1].body), { package: VALID_PACKAGE });
-  assert.equal(elements.claimPackageCount.textContent, '19 / 1,400 characters');
+  assert.equal(elements.claimPackageCount.textContent, '');
 });
 
 test('all decoder refusal reasons have dedicated actionable public copy', async () => {
@@ -291,7 +291,7 @@ test('registration and each successful action advance exactly one accessible ste
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(elements.acquireAssociation.disabled, true);
   assert.equal(elements.finalizeProvisioning.disabled, true);
-  assert.match(elements.status.textContent, /desktop app will restart/i);
+  assert.match(elements.status.textContent, /desktop app is restarting/i);
 
   for (const [, options] of fetchCalls) {
     assert.equal(options.credentials, 'same-origin');
@@ -325,7 +325,7 @@ test('configured restart on arrival completes every step and skips extension det
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(elements.acquireAssociation.disabled, true);
   assert.equal(elements.finalizeProvisioning.disabled, true);
-  assert.match(elements.status.textContent, /desktop app will restart/i);
+  assert.match(elements.status.textContent, /desktop app is restarting/i);
 });
 
 test('confirm is single-flight and completed actions cannot be repeated', async () => {

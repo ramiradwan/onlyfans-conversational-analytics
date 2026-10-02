@@ -1,7 +1,5 @@
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import {
-  Alert,
-  AlertTitle,
   Box,
   Button,
   LinearProgress,
@@ -15,6 +13,7 @@ import type { ReactNode } from 'react';
 
 import type { AnalyticsReadState } from '../../analytics';
 import { componentTokens } from '../../theme';
+import { ReservedNotice } from '../ui/ReservedRegion';
 
 const StateCard = styled(Paper)(({ theme }) => ({
   alignContent: 'center',
@@ -174,13 +173,8 @@ export function AnalyticsStateFrame({ state, children, onRetry }: AnalyticsState
 
   return (
     <Stack spacing={2} aria-busy={state.isRefreshing}>
-      {notice && (
-        <Alert severity={notice.severity} role={notice.severity === 'error' ? 'alert' : undefined}>
-          <AlertTitle>{notice.title}</AlertTitle>
-          {notice.detail}
-        </Alert>
-      )}
-      {state.isRefreshing && <LinearProgress aria-label="Refreshing analytics" />}
+      <ReservedNotice id="analytics-notice" notice={notice ? { title: notice.title, body: notice.detail, severity: notice.severity } : null} />
+      <Box sx={{ height: 4, visibility: state.isRefreshing ? 'visible' : 'hidden' }}><LinearProgress aria-label="Refreshing analytics" /></Box>
       <Content $refreshing={state.isRefreshing}>{children}</Content>
     </Stack>
   );

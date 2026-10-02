@@ -112,7 +112,7 @@ export function deriveCustomerJourney({
         id: CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE,
         tone: 'warning',
         title: 'Desktop app is unavailable',
-        body: 'Open the desktop app, then try again. Your connection is saved.',
+        body: 'Open the desktop app. Your connection is saved.',
         primaryAction: 'retry_full',
         primaryLabel: 'Retry connection',
         secondaryAction: null,
@@ -124,8 +124,8 @@ export function deriveCustomerJourney({
       tone: 'warning',
       title: 'Set up the desktop app for Full analytics',
       body: desktopDownloadAvailable
-        ? 'Full analytics runs in the desktop app on this computer. Install or open it and finish its setup, then check again.'
-        : 'Full analytics runs in the desktop app on this computer. Open it and finish its setup, then check again.',
+        ? 'Install or open the desktop app to store and analyze messages on this computer.'
+        : 'Open the desktop app to store and analyze messages on this computer.',
       primaryAction: desktopDownloadAvailable ? 'install_desktop' : 'retry_full',
       primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : 'Check again',
       secondaryAction: desktopDownloadAvailable ? 'retry_full' : null,
@@ -151,7 +151,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: 'warning',
       title: 'Sign in to your creator account',
-      body: 'Use OnlyFans in this browser, then return here.',
+      body: 'Use the creator account you want to connect.',
       primaryAction: 'open_creator_account',
       primaryLabel: 'Open creator account',
       secondaryAction: 'open_dashboard',

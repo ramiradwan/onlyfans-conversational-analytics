@@ -182,12 +182,12 @@ describe('CreatorVaultControls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete all messages' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete all' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(await screen.findByText("Deleting isn't finished")).toBeTruthy();
+    expect(await screen.findByText(/Deleting isn't finished/)).toBeTruthy();
     expect(screen.queryByText('Messages deleted.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Finish deleting' }));
     await waitFor(() => expect(retryDeletion).toHaveBeenCalledWith('operation-1'));
     expect(await screen.findByText('Messages deleted.')).toBeTruthy();
-    expect(screen.queryByText("Deleting isn't finished")).toBeNull();
+    expect(screen.queryByText(/Deleting isn't finished/)).toBeNull();
   });
 
   it('shows the indefinite option only when the backend capability permits it', async () => {
@@ -221,7 +221,7 @@ describe('CreatorVaultControls', () => {
     const archiveDialog = within(screen.getByRole('dialog'));
     expect(archiveDialog.getByLabelText('Days to keep')).toBeTruthy();
     fireEvent.click(archiveDialog.getByRole('radio', { name: 'Keep until I delete them' }));
-    expect(archiveDialog.queryByLabelText('Days to keep')).toBeNull();
+    expect(archiveDialog.queryByRole('spinbutton', { name: 'Days to keep' })).toBeNull();
     fireEvent.click(archiveDialog.getByRole('button', { name: 'Turn on archive' }));
     await waitFor(() => expect(api.command).toHaveBeenCalledWith({
       action: 'enable_indefinite',

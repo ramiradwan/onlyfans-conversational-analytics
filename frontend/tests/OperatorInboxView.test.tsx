@@ -363,9 +363,8 @@ describe('OperatorInboxView summary and REST-page integration', () => {
     expect(await screen.findByText('Still visible')).toBeTruthy();
     act(() => store.markDisconnected());
 
-    const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Updates paused');
-    expect(alert.textContent).toContain('Showing your last conversations while reconnecting.');
+    expect(screen.queryByText('Updates paused')).toBeNull();
+    expect(screen.queryByText('Connection interrupted')).toBeNull();
     expect(screen.getByText('Still visible')).toBeTruthy();
     await waitFor(() => expect(store.getState().liveFreshness.status).toBe('delayed'));
   });

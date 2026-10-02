@@ -183,7 +183,7 @@ function mountDashboard(
 /** Mounts the dashboard and lets the readiness request settle. */
 async function renderDashboard(
   store: ReturnType<typeof createBridgeTransportStore>,
-  activationApi = readinessApi(null),
+  activationApi = readinessApi(true),
 ) {
   const view = mountDashboard(store, activationApi);
   await act(async () => {
@@ -214,15 +214,27 @@ afterEach(() => {
 });
 
 describe('CreatorDashboardView', () => {
-  it('shows only the processing status and no alert before the first snapshot', async () => {
+  it('shows the saved chat count after history completes', async () => {
+    await renderDashboard(readyStore());
+    expect(overview().getByText('History saved for 1 chats')).toBeTruthy();
+    expect(overview().queryByRole('progressbar')).toBeNull();
+  });
+  it('shows available metrics while setup readiness remains unknown', () => {
+    const api = readinessApi(null, () => new Promise(() => {}));
+    mountDashboard(readyStore(), api);
+    expectStat('Messages', '19');
+    expect(screen.getByText('Checking setup…')).toBeTruthy();
+    expect(screen.queryByText('Finish setup')).toBeNull();
+  });
+  it('reserves metric skeletons before the first snapshot', async () => {
     const store = createBridgeTransportStore();
     store.bindAccount(ACCOUNT_ID);
 
     await renderDashboard(store);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toBe('Processing your data…');
-    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Recent conversations' })).toBeNull();
   });
@@ -328,7 +340,7 @@ describe('CreatorDashboardView', () => {
       }),
     );
 
-    await renderDashboard(store);
+    await renderDashboard(store, readinessApi(false));
 
     const prompt = within(screen.getByRole('region', { name: 'Finish setup' }));
     expect(prompt.getByText('1 of 3 complete')).toBeTruthy();
@@ -336,12 +348,12 @@ describe('CreatorDashboardView', () => {
     expect(prompt.getByText('Turn on message history').textContent).not.toContain('(done)');
     expect(prompt.getByText('Turn on Full analytics').textContent).not.toContain('(done)');
     const current = prompt.getAllByRole('listitem').filter((item) => item.getAttribute('aria-current') === 'step');
-    expect(current.map((item) => item.textContent)).toEqual(['2Turn on message history']);
+    expect(current.map((item) => item.textContent)).toEqual(['2Turn on message historyAllow browser access so message history can be read.']);
     expect(prompt.getByRole('link', { name: 'Continue setup' }).getAttribute('href')).toBe(
-      '/settings',
+      '/settings#browser-extension',
     );
-    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
-    expect(screen.queryByRole('region', { name: 'Recent conversations' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Recent conversations' })).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -409,7 +421,7 @@ describe('CreatorDashboardView', () => {
     expectStat('Messages', '19');
 
     act(() => store.markDisconnected());
-    expect(screen.getByRole('alert').textContent).toContain('Updates paused');
+    expect(screen.queryByRole('alert')).toBeNull();
     expectStat('Messages', '19');
   });
 
@@ -458,8 +470,8 @@ describe('CreatorDashboardView', () => {
     const api = readinessApi(null, () => new Promise((settle) => { resolve = settle; }));
     mountDashboard(readyStore(), api);
 
-    expect(screen.getByRole('status').textContent).toBe('Processing your data…');
-    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
+    expect(screen.getByText('Checking setup…')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
 
     await act(async () => resolve({
@@ -470,19 +482,20 @@ describe('CreatorDashboardView', () => {
 
     const prompt = screen.getByRole('region', { name: 'Finish setup' });
     const overview = screen.getByRole('region', { name: 'Overview' });
-    expect(prompt.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByText('Processing your data…')).toBeNull();
+    expect(overview.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('Loading dashboard…')).toBeNull();
     expectStat('Messages', '19');
   });
 
-  it('renders the settled layout at once when the dashboard mounts again', async () => {
+  it('checks readiness again on remount while keeping the snapshot', async () => {
     const store = readyStore();
     const api = readinessApi(false);
     const first = await renderDashboard(store, api);
     first.unmount();
 
     mountDashboard(store, api);
-
+    expect(screen.getByText('Checking setup…')).toBeTruthy();
+    await act(async () => undefined);
     expect(screen.getByRole('region', { name: 'Finish setup' })).toBeTruthy();
     expectStat('Messages', '19');
   });
@@ -492,12 +505,14 @@ describe('CreatorDashboardView', () => {
     try {
       const api = readinessApi(null, () => new Promise(() => undefined));
       mountDashboard(readyStore(), api);
-      expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
+      expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
 
       act(() => vi.advanceTimersByTime(3000));
 
       expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
       expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
+      expect(screen.getByText('Setup status is unavailable.')).toBeTruthy();
+      expect(screen.getByText('Setup status is unavailable.').closest('[role="alert"]')).not.toBeNull();
       expect(vi.mocked(api.readiness).mock.calls[0]?.[0]?.aborted).toBe(true);
     } finally {
       vi.useRealTimers();

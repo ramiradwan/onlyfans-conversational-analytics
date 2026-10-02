@@ -85,11 +85,11 @@ function render(model) {
   text('full-secondary', mode === 'preview' ? 'Keep Preview' : 'Not now');
   text('access-title', status.phase === 'permission_required' ? 'Allow site access' : 'Apply site access');
   text('access-body', status.phase === 'permission_required'
-    ? 'Allow access to OnlyFans to restart the analytics mode you chose.'
-    : 'Reload your open OnlyFans tabs to apply the access you allowed.');
+    ? 'Allow site access so the extension can read activity from your creator account.'
+    : 'Reload when you are ready to apply the access you allowed.');
   show('restore-access', status.phase === 'permission_required');
   show('reload-tabs', status.phase !== 'permission_required' && status.reload_required === true);
-  renderJourney(currentJourney);
+  renderJourney(currentJourney, model);
   if (currentJourney.id === 'preview_available') text('journey-body', 'Your daily counts are available in the extension. Preview does not need the desktop app.');
   if (currentJourney.id === 'full_ready') text('journey-body', 'Setup is finished. Insights and stored messages are in the desktop app.');
   renderPairing(model, currentJourney);

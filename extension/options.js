@@ -31,14 +31,14 @@ function render(model) {
   // While the desktop app can control this browser, its Disconnect removes both sides.
   const forgettable = model.pairing.state === 'paired' && model.pairing.desktop_control !== true;
   show('forget-companion', forgettable);
-  element('forget-companion').closest('.settings-row').classList.toggle('hidden', !forgettable);
+  element('forget-companion').closest('.settings-row').classList.toggle('reserved-empty', !forgettable);
   show('history', status.phase === 'full' && model.pairing.state === 'paired');
-  element('history').closest('.settings-row').classList.toggle('hidden', status.phase !== 'full' || model.pairing.state !== 'paired');
+  element('history').closest('.settings-row').classList.toggle('reserved-empty', status.phase !== 'full' || model.pairing.state !== 'paired');
   text('history', status.history_permission ? 'Open history settings' : 'Allow message history');
   if (location.hash === '#history' && status.history_permission) void finishHandoff();
   text('history-status', status.history_permission
     ? 'Choose which earlier conversations to include in the desktop app.'
-    : 'Allow browser access, then choose earlier conversations in the desktop app.');
+    : 'Allow browser access so message history can be read.');
   text('pending-count', new Intl.NumberFormat().format(status.delivery?.pending_entries ?? 0));
   const drops = Object.values(status.delivery?.capture_drop_counts ?? {}).reduce((sum, count) => sum + (Number.isSafeInteger(count) ? count : 0), 0);
   text('capture-health', status.delivery?.startup_error_code ? 'Full analytics could not start. Open the desktop app, then retry in setup.'
@@ -80,6 +80,7 @@ page.bind('history', () => client.model.status.history_permission
 page.bind('open-setup', () => openSurface('setup'));
 page.bind('open-dashboard', () => chrome.tabs.create({ url: client.model.config.dashboard_url }));
 page.bind('manage-desktop-data', () => chrome.tabs.create({ url: client.model.config.history_settings_url }));
+element('open-connection-details').addEventListener('click', () => element('connection-details-dialog').showModal());
 page.bind('retry-runtime', () => client.sync());
 text('version-label', `Conversation Analytics · version ${chrome.runtime.getManifest().version}`);
 for (const id of mutations) page.lock(id, true);

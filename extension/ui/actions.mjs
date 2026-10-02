@@ -30,15 +30,16 @@ export async function allowHistory(model) {
   return chrome.tabs.create({ url: model.config.history_settings_url });
 }
 
-export async function openCreatorAccount() {
-  try {
-    const tabs = await chrome.tabs.query({ url: [ONLYFANS_ORIGIN_PATTERN] });
-    const tab = tabs.find((candidate) => candidate.active === true) ?? tabs[0];
-    if (Number.isInteger(tab?.id)) {
-      await chrome.tabs.update(tab.id, { active: true });
-      if (Number.isInteger(tab.windowId)) await chrome.windows?.update?.(tab.windowId, { focused: true });
-      return;
-    }
-  } catch {}
-  await chrome.tabs.create({ url: 'https://onlyfans.com/' });
+export async function openCreatorAccount(chromeApi = globalThis.chrome) {
+  let tabs;
+  try { tabs = await chromeApi.tabs.query({ url: [ONLYFANS_ORIGIN_PATTERN] }); } catch { return; }
+  const tab = tabs.find((candidate) => candidate.active === true) ?? tabs[0];
+  if (Number.isInteger(tab?.id)) {
+    try {
+      await chromeApi.tabs.update(tab.id, { active: true });
+      if (Number.isInteger(tab.windowId)) await chromeApi.windows?.update?.(tab.windowId, { focused: true });
+    } catch {}
+    return;
+  }
+  await chromeApi.tabs.create({ url: 'https://onlyfans.com/' });
 }

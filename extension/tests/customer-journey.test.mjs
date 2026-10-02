@@ -89,7 +89,7 @@ test('first Full attempt explains that the desktop app is required', () => {
   assert.equal(result.id, CUSTOMER_STATES.DESKTOP_APP_NEEDED);
   assert.equal(result.primaryLabel, 'Install desktop app');
   assert.equal(result.secondaryAction, 'retry_full');
-  assert.match(result.body, /desktop app on this computer/);
+  assert.equal(result.body, 'Install or open the desktop app to store and analyze messages on this computer.');
   assert.doesNotMatch(result.body, /Preview/);
 
   const noDownload = deriveCustomerJourney({

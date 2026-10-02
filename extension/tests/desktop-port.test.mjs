@@ -58,6 +58,7 @@ test('the stage follows the extension-owned prerequisites in order', () => {
 });
 
 test('port messages have closed schemas', () => {
+  assert.equal(isDesktopMessage({ type: 'open', version: 1, step: 'creator' }), true);
   assert.equal(isDesktopMessage({ type: 'open', version: 1, step: 'setup' }), true);
   assert.equal(isDesktopMessage({ type: 'open', version: 1, step: 'connection' }), true);
   assert.equal(isDesktopMessage({ type: 'open', version: 1, step: 'access' }), true);
@@ -69,6 +70,19 @@ test('port messages have closed schemas', () => {
     { type: 'pair', version: 2 }, { type: 'pair', version: 1, extra: true }, { type: 'confirm', version: 1 },
     { type: 'forget', version: 1 }, null, [],
   ]) assert.equal(isDesktopMessage(message), false, JSON.stringify(message));
+});
+
+test('creator navigation needs an explicit port message and never starts pairing', async () => {
+  const h = harness();
+  const port = h.connect();
+  await tick();
+  assert.deepEqual(h.calls.open, []);
+  port.onMessage.listeners[0]({ type: 'open', version: 1, step: 'creator' });
+  await tick();
+  assert.equal(h.calls.open.length, 1);
+  assert.equal(h.calls.open[0].step, 'creator');
+  assert.equal(h.calls.pair, 0);
+  assert.equal(h.calls.cancel, 0);
 });
 
 function harness({ state = { consent: consent('full'), legal: legal(), pairing: { state: 'unpaired' } } } = {}) {

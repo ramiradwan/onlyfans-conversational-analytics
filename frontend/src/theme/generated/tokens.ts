@@ -1053,6 +1053,18 @@ export const shape = {
 } as const;
 
 export const componentTokens = {
+  "FreshnessStatus": {
+    "blockSize": 24,
+    "detailInlineSize": 320,
+    "dotSize": 8,
+    "fontSize": "0.875rem",
+    "gap": 6,
+    "iconGutter": 16,
+    "inlineSize": "20em",
+    "minCheckingMs": 800,
+    "narrowRowHeight": 40,
+    "paddingInline": 8
+  },
   "MuiAlert": {
     "toneBorder": "32%",
     "toneFill": "12%"
@@ -1111,6 +1123,50 @@ export const componentTokens = {
     "conversationPaneMinWidth": "18rem",
     "insightsPaneMinWidth": "17rem"
   },
+  "reserved": {
+    "actionRow": 48,
+    "graceMs": 3000,
+    "issueBand": {
+      "narrow": 104,
+      "wide": 64
+    },
+    "loadingLabelDelayMs": 400,
+    "name": {
+      "maxGraphemes": 32
+    },
+    "notice": {
+      "narrow": 128,
+      "wide": 88
+    },
+    "preview": {
+      "lines": 2,
+      "maxGraphemes": 56
+    },
+    "provisioningRail": 52,
+    "provisioningStage": {
+      "narrow": 440,
+      "wide": 360
+    },
+    "settingsSection": {
+      "narrow": 320,
+      "wide": 240
+    },
+    "setupStep": {
+      "narrow": 96,
+      "wide": 72
+    },
+    "setupStepCurrent": {
+      "narrow": 248,
+      "wide": 192
+    },
+    "statusLine": {
+      "narrow": 40,
+      "wide": 20
+    },
+    "value": {
+      "chars": 9
+    }
+  },
   "segmentedControl": {
     "padding": 2,
     "segmentRadius": 7,
@@ -1163,6 +1219,7 @@ export const componentTokens = {
     }
   },
   "staticUi": {
+    "actionRowBlock": 48,
     "bodySize": "1rem",
     "brandGlyphSize": 20,
     "brandSize": 32,
@@ -1171,13 +1228,21 @@ export const componentTokens = {
     "headerHeight": 72,
     "labelSize": "0.875rem",
     "largeControlHeight": 48,
+    "noticeBlock": 88,
+    "noticeBlockNarrow": 128,
     "popupBodySize": "0.8125rem",
     "popupHeadingSize": "1rem",
     "popupMaxHeight": "600px",
     "popupMetricSize": "1.5rem",
     "popupMinWidth": "320px",
+    "popupStatusBlock": 64,
     "popupWidth": "390px",
-    "setupMaxWidth": "42rem"
+    "provisioningRailBlock": 52,
+    "provisioningStageBlock": 360,
+    "provisioningStageBlockNarrow": 440,
+    "setupMaxWidth": "42rem",
+    "statusLineBlock": 20,
+    "statusLineBlockNarrow": 40
   }
 } as const;
 

@@ -43,16 +43,6 @@ async function centerPixel(page, locator) {
     return [...ctx.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data];
   }, png.toString('base64'));
 }
-async function pixelAt(page, locator, x, y) {
-  const png = await locator.screenshot({ animations: 'disabled', scale: 'css' });
-  return page.evaluate(async ([encoded, px, py]) => {
-    const image = new Image(); image.src = 'data:image/png;base64,' + encoded; await image.decode();
-    const c = document.createElement('canvas'); c.width = image.width; c.height = image.height;
-    const ctx = c.getContext('2d'); ctx.drawImage(image, 0, 0);
-    return [...ctx.getImageData(Math.floor(px), Math.floor(py), 1, 1).data];
-  }, [png.toString('base64'), x, y]);
-}
-
 /** Separate interaction probes; they never alter a standard capture's state. */
 export async function captureReviewChecks(browser, base, outDir) {
   const directory = join(outDir, 'review'); await mkdir(directory, { recursive: true });
@@ -171,8 +161,9 @@ export async function captureReviewChecks(browser, base, outDir) {
         const avatar = await appearance(page.locator('.MuiAvatar-root').first()); near(avatar.width, 34, 'avatar width');
         assert.equal(avatar.radius, '11px'); near(avatar.fontSize, 13, 'avatar label');
         const timestamp = await appearance(page.locator('time').first()); assert(timestamp.font.includes('Space Grotesk')); near(timestamp.fontSize, 12, 'timestamp size');
-        const status = await appearance(page.getByRole('button', { name: /^Status:/ })); assert.equal(status.border, '1px');
-        assert.equal((await appearance(page.locator('[data-status-settled="true"]'))).animation, 'none');
+        const status = await appearance(page.getByRole('button', { name: /^Status:/ }));
+        near(status.width, 280, 'status width'); near(status.height, 24, 'status height'); near(status.fontSize, 14, 'status size');
+        assert.equal((await appearance(page.locator('[data-freshness-glyph="dot"]').filter({ visible: true }))).animation, 'none');
         const passkeyLayouts = [];
         for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
           await page.setViewportSize(viewport);
@@ -220,22 +211,19 @@ export async function captureReviewChecks(browser, base, outDir) {
             cardLocator.getByRole('button', { name: 'Sign in with passkey', exact: true }), setup, visibleBrand].map(appearance));
           const resting = await keyBoxes();
           await cardLocator.getByRole('button', { name: 'Sign in with passkey', exact: true }).click();
-          const alertLocator = page.getByRole('alert');
-          await alertLocator.waitFor();
+          const feedback = page.locator('[data-reserved-region="passkey-feedback"]');
+          const summary = feedback.getByRole('alert');
+          await summary.waitFor();
           const failed = await keyBoxes();
           resting.forEach((box, index) => { near(failed[index].x, box.x, `passkey error shift x ${index}`); near(failed[index].y, box.y, `passkey error shift y ${index}`); });
-          const alert = await appearance(alertLocator);
-          near(alert.width, card.width, 'passkey alert width');
-          assert(alert.y >= card.y + card.height && alert.y + alert.height <= viewport.height, 'passkey alert sits below the card, in view');
-          const alertFill = await pixelAt(page, alertLocator, alert.width / 2, 3);
-          assert(alertFill[0] > alertFill[1] + 8 && alertFill[0] > alertFill[2] + 8, `passkey alert tint is not red: ${alertFill}`);
-          if (mode === 'dark') {
-            const sum = (rgb) => rgb[0] + rgb[1] + rgb[2];
-            assert(sum(alertFill) >= sum(card.fill), `dark passkey alert is darker than the card: ${alertFill} vs ${card.fill}`);
-          }
-          assert(contrastAgainst(alert.ink, [...alertFill.slice(0, 3), 1]) >= 4.5, 'passkey alert text contrast');
+          const feedbackBox = await appearance(feedback), summaryStyle = await appearance(summary);
+          near(feedbackBox.width, card.width, 'passkey feedback width');
+          near(feedbackBox.height, viewport.width < 600 ? 40 : 20, 'passkey feedback height');
+          assert(feedbackBox.y >= card.y + card.height && feedbackBox.y + feedbackBox.height <= viewport.height, 'passkey feedback sits below the card, in view');
+          assert(contrastAgainst(summaryStyle.ink, summaryStyle.canvas) >= 4.5, 'passkey error text contrast');
+          assert.equal(await summary.innerText(), 'Sign-in was cancelled or timed out. Try again.');
           await page.screenshot({ path: join(directory, `passkey-error-${mode}-${viewport.width}.png`), animations: 'disabled' });
-          passkeyLayouts.push({ viewport, header, brand, homeBrand, card, tile, heading, alert, alertFill });
+          passkeyLayouts.push({ viewport, header, brand, homeBrand, card, tile, heading, feedbackBox, summaryStyle });
         }
         return { avatar, timestamp, status, passkeyLayouts };
       });

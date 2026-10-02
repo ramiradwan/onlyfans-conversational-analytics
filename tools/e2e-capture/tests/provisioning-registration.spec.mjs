@@ -9,7 +9,7 @@ import {
   completeBrowserWebAuthnCeremony,
   readServedRuntimeConfig,
 } from '../lib/brain-probe.mjs';
-import { ProvisioningHost, launchProvisioningBrowser } from '../lib/provisioning-host.mjs';
+import { ProvisioningHost, launchProvisioningBrowser, returnToProvisioningPage } from '../lib/provisioning-host.mjs';
 import {
   EXTENSION_DIST,
   assertBuiltExtension,
@@ -86,7 +86,11 @@ test('a clean installation registers, authenticates, and reaches its configured 
     context = await launchProvisioningBrowser(browserProfile, {
       creatorAccountId: descriptor.creator_account_id,
     });
+    await context.route(`${new URL(descriptor.hosted_onboarding_url).origin}/**`, (route) => route.fulfill({
+      contentType: 'text/html', body: '<!doctype html><title>Secure creator approval</title>',
+    }));
     const page = await context.newPage();
+
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
     await test.step('the launcher handoff opens the provisioning page', async () => {
@@ -110,15 +114,25 @@ test('a clean installation registers, authenticates, and reaches its configured 
       await expect(page.locator('#confirm-identity')).toBeEnabled();
       await page.locator('#confirm-identity').click();
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
-      await page.locator('#acquire-association').click();
-      await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'current');
+      await expect(page.locator('#acquire-association')).toBeHidden();
+      const [hosted] = await Promise.all([
+        context.waitForEvent('page'), page.locator('#continue-creator-approval').click(),
+      ]);
+      await hosted.waitForLoadState('domcontentloaded');
+      await expect(hosted).toHaveURL(descriptor.hosted_onboarding_url);
+      await hosted.bringToFront();
+
+      await hosted.close();
+      await returnToProvisioningPage(page);
+      await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'completed');
     });
 
     let configuration = null;
     await test.step('finalization writes runtime configuration', async () => {
-      await page.locator('#finalize-provisioning').click();
       await expect(page.locator('#provisioning-status'))
-        .toHaveText('The desktop app will restart. Then return to the extension.');
+        .toHaveText('The desktop app is restarting. Continue there when it opens.');
+      await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'completed');
+      await expect(page.locator('#finalize-provisioning')).toBeHidden();
       configuration = await readRuntimeConfiguration(
         path.join(dataDirectory, RUNTIME_CONFIGURATION_FILENAME),
       );

@@ -30,7 +30,7 @@ const messageSchema = z.strictObject({
 
 export type ExtensionStage = z.infer<typeof stageSchema>;
 export type ExtensionAttempt = z.infer<typeof attemptSchema>;
-export type ExtensionStep = 'setup' | 'access' | 'history' | 'connection';
+export type ExtensionStep = 'setup' | 'access' | 'history' | 'connection' | 'creator';
 
 export interface ExtensionPortState {
   /** `absent`: no extension answers in this browser (another browser, or not installed). */

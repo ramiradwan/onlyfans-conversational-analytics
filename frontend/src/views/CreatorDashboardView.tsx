@@ -1,6 +1,4 @@
 import {
-  Alert,
-  AlertTitle,
   Box,
   Button,
   Popover,
@@ -12,6 +10,7 @@ import { useEffect, useId, useState, useSyncExternalStore } from 'react';
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
 import { RecentConversations } from '../components/dashboard/RecentConversations';
 import { SetupPrompt } from '../components/SetupPrompt';
+import { LoadingFrame, ReservedNotice, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AnalyticsMetric, HistoricalCoverage } from '../protocol';
 import {
@@ -35,7 +34,6 @@ import {
 } from '../utils/dataReadiness';
 import {
   extensionConnection,
-  extensionIssue,
   protocolErrorText,
   setupIncomplete,
   type StatusMessage,
@@ -49,8 +47,6 @@ const LOCAL_DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
 const LOCAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 const READINESS_WAIT_MS = 3000;
 
-/** Last settled Full analytics readiness per API; `null` when it could not be read. */
-const settledReadiness = new WeakMap<CapabilityLicenseApi, boolean | null>();
 
 type CreatorDashboardState = Omit<
   Pick<
@@ -69,6 +65,8 @@ type CreatorDashboardState = Omit<
   >,
   'agent' | 'protocolError' | 'system'
 > & {
+  creatorAccountId?: string | null;
+  session?: { connection_id: string } | null;
   agent: Pick<
     NonNullable<BridgeTransportState['agent']>,
     | 'applied_config_revision'
@@ -110,7 +108,7 @@ function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): StatusM
       title: 'Refreshing your numbers',
     };
   }
-  if (state.readModelState === 'degraded') {
+  if (state.readModelState === 'degraded' && state.connection === 'connected') {
     return state.viewRevision === null
       ? {
           detail: 'Your numbers will appear once the connection is back.',
@@ -166,18 +164,6 @@ function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): StatusM
       title: 'Message history needs attention',
     };
   }
-  const connection = extensionConnection(state.agent);
-  if (connection !== 'applying_settings') {
-    const issue = extensionIssue(connection);
-    if (issue !== null) return issue;
-  }
-  if (state.connection === 'disconnected' || state.connection === 'error') {
-    return {
-      detail: 'Showing your last numbers while reconnecting.',
-      severity: 'warning',
-      title: 'Updates paused',
-    };
-  }
   return null;
 }
 
@@ -188,7 +174,8 @@ function formatLocal(date: string | null, format: Intl.DateTimeFormat): string |
 }
 
 function historyProgress(coverage: HistoricalCoverage): OverviewProgress | null {
-  if (coverage.status === 'complete' || coverage.phase === 'not_started') return null;
+  if (coverage.status === 'complete') return { label: coverageProgressLabel(coverage), percent: 100, complete: true };
+  if (coverage.phase === 'not_started') return null;
   if (coverage.phase === 'paused' || coverage.phase === 'blocked') return null;
   const discovered = coverage.discovered_conversations;
   return {
@@ -245,10 +232,9 @@ function NumbersBasis({
   return (
     <Box>
       <Stack
-        direction="row"
-        sx={{ alignItems: 'center', columnGap: 1, flexWrap: 'wrap', px: 0.5, rowGap: 0.5 }}
+        sx={{ alignItems: 'flex-start', px: 0.5, rowGap: 0.5 }}
       >
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        <Typography variant="body2" sx={{ color: 'text.secondary', height: { xs: '3.75rem', sm: '2.5rem' } }}>
           {[
             evidence.partial
               ? syncing ? null : 'Counts include messages synced so far.'
@@ -318,13 +304,10 @@ export default function CreatorDashboardView({
 }: CreatorDashboardViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const { canViewInbox } = usePermissions();
-  // `undefined` until the first readiness result settles.
-  const [fullAnalyticsReady, setFullAnalyticsReady] = useState<boolean | null | undefined>(
-    () => settledReadiness.get(activationApi),
-  );
-  // Content waits for the snapshot and readiness together, because readiness decides whether the
-  // setup prompt sits above the overview.
-  const hasSnapshot = state.viewRevision !== null && fullAnalyticsReady !== undefined;
+  const scope = String(state.creatorAccountId) + ':' + String(state.session?.connection_id);
+  const [setup, setSetup] = useState<{ scope: string; value: boolean | null | undefined }>({ scope, value: undefined });
+  const fullAnalyticsReady = setup.scope === scope ? setup.value : undefined;
+  const hasSnapshot = state.viewRevision !== null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -332,8 +315,7 @@ export default function CreatorDashboardView({
     const settle = (next: boolean | null) => {
       if (!pending) return;
       pending = false;
-      settledReadiness.set(activationApi, next);
-      setFullAnalyticsReady(next);
+      setSetup({ scope, value: next });
     };
     const timeout = window.setTimeout(() => {
       settle(null);
@@ -348,7 +330,7 @@ export default function CreatorDashboardView({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [activationApi]);
+  }, [activationApi, scope]);
 
   const readiness: DataReadiness = {
     coverage: state.coverage,
@@ -367,79 +349,35 @@ export default function CreatorDashboardView({
     analytics?.outbound_messages,
   ];
   const format = (metric: AnalyticsMetric | null | undefined) =>
-    formatAdditiveMetric(metric, readiness, (value) => NUMBER_FORMAT.format(value));
-  const conversationSetupIncomplete = hasSnapshot && setupIncomplete(state.coverage);
+    formatAdditiveMetric(metric, readiness, (value) => Number(value) > 9_999_999 ? '10M+' : NUMBER_FORMAT.format(value)).replace(/\+\+$/, '+');
+  const conversationSetupIncomplete = hasSnapshot && fullAnalyticsReady !== undefined && setupIncomplete(state.coverage);
   const fullSetupIncomplete = hasSnapshot && !conversationSetupIncomplete && fullAnalyticsReady === false;
   const showSetup = conversationSetupIncomplete || fullSetupIncomplete;
-  const hasCounts = metrics.some((metric) => (metric?.value ?? 0) > 0);
-  const showNumbers = !conversationSetupIncomplete || hasCounts;
+
   const evidence = summarizeMetricEvidence(metrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
 
   return (
-    <Box
-      sx={{
-        flex: 1,
-        minHeight: 0,
-        overflowY: 'auto',
-        pb: 3,
-      }}
-    >
-      <Stack
-        spacing={2.5}
-        sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}
-      >
-        <Typography component="h1" variant="h4">
-          Dashboard
-        </Typography>
-
-        {issue !== null && (
-          <Alert severity={issue.severity} role="alert">
-            <AlertTitle>{issue.title}</AlertTitle>
-            {issue.detail}
-          </Alert>
-        )}
-
-        {showSetup && (
-          <SetupPrompt
-            extensionConnected={extensionConnection(state.agent) === 'connected'}
-            fullAnalyticsReady={fullAnalyticsReady === true}
-            historyEnabled={!conversationSetupIncomplete}
-            title="Finish setup"
-          />
-        )}
-
-        {showNumbers && hasSnapshot && (
-          <DashboardOverview
-            conversations={format(analytics?.total_conversations)}
-            messages={format(analytics?.total_messages)}
-            progress={progress}
-            received={format(analytics?.inbound_messages)}
-            sent={format(analytics?.outbound_messages)}
-            split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)}
-          />
-        )}
-
-        {showNumbers && hasSnapshot && evidence !== null && (
-          <NumbersBasis
-            evidence={evidence}
-            messagesCounted={analytics?.total_messages?.sample_size ?? null}
-            syncing={progress !== null}
-          />
-        )}
-
-        {hasSnapshot && !conversationSetupIncomplete && (
-          <RecentConversations
-            conversations={state.conversations}
-            showInboxLink={canViewInbox}
-          />
-        )}
-
-        {!hasSnapshot && (
-          <Typography role="status" variant="body2" sx={{ color: 'text.secondary', px: 0.5 }}>
-            Processing your data…
-          </Typography>
-        )}
+    <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', pb: 3 }}>
+      <Stack spacing={2.5} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
+        <Typography component="h1" variant="h4">Dashboard</Typography>
+        <ReservedNotice id="dashboard-notice" notice={issue ? { title: issue.title, body: issue.detail, severity: issue.severity } : fullAnalyticsReady === null ? { title: 'Setup status is unavailable.', body: '', severity: 'warning' } : null} />
+        <StatusLine id="dashboard-setup-status" text={fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
+        <ReservedRegion id="dashboard-overview" size={{ xs: 450, sm: 300 }}>
+          <Box data-region-content><DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} /></Box>
+          {!hasSnapshot && <Box sx={{ position: 'absolute', inset: 0 }}><LoadingFrame label="Loading dashboard…" /></Box>}
+        </ReservedRegion>
+        <ReservedRegion id="dashboard-basis" size={{ xs: 128, sm: 88 }}>
+          {hasSnapshot && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={analytics?.total_messages?.sample_size ?? null} syncing={progress !== null && !progress.complete} /></Box>}
+        </ReservedRegion>
+        <ReservedRegion id="dashboard-recent" size={{ xs: 440, sm: 360 }} regionRole="scroll">
+          {hasSnapshot ? <Box data-region-content><RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} /></Box> : <LoadingFrame label="Loading dashboard…" />}
+        </ReservedRegion>
+        <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
+          {showSetup && <Box data-region-content>
+            <SetupPrompt extensionConnected={extensionConnection(state.agent) === 'connected'} fullAnalyticsReady={fullAnalyticsReady === true} historyEnabled={!conversationSetupIncomplete} title="Finish setup" />
+          </Box>}
+        </ReservedRegion>
       </Stack>
     </Box>
   );

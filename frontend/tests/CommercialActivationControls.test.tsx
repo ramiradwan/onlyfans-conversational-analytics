@@ -1,6 +1,7 @@
 import { ThemeProvider } from '@mui/material/styles';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mockFeedbackOverflow } from './feedbackGeometry';
 
 import { CommercialActivationControls } from '../src/components/CommercialActivationControls';
 import {
@@ -54,7 +55,20 @@ async function showRequired(api: CapabilityLicenseApi, secureSetupUrl = '') {
   expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
 }
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+it('submits once with Enter and disables the field during the request', async () => {
+  const redeem = vi.fn(() => new Promise<never>(() => {}));
+  await showRequired(makeApi({ redeem }));
+  const field = screen.getByLabelText('Activation code');
+  fireEvent.change(field, { target: { value: ` ${CONTINUATION} ` } });
+  fireEvent.keyDown(field, { key: 'Enter' });
+  fireEvent.keyDown(field, { key: 'Enter' });
+  expect(redeem).toHaveBeenCalledTimes(1);
+  expect(redeem).toHaveBeenCalledWith(CONTINUATION, expect.any(AbortSignal));
+  expect((field as HTMLInputElement).disabled).toBe(true);
+  expect(screen.getByText('Checking code…')).toBeTruthy();
+});
 
 describe('commercial activation controls', () => {
   it('exposes the customer action when canonical readiness requires activation', async () => {
@@ -112,6 +126,7 @@ describe('commercial activation controls', () => {
   });
 
   it('keeps a failed redemption recoverable and re-reads canonical readiness', async () => {
+    mockFeedbackOverflow();
     const readiness = vi.fn()
       .mockResolvedValueOnce(required)
       .mockResolvedValueOnce(required);
@@ -128,7 +143,10 @@ describe('commercial activation controls', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Activate' })));
 
     expect(readiness).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
     expect(await screen.findByText(/Nothing has changed. Try again in a moment/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull());
     expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
     expect((screen.getByLabelText('Activation code') as HTMLInputElement).value).toBe(CONTINUATION);
   });

@@ -90,121 +90,22 @@ function partialState(phase: 'backfilling' | 'paused'): BridgeTransportState {
   });
 }
 
-describe('AppBar locked readiness priority', () => {
-  it('shows Action needed before every other condition for protocol or Agent issues', () => {
-    const presentation = getStatusPresentation(
-      state({
-        protocolError: {
-          code: 'identity_conflict',
-          related_message_id: null,
-          retryable: false,
-          fatal: true,
-          detail: 'Bound account does not match the signer identity.',
-        },
-        viewRevision: null,
-        projection: { ...state().projection, status: 'unavailable' },
-        liveFreshness: { ...state().liveFreshness, status: 'delayed' },
-      }),
-    );
-
-    expect(presentation.label).toBe('Action needed');
-    expect(presentation.detail).toContain('Reload the page');
-    expect(presentation.detail).not.toContain('Bound account');
+describe('AppBar freshness authority', () => {
+  it('keeps fatal protocol errors actionable', () => {
+    const result = getStatusPresentation(state({ protocolError: { code: 'identity_conflict', related_message_id: null, retryable: false, fatal: true, detail: 'internal detail' } }));
+    expect(result.label).toBe('Action needed');
+    expect(result.detail).not.toContain('internal detail');
   });
-
-  it('requires both config and history-settings revisions to be applied exactly', () => {
-    const configMismatch = state({
-      agent: {
-        ...state().agent!,
-        applied_config_revision: 'config-7',
-      },
-    });
-    const settingsMismatch = state({
-      agent: {
-        ...state().agent!,
-        applied_history_settings_revision: 11,
-      },
-    });
-    const missingAppliedRevision = state({
-      agent: {
-        ...state().agent!,
-        applied_history_settings_revision: null,
-      },
-    });
-
-    expect(getStatusPresentation(configMismatch).label).toBe('Applying settings');
-    expect(getStatusPresentation(settingsMismatch).label).toBe('Applying settings');
-    expect(getStatusPresentation(missingAppliedRevision).label).toBe('Applying settings');
-    expect(getStatusPresentation(state()).label).toBe('Up to date');
+  it('does not manufacture freshness from metrics, history, configuration or liveness', () => {
+    for (const input of [state(), partialState('paused'), partialState('backfilling'), state({ projection: { ...state().projection, status: 'unavailable' } }), state({ agent: { ...state().agent!, applied_config_revision: null } })]) {
+      expect(getStatusPresentation(input).label).toBe('Messages not checked');
+    }
   });
-
-  it('shows Data unavailable when no valid projection exists and no action issue outranks it', () => {
-    expect(
-      getStatusPresentation(
-        state({
-          viewRevision: null,
-          projection: {
-            ...state().projection,
-            status: 'unavailable',
-            reason: 'projection_generation_failed',
-          },
-        }),
-      ).label,
-    ).toBe('Data unavailable');
-  });
-
-  it('shows Updates delayed ahead of paused coverage or a lagging projection', () => {
-    const partial = partialState('paused');
-    expect(
-      getStatusPresentation({
-        ...partial,
-        liveFreshness: {
-          ...partial.liveFreshness,
-          status: 'delayed',
-          reason: 'agent_heartbeat_late',
-        },
-        projection: {
-          ...partial.projection,
-          canonical_revision: 9,
-          projected_revision: 8,
-        },
-      }).label,
-    ).toBe('Updates delayed');
-  });
-
-  it('distinguishes paused and running partial acquisition', () => {
-    expect(getStatusPresentation(partialState('paused')).label).toBe('History paused');
-    const running = getStatusPresentation(partialState('backfilling'));
-    expect(running.label).toBe('Syncing history');
-    expect(running.detail).toContain('History 50% synced');
-  });
-
-  it('shows Updating insights after complete acquisition until projection catches up', () => {
-    const behind = state({
-      projection: {
-        ...state().projection,
-        canonical_revision: 9,
-        projected_revision: 8,
-      },
-    });
-
-    expect(getStatusPresentation(behind).label).toBe('Updating insights');
-  });
-
-  it('uses Up to date only when coverage, projection, freshness, and configuration align', () => {
-    expect(getStatusPresentation(state()).label).toBe('Up to date');
-    expect(
-      getStatusPresentation(
-        state({ liveFreshness: { ...state().liveFreshness, status: 'unknown' } }),
-      ).label,
-    ).toBe('Updates delayed');
-    expect(
-      getStatusPresentation(
-        state({ projection: { ...state().projection, status: 'degraded' } }),
-      ).label,
-    ).toBe('Updating insights');
-    expect(getStatusPresentation(partialState('backfilling')).label).toBe(
-      'Syncing history',
-    );
+  it('follows catch-up state independently of the live arrival indicator', () => {
+    const catchupFreshness = { status: 'current' as const, reason: null, uncertain_since: null, last_closed_at: AS_OF, observing_since: AS_OF };
+    expect(getStatusPresentation(state({ catchupFreshness, liveFreshness: { ...state().liveFreshness, status: 'unknown' } })).label).toBe('Up to date');
+    expect(getStatusPresentation(state({ catchupFreshness: { ...catchupFreshness, status: 'paused', reason: 'applying_settings' } })).label).toBe('Paused · applying settings');
+    expect(getStatusPresentation(state({ catchupFreshness, viewRevision: null })).label).toBe('Messages not checked');
+    expect(getStatusPresentation(state({ catchupFreshness, connection: 'disconnected' })).label).toBe('Paused · Brain offline');
   });
 });
