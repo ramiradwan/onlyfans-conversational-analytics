@@ -1,5 +1,7 @@
 """Bounded source selection within a gateway-owned canonical connection."""
 
+from functools import cached_property
+
 from app.analytics.errors import CanonicalAccountNotFound, ProjectionUnavailable
 from app.analytics.evidence_contracts import EvidenceLocation
 from app.analytics.opaque_refs import conversation_ref, message_ref
@@ -10,7 +12,7 @@ from app.analytics.source_coverage import AcquisitionCoverage, question_coverage
 
 class CanonicalQuestionScope:
     def __init__(self, connection, account, budget):
-        self.connection, self.account = connection, account
+        self.connection, self.account, self.budget = connection, account, budget
         self.token = connection.execute("PRAGMA data_version").fetchone()[0]
         row = connection.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?",
                                  (account,)).fetchone()
@@ -18,8 +20,11 @@ class CanonicalQuestionScope:
             raise CanonicalAccountNotFound()
         self.revision = int(row[0])
         self.locations = {}
-        self.coverage = AcquisitionCoverage(connection, account, consume=budget.consume)
         self.check(budget)
+
+    @cached_property
+    def coverage(self):
+        return AcquisitionCoverage(self.connection, self.account, consume=self.budget.consume)
 
     def check(self, budget):
         budget.check()

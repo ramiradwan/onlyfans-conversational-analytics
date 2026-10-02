@@ -53,9 +53,13 @@ async def test_force_during_an_unchanged_build_is_not_lost(ready, monkeypatch):
         revision = await scheduler.canonical_revision(ACCOUNT)
         await scheduler.schedule(ACCOUNT, revision)
         await asyncio.wait_for(started.wait(), 10)
+        ownership = (scheduler._scheduler_owner_id, scheduler._publication_epoch, revision)
+        assert scheduler._pending_question_state(ACCOUNT) == ownership
         await scheduler.schedule(ACCOUNT, revision, force=True)
+        assert scheduler._pending_question_state(ACCOUNT) == ownership
         proceed.set()
         assert (await scheduler.wait(ACCOUNT)).availability == AvailabilityStatus.AVAILABLE
+        assert scheduler._pending_question_state(ACCOUNT) is None
         assert [analyzer.calls for analyzer in ready.analyzers] == [18, 18, 18]
     finally:
         proceed.set()

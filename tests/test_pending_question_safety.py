@@ -47,17 +47,27 @@ def test_pending_cannot_supply_an_answer_after_update_ends():
     source.open_question_scope.assert_called_once()
 
 
-@pytest.mark.parametrize('condition',['closed','cancelled','no_epoch','no_work','not_attempted'])
-def test_scheduler_pending_notice_ends_with_ownership(condition):
+@pytest.mark.parametrize('force_requested', [0, 1])
+@pytest.mark.parametrize('condition', [
+    'closed', 'publication_closed', 'cancelled', 'no_epoch', 'no_work',
+    'not_attempted', 'no_cancellation',
+])
+def test_scheduler_pending_notice_ends_with_ownership(condition, force_requested):
     from app.analytics.scheduling import InProcessProjectionScheduler,_AccountWork,_CancellationToken
     scheduler=object.__new__(InProcessProjectionScheduler)
     scheduler._state_lock=RLock();scheduler._closed=False;scheduler._publication_closed=Event()
     scheduler._publication_epoch='epoch';scheduler._scheduler_owner_id='owner'
-    work=_AccountWork(2,2,_CancellationToken());scheduler._work={ACCOUNT:work}
+    work = _AccountWork(
+        requested_revision=2, attempted_revision=2, cancellation=_CancellationToken(),
+        force_requested=force_requested,
+    )
+    scheduler._work = {ACCOUNT: work}
     assert scheduler._pending_question_state(ACCOUNT)==('owner','epoch',2)
     if condition=='closed':scheduler._closed=True
+    elif condition=='publication_closed':scheduler._publication_closed.set()
     elif condition=='cancelled':work.cancellation.cancel()
     elif condition=='no_epoch':scheduler._publication_epoch=None
     elif condition=='no_work':scheduler._work.clear()
-    else:work.attempted_revision=None
+    elif condition=='not_attempted':work.attempted_revision=None
+    else:work.cancellation=None
     assert scheduler._pending_question_state(ACCOUNT) is None

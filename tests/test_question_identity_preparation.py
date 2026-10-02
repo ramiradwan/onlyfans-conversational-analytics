@@ -1,16 +1,20 @@
 """Question identity preparation belongs to cancellable scheduler work, not reads."""
 
 import asyncio
+from datetime import timedelta
 from threading import Event, current_thread
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
 from app.analytics.errors import ProjectionUnavailable, ProjectionBuildCancelled
 from app.analytics.identity import canonical_identity
-from app.analytics.query_execution import QuestionBudget, QuestionLimits
+from app.analytics.query_execution import QuestionBudget, QuestionLimits, QuestionLimitExceeded
+from app.analytics.query_contracts import QuestionPlan
 from app.analytics.scheduling import InProcessProjectionScheduler
-from tests.continuous_analytics_fixture import ACCOUNT, cleanup, make_fixture
+from tests.continuous_analytics_fixture import ACCOUNT, NOW, cleanup, make_fixture
+from tests.analytics_coverage_fixture import seed_coverage
 
 pytestmark = [pytest.mark.ci_tier('integration')]
 
@@ -29,6 +33,64 @@ def source_fixture(tmp_path, monkeypatch):
 
 def bounded_scope(source):
     return source.open_question_scope(ACCOUNT, QuestionBudget(QuestionLimits(max_records=2)))
+
+
+def coverage_question(kind):
+    return SimpleNamespace(plan=QuestionPlan(question=kind, timezone="UTC",
+        start=NOW-timedelta(days=10), end=NOW, cutoff=NOW), cutoff=NOW,
+        retention_cutoff_exclusive=NOW-timedelta(days=90), selection_clipped_by_retention=False)
+
+
+@pytest.mark.parametrize("kind", ["no_later_creator_reply.v1", "pricing_discussions.v1"])
+def test_conversation_coverage_is_lazily_charged_to_the_same_budget(source_fixture, kind):
+    f = source_fixture
+    with f.repositories.database.transaction() as db:
+        seed_coverage(db, ACCOUNT, [f"chat-{index}" for index in range(3)], NOW)
+    f.source.prepare_question_identity(ACCOUNT)
+    statements = []
+    budget = QuestionBudget(QuestionLimits(wall_clock_ms=30_000))
+    with f.source.open_question_scope(ACCOUNT, budget) as scope:
+        assert budget.records_examined == 2
+        scope.connection.set_trace_callback(statements.append)
+        rows = scope.conversations(coverage_question(kind), budget)
+        assert next(rows).coverage == "complete"
+        first_conversation_records = budget.records_examined
+        assert len(list(rows)) == 2
+    assert sum("FROM account_coverage_heads" in sql for sql in statements) == 1
+    assert sum("FROM coverage_members" in sql for sql in statements) == 3
+
+    statements.clear()
+    budget = QuestionBudget(QuestionLimits(max_records=first_conversation_records-1,
+                                          wall_clock_ms=30_000))
+    with pytest.raises(QuestionLimitExceeded):
+        with f.source.open_question_scope(ACCOUNT, budget) as scope:
+            assert budget.records_examined == 2
+            scope.connection.set_trace_callback(statements.append)
+            next(scope.conversations(coverage_question(kind), budget))
+    assert sum("FROM account_coverage_heads" in sql for sql in statements) == 1
+    assert not any("FROM coverage_members" in sql for sql in statements)
+
+
+def test_coverage_cache_stays_with_its_scope_and_source_identity(source_fixture):
+    f = source_fixture
+    with f.repositories.database.transaction() as db:
+        seed_coverage(db, ACCOUNT, [f"chat-{index}" for index in range(3)], NOW)
+    original = f.source.prepare_question_identity(ACCOUNT)
+    question = coverage_question("no_later_creator_reply.v1")
+    budget = QuestionBudget(QuestionLimits(wall_clock_ms=30_000))
+    with f.source.open_question_scope(ACCOUNT, budget) as scope:
+        assert {row.coverage for row in scope.conversations(question, budget)} == {"complete"}
+    with f.repositories.database.transaction() as db:
+        db.execute("UPDATE coverage_members SET history_started_at=NULL WHERE creator_account_id=?", (ACCOUNT,))
+    with pytest.raises(ProjectionUnavailable):
+        with bounded_scope(f.source):
+            pass
+    refreshed = f.source.prepare_question_identity(ACCOUNT)
+    assert refreshed.revision == original.revision and refreshed != original
+    budget = QuestionBudget(QuestionLimits(wall_clock_ms=30_000))
+    with f.source.open_question_scope(ACCOUNT, budget) as scope:
+        assert {row.coverage for row in scope.conversations(question, budget)} == {"partial"}
+
 
 @pytest.mark.parametrize("expired", [False, True])
 def test_unprepared_questions_do_not_attempt_an_inline_scan(source_fixture, monkeypatch, expired):
