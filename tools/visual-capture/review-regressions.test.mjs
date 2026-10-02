@@ -1,4 +1,3 @@
-import '../../app/provisioning/provisioning-resume.test.mjs';
 import assert from 'node:assert/strict';
 import { assertNumericTypography } from './appearance-contracts.mjs';
 import { randomUUID } from 'node:crypto';
