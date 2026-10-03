@@ -148,7 +148,7 @@ def test_handoff_timeout_never_creates_a_successful_observation(tmp_path, monkey
     observer.profile = PROFILE
     monkeypatch.setattr(evidence, "observe_guest", lambda paths: {})
     ticks = iter([0, evidence.WAIT_SECONDS + 1])
-    monkeypatch.setattr(evidence.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(evidence, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     with pytest.raises(ValueError, match="handoff_timeout"):
         observer._observe("pre")
     assert (tmp_path / "pre.request.json").is_file()
