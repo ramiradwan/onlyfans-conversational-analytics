@@ -20,14 +20,14 @@ $osInfo = Get-CimInstance Win32_OperatingSystem
 $processors = @(Get-CimInstance Win32_Processor)
 $disk = Get-Partition -DriveLetter ($env:SystemDrive.TrimEnd(':')) | Get-Disk
 $physical = @(Get-PhysicalDisk | Where-Object { $_.DeviceId -eq $disk.Number })
-if ($physical.Count -ne 1 -or $physical[0].MediaType -ne 'SSD') { throw 'ssd_profile_not_established' }
+if ($physical.Count -ne 1) { throw 'disk_profile_not_established' }
 $power = (& powercfg /getactivescheme | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $power) { throw 'power_mode_unavailable' }
 [ordered]@{
  os = 'Windows'
  memory_gib = [int][Math]::Round([double]$osInfo.TotalVisibleMemorySize / 1048576)
  cores = [int](($processors | Measure-Object NumberOfCores -Sum).Sum)
- disk = 'SSD'
+ disk = [string]$physical[0].MediaType
  cpu_model = (($processors | Select-Object -ExpandProperty Name) -join ', ')
  power_mode = $power
  instruction_requirements = $env:PROCESSOR_ARCHITECTURE

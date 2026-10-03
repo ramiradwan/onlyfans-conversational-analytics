@@ -3,6 +3,7 @@
   "protocol": "analytics-closure.v2",
   "baseline_revision": "511efd1bb6917ce9b6b5d1723b0eb949ba43466a",
   "scope_decision": {
+    "hardware_target": "Virtualized Windows profiles with static memory and four virtual processors. Results do not qualify physical-laptop performance or advertised minimum requirements.",
     "latency_profile": "reference-windows-16g",
     "constrained_profile": "Correctness, resources, stability, interface and ingestion are required. Latency is reported without a reference-profile promise.",
     "bulk_and_cold": "Completion within execution guards.",
@@ -30,6 +31,13 @@
       "disk": "SSD",
       "numeric_latency_gates": false
     }
+  },
+  "hardware_evidence": {
+    "schema": "analytics-hardware-evidence.v1",
+    "topology": "hyper-v-single-boot-disk",
+    "storage": "Complete single boot-disk inventory, every attached backing file and parent mapped to physical SSD storage.",
+    "observations": "Fresh VM-bound host and guest observations before work and after joined cleanup.",
+    "handoff_seconds": 180
   },
   "fixture": {
     "id": "a07-half-dominant.v1",
@@ -193,7 +201,7 @@
   },
   "status": "frozen",
   "measurement": {
-    "version": "analytics-observable-scheduler.v8",
+    "version": "analytics-observable-scheduler.v9",
     "visibility_poll_seconds": 0.1,
     "query_clock": "System UTC establishes query validity and expiry. Fixture selection uses the fixed evaluation clock.",
     "visibility": "Durable canonical commit through the latest current visible result, synchronous cleanup and drained backlog.",

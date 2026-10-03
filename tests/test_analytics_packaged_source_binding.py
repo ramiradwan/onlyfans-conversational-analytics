@@ -32,7 +32,9 @@ def candidate(tmp_path, monkeypatch):
     installer = tmp_path / "installer.exe"
     installer.write_bytes(b"synthetic installer")
     observed = dict(MANIFEST["profiles"][PROFILE], cpu_model="Synthetic CPU",
-                    power_mode="Synthetic mode", instruction_requirements="AMD64")
+                    power_mode="Synthetic mode", instruction_requirements="AMD64",
+                    virtualization="hyper-v-single-boot-disk", host_cpu_model="Synthetic host",
+                    host_power_mode="Synthetic mode", storage_evidence={"schema": "analytics-hardware-evidence.v1"})
     monkeypatch.setattr(hardware, "observe", lambda: deepcopy(observed))
     monkeypatch.setattr(hardware, "observe_network_isolation",
                         lambda: {"active_adapters": 0, "default_routes": 0})
@@ -104,7 +106,7 @@ def test_evidence_verifier_rechecks_the_archived_source(candidate, tmp_path, fau
     inputs, source = candidate(raw)
     context = {"source": source, "artifacts": packaged.artifact_context(inputs)}
     payload = {"subject_sha256": q.digest(source), "supervisor_instance": "synthetic", "hardware": {}}
-    observed = {}
+    observed = {"hardware": {}}
     if fault != "missing_observation":
         observed["runtime_source"] = {"source_revision": REVISION, "manifest_sha256": "0" * 64}
     config = {"manifest": MANIFEST, "subject": source, "observed": observed}

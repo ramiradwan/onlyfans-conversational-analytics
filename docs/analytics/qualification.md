@@ -29,7 +29,7 @@ Synthetic fixtures establish query mechanics. The repository cases contain class
 
 ## Workload and measurement
 
-Use the CPU laptop profiles and pack budgets in [Local analysis](local-analysis.md). Record actual OS, CPU model, core and thread limits, RAM, free memory, disk type, runtime versions, power mode, source revision and enabled analyzers. A faster desktop measurement does not qualify a laptop.
+Use the manifest's Windows virtual-machine profiles with four virtual processors and 8 GiB or 16 GiB static memory. Record guest and host CPU models, power modes, virtualization, RAM, free memory, storage evidence, runtime versions, source revision and enabled analyzers. These measurements do not qualify physical-laptop performance or advertised minimum requirements. Optional model-pack budgets remain in [Local analysis](local-analysis.md).
 
 Exercise 10,000 and 100,000 retained messages. The 1,000,000-message workload is an optional stress case. Put half the messages in one conversation and distribute the remainder across 100 conversations. Use deterministic synthetic content, alternating direction and event times spread across the 48 hours before a fixed evaluation clock. Exercise stable timestamp ties separately.
 
@@ -47,7 +47,7 @@ Before distributing an optional model, compare the same application build with a
 |---|---|---|
 | Source context | Available coverage, ordering evidence, event kind and source version retain their meaning. Missing metadata stays unknown. | Analytics and backend |
 | Pricing quality | Approved annotation guidance and held-out representative data pass the declared task gate. | Applied ML and product |
-| Interactive performance | Saved queries and update workloads execute on the recorded laptop profiles. | Analytics, backend and testing |
+| Interactive performance | Saved queries and update workloads execute on both declared virtual-machine profiles. | Analytics, backend and testing |
 | Distribution | Base installer and optional pack measurements cover dependencies, verification, cancellation, removal and offline operation. | Packaging, security and testing |
 
 These requirements remain applicable when structural fixtures and regression tests pass. Qualification does not authorize changing capture scope, uploading customer data or introducing another inference runtime.
@@ -70,6 +70,16 @@ The private input document uses schema `analytics-package-inputs.v1`. Set `sourc
 Set `bridge_origin`, the optional `bridge_path`, `platform_origin`, `identity_path`, `conversations_path` and `messages_path_prefix` from the packaged adapter's supported upstream contract. The browser supplies only deterministic synthetic responses to those upstream reads. An optional `browser_executable` selects an installed browser. No credential or signing key belongs in the input document. Keep explicit canonical and analytics database paths in the installation's private `runtime.env`, within its data directory, with its existing local encryption key.
 
 Use a fresh, empty dedicated installation for each packaged job. The guest must have no active non-loopback network adapters or default routes, with dependencies and valid grants available locally. The collector measures these facts before launch and after cleanup. It reports unavailable hardware, artifacts, browser dependencies or isolation as BLOCKED before starting product work. It preserves any started failure as FAIL.
+
+### Verify virtual storage
+
+Pass `--hardware-handoff /path/to/handoff.json` for semantic questions and packaged jobs. The private document uses schema `analytics-hardware-handoff.v1` and supplies an existing guest `directory`, the selected `vm_id` and the reviewed host observer's `producer_sha256`. It contains no credentials. The host observer uses PowerShell Direct with that VM ID while the guest network remains disconnected.
+
+The runner creates a fresh attempt directory inside the handoff directory. It writes `pre.request.json` before launching work and `post.request.json` after the owned worker joins. The host observer answers each with the corresponding `*.response.json`, published atomically. Each response binds the complete request digest, producer digest, guest collector digest and raw storage snapshot. Each response has a 180-second deadline. Observation time stays outside operation latency and does not extend worker execution budgets.
+
+Supported storage has exactly one virtual SCSI boot/system disk, agreeing complete guest disk inventories and no additional virtual disks or nonprimordial storage pools. Every workload path must map to that disk without reparse redirection. Every file in its attached backing chain must map through host volume and partition associations to physical SSD storage. Unknown media, missing parents, extra disks, unsupported storage or changed topology fail verification. The guest's raw media label remains recorded even when it says `Unspecified`.
+
+Archived evidence binds the source, manifest, attempt, guest boot, workload paths and local observations to the selected VM. Final verification repeats the joins from those records. A discovery report, scalar SSD flag or digest without its reviewed observer cannot establish this evidence. See the [hardware evidence contract](hardware-evidence.md) for the producer schema.
 
 ## Semantic questions
 

@@ -485,6 +485,8 @@ def inspect_attempt(path: Path, manifest: dict, context: dict) -> tuple[str, dic
                 or file_digest(file) != reference["sha256"] or file.stat().st_size != reference["bytes"]):
             return job, verdict("FAIL", "evidence_hash_mismatch"), result
     errors = check_payload(manifest, context, job, payload)
+    from tools.analytics_qualification_hardware_evidence import check_evidence as check_hardware_evidence
+    errors.extend(check_hardware_evidence(path, result, manifest, context))
     if job == "source-ci":
         errors.extend(check_ci_evidence(path, result, context, manifest))
     elif job == "regression":

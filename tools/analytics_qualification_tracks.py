@@ -17,6 +17,15 @@ def check_profile(manifest, profile, hardware):
     for field in ("cpu_model", "power_mode", "instruction_requirements"):
         if not isinstance(hardware.get(field), str) or not hardware[field].strip():
             errors.append("hardware_measurement_missing:" + field)
+    if "hardware_evidence" in manifest:
+        if hardware.get("virtualization") != manifest["hardware_evidence"]["topology"]:
+            errors.append("hardware_virtualization_not_established")
+        evidence = hardware.get("storage_evidence", {})
+        if evidence.get("schema") != manifest["hardware_evidence"]["schema"]:
+            errors.append("hardware_storage_evidence_missing")
+        for field in ("host_cpu_model", "host_power_mode"):
+            if not isinstance(hardware.get(field), str) or not hardware[field].strip():
+                errors.append("hardware_measurement_missing:" + field)
     return errors
 
 

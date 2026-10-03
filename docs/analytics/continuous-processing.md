@@ -72,7 +72,7 @@ Each output directory must be new. The workload command uses isolated synthetic 
 
 The forced unchanged phase measures rebuilding with reuse, not the ordinary unchanged no-op path. Query results retain unknown message-type coverage. A successful query timing does not qualify the no-reply classification or pricing accuracy.
 
-Source scans, full graph serialization, validation, and generation writes remain workload costs. The [laptop workload and acceptance targets](qualification.md) remain separate gates. This command does not establish installer size, constrained-laptop performance, or production feature accuracy.
+Source scans, full graph serialization, validation, and generation writes remain workload costs. The [declared workload and acceptance targets](qualification.md) remain separate gates. This command does not establish installer size, physical-laptop performance, or production feature accuracy.
 
 No model, runtime dependency, public protocol change, or additional database is required. Conversation fragments belong to the disposable analytics store. Source-verification tokens and the date index also have an additive canonical migration, described in [Read verification](read-verification.md).
 

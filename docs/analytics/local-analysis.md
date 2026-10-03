@@ -30,6 +30,8 @@ Local inference must never fall back to a hosted service or upload conversation 
 
 Target CPU-only Windows laptops with an SSD. Qualify an 8 GiB, four-core constrained profile and a 16 GiB, four-core reference profile. These are qualification targets, not advertised minimum requirements until tested. Record CPU instruction requirements; do not assume GPU, NPU, CUDA, or a particular vector instruction extension.
 
+Current deterministic analytics acceptance uses the virtual-machine profiles in the [qualification procedure](qualification.md). Those results do not establish this physical-laptop target or qualify an optional model pack.
+
 Initial acceptance budgets for a primary text-analysis pack are 250 MiB total download, 512 MiB installed size, and 512 MiB additional peak resident memory, including its runtime and dependencies. These are design limits, not measurements. Any exception requires a measured task benefit and an explicit product decision; an optional LLM must not silently raise the baseline.
 
 Limit background analysis to one job and at most two CPU threads initially. Benchmark bounded batches, cold load, warm inference, cancellation, and sustained backlog processing while the UI and ingestion remain active. Pause or decline optional inference when memory or disk headroom is insufficient. Report unsupported hardware rather than repeatedly failing or switching to the cloud.

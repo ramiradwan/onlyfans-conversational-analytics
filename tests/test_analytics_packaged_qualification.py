@@ -24,7 +24,9 @@ PROFILE = "reference-windows-16g"
 
 def hardware():
     return dict(MANIFEST["profiles"][PROFILE], cpu_model="Synthetic CPU", power_mode="Synthetic mode",
-                instruction_requirements="AMD64")
+                instruction_requirements="AMD64", virtualization="hyper-v-single-boot-disk",
+                host_cpu_model="Synthetic host", host_power_mode="Synthetic mode",
+                storage_evidence={"schema": "analytics-hardware-evidence.v1"})
 
 
 def semantic():

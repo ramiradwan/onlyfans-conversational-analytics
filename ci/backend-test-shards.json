@@ -407,6 +407,10 @@
         "reason": "Run the packaging mode handoff and environment restoration through native PowerShell child processes."
       },
       {
+        "selector": "tests/test_analytics_qualification_storage.py::test_guest_script_uses_the_declared_projection_without_live_storage_queries",
+        "reason": "Exercise the guest hardware projection through native Windows PowerShell with synthetic storage observations."
+      },
+      {
         "selector": "tests/test_packaging_smoke.py",
         "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
       },

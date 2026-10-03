@@ -67,19 +67,7 @@ def run_source(root, directory, context, session, manifest, args):
            f"questions/{profile}/{args.case}/{args.state}" if kind == "questions" else
            f"visibility/{profile}/{args.repeat}")
     attempt = q.begin_attempt(directory, context, session, job)
-    hardware = None
-    if getattr(args, "run_questions", False):
-        from tools.analytics_qualification_hardware import observe
-        from tools.analytics_qualification_tracks import check_profile
-        try:
-            hardware = observe()
-            errors = check_profile(manifest, profile, hardware)
-            if errors:
-                raise ValueError(";".join(errors))
-        except (OSError, ValueError, subprocess.SubprocessError) as error:
-            finish(attempt, context, job, {"status": "BLOCKED", "worker_started": False,
-                "exit_code": None, "reason": str(error)})
-            return
+    hardware, hardware_evidence = None, None
     subject_root = (args.subject_root or root).resolve()
     subject = q.source_context(subject_root)
     config = {"subject_directory": str(subject_root), "subject_files": subject["files"],
@@ -91,6 +79,24 @@ def run_source(root, directory, context, session, manifest, args):
         "data": str(attempt / "collector/data"), "entry_point": str(root / "tools/qualify_analytics_baseline.py"),
         "job": job, "profile": profile, "hardware": hardware,
         "semantic_questions": getattr(args, "run_questions", False)}
+    if config["semantic_questions"]:
+        from tools.analytics_qualification_hardware_evidence import HardwareEvidence, workload_paths
+        from tools.analytics_qualification_tracks import check_profile
+        try:
+            if subject_root != root.resolve():
+                raise ValueError("semantic_question_source_directory_mismatch")
+            paths = workload_paths(root, attempt, data=config["data"])
+            hardware_evidence = HardwareEvidence(attempt, context, manifest, profile, paths,
+                                                 getattr(args, "hardware_handoff", None))
+            config["hardware"] = hardware_evidence.hardware
+            config["hardware_runtime"] = hardware_evidence.runtime_paths
+            errors = check_profile(manifest, profile, config["hardware"])
+            if errors:
+                raise ValueError(";".join(errors))
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            finish(attempt, context, job, {"status": "BLOCKED", "worker_started": False,
+                "exit_code": None, "reason": str(error)})
+            return
     execution_schedule = None
     worker_limit = manifest["limits"]["whole_worker_seconds"]
     if kind == "visibility" and "visibility_execution" in manifest:
@@ -102,6 +108,8 @@ def run_source(root, directory, context, session, manifest, args):
     command = [sys.executable, config["entry_point"], "--collector-worker", str(attempt / "worker-input.json")]
     result = {}
     try:
+        if hardware_evidence:
+            hardware_evidence.before_worker()
         result = supervise(command, root, attempt, worker_limit, limits=manifest["limits"],
                            execution_schedule=execution_schedule)
         if result["worker_started"]:
@@ -124,6 +132,15 @@ def run_source(root, directory, context, session, manifest, args):
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         result.update(status="FAIL", complete=False, reporting_error=type(error).__name__,
                       reason=result.get("reason") or type(error).__name__)
+    if hardware_evidence:
+        try:
+            if result.get("worker_started"):
+                hardware_evidence.after_worker(result)
+                result["source_after_sha256"] = q.digest(q.source_context(root))
+                result["subject_after_sha256"] = q.digest(q.source_context(subject_root))
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            result.update(status="FAIL", complete=False, reason=result.get("reason") or str(error))
+        result.setdefault("attachments", []).extend(hardware_evidence.references)
     finish(attempt, context, job, result)
 
 
@@ -165,6 +182,7 @@ def main(root: Path) -> int:
     action.add_argument("--run-questions", action="store_true")
     action.add_argument("--run-package", choices=("package", "matrix", "visibility"))
     parser.add_argument("--package-inputs", type=Path)
+    parser.add_argument("--hardware-handoff", type=Path)
     parser.add_argument("--profile", choices=("reference-windows-16g", "constrained-windows-8g"), default="reference-windows-16g")
     parser.add_argument("--subject-root", type=Path)
     parser.add_argument("--messages", type=int, choices=(10000, 100000), default=100000)

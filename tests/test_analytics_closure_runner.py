@@ -156,3 +156,82 @@ def test_reporting_error_retains_owned_worker_result(command, monkeypatch):
     assert result["reason"] == "known_product_failure" and result["reporting_error"] == "ValueError"
     assert result["payload"] == {"complete": True}
     assert {x["name"] for x in result["attachments"]} == {"payload.json", "worker-input.json", "worker.log"}
+
+
+def hardware_runner_case(command, monkeypatch, mode):
+    from types import SimpleNamespace
+    from tools import analytics_qualification_hardware_evidence as hardware
+    from tools import analytics_qualification_packaged as packaged
+    directory, invoke = command
+    assert invoke() == 2
+    context = q.read_json(directory / "context.json")
+    session = q.session(directory, context)
+    manifest = q.read_json(ROOT / "docs/analytics/acceptance-manifest.json")
+    args = SimpleNamespace(run_source="questions", run_questions=True, run_package="package",
+                           profile="reference-windows-16g", messages=100000, case="empty",
+                           state="fresh", repeat=0, subject_root=None, known_synthetic_kinds=True,
+                           hardware_handoff=None, package_inputs=directory / "package-inputs.json")
+    monkeypatch.setattr(hardware, "workload_paths", lambda *args, **kwargs: {"temporary": "temporary"})
+    if mode == "packaged":
+        q.write_once(args.package_inputs, {})
+        def prerequisites(inputs, manifest, source, profile, *, hardware_observer):
+            return {"hardware": hardware_observer("browser.exe"), "artifacts": context.get("artifacts")}
+        monkeypatch.setattr(packaged, "prerequisites", prerequisites)
+    def run():
+        (packaged.run if mode == "packaged" else runner.run_source)(
+            ROOT, directory, context, session, manifest, args)
+        return q.read_json(next((directory / "attempts").glob("*/result.json")))
+    return run
+
+
+@pytest.mark.parametrize("mode", ["source", "packaged"])
+def test_missing_hardware_pre_blocks_before_worker(command, monkeypatch, mode):
+    from tools import analytics_qualification_process as process
+    run = hardware_runner_case(command, monkeypatch, mode)
+    def forbidden(*args, **kwargs):
+        pytest.fail("worker must not start without pre observation")
+    monkeypatch.setattr(runner, "supervise", forbidden)
+    monkeypatch.setattr(process, "supervise", forbidden)
+    result = run()
+    assert result["status"] == "BLOCKED"
+    assert result["worker_started"] is False and result["exit_code"] is None
+    assert result["reason"] == "hardware_handoff_not_configured"
+
+
+@pytest.mark.parametrize("mode", ["source", "packaged"])
+def test_invalid_hardware_post_retains_joined_worker_failure(command, monkeypatch, mode):
+    from tools import analytics_qualification_hardware_evidence as hardware
+    from tools import analytics_qualification_process as process
+    from tools import analytics_qualification_tracks as tracks
+    run = hardware_runner_case(command, monkeypatch, mode)
+    observed = []
+    class InvalidPost:
+        hardware = {"disk": "SSD"}
+        runtime_paths = {"temporary": "temporary"}
+        references = []
+        def __init__(self, *args):
+            pass
+        def before_worker(self):
+            observed.append("before")
+        def after_worker(self, result):
+            assert result["worker_joined"] is True
+            assert result["process_instance"] == "retained-owner"
+            observed.append("after")
+            raise ValueError("hardware_topology_changed_during_worker")
+    def completed_worker(command, root, attempt, seconds, **kwargs):
+        q.write_once(attempt / "collector/payload.json", {"complete": True})
+        (attempt / "worker.log").write_text("worker joined", encoding="utf-8")
+        return {"status": "PASS", "worker_started": True, "worker_joined": True,
+                "process_instance": "retained-owner", "exit_code": 0, "seconds": 2,
+                "timed_out": False, "reason": None}
+    monkeypatch.setattr(hardware, "HardwareEvidence", InvalidPost)
+    monkeypatch.setattr(tracks, "check_profile", lambda *args: [])
+    monkeypatch.setattr(q, "check_payload", lambda *args: [])
+    monkeypatch.setattr(runner, "supervise", completed_worker)
+    monkeypatch.setattr(process, "supervise", completed_worker)
+    result = run()
+    assert observed == ["before", "after"]
+    assert result["status"] == "FAIL" and result["complete"] is False
+    assert result["worker_started"] is True and result["worker_joined"] is True
+    assert result["exit_code"] == 0 and result["process_instance"] == "retained-owner"
+    assert result["reason"] == "hardware_topology_changed_during_worker"

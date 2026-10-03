@@ -96,7 +96,7 @@ def runtime_source(archive, revision):
     return {"source_revision": revision, "manifest_sha256": hashlib.sha256(raw).hexdigest()}
 
 
-def prerequisites(inputs, manifest, source, profile):
+def prerequisites(inputs, manifest, source, profile, *, hardware_observer=None):
     from tools.analytics_qualification_hardware import observe, observe_network_isolation
     artifacts = artifact_context(inputs)
     for field in ("runtime_directory", "agent_directory", "data_directory", "browser_profile"):
@@ -107,10 +107,6 @@ def prerequisites(inputs, manifest, source, profile):
     if source.get("working_tree") or source.get("signature_valid") is not True:
         raise ValueError("package_source_not_clean_and_signed")
     release_source = runtime_source(artifacts["runtime"]["path"], source["revision"])
-    hardware = observe()
-    errors = check_profile(manifest, profile, hardware)
-    if errors:
-        raise ValueError(";".join(errors))
     files = extracted_files(artifacts["runtime"]["path"], inputs["runtime_directory"])
     root = Path(inputs["runtime_directory"]).resolve()
     agent = Path(inputs["agent_directory"]).resolve(strict=True)
@@ -141,8 +137,13 @@ def prerequisites(inputs, manifest, source, profile):
         "messages_path_prefix"}
     if not inputs.keys() <= allowed:
         raise ValueError("package_inputs_contain_unsupported_fields")
+    browser = str(Path(inputs.get("browser_executable") or resolved_browser).resolve())
+    hardware = hardware_observer(browser) if hardware_observer else observe()
+    errors = check_profile(manifest, profile, hardware)
+    if errors:
+        raise ValueError(";".join(errors))
     return {"hardware": hardware, "artifacts": artifacts, "runtime_files": files,
-            "runtime_source": release_source,
+            "runtime_source": release_source, "browser_executable": browser,
             "network_isolation": observe_network_isolation()}
 
 
@@ -154,9 +155,18 @@ def run(root, directory, context, session, manifest, args):
            f"mutation/{profile}/{args.messages}" if kind == "matrix" else
            f"visibility/{profile}/{args.repeat}")
     attempt = q.begin_attempt(directory, context, session, job)
+    hardware_evidence = None
     try:
         inputs = q.read_json(args.package_inputs)
-        observed = prerequisites(inputs, manifest, context["source"], profile)
+        from tools.analytics_qualification_hardware_evidence import HardwareEvidence, workload_paths
+        def hardware_observer(browser):
+            nonlocal hardware_evidence
+            paths = workload_paths(root, attempt, inputs=inputs, browser=browser)
+            hardware_evidence = HardwareEvidence(attempt, context, manifest, profile, paths,
+                                                 getattr(args, "hardware_handoff", None))
+            return hardware_evidence.hardware
+        observed = prerequisites(inputs, manifest, context["source"], profile,
+                                 hardware_observer=hardware_observer)
         if observed["artifacts"] != context.get("artifacts"):
             raise ValueError("package_inputs_differ_from_campaign")
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
@@ -166,7 +176,8 @@ def run(root, directory, context, session, manifest, args):
     config = {"root": str(root), "manifest": manifest, "subject": context["source"],
         "subject_sha256": q.digest(context["source"]), "job": job, "mode": kind,
         "profile": profile, "messages": args.messages, "repeat": args.repeat,
-        "inputs": inputs, "observed": observed, "output": str(attempt / "collector")}
+        "inputs": inputs, "observed": observed, "output": str(attempt / "collector"),
+        "hardware_runtime": hardware_evidence.runtime_paths}
     schedule = None
     limit = manifest["limits"]["whole_worker_seconds"]
     if kind == "visibility":
@@ -176,6 +187,7 @@ def run(root, directory, context, session, manifest, args):
     q.write_once(attempt / "worker-input.json", config)
     result = {}
     try:
+        hardware_evidence.before_worker()
         result = supervise([sys.executable, "-m", "tools.analytics_qualification_packaged",
             "--worker", str(attempt / "worker-input.json")], root, attempt, limit,
             limits=manifest["limits"], execution_schedule=schedule)
@@ -198,6 +210,14 @@ def run(root, directory, context, session, manifest, args):
                 result["status"] = "FAIL"
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         result.update(status="FAIL", complete=False, reason=type(error).__name__)
+    try:
+        if result.get("worker_started"):
+            hardware_evidence.after_worker(result)
+            result["source_after_sha256"] = q.digest(q.source_context(root))
+            result["subject_after_sha256"] = result["source_after_sha256"]
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+        result.update(status="FAIL", complete=False, reason=result.get("reason") or str(error))
+    result.setdefault("attachments", []).extend(hardware_evidence.references)
     finish(attempt, context, job, result)
 
 
@@ -217,7 +237,8 @@ def check_evidence(attempt, result, manifest, context):
             or config["subject"] != context["source"]
             or payload.get("subject_sha256") != q.digest(context["source"])
             or payload.get("supervisor_instance") != result.get("process_instance")
-            or read("hardware.json") != payload.get("hardware")):
+            or read("hardware.json") != payload.get("hardware")
+            or config.get("observed", {}).get("hardware") != payload.get("hardware")):
         return ["packaged_raw_binding_mismatch"]
     try:
         release_source = runtime_source(context["artifacts"]["runtime"]["path"], context["source"]["revision"])
