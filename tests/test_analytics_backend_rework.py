@@ -95,6 +95,8 @@ from app.services import insights_service
 from app.transport.manager import DEV_AGENT_AUTH_TICKET
 from app.canonical.read_models import AccountReadModel
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 REPOSITORY_ROOT = Path(__file__).parents[1]
@@ -362,8 +364,11 @@ def test_protected_analytics_openapi_requires_auth_and_structured_errors() -> No
         path for path in schema["paths"] if path.startswith("/api/v1/insights/")
     }
     assert protected_paths
-    for path in protected_paths:
-        operation = schema["paths"][path]["get"]
+    operations = [operation for path in protected_paths
+                  for method, operation in schema["paths"][path].items()
+                  if method in {"get", "post", "put", "patch", "delete", "head", "options"}]
+    assert operations
+    for operation in operations:
         # The account-session dependency reads a same-origin cookie directly
         # from the request; unlike the retired dev ticket seam, that is not
         # surfaced as an explicit header/query parameter in the OpenAPI
@@ -525,6 +530,7 @@ def test_pipeline_rejects_a_graph_reader_outside_atomic_projection_store() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.windows_compat
 @pytest.mark.parametrize("failure_mode", ["deleted", "graph_tamper"])
 async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
     tmp_path: Path,
@@ -558,6 +564,7 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         projections=stores.projections,
         graph=stores.graph,
     )
+    pipeline.compact_graph = False
     scheduler = InProcessProjectionScheduler(
         pipeline, worker_count=2, queue_capacity=4
     )
@@ -566,50 +573,56 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         pipeline=pipeline,
         scheduler=scheduler,
     )
-    await scheduler.start(recover=True)
-    initial = await scheduler.wait(payload.creator_account_id)
-    assert initial.availability is AvailabilityStatus.AVAILABLE
-
-    build_count = 0
-    original_build = pipeline._build
-
-    def counted_build(*args, **kwargs):
-        nonlocal build_count
-        build_count += 1
-        return original_build(*args, **kwargs)
-
-    monkeypatch.setattr(pipeline, "_build", counted_build)
-    if failure_mode == "deleted":
-        projection_path.unlink()
-    else:
-        database = stores.projections.database
-        assert database is not None
-        with database.transaction() as connection:
-            connection.execute("DROP TRIGGER graph_node_building_update")
-            connection.execute(
-                """
-                UPDATE graph_nodes SET properties_json='{"character_count":999}'
-                WHERE node_id=(SELECT MIN(node_id) FROM graph_nodes)
-                """
-            )
-
-    recovery_entered = threading.Event()
     release_recovery = threading.Event()
-    recovery_timeout_seconds = 15
-    original_ensure_ready = stores.projections.ensure_ready
-
-    def paused_recovery() -> None:
-        recovery_entered.set()
-        # The coroutine's finally block owns this release. A worker-side
-        # deadline would turn host scheduling delay into a recovery failure.
-        release_recovery.wait()
-        original_ensure_ready()
-
-    monkeypatch.setattr(stores.projections, "ensure_ready", paused_recovery)
-    monkeypatch.setattr(insights_service, "analytics_runtime", lambda source=None: runtime)
-    bind_session(payload.creator_account_id)
-    responses = []
     try:
+        await scheduler.start(recover=True)
+        initial = await scheduler.wait(payload.creator_account_id)
+        assert initial.availability is AvailabilityStatus.AVAILABLE
+
+        build_count = 0
+        original_build = pipeline._build
+
+        def counted_build(*args, **kwargs):
+            nonlocal build_count
+            build_count += 1
+            return original_build(*args, **kwargs)
+
+        monkeypatch.setattr(pipeline, "_build", counted_build)
+        if failure_mode == "deleted":
+            database = stores.projections.database
+            assert database is not None
+            # Release only the idle WAL anchor so Windows permits deliberate
+            # file loss; keep the scheduler/store identity for HTTP recovery.
+            database.release_wal_anchor()
+            assert database.open_connection_count(projection_path) == 0
+            projection_path.unlink()
+        else:
+            database = stores.projections.database
+            assert database is not None
+            with database.transaction() as connection:
+                connection.execute("DROP TRIGGER graph_node_building_update")
+                connection.execute(
+                    """
+                    UPDATE graph_nodes SET properties_json='{"character_count":999}'
+                    WHERE node_id=(SELECT MIN(node_id) FROM graph_nodes)
+                    """
+                )
+
+        recovery_entered = threading.Event()
+        recovery_timeout_seconds = 15
+        original_ensure_ready = stores.projections.ensure_ready
+
+        def paused_recovery() -> None:
+            recovery_entered.set()
+            # The coroutine's finally block owns this release. A worker-side
+            # deadline would turn host scheduling delay into a recovery failure.
+            release_recovery.wait()
+            original_ensure_ready()
+
+        monkeypatch.setattr(stores.projections, "ensure_ready", paused_recovery)
+        monkeypatch.setattr(insights_service, "analytics_runtime", lambda source=None: runtime)
+        bind_session(payload.creator_account_id)
+        responses = []
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://testserver"
         ) as client:
@@ -1211,6 +1224,7 @@ async def test_projection_revisions_coalesce_to_one_latest_build(
     assert await scheduler.close(timeout=1)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_projection_shutdown_is_awaited_and_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
@@ -1249,6 +1263,7 @@ async def test_projection_shutdown_is_awaited_and_fail_closed(
     assert pipeline.graph.partition_revision(account_ref(account_id)) is None
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_projection_shutdown_joins_cooperative_owned_worker(
     monkeypatch: pytest.MonkeyPatch,
@@ -1290,6 +1305,7 @@ async def test_projection_shutdown_joins_cooperative_owned_worker(
     assert pipeline.graph.partition_revision(account_ref(account_id)) is None
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_projection_startup_recovers_unscheduled_canonical_accounts() -> None:
     source = MutableCanonicalSource(
@@ -1315,6 +1331,7 @@ async def test_projection_startup_recovers_unscheduled_canonical_accounts() -> N
     assert await scheduler.close(timeout=1)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_projection_get_keeps_event_loop_responsive_during_canonical_read() -> None:
     account_id = "synthetic-responsive-get-account"
@@ -1348,6 +1365,7 @@ async def test_projection_get_keeps_event_loop_responsive_during_canonical_read(
     assert await runtime.scheduler.close(timeout=1)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_scheduler_canonical_io_does_not_hold_state_lock_or_event_loop(
 ) -> None:
@@ -1517,6 +1535,7 @@ async def test_projection_build_coordination_is_per_account(
     }
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_scheduler_builds_different_accounts_concurrently(
     monkeypatch: pytest.MonkeyPatch,
@@ -1577,6 +1596,7 @@ async def test_scheduler_builds_different_accounts_concurrently(
     assert await scheduler.close(timeout=1)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_different_accounts_publish_concurrently_without_global_io_lock(
     monkeypatch: pytest.MonkeyPatch,
@@ -1725,6 +1745,7 @@ async def test_naive_protocol_timestamp_is_sanitized_at_analytics_boundary() -> 
         )
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_aware_timestamps_and_equal_time_source_order_survive_sqlite(
     tmp_path: Path,
@@ -2219,6 +2240,7 @@ async def test_public_errors_use_stable_codes_and_redact_inputs() -> None:
         assert private_timestamp not in response.text
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_rebuild_source_is_existing_read_only_schema_and_output_is_atomic(
     tmp_path: Path,
@@ -2319,6 +2341,7 @@ async def test_rebuild_source_is_existing_read_only_schema_and_output_is_atomic(
     assert database_path.read_bytes() == before
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_rebuild_cli_subprocess_uses_sanitized_atomic_boundary(
     tmp_path: Path,
@@ -2378,6 +2401,7 @@ async def test_rebuild_cli_subprocess_uses_sanitized_atomic_boundary(
     assert str(database_path) not in rejected.stdout + rejected.stderr
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_rebuild_pins_one_source_transaction_across_path_swap(
     tmp_path: Path,
@@ -2426,6 +2450,7 @@ async def test_rebuild_pins_one_source_transaction_across_path_swap(
             database.verify_identity()
 
 
+@pytest.mark.windows_compat
 @pytest.mark.asyncio
 async def test_rebuild_rejects_link_and_parent_alias_sources(tmp_path: Path) -> None:
     database_path = tmp_path / "canonical.sqlite3"
@@ -2683,6 +2708,7 @@ async def test_rebuild_sanitizes_repository_and_validation_failures(
     assert "validation" not in public.lower()
 
 
+@pytest.mark.windows_compat
 def test_private_output_platform_ports_fail_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2714,6 +2740,7 @@ def test_private_output_platform_ports_fail_closed(
     assert "synthetic security refusal" not in str(refused.value)
 
 
+@pytest.mark.windows_compat
 @pytest.mark.skipif(os.name != "nt", reason="requires Windows ACL APIs")
 @pytest.mark.asyncio
 async def test_windows_rebuild_output_has_one_protected_owner_ace(

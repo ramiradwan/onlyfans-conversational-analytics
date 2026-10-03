@@ -10,6 +10,8 @@ import sys
 
 import pytest
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
+
 
 def _measure_acl_growth(path: Path) -> dict[str, int]:
     import ctypes

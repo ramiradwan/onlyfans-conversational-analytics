@@ -19,6 +19,8 @@ from app.persistence.auth import (
     SQLiteAuthenticationStore,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @dataclass
 class MutableClock:

@@ -15,6 +15,8 @@ from app.persistence.factory import create_canonical_repositories
 from app.persistence.retention import CreatorVaultRetention
 from app.persistence.retention_restore import restore_backup_pair_with_deletion_barriers
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 ACCOUNT = "restore-account"
 TARGET_PARTICIPANT = "participant-deleted"
 SURVIVOR_PARTICIPANT = "participant-survivor"

@@ -2,14 +2,79 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from threading import RLock
 
 from app.persistence.database import ProjectionsSQLite
 from app.persistence.migrations import MigrationRunner
 from app.analytics.opaque_refs import normalize_account_ref
+
+
+GENERATION_WRITE_CACHE_KIB = 16 * 1024
+GENERATION_VERIFICATION_CACHE_KIB = 32 * 1024
+GENERATION_RETIREMENT_CACHE_KIB = 128 * 1024
+MAX_CONTENT_WRITE_CACHE_KIB = 128 * 1024
+
+
+@contextmanager
+def generation_verification_cache(connection):
+    """Use a bounded page-cache target for one stored-generation verification."""
+
+    previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
+    target = -GENERATION_VERIFICATION_CACHE_KIB
+    if previous != target:
+        connection.execute(f"PRAGMA cache_size={target}")
+    try:
+        yield
+    finally:
+        if previous != target:
+            connection.execute(f"PRAGMA cache_size={previous}")
+
+
+def content_write_cache_target(record_count: int, *, membership_page_count: int = 0) -> int:
+    if type(record_count) is not int or record_count < 0:
+        raise ValueError("graph_record_count_invalid")
+    if (type(membership_page_count) is not int
+            or not 0 <= membership_page_count <= record_count):
+        raise ValueError("graph_membership_page_count_invalid")
+    return max(GENERATION_WRITE_CACHE_KIB,
+               min(MAX_CONTENT_WRITE_CACHE_KIB,
+                   (record_count + 1) // 2 + membership_page_count))
+
+
+@contextmanager
+def generation_retirement_cache(connection):
+    """Use bounded headroom while synchronously reclaiming retired content."""
+
+    previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
+    target = -GENERATION_RETIREMENT_CACHE_KIB
+    if previous != target:
+        connection.execute(f"PRAGMA cache_size={target}")
+    try:
+        yield
+    finally:
+        if previous != target:
+            connection.execute(f"PRAGMA cache_size={previous}")
+
+
+@contextmanager
+def content_write_cache(connection, record_count: int, *, membership_page_count: int = 0):
+    """Keep the content writer's working set bounded and local to its connection."""
+
+    previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
+    target = -content_write_cache_target(
+        record_count, membership_page_count=membership_page_count)
+    if previous != target:
+        connection.execute(f"PRAGMA cache_size={target}")
+    try:
+        yield
+    finally:
+        if previous != target:
+            connection.execute(f"PRAGMA cache_size={previous}")
 
 
 GenerationStatus = Literal[
@@ -77,11 +142,54 @@ class ProjectionsDatabase(ProjectionsSQLite):
         self.migrations_dir = Path(
             migrations_dir or Path(__file__).with_name("sql")
         )
+        self._wal_anchor_lock = RLock()
+        self._wal_anchor = None
         self.migration_runner = MigrationRunner(
             self,
             migrations_dir=self.migrations_dir,
         )
         self.migration_runner.run()
+
+    def connect(self):
+        connection = super().connect()
+        try:
+            connection.execute("PRAGMA wal_autocheckpoint=0")
+            if int(connection.execute("PRAGMA wal_autocheckpoint").fetchone()[0]) != 0:
+                raise RuntimeError("analytics_wal_autocheckpoint_not_disabled")
+            return connection
+        except BaseException:
+            connection.close()
+            raise
+
+    def retain_wal_anchor(self) -> None:
+        """Keep one idle connection open so commits never own last-close checkpointing."""
+
+        with self._wal_anchor_lock:
+            if self._wal_anchor is None:
+                self._wal_anchor = self.connect()
+
+    def passive_wal_checkpoint(self):
+        """Checkpoint opportunistically without blocking active readers or writers."""
+
+        with self._wal_anchor_lock:
+            connection = self._wal_anchor
+            if connection is None:
+                return None
+            row = connection.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+            return None if row is None else tuple(row)
+
+    def release_wal_anchor(self) -> None:
+        """Checkpoint then release the scheduler-lifetime WAL anchor."""
+
+        with self._wal_anchor_lock:
+            connection = self._wal_anchor
+            self._wal_anchor = None
+        if connection is None:
+            return
+        try:
+            connection.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+        finally:
+            connection.close()
 
     def active_generation(self, creator_account_id: str) -> ProjectionGeneration | None:
         partition_ref = normalize_account_ref(creator_account_id)

@@ -40,6 +40,8 @@ from app.persistence.projection_activation import (
     InMemoryProjectionActivationRepository,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 NOW = datetime.now(timezone.utc)
 
@@ -268,6 +270,7 @@ def test_direct_sql_topic_pair_requires_both_matching_fields(tmp_path: Path) -> 
                 )
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 @pytest.mark.parametrize("sample", range(3))
 def test_50k_node_short_lease_build_stays_live_under_repeated_runs(
@@ -790,6 +793,7 @@ def test_inflight_algorithm_cannot_return_or_cache_after_generation_replacement(
         ).fetchone()[0] == 0
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_16400_disjoint_edges_materialize_only_the_root_frontier(
     tmp_path: Path,
@@ -963,7 +967,9 @@ def test_populated_projection_v2_metric_upgrade_discards_legacy_rows_and_restart
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 1
     with upgraded.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 25
+        assert connection.execute("SELECT COUNT(*) FROM conversation_fragments").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM enrichment_reuse").fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 0
@@ -980,7 +986,7 @@ def test_populated_projection_v2_metric_upgrade_discards_legacy_rows_and_restart
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
-def test_populated_projection_v1_metric_upgrade_through_v4_is_restart_safe(
+def test_populated_projection_v1_metric_upgrade_through_v5_is_restart_safe(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "projections-v1.sqlite3"
@@ -1041,7 +1047,9 @@ def test_populated_projection_v1_metric_upgrade_through_v4_is_restart_safe(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 1
     with upgraded.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 25
+        assert connection.execute("SELECT COUNT(*) FROM conversation_fragments").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM enrichment_reuse").fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 0

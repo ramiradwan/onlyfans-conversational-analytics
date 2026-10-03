@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
+
 from app.core import customer_release
 
 ORIGIN = "https://api.example.com"

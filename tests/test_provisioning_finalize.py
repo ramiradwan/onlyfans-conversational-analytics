@@ -30,6 +30,8 @@ from app.provisioning.finalize import (
 )
 from app.security.grant_types import PROVISIONING_GRANT_TYPES
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 # Stated independently of the module under test so that dropping a required
 # type from `PROVISIONING_GRANT_TYPES` cannot silently drop the case that covers it.

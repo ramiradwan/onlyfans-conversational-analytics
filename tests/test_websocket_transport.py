@@ -38,6 +38,8 @@ from app.transport.manager import (
     utc_now,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 AUTHORIZATION_GRANT_TYPES = (
@@ -409,6 +411,8 @@ def test_agent_drop_reconnects_with_new_connection_and_fence() -> None:
 
 
 def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
+    # Entering the client gives both sockets one event loop, so a broadcast from
+    # the Agent's handler wakes the Bridge's pending receive.
     with TestClient(app) as client:
         with client.websocket_connect("/ws/bridge") as bridge:
             bridge_handshake(bridge)
@@ -433,7 +437,7 @@ def test_valid_fixture_exchange_routes_ack_and_presence_end_to_end() -> None:
                 agent.send_json(observed)
                 presence = bridge.receive_json()
                 while presence["type"] != "presence.state":
-                    assert presence["type"] in {"state.snapshot", "state.delta"}
+                    assert presence["type"] in {"state.snapshot", "state.delta", "system.state"}
                     presence = bridge.receive_json()
                 assert presence["type"] == "presence.state"
                 assert presence["payload"]["freshness"] == "current"

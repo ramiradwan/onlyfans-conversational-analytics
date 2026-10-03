@@ -38,6 +38,8 @@ from app.persistence.companion_pairing import (
 )
 from app.provisioning.progress_reporting import OnboardingProgressCoordinator
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @dataclass
 class Clock:

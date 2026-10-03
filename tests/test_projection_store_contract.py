@@ -25,6 +25,8 @@ from app.persistence.projection_activation import (
 )
 from app.canonical.read_models import AccountReadModel
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 class EmptySource:
     def __init__(self, revision: int) -> None:

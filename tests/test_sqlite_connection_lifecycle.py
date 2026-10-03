@@ -6,6 +6,8 @@ import pytest
 
 from app.persistence import database as database_module
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 class ProbeLock:
     def __init__(self) -> None:

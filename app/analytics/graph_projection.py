@@ -56,7 +56,20 @@ def stable_edge_id(
 class RelationshipGraphProjector:
     """Build message-level temporal and relationship-dynamics graph records."""
 
-    def project(
+    def project(self, creator_account_id, source_revision, conversations, enrichments,
+                metrics, *, cancellation_check=None):
+        nodes, edges = {}, {}
+        for batch_nodes, batch_edges in self.batches(creator_account_id, source_revision,
+                conversations, enrichments, metrics, cancellation_check=cancellation_check):
+            for records, target, name in ((batch_nodes, nodes, "node_id"), (batch_edges, edges, "edge_id")):
+                for record in records:
+                    key = getattr(record, name)
+                    if key in target and target[key] != record:
+                        raise ValueError("graph_record_identity_collision")
+                    target[key] = record
+        return self._summarize(account_ref(creator_account_id), source_revision, nodes, edges, cancellation_check)
+
+    def batches(
         self,
         creator_account_id: str,
         source_revision: int,
@@ -65,7 +78,7 @@ class RelationshipGraphProjector:
         metrics: list[ConversationMetrics],
         *,
         cancellation_check: CancellationCheck | None = None,
-    ) -> tuple[list[GraphNode], list[GraphEdge], GraphProjectionSummary]:
+    ):
         check_cancelled(cancellation_check)
         partition_ref = account_ref(creator_account_id)
         nodes: dict[str, GraphNode] = {}
@@ -373,35 +386,40 @@ class RelationshipGraphProjector:
                     )
                 previous_message_node_id = message_node_id
                 previous_sent_at = enrichment.sent_at
+                if (sequence + 1) % 128 == 0:
+                    yield list(nodes.values()), list(edges.values())
+                    nodes.clear()
+                    edges.clear()
 
-        for participant_opaque_ref, items in sorted(
-            conversations_by_participant.items()
-        ):
+        self._conversation_edges(edges, partition_ref, metrics, cancellation_check)
+        if nodes or edges:
+            yield list(nodes.values()), list(edges.values())
+
+    def _conversation_edges(self, edges, partition_ref, metrics, cancellation_check):
+        grouped = defaultdict(list)
+        for item in metrics:
+            grouped[item.participant_ref].append(item)
+        for participant_opaque_ref, items in sorted(grouped.items()):
             check_cancelled(cancellation_check)
             ordered_items = sorted(
                 items,
                 key=lambda item: (
-                    item[1].started_at is None,
-                    item[1].started_at,
-                    item[1].conversation_ref,
+                    item.started_at is None,
+                    item.started_at,
+                    item.conversation_ref,
                 ),
             )
             for left, right in zip(ordered_items, ordered_items[1:]):
-                left_conversation, left_metrics = left
-                right_conversation, right_metrics = right
+                left_metrics, right_metrics = left, right
                 left_id = stable_node_id(
                     partition_ref,
                     GraphNodeKind.CONVERSATION,
-                    conversation_ref(
-                        creator_account_id, left_conversation.conversation_id
-                    ),
+                    left_metrics.conversation_ref,
                 )
                 right_id = stable_node_id(
                     partition_ref,
                     GraphNodeKind.CONVERSATION,
-                    conversation_ref(
-                        creator_account_id, right_conversation.conversation_id
-                    ),
+                    right_metrics.conversation_ref,
                 )
                 interval = None
                 if left_metrics.ended_at and right_metrics.started_at:
@@ -427,6 +445,8 @@ class RelationshipGraphProjector:
                     properties=properties,
                 )
 
+    @staticmethod
+    def _summarize(partition_ref, source_revision, nodes, edges, cancellation_check):
         ordered_nodes = [nodes[key] for key in sorted(nodes)]
         ordered_edges = [edges[key] for key in sorted(edges)]
         check_cancelled(cancellation_check)
@@ -445,6 +465,31 @@ class RelationshipGraphProjector:
             },
         )
         return ordered_nodes, ordered_edges, summary
+
+    def compose(self, account_id, source_revision, fragments, metrics, *, cancellation_check=None):
+        """Union conversation-local graphs and rebuild participant timelines."""
+
+        partition = account_ref(account_id)
+        creator_id = stable_node_id(partition, GraphNodeKind.PARTICIPANT, partition)
+        nodes = {creator_id: GraphNode(node_id=creator_id, account_ref=partition,
+            kind=GraphNodeKind.PARTICIPANT, properties={"role": "creator"})}
+        edges = {}
+        for fragment in fragments:
+            check_cancelled(cancellation_check)
+            for index, node in enumerate(fragment.nodes):
+                if index % 256 == 0:
+                    check_cancelled(cancellation_check)
+                if node.node_id in nodes and nodes[node.node_id] != node:
+                    raise ValueError("graph_node_identity_collision")
+                nodes[node.node_id] = node
+            for index, edge in enumerate(fragment.edges):
+                if index % 256 == 0:
+                    check_cancelled(cancellation_check)
+                if edge.edge_id in edges and edges[edge.edge_id] != edge:
+                    raise ValueError("graph_edge_identity_collision")
+                edges[edge.edge_id] = edge
+        self._conversation_edges(edges, partition, metrics, cancellation_check)
+        return self._summarize(partition, source_revision, nodes, edges, cancellation_check)
 
     @staticmethod
     def _edge(

@@ -15,20 +15,53 @@ def _valid_graph_id(label: str) -> str:
 
 
 def _graph_digest(artifact: RebuildArtifact) -> str:
-    value = {
-        "nodes": [
-            node.model_dump(mode="json")
-            for node in sorted(artifact.nodes, key=lambda item: item.node_id)
-        ],
-        "edges": [
-            edge.model_dump(mode="json")
-            for edge in sorted(artifact.edges, key=lambda item: item.edge_id)
-        ],
-    }
-    encoded = json.dumps(
-        value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+    nodes = [
+        node.model_dump(mode="json")
+        for node in sorted(artifact.nodes, key=lambda item: item.node_id)
+    ]
+    edges = [
+        edge.model_dump(mode="json")
+        for edge in sorted(artifact.edges, key=lambda item: item.edge_id)
+    ]
+    if "graph.segment-root.v1" not in artifact.projection.pipeline_revision:
+        encoded = json.dumps(
+            {"nodes": nodes, "edges": edges},
+            ensure_ascii=False, separators=(",", ":"), sort_keys=True,
+        ).encode("utf-8")
+        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+    root = hashlib.sha256(b"analytics-graph.segment-root.v1\0")
+    for kind, values, key_name in (
+        ("edge", edges, "edge_id"),
+        ("node", nodes, "node_id"),
+    ):
+        buckets = {}
+        for item in values:
+            buckets.setdefault(str(item[key_name])[3:5], []).append(item)
+        for bucket in sorted(buckets):
+            rows = sorted(buckets[bucket], key=lambda item: item[key_name])
+            segment = hashlib.sha256(
+                ("graph-segment.v1:" + kind + ":" + bucket).encode()
+            )
+            for item in rows:
+                encoded = json.dumps(
+                    item, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                ).encode("utf-8")
+                segment.update(
+                    str(item[key_name]).encode()
+                    + b":"
+                    + hashlib.sha256(encoded).hexdigest().encode()
+                    + b"\n"
+                )
+            root.update(b"\0")
+            root.update(kind.encode("ascii"))
+            root.update(b":")
+            root.update(bucket.encode("ascii"))
+            root.update(b":")
+            root.update(str(len(rows)).encode("ascii"))
+            root.update(b":")
+            root.update(segment.hexdigest().encode("ascii"))
+    return "sha256:" + root.hexdigest()
 
 
 class BrokenMetricAdapter:

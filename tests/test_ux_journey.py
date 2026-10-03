@@ -6,11 +6,14 @@ import copy
 import sys
 from pathlib import Path
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import pytest
 
 from tools.validate_ux_journey import UxJourneyError, load_manifest, main, validate_manifest
 

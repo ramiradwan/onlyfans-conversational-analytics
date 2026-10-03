@@ -42,6 +42,8 @@ from app.security.hosted_grants import (
 from app.security.installation_key import InstallationProof
 from app.security.runtime_policy import AuthContext
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 _P256_ORDER = int(
     "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16

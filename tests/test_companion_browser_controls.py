@@ -7,6 +7,8 @@ import json
 from types import SimpleNamespace
 
 import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

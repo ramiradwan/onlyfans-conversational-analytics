@@ -15,6 +15,8 @@ import pytest
 
 from app.security import grant_types
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 SOURCE_MODULE = Path(grant_types.__file__).resolve()
 APPLICATION_ROOT = SOURCE_MODULE.parents[1]

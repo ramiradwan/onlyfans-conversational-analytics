@@ -24,6 +24,8 @@ import visible_windows
 from app.core.config import Settings
 from app.core.runtime_paths import runtime_data_directory
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
@@ -323,15 +325,23 @@ def _assert_user_data_retained(data_file: Path) -> None:
 
 def _assert_program_payload_removed(prefix: Path) -> None:
     deadline = time.monotonic() + 5
+    remaining, access_error = None, None
     while time.monotonic() < deadline:
         try:
             remaining = list(prefix.iterdir())
+            access_error = None
         except FileNotFoundError:
             return
-        if not remaining:
-            return
+        except PermissionError as error:
+            # An unreadable directory is not evidence that removal completed.
+            access_error = error
+        else:
+            if not remaining:
+                return
         time.sleep(0.05)
-    assert not remaining, f"uninstall must leave no program payload behind: {remaining}"
+    if access_error is not None:
+        raise access_error
+    assert remaining == [], f"uninstall must leave no program payload behind: {remaining}"
 
 
 def _inno_setup_compiler() -> Path:
@@ -1374,3 +1384,34 @@ def test_a_declared_digest_decides_whether_a_store_candidate_exists(
 
     assert published.returncode == 0, published.stdout + published.stderr
     assert len(_store_candidates(built)) == 1, _store_candidates(built)
+
+
+@pytest.mark.parametrize("observations,passes", [
+    ([PermissionError("pending"), FileNotFoundError()], True),
+    ([PermissionError("pending"), []], True),
+    ([FileNotFoundError()], True),
+    ([PermissionError("persistent")], False),
+    ([["Brain.exe"]], False),
+    ([PermissionError("pending"), ["Brain.exe"]], False),
+])
+def test_program_removal_requires_observed_absence_within_existing_deadline(monkeypatch, observations, passes):
+    from types import SimpleNamespace
+    elapsed, reads = [0.0], [0]
+    def sleep(seconds):
+        elapsed[0] += seconds
+    def iterdir():
+        value = observations[min(reads[0], len(observations) - 1)]
+        reads[0] += 1
+        if isinstance(value, Exception):
+            raise value
+        return iter(value)
+    monkeypatch.setattr(sys.modules[__name__], "time", SimpleNamespace(
+        monotonic=lambda: elapsed[0], sleep=sleep))
+    prefix = SimpleNamespace(iterdir=iterdir)
+    if passes:
+        _assert_program_payload_removed(prefix)
+        assert reads[0] == len(observations)
+    else:
+        with pytest.raises((PermissionError, AssertionError)):
+            _assert_program_payload_removed(prefix)
+        assert 5 <= elapsed[0] <= 5.05

@@ -30,6 +30,9 @@ TRANSACTION_CONTROL = re.compile(
     r"(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b",
     re.IGNORECASE,
 )
+CANONICAL_MIGRATIONS_DIR = Path(__file__).with_name("sql")
+_CATCHUP_V9_CHECKSUM = "16dd7b5eabaff870a1313140123cd3081ccd50790ea1d3c3f6bf5dfadfbf7239"
+_ANALYTICS_V9_CHECKSUM = "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772"
 
 
 class MigrationError(RuntimeError):
@@ -149,12 +152,7 @@ class InstallationMigrationLock:
         handle.close()
 
 
-def load_migration_catalog(
-    migrations_dir: str | Path | None = None,
-) -> list[Migration]:
-    """Load and checksum the contiguous repository migration catalog."""
-
-    directory = Path(migrations_dir or Path(__file__).with_name("sql"))
+def _read_migrations(directory: Path) -> list[Migration]:
     migrations: list[Migration] = []
     if not directory.is_dir():
         raise MigrationError(f"migration directory is missing: {directory}")
@@ -180,6 +178,10 @@ def load_migration_catalog(
                 checksum=hashlib.sha256(raw).hexdigest(),
             )
         )
+    return migrations
+
+
+def _validate_catalog_sequence(migrations: list[Migration]) -> list[Migration]:
     if not migrations:
         raise MigrationError("the canonical migration catalog is empty")
     versions = [item.version for item in migrations]
@@ -189,6 +191,53 @@ def load_migration_catalog(
             f"migration versions must be contiguous from 0001: {versions!r}"
         )
     return migrations
+
+
+def load_migration_catalog(
+    migrations_dir: str | Path | None = None,
+) -> list[Migration]:
+    """Load and checksum one contiguous catalog without inspecting a database."""
+
+    return _validate_catalog_sequence(
+        _read_migrations(Path(migrations_dir or CANONICAL_MIGRATIONS_DIR))
+    )
+
+
+def resolve_migration_catalog(
+    connection: sqlite3.Connection,
+    migrations_dir: str | Path | None = None,
+) -> list[Migration]:
+    """Select an exact canonical history; callers still validate its full ledger.
+
+    Both audited v9 histories are immutable. Their missing feature is applied at
+    v10, and v11 onward is shared. Selection never rewrites ledger rows, executes
+    SQL migrations, or changes custom/authentication/projection catalogs.
+    """
+
+    directory = Path(migrations_dir or CANONICAL_MIGRATIONS_DIR)
+    catalog = load_migration_catalog(directory)
+    if directory.resolve() != CANONICAL_MIGRATIONS_DIR.resolve():
+        return catalog
+    legacy = _read_migrations(directory / "legacy_analytics_v9")
+    default_pair = [(m.version, m.name, m.checksum) for m in catalog[8:10]]
+    legacy_pair = [(m.version, m.name, m.checksum) for m in legacy]
+    if default_pair != [
+        (9, "message_catchup", _CATCHUP_V9_CHECKSUM),
+        (10, "analytics_source_tokens", _ANALYTICS_V9_CHECKSUM),
+    ] or legacy_pair != [
+        (9, "analytics_source_tokens", _ANALYTICS_V9_CHECKSUM),
+        (10, "message_catchup", _CATCHUP_V9_CHECKSUM),
+    ]:
+        raise MigrationChecksumError("canonical v9 compatibility resources differ")
+    legacy_catalog = _validate_catalog_sequence(catalog[:8] + legacy + catalog[10:])
+    row = connection.execute(
+        "SELECT name, checksum FROM schema_migrations WHERE version=9"
+    ).fetchone()
+    if row is None or tuple(row) == ("message_catchup", _CATCHUP_V9_CHECKSUM):
+        return catalog
+    if tuple(row) == ("analytics_source_tokens", _ANALYTICS_V9_CHECKSUM):
+        return legacy_catalog
+    raise MigrationChecksumError("canonical migration 0009 checksum/name mismatch")
 
 
 class MigrationRunner:
@@ -213,12 +262,12 @@ class MigrationRunner:
         self.last_backup_path: Path | None = None
 
     def run(self) -> list[int]:
-        catalog = self._load_catalog()
         with process_migration_mutex(self.lock_path), InstallationMigrationLock(
             self.lock_path, timeout_seconds=self.lock_timeout_seconds
         ):
             with self.database.read() as connection:
                 self._ensure_ledger(connection)
+                catalog = self._load_catalog(connection)
                 applied = self._validate_applied(connection, catalog)
                 pending = [item for item in catalog if item.version not in applied]
                 if not pending:
@@ -233,8 +282,10 @@ class MigrationRunner:
                 self._validate_database(connection)
                 return completed
 
-    def _load_catalog(self) -> list[Migration]:
-        return load_migration_catalog(self.migrations_dir)
+    def _load_catalog(self, connection: sqlite3.Connection | None = None) -> list[Migration]:
+        if connection is None:
+            return load_migration_catalog(self.migrations_dir)
+        return resolve_migration_catalog(connection, self.migrations_dir)
 
     @staticmethod
     def _ensure_ledger(connection: sqlite3.Connection) -> None:
@@ -256,13 +307,14 @@ class MigrationRunner:
         rows = connection.execute(
             "SELECT version, name, checksum FROM schema_migrations ORDER BY version"
         ).fetchall()
-        by_version = {item.version: item for item in catalog}
-        applied = {int(row["version"]): row for row in rows}
-        versions = list(applied)
-        if versions and versions != list(range(1, max(versions) + 1)):
+        versions = [row["version"] for row in rows]
+        if (any(type(version) is not int for version in versions)
+                or versions != list(range(1, len(rows) + 1))):
             raise SchemaCompatibilityError(
                 f"migration ledger is not contiguous: {versions!r}"
             )
+        by_version = {item.version: item for item in catalog}
+        applied = {row["version"]: row for row in rows}
         for version, row in applied.items():
             migration = by_version.get(version)
             if migration is None:

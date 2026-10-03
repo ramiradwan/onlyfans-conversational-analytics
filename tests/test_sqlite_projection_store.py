@@ -57,6 +57,8 @@ from app.protocol.payloads import (
     SnapshotRecordCounts,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 WORKER = Path(__file__).with_name("projection_crash_worker.py")
@@ -138,6 +140,30 @@ def test_projection_database_path_has_a_separate_default(monkeypatch) -> None:
     configured = Settings(_env_file=None)
     assert configured.projection_database_path == Path("projections.sqlite3")
     assert configured.projection_database_path != configured.canonical_database_path
+
+
+def test_analytics_projection_connections_disable_wal_autocheckpoint(tmp_path: Path) -> None:
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    with database.read() as connection:
+        assert connection.execute("PRAGMA wal_autocheckpoint").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_scheduler_epoch_retains_and_releases_wal_anchor(tmp_path: Path) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    store = make_store(tmp_path / "analytics.sqlite3", repositories)
+    pipeline = pipeline_for(repositories, store)
+    scheduler = InProcessProjectionScheduler(
+        pipeline, worker_count=1, queue_capacity=2, reconciliation_interval=30
+    )
+
+    assert store.database.open_connection_count(store.database.path) == 0
+    await scheduler.start(recover=False)
+    assert store.database.open_connection_count(store.database.path) == 1
+    checkpoint = store.passive_wal_checkpoint()
+    assert checkpoint is not None and len(checkpoint) == 3
+    assert await scheduler.close(timeout=5)
+    assert store.database.open_connection_count(store.database.path) == 0
 
 
 @pytest.mark.asyncio
@@ -229,7 +255,9 @@ def test_production_graph_mutators_cannot_touch_active_generation(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     partition_ref = account_ref("account-a")
     nodes = store.graph.nodes(partition_ref)
@@ -287,6 +315,7 @@ def test_canonical_and_projection_paths_must_be_distinct(tmp_path: Path) -> None
         )
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "crash_stage",
@@ -374,6 +403,7 @@ def test_reserved_activation_is_cancelled_after_advance_and_reopen(
     assert reopened.get("account-a") is None
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_concurrent_process_cannot_retire_live_build_or_rollback_winner(
     tmp_path: Path,
@@ -496,6 +526,7 @@ def test_copied_persisted_owner_fields_without_capability_cannot_write(
     original_writer.refresh()
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_50000_node_stage_renews_short_writer_lease_through_validation(
     tmp_path: Path,
@@ -520,7 +551,9 @@ def test_50000_node_stage_renews_short_writer_lease_through_validation(
         )
         for index in range(50_000)
     ]
-    graph_digest = graph_content_digest(nodes, [])
+    from app.analytics.shared_graph import projection_graph_digest
+
+    graph_digest = projection_graph_digest(base.projection.pipeline_revision, nodes, [])
     projection = base.projection.model_copy(
         update={
             "graph_digest": graph_digest,
@@ -559,7 +592,9 @@ def test_startup_quarantines_active_generation_without_exact_witness(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     assert active is not None and repositories.database is not None
 
@@ -610,6 +645,7 @@ def test_tampered_pending_generation_is_cancelled_and_never_activated(
             "intent_reserved",
             str(canonical_path),
             str(projections_path),
+            "--owned-graph",
         ],
         cwd=Path(__file__).parents[1],
         check=False,
@@ -642,7 +678,9 @@ def test_active_rows_are_schema_immutable_and_digest_checked_on_read(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     assert active is not None
     statement = """
@@ -804,24 +842,36 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
     scheduler = InProcessProjectionScheduler(
         pipeline, worker_count=1, queue_capacity=2
     )
-    await scheduler.start(recover=False)
-    entered = threading.Event()
+    loop = asyncio.get_running_loop()
+    entered = asyncio.Event()
     release = threading.Event()
-    first_revocation_started = threading.Event()
+    first_revocation_started = asyncio.Event()
     release_first_revocation = threading.Event()
-    canonical_revoked = threading.Event()
+    canonical_revoked = asyncio.Event()
     original_publish = pipeline.publish_candidate
     observed_candidates = []
+    watchdog_seconds = 30
+    close_task: asyncio.Task[bool] | None = None
+
+    async def wait_for_barrier(event: asyncio.Event, name: str) -> None:
+        # Real SQLite preparation is not the close deadline under test. Wait
+        # for the observed transition without occupying a default-executor
+        # thread needed by the scheduler's background revocation.
+        try:
+            await asyncio.wait_for(event.wait(), timeout=watchdog_seconds)
+        except TimeoutError:
+            pytest.fail(
+                f"Timed out waiting for {name}; "
+                f"scheduler state: {scheduler.state('account-a')}",
+                pytrace=False,
+            )
 
     def paused_publish(candidate):
         observed_candidates.append(candidate)
-        entered.set()
+        loop.call_soon_threadsafe(entered.set)
         release.wait()
         return original_publish(candidate)
 
-    pipeline.publish_candidate = paused_publish  # type: ignore[method-assign]
-    await scheduler.schedule("account-a", 0)
-    assert await asyncio.to_thread(entered.wait, 2)
     revocations = 0
     original_revoke = repositories.projection_activation.revoke_publication_epoch
 
@@ -829,27 +879,31 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
         nonlocal revocations
         revocations += 1
         if revocations == 1:
-            first_revocation_started.set()
+            loop.call_soon_threadsafe(first_revocation_started.set)
             release_first_revocation.wait()
             raise sqlite3.OperationalError("synthetic_canonical_revocation_failure")
         result = original_revoke(*args, **kwargs)
-        canonical_revoked.set()
+        loop.call_soon_threadsafe(canonical_revoked.set)
         return result
 
-    monkeypatch.setattr(
-        repositories.projection_activation,
-        "revoke_publication_epoch",
-        flaky_canonical_revoke,
-    )
-    close_task = asyncio.create_task(scheduler.close(timeout=0.02))
     try:
-        assert await asyncio.to_thread(first_revocation_started.wait, 5)
+        await scheduler.start(recover=False)
+        monkeypatch.setattr(pipeline, "publish_candidate", paused_publish)
+        await scheduler.schedule("account-a", 0)
+        await wait_for_barrier(entered, "publication after the open check")
+        monkeypatch.setattr(
+            repositories.projection_activation,
+            "revoke_publication_epoch",
+            flaky_canonical_revoke,
+        )
+        close_task = asyncio.create_task(scheduler.close(timeout=0.02))
+        await wait_for_barrier(first_revocation_started, "first canonical revocation")
         assert not await close_task
 
         # Complete the synthetic late first failure only after the caller's hard
         # deadline. Persisted revocation must still receive its fail-closed retry.
         release_first_revocation.set()
-        assert await asyncio.to_thread(canonical_revoked.wait, 5)
+        await wait_for_barrier(canonical_revoked, "persisted canonical revocation")
         assert revocations >= 2
         assert repositories.database is not None
         with repositories.database.read() as connection:
@@ -861,14 +915,21 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
         assert store.database.active_generation("account-a") is None
     finally:
         release_first_revocation.set()
-        release.set()
-        if not close_task.done():
-            await close_task
-
-    deadline = time.monotonic() + 5
-    while scheduler.executor_thread_count and time.monotonic() < deadline:
-        await asyncio.sleep(0.01)
-    assert scheduler.executor_thread_count == 0
+        try:
+            if close_task is not None:
+                await close_task
+        finally:
+            try:
+                # Fence before releasing a late publisher, including when the
+                # close task was absent or cancelled before its coroutine began.
+                if not scheduler.closed:
+                    await scheduler.close(timeout=0.02)
+            finally:
+                release.set()
+                deadline = time.monotonic() + watchdog_seconds
+                while scheduler.executor_thread_count and time.monotonic() < deadline:
+                    await asyncio.sleep(0.01)
+                assert scheduler.executor_thread_count == 0
     assert store.database.active_generation("account-a") is None
     assert len(observed_candidates) == 1
     witnessed = repositories.projection_activation.get(
@@ -957,29 +1018,38 @@ async def test_deleted_projection_file_returns_unavailable_then_rebuilds_once(
         graph=stores.graph,
     )
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
-    await scheduler.start(recover=True)
-    await _wait_for_lazy_projection(scheduler, repositories)
-    await scheduler.wait("account-a")
-    build_count = 0
-    original_build = pipeline._build
+    try:
+        await scheduler.start(recover=True)
+        await _wait_for_lazy_projection(scheduler, repositories)
+        await scheduler.wait("account-a")
+        current = stores.projections.database
+        assert current is not None
+        # Windows cannot unlink the scheduler's intentionally open WAL anchor.
+        # Release only that idle handle to inject file loss while preserving the
+        # scheduler and lazy store identity state exercised by recovery below.
+        current.release_wal_anchor()
+        assert current.open_connection_count(path) == 0
+        build_count = 0
+        original_build = pipeline._build
 
-    def counted_build(*args, **kwargs):
-        nonlocal build_count
-        build_count += 1
-        return original_build(*args, **kwargs)
+        def counted_build(*args, **kwargs):
+            nonlocal build_count
+            build_count += 1
+            return original_build(*args, **kwargs)
 
-    pipeline._build = counted_build  # type: ignore[method-assign]
-    path.unlink()
-    account = history_source_for(repositories).account_read_model("account-a")
-    with pytest.raises(ProjectionStorageUnavailable):
-        await scheduler.active_projection("account-a", account)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    projection = await _wait_for_lazy_projection(scheduler, repositories)
-    assert projection.source_revision == account.view_revision
-    assert build_count == 1
-    assert stores.projections.recovery_count == 2
-    assert await scheduler.close(timeout=2)
+        pipeline._build = counted_build  # type: ignore[method-assign]
+        path.unlink()
+        account = history_source_for(repositories).account_read_model("account-a")
+        with pytest.raises(ProjectionStorageUnavailable):
+            await scheduler.active_projection("account-a", account)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        projection = await _wait_for_lazy_projection(scheduler, repositories)
+        assert projection.source_revision == account.view_revision
+        assert build_count == 1
+        assert stores.projections.recovery_count == 2
+    finally:
+        assert await scheduler.close(timeout=2)
 
 
 @pytest.mark.asyncio
@@ -1004,46 +1074,53 @@ async def test_valid_empty_projection_file_replacement_is_quarantined_and_rebuil
         graph=stores.graph,
     )
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
-    await scheduler.start(recover=True)
-    await _wait_for_lazy_projection(scheduler, repositories)
-    await scheduler.wait("account-a")
+    try:
+        await scheduler.start(recover=True)
+        await _wait_for_lazy_projection(scheduler, repositories)
+        await scheduler.wait("account-a")
+        current = stores.projections.database
+        assert current is not None
+        # Keep the live scheduler/store identity, but release its idle WAL
+        # anchor so Windows permits this deliberate external file replacement.
+        current.release_wal_anchor()
+        assert current.open_connection_count(path) == 0
 
-    build_count = 0
-    original_build = pipeline._build
+        build_count = 0
+        original_build = pipeline._build
 
-    def counted_build(*args, **kwargs):
-        nonlocal build_count
-        build_count += 1
-        return original_build(*args, **kwargs)
+        def counted_build(*args, **kwargs):
+            nonlocal build_count
+            build_count += 1
+            return original_build(*args, **kwargs)
 
-    pipeline._build = counted_build  # type: ignore[method-assign]
-    replacement_path = tmp_path / "valid-empty-replacement.sqlite3"
-    replacement = ProjectionsDatabase(replacement_path)
-    current = stores.projections.database
-    assert current is not None
-    for database in (current, replacement):
-        with database.read() as connection:
-            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    for candidate in (
-        Path(f"{path}-wal"),
-        Path(f"{path}-shm"),
-        Path(f"{replacement_path}-wal"),
-        Path(f"{replacement_path}-shm"),
-    ):
-        candidate.unlink(missing_ok=True)
-    os.replace(replacement_path, path)
+        pipeline._build = counted_build  # type: ignore[method-assign]
+        replacement_path = tmp_path / "valid-empty-replacement.sqlite3"
+        replacement = ProjectionsDatabase(replacement_path)
+        for database in (current, replacement):
+            with database.read() as connection:
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            assert database.open_connection_count(database.path) == 0
+        for candidate in (
+            Path(f"{path}-wal"),
+            Path(f"{path}-shm"),
+            Path(f"{replacement_path}-wal"),
+            Path(f"{replacement_path}-shm"),
+        ):
+            candidate.unlink(missing_ok=True)
+        os.replace(replacement_path, path)
 
-    account = history_source_for(repositories).account_read_model("account-a")
-    with pytest.raises(ProjectionStorageUnavailable):
-        await scheduler.active_projection("account-a", account)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    recovered = await _wait_for_lazy_projection(scheduler, repositories)
-    assert recovered.source_revision == account.view_revision
-    assert build_count == 1
-    assert stores.projections.recovery_count == 2
-    assert len(list(path.parent.glob(f".{path.name}.*.quarantine"))) == 1
-    assert await scheduler.close(timeout=2)
+        account = history_source_for(repositories).account_read_model("account-a")
+        with pytest.raises(ProjectionStorageUnavailable):
+            await scheduler.active_projection("account-a", account)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        recovered = await _wait_for_lazy_projection(scheduler, repositories)
+        assert recovered.source_revision == account.view_revision
+        assert build_count == 1
+        assert stores.projections.recovery_count == 2
+        assert len(list(path.parent.glob(f".{path.name}.*.quarantine"))) == 1
+    finally:
+        assert await scheduler.close(timeout=2)
 
 
 @pytest.mark.asyncio
@@ -1067,6 +1144,7 @@ async def test_graph_digest_tamper_quarantines_projection_and_self_heals(
         projections=stores.projections,
         graph=stores.graph,
     )
+    pipeline.compact_graph = False
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
     await scheduler.start(recover=True)
     await _wait_for_lazy_projection(scheduler, repositories)
@@ -1128,7 +1206,7 @@ async def test_non_sqlite_projection_file_cannot_block_canonical_readiness(
 
 
 def test_retired_generation_gc_is_bounded_and_preserves_pending(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(
@@ -1144,8 +1222,28 @@ def test_retired_generation_gc_is_bounded_and_preserves_pending(
         pipeline.project_account("account-a")
     advance(repositories, 5)
     pending = pipeline.build_candidate("account-a")
+
+    from app.analytics.database import (
+        GENERATION_RETIREMENT_CACHE_KIB, generation_retirement_cache,
+    )
+    import app.analytics.sqlite_projection_store as projection_store_module
+    observed_cache_sizes = []
+
+    @contextmanager
+    def observed_retirement_cache(connection):
+        with generation_retirement_cache(connection):
+            observed_cache_sizes.append(
+                int(connection.execute("PRAGMA cache_size").fetchone()[0])
+            )
+            yield
+
+    monkeypatch.setattr(
+        projection_store_module, "generation_retirement_cache", observed_retirement_cache
+    )
+    store.rollback_retention = 0
     store.collect_garbage(account_ref("account-a"))
 
+    assert observed_cache_sizes == [-GENERATION_RETIREMENT_CACHE_KIB]
     generations = store.database.generations("account-a")
     assert sum(item.status == "active" for item in generations) == 1
     assert sum(item.status == "validated" for item in generations) == 1

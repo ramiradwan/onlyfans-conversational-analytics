@@ -18,7 +18,9 @@ from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 
 BOUNDED_PIPELINE_PREFIX = "analytics.pipeline.v3+"
 from app.analytics.resilient_projection_store import LazySQLiteAnalyticsProjectionStore
-from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
+from app.analytics.sqlite_projection_store import (
+    ProjectionValidationError, SQLiteAnalyticsProjectionStore,
+)
 from app.models.analytics import AnalyticsProjection, RebuildArtifact
 from app.persistence.projection_activation import (
     ProjectionActivationConflict,
@@ -78,14 +80,11 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
         return super().stage_artifact(artifact, **kwargs)
 
     def publish_generation(self, generation_id: str, **kwargs) -> bool:
-        projection = self._projection_for_generation(generation_id)
-        if projection is None:
+        state = self._stored_retention_state(generation_id, now=_utc(self._retention_clock()))
+        if state is None:
             self.discard_generation(generation_id)
             raise ProjectionActivationConflict("analytics retention projection missing")
-        expired, _ = self._artifact_retention_state(
-            projection,
-            now=_utc(self._retention_clock()),
-        )
+        expired, _ = state
         if expired:
             self.discard_generation(generation_id)
             raise ProjectionActivationConflict("analytics retention window expired")
@@ -110,13 +109,17 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
         )
         if generation_id is None or creator_account_id in self._expiring_accounts:
             return generation_id
-        projection = self._projection_for_generation(generation_id)
-        if projection is None:
+        try:
+            state = self._stored_retention_state(
+                generation_id, now=_utc(self._retention_clock())
+            )
+        except ValueError as error:
+            raise ProjectionValidationError(
+                "projection_generation_invalid"
+            ) from error
+        if state is None:
             return None
-        expired, _ = self._artifact_retention_state(
-            projection,
-            now=_utc(self._retention_clock()),
-        )
+        expired, _ = state
         if not expired:
             self._purge_expired_retired_generations()
             return generation_id
@@ -147,12 +150,10 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
     def _arm_retention_timer(
         self, creator_account_id: str, generation_id: str
     ) -> None:
-        projection = self._projection_for_generation(generation_id)
-        if projection is None:
+        state = self._stored_retention_state(generation_id, now=_utc(self._retention_clock()))
+        if state is None:
             return
-        expired, due = self._artifact_retention_state(
-            projection, now=_utc(self._retention_clock())
-        )
+        expired, due = state
         with self._retention_lock:
             previous = self._retention_timers.pop(creator_account_id, None)
             if previous is not None:
@@ -268,13 +269,12 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
             self._purge_expired_retired_generations()
             return False
         generation_id = str(generation["generation_id"])
-        projection = self._projection_for_generation(generation_id)
-        if projection is None:
-            return False
-        expired, _ = self._artifact_retention_state(
-            projection,
-            now=_utc(self._retention_clock()),
+        state = self._stored_retention_state(
+            generation_id, now=_utc(self._retention_clock())
         )
+        if state is None:
+            return False
+        expired, _ = state
         if not expired:
             self._purge_expired_retired_generations()
             return False
@@ -289,14 +289,13 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
             active = self._active_generation_row(partition_ref)
             if active is None or str(active["generation_id"]) != generation_id:
                 return
+            state = self._stored_retention_state(
+                generation_id, now=_utc(self._retention_clock())
+            )
+            if state is None or not state[0]:
+                return
             projection = self._projection_for_generation(generation_id)
             if projection is None:
-                return
-            expired, _ = self._artifact_retention_state(
-                projection,
-                now=_utc(self._retention_clock()),
-            )
-            if not expired:
                 return
             identity = self.canonical_identity_reader(creator_account_id)
             if identity is None:
@@ -330,7 +329,10 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
                 timer.cancel()
 
     def _purge_expired_retired_generations(self) -> None:
+        from app.analytics.projection_verification import read_projection_source_time
+
         now = _utc(self._retention_clock())
+        expired_ids: list[str] = []
         with self.database.read() as connection:
             rows = connection.execute(
                 """SELECT g.generation_id,p.document_json
@@ -339,16 +341,16 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
                      ON p.generation_id=g.generation_id
                      AND p.creator_account_id=g.creator_account_id
                    WHERE g.status='retired'"""
-            ).fetchall()
-        expired_ids: list[str] = []
-        for row in rows:
-            if row["document_json"] is None:
-                expired_ids.append(str(row["generation_id"]))
-                continue
-            projection = AnalyticsProjection.model_validate_json(row["document_json"])
-            expired, _ = self._artifact_retention_state(projection, now=now)
-            if expired:
-                expired_ids.append(str(row["generation_id"]))
+            )
+            for row in rows:
+                if row["document_json"] is None:
+                    expired_ids.append(str(row["generation_id"]))
+                    continue
+                revision, first = read_projection_source_time(row["document_json"])
+                expired, _ = self._source_retention_state(
+                    revision, first, now=now)
+                if expired:
+                    expired_ids.append(str(row["generation_id"]))
         if not expired_ids:
             return
         with self.database.transaction() as connection:
@@ -358,19 +360,26 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
                     (generation_id,),
                 )
 
-    def _projection_for_generation(
-        self, generation_id: str
-    ) -> AnalyticsProjection | None:
+    def _stored_retention_state(self, generation_id: str, *, now: datetime) -> tuple[bool, datetime | None] | None:
+        from app.analytics.projection_verification import read_projection_source_time
+
         with self.database.read() as connection:
             row = connection.execute(
                 "SELECT document_json FROM analytics_projections WHERE generation_id=?",
                 (generation_id,),
             ).fetchone()
-        return (
-            None
-            if row is None
-            else AnalyticsProjection.model_validate_json(row["document_json"])
-        )
+        if row is None:
+            return None
+        revision, first = read_projection_source_time(row["document_json"])
+        return self._source_retention_state(revision, first, now=now)
+
+    def _projection_for_generation(
+        self, generation_id: str
+    ) -> AnalyticsProjection | None:
+        try:
+            return self._validate_persisted_generation(generation_id)["projection"]
+        except (KeyError, ProjectionValidationError, ValueError):
+            return None
 
     @staticmethod
     def _artifact_retention_state(
@@ -378,14 +387,21 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
         *,
         now: datetime,
     ) -> tuple[bool, datetime | None]:
-        if projection.pipeline_revision == CLEAR_PIPELINE_REVISION:
+        first = getattr(projection.message_enrichments, "first_source_at", None)
+        if first is None and projection.message_enrichments:
+            first = min(_utc(item.sent_at) for item in projection.message_enrichments)
+        return RetentionBoundSQLiteAnalyticsProjectionStore._source_retention_state(
+            projection.pipeline_revision, first, now=now)
+
+    @staticmethod
+    def _source_retention_state(revision: str, first: datetime | None, *, now: datetime) -> tuple[bool, datetime | None]:
+        if revision == CLEAR_PIPELINE_REVISION:
             return False, None
-        if not projection.pipeline_revision.startswith(BOUNDED_PIPELINE_PREFIX):
+        if not revision.startswith(BOUNDED_PIPELINE_PREFIX):
             return True, None
-        source_times = [_utc(item.sent_at) for item in projection.message_enrichments]
-        if not source_times:
+        if first is None:
             return False, None
-        due = min(source_times) + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
+        due = _utc(first) + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
         return due <= now, due
 
     @staticmethod

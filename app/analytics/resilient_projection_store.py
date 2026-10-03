@@ -130,6 +130,54 @@ class LazySQLiteAnalyticsProjectionStore:
             self._next_retry_at = 0.0
             self._recovery_count += 1
 
+    def generation_references_supported(self) -> bool:
+        return self._read("generation_references_supported", None)
+
+    def conversation_enrichment_units_supported(self) -> bool:
+        return self._read("conversation_enrichment_units_supported", None)
+
+    def check_generation_reference(self, account_id, reference):
+        return self._read("check_generation_reference", account_id, account_id, reference)
+
+    def read_generation_artifact(self, account_id, reference):
+        return self._read("read_generation_artifact", account_id, account_id, reference)
+
+    def open_conversation_fragments(self, account_id):
+        return self._available_store(account_id).open_conversation_fragments(account_id)
+
+    def load_conversation_fragment(self, account_id, *args, **kwargs):
+        return self._read("load_conversation_fragment", account_id, account_id, *args, **kwargs)
+
+    def load_enrichment_entries(self, account_id, keys, **kwargs):
+        return self._read("load_enrichment_entries", account_id, account_id, keys, **kwargs)
+
+    def load_conversation_enrichment_entries(self, account_id, *args, **kwargs):
+        return self._read("load_conversation_enrichment_entries", account_id,
+                          account_id, *args, **kwargs)
+
+    def load_enrichment_unit_contents(self, account, unit_ids):
+        return self._read("load_enrichment_unit_contents", None, account, unit_ids)
+
+    def question_pricing(self, account_id, snapshot, references, budget):
+        return self._read("question_pricing", account_id, account_id, snapshot, references, budget)
+
+    def question_snapshot(self, account_id, canonical_identity, budget):
+        return self._read("question_snapshot", account_id, account_id, canonical_identity, budget)
+
+    def prepare_update_reuse(self, account, *args):
+        return self._read("prepare_update_reuse", account, account, *args)
+
+    def update_reuse_prepared(self, account, identity):
+        return self._read("update_reuse_prepared", account, account, identity)
+
+    def predecessor_update_reuse_prepared(self, account, *args):
+        return self._read("predecessor_update_reuse_prepared", account, account, *args)
+
+    def projection_currentness(self, account_id, *args, **kwargs):
+        return self._read(
+            "projection_currentness", account_id, account_id, *args, **kwargs
+        )
+
     def get(self, creator_account_id: str, **kwargs):
         return self._read("get", creator_account_id, creator_account_id, **kwargs)
 
@@ -157,6 +205,9 @@ class LazySQLiteAnalyticsProjectionStore:
             artifact,
             **kwargs,
         )
+
+    def stage_built_artifact(self, artifact, **kwargs):
+        return self._write("stage_built_artifact", kwargs.get("creator_account_id"), artifact, **kwargs)
 
     def stage_artifact(self, artifact, **kwargs):
         account_id = kwargs.get("creator_account_id")
@@ -218,12 +269,21 @@ class LazySQLiteAnalyticsProjectionStore:
     def clear(self, creator_account_id: str) -> None:
         self._write("clear", creator_account_id, creator_account_id)
 
+    def integrity_upgrade_required(self, account_id):
+        return self._read("integrity_upgrade_required", account_id, account_id)
+
+    def passive_wal_checkpoint(self):
+        return self._write("passive_wal_checkpoint", None)
+
     def close(self) -> None:
         with self._lock:
             self._closed = True
+            store = self._store
             self._store = None
             self._file_identity = None
             self._store_identity = None
+        if store is not None:
+            store.close()
 
     def _read(self, method: str, account_id: str | None, *args, **kwargs):
         store = self._available_store(account_id)
@@ -276,6 +336,11 @@ class LazySQLiteAnalyticsProjectionStore:
     ) -> FailureCallback | None:
         if self._store is not failed_store:
             return None
+        if failed_store is not None:
+            try:
+                failed_store.close()
+            except Exception:
+                pass
         self._store = None
         self._file_identity = None
         self._store_identity = None

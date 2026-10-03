@@ -6,6 +6,10 @@ from app.provisioning.app import create_provisioning_app
 from app.provisioning.session import PROVISIONING_ORIGIN, PROVISIONING_SESSION_COOKIE_NAME
 from provisioning_markup import PageMarkup
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 HANDOFF_TOKEN = "t" * 32
 EXTENSION_ID = "lfiompogjmmgnbkacdnikbfoihmlloda"

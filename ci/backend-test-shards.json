@@ -1,0 +1,749 @@
+{
+  "schema_version": 1,
+  "assignment_basis": {
+    "status": "provisional_unmeasured",
+    "method": "preserved existing assignments; new files assigned deterministically by declared test counts",
+    "timing_seconds": {
+      "tests/hardening/falsifiers/test_falsifiers.py": 0.511329,
+      "tests/stateful/test_agent_delivery.py": 7.749371,
+      "tests/stateful/test_analytics_determinism.py": 0.098643,
+      "tests/stateful/test_analytics_equivalence.py": 0.372128,
+      "tests/stateful/test_brain_ingestion.py": 3.306306,
+      "tests/stateful/test_brain_persistent_ingestion.py": 0.952887,
+      "tests/test_activation_enforcement.py": 0.112549,
+      "tests/test_activation_gate.py": 6.857079,
+      "tests/test_activation_read_scope.py": 1.799957,
+      "tests/test_analysis_authorization.py": 0.006425,
+      "tests/test_analysis_restart_offline.py": 0.170182,
+      "tests/test_analysis_runtime_gate.py": 0.002274,
+      "tests/test_analytics_backend_rework.py": 10.099374,
+      "tests/test_analytics_closure_collectors.py": 234.756545,
+      "tests/test_analytics_closure_process.py": 0.245451,
+      "tests/test_analytics_closure_runner.py": 0.46766,
+      "tests/test_analytics_evidence.py": 5.198503,
+      "tests/test_analytics_graph_record_reuse.py": 0.04803,
+      "tests/test_analytics_pipeline.py": 1.400568,
+      "tests/test_analytics_query_endpoints.py": 37.017956,
+      "tests/test_analytics_question_cases.py": 0.025901,
+      "tests/test_analytics_question_service.py": 0.085679,
+      "tests/test_analytics_retention.py": 2.693617,
+      "tests/test_analytics_source_tokens.py": 4.946161,
+      "tests/test_append_cache_ownership.py": 25.742928,
+      "tests/test_append_enrichment_copying.py": 25.113431,
+      "tests/test_append_materialization_work.py": 44.330178,
+      "tests/test_append_prefix_validation.py": 16.754438,
+      "tests/test_append_removal_work.py": 13.535515,
+      "tests/test_attestation_package_qualification.py": 9.528575,
+      "tests/test_auth_store.py": 1.763593,
+      "tests/test_bounded_publication.py": 17.134039,
+      "tests/test_build_extension_identity.py": 0.000469,
+      "tests/test_build_windows.py": 0.008806,
+      "tests/test_canonical_repository_contract.py": 0.340048,
+      "tests/test_capability_license_persistence.py": 0.815885,
+      "tests/test_changed_graph_read_order.py": 10.65974,
+      "tests/test_compact_graph.py": 17.919807,
+      "tests/test_companion_analysis_readiness_rpc.py": 0.001389,
+      "tests/test_companion_pairing_persistence.py": 4.921446,
+      "tests/test_config_identity_sqlite_migration.py": 0.067501,
+      "tests/test_content_write_order.py": 13.289315,
+      "tests/test_continuous_analytics.py": 16.485127,
+      "tests/test_continuous_recovery.py": 5.557202,
+      "tests/test_conversation_fragment_storage.py": 3.542905,
+      "tests/test_conversation_graph_receipts.py": 47.788437,
+      "tests/test_conversation_graph_references.py": 34.611081,
+      "tests/test_conversation_pages.py": 104.007634,
+      "tests/test_creator_vault_api.py": 0.685373,
+      "tests/test_creator_vault_deletion_operations.py": 0.16903,
+      "tests/test_creator_vault_export.py": 0.186387,
+      "tests/test_creator_vault_retention.py": 0.944549,
+      "tests/test_dominant_append_reuse.py": 82.86892,
+      "tests/test_durable_ingestion.py": 0.124966,
+      "tests/test_encoded_conversation_graph.py": 12.111006,
+      "tests/test_enrichment_cache_contract.py": 4.9648,
+      "tests/test_enrichment_cache_storage.py": 5.325008,
+      "tests/test_enrichment_input_batches.py": 1.375116,
+      "tests/test_enrichment_proof_transition.py": 23.701771,
+      "tests/test_enrichment_reuse.py": 9.025789,
+      "tests/test_enrichment_staging.py": 2.075209,
+      "tests/test_forced_rebuild_preparation.py": 2.329093,
+      "tests/test_generation_throughput.py": 5.3565,
+      "tests/test_generation_verification_cache.py": 2.137109,
+      "tests/test_graph_chunk_metadata.py": 7.843092,
+      "tests/test_graph_digest_stream.py": 0.136328,
+      "tests/test_graph_reclamation.py": 1.789326,
+      "tests/test_graph_row_encoding.py": 1.036648,
+      "tests/test_graph_store_contract.py": 5.21765,
+      "tests/test_historical_analytics_retention.py": 2.15389,
+      "tests/test_history_api.py": 1.158853,
+      "tests/test_history_v2.py": 1.040206,
+      "tests/test_incremental_enrichment_units.py": 11.021293,
+      "tests/test_incremental_graph_units.py": 9.411631,
+      "tests/test_json_validation_header.py": 3.078319,
+      "tests/test_licensed_analytics_pipeline.py": 0.005186,
+      "tests/test_local_database_encryption.py": 0.016336,
+      "tests/test_managed_recovery_publication.py": 0.181076,
+      "tests/test_membership_insert_plan.py": 0.23884,
+      "tests/test_packaged_runtime.py": 0.003599,
+      "tests/test_packaging_smoke.py": 0.005401,
+      "tests/test_predecessor_graph_handoff.py": 39.268397,
+      "tests/test_projection_activation.py": 1.258714,
+      "tests/test_projection_backup_restore_retention.py": 2.865516,
+      "tests/test_projection_currentness.py": 7.805539,
+      "tests/test_projection_metadata_parsing.py": 2.890229,
+      "tests/test_projection_query_metadata.py": 1.563937,
+      "tests/test_projection_store_contract.py": 0.582791,
+      "tests/test_projection_v2.py": 5.089142,
+      "tests/test_projection_verification.py": 5.394295,
+      "tests/test_proven_currentness.py": 5.223305,
+      "tests/test_published_source_identity.py": 1.302336,
+      "tests/test_qualification_runtime_clock.py": 18.851376,
+      "tests/test_question_identity_preparation.py": 3.797126,
+      "tests/test_question_route_guards.py": 4.724939,
+      "tests/test_readiness_identity.py": 3.130449,
+      "tests/test_recovered_update_reuse.py": 17.326364,
+      "tests/test_removed_graph_endpoints.py": 6.996495,
+      "tests/test_reply_source_selection.py": 4.119856,
+      "tests/test_retention_ci_regressions.py": 0.180176,
+      "tests/test_retention_ingress_paths.py": 0.67989,
+      "tests/test_retention_maintenance.py": 0.107098,
+      "tests/test_retention_participant_scope.py": 0.125995,
+      "tests/test_retention_phase_b_evidence_workflow.py": 0.056458,
+      "tests/test_retention_phase_b_supplement_workflow.py": 0.087179,
+      "tests/test_retention_restore_authority.py": 0.000511,
+      "tests/test_selected_graph_content.py": 0.414967,
+      "tests/test_selected_graph_reader.py": 9.534701,
+      "tests/test_shared_conversation_pages.py": 27.634928,
+      "tests/test_shared_enrichment.py": 19.276001,
+      "tests/test_shared_graph.py": 47.535968,
+      "tests/test_shared_graph_lifecycle.py": 2.205349,
+      "tests/test_shared_graph_queries.py": 8.984251,
+      "tests/test_shared_membership_pages.py": 27.29259,
+      "tests/test_small_conversation_pages.py": 10.766347,
+      "tests/test_source_catalog_cache.py": 1.188743,
+      "tests/test_source_token_migration.py": 0.067115,
+      "tests/test_sqlite_backup.py": 8.032854,
+      "tests/test_sqlite_canonical_persistence.py": 0.935136,
+      "tests/test_sqlite_connection_lifecycle.py": 0.009302,
+      "tests/test_sqlite_graph_store.py": 2.513444,
+      "tests/test_sqlite_projection_store.py": 14.58359,
+      "tests/test_stale_reference_revision.py": 2.027577,
+      "tests/test_transport_auth_v2.py": 0.207676,
+      "tests/test_upstream_retention_authority.py": 0.052019,
+      "tests/test_ux_journey.py": 0.447124,
+      "tests/test_validation_receipts.py": 10.082468,
+      "tests/test_verified_append_records.py": 4.630482,
+      "tests/test_visibility_proof_completeness.py": 0.530675,
+      "tests/test_websocket_transport.py": 1.237709,
+      "tests/test_witness_source_cache.py": 1.353149
+    },
+    "source": {
+      "commit": "14adf8d7160929d141a5e34426bb19f9aafff6b1",
+      "workflow_run_id": "36804164704",
+      "run_attempt": 1,
+      "artifact_id": 11137349255,
+      "lane": "build-and-test-test-backend",
+      "platform": "Linux",
+      "python": "3.11.16",
+      "samples_per_integration_file": 1,
+      "report_sha256": "f42274aa9e797cd1ea3e82d21dee720403d62f3fbeb88c32b0125ce38cd60801",
+      "selected_nodeids_sha256": "9b2ed86c4cb0bd4864a11f20611309de10e76cac18c13322f2f454ce7de44fa0"
+    }
+  },
+  "integration_shards": {
+    "tests/hardening/falsifiers/test_falsifiers.py": 3,
+    "tests/stateful/test_agent_delivery.py": 2,
+    "tests/stateful/test_analytics_determinism.py": 4,
+    "tests/stateful/test_analytics_equivalence.py": 1,
+    "tests/stateful/test_brain_ingestion.py": 1,
+    "tests/stateful/test_brain_persistent_ingestion.py": 2,
+    "tests/test_activation_enforcement.py": 1,
+    "tests/test_activation_gate.py": 3,
+    "tests/test_activation_read_scope.py": 2,
+    "tests/test_analysis_authorization.py": 4,
+    "tests/test_analysis_restart_offline.py": 2,
+    "tests/test_analysis_runtime_gate.py": 1,
+    "tests/test_analytics_backend_rework.py": 4,
+    "tests/test_analytics_closure_collectors.py": 1,
+    "tests/test_analytics_closure_process.py": 2,
+    "tests/test_analytics_closure_runner.py": 4,
+    "tests/test_analytics_evidence.py": 4,
+    "tests/test_analytics_exchange_sqlite.py": 4,
+    "tests/test_analytics_forced_rebuild.py": 2,
+    "tests/test_analytics_graph_record_reuse.py": 4,
+    "tests/test_analytics_lifecycle_receipts.py": 4,
+    "tests/test_analytics_package_oracle.py": 2,
+    "tests/test_analytics_pipeline.py": 3,
+    "tests/test_analytics_query_endpoints.py": 2,
+    "tests/test_analytics_question_cases.py": 2,
+    "tests/test_analytics_question_service.py": 3,
+    "tests/test_analytics_rebuild_admission.py": 1,
+    "tests/test_analytics_retention.py": 4,
+    "tests/test_analytics_source_tokens.py": 3,
+    "tests/test_append_cache_ownership.py": 3,
+    "tests/test_append_enrichment_copying.py": 4,
+    "tests/test_append_materialization_work.py": 3,
+    "tests/test_append_prefix_validation.py": 2,
+    "tests/test_append_removal_work.py": 2,
+    "tests/test_attestation_package_qualification.py": 1,
+    "tests/test_auth_store.py": 1,
+    "tests/test_batched_graph_retirement.py": 3,
+    "tests/test_batched_page_retirement.py": 2,
+    "tests/test_bound_enrichment_prefix.py": 3,
+    "tests/test_bounded_publication.py": 4,
+    "tests/test_build_extension_identity.py": 3,
+    "tests/test_build_windows.py": 1,
+    "tests/test_canonical_migration_lineages.py": 3,
+    "tests/test_canonical_repository_contract.py": 3,
+    "tests/test_capability_license_persistence.py": 2,
+    "tests/test_catchup_ledger.py": 1,
+    "tests/test_catchup_rpc.py": 3,
+    "tests/test_changed_graph_read_order.py": 1,
+    "tests/test_compact_graph.py": 2,
+    "tests/test_companion_analysis_readiness_rpc.py": 1,
+    "tests/test_companion_onboarding_progress.py": 3,
+    "tests/test_companion_pairing_persistence.py": 1,
+    "tests/test_config_identity_sqlite_migration.py": 2,
+    "tests/test_content_write_order.py": 1,
+    "tests/test_continuous_analytics.py": 3,
+    "tests/test_continuous_recovery.py": 4,
+    "tests/test_conversation_fragment_storage.py": 2,
+    "tests/test_conversation_graph_receipts.py": 4,
+    "tests/test_conversation_graph_references.py": 3,
+    "tests/test_conversation_integrity_migration.py": 3,
+    "tests/test_conversation_pages.py": 2,
+    "tests/test_creator_vault_api.py": 4,
+    "tests/test_creator_vault_deletion_operations.py": 3,
+    "tests/test_creator_vault_export.py": 1,
+    "tests/test_creator_vault_retention.py": 4,
+    "tests/test_dominant_append_reuse.py": 3,
+    "tests/test_durable_ingestion.py": 2,
+    "tests/test_encoded_conversation_graph.py": 4,
+    "tests/test_enrichment_cache_contract.py": 1,
+    "tests/test_enrichment_cache_storage.py": 1,
+    "tests/test_enrichment_identity_index_migration.py": 1,
+    "tests/test_enrichment_input_batches.py": 3,
+    "tests/test_enrichment_proof_transition.py": 2,
+    "tests/test_enrichment_reference_component.py": 1,
+    "tests/test_enrichment_reuse.py": 3,
+    "tests/test_enrichment_staging.py": 1,
+    "tests/test_final_visibility_runtime.py": 3,
+    "tests/test_focused_insertion_diagnostic.py": 2,
+    "tests/test_forced_rebuild_preparation.py": 3,
+    "tests/test_full_update_attribution.py": 3,
+    "tests/test_generation_throughput.py": 2,
+    "tests/test_generation_verification_cache.py": 4,
+    "tests/test_generation_verification_envelope.py": 3,
+    "tests/test_graph_chunk_metadata.py": 3,
+    "tests/test_graph_component_diagnostic.py": 1,
+    "tests/test_graph_digest_stream.py": 4,
+    "tests/test_graph_membership_transition.py": 1,
+    "tests/test_graph_reclamation.py": 2,
+    "tests/test_graph_reference_sql.py": 1,
+    "tests/test_graph_row_encoding.py": 3,
+    "tests/test_graph_store_contract.py": 3,
+    "tests/test_historical_analytics_retention.py": 4,
+    "tests/test_history_api.py": 1,
+    "tests/test_history_v2.py": 2,
+    "tests/test_hosted_origin_resolution.py": 2,
+    "tests/test_incremental_conversation_integrity.py": 1,
+    "tests/test_incremental_enrichment_units.py": 3,
+    "tests/test_incremental_graph_units.py": 4,
+    "tests/test_integrity_cost_contract.py": 3,
+    "tests/test_integrity_fallback_modes.py": 3,
+    "tests/test_integrity_ready_handoff.py": 1,
+    "tests/test_integrity_upgrade_lifecycle.py": 2,
+    "tests/test_integrity_verification_bounds.py": 3,
+    "tests/test_json_validation_header.py": 1,
+    "tests/test_licensed_analytics_pipeline.py": 4,
+    "tests/test_live_socket_capture_policy.py": 2,
+    "tests/test_local_database_encryption.py": 3,
+    "tests/test_managed_recovery_publication.py": 4,
+    "tests/test_membership_insert_plan.py": 2,
+    "tests/test_membership_proof_falsifiers.py": 2,
+    "tests/test_membership_validation_bounds.py": 2,
+    "tests/test_packaged_runtime.py": 3,
+    "tests/test_packaging_smoke.py": 1,
+    "tests/test_persisted_membership_handoff.py": 2,
+    "tests/test_predecessor_graph_handoff.py": 4,
+    "tests/test_prefix_update_attribution.py": 1,
+    "tests/test_private_file_memory.py": 2,
+    "tests/test_projection_activation.py": 1,
+    "tests/test_projection_backup_restore_retention.py": 2,
+    "tests/test_projection_currentness.py": 4,
+    "tests/test_projection_metadata_parsing.py": 3,
+    "tests/test_projection_query_metadata.py": 4,
+    "tests/test_projection_store_contract.py": 1,
+    "tests/test_projection_v2.py": 2,
+    "tests/test_projection_verification.py": 2,
+    "tests/test_proven_currentness.py": 4,
+    "tests/test_published_source_identity.py": 2,
+    "tests/test_qualification_host_guard.py": 2,
+    "tests/test_qualification_runtime_clock.py": 3,
+    "tests/test_question_coverage.py": 3,
+    "tests/test_question_identity_preparation.py": 4,
+    "tests/test_question_route_guards.py": 2,
+    "tests/test_readiness_identity.py": 3,
+    "tests/test_recovered_update_reuse.py": 3,
+    "tests/test_reference_sql_component.py": 1,
+    "tests/test_removed_graph_endpoints.py": 1,
+    "tests/test_reply_source_selection.py": 3,
+    "tests/test_retention_ci_regressions.py": 1,
+    "tests/test_retention_ingress_paths.py": 3,
+    "tests/test_retention_maintenance.py": 3,
+    "tests/test_retention_participant_scope.py": 4,
+    "tests/test_retention_phase_b_evidence_workflow.py": 1,
+    "tests/test_retention_phase_b_supplement_workflow.py": 1,
+    "tests/test_retention_restore_authority.py": 3,
+    "tests/test_selected_graph_content.py": 4,
+    "tests/test_selected_graph_reader.py": 3,
+    "tests/test_shared_conversation_pages.py": 4,
+    "tests/test_shared_enrichment.py": 4,
+    "tests/test_shared_graph.py": 4,
+    "tests/test_shared_graph_lifecycle.py": 1,
+    "tests/test_shared_graph_queries.py": 2,
+    "tests/test_shared_membership_pages.py": 2,
+    "tests/test_small_conversation_pages.py": 2,
+    "tests/test_source_catalog_cache.py": 4,
+    "tests/test_source_token_migration.py": 2,
+    "tests/test_sqlite_backup.py": 1,
+    "tests/test_sqlite_canonical_persistence.py": 1,
+    "tests/test_sqlite_connection_lifecycle.py": 4,
+    "tests/test_sqlite_graph_store.py": 2,
+    "tests/test_sqlite_projection_store.py": 4,
+    "tests/test_stale_reference_revision.py": 3,
+    "tests/test_streamed_conversation_pending.py": 2,
+    "tests/test_targeted_visibility_benchmark.py": 3,
+    "tests/test_tied_insertion_admission.py": 3,
+    "tests/test_tied_insertion_metric_reuse.py": 2,
+    "tests/test_tied_insertion_reuse.py": 1,
+    "tests/test_tied_insertion_safety.py": 2,
+    "tests/test_tied_insertion_scheduler.py": 2,
+    "tests/test_transport_auth_v2.py": 3,
+    "tests/test_upstream_retention_authority.py": 3,
+    "tests/test_ux_journey.py": 2,
+    "tests/test_validation_receipts.py": 2,
+    "tests/test_verified_append_records.py": 4,
+    "tests/test_visibility_proof_completeness.py": 1,
+    "tests/test_websocket_transport.py": 3,
+    "tests/test_witness_source_cache.py": 4
+  },
+  "windows_contracts": {
+    "platform": [
+      {
+        "selector": "tests/test_activation_gate.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_agent_bundle.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_analysis_restart_offline.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_attestation_package_qualification.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_auth_store.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_build_extension_identity.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_build_windows.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_companion_noise.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_config_identity_sqlite_migration.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_engineering_attestation.py::test_zip_reader_rejects_unsafe_duplicate_encrypted_and_symlink_entries",
+        "reason": "ZIP platform metadata changes the parameter bytes and collected node IDs; retain the Windows archive-validation cases as explicit Windows obligations."
+      },
+      {
+        "selector": "tests/test_exclusive_resource.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_first_run_configuration.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_grant_verifier.py::test_grant_profile_vectors_match_expected_outcomes",
+        "reason": "Native path separators change the collected vector case IDs; retain each Windows grant-vector identity as an explicit Windows obligation."
+      },
+      {
+        "selector": "tests/test_installation_key.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_launcher.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_local_database_encryption.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_packaged_boot_dispatch.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_packaged_runtime.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_packaging_smoke.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_provisioning_binding_acquisition.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_provisioning_claim_submission.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_release_signing.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_resource_paths.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_sqlcipher_runtime_supply.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_sqlite_backup.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_sqlite_canonical_persistence.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_sqlite_connection_lifecycle.py",
+        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
+      },
+      {
+        "selector": "tests/test_qualification_host_guard.py::AdmissionTests::test_guard_slot_cannot_race_second_process",
+        "reason": "A second native Windows process must observe the same directory lease and refuse before launching a competing workload."
+      },
+      {
+        "selector": "tests/test_targeted_visibility_benchmark.py::test_atomic_status_replaces_non_evidence_sidecar",
+        "reason": "Atomic replacement of an existing status file must work with Windows filesystem semantics."
+      },
+      {
+        "selector": "tests/test_companion_onboarding_progress.py",
+        "reason": "Persistent companion authentication and configuration readiness on Windows SQLite."
+      },
+      {
+        "selector": "tests/test_hosted_origin_resolution.py",
+        "reason": "Windows subprocess composition and bundled release paths/environment precedence."
+      },
+      {
+        "selector": "tests/test_private_file_memory.py",
+        "reason": "Mandatory Windows native private-file ACL memory regression; intentionally also covered by production boot."
+      }
+    ],
+    "analytics": [
+      {
+        "selector": "tests/test_analytics_closure_process.py",
+        "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_analytics_query_endpoints.py",
+        "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_continuous_recovery.py",
+        "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_generation_throughput.py",
+        "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_graph_reclamation.py",
+        "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_recovered_update_reuse.py",
+        "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_sqlite_graph_store.py",
+        "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_sqlite_projection_store.py",
+        "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_http_projection_failure_is_sanitized_and_recovery_is_coalesced",
+        "reason": "Windows file sharing and scheduler-owned WAL handles must permit deliberate fault injection while preserving HTTP sanitization and coalesced recovery."
+      },
+      {
+        "selector": "tests/test_focused_insertion_diagnostic.py::test_real_stored_validators_and_fresh_oracle_agree",
+        "reason": "Short component and validation durations need the high-resolution Windows clock while retaining real persisted-content and independent-rebuild checks."
+      },
+      {
+        "selector": "tests/test_focused_insertion_diagnostic.py::test_no_trace_installs_no_global_profiler_and_retains_outer_timing",
+        "reason": "Disabling tracing must retain high-resolution elapsed measurement on Windows without installing a global profiler."
+      },
+      {
+        "selector": "tests/test_graph_component_diagnostic.py::test_transition_total_includes_store_and_release",
+        "reason": "Windows elapsed-clock resolution must retain store and release duration accounting without changing monotonic trace coordinates."
+      },
+      {
+        "selector": "tests/test_tied_insertion_scheduler.py::test_scheduler_idle_insertion_keeps_queries_cleanup_and_rebuild_equality",
+        "reason": "Windows event-loop wakeups must preserve the full real idle interval before verifying scheduler reuse, query currentness and cleanup."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_projection_shutdown_is_awaited_and_fail_closed",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_projection_shutdown_joins_cooperative_owned_worker",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_projection_startup_recovers_unscheduled_canonical_accounts",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_projection_get_keeps_event_loop_responsive_during_canonical_read",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_scheduler_canonical_io_does_not_hold_state_lock_or_event_loop",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_scheduler_builds_different_accounts_concurrently",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_different_accounts_publish_concurrently_without_global_io_lock",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_aware_timestamps_and_equal_time_source_order_survive_sqlite",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_rebuild_source_is_existing_read_only_schema_and_output_is_atomic",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_rebuild_cli_subprocess_uses_sanitized_atomic_boundary",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_rebuild_pins_one_source_transaction_across_path_swap",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_rebuild_rejects_link_and_parent_alias_sources",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_private_output_platform_ports_fail_closed",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_analytics_backend_rework.py::test_windows_rebuild_output_has_one_protected_owner_ace",
+        "reason": "Windows-sensitive scheduler, filesystem, subprocess or ACL behavior."
+      },
+      {
+        "selector": "tests/test_batched_graph_retirement.py::test_schema23_upgrade_preserves_published_graph_and_backup",
+        "reason": "Graph-retirement migration must preserve published content and reopen its encrypted backup on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_batched_graph_retirement.py::test_failed_schema23_migration_rolls_back",
+        "reason": "Failed graph-retirement DDL must roll back without corrupting the prior schema on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_batched_page_retirement.py::test_schema22_upgrade_preserves_page_cache_and_backup",
+        "reason": "Page-retirement migration must preserve published content and reopen its encrypted backup on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_batched_page_retirement.py::test_failed_schema22_migration_rolls_back",
+        "reason": "Failed page-retirement DDL must roll back without corrupting the prior schema on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_conversation_integrity_migration.py::test_schema22_keeps_legacy_units_and_published_output",
+        "reason": "Integrity migration must preserve legacy units and reopen its encrypted backup on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_conversation_integrity_migration.py::test_failed_integrity_migration_rolls_back_all_schema_changes",
+        "reason": "Failed integrity DDL must leave the prior database usable on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_enrichment_identity_index_migration.py::test_upgrade_preserves_enrichment_bytes_backup_and_invalidates_receipt",
+        "reason": "Enrichment-index migration must reopen encrypted backups, retain content, and invalidate old receipts on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_enrichment_identity_index_migration.py::test_failed_index_migration_rolls_back_completely",
+        "reason": "Failed enrichment-index DDL must roll back completely on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_graph_reference_sql.py::test_upgrade_preserves_graph_backup_and_invalidates_old_receipt",
+        "reason": "Graph-index migration must reopen encrypted backups, retain content, and invalidate old receipts on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_graph_reference_sql.py::test_failed_index_migration_rolls_back_completely",
+        "reason": "Failed graph-index DDL must roll back completely on the fixed Windows SQLCipher runtime."
+      },
+      {
+        "selector": "tests/test_integrity_upgrade_lifecycle.py",
+        "reason": "Lazy reopening and scheduler-owned integrity upgrades must publish once and join owned workers on Windows, including the refused-unit fallback."
+      },
+      {
+        "selector": "tests/test_tied_insertion_safety.py::test_cancelled_insertion_keeps_previous_generation_and_joins_heartbeat",
+        "reason": "Cancellation must preserve the published generation and join the native graph lease heartbeat thread on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_evidence.py::test_scoped_binding_sql_interrupt_preserves_request_failure",
+        "reason": "The fixed Windows SQLCipher runtime must preserve deadline and cancellation failures through the SQL progress handler and evidence binding while sharing only the original request-scope connection."
+      },
+      {
+        "selector": "tests/test_catchup_ledger.py::test_migration_seeds_latest_completed_generation",
+        "reason": "Canonical migration initializes catch-up continuity from persisted generation state."
+      },
+      {
+        "selector": "tests/test_live_socket_capture_policy.py::test_t3_upgrade_is_restart_idempotent",
+        "reason": "Canonical configuration upgrades and reopen on Windows; memory parameter retained as control."
+      },
+      {
+        "selector": "tests/test_live_socket_capture_policy.py::test_t6_pending_history_survives_restart",
+        "reason": "Persisted pending-history state survives Windows canonical reopen."
+      },
+      {
+        "selector": "tests/test_live_socket_capture_policy.py::test_t8_repeated_admission_and_restart_preserve_binding",
+        "reason": "Windows restart preserves canonical binding and admission configuration."
+      },
+      {
+        "selector": "tests/test_canonical_migration_lineages.py",
+        "reason": "Both immutable canonical migration histories upgrade, reopen and verify on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_exchange_sqlite.py",
+        "reason": "Encrypted exchange publications preserve source bindings and interrupted import recovery on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_forced_rebuild.py",
+        "reason": "Forced rebuilds recompute, coalesce and cancel through the bounded scheduler on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_lifecycle_receipts.py",
+        "reason": "Inherited pipe receipts bind durable canonical writes and joined shutdown on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_package_oracle.py",
+        "reason": "Read-only encrypted canonical and projection verification rejects tampering and stale records on Windows."
+      },
+      {
+        "selector": "tests/test_question_coverage.py",
+        "reason": "Retained acquisition evidence invalidates bounded question and source bindings on Windows."
+      },
+      {
+        "selector": "tests/test_analytics_rebuild_admission.py",
+        "reason": "Creator rebuilds recheck durable account and analysis authority on Windows."
+      },
+      {
+        "selector": "tests/test_process_lifetime.py",
+        "reason": "Windowed processes shut down on parent pipe closure without console signals."
+      }
+    ]
+  },
+  "stateful_profiles": {
+    "tier_a_general": {
+      "hypothesis_profile": "tier_a_general",
+      "selectors": [
+        "tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral"
+      ]
+    },
+    "tier_a_deletion": {
+      "hypothesis_profile": "tier_a_deletion",
+      "selectors": [
+        "tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion"
+      ]
+    },
+    "agent_tier_a_general": {
+      "hypothesis_profile": "agent_tier_a_general",
+      "selectors": [
+        "tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral"
+      ]
+    },
+    "agent_tier_a_deletion": {
+      "hypothesis_profile": "agent_tier_a_deletion",
+      "selectors": [
+        "tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion"
+      ]
+    },
+    "analytics_determinism_fast": {
+      "hypothesis_profile": "analytics_determinism_fast",
+      "selectors": [
+        "tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism"
+      ]
+    },
+    "analytics_convergence_fast": {
+      "hypothesis_profile": "analytics_convergence_fast",
+      "selectors": [
+        "tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence"
+      ]
+    },
+    "analytics_deletion_fast": {
+      "hypothesis_profile": "analytics_deletion_fast",
+      "selectors": [
+        "tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence"
+      ]
+    },
+    "analytics_oracle_falsifiers": {
+      "hypothesis_profile": null,
+      "selectors": [
+        "tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults",
+        "tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifacts",
+        "tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifacts",
+        "tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness",
+        "tests/stateful/test_analytics_equivalence.py::test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase"
+      ]
+    },
+    "tier_b_general": {
+      "hypothesis_profile": "tier_b_general",
+      "selectors": [
+        "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral"
+      ]
+    },
+    "tier_b_deletion": {
+      "hypothesis_profile": "tier_b_deletion",
+      "selectors": [
+        "tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion"
+      ]
+    },
+    "windows_persistence_smoke": {
+      "hypothesis_profile": "windows_persistence_smoke",
+      "selectors": [
+        "tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke"
+      ]
+    }
+  },
+  "intentional_duplicates": {
+    "windows_contracts": "All Windows contract cases also retain their required Linux owner where the legacy Linux command selected them; Windows execution is an intentional additional platform obligation.",
+    "stateful": "Profiles are separate execution obligations even when they share a test implementation.",
+    "agent_generated_defaults": "Hypothesis Agent TestCase aliases do not inherit the source state-machine marker. Both currently run in the legacy default population with the default profile as well as in explicit Agent profile lanes; preserve both obligations during this migration."
+  }
+}

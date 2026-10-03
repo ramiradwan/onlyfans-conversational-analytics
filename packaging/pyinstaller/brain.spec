@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 
 from PyInstaller.building.api import COLLECT, EXE, PYZ  # type: ignore[import-not-found]
 from PyInstaller.building.build_main import Analysis  # type: ignore[import-not-found]
-from PyInstaller.utils.hooks import collect_dynamic_libs  # type: ignore[import-not-found]
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, copy_metadata  # type: ignore[import-not-found]
 
 
 _PROJECT_ROOT = Path(os.environ.get("BRAIN_PROJECT_ROOT", Path.cwd())).resolve()
@@ -76,6 +76,8 @@ def _add_tree(
 
 
 _DATAS: list[tuple[str, str]] = []
+_DATAS.extend(collect_data_files("tzdata"))
+_DATAS.extend(copy_metadata("tzdata"))
 for _required_file in _POLICY["required_files"]:
     if _required_file.startswith(_INTERNAL_PREFIX):
         _add_file(_DATAS, _required_file)

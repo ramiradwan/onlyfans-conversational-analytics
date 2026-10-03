@@ -31,6 +31,8 @@ from contracts.loader import (
     verify_snapshot_integrity,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1] / "contracts"
 PROGRESS_PROFILE = "urn:bridge-clean:onboarding-progress:v1"

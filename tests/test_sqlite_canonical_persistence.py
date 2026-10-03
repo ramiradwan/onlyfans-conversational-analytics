@@ -32,6 +32,8 @@ from app.services.agent_configuration import (
 from app.services.command_execution import CommandDeliveryTarget, CommandService
 from app.transport.ingestion import IngestionService, StreamKey
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 FIXTURES = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 _BOOTSTRAP_SEQUENCE = int(BOOTSTRAP_CONFIG_REVISION.removeprefix("config-"))

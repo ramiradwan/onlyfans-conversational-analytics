@@ -16,9 +16,9 @@ import pytest
 import exclusive_resource
 
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat, pytest.mark.serial, pytest.mark.skipif(
     os.name != "nt", reason="machine_wide_lock is a Win32 named-mutex claim"
-)
+)]
 
 TESTS_DIRECTORY = Path(__file__).resolve().parent
 _HOLD_SECONDS = 1.5

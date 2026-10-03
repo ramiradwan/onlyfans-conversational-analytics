@@ -11,6 +11,8 @@ from app.persistence.factory import create_canonical_repositories
 from app.services.agent_configuration import AgentConfigurationAuthority, InMemoryAgentConfigRepository
 from app.transport.manager import AuthenticationError, InMemoryTransportManager
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 NOW = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
 ACCOUNT = "creator-account-1"

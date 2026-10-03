@@ -23,6 +23,8 @@ from tests.state_models.analytics_oracle import (
     reproduction_payload,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 EVALUATION_CLOCK = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
 CREATOR_ID = "analytics_determinism-synthetic-creator"
@@ -133,6 +135,7 @@ def _fresh_builds(account: AccountReadModel, *, seed: int | None = 0):
     return first, second, context
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 class TestAnalyticsDeterminism:
     @given(account=canonical_accounts(), seed=st.integers(min_value=0, max_value=2**32 - 1))

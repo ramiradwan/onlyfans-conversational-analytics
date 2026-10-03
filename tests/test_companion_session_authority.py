@@ -27,6 +27,8 @@ from app.security.companion_session_authority import (
 from test_companion_pairing_service import local, _awaiting
 from test_companion_pairing_proof import contract, grant_references, ORDER
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @pytest.fixture
 def admitted(local):

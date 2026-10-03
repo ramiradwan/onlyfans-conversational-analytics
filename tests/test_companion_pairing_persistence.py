@@ -38,6 +38,8 @@ from app.persistence.companion_pairing import (
 )
 from app.security.runtime_policy import AuthContext
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @dataclass
 class MutableClock:

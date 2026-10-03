@@ -18,6 +18,8 @@ from app.core.first_run import (
 )
 from app.core.runtime_paths import runtime_data_directory
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"
 BINDINGS = VerifiedGrantBindings(

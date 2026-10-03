@@ -15,6 +15,8 @@ import pytest
 from app import packaged_entry
 from app.core.config import Settings
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
 # Every Settings field name, uppercased: the environment surface cleared from

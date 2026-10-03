@@ -6,6 +6,8 @@ from app.analytics import runtime as analytics_runtime
 from app.api.endpoints import transport_ws
 from app.security.runtime_policy import RuntimeAuthorizationDenied
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 @pytest.mark.asyncio
 async def test_post_ingest_rebuild_is_not_scheduled_when_analysis_run_is_denied(
