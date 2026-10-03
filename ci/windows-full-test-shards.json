@@ -209,6 +209,7 @@
     "tests/test_onboarding_progress_reporting.py": 1,
     "tests/test_packaged_boot_dispatch.py": 1,
     "tests/test_packaged_runtime.py": 1,
+    "tests/test_packaging_build_mode.py": 2,
     "tests/test_packaging_policy.py": 2,
     "tests/test_packaging_smoke.py": 2,
     "tests/test_passive_capture_identity_configuration.py": 2,
@@ -634,6 +635,7 @@
       "tests/test_analytics_packaged_source_binding.py",
       "tests/test_analytics_rebuild_admission.py",
       "tests/test_ci_windows_shards.py",
+      "tests/test_packaging_build_mode.py",
       "tests/test_process_lifetime.py",
       "tests/test_question_coverage.py"
     ]
