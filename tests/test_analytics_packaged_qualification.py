@@ -235,6 +235,73 @@ def test_independent_fixture_preserves_capture_fields_and_mutation_sets():
     assert fixture.messages["matrix-history-0"][4] == "2026-08-28T08:00:00.000Z"
 
 
+def test_browser_fixture_survives_production_capture_and_matches_independent_fields():
+    """Every offered fixture shape retains its fields through the production normalizer."""
+    import shutil
+
+    from app.protocol.common import RawMessage
+    from tools.analytics_qualification_package_fixture import Fixture
+
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required for the capture fixture contract"
+    root = Path(__file__).resolve().parents[1]
+    config = {"size": 1000, "evaluation_clock": MANIFEST["fixture"]["evaluation_clock"],
+              "synthetic_account_id": "synthetic-continuous-owner"}
+    script = r'''
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { seedMessage, appendedMessage, editedMessages, historicalMessages, interleavedMessage }
+  from './tools/e2e-capture/lib/packaged-analytics-fixture.mjs';
+import { normalizeMessageRecord } from './extension/capture/normalization.mjs';
+import { mapPlatformObservation } from './extension/transport/read-only-capture-ingestion.mjs';
+
+const input = JSON.parse(readFileSync(0, 'utf8'));
+const offered = new Map(), canonical = new Map();
+function capture(records) {
+  for (const raw of records) {
+    const record = normalizeMessageRecord(raw, { contextChatId: raw.chat_id });
+    assert.notEqual(record, null, 'The offered record must survive the page-hook normalizer');
+    const mapped = mapPlatformObservation({ event_type: 'message.observed',
+      observed_at: input.evaluation_clock,
+      source_path: `/api2/v2/chats/${encodeURIComponent(raw.chat_id)}/messages`,
+      creator_platform_user_id: input.synthetic_account_id, context_chat_id: raw.chat_id, record });
+    assert.equal(mapped.ok, true);
+    assert.equal(mapped.change.type, 'message.upsert');
+    offered.set(raw.id, raw);
+    canonical.set(raw.id, mapped.change.message);
+  }
+}
+capture(Array.from({ length: input.size }, (_, index) => seedMessage(index, input.size, input)));
+capture([appendedMessage('matrix-current', 1, input)]);
+capture(editedMessages(offered));
+for (const batch of [0, 99]) {
+  capture(historicalMessages(batch, input));
+  capture([interleavedMessage(batch, input)]);
+}
+const missingCounterparty = { ...seedMessage(0, input.size, input) };
+delete missingCounterparty.chatUserId;
+assert.equal(normalizeMessageRecord(missingCounterparty, { contextChatId: missingCounterparty.chat_id }), null);
+process.stdout.write(JSON.stringify([...canonical.values()]));
+'''
+    result = subprocess.run([node, "--input-type=module", "-e", script], cwd=root,
+                            input=json.dumps(config), capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    records = json.loads(result.stdout)
+    for record in records:
+        RawMessage.model_validate_json(json.dumps(record))
+    actual = sorted([
+        [record[key] for key in ("message_id", "chat_id", "sender_platform_user_id",
+                                "text", "sent_at", "direction")]
+        for record in records
+    ])
+    expected = Fixture(config["size"], config["evaluation_clock"])
+    expected.append("matrix-current", 1)
+    expected.edit()
+    for batch in (0, 99):
+        expected.history_batch(batch)
+    assert actual == expected.rows()
+
+
 @pytest.mark.parametrize("fault", [None, "completed", "different_attempt", "before_request", "not_full", "missing"])
 def test_cancellation_requires_the_same_running_full_build(fault):
     record = {"process_instance": "42:synthetic", "attempt_id": "build-1", "request_ns": 100,

@@ -1,22 +1,12 @@
 import { chromium } from '@playwright/test';
 import { createInterface } from 'node:readline';
+import {
+  chats, seedMessage, appendedMessage, editedMessages, historicalMessages, interleavedMessage,
+} from './packaged-analytics-fixture.mjs';
 
 let context, bridge, platform, worker, popup, input;
 let messages = new Map();
 let selectedPage = [];
-const chats = Array.from({ length: 101 }, (_, index) => `chat-${index}`);
-
-function instant(milliseconds) { return new Date(milliseconds).toISOString(); }
-
-function message(index, size) {
-  const half = Math.floor(size / 2);
-  const chat = index < half ? 0 : 1 + ((index - half) % 100);
-  const position = index < half ? index : Math.floor((index - half) / 100);
-  return { id: `matrix-input-${index}`, chat_id: chats[chat],
-    fromUser: { id: position % 2 ? input.synthetic_account_id : chats[chat] },
-    text: `Synthetic support message ${index}`,
-    createdAt: instant(Date.parse(input.evaluation_clock) - 48 * 3600000 + index * 48 * 3600000 / size) };
-}
 
 function csrfRequest({ route, body }) {
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -29,7 +19,7 @@ function csrfRequest({ route, body }) {
 async function start(config) {
   input = config;
   messages = new Map(Array.from({ length: input.seeded_size ?? 0 }, (_, index) => {
-    const value = message(index, input.seeded_size);
+    const value = seedMessage(index, input.seeded_size, input);
     return [value.id, value];
   }));
   const origin = new URL(input.bridge_origin);
@@ -62,7 +52,7 @@ async function start(config) {
     return route.abort();
   });
   bridge = await context.newPage();
-  const bridgeUrl = new URL(input.bridge_path ?? '/', input.bridge_origin).href;
+  const bridgeUrl = new URL(input.bridge_path ?? '/analytics', input.bridge_origin).href;
   const deadline = Date.now() + 120000;
   while (true) {
     try {
@@ -118,22 +108,16 @@ async function command(request) {
   if (action === 'start') return start(request.inputs);
   if (action === 'seed') {
     await capture(Array.from({ length: Math.min(request.count, request.size - request.offset) },
-      (_, index) => message(request.offset + index, request.size)));
+      (_, index) => seedMessage(request.offset + index, request.size, input)));
     return { generated_messages: messages.size };
   }
   if (action === 'append') {
-    const value = { id: request.message_id, chat_id: chats[request.chat],
-      fromUser: { id: chats[request.chat] }, text: 'Synthetic current message',
-      createdAt: instant(Date.parse(input.evaluation_clock) - 1) };
+    const value = appendedMessage(request.message_id, request.chat, input);
     await capture([value]);
     return { generated_messages: messages.size };
   }
   if (action === 'edit') {
-    const values = Array.from({ length: 100 }, (_, index) => {
-      const value = messages.get(`matrix-input-${index}`);
-      if (!value) throw new Error('synthetic_edit_source_missing');
-      return { ...value, text: `Synthetic changed support ${index}` };
-    });
+    const values = editedMessages(messages);
     await capture(values);
     return { edited: values.length };
   }
@@ -150,16 +134,9 @@ async function command(request) {
     return { deleted: 100 };
   }
   if (action === 'history_batch') {
-    const values = Array.from({ length: 100 }, (_, offset) => {
-      const index = request.batch * 100 + offset;
-      return { id: `matrix-history-${index}`, chat_id: chats[0], fromUser: { id: chats[0] },
-        text: `Synthetic historical message ${index}`,
-        createdAt: instant(Date.parse(input.evaluation_clock) - 30 * 86400000 + index * 1000) };
-    });
+    const values = historicalMessages(request.batch, input);
     await capture(values);
-    await capture([{ id: `matrix-interleaved-live-${request.batch}`, chat_id: chats[1 + request.batch],
-      fromUser: { id: chats[1 + request.batch] }, text: 'Synthetic interleaved message',
-      createdAt: instant(Date.parse(input.evaluation_clock) - 100 + request.batch) }]);
+    await capture([interleavedMessage(request.batch, input)]);
     return { generated_messages: messages.size };
   }
   if (action === 'question') return bridge.evaluate(csrfRequest,

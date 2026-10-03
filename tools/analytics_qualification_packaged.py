@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
@@ -73,6 +74,28 @@ def extracted_files(archive, directory):
     return expected
 
 
+def runtime_source(archive, revision):
+    """Bind the frozen release manifest to the reviewed source revision."""
+    def unique(pairs):
+        value = dict(pairs)
+        if len(value) != len(pairs):
+            raise ValueError("package_release_manifest_invalid")
+        return value
+
+    with zipfile.ZipFile(archive) as package:
+        manifests = [item for item in package.infolist() if item.filename == "release-manifest.json"]
+        if len(manifests) != 1 or not 0 < manifests[0].file_size <= 65536:
+            raise ValueError("package_release_manifest_missing_or_invalid")
+        raw = package.read(manifests[0])
+    value = json.loads(raw, object_pairs_hook=unique)
+    if (not isinstance(value, dict) or value.get("schema") != "ofca-release-manifest/v1"
+            or value.get("architecture") != "x64"):
+        raise ValueError("package_release_manifest_invalid")
+    if value.get("source_commit") != revision:
+        raise ValueError("package_release_source_revision_mismatch")
+    return {"source_revision": revision, "manifest_sha256": hashlib.sha256(raw).hexdigest()}
+
+
 def prerequisites(inputs, manifest, source, profile):
     from tools.analytics_qualification_hardware import observe, observe_network_isolation
     artifacts = artifact_context(inputs)
@@ -83,6 +106,7 @@ def prerequisites(inputs, manifest, source, profile):
         raise ValueError("package_source_revision_mismatch")
     if source.get("working_tree") or source.get("signature_valid") is not True:
         raise ValueError("package_source_not_clean_and_signed")
+    release_source = runtime_source(artifacts["runtime"]["path"], source["revision"])
     hardware = observe()
     errors = check_profile(manifest, profile, hardware)
     if errors:
@@ -118,6 +142,7 @@ def prerequisites(inputs, manifest, source, profile):
     if not inputs.keys() <= allowed:
         raise ValueError("package_inputs_contain_unsupported_fields")
     return {"hardware": hardware, "artifacts": artifacts, "runtime_files": files,
+            "runtime_source": release_source,
             "network_isolation": observe_network_isolation()}
 
 
@@ -194,6 +219,12 @@ def check_evidence(attempt, result, manifest, context):
             or payload.get("supervisor_instance") != result.get("process_instance")
             or read("hardware.json") != payload.get("hardware")):
         return ["packaged_raw_binding_mismatch"]
+    try:
+        release_source = runtime_source(context["artifacts"]["runtime"]["path"], context["source"]["revision"])
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+        return ["packaged_source_binding_invalid"]
+    if config.get("observed", {}).get("runtime_source") != release_source:
+        return ["packaged_source_binding_mismatch"]
     artifacts = {key: value["sha256"] for key, value in context["artifacts"].items()}
     for name in ("network-isolation-before.json", "network-isolation-after.json"):
         if read(name) != {"active_adapters": 0, "default_routes": 0}:
