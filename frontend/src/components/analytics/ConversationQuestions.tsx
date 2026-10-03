@@ -12,6 +12,7 @@ const labels: Record<QuestionId, string> = {
   'no_later_creator_reply.v1': 'No later reply from you',
   'pricing_discussions.v1': 'Pricing discussions',
 };
+const pricingNotice = 'Pricing discussions are not available yet.';
 export function ConversationQuestions({ controller, transport = bridgeTransportStore }: {
   controller?: QuestionStore;
   transport?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
@@ -29,6 +30,11 @@ export function ConversationQuestions({ controller, transport = bridgeTransportS
   }, [questions, transport]);
   const enabled = state.catalog?.questions.find((item) => item.question === question)?.enabled === true;
   const busy = state.status === 'running' || state.status === 'loading';
+  const pricingUnavailable = state.catalog?.questions.some((item) => item.question === 'pricing_discussions.v1' && !item.enabled);
+  const feedback = validation ?? (busy
+    ? state.status === 'running' ? 'Checking saved conversations…' : 'Loading available questions…'
+    : state.message);
+  const feedbackError = Boolean(validation) || state.status === 'error';
   const result = state.result;
   function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -50,7 +56,12 @@ export function ConversationQuestions({ controller, transport = bridgeTransportS
         <Box><Typography id="conversation-questions-title" component="h2" variant="h6">Conversation questions</Typography>
           <Typography color="text.secondary">Find saved conversations and inspect the messages behind each result.</Typography></Box>
         <Stack component="form" onSubmit={submit} spacing={2}>
-          <TextField select label="Question" value={question} onChange={(event) => {
+          <TextField select label="Question" value={question}
+            helperText={<Box component="span" sx={{ display: 'grid',
+              '&::before': { content: `"${pricingNotice}"`, gridArea: '1 / 1', visibility: 'hidden' } }}>
+              <Box component="span" sx={{ gridArea: '1 / 1' }}>{pricingUnavailable ? pricingNotice : '\u00a0'}</Box>
+            </Box>}
+            onChange={(event) => {
             setQuestion(event.target.value as QuestionId); questions.actions.invalidate('Question changed. Run it again.');
           }}>
             {Object.entries(labels).map(([id, label]) => <MenuItem key={id} value={id}
@@ -65,18 +76,17 @@ export function ConversationQuestions({ controller, transport = bridgeTransportS
               slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: localDate(new Date()) } }} fullWidth />
           </Stack>
           <Typography variant="body2" color="text.secondary">Dates use {Intl.DateTimeFormat().resolvedOptions().timeZone}. These filters apply only to conversation questions.</Typography>
-          {validation && <Alert severity="error">{validation}</Alert>}
           <Stack direction="row" spacing={1}>
-            <Button type="submit" variant="contained" disabled={!enabled || !state.canRun || busy}>{busy ? 'Loading…' : 'Run question'}</Button>
+            <Button type="submit" variant="contained" aria-busy={busy} disabled={!enabled || !state.canRun || busy}>Run question</Button>
             {!state.catalog && state.canRun && !busy && <Button onClick={() => void questions.actions.catalog()}>Retry</Button>}
           </Stack>
+          <Typography variant="body2" role={feedbackError ? 'alert' : 'status'}
+            aria-live={feedbackError ? 'assertive' : 'polite'} color={feedbackError ? 'error.main' : 'text.secondary'}
+            tabIndex={feedback ? 0 : undefined}
+            data-question-status="feedback" data-journey-state={state.message ? 'questions.unavailable' : undefined}
+            sx={{ height: '3em', lineHeight: 1.5, overflowY: 'auto', scrollbarGutter: 'stable' }}>{feedback || '\u00a0'}</Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary">This checks saved messages only. A message without a later reply does not necessarily need one. Some messages do not include enough information to determine reply status.</Typography>
-        {state.catalog?.questions.some((item) => item.question === 'pricing_discussions.v1' && !item.enabled) &&
-          <Typography variant="body2" color="text.secondary">Pricing discussions are not available yet.</Typography>}
-        {busy && <Typography role="status" aria-live="polite">{state.status === 'running' ? 'Checking saved conversations…' : 'Loading available questions…'}</Typography>}
-        {state.message && <Alert severity={state.status === 'error' ? 'error' : 'info'}
-          data-journey-state="questions.unavailable">{state.message}</Alert>}
         {result && <Stack spacing={1.5} data-journey-state="questions.results" aria-live="polite">
           <Typography variant="body2">Checked {new Date(result.checked_at).toLocaleString()}. Follow-up checked through {new Date(result.question.cutoff).toLocaleString()}.</Typography>
           {result.question.selection_clipped_by_retention && <Alert severity="info">Only messages within the available 90-day analysis history were checked.</Alert>}
