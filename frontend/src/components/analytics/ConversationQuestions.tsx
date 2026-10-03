@@ -83,8 +83,10 @@ export function ConversationQuestions({ controller, transport = bridgeTransportS
           <Typography variant="body2" role={feedbackError ? 'alert' : 'status'}
             aria-live={feedbackError ? 'assertive' : 'polite'} color={feedbackError ? 'error.main' : 'text.secondary'}
             tabIndex={feedback ? 0 : undefined}
-            data-question-status="feedback" data-journey-state={state.message ? 'questions.unavailable' : undefined}
-            sx={{ height: '3em', lineHeight: 1.5, overflowY: 'auto', scrollbarGutter: 'stable' }}>{feedback || '\u00a0'}</Typography>
+            data-question-status="feedback"
+            sx={{ height: '3em', lineHeight: 1.5, overflowY: 'auto', scrollbarGutter: 'stable' }}>
+            {state.message ? <span data-journey-state="questions.unavailable">{feedback || '\u00a0'}</span> : feedback || '\u00a0'}
+          </Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary">This checks saved messages only. A message without a later reply does not necessarily need one. Some messages do not include enough information to determine reply status.</Typography>
         {result && <Stack spacing={1.5} data-journey-state="questions.results" aria-live="polite">
