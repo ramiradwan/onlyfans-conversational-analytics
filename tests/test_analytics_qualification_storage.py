@@ -231,6 +231,10 @@ def test_malformed_nested_values_produce_a_validation_error(value):
 @pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell path and storage projection contract")
 @pytest.mark.windows_compat
 def test_guest_script_uses_the_declared_projection_without_live_storage_queries(tmp_path):
+    """Allow shell startup within a functional test's infrastructure guard.
+
+    The real observer retains its separate 30-second qualification limit.
+    """
     shell = shutil.which("powershell.exe")
     assert shell is not None
     data = tmp_path / "future" / "canonical.sqlite3"
@@ -246,6 +250,7 @@ def test_guest_script_uses_the_declared_projection_without_live_storage_queries(
     harness.write_text(r'''
 param([string]$Fixture, [string]$Collector, [string]$Paths)
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('projection-fixture-loading')
 $raw = Get-Content -Raw -LiteralPath $Fixture | ConvertFrom-Json
 function Get-Disk { $raw.Disks }
 function Get-Partition { param($Volume); $raw.Partitions }
@@ -269,13 +274,20 @@ function Get-CimInstance {
     }
 }
 $env:PROCESSOR_ARCHITECTURE=''
+[Console]::Error.WriteLine('projection-collector-starting')
 & $Collector -PathsFile $Paths
+[Console]::Error.WriteLine('projection-collector-completed')
 ''', encoding="utf-8")
-    result = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-File", str(harness), "-Fixture", str(tmp_path / "fixture.json"), "-Collector", str(script),
-        "-Paths", str(tmp_path / "paths.json")], capture_output=True, timeout=30,
-        env={key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"},
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        result = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", str(harness), "-Fixture", str(tmp_path / "fixture.json"), "-Collector", str(script),
+            "-Paths", str(tmp_path / "paths.json")], capture_output=True, timeout=120,
+            env={key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"},
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired as error:
+        diagnostics = (error.stderr or b"").decode("utf-8", errors="replace")
+        pytest.fail(f"Synthetic projection harness exceeded {error.timeout} seconds. Captured stderr:\n"
+                    f"{diagnostics or '<no phase markers or stderr captured>'}", pytrace=False)
     assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
     guest = json.loads(result.stdout.decode("utf-8-sig"))
     snapshot = storage_snapshot()
