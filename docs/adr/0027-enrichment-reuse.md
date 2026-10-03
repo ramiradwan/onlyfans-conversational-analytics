@@ -27,7 +27,7 @@ Missing, evicted, malformed, or incompatible records require analysis again. Ret
 
 Per-build size limits bound retained reuse records. These limits are not a total process-memory guarantee. Shared storage does not raise the cache limits or avoid rebuilding the per-build analyzer records. It adds no model weights, runtime dependencies, inference process, or network traffic.
 
-See [Enrichment reuse](../analytics/enrichment-reuse.md) for the input contract, limits, and qualification commands. The authority, publication, encryption, and retention requirements in ADRs 0009, 0019, 0020, and 0026 remain in force.
+See [Enrichment reuse](../analytics/enrichment-reuse.md) for the input contract, limits, and qualification commands. The authority, publication, encryption, and retention requirements in ADRs 0009, 0019, and 0020 remain in force. [Proposed ADR 0043](0043-bounded-analytics-questions.md) describes bounded, source-linked questions over these projections.
 
 ## Shared document storage
 

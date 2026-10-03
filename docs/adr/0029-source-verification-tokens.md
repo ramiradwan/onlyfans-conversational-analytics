@@ -28,4 +28,4 @@ This narrows repeated verification work without making database tokens authorita
 
 Graph hashing encodes validated records one at a time, preserving the exact canonical JSON bytes and cancellation checks. Full-generation serialization, validation, and physical writes remain costs. No new model, dependency, process, or cloud service is introduced.
 
-[Read verification](../analytics/read-verification.md) defines cache behavior and tests. ADRs 0009, 0019, 0020, 0026, and 0028 retain their authority, encryption, publication, and data-use rules.
+[Read verification](../analytics/read-verification.md) defines cache behavior and tests. ADRs 0009, 0019, 0020, and 0028 retain their authority, encryption, publication, and data-use rules. [Proposed ADR 0043](0043-bounded-analytics-questions.md) describes bounded, source-linked questions over these projections.
