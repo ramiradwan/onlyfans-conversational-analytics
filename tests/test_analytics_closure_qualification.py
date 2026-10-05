@@ -242,7 +242,8 @@ def regression_attempt(evidence):
               "payload": payload, "payload_sha256": q.digest(payload), "attachments": attachments,
               "source_after_sha256": q.digest(context["source"]), "process_instance": uuid4().hex,
               "worker_started": True, "worker_joined": True, "complete": True, "exit_code": 0,
-              "timed_out": False, "seconds": 1.0, "maximum_seconds": 1800}
+              "timed_out": False, "seconds": 1.0,
+              "maximum_seconds": MANIFEST["limits"]["whole_worker_seconds"]}
     q.write_once(attempt / "result.json", result)
     return attempt, result
 
