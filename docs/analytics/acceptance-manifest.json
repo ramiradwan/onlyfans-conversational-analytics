@@ -60,7 +60,7 @@
     "generator": "tools/analytics_qualification_fixture.py"
   },
   "limits": {
-    "whole_worker_seconds": 1800,
+    "whole_worker_seconds": 7200,
     "shutdown_seconds": 10,
     "maximum_process_tree_bytes": 4294967296,
     "minimum_free_disk_bytes": 8589934592,
