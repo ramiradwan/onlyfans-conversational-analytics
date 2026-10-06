@@ -79,6 +79,8 @@ class RelationshipGraphProjector:
         *,
         cancellation_check: CancellationCheck | None = None,
     ):
+        from app.core.lifecycle_receipts import startup_count
+        startup_count('canonical_graph_batches')
         check_cancelled(cancellation_check)
         partition_ref = account_ref(creator_account_id)
         nodes: dict[str, GraphNode] = {}

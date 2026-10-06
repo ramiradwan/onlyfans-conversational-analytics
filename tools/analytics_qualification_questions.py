@@ -81,6 +81,12 @@ async def questions(work, journal, process, case, state, configured_at):
         report["scheduler_availability"] = status.availability.value
         if status.availability != AvailabilityStatus.AVAILABLE:
             raise ValueError("question_runtime_not_ready")
+        trace = getattr(work, "startup_trace", None)
+        if trace is not None:
+            try:
+                trace.mark_ready()
+            except Exception:
+                trace.failed = True
         journal.save("readiness", {k: v for k, v in report.items() if k not in {"calls", "expected"}})
         if state == "idle":
             began = time.monotonic()

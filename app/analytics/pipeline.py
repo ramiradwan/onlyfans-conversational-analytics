@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.core.lifecycle_receipts import startup_timed, startup_span, startup_count
+
 import hashlib
 import json
 import secrets
@@ -516,6 +518,7 @@ class AnalyticsPipeline:
 
         with self._account_lock(candidate.creator_account_id):
             if candidate.staged_generation_id is not None:
+                startup_count("product_publications")
                 changed = self.projections.publish_generation(
                     candidate.staged_generation_id,
                     creator_account_id=candidate.creator_account_id,
@@ -655,6 +658,7 @@ class AnalyticsPipeline:
             return self._prepare_questions(creator_account_id, requested_revision,
                                            cancellation_check=cancellation_check)
 
+    @startup_timed('startup.question_preparation')
     def _prepare_questions(self, creator_account_id: str, requested_revision: int,
                            *, cancellation_check=None) -> bool:
         """Prepare identity before reporting readiness, without a question budget."""
@@ -664,7 +668,8 @@ class AnalyticsPipeline:
             return self.projection_is_current(creator_account_id, requested_revision)
         def read():
             check_cancelled(cancellation_check)
-            return prepare(creator_account_id, cancellation_check=cancellation_check)
+            with startup_span("startup.canonical_identity", account_ref=account_ref(creator_account_id)):
+                return prepare(creator_account_id, cancellation_check=cancellation_check)
 
         restore = getattr(self.projections, "prepare_update_reuse", None)
         prepared_reader = getattr(self.projections, "update_reuse_prepared", None)
@@ -808,6 +813,7 @@ class AnalyticsPipeline:
 
         return self.project_account(creator_account_id, force=True)
 
+    @startup_timed('startup.product_build', 'product_builds')
     def _build(
         self,
         creator_account_id: str,

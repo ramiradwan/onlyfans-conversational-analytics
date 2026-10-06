@@ -1,6 +1,8 @@
 """Prepare reusable metadata from independently checked source and stored bytes."""
 from __future__ import annotations
 
+from app.core.lifecycle_receipts import startup_timed, startup_span, startup_count
+
 from collections import defaultdict
 from datetime import timedelta
 import time
@@ -71,6 +73,7 @@ def expected_units(pipeline, account, catalog, projection, references, cancellat
         yield unit, graph
 
 
+@startup_timed('startup.recovery_proofs')
 def restore(store, account, catalog, build_expected, check, source_current):
     """Install metadata only after one stable, witnessed read passes every check."""
     from app.analytics import conversation_graph_unit_sql as units

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.core.lifecycle_receipts import startup_timed
+
 import os
 from app.persistence import sqlite_api as sqlite3
 import time
@@ -88,6 +90,7 @@ class LazySQLiteAnalyticsProjectionStore:
         with self._lock:
             self._failure_callback = callback
 
+    @startup_timed("startup.storage_open")
     def ensure_ready(self) -> None:
         """Scheduler-only mutation seam that opens, repairs, or recreates storage."""
 

@@ -200,3 +200,172 @@ def finish(workers_joined: bool):
     if enabled():
         emit("shutdown", workers_joined=workers_joined)
         _sink.finish(workers_joined)
+
+
+# One opt-in observer in a qualification child. There is no service, database
+# write, per-record receipt or change to the decisions made by the runtime.
+_startup_observer = None
+
+
+class StartupTrace:
+    MAX_SPANS = 256
+    MAX_COUNTERS = 32
+
+    def __init__(self, instance, started_at=None, *, clock=time.monotonic):
+        self.instance, self.clock = instance, clock
+        self.started = clock() if started_at is None else started_at
+        self.lock = threading.RLock()
+        self.spans, self.counters, self.stacks = [], {}, {}
+        self.failed, self.closed, self.result = False, False, None
+        self.ready_at = None
+
+    def start(self):
+        global _startup_observer
+        if _startup_observer is not None:
+            self.failed = True
+            return
+        _startup_observer = self
+
+    def begin(self, name, fields):
+        with self.lock:
+            if self.closed or self.ready_at is not None:
+                return None
+            if len(self.spans) >= self.MAX_SPANS:
+                self.failed = True
+                return None
+            thread = threading.get_ident()
+            stack = self.stacks.setdefault(thread, [])
+            index = len(self.spans)
+            self.spans.append(dict(id=index, phase=name, thread=thread,
+                parent=stack[-1] if stack else None, started=self.clock(), ended=None,
+                status="running", **fields))
+            stack.append(index)
+            return index
+
+    def end(self, index, ok):
+        if index is None:
+            return
+        with self.lock:
+            if self.closed:
+                self.failed = True
+                return
+            row = self.spans[index]
+            stack = self.stacks.get(row["thread"], [])
+            if not stack or stack[-1] != index:
+                self.failed = True
+            else:
+                stack.pop()
+            row.update(ended=self.clock(), status="complete" if ok else "failed")
+            self.failed |= not ok and (self.ready_at is None or row["ended"] <= self.ready_at)
+
+    def count(self, name, value=1):
+        with self.lock:
+            if self.closed or self.ready_at is not None:
+                return
+            if name not in self.counters and len(self.counters) >= self.MAX_COUNTERS:
+                self.failed = True
+                return
+            self.counters[name] = self.counters.get(name, 0) + value
+
+    @staticmethod
+    def union(intervals):
+        used, end = 0.0, None
+        for start, finish in sorted(intervals):
+            used += max(0.0, finish - max(start, end if end is not None else start))
+            end = finish if end is None else max(end, finish)
+        return used
+
+    def mark_ready(self):
+        """Freeze the measured boundary, not the still-running operation handles."""
+        global _startup_observer
+        with self.lock:
+            if self.ready_at is None and not self.closed:
+                self.ready_at = self.clock()
+                if _startup_observer is self:
+                    _startup_observer = None
+
+    def finish(self, successful=True):
+        global _startup_observer
+        with self.lock:
+            if self.closed:
+                return self.result
+            observed_through = self.clock()
+            ended = self.ready_at if self.ready_at is not None else observed_through
+            if _startup_observer is self:
+                _startup_observer = None
+            elif _startup_observer is not None:
+                self.failed = True
+            complete = successful and not self.failed and not any(self.stacks.values())
+            spans = [dict(row) for row in self.spans]
+            for row in spans:
+                row['observed_end'] = row['ended']
+                row['continued_after_readiness'] = row['ended'] is not None and row['ended'] > ended
+                if row['ended'] is not None:
+                    row['ended'] = min(row['ended'], ended)
+            for row in spans:
+                if row["ended"] is None:
+                    complete = False
+                    row["status"] = "incomplete"
+                    row["inclusive_seconds"] = row["exclusive_seconds"] = None
+                    continue
+                row["inclusive_seconds"] = row["ended"] - row["started"]
+                children = [(max(row["started"], x["started"]), min(row["ended"], x["ended"]))
+                    for x in spans if x["parent"] == row["id"] and x["ended"] is not None]
+                row["exclusive_seconds"] = max(0.0, row["inclusive_seconds"] - self.union(children))
+                if row["started"] < self.started or row["observed_end"] > observed_through or row["inclusive_seconds"] < 0:
+                    complete = False
+            covered = self.union([(max(self.started, x["started"]), min(ended, x["ended"]))
+                for x in spans if x["ended"] is not None])
+            self.closed = True
+            self.result = dict(schema="analytics-startup-timing.v1", process_instance=self.instance,
+                started=self.started, ended=ended, observed_through=observed_through, total_seconds=ended-self.started,
+                covered_seconds=covered, unexplained_seconds=max(0.0, ended-self.started-covered),
+                complete=bool(complete), spans=spans, counters=dict(self.counters))
+            return self.result
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def startup_span(name, **fields):
+    observer = _startup_observer
+    index = None
+    if observer is not None:
+        try:
+            index = observer.begin(name, fields)
+        except Exception:
+            observer.failed = True
+    ok = False
+    try:
+        yield
+        ok = True
+    finally:
+        if observer is not None:
+            try:
+                observer.end(index, ok)
+            except Exception:
+                observer.failed = True
+
+
+def startup_count(name, value=1):
+    observer = _startup_observer
+    if observer is not None:
+        try:
+            observer.count(name, value)
+        except Exception:
+            observer.failed = True
+
+
+def startup_timed(name, counter=None):
+    def decorate(operation):
+        @wraps(operation)
+        def measured(*args, **kwargs):
+            if _startup_observer is None:
+                return operation(*args, **kwargs)
+            if counter:
+                startup_count(counter)
+            with startup_span(name):
+                return operation(*args, **kwargs)
+        return measured
+    return decorate

@@ -140,6 +140,8 @@ class EnrichmentStage:
         *,
         cancellation_check: CancellationCheck | None = None,
     ) -> list[MessageEnrichment]:
+        from app.core.lifecycle_receipts import startup_count
+        startup_count('enrichment_batches')
         check_cancelled(cancellation_check)
         ordered = sorted(
             conversation.messages,

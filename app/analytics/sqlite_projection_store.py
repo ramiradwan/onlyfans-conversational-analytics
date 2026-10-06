@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.core.lifecycle_receipts import startup_timed, startup_span, startup_count
+
 import json
 import secrets
 from app.persistence import sqlite_api as sqlite3
@@ -1423,15 +1425,18 @@ class SQLiteAnalyticsProjectionStore:
             force=True,
         )
 
+    @startup_timed('startup.store_reconciliation')
     def reconcile_startup(self) -> dict[str, int]:
         """Quarantine unwitnessed active rows and recover only exact identities."""
 
         with self.database.read() as connection:
-            integrity = connection.execute("PRAGMA integrity_check").fetchall()
+            with startup_span("startup.sqlite_integrity"):
+                integrity = connection.execute("PRAGMA integrity_check").fetchall()
             if len(integrity) != 1 or integrity[0][0] != "ok":
                 raise ProjectionValidationError("projection_integrity_invalid")
-            if connection.execute("PRAGMA foreign_key_check").fetchall():
-                raise GraphReferentialIntegrityError("projection_foreign_key_invalid")
+            with startup_span("startup.foreign_keys"):
+                if connection.execute("PRAGMA foreign_key_check").fetchall():
+                    raise GraphReferentialIntegrityError("projection_foreign_key_invalid")
         counts = {"retired": 0, "activated": 0, "completed": 0, "cancelled": 0}
         now = _now()
         with self.database.read() as connection:
@@ -1611,6 +1616,7 @@ class SQLiteAnalyticsProjectionStore:
             self.collect_garbage(validated_account_ref(account_id))
         return counts
 
+    @startup_timed('startup.garbage_collection')
     def collect_garbage(self, partition_ref: AccountPartitionRef | str) -> int:
         """Delete one bounded retired-generation batch for a validated partition."""
 
@@ -1699,6 +1705,7 @@ class SQLiteAnalyticsProjectionStore:
             if updated.rowcount != 1:
                 raise ProjectionValidationError("generation build ownership was lost")
 
+    @startup_timed('startup.persisted_validation')
     def _validate_persisted_generation(
         self,
         generation_id: str,
@@ -2437,7 +2444,11 @@ def recompute_generation(
 ) -> dict[str, object]:
     """Verify stored data with a connection-local page-cache target."""
 
-    with generation_verification_cache(connection):
+    startup_count("persisted_recomputations")
+    startup_count("materialized_projections", int(materialize_projection))
+    startup_count("materialized_graphs", int(materialize_graph))
+    with startup_span("startup.full_recomputation", generation_id=generation_id,
+                      materialize_projection=materialize_projection, materialize_graph=materialize_graph), generation_verification_cache(connection):
         return _recompute_generation(connection, generation_id, check=check,
                                      materialize_graph=materialize_graph,
                                      materialize_projection=materialize_projection,

@@ -157,19 +157,24 @@ def collect(config):
     output.mkdir(parents=True, exist_ok=True)
     configured_at = time.monotonic()
     instance = str(os.getpid()) + ":" + uuid4().hex
+    from app.core.lifecycle_receipts import StartupTrace, startup_span
+    startup = StartupTrace(instance, configured_at) if config["mode"] == "questions-child" else None
+    if startup is not None:
+        startup.start()
     journal = Journal(output / "events", instance)
     progress = CollectorProgress(output, instance)
-    process = {"instance": instance, "pid": os.getpid(), "started": q.stamp(),
-        "supervisor_instance": os.environ.get("OFCA_QUALIFICATION_PROCESS"),
-        "runtime": q.runtime_context(), "subject_sha256": config["subject_sha256"]}
-    q.write_once(output / "process.json", process)
-    if not subject_matches(config):
-        raise ValueError("subject_source_mismatch_before_start")
-    sys.path.insert(0, config["subject_directory"])
-    import tests.conftest  # Only isolated synthetic stores and test keys.
-    mode = config["mode"]
-    if mode == "visibility":
-        mark_state(config, "cold", instance)
+    with startup_span("startup.child_validation"):
+        process = {"instance": instance, "pid": os.getpid(), "started": q.stamp(),
+            "supervisor_instance": os.environ.get("OFCA_QUALIFICATION_PROCESS"),
+            "runtime": q.runtime_context(), "subject_sha256": config["subject_sha256"]}
+        q.write_once(output / "process.json", process)
+        if not subject_matches(config):
+            raise ValueError("subject_source_mismatch_before_start")
+        sys.path.insert(0, config["subject_directory"])
+        import tests.conftest  # Only isolated synthetic stores and test keys.
+        mode = config["mode"]
+        if mode == "visibility":
+            mark_state(config, "cold", instance)
     data = Path(config["data"])
     report = {"complete": False, "initial_messages": config["messages"]}
     work = None
@@ -190,12 +195,13 @@ def collect(config):
             report.update(preparation_seconds=preparation_seconds,
                           preparation=prepared["baseline"]["verification"], prepared_input=prepared)
         else:
-            with progress.phase("restart.storage_initialization" if mode == "visibility-restarted" else "fixture.initialization"):
+            with startup_span("startup.repository_reopen"), progress.phase("restart.storage_initialization" if mode == "visibility-restarted" else "fixture.initialization"):
                 work = Workload(data, manifest, config["messages"],
                     reopen=mode in {"questions-child", "visibility-restarted"},
                     question_case=config["case"] if mode in {"questions", "questions-child"} else None,
                     known_kinds=config["known_kinds"])
             work.qualification_progress = progress
+            work.startup_trace = startup
             if config.get("prepared_input"):
                 work.prepared_question_baseline = config["prepared_input"]["baseline"]
             if config.get("profile_updates"):
@@ -231,6 +237,13 @@ def collect(config):
     finally:
         if work is not None:
             work.close()
+        if startup is not None and not startup.closed:
+            try:
+                timing = startup.finish(report.get("complete") is True)
+                q.write_once(output / "startup-timings.json", timing)
+                report["startup_timing_complete"] = timing["complete"]
+            except Exception:
+                report["startup_timing_complete"] = False
         semantic = config.get("semantic_questions", False) and mode in {"questions", "questions-child"}
         report.update(execution="synthetic_question" if semantic else "source_diagnostic",
             evidence_track="semantic_questions" if semantic else "diagnostic",

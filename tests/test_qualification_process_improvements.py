@@ -264,5 +264,114 @@ class VerificationTests(unittest.TestCase):
             self.assertFalse((Path(directory)/"result.json").exists())
 
 
+class StartupTraceTests(unittest.TestCase):
+    def test_nested_time_is_not_double_counted_and_remainder_visible(self):
+        from app.core import lifecycle_receipts as lr
+        now = [0.0]; trace = lr.StartupTrace("child", clock=lambda: now[0]);trace.start()
+        try:
+            now[0] = 1
+            with lr.startup_span("opening"):
+                now[0] = 2
+                with lr.startup_span("validation"):
+                    lr.startup_count("persisted_recomputations")
+                    now[0] = 5
+                now[0] = 7
+            now[0] = 8
+            result = trace.finish()
+        finally:
+            trace.finish(False)
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["total_seconds"], 8)
+        self.assertEqual(result["covered_seconds"], 6)
+        self.assertEqual(result["unexplained_seconds"], 2)
+        self.assertEqual([s["exclusive_seconds"] for s in result["spans"]], [3, 3])
+        self.assertEqual(result["counters"]["persisted_recomputations"], 1)
+
+    def test_missing_end_failure_and_capacity_never_claim_complete(self):
+        from app.core import lifecycle_receipts as lr
+        trace = lr.StartupTrace("partial"); trace.start()
+        trace.begin("unfinished", {})
+        self.assertFalse(trace.finish()["complete"])
+        trace = lr.StartupTrace("error");trace.start()
+        with self.assertRaises(RuntimeError):
+            with lr.startup_span("operation"):raise RuntimeError("operation failed")
+        self.assertFalse(trace.finish()["complete"])
+        trace = lr.StartupTrace("bounded");trace.start()
+        for i in range(trace.MAX_SPANS+1):
+            with lr.startup_span("short"):pass
+        self.assertEqual(len(trace.spans),trace.MAX_SPANS)
+        self.assertFalse(trace.finish()["complete"])
+
+    def test_inactive_or_failed_observer_does_not_change_operation(self):
+        from app.core import lifecycle_receipts as lr
+        @lr.startup_timed("example", "calls")
+        def operation(value):return value+1
+        self.assertEqual(operation(2),3)
+        trace=lr.StartupTrace("fault");trace.start()
+        with patch.object(trace,"begin",side_effect=ValueError("telemetry failure")):
+            self.assertEqual(operation(3),4)
+        self.assertFalse(trace.finish()["complete"])
+        self.assertIsNone(lr._startup_observer)
+
+
+    def test_inflight_span_crossing_readiness_is_finalized_after_join(self):
+        from app.core import lifecycle_receipts as lr
+        now=[0.0];trace=lr.StartupTrace('boundary',clock=lambda:now[0]);trace.start()
+        now[0]=1
+        with lr.startup_span('concurrent_recheck'):
+            now[0]=2;trace.mark_ready()
+            with lr.startup_span('after_readiness_not_part_of_startup'):
+                lr.startup_count('after_readiness_not_counted')
+                now[0]=5
+        now[0]=6;result=trace.finish()
+        self.assertTrue(result['complete'])
+        self.assertEqual(result['total_seconds'],2)
+        self.assertEqual(result['observed_through'],6)
+        self.assertEqual(len(result['spans']),1)
+        self.assertEqual(result['spans'][0]['inclusive_seconds'],1)
+        self.assertEqual(result['spans'][0]['observed_end'],5)
+        self.assertTrue(result['spans'][0]['continued_after_readiness'])
+        self.assertNotIn('after_readiness_not_counted',result['counters'])
+
+    def test_unjoined_span_remains_incomplete_after_boundary(self):
+        from app.core import lifecycle_receipts as lr
+        trace=lr.StartupTrace('unjoined');trace.start();trace.begin('open',{});trace.mark_ready()
+        self.assertFalse(trace.finish()['complete'])
+
+
+    def test_child_exit_and_existing_source_metadata_survive_trace_finalization(self):
+        import os
+        import tempfile
+        from pathlib import Path
+        from tools import analytics_qualification as q
+        from tools import analytics_qualification_worker as worker
+        class Input:
+            def __init__(self,*args,**kwargs):pass
+            def counts(self):return {'messages':400,'revision':1}
+            def close(self):pass
+        async def answer(work,*args):
+            work.startup_trace.mark_ready()
+            return {'complete':True}
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);out=root/'collector'
+            manifest=q.read_json(Path(__file__).resolve().parents[1]/'docs/analytics/acceptance-manifest.json')
+            config={'mode':'questions-child','output':str(out),'subject_directory':str(root),'subject_sha256':'checked-source',
+                    'subject_files':{},'data':str(root/'data'),'manifest':manifest,'messages':400,'case':'populated','state':'fresh',
+                    'profile':'constrained-windows-8g','known_kinds':True,'semantic_questions':True,'hardware':{'actual':'hardware'}}
+            q.write_once(root/'input.json',config)
+            with patch.dict(os.environ,{'OFCA_QUALIFICATION_PROCESS':'owned-child'}),patch.object(worker,'subject_matches',return_value=True) as source_check,patch.object(q,'runtime_context',return_value={'runtime':'test'}),patch.object(worker,'Workload',Input),patch.object(worker,'questions',answer):
+                self.assertEqual(worker.main(str(root/'input.json')),0)
+            payload=q.read_json(out/'payload.json')
+            self.assertTrue(payload['subject_unchanged'])
+            self.assertEqual(source_check.call_count,2)
+            self.assertEqual(payload['subject_sha256'],config['subject_sha256'])
+            self.assertEqual(payload['collector_process']['subject_sha256'],config['subject_sha256'])
+            self.assertEqual(payload['manifest_sha256'],q.digest(manifest))
+            self.assertEqual(payload['evidence_track'],'semantic_questions')
+            self.assertEqual(payload['hardware'],config['hardware'])
+            self.assertTrue(payload['startup_timing_complete'])
+            self.assertTrue(q.read_json(out/'startup-timings.json')['complete'])
+
+
 if __name__ == "__main__":
     unittest.main()
