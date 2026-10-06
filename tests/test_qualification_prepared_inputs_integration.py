@@ -11,6 +11,8 @@ from tools.analytics_qualification_fixture import Workload
 from tools.analytics_qualification_progress import CollectorProgress
 
 
+pytestmark = [pytest.mark.ci_tier("integration"), pytest.mark.windows_compat]
+
 @pytest.fixture(scope="module")
 def prepared(tmp_path_factory):
     root = tmp_path_factory.mktemp("prepared-real-db")

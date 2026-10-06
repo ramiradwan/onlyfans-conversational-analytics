@@ -279,6 +279,7 @@
     "tests/test_proven_currentness.py": 4,
     "tests/test_published_source_identity.py": 2,
     "tests/test_qualification_host_guard.py": 2,
+    "tests/test_qualification_prepared_inputs_integration.py": 1,
     "tests/test_qualification_runtime_clock.py": 3,
     "tests/test_question_coverage.py": 3,
     "tests/test_question_identity_preparation.py": 4,
@@ -675,6 +676,14 @@
       {
         "selector": "tests/test_process_lifetime.py",
         "reason": "Windowed processes shut down on parent pipe closure without console signals."
+      },
+      {
+        "selector": "tests/test_qualification_prepared_inputs.py",
+        "reason": "Prepared-input copies, file ownership, corruption rejection and append-only evidence restoration must preserve Windows filesystem semantics."
+      },
+      {
+        "selector": "tests/test_qualification_prepared_inputs_integration.py",
+        "reason": "Prepared encrypted database snapshots must close, reopen and reject canonical or persisted-content corruption on the fixed Windows SQLCipher runtime."
       }
     ]
   },

@@ -10,10 +10,14 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 from tools import analytics_qualification as q
 from tools import analytics_qualification_baselines as b
 from tools import analytics_qualification_bundle as bundle
 
+
+pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
 
 class BaselineTests(unittest.TestCase):
     def setUp(self):

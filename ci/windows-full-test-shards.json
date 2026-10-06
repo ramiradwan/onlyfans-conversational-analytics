@@ -250,6 +250,8 @@
     "tests/test_published_source_identity.py": 1,
     "tests/test_qualification_execution_budget.py": 1,
     "tests/test_qualification_host_guard.py": 1,
+    "tests/test_qualification_prepared_inputs.py": 2,
+    "tests/test_qualification_prepared_inputs_integration.py": 2,
     "tests/test_qualification_process_improvements.py": 1,
     "tests/test_qualification_runtime_clock.py": 1,
     "tests/test_question_coverage.py": 2,
@@ -641,6 +643,8 @@
       "tests/test_ci_windows_shards.py",
       "tests/test_packaging_build_mode.py",
       "tests/test_process_lifetime.py",
+      "tests/test_qualification_prepared_inputs.py",
+      "tests/test_qualification_prepared_inputs_integration.py",
       "tests/test_question_coverage.py"
     ]
   }
