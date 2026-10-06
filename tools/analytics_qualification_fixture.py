@@ -194,8 +194,65 @@ class Workload:
                 raise ValueError("independent_rebuild_mismatch")
             self.last = GenerationReference.from_projection(expected, row["generation_id"], row["publication_epoch"])
         return {"independent_rebuild_equal": True, "persisted_content_revalidated": True,
-                "expected": expected_values, "actual": actual_values,
+                "reference_mode": "independent_rebuild", "expected": expected_values, "actual": actual_values,
                 "verification_timings": timer.result()}
+
+    def close_for_snapshot(self):
+        """Seal only this synthetic fixture after all its owned work has closed."""
+        from contextlib import ExitStack
+        store = getattr(self.f.stores.projections, "_store", None) or self.f.stores.projections
+        databases = (self.f.repositories.database, self.f.repositories.projection_database, store.database)
+        self.close()
+        self.f.pipeline.close_projection_storage()
+        with ExitStack() as locks:
+            for database in databases:
+                locks.enter_context(database.exclusive_lifecycle(database.path))
+            for database in databases:
+                with database.read() as connection:
+                    checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                    if checkpoint[0] != 0:
+                        raise ValueError("fixture_snapshot_checkpoint_busy")
+                if database.open_connection_count(database.path):
+                    raise ValueError("fixture_snapshot_connections_open")
+                for suffix in ("-wal", "-shm", "-journal"):
+                    sidecar = Path(str(database.path) + suffix)
+                    if not sidecar.exists():
+                        continue
+                    if suffix != "-shm" and sidecar.stat().st_size:
+                        raise ValueError("fixture_snapshot_uncheckpointed_data")
+                    sidecar.unlink()
+
+    def verify_prepared_reference(self, baseline):
+        """Rescan unchanged source and stored content; do not rebuild the same oracle."""
+        from tools.analytics_qualification_progress import VerificationTimer
+        from app.analytics.source_snapshot import scan_identity
+        timer = VerificationTimer(getattr(self, "qualification_progress", None))
+        expected = baseline["verification"]["expected"]
+        with timer.phase("resolve_generation"):
+            store = getattr(self.f.stores.projections, "_store", None) or self.f.stores.projections
+            with store.database.read() as db:
+                row = db.execute("SELECT * FROM projection_generations WHERE status='active'").fetchone()
+            if row is None:
+                raise ValueError("no_active_generation")
+        with timer.phase("canonical_reference"):
+            with self.f.repositories.database.read() as db:
+                db.execute("BEGIN")
+                revision = db.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?",
+                                      (self.account,)).fetchone()[0]
+                identity, _, count = scan_identity(db, self.account, revision)
+            if (revision != baseline["source_counts"]["revision"] or count != self.size
+                    or identity.content_digest != expected["canonical_content_digest"]):
+                raise ValueError("prepared_reference_source_changed")
+        with timer.phase("persisted_generation"):
+            actual = store._validate_persisted_generation(row["generation_id"], materialize_projection=False)
+        with timer.phase("compare"):
+            values = {key: actual[key] if key in actual else row[key] for key in expected}
+            if values != expected or row["canonical_revision"] != revision:
+                raise ValueError("prepared_reference_persisted_mismatch")
+        return {"independent_rebuild_equal": True, "persisted_content_revalidated": True,
+                "reference_mode": "verified_baseline", "canonical_rescanned": True,
+                "baseline_manifest_sha256": q.digest(baseline),
+                "expected": expected, "actual": values, "verification_timings": timer.result()}
 
     def integrity(self):
         store = getattr(self.f.stores.projections, "_store", None) or self.f.stores.projections

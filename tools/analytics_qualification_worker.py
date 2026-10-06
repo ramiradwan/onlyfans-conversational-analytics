@@ -174,39 +174,57 @@ def collect(config):
     report = {"complete": False, "initial_messages": config["messages"]}
     work = None
     try:
-        with progress.phase("restart.storage_initialization" if mode == "visibility-restarted" else "fixture.initialization"):
-            work = Workload(data, manifest, config["messages"],
-                reopen=mode in {"questions-child", "visibility-restarted"},
-                question_case=config["case"] if mode in {"questions", "questions-child"} else None,
-                known_kinds=config["known_kinds"])
-        work.qualification_progress = progress
-        if config.get("profile_updates"):
-            from tools.analytics_qualification_profile import install
-            install(work, output)
-        q.write_once(output / "fixture.json", {"definition": manifest["fixture"],
-            "manifest_sha256": q.digest(manifest), "source_counts": work.counts(),
-            "kind_adapter": "known_synthetic_kinds" if config["known_kinds"] else "production_unknown_kinds",
-            "input_path": "direct_synthetic_database_fixture", "question_case": config["case"]})
-        if mode == "matrix":
-            report = asyncio.run(matrix(work, journal))
-        elif mode == "questions-child":
-            report = asyncio.run(questions(work, journal, instance, config["case"], config["state"], configured_at))
-        elif mode == "questions":
-            candidate = work.f.pipeline.build_candidate(work.account, force=True)
-            work.f.pipeline.publish_candidate(candidate)
-            preparation = work.verify()
-            work.close()
-            work = None
-            gc.collect()
+        if mode == "questions" and config.get("question_baselines"):
+            from tools.analytics_qualification_baselines import acquire
+            prepared = acquire(config, process, progress)
+            q.write_once(output / "prepared-input.json", prepared)
+            q.write_once(output / "fixture.json", {"definition": manifest["fixture"],
+                "manifest_sha256": q.digest(manifest), "source_counts": prepared["baseline"]["source_counts"],
+                "kind_adapter": "known_synthetic_kinds" if config["known_kinds"] else "production_unknown_kinds",
+                "input_path": "verified_synthetic_database_copy", "question_case": config["case"]})
             preparation_seconds = time.monotonic() - configured_at
-            journal.save("prepared", {"seconds": preparation_seconds, **preparation})
-            report = child(config, output / "fresh-process", "questions-child")
-            report.update(preparation_seconds=preparation_seconds, preparation=preparation)
-        elif mode in {"visibility", "visibility-restarted"}:
-            report = collect_visibility(work, journal, config, instance,
-                                        restarted=mode == "visibility-restarted")
+            journal.save("prepared", {"seconds": preparation_seconds, "baseline_id": prepared["baseline_id"],
+                                     "created": prepared["created"], "copy": prepared["copy"]})
+            child_config = dict(config, prepared_input=prepared)
+            report = child(child_config, output / "fresh-process", "questions-child")
+            report.update(preparation_seconds=preparation_seconds,
+                          preparation=prepared["baseline"]["verification"], prepared_input=prepared)
         else:
-            raise ValueError("unknown_collector")
+            with progress.phase("restart.storage_initialization" if mode == "visibility-restarted" else "fixture.initialization"):
+                work = Workload(data, manifest, config["messages"],
+                    reopen=mode in {"questions-child", "visibility-restarted"},
+                    question_case=config["case"] if mode in {"questions", "questions-child"} else None,
+                    known_kinds=config["known_kinds"])
+            work.qualification_progress = progress
+            if config.get("prepared_input"):
+                work.prepared_question_baseline = config["prepared_input"]["baseline"]
+            if config.get("profile_updates"):
+                from tools.analytics_qualification_profile import install
+                install(work, output)
+            q.write_once(output / "fixture.json", {"definition": manifest["fixture"],
+                "manifest_sha256": q.digest(manifest), "source_counts": work.counts(),
+                "kind_adapter": "known_synthetic_kinds" if config["known_kinds"] else "production_unknown_kinds",
+                "input_path": "direct_synthetic_database_fixture", "question_case": config["case"]})
+            if mode == "matrix":
+                report = asyncio.run(matrix(work, journal))
+            elif mode == "questions-child":
+                report = asyncio.run(questions(work, journal, instance, config["case"], config["state"], configured_at))
+            elif mode == "questions":
+                candidate = work.f.pipeline.build_candidate(work.account, force=True)
+                work.f.pipeline.publish_candidate(candidate)
+                preparation = work.verify()
+                work.close()
+                work = None
+                gc.collect()
+                preparation_seconds = time.monotonic() - configured_at
+                journal.save("prepared", {"seconds": preparation_seconds, **preparation})
+                report = child(config, output / "fresh-process", "questions-child")
+                report.update(preparation_seconds=preparation_seconds, preparation=preparation)
+            elif mode in {"visibility", "visibility-restarted"}:
+                report = collect_visibility(work, journal, config, instance,
+                                            restarted=mode == "visibility-restarted")
+            else:
+                raise ValueError("unknown_collector")
     except BaseException as error:
         report.update(complete=False, error_type=type(error).__name__, error=str(error))
         journal.save("failure", {"error_type": type(error).__name__, "error": str(error)})
@@ -223,6 +241,21 @@ def collect(config):
             fixture_mode="known_synthetic_kinds" if config["known_kinds"] else "production_unknown_kinds",
             clock=manifest["fixture"]["evaluation_clock"],
             continue_after_visibility_failure=config.get("continue_after_visibility_failure", False))
+        if mode == "questions" and config.get("question_baselines"):
+            from tools.analytics_qualification_baselines import cleanup_working_copy
+            report.setdefault("working_copy_cleanup", "retained_failed_or_incomplete")
+            try:
+                # Validate the prospective success record before disposing of any working data.
+                prospective = dict(report, working_copy_cleanup="removed_after_joined_success")
+                errors = q.check_payload(manifest, {}, config["job"], prospective)
+                if report.get("complete") and not errors:
+                    report["working_copy_cleanup"] = cleanup_working_copy(config, report)
+                elif errors:
+                    report.update(complete=False, validation_errors=errors)
+            except Exception as error:
+                report.update(complete=False, cleanup_error=type(error).__name__ + ":" + str(error))
+            q.write_once(output / "working-copy-cleanup.json", {"status": report["working_copy_cleanup"],
+                         "path": config["data"], "complete": report.get("complete") is True})
         q.write_once(output / "payload.json", report)
         progress.record("collector", "complete" if report.get("complete") else "failed",
                         unexecuted_cases=report.get("unexecuted_cases", []))

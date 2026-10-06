@@ -125,3 +125,8 @@ python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence 
 ```
 
 Verification recomputes the verdict from immutable raw evidence and rechecks source and artifact hashes. Exit codes are 0 for PASS, 1 for FAIL and 2 for BLOCKED. Final acceptance requires every mandatory gate for the final signed source and exact package. A material change requires repeating affected qualification.
+
+
+## Reusable synthetic question preparation
+
+New campaigns use `verified-question-inputs.v1` from the acceptance manifest. The collector builds and independently verifies two input variants shared across profiles, then gives each question job a private copy and a new process. Unmodified jobs rescan and validate against the verified reference; mutation/pagination jobs still independently rebuild their changed expected outputs. See [Prepared question inputs](prepared-question-inputs.md) for storage, integrity, diagnostics and rollout. Old-protocol results and frozen source contexts are not rewritten.

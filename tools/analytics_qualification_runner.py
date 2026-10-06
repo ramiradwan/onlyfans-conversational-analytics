@@ -79,6 +79,9 @@ def run_source(root, directory, context, session, manifest, args):
         "data": str(attempt / "collector/data"), "entry_point": str(root / "tools/qualify_analytics_baseline.py"),
         "job": job, "profile": profile, "hardware": hardware,
         "semantic_questions": getattr(args, "run_questions", False)}
+    prepared_protocol = manifest["questions"].get("preparation", {}).get("protocol")
+    if kind == "questions" and prepared_protocol == "verified-question-inputs.v1":
+        config["question_baselines"] = str(directory / "question-baselines")
     if config["semantic_questions"]:
         from tools.analytics_qualification_hardware_evidence import HardwareEvidence, workload_paths
         from tools.analytics_qualification_tracks import check_profile

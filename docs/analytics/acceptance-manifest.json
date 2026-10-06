@@ -148,6 +148,23 @@
       "tied_time": "chat-1 last creator and participant messages share the latest timestamp; chat-1 is undetermined",
       "expected_tied_conversations": 99,
       "pagination": "50 plus 50; old cursor must fail after a committed edit and new publication"
+    },
+    "preparation": {
+      "protocol": "verified-question-inputs.v1",
+      "baseline_scope": "exact source, runtime, manifest, message count and input variant; hardware profile is independently measured per job",
+      "variants": [
+        "ordinary",
+        "tied_time"
+      ],
+      "ordinary_cases": [
+        "populated",
+        "empty",
+        "generation_bound_pagination"
+      ],
+      "per_job": "hash-verified independent database copy and a fresh application process",
+      "unmodified_verification": "rescan canonical content and revalidate persisted output against independently built baseline expectations",
+      "mutated_verification": "independent canonical rebuild and persisted-content verification",
+      "working_copy": "owned by the current unsealed attempt; remove only after successful queries, verification and joined cleanup, before final result/export; retain failed data with the attempt"
     }
   },
   "ci_jobs": [

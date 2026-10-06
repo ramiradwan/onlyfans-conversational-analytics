@@ -433,7 +433,11 @@ def check_payload(manifest: dict, context: dict, job: str, data: dict) -> list[s
     if job.startswith("visibility/"):
         return check_visibility(manifest, job, data)
     if job.startswith("questions/"):
-        return check_questions(manifest, job, data)
+        errors = check_questions(manifest, job, data)
+        if manifest["questions"].get("preparation", {}).get("protocol") == "verified-question-inputs.v1":
+            from tools.analytics_qualification_baselines import check_input_receipt
+            errors += check_input_receipt(data, manifest, job.split("/")[1], job.split("/")[2])
+        return errors
     if job.startswith("package/"):
         return check_package(manifest, job, data)
     return ["unknown_job"]

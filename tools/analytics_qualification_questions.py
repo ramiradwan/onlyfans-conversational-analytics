@@ -71,9 +71,12 @@ async def questions(work, journal, process, case, state, configured_at):
         "page_size": 50, "question": plan["question"], "filters": plan["filters"], "plan": plan,
         "process_instance": process, "expected": expected, "calls": [], "complete": False}
     try:
-        resources.start()
-        await scheduler.start(recover=True)
-        status = await scheduler.wait(work.account)
+        from contextlib import nullcontext
+        progress = getattr(work, "qualification_progress", None)
+        with progress.phase("question.cold_readiness") if progress else nullcontext():
+            resources.start()
+            await scheduler.start(recover=True)
+            status = await scheduler.wait(work.account)
         report["cold_readiness_seconds"] = time.monotonic() - configured_at
         report["scheduler_availability"] = status.availability.value
         if status.availability != AvailabilityStatus.AVAILABLE:
@@ -124,7 +127,11 @@ async def questions(work, journal, process, case, state, configured_at):
             report["pricing_disabled"] = True
         else:
             report["pricing_disabled"] = False
-        report["verification"] = await asyncio.to_thread(work.verify)
+        baseline = getattr(work, "prepared_question_baseline", None)
+        if baseline is not None and state != "mutated" and case != "generation_bound_pagination":
+            report["verification"] = await asyncio.to_thread(work.verify_prepared_reference, baseline)
+        else:
+            report["verification"] = await asyncio.to_thread(work.verify)
         report["complete"] = True
     finally:
         query_service.QuestionBudget = budget_type
