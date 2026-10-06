@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.core.lifecycle_receipts import startup_timed
 
 import os
+from contextlib import contextmanager
 from app.persistence import sqlite_api as sqlite3
 import time
 from pathlib import Path
@@ -165,7 +166,58 @@ class LazySQLiteAnalyticsProjectionStore:
         return self._read("question_pricing", account_id, account_id, snapshot, references, budget)
 
     def question_snapshot(self, account_id, canonical_identity, budget):
-        return self._read("question_snapshot", account_id, account_id, canonical_identity, budget)
+        with self.question_publications(account_id, budget) as read:
+            return read(account_id, canonical_identity, budget)
+
+    @contextmanager
+    def question_publications(self, account_id, budget):
+        """Own a connection, not a transaction or cached snapshot, for one question.
+
+        Initial and final reads both see current committed publication metadata
+        and recheck the physical file and store identity. No state crosses requests.
+        """
+        from app.analytics.query_sql import bounded_sql
+        from app.analytics.query_execution import QuestionLimitExceeded
+        budget.check()
+        with self._lock:
+            store = self._store
+            available = not self._closed and store is not None and self.path.exists()
+        if not available:
+            self._mark_failed(store, account_id)
+            raise ProjectionStorageUnavailable()
+        try:
+            with store.database.read() as connection:
+                checks = 0
+                def read(account, identity, current_budget):
+                    nonlocal checks
+                    if account != account_id or current_budget is not budget:
+                        raise ValueError("publication_scope_binding_changed")
+                    # Opening secured these files; the final read checks live permissions
+                    # again without reopening or caching an earlier authorization result.
+                    if checks:
+                        store.database._restrict_permissions()
+                    checks += 1
+                    with bounded_sql(connection, budget), self._lock:
+                        # The identity check performs stat and rejects a missing
+                        # or replaced path itself. A separate exists() repeats
+                        # the same blocking Windows metadata open needlessly.
+                        available = (not self._closed and self._store is store
+                            and not connection.in_transaction
+                            and self._identity_matches_unlocked(store, connection=connection))
+                    if not available:
+                        raise ProjectionStorageUnavailable()
+                    return store.question_snapshot(account, identity, budget, connection=connection)
+                yield read
+            budget.check()
+        except QuestionLimitExceeded:
+            # The request running out of time is not evidence of database corruption.
+            raise
+        except ProjectionStorageUnavailable:
+            self._mark_failed(store, account_id)
+            raise
+        except _STORAGE_FAILURES:
+            self._mark_failed(store, account_id)
+            raise ProjectionStorageUnavailable() from None
 
     def prepare_update_reuse(self, account, *args):
         return self._read("prepare_update_reuse", account, account, *args)
@@ -354,12 +406,19 @@ class LazySQLiteAnalyticsProjectionStore:
         return self._failure_callback
 
     def _identity_matches_unlocked(
-        self, store: SQLiteAnalyticsProjectionStore
+        self, store: SQLiteAnalyticsProjectionStore, *, connection=None
     ) -> bool:
         try:
             file_identity = self._file_identity_for_path()
-            observed = store.database.store_identity()
-        except Exception:
+            observed = (store.database.store_identity() if connection is None
+                        else store.database.store_identity(connection=connection))
+        except Exception as error:
+            from app.analytics.query_execution import QuestionLimitExceeded
+            if isinstance(error, QuestionLimitExceeded) or (
+                    connection is not None and isinstance(error, sqlite3.OperationalError)):
+                # Let the enclosing SQL budget translate its own interruption.
+                # It must not be mistaken for a replaced or corrupted store.
+                raise
             return False
         expected = self._store_identity
         if (

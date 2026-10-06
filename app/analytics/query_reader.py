@@ -1,6 +1,6 @@
 """Join bounded canonical facts to an exact published analytics generation."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 
 from app.analytics.errors import ProjectionUnavailable
@@ -16,8 +16,8 @@ class PublishedQuestionReader:
         self.pipeline_revision, self.config_digest = pipeline_revision, config_digest
         self.preparing = preparing
 
-    def publication(self, scope, budget):
-        read = getattr(self.store, "question_snapshot", None)
+    def publication(self, scope, budget, read=None):
+        read = read or getattr(self.store, "question_snapshot", None)
         if read is None:
             raise ProjectionUnavailable(reason_code="analytics_question_store_unavailable")
         snapshot, revision, config = read(self.account, scope.identity, budget)
@@ -33,23 +33,27 @@ class PublishedQuestionReader:
         if self.preparing is not None and self.preparing(self.account) is True:
             self.evidence_resolver.clear_account(self.policy)
             raise ProjectionUnavailable(availability="building")
-        with self.source.open_question_scope(self.account, budget) as scope:
-            session = _QuestionSession(self, scope, self.publication(scope, budget))
-            try:
-                yield session
-                session.assert_current(session.snapshot, budget)
-            except Exception:
-                self.evidence_resolver.clear_account(self.policy)
-                raise
+        acquire = getattr(self.store, "question_publications", None)
+        try:
+            with self.source.open_question_scope(self.account, budget) as scope:
+                with acquire(self.account, budget) if acquire is not None else nullcontext(None) as read:
+                    session = _QuestionSession(self, scope, self.publication(scope, budget, read), read)
+                    yield session
+                    session.assert_current(session.snapshot, budget)
+            budget.check()  # Connection cleanup remains inside the original request budget.
+        except Exception:
+            self.evidence_resolver.clear_account(self.policy)
+            raise
 
 
 class _QuestionSession:
-    def __init__(self, owner, scope, snapshot):
+    def __init__(self, owner, scope, snapshot, publication_read=None):
         self.owner, self.scope, self.snapshot = owner, scope, snapshot
+        self.publication_read = publication_read
 
     def assert_current(self, snapshot, budget):
         self.scope.check(budget)
-        if self.owner.publication(self.scope, budget) != snapshot:
+        if self.owner.publication(self.scope, budget, self.publication_read) != snapshot:
             raise ProjectionUnavailable(availability="building")
         self.scope.check(budget)
 

@@ -1,5 +1,6 @@
 """Read publication metadata for questions answered from live canonical facts."""
 
+from contextlib import nullcontext
 from datetime import timedelta
 
 from app.analytics.errors import ProjectionUnavailable
@@ -9,35 +10,37 @@ from app.analytics.query_contracts import QuestionSnapshot, utc_instant
 from app.analytics.query_sql import bounded_sql
 
 
-def published_snapshot(store, account, identity, budget):
+def published_snapshot(store, account, identity, budget, *, connection=None):
     partition = account_ref(account)
     budget.check()
-    generation = store._active_generation_row(partition)
-    if generation is None or generation["canonical_revision"] != identity.revision:
-        raise ProjectionUnavailable()
-    if generation["canonical_content_digest"] != identity.content_digest:
-        raise ProjectionUnavailable(availability="building")
-    intent = store.activation.get(generation["generation_id"])
-    if (not store._intent_matches(generation, intent, require_completed=True)
-            or intent.creator_account_id != account):
-        raise ProjectionUnavailable()
-    with store.database.read() as db, bounded_sql(db, budget):
-        row = db.execute("""SELECT projection_digest AS content_digest,
-            projection_generation AS sequence, source_message_count AS messages, first_source
-            FROM projection_query_metadata WHERE creator_account_id=? AND generation_id=?""",
-            (partition, generation["generation_id"])).fetchone()
-    if row is None or row["content_digest"] != generation["projection_digest"]:
-        raise ProjectionUnavailable(availability="error")
+    with store.database.read() if connection is None else nullcontext(connection) as db:
+        with bounded_sql(db, budget):
+            generation = db.execute("""SELECT * FROM projection_generations
+                WHERE creator_account_id=? AND status='active'""", (partition,)).fetchone()
+            if generation is None or generation["canonical_revision"] != identity.revision:
+                raise ProjectionUnavailable()
+            if generation["canonical_content_digest"] != identity.content_digest:
+                raise ProjectionUnavailable(availability="building")
+            intent = store.activation.get(generation["generation_id"])
+            if (not store._intent_matches(generation, intent, require_completed=True)
+                    or intent.creator_account_id != account):
+                raise ProjectionUnavailable()
+            row = db.execute("""SELECT projection_digest AS content_digest,
+                projection_generation AS sequence, source_message_count AS messages, first_source
+                FROM projection_query_metadata WHERE creator_account_id=? AND generation_id=?""",
+                (partition, generation["generation_id"])).fetchone()
+            if row is None or row["content_digest"] != generation["projection_digest"]:
+                raise ProjectionUnavailable(availability="error")
+            budget.check()
+            snapshot = QuestionSnapshot(account_ref=partition, source_revision=identity.revision,
+                projection_generation=row["sequence"], generation_id=generation["generation_id"],
+                canonical_content_digest=generation["canonical_content_digest"],
+                projection_digest=generation["projection_digest"],
+                derived_at=generation["started_at"], source_message_count=row["messages"],
+                retention_due_at=(utc_instant(row["first_source"])
+                    + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)) if row["first_source"] else None)
     budget.check()
-    snapshot = QuestionSnapshot(account_ref=partition, source_revision=identity.revision,
-        projection_generation=row["sequence"], generation_id=generation["generation_id"],
-        canonical_content_digest=generation["canonical_content_digest"],
-        projection_digest=generation["projection_digest"],
-        derived_at=generation["started_at"], source_message_count=row["messages"],
-        retention_due_at=(utc_instant(row["first_source"])
-            + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)) if row["first_source"] else None)
     return snapshot, generation["pipeline_revision"], generation["pipeline_config_digest"]
-
 
 def published_pricing(store, account, snapshot, references, budget):
     """Read stored topic relationships without classifying text during a query."""

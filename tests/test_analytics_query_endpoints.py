@@ -471,3 +471,223 @@ def test_cold_question_requests_owned_preparation_before_returning_answers(ready
     response = ready.client.post("/api/v1/insights/questions", json=plan())
     assert response.status_code == 200, response.text
     assert len(response.json()["page"]["rows"]) == 2
+
+
+@pytest.fixture
+def lazy_ready(ready):
+    from app.analytics.resilient_projection_store import LazySQLiteAnalyticsProjectionStore
+    previous = ready.pipeline.projections
+    store = LazySQLiteAnalyticsProjectionStore(previous.database.path,
+        activation=ready.stored.projection_activation,
+        canonical_identity_reader=lambda account: canonical_identity(ready.source.account_read_model(account)))
+    store.ensure_ready()
+    ready.pipeline.projections = store
+    try:
+        yield ready, store
+    finally:
+        ready.pipeline.projections = previous
+        store.close()
+
+
+@pytest.mark.parametrize('lazy', [False, True])
+def test_one_analytics_connection_per_question_with_two_live_checks(ready, lazy_ready, monkeypatch, lazy):
+    item, lazy_store = lazy_ready
+    store = lazy_store if lazy else ready.stores.projections
+    ready.pipeline.projections = store
+    database = store.database
+    original = database.connect
+    connections = []
+    def counted():
+        value = original();connections.append(value);return value
+    monkeypatch.setattr(database, 'connect', counted)
+    result = ready.resources.execute(policy(), plan())
+    assert len(result.page.rows) == 2
+    assert len(connections) == 1  # Initial and final statements, one owned autocommit connection.
+    for connection in connections:
+        with pytest.raises(Exception):connection.execute('SELECT 1')
+
+
+def test_connection_cost_stays_inside_original_budget_without_duplicate_opens(lazy_ready, monkeypatch):
+    ready, store = lazy_ready
+    from app.analytics.query_service import AnalyticsQuestionService
+    from app.analytics.query_reader import PublishedQuestionReader
+    from app.analytics.query_service import RegisteredQuestion
+    from app.analytics.query_handlers import no_later_creator_reply
+    REPLY = RegisteredQuestion('no_later_creator_reply.v1', 'canonical.v2', no_later_creator_reply)
+    now = [0.0]
+    original = store.database.connect
+    opens = []
+    def delayed():
+        # A deterministic model of the native trace's slow open, not a changed
+        # production clock or relaxed one-second deadline.
+        now[0] += 0.22;opens.append(now[0]);return original()
+    monkeypatch.setattr(store.database, 'connect', delayed)
+    reader = PublishedQuestionReader(ready.source, store, ACCOUNT, policy(),
+        ready.resources.evidence, ready.pipeline.pipeline_revision, ready.pipeline.pipeline_config_digest)
+    service = AnalyticsQuestionService(reader, [REPLY], clock=lambda: NOW,
+        monotonic=lambda: now[0], limits=QuestionLimits(wall_clock_ms=1000))
+    response = service.execute(policy(), plan())
+    assert len(response.page.rows) == 2 and opens == [0.22]
+
+
+def test_publication_connection_timeout_does_not_quarantine_valid_store(lazy_ready, monkeypatch):
+    ready, store = lazy_ready
+    from app.analytics.query_service import AnalyticsQuestionService
+    from app.analytics.query_reader import PublishedQuestionReader
+    from app.analytics.query_service import RegisteredQuestion
+    from app.analytics.query_handlers import no_later_creator_reply
+    REPLY = RegisteredQuestion('no_later_creator_reply.v1', 'canonical.v2', no_later_creator_reply)
+    now = [0.0];original = store.database.connect;opened_store = store._store
+    def delayed():
+        value=original();now[0] += 1.1;return value
+    monkeypatch.setattr(store.database, 'connect', delayed)
+    reader=PublishedQuestionReader(ready.source,store,ACCOUNT,policy(),ready.resources.evidence,
+        ready.pipeline.pipeline_revision,ready.pipeline.pipeline_config_digest)
+    service=AnalyticsQuestionService(reader,[REPLY],clock=lambda:NOW,monotonic=lambda:now[0])
+    with pytest.raises(QuestionLimitExceeded):service.execute(policy(),plan())
+    assert store._store is opened_store and not store._needs_recovery
+
+
+def test_final_publication_still_rechecks_witness_on_the_request_connection(lazy_ready, monkeypatch):
+    ready, store=lazy_ready
+    original=store.activation.get;seen=[]
+    def changed(generation_id):
+        seen.append(generation_id)
+        return original(generation_id) if len(seen)==1 else None
+    monkeypatch.setattr(store.activation,'get',changed)
+    result=ready.client.post('/api/v1/insights/questions',json=plan())
+    assert result.status_code==503 and 'rows' not in result.json()
+    assert len(seen)==2 and not ready.resources.evidence._entries
+
+
+def test_final_publication_refuses_replaced_physical_file(lazy_ready, monkeypatch):
+    ready,store=lazy_ready
+    original=store._file_identity_for_path;seen=[]
+    def changed():
+        seen.append(True)
+        return original() if len(seen)==1 else (-1,-1)
+    monkeypatch.setattr(store,'_file_identity_for_path',changed)
+    result=ready.client.post('/api/v1/insights/questions',json=plan())
+    assert result.status_code==503 and 'rows' not in result.json()
+    assert not ready.resources.evidence._entries
+    assert store._needs_recovery
+
+
+
+def test_missing_analytics_file_is_not_created_by_question(lazy_ready, tmp_path, monkeypatch):
+    ready, store = lazy_ready
+    missing = tmp_path / 'missing-analytics.sqlite3'
+    store.path = missing
+    def forbidden():
+        raise AssertionError('query must not open/create a missing store')
+    monkeypatch.setattr(store.database, 'connect', forbidden)
+    result = ready.client.post('/api/v1/insights/questions', json=plan())
+    assert result.status_code == 503 and not missing.exists()
+    assert store._needs_recovery and not ready.resources.evidence._entries
+
+
+
+def test_sql_interrupt_during_identity_read_remains_a_query_budget_error(lazy_ready, monkeypatch):
+    ready, store = lazy_ready
+    from app.analytics.query_service import AnalyticsQuestionService, RegisteredQuestion
+    from app.analytics.query_reader import PublishedQuestionReader
+    from app.analytics.query_handlers import no_later_creator_reply
+    now=[0.0];opened=store._store
+    def expired_identity(*, connection):
+        now[0]=2.0
+        connection.execute("WITH RECURSIVE x(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM x WHERE n<1000) SELECT sum(n) FROM x").fetchone()
+        raise AssertionError('expired query was not interrupted')
+    monkeypatch.setattr(store.database,'store_identity',expired_identity)
+    reader=PublishedQuestionReader(ready.source,store,ACCOUNT,policy(),ready.resources.evidence,
+        ready.pipeline.pipeline_revision,ready.pipeline.pipeline_config_digest)
+    service=AnalyticsQuestionService(reader,[RegisteredQuestion('no_later_creator_reply.v1','canonical.v2',no_later_creator_reply)],
+        clock=lambda:NOW,monotonic=lambda:now[0])
+    with pytest.raises(QuestionLimitExceeded):service.execute(policy(),plan())
+    assert store._store is opened and not store._needs_recovery
+
+
+@pytest.mark.parametrize('lazy', [False, True])
+def test_request_connection_observes_committed_changes_at_final_check(ready, lazy_ready, monkeypatch, lazy):
+    from app.analytics.query_reader import _QuestionSession
+    item,lazy_store=lazy_ready
+    store=lazy_store if lazy else ready.stores.projections
+    ready.pipeline.projections=store
+    original=_QuestionSession.assert_current
+    commits=[]
+    def change_then_recheck(session,snapshot,budget):
+        # A different connection commits while the request connection is open.
+        # A pinned transaction/cached snapshot would wrongly hide this change.
+        with store.database.transaction() as db:
+            # The schema intentionally rejects metadata rewrites. Retirement
+            # is a permitted committed state change and must be seen at exit.
+            changed=db.execute("UPDATE projection_generations SET status='retired' WHERE generation_id=?",
+                               (snapshot.generation_id,))
+            assert changed.rowcount==1
+        commits.append(True)
+        return original(session,snapshot,budget)
+    monkeypatch.setattr(_QuestionSession,'assert_current',change_then_recheck)
+    response=ready.client.post('/api/v1/insights/questions',json=plan())
+    assert response.status_code==503 and 'rows' not in response.json()
+    assert commits==[True] and not ready.resources.evidence._entries
+
+
+def test_publication_connection_never_survives_or_crosses_requests(lazy_ready,monkeypatch):
+    ready,store=lazy_ready
+    original=store.database.connect;connections=[]
+    def opened():
+        connection=original();connections.append(connection);return connection
+    monkeypatch.setattr(store.database,'connect',opened)
+    for _ in range(2):
+        assert ready.client.post('/api/v1/insights/questions',json=plan()).status_code==200
+    assert len(connections)==2 and connections[0] is not connections[1]
+    for connection in connections:
+        with pytest.raises(Exception):connection.execute('SELECT 1')
+
+
+def test_request_connection_closes_on_handler_failure(lazy_ready,monkeypatch):
+    ready,store=lazy_ready
+    from app.analytics.query_reader import _QuestionSession
+    original=store.database.connect;connections=[]
+    def opened():
+        connection=original();connections.append(connection);return connection
+    monkeypatch.setattr(store.database,'connect',opened)
+    def stop(*args,**kwargs):raise QuestionLimitExceeded()
+    monkeypatch.setattr(_QuestionSession,'conversations',stop)
+    with pytest.raises(QuestionLimitExceeded):ready.resources.execute(policy(),plan())
+    assert len(connections)==1 and not ready.resources.evidence._entries
+    with pytest.raises(Exception):connections[0].execute('SELECT 1')
+    assert not store._needs_recovery
+
+
+
+def test_final_live_file_permission_check_is_not_skipped(lazy_ready,monkeypatch):
+    ready,store=lazy_ready
+    from app.persistence.private_files import PrivateFileSecurityError
+    original=store.database._restrict_permissions;checks=[]
+    def permissions():
+        checks.append(True)
+        if len(checks)>1:raise PrivateFileSecurityError('live permissions cannot be secured')
+        original()
+    monkeypatch.setattr(store.database,'_restrict_permissions',permissions)
+    response=ready.client.post('/api/v1/insights/questions',json=plan())
+    assert len(checks)==2 and response.status_code==503 and 'rows' not in response.json()
+    assert not ready.resources.evidence._entries
+
+
+
+def test_publication_uses_identity_check_without_duplicate_exists_probe(lazy_ready,monkeypatch):
+    from pathlib import Path
+    ready,store=lazy_ready
+    original_exists=Path.exists;original_identity=store._file_identity_for_path
+    probes=[];identities=[]
+    def exists(path):
+        if path is store.path:probes.append(True)
+        return original_exists(path)
+    def identity():
+        identities.append(True);return original_identity()
+    monkeypatch.setattr(Path,'exists',exists)
+    monkeypatch.setattr(store,'_file_identity_for_path',identity)
+    answer=ready.resources.execute(policy(),plan())
+    assert len(answer.page.rows)==2
+    assert len(probes)==1  # Prevent creating a missing file before the open.
+    assert len(identities)==2  # Initial AND final full physical/logical checks remain.

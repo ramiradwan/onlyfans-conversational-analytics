@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.core.lifecycle_receipts import startup_timed, startup_span, startup_count
 
 import json
+from contextlib import contextmanager
 import secrets
 from app.persistence import sqlite_api as sqlite3
 import time
@@ -681,12 +682,33 @@ class SQLiteAnalyticsProjectionStore:
 
         return published_pricing(self, account_id, snapshot, references, budget)
 
-    def question_snapshot(self, account_id, canonical_identity, budget):
+    @contextmanager
+    def question_publications(self, account_id, budget):
+        """One bounded autocommit connection; both publication reads remain live."""
+        with self.database.read() as connection:
+            checks = 0
+            def read(account, identity, current_budget):
+                nonlocal checks
+                if account != account_id or current_budget is not budget:
+                    raise ValueError("publication_scope_binding_changed")
+                # Opening secured these files; the final read checks live permissions
+                # again without reopening or caching an earlier authorization result.
+                if checks:
+                    self.database._restrict_permissions()
+                checks += 1
+                if connection.in_transaction:
+                    from app.analytics.errors import ProjectionUnavailable
+                    raise ProjectionUnavailable(availability="error")
+                return self.question_snapshot(account, identity, budget, connection=connection)
+            yield read
+        budget.check()
+
+    def question_snapshot(self, account_id, canonical_identity, budget, *, connection=None):
         """Return witnessed metadata for a bounded live-source question read."""
 
         from app.analytics.query_publication import published_snapshot
 
-        return published_snapshot(self, account_id, canonical_identity, budget)
+        return published_snapshot(self, account_id, canonical_identity, budget, connection=connection)
 
     def prepare_update_reuse(self, account, catalog, build_expected, check, source_current):
         from app.analytics.recovered_reuse import restore

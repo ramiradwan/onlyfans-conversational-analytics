@@ -38,9 +38,12 @@ def apply_private_file_security(
     selected = os.name if platform_name is None else platform_name
     try:
         if selected == "nt":
-            _set_windows_owner_only_acl(target)
+            # A read connection must verify current permissions, not rewrite an
+            # already-private DACL. Recheck on every call; never cache this fact.
             if not _windows_acl_is_owner_only(target):
-                raise OSError("owner-only DACL verification failed")
+                _set_windows_owner_only_acl(target)
+                if not _windows_acl_is_owner_only(target):
+                    raise OSError("owner-only DACL verification failed")
         else:
             os.chmod(target, 0o600)
             if stat.S_IMODE(target.stat().st_mode) != 0o600:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -226,10 +226,10 @@ class ProjectionsDatabase(ProjectionsSQLite):
                 )
             ]
 
-    def store_identity(self) -> tuple[int, str, str, str | None]:
+    def store_identity(self, *, connection=None) -> tuple[int, str, str, str | None]:
         """Return cheap file/schema/store/active-witness identity metadata."""
 
-        with self.read() as connection:
+        with self.read() if connection is None else nullcontext(connection) as connection:
             row = connection.execute(
                 "SELECT store_id, schema_identity FROM projection_store_identity WHERE singleton=1"
             ).fetchone()
