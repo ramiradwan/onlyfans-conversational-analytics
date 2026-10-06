@@ -139,12 +139,13 @@ class SQLiteAnalyticsProjectionStore:
         self._validation_receipts = ValidationReceipts()
         self._graph_segment_proofs = OrderedDict()
         self._graph_segment_proof_lock = RLock()
+        self._startup_verifications = OrderedDict()
         self._conversation_graph_proofs = OrderedDict()
-        self._conversation_graph_proof_lock = RLock()
+        self._conversation_graph_proof_lock = self._graph_segment_proof_lock
         self._conversation_enrichment_proofs = OrderedDict()
-        self._conversation_enrichment_proof_lock = RLock()
+        self._conversation_enrichment_proof_lock = self._graph_segment_proof_lock
         self._verification_envelopes = OrderedDict()
-        self._verification_envelope_lock = RLock()
+        self._verification_envelope_lock = self._graph_segment_proof_lock
         self.reuse_validation_receipts = True
         self.reuse_conversation_enrichment_units = True
         from app.analytics.currentness import GenerationCurrentness
@@ -155,6 +156,79 @@ class SQLiteAnalyticsProjectionStore:
         )
         if reconcile:
             self.reconcile_startup()
+
+    def _retain_startup_verification(self, generation, witness, stamp, values):
+        from app.analytics.generation_verification import StartupVerification, envelope_from_values
+        from app.analytics.validation_receipt import ValidationReceipt, generation_binding, RECEIPT_SECONDS, MAX_RECEIPTS
+        if stamp is None or len(stamp) != 4 or generation['status'] != 'active':
+            return
+        if not self._intent_matches(generation, witness, require_completed=True):
+            return
+        receipt = ValidationReceipt(generation['generation_id'], tuple(stamp), generation_binding(generation),
+                                    time.monotonic() + RECEIPT_SECONDS)
+        envelope = envelope_from_values(receipt, values)
+        if envelope is None:
+            startup_count('startup_handoff_unavailable')
+            return
+        # Only small header fields and existing bounded proof metadata survive.
+        stat = Path(self.database.path).stat()
+        if not stat.st_ino:
+            return  # No reliable physical file identity: use full readiness verification.
+        saved = StartupVerification(receipt, tuple(sorted(dict(generation).items())), witness,
+            (stat.st_dev, stat.st_ino), envelope,
+            generation['creator_account_id'], int(generation['canonical_revision']),
+            generation['canonical_content_digest'], generation['pipeline_revision'], generation['pipeline_config_digest'])
+        with self._verification_envelope_lock:
+            key = receipt.generation_id
+            if key in self._verification_envelopes:
+                return
+            self._startup_verifications[key] = saved
+            self._startup_verifications.move_to_end(key)
+            while len(self._startup_verifications) + len(self._verification_envelopes) > MAX_RECEIPTS:
+                self._startup_verifications.popitem(last=False)
+        startup_count('startup_handoffs_retained')
+
+    def _take_startup_verification(self, connection, generation, witness):
+        from app.analytics.validation_receipt import content_stamp
+        with self._verification_envelope_lock:
+            candidate = self._startup_verifications.pop(generation['generation_id'], None)
+        if candidate is None:
+            startup_count('startup_handoff_miss')
+            return None
+        if time.monotonic() >= candidate.receipt.expires_at:
+            startup_count('startup_handoff_expired')
+            return None
+        stat = Path(self.database.path).stat()
+        if (candidate.database_identity != (stat.st_dev, stat.st_ino)
+                or candidate.row != tuple(sorted(dict(generation).items()))
+                or candidate.witness != witness or candidate.receipt.stamp != content_stamp(connection)):
+            startup_count('startup_handoff_changed')
+            return None
+        startup_count('startup_handoff_hits')
+        return candidate
+
+    def _install_recovery_envelope(self, envelope, check, *, expires_at):
+        from app.analytics.validation_receipt import MAX_RECEIPTS
+        if envelope is None:
+            return False
+        with self._verification_envelope_lock:
+            check()
+            if time.monotonic() >= expires_at:
+                return None  # Caller performs ordinary currentness verification; never force a rebuild for this cache miss.
+            key = envelope.generation_id
+            # No allocations or arbitrary callbacks occur after the cancellation
+            # boundary except bounded ordered-dict assignments under one lock.
+            for cache, value in ((self._graph_segment_proofs, envelope.graph),
+                                 (self._conversation_graph_proofs, envelope.conversations),
+                                 (self._conversation_enrichment_proofs, envelope.enrichment),
+                                 (self._verification_envelopes, envelope)):
+                cache[key] = value; cache.move_to_end(key)
+                while len(cache) > MAX_RECEIPTS:
+                    cache.popitem(last=False)
+            self._startup_verifications.pop(key, None)
+            while self._startup_verifications and len(self._startup_verifications) + len(self._verification_envelopes) > MAX_RECEIPTS:
+                self._startup_verifications.popitem(last=False)
+        return True
 
     def _remember_graph_segment_proof(self, receipt, segments):
         if receipt is None or not segments:
@@ -361,10 +435,13 @@ class SQLiteAnalyticsProjectionStore:
         if envelope is None:
             return None
         with self._verification_envelope_lock:
+            self._startup_verifications.pop(generation_id, None)
             self._verification_envelopes[generation_id] = envelope
             self._verification_envelopes.move_to_end(generation_id)
             while len(self._verification_envelopes) > MAX_RECEIPTS:
                 self._verification_envelopes.popitem(last=False)
+            while self._startup_verifications and len(self._startup_verifications) + len(self._verification_envelopes) > MAX_RECEIPTS:
+                self._startup_verifications.popitem(last=False)
         return envelope
 
     def _trusted_verification_envelope(self, connection, generation):
@@ -614,7 +691,14 @@ class SQLiteAnalyticsProjectionStore:
     def prepare_update_reuse(self, account, catalog, build_expected, check, source_current):
         from app.analytics.recovered_reuse import restore
 
-        return restore(self, account, catalog, build_expected, check, source_current)
+        try:
+            return restore(self, account, catalog, build_expected, check, source_current)
+        except BaseException:
+            # A cancelled/failed preparation cannot leave a candidate for an
+            # unrelated later readiness request in the same store instance.
+            with self._verification_envelope_lock:
+                self._startup_verifications.clear()
+            raise
 
     def integrity_upgrade_required(self, account_id):
         """Request ordinary publication for legacy optional units, not an in-place rewrite."""
@@ -1222,6 +1306,8 @@ class SQLiteAnalyticsProjectionStore:
         return self.database.passive_wal_checkpoint()
 
     def close(self) -> None:
+        with self._verification_envelope_lock:
+            self._startup_verifications.clear()
         self.database.release_wal_anchor()
 
     def fence_publication_epoch(self, publication_epoch: str) -> None:
@@ -1429,6 +1515,8 @@ class SQLiteAnalyticsProjectionStore:
     def reconcile_startup(self) -> dict[str, int]:
         """Quarantine unwitnessed active rows and recover only exact identities."""
 
+        with self._verification_envelope_lock:
+            self._startup_verifications.clear()
         with self.database.read() as connection:
             with startup_span("startup.sqlite_integrity"):
                 integrity = connection.execute("PRAGMA integrity_check").fetchall()
@@ -1462,7 +1550,8 @@ class SQLiteAnalyticsProjectionStore:
             )
             if valid:
                 try:
-                    self._validate_persisted_generation(generation["generation_id"])
+                    self._validate_persisted_generation(generation["generation_id"],
+                        materialize_projection=False, capture_startup=(dict(generation), intent))
                 except (ProjectionValidationError, GraphReferentialIntegrityError, ValueError):
                     valid = False
             if not valid:
@@ -1715,6 +1804,7 @@ class SQLiteAnalyticsProjectionStore:
         materialize_projection: bool = True,
         deadline: float | None = None,
         cancellation_check: CancellationCheck | None = None,
+        capture_startup=None,
     ) -> dict[str, object]:
         def check() -> None:
             _check_operation_budget(deadline, cancellation_check)
@@ -1741,6 +1831,8 @@ class SQLiteAnalyticsProjectionStore:
                     raise KeyError("projection_generation_missing")
                 if generation["status"] == "building" and not allow_building:
                     raise ProjectionValidationError("projection_generation_unvalidated")
+                from app.analytics.validation_receipt import content_stamp
+                initial_stamp = content_stamp(connection) if capture_startup is not None else None
                 values = recompute_generation(
                     connection,
                     generation_id,
@@ -1749,6 +1841,12 @@ class SQLiteAnalyticsProjectionStore:
                 )
                 verify_generation_values(generation, values)
                 check()
+                if capture_startup is not None:
+                    expected_row, witness = capture_startup
+                    after = connection.execute('SELECT * FROM projection_generations WHERE generation_id=?', (generation_id,)).fetchone()
+                    if (after is not None and dict(generation) == expected_row == dict(after)
+                            and initial_stamp is not None and content_stamp(connection) == initial_stamp):
+                        self._retain_startup_verification(generation, witness, initial_stamp, values)
                 from app.core.lifecycle_receipts import emit
                 emit("persisted_validation", generation_id=generation_id,
                      canonical_revision=int(generation["canonical_revision"]),
@@ -2262,6 +2360,8 @@ class SQLiteAnalyticsProjectionStore:
             return updated.rowcount == 1
 
     def _retire(self, generation_id: str, *, allow_active: bool = False) -> None:
+        with self._verification_envelope_lock:
+            self._startup_verifications.pop(generation_id, None)
         with self.database.transaction() as connection:
             statuses = "('building','validated','activation_pending','active')" if allow_active else "('building','validated','activation_pending')"
             connection.execute(

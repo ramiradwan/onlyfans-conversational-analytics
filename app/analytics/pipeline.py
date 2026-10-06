@@ -712,6 +712,9 @@ class AnalyticsPipeline:
                 return False
             check = lambda: check_cancelled(cancellation_check)
             def source_current(projection=None, *, source_due_at=None):
+                if (projection is None or projection.pipeline_revision != self.pipeline_revision
+                        or projection.pipeline_config_digest != self.pipeline_config_digest):
+                    return False
                 live = (source_due_at > self._retention_clock()
                         if source_due_at is not None else not self._expired(projection))
                 return live and read() == catalog.identity

@@ -114,10 +114,17 @@ def restore(store, account, catalog, build_expected, check, source_current):
             (row['generation_id'], row['creator_account_id'])).fetchone()[0]
         if not 0 < count <= MAX_GRAPH_UNITS:
             return None
-        values = recompute_generation(db, row['generation_id'], check=check,
-            materialize_projection=False, materialize_graph=False)
+        candidate = store._take_startup_verification(db, row, intent)
         from app.analytics.sqlite_projection_store import verify_generation_values
-        verify_generation_values(row, values)
+        if candidate is None:
+            startup_count('startup_fallback_verifications')
+            values = recompute_generation(db, row['generation_id'], check=check,
+                materialize_projection=False, materialize_graph=False)
+            verify_generation_values(row, values)
+        else:
+            proof = candidate.envelope
+            values = {'projection': candidate, 'enrichment_units': proof.enrichment.headers,
+                      'conversation_integrity': proof.conversations, 'graph_segments': proof.graph.segments}
         projection = values['projection']
         enrichment_headers = tuple(values.get('enrichment_units', ()))
         integrity = values.get('conversation_integrity')
@@ -138,17 +145,16 @@ def restore(store, account, catalog, build_expected, check, source_current):
                 return False
             witness = store.activation.get(row['generation_id'])
             source_due_at = min(h.expires_at for h in enrichment_headers)
-            if (not store._intent_matches(current, witness, require_completed=True)
+            if (witness != intent or not store._intent_matches(current, witness, require_completed=True)
                     or witness.creator_account_id != account
                     or not source_current(projection, source_due_at=source_due_at)):
                 return False
             check()
-            receipt = ValidationReceipt(row['generation_id'], stamp,
-                generation_binding(row), time.monotonic() + RECEIPT_SECONDS)
-            store._remember_graph_segment_proof(receipt, values['graph_segments'])
-            store._remember_verified_conversation_graph_proof(receipt, integrity, expected)
-            store._remember_conversation_enrichment_proof(receipt, enrichment_headers)
-            return store._remember_verification_envelope(receipt) is not None
+            from app.analytics.generation_verification import envelope_from_values
+            receipt = (candidate.receipt if candidate is not None else
+                ValidationReceipt(row['generation_id'], stamp, generation_binding(row), time.monotonic() + RECEIPT_SECONDS))
+            envelope = candidate.envelope if candidate is not None else envelope_from_values(receipt, values)
+            return store._install_recovery_envelope(envelope, check, expires_at=receipt.expires_at)
 
         # Compatibility fallback for legacy/incomplete optional integrity units.
         values = recompute_generation(db, row['generation_id'], check=check,
@@ -186,14 +192,12 @@ def restore(store, account, catalog, build_expected, check, source_current):
         if current is None or dict(current) != dict(row) or content_stamp(db) != stamp:
             return False
         witness = store.activation.get(row['generation_id'])
-        if (not store._intent_matches(current, witness, require_completed=True)
+        if (witness != intent or not store._intent_matches(current, witness, require_completed=True)
                 or witness.creator_account_id != account or not source_current(projection)):
             return False
         check()
         receipt = ValidationReceipt(row['generation_id'], stamp,
             generation_binding(row), time.monotonic() + RECEIPT_SECONDS)
-        store._remember_graph_segment_proof(receipt, values['graph_segments'])
-        store._remember_conversation_graph_proof(receipt, verified_units, None, projection)
-        store._remember_conversation_enrichment_proof(receipt, values['enrichment_units'])
-        store._remember_verification_envelope(receipt)
-        return True
+        from app.analytics.generation_verification import envelope_from_values
+        envelope = envelope_from_values(receipt, values, legacy_units=verified_units)
+        return store._install_recovery_envelope(envelope, check, expires_at=receipt.expires_at)

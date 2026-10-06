@@ -14,10 +14,18 @@ pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
 
 
 @pytest.mark.asyncio
-async def test_reopened_scheduler_prepares_verified_reuse_without_analyzers(tmp_path):
+async def test_reopened_scheduler_prepares_verified_reuse_without_analyzers(tmp_path, monkeypatch):
     original = make_fixture(tmp_path)
     original.pipeline.project_account(ACCOUNT)
     cleanup(original)
+    from app.analytics import sqlite_projection_store
+    from app.core.lifecycle_receipts import StartupTrace
+    trace = StartupTrace('real-reopened-process');trace.start()
+    real = sqlite_projection_store.recompute_generation
+    calls = []
+    def observed(*args, **kwargs):
+        calls.append(dict(kwargs));return real(*args, **kwargs)
+    monkeypatch.setattr(sqlite_projection_store, 'recompute_generation', observed)
     source = HistoryAnalyticsSource(original.repositories.history)
     stores = create_analytics_stores('sqlite', projections_path=tmp_path/'analytics.sqlite3',
         activation=original.repositories.projection_activation,
@@ -39,11 +47,20 @@ async def test_reopened_scheduler_prepares_verified_reuse_without_analyzers(tmp_
             assert envelope is not None
             assert envelope.conversations.membership_prefixes
         assert [a.calls for a in original.analyzers] == before
+        assert len(calls) == 1 and calls[0]['materialize_projection'] is False
+        summary = trace.finish()
+        assert summary['complete'] and summary['counters']['persisted_recomputations'] == 1
+        assert summary['counters'].get('product_builds', 0) == 0
+        assert summary['counters'].get('canonical_graph_batches', 0) == 0
+        assert summary['counters'].get('enrichment_batches', 0) == 0
+        assert summary['counters']['startup_handoff_hits'] == 1
+        assert not store._startup_verifications
     finally:
+        trace.finish(False)
         assert await scheduler.close(timeout=10)
 
 
-def reopened(tmp_path, maker=make_fixture):
+def reopened(tmp_path, maker=make_fixture, *, startup_handoff=False):
     f = maker(tmp_path)
     f.pipeline.project_account(ACCOUNT)
     cleanup(f)
@@ -53,6 +70,8 @@ def reopened(tmp_path, maker=make_fixture):
         canonical_identity_reader=source.read_identity, retention_clock=lambda: NOW)
     pipeline = AnalyticsPipeline(source, projections=stores.projections,
         enrichment=f.pipeline.enrichment, clock=lambda: NOW)
+    if not startup_handoff:
+        stores.projections._startup_verifications.clear()  # Exercise the existing post-open fallback explicitly.
     return f, source, stores, pipeline
 
 
@@ -238,3 +257,143 @@ def test_recovery_is_cancelled_before_installing_reuse(tmp_path, monkeypatch):
         assert not pipeline._account_locks
     finally:
         stores.projections.close_retention_scheduler()
+
+
+@pytest.mark.parametrize('fault', ['epoch', 'schema', 'witness', 'expired', 'replacement', 'source', 'retention', 'pipeline'])
+def test_startup_handoff_rechecks_live_state(tmp_path, monkeypatch, fault):
+    from dataclasses import replace
+    from datetime import timedelta
+    from app.analytics import sqlite_projection_store
+    f, source, stores, pipeline = reopened(tmp_path, startup_handoff=True)
+    store = stores.projections
+    try:
+        assert len(store._startup_verifications) == 1
+        key, candidate = next(iter(store._startup_verifications.items()))
+        assert not store._verification_envelopes and not store._graph_segment_proofs
+        if fault == 'epoch':
+            with store.database.transaction() as db:db.execute('UPDATE generation_content_epoch SET value=value+1')
+        elif fault == 'schema':
+            with store.database.transaction() as db:db.execute('CREATE INDEX extra_test_index ON projection_generations(status)')
+        elif fault == 'witness':
+            get = store.activation.get
+            monkeypatch.setattr(store.activation, 'get', lambda value: replace(get(value), completed_at=NOW-timedelta(days=1)))
+        elif fault == 'expired':
+            store._startup_verifications[key] = replace(candidate, receipt=replace(candidate.receipt, expires_at=0.0))
+        elif fault == 'replacement':
+            store._startup_verifications[key] = replace(candidate, database_identity=(-1,-1))
+        elif fault == 'source':
+            with f.repositories.database.transaction() as db:db.execute("UPDATE account_messages SET text='changed without revision'")
+        elif fault == 'retention':monkeypatch.setattr(pipeline, '_retention_clock', lambda: NOW+timedelta(days=91))
+        else:monkeypatch.setattr(pipeline, 'pipeline_config_digest', 'sha256:'+'0'*64)
+        calls=[];real=sqlite_projection_store.recompute_generation
+        def observed(*args, **kwargs):calls.append(1);return real(*args, **kwargs)
+        monkeypatch.setattr(sqlite_projection_store, 'recompute_generation', observed)
+        ready=pipeline.prepare_questions(ACCOUNT, 1)
+        if fault in ('source','retention','pipeline'):
+            assert not ready and not store._verification_envelopes
+        else:
+            assert ready and len(calls)==1
+        assert key not in store._startup_verifications or not ready
+    finally:
+        stores.projections.close_retention_scheduler()
+
+
+def test_handoff_is_one_use_bounded_and_discarded_on_close(tmp_path):
+    from dataclasses import replace
+    from app.analytics.validation_receipt import MAX_RECEIPTS
+    f, source, stores, pipeline = reopened(tmp_path, startup_handoff=True)
+    store=stores.projections
+    try:
+        candidate=next(iter(store._startup_verifications.values()))
+        assert not hasattr(candidate,'message_enrichments') and not hasattr(candidate,'nodes')
+        assert sum(len(x[1])+len(x[2]) for x in candidate.envelope.conversations.membership_prefixes) <= 2*1024*1024
+        with store.database.read() as db:
+            row=db.execute("SELECT * FROM projection_generations WHERE status='active'").fetchone()
+            assert store._take_startup_verification(db,row,store.activation.get(row['generation_id'])) is candidate
+            assert store._take_startup_verification(db,row,store.activation.get(row['generation_id'])) is None
+        store._startup_verifications[candidate.receipt.generation_id]=candidate
+        store.close()
+        assert not store._startup_verifications
+    finally:
+        stores.projections.close_retention_scheduler()
+
+
+def test_cancellation_before_atomic_handoff_install_leaves_no_proofs(tmp_path, monkeypatch):
+    from threading import Event
+    from app.analytics.errors import ProjectionBuildCancelled
+    f, source, stores, pipeline=reopened(tmp_path,startup_handoff=True)
+    store=stores.projections;stop=Event();original=store._install_recovery_envelope
+    def cancel(envelope,check,**kwargs):
+        stop.set();return original(envelope,check,**kwargs)
+    monkeypatch.setattr(store,'_install_recovery_envelope',cancel)
+    try:
+        with pytest.raises(ProjectionBuildCancelled):pipeline.prepare_questions(ACCOUNT,1,cancellation_check=stop.is_set)
+        assert not any((store._startup_verifications,store._verification_envelopes,store._graph_segment_proofs,store._conversation_graph_proofs,store._conversation_enrichment_proofs))
+        assert not pipeline._account_locks
+    finally:
+        stores.projections.close_retention_scheduler()
+
+
+def test_pending_handoff_bound_and_expiry_are_not_renewed(tmp_path):
+    from dataclasses import replace
+    from app.analytics.validation_receipt import MAX_RECEIPTS
+    f, source, stores, pipeline = reopened(tmp_path, startup_handoff=True)
+    store=stores.projections
+    try:
+        original=next(iter(store._startup_verifications.values()))
+        # Feed independently checked metadata through the production retention
+        # boundary with distinct observed rows/witnesses, not through cache writes.
+        values={'graph_segments':original.envelope.graph.segments,
+                'enrichment_units':original.envelope.enrichment.headers,
+                'conversation_integrity':original.envelope.conversations}
+        for index in range(MAX_RECEIPTS+3):
+            row=dict(original.row);row['generation_id']='test-generation-'+str(index)
+            witness=replace(original.witness,generation_id=row['generation_id'])
+            store._retain_startup_verification(row,witness,original.receipt.stamp,values)
+        assert len(store._startup_verifications)<=MAX_RECEIPTS
+        latest=next(reversed(store._startup_verifications.values()))
+        assert latest.receipt.expires_at>=original.receipt.expires_at
+        # Inspection does not extend an already issued candidate's lifetime.
+        expiry=latest.receipt.expires_at
+        assert store._startup_verifications[latest.receipt.generation_id].receipt.expires_at==expiry
+        store.close()
+        assert not store._startup_verifications
+    finally:
+        stores.projections.close_retention_scheduler()
+
+
+
+def test_real_question_fixture_reuses_initial_full_validation(tmp_path, monkeypatch):
+    from pathlib import Path
+    from tools import analytics_qualification as q
+    from tools.analytics_qualification_fixture import Workload
+    from app.analytics import sqlite_projection_store
+    manifest=q.read_json(Path(__file__).resolve().parents[1]/'docs/analytics/acceptance-manifest.json')
+    root=tmp_path/'question-input';work=Workload(root,manifest,400,question_case='populated',known_kinds=True)
+    candidate=work.f.pipeline.build_candidate(work.account,force=True)
+    work.f.pipeline.publish_candidate(candidate)
+    expected=work.verify()['expected']
+    work.close_for_snapshot()
+    calls=[];real=sqlite_projection_store.recompute_generation
+    def observed(*args,**kwargs):calls.append(kwargs);return real(*args,**kwargs)
+    monkeypatch.setattr(sqlite_projection_store,'recompute_generation',observed)
+    opened=Workload(root,manifest,400,reopen=True,question_case='populated',known_kinds=True)
+    try:
+        opened.f.pipeline.ensure_projection_storage()
+        store=opened.f.stores.projections._store
+        assert len(store._startup_verifications)==1
+        assert opened.f.pipeline.prepare_questions(opened.account,1)
+        assert len(calls)==1 and calls[0]['materialize_projection'] is False
+        assert len(store._verification_envelopes)==1 and not store._startup_verifications
+        proof=next(iter(store._verification_envelopes.values()))
+        from app.analytics.generation_verification import envelope_from_values
+        from app.analytics.validation_receipt import ValidationReceipt
+        # Empty graph segments are a valid verified representation. The helper
+        # must not reject them merely for being empty; integrity is established
+        # by the complete recomputation before this constructor is called.
+        receipt=ValidationReceipt(proof.generation_id, proof.stamp, proof.binding, float('inf'))
+        empty_graph=envelope_from_values(receipt, {'graph_segments':(),
+            'enrichment_units':proof.enrichment.headers,'conversation_integrity':proof.conversations})
+        assert empty_graph is not None and empty_graph.graph.segments==()
+    finally:
+        opened.close();opened.f.pipeline.close_projection_storage()
