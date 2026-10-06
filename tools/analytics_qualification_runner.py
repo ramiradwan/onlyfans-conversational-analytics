@@ -178,6 +178,12 @@ def main(root: Path) -> int:
     parser.add_argument("--resume", action="store_true")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--verify", action="store_true")
+    action.add_argument("--run-campaign", action="store_true",
+                        help="Run ready mandatory jobs on the current profile; blocked prerequisites remain explicit.")
+    action.add_argument("--run-job", help="Select exactly one job from the authoritative manifest.")
+    action.add_argument("--campaign-plan", action="store_true", help="Print all required routes without starting a worker.")
+    parser.add_argument("--campaign-inputs", type=Path, help="Exact-source job prerequisite references, no commands or credentials.")
+    parser.add_argument("--preflight-campaign", action="store_true", help="Check every configured route without starting jobs.")
     action.add_argument("--run-regressions", action="store_true")
     action.add_argument("--run-ci", action="store_true")
     parser.add_argument("--review-record", type=Path)
@@ -198,6 +204,10 @@ def main(root: Path) -> int:
     parser.add_argument("--continue-after-visibility-failure", action="store_true",
                         help="Diagnostic only: finish later visibility cases after a failure; never qualifies.")
     args = parser.parse_args()
+    if (args.run_campaign or args.run_job or args.preflight_campaign) and args.campaign_inputs is None:
+        parser.error("Campaign execution/preflight requires --campaign-inputs")
+    if args.preflight_campaign and (args.run_campaign or args.run_job):
+        parser.error("Preflight cannot also execute a campaign")
     if args.continue_after_visibility_failure and args.run_source != "visibility":
         parser.error("--continue-after-visibility-failure requires --run-source visibility")
     if args.run_ci and args.review_record is None:
@@ -212,6 +222,10 @@ def main(root: Path) -> int:
     manifest = q.read_json(root / "docs/analytics/acceptance-manifest.json")
     try:
         source = q.source_context(root)
+        if args.campaign_plan:
+            from tools.analytics_qualification_campaign import describe
+            print(q.encoded(describe(manifest)).decode(), end="")
+            return 0
         if args.verify:
             result = q.verify(directory, manifest, current_source=source)
             print(q.encoded(result).decode(), end="")
@@ -231,6 +245,21 @@ def main(root: Path) -> int:
                     from tools.analytics_qualification_packaged import artifact_context
                     artifacts = artifact_context(q.read_json(args.package_inputs))
                 context = q.initialize(directory, manifest, source, runtime, artifacts)
+            if args.run_campaign or args.run_job or args.preflight_campaign:
+                from tools.analytics_qualification_campaign import checked_inputs, prerequisites, plan, run_ready
+                config = checked_inputs(q.read_json(args.campaign_inputs), context, manifest)
+                if args.preflight_campaign:
+                    blocked = {item["job"]: reasons for item in plan(manifest)
+                        if (reasons := prerequisites(manifest, context, item["job"], config["jobs"][item["job"]], active_profile=args.profile))}
+                    result = {"status": "BLOCKED" if blocked else "READY_FOR_PUBLIC_COLLECTORS",
+                              "required_jobs": len(q.required_jobs(manifest)), "blocked": blocked,
+                              "qualification_credit": 0, "actual_collector_prerequisites_still_required": True}
+                else:
+                    result = run_ready(root, directory, context, manifest, config,
+                                       active_profile=args.profile, selected_job=args.run_job)
+                q.write_once(directory / "campaign-reports" / (uuid4().hex + ".json"), result)
+                print(q.encoded(result).decode(), end="")
+                return 0 if result["status"] in {"PASS", "READY_FOR_PUBLIC_COLLECTORS"} else 1 if result["status"] == "FAIL" else 2
             identity = q.session(directory, context)
             if not args.resume:
                 preflight(directory, identity)

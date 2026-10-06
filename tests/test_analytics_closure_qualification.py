@@ -335,3 +335,109 @@ def test_failed_question_timings_never_become_successful_latency_statistics():
     assert summary["errors"] == {"analytics_question_limit_exceeded": 100}
     assert summary["p95_seconds"] is None and summary["maximum_seconds"] is None
     assert summary["latency_unqualified_reason"]
+
+
+class TestCompleteCampaignRouting:
+    def manifest(self):
+        from pathlib import Path
+        from tools import analytics_qualification as q
+        return q.read_json(Path(__file__).resolve().parents[1]/"docs/analytics/acceptance-manifest.json")
+
+    def test_exact_38_routes_and_early_reference_gates(self):
+        from collections import Counter
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest();jobs=c.plan(manifest)
+        assert len(jobs)==38 and {x['job'] for x in jobs}==set(q.required_jobs(manifest))
+        assert Counter(x['family'] for x in jobs)=={'questions':24,'package':2,'mutation':4,'visibility':6,'regression':1,'source-ci':1}
+        assert [x['job'] for x in jobs[:3]]==['questions/constrained-windows-8g/populated/fresh','questions/reference-windows-16g/populated/fresh','visibility/reference-windows-16g/0']
+
+    def test_unknown_route_and_missing_full_matrix_refused(self):
+        import pytest
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest();ctx={'source':{'revision':'test'},'artifacts':{}}
+        with pytest.raises(ValueError):c.route(manifest,'question/typo')
+        with pytest.raises(ValueError):c.checked_inputs({'schema':c.SCHEMA,'source_sha256':q.digest(ctx['source']),'manifest_sha256':q.digest(manifest),'jobs':{}},ctx,manifest)
+
+    def test_missing_setup_and_profile_are_blockers_not_success(self):
+        from tools import analytics_qualification_campaign as c
+        errors=c.prerequisites(self.manifest(),{'source':{'revision':'test'},'artifacts':{}},'package/reference-windows-16g',
+            {'package_inputs':None,'hardware_handoff':None,'setup_review':None},active_profile='constrained-windows-8g')
+        assert set(errors)=={'missing_package_inputs','missing_hardware_handoff','missing_setup_review','profile_transition_required:reference-windows-16g'}
+
+    def test_every_route_calls_its_existing_public_collector(self, tmp_path, monkeypatch):
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification_runner as runner
+        from tools import analytics_qualification_packaged as packaged
+        from tools import analytics_qualification as q
+        manifest=self.manifest();calls=[]
+        monkeypatch.setattr(c,'_reference',lambda value:tmp_path/'actual-input.json')
+        monkeypatch.setattr(q,'session',lambda *a:'session')
+        monkeypatch.setattr(q,'source_context',lambda *a:{'revision':'test'})
+        monkeypatch.setattr(q,'verify',lambda *a,**k:{'status':'BLOCKED','evidence_validity':{'status':'PASS'}})
+        monkeypatch.setattr(q,'write_once',lambda *a:None)
+        monkeypatch.setattr(runner,'run_source',lambda *a:calls.append(('questions',a[-1])))
+        monkeypatch.setattr(runner,'run_regressions',lambda *a:calls.append(('regression',None)))
+        monkeypatch.setattr(runner,'run_ci',lambda *a:calls.append(('source-ci',None)))
+        monkeypatch.setattr(packaged,'run',lambda *a:calls.append(('package',a[-1])))
+        for item in c.plan(manifest):
+            c.dispatch(tmp_path,tmp_path,{},manifest,item['job'],{'package_inputs':{'path':'unused'},'hardware_handoff':{'path':'unused'},'review_record':{'path':'unused'}})
+        assert len(calls)==38
+        assert sum(f=='questions' for f,_ in calls)==24
+        package_modes=[args.run_package for family,args in calls if family=='package']
+        assert package_modes.count('package')==2 and package_modes.count('matrix')==4 and package_modes.count('visibility')==6
+        assert sum(f=='regression' for f,_ in calls)==sum(f=='source-ci' for f,_ in calls)==1
+
+    def test_unchanged_configured_hash_is_required(self, tmp_path):
+        import pytest
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        file=tmp_path/'input.json';file.write_text('{}');reference={'path':str(file),'sha256':q.file_digest(file)}
+        assert c._reference(reference)==file
+        file.write_text('{"changed":true}')
+        with pytest.raises(ValueError,match='hash_changed'):c._reference(reference)
+
+
+    def test_finite_campaign_advances_only_from_verified_results(self, tmp_path, monkeypatch):
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest();accepted=set();calls=[]
+        def verified(*args, **kwargs):
+            return {'status':'PASS' if len(accepted)==38 else 'BLOCKED','evidence_validity':{'status':'PASS'},
+                    'jobs':{job:{'status':'PASS' if job in accepted else 'BLOCKED'} for job in q.required_jobs(manifest)}}
+        monkeypatch.setattr(q,'verify',verified);monkeypatch.setattr(q,'source_context',lambda *a:{})
+        monkeypatch.setattr(c,'checked_inputs',lambda value,*a:value)
+        monkeypatch.setattr(c,'prerequisites',lambda *a,**k:[])
+        def dispatch(root,directory,context,manifest,job,inputs):
+            assert job not in accepted;calls.append(job);accepted.add(job);return verified()
+        monkeypatch.setattr(c,'dispatch',dispatch)
+        config={'jobs':{job:{} for job in q.required_jobs(manifest)}}
+        result=c.run_ready(tmp_path,tmp_path,{},manifest,config,active_profile='reference-windows-16g')
+        assert result['status']=='PASS' and result['accepted_jobs']==38 and len(calls)==38
+        again=c.run_ready(tmp_path,tmp_path,{},manifest,config,active_profile='reference-windows-16g')
+        assert again['status']=='PASS' and len(calls)==38
+
+    def test_missing_prerequisite_never_creates_attempt_or_pass(self, tmp_path, monkeypatch):
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest();verdict={'status':'BLOCKED','evidence_validity':{'status':'PASS'},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}}
+        monkeypatch.setattr(q,'verify',lambda *a,**k:verdict);monkeypatch.setattr(q,'source_context',lambda *a:{})
+        monkeypatch.setattr(c,'checked_inputs',lambda value,*a:value)
+        monkeypatch.setattr(c,'prerequisites',lambda *a,**k:['genuine_setup_required'])
+        monkeypatch.setattr(c,'dispatch',lambda *a:(_ for _ in ()).throw(AssertionError('dispatch must not run')))
+        result=c.run_ready(tmp_path,tmp_path,{},manifest,{'jobs':{j:{} for j in q.required_jobs(manifest)}},active_profile='constrained-windows-8g')
+        assert result['status']=='BLOCKED' and result['accepted_jobs']==0 and result['blocked']
+        assert not (tmp_path/'attempts').exists()
+
+    def test_failed_public_job_stops_before_another_dispatch(self, tmp_path, monkeypatch):
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest();verdict={'status':'BLOCKED','evidence_validity':{'status':'PASS'},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}};calls=[]
+        monkeypatch.setattr(q,'verify',lambda *a,**k:verdict);monkeypatch.setattr(q,'source_context',lambda *a:{})
+        monkeypatch.setattr(c,'checked_inputs',lambda value,*a:value);monkeypatch.setattr(c,'prerequisites',lambda *a,**k:[])
+        def fail(*args):
+            job=args[-2];calls.append(job);verdict['jobs'][job]={'status':'FAIL'};verdict['status']='FAIL';return verdict
+        monkeypatch.setattr(c,'dispatch',fail)
+        result=c.run_ready(tmp_path,tmp_path,{},manifest,{'jobs':{j:{} for j in q.required_jobs(manifest)}},active_profile='constrained-windows-8g')
+        assert result['status']=='FAIL' and result['accepted_jobs']==0 and len(calls)==1
