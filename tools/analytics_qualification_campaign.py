@@ -154,6 +154,15 @@ def arguments(manifest, job, inputs):
     return args
 
 
+
+def evidence_valid_so_far(verdict):
+    """Missing future jobs is not corrupt evidence; other blocks are not waived."""
+    gate = verdict.get("gates", {}).get("evidence_validity", {})
+    return ((gate.get("status") == "PASS" and gate.get("reasons") == [])
+            or (gate.get("status") == "BLOCKED"
+                and gate.get("reasons") == ["mandatory_evidence_missing"]))
+
+
 def dispatch(root, directory, context, manifest, job, inputs):
     """Execute one authoritative family through its existing actual collector."""
     from tools import analytics_qualification_runner as runner
@@ -170,7 +179,7 @@ def dispatch(root, directory, context, manifest, job, inputs):
         run(root, directory, context, session, manifest, arguments(manifest, job, inputs))
     verdict = q.verify(directory, manifest, current_source=q.source_context(root))
     q.write_once(directory / "verdicts" / (session + ".json"), verdict)
-    if verdict.get("evidence_validity", {}).get("status") != "PASS":
+    if not evidence_valid_so_far(verdict):
         raise ValueError("campaign_evidence_invalid")
     return verdict
 
@@ -178,7 +187,7 @@ def dispatch(root, directory, context, manifest, job, inputs):
 def run_ready(root, directory, context, manifest, config, *, active_profile, selected_job=None):
     checked_inputs(config, context, manifest)
     before = q.verify(directory, manifest, current_source=q.source_context(root))
-    if before["status"] == "FAIL" or before.get("evidence_validity", {}).get("status") != "PASS":
+    if before["status"] == "FAIL" or not evidence_valid_so_far(before):
         raise ValueError("campaign_prior_evidence_invalid")
     accepted = {job for job, value in before["jobs"].items() if value["status"] == "PASS"}
     if selected_job is not None and selected_job not in q.required_jobs(manifest):

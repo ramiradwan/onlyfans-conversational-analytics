@@ -375,7 +375,7 @@ class TestCompleteCampaignRouting:
         monkeypatch.setattr(c,'_reference',lambda value:tmp_path/'actual-input.json')
         monkeypatch.setattr(q,'session',lambda *a:'session')
         monkeypatch.setattr(q,'source_context',lambda *a:{'revision':'test'})
-        monkeypatch.setattr(q,'verify',lambda *a,**k:{'status':'BLOCKED','evidence_validity':{'status':'PASS'}})
+        monkeypatch.setattr(q,'verify',lambda *a,**k:{'status':'BLOCKED','gates':{'evidence_validity':{'status':'PASS','reasons':[]}}})
         monkeypatch.setattr(q,'write_once',lambda *a:None)
         monkeypatch.setattr(runner,'run_source',lambda *a:calls.append(('questions',a[-1])))
         monkeypatch.setattr(runner,'run_regressions',lambda *a:calls.append(('regression',None)))
@@ -404,7 +404,7 @@ class TestCompleteCampaignRouting:
         from tools import analytics_qualification as q
         manifest=self.manifest();accepted=set();calls=[]
         def verified(*args, **kwargs):
-            return {'status':'PASS' if len(accepted)==38 else 'BLOCKED','evidence_validity':{'status':'PASS'},
+            return {'status':'PASS' if len(accepted)==38 else 'BLOCKED','gates':{'evidence_validity':{'status':'PASS','reasons':[]}},
                     'jobs':{job:{'status':'PASS' if job in accepted else 'BLOCKED'} for job in q.required_jobs(manifest)}}
         monkeypatch.setattr(q,'verify',verified);monkeypatch.setattr(q,'source_context',lambda *a:{})
         monkeypatch.setattr(c,'checked_inputs',lambda value,*a:value)
@@ -421,7 +421,7 @@ class TestCompleteCampaignRouting:
     def test_missing_prerequisite_never_creates_attempt_or_pass(self, tmp_path, monkeypatch):
         from tools import analytics_qualification_campaign as c
         from tools import analytics_qualification as q
-        manifest=self.manifest();verdict={'status':'BLOCKED','evidence_validity':{'status':'PASS'},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}}
+        manifest=self.manifest();verdict={'status':'BLOCKED','gates':{'evidence_validity':{'status':'PASS','reasons':[]}},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}}
         monkeypatch.setattr(q,'verify',lambda *a,**k:verdict);monkeypatch.setattr(q,'source_context',lambda *a:{})
         monkeypatch.setattr(c,'checked_inputs',lambda value,*a:value)
         monkeypatch.setattr(c,'prerequisites',lambda *a,**k:['genuine_setup_required'])
@@ -433,7 +433,7 @@ class TestCompleteCampaignRouting:
     def test_failed_public_job_stops_before_another_dispatch(self, tmp_path, monkeypatch):
         from tools import analytics_qualification_campaign as c
         from tools import analytics_qualification as q
-        manifest=self.manifest();verdict={'status':'BLOCKED','evidence_validity':{'status':'PASS'},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}};calls=[]
+        manifest=self.manifest();verdict={'status':'BLOCKED','gates':{'evidence_validity':{'status':'PASS','reasons':[]}},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}};calls=[]
         monkeypatch.setattr(q,'verify',lambda *a,**k:verdict);monkeypatch.setattr(q,'source_context',lambda *a:{})
         monkeypatch.setattr(c,'checked_inputs',lambda value,*a:value);monkeypatch.setattr(c,'prerequisites',lambda *a,**k:[])
         def fail(*args):
@@ -457,10 +457,57 @@ class TestCompleteCampaignRouting:
         from tools import analytics_qualification as q
         manifest=self.manifest();root=tmp_path/'closure';root.mkdir()
         (tmp_path/'closure.stop-after-current').write_text('stop at current completed boundary')
-        before={'status':'BLOCKED','evidence_validity':{'status':'PASS'},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}}
+        before={'status':'BLOCKED','gates':{'evidence_validity':{'status':'PASS','reasons':[]}},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}}
         monkeypatch.setattr(q,'verify',lambda *a,**k:before);monkeypatch.setattr(q,'source_context',lambda *a:{})
         monkeypatch.setattr(c,'checked_inputs',lambda value,*a:value)
         monkeypatch.setattr(c,'dispatch',lambda *a:(_ for _ in ()).throw(AssertionError('must not dispatch')))
         result=c.run_ready(tmp_path,root,{},manifest,{'jobs':{j:{} for j in q.required_jobs(manifest)}},active_profile='constrained-windows-8g')
         assert result['status']=='BLOCKED' and result['accepted_jobs']==0
         assert not list(root.iterdir())
+
+
+    def test_actual_public_empty_verdict_preflights_instead_of_failing(self, tmp_path, monkeypatch):
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest()
+        source={'revision':'1'*40,'files':{},'signature_valid':True,'working_tree':'',
+                'signer':manifest['source']['signer_email']}
+        root=tmp_path/'closure'
+        context=q.initialize(root,manifest,source,{'test_runtime':True},{})
+        # Use the actual public verifier. Only local source discovery is replaced.
+        monkeypatch.setattr(q,'source_context',lambda *a:source)
+        verdict=q.verify(root,manifest,current_source=source)
+        assert verdict['status']=='BLOCKED'
+        assert verdict['gates']['evidence_validity']=={'status':'BLOCKED','reasons':['mandatory_evidence_missing']}
+        result=c.run_ready(tmp_path,root,context,manifest,c.input_template(context,manifest),
+                           active_profile='constrained-windows-8g')
+        first='questions/constrained-windows-8g/populated/fresh'
+        assert result['status']=='BLOCKED' and result['accepted_jobs']==0
+        assert result['blocked'][first]==['missing_hardware_handoff']
+        assert not (root/'attempts').exists()
+
+    def test_actual_public_bad_source_or_manifest_still_stops_campaign(self, tmp_path, monkeypatch):
+        import pytest
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest()
+        source={'revision':'1'*40,'files':{},'signature_valid':True,'working_tree':'',
+                'signer':manifest['source']['signer_email']}
+        root=tmp_path/'closure';context=q.initialize(root,manifest,source,{'test_runtime':True},{})
+        monkeypatch.setattr(q,'source_context',lambda *a:dict(source,revision='2'*40))
+        with pytest.raises(ValueError,match='campaign_prior_evidence_invalid'):
+            c.run_ready(tmp_path,root,context,manifest,c.input_template(context,manifest),active_profile='constrained-windows-8g')
+        monkeypatch.setattr(q,'source_context',lambda *a:source)
+        (root/'manifest.json').write_text('{}')
+        with pytest.raises(ValueError,match='campaign_prior_evidence_invalid'):
+            c.run_ready(tmp_path,root,context,manifest,c.input_template(context,manifest),active_profile='constrained-windows-8g')
+
+    def test_only_missing_future_jobs_is_permitted_evidence_block(self):
+        from tools import analytics_qualification_campaign as c
+        assert c.evidence_valid_so_far({'gates':{'evidence_validity':{'status':'PASS','reasons':[]}}})
+        assert c.evidence_valid_so_far({'gates':{'evidence_validity':{'status':'BLOCKED','reasons':['mandatory_evidence_missing']}}})
+        for gate in ({'status':'FAIL','reasons':[]},{'status':'BLOCKED','reasons':['acceptance_manifest_not_frozen']},
+                     {'status':'BLOCKED','reasons':['mandatory_evidence_missing','source_does_not_match_run']},
+                     {'status':'PASS','reasons':['invalid_attempt']},{}):
+            assert not c.evidence_valid_so_far({'gates':{'evidence_validity':gate}})
+        assert not c.evidence_valid_so_far({'evidence_validity':{'status':'PASS','reasons':[]}})
