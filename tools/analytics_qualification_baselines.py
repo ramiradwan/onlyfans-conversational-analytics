@@ -328,3 +328,102 @@ def cleanup_working_copy(config: dict, report: dict) -> str:
                 "unexpected_working_copy_content")
     shutil.rmtree(path)
     return "removed_after_joined_success"
+
+
+
+def check_adoption(donor, donor_source, target_source, config, runtime):
+    """Source changes never inherit PASS credit; input compatibility is explicit."""
+    validate_record(donor, donor["binding"])
+    for source in (donor_source, target_source):
+        require(source.get("signature_valid") is True and not source.get("working_tree"), "adoption_source_not_clean_signed")
+    require(donor["binding"]["subject_sha256"] == q.digest(donor_source)
+            and config["subject_sha256"] == q.digest(target_source), "adoption_source_binding")
+    expected = binding(config, runtime)
+    require(all(donor["binding"][name] == expected[name] for name in expected if name != "subject_sha256"),
+            "adoption_runtime_fixture_or_configuration_changed")
+    # The definition/clock is additionally covered by the complete manifest.
+    # Storage/fixture source files are compared as signed Git blob identities so
+    # checkout line-ending conversion cannot masquerade as a format change.
+    return expected
+
+
+def adopt_verified_input(config, producer, donor_directory, donor_source_root, progress):
+    """Independently verify one copied variant on the new source before reuse.
+
+    Does not construct messages or publish analytics. Full independent canonical
+    reference and persisted-content checks run on the new code, outside the
+    optimized startup handoff. Any incompatibility fails; caller may then choose
+    a genuine necessary new baseline build rather than silently relabeling input.
+    """
+    import subprocess
+    from tools.analytics_qualification_fixture import Workload
+    donor_directory = safe(Path(donor_directory))
+    donor_source_root, target_root = Path(donor_source_root), Path(config["subject_directory"])
+    donor_source, target_source = q.source_context(donor_source_root), q.source_context(target_root)
+    donor = read_record(donor_directory / "baseline.json")
+    expected = check_adoption(donor, donor_source, target_source, config, producer["runtime"])
+    exact_files(donor_directory)
+    for name, row in donor["files"].items():
+        require(file_record(donor_directory/name) == row, "adoption_donor_changed")
+    stable = [name for name in donor_source["files"] if name.startswith('app/persistence/')
+              or name.endswith('.sql') or name in {'app/analytics/database.py',
+              'tests/continuous_analytics_fixture.py', 'tools/analytics_qualification_fixture.py'}]
+    def blob(root, name):
+        return subprocess.check_output(['git','--no-optional-locks','-C',str(root),
+                                        'rev-parse','HEAD:'+name], text=True, timeout=15).strip()
+    require(all(name in target_source["files"] and blob(donor_source_root,name)==blob(target_root,name)
+                for name in stable), "adoption_storage_format_or_fixture_code_changed")
+    target = safe(Path(config["question_baselines"])) / q.digest(expected)
+    require(not target.exists(), "adoption_target_exists")
+    evidence = target.parent.parent / "input-adoption" / q.digest(expected)
+    evidence.mkdir(parents=True, exist_ok=False)
+    q.write_once(evidence/'donor-baseline.json', donor)
+    q.write_once(evidence/'donor-source.json', donor_source)
+    q.write_once(evidence/'target-source.json', target_source)
+    copied_producer = dict(producer, subject_sha256=q.digest(target_source),
+        prepared_profile=config['profile'], preparation_method='independently_revalidated_input_copy',
+        initial_analytics_builds=0, donor_baseline_sha256=q.digest(donor),
+        donor_source_sha256=q.digest(donor_source), donor_original_build_seconds=donor['build_seconds'])
+    def verify_copy(destination):
+        from tools.analytics_qualification_bundle import _copy_verified
+        for name,row in donor['files'].items():
+            _copy_verified(donor_directory/name,destination/name,row)
+        work = None
+        try:
+            work = Workload(destination, config['manifest'], config['messages'], reopen=True,
+                            question_case=config['case'], known_kinds=config['known_kinds'])
+            work.qualification_progress = progress
+            work.f.pipeline.ensure_projection_storage()
+            verified, counts = work.verify(), work.counts()
+            require(verified.get('reference_mode') == 'independent_rebuild'
+                    and verified['expected'] == verified['actual'] == donor['verification']['expected'],
+                    'adoption_independent_results_differ')
+            work.close_for_snapshot()
+            extras = set(p.name for p in destination.iterdir()) - set(DATABASES)
+            require(extras <= MIGRATION_LOCKS | MIGRATION_DIRECTORIES, 'adoption_extra_content')
+            for name in extras:
+                item=safe(destination/name)
+                if item.is_dir():
+                    require(not any(item.iterdir()), 'adoption_unexpected_migration');item.rmdir()
+                else:item.rename(evidence/('copy-'+name))
+            require(q.source_context(target_root)==target_source and q.source_context(donor_source_root)==donor_source,
+                    'adoption_source_changed_before_seal')
+            require(all(file_record(donor_directory/name)==row for name,row in donor['files'].items()),
+                    'adoption_donor_changed_before_seal')
+            return verified, counts
+        finally:
+            if work is not None:
+                work.close();work.f.pipeline.close_projection_storage()
+    directory, record, created = prepare(target.parent, expected, copied_producer, verify_copy)
+    require(created and q.source_context(target_root)==target_source and q.source_context(donor_source_root)==donor_source,
+            'adoption_source_changed_during_verification')
+    require(all(file_record(donor_directory/name)==row for name,row in donor['files'].items()), 'adoption_donor_changed')
+    result = {'status':'PASS','kind':'verified_input_adoption','qualification_credit':0,
+              'source_revision':target_source['revision'],'source_sha256':q.digest(target_source),
+              'baseline_id':q.digest(expected),'baseline_manifest_sha256':q.digest(record),
+              'donor_baseline_sha256':q.digest(donor),'original_build_seconds':donor['build_seconds'],
+              'copy_and_independent_verification_seconds':record['build_seconds'],
+              'initial_analytics_builds':0,'old_pass_results_reused':False,'donor_unchanged':True,
+              'independent_verification':record['verification']}
+    q.write_once(evidence/'result.json', result)
+    return directory, record, result

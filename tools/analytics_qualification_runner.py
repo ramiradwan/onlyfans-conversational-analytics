@@ -178,6 +178,8 @@ def main(root: Path) -> int:
     parser.add_argument("--resume", action="store_true")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--verify", action="store_true")
+    action.add_argument("--campaign-template", type=Path,
+                        help="Write an exact-source template with every missing prerequisite explicitly null; no jobs run.")
     action.add_argument("--run-campaign", action="store_true",
                         help="Run ready mandatory jobs on the current profile; blocked prerequisites remain explicit.")
     action.add_argument("--run-job", help="Select exactly one job from the authoritative manifest.")
@@ -245,6 +247,12 @@ def main(root: Path) -> int:
                     from tools.analytics_qualification_packaged import artifact_context
                     artifacts = artifact_context(q.read_json(args.package_inputs))
                 context = q.initialize(directory, manifest, source, runtime, artifacts)
+            if args.campaign_template:
+                from tools.analytics_qualification_campaign import input_template
+                q.write_once(args.campaign_template.resolve(), input_template(context, manifest))
+                print(q.encoded({"status":"TEMPLATE_ONLY","qualification_credit":0,
+                      "required_jobs":len(q.required_jobs(manifest)),"path":str(args.campaign_template.resolve())}).decode(),end="")
+                return 0
             if args.run_campaign or args.run_job or args.preflight_campaign:
                 from tools.analytics_qualification_campaign import checked_inputs, prerequisites, plan, run_ready
                 config = checked_inputs(q.read_json(args.campaign_inputs), context, manifest)

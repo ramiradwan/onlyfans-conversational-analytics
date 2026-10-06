@@ -135,7 +135,7 @@ def prerequisites(manifest, context, job, inputs, *, active_profile):
                 authenticated = subprocess.run([cli, "auth", "status", "--hostname", "github.com"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, check=False)
                 if authenticated.returncode:
-                    errors.append("same_guest_github_authentication_required")
+                    errors.append("same_guest_github_authentication_or_connectivity_unconfirmed")
             except (OSError, subprocess.SubprocessError):
                 errors.append("same_guest_github_authentication_unconfirmed")
     return errors
@@ -197,7 +197,7 @@ def run_ready(root, directory, context, manifest, config, *, active_profile, sel
         job = item["job"]
         if job in accepted:
             continue  # Read actual public evidence; never rerun a passed tuple.
-        if (directory / "STOP_AFTER_CURRENT").exists():
+        if (directory.parent / (directory.name + ".stop-after-current")).exists():
             blocked[job] = ["operator_stop_after_current"]
             break
         if job in attempted:
@@ -229,3 +229,16 @@ def describe(manifest):
             "families": dict(Counter(item["family"] for item in jobs)),
             "profile_changes": "Host coordinator must change the actual VM profile between profile groups.",
             "completion": "Only exact-source public aggregate PASS establishes completion."}
+
+
+
+def input_template(context, manifest):
+    jobs = {}
+    for item in plan(manifest):
+        family = item['family']
+        fields = ('hardware_handoff',) if family == 'questions' else (
+            'package_inputs','hardware_handoff','setup_review') if family in {'package','mutation','visibility'} else (
+            'review_record',) if family == 'source-ci' else ()
+        jobs[item['job']] = dict.fromkeys(fields)
+    return {'schema':SCHEMA,'source_sha256':q.digest(context['source']),
+            'manifest_sha256':q.digest(manifest),'jobs':jobs}

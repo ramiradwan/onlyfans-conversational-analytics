@@ -45,3 +45,24 @@ python tools/qualify_continuous_analytics.py --messages 10000 --query-samples 10
 ```
 
 Output directories must be new. Run the canonical ingestion, backup, migration, and analytics regression tests because the change includes an authoritative schema migration. Report query failures separately from successful latency. These synthetic measurements do not qualify production event classification, pricing quality, constrained laptops, or installer size.
+
+
+## Startup validation handoff
+
+For unchanged active modern-v2 data, the store's initial full streaming verification
+may retain a bounded `StartupVerification` result. It is not a trust envelope and
+is never serialized. Question readiness consumes it once only after rechecking the
+full generation row, completed publication witness, physical database identity,
+all four content-stamp components, canonical identity, pipeline/configuration,
+retention and cancellation. Final checks outside the original read snapshot remain.
+Proofs and the final envelope are constructed before installation and installed
+under one shared re-entrant proof lock. Missing, changed, expired or unsupported
+handoffs use complete verification; no caller may force reuse. The original
+receipt lifetime and combined eight-generation retention are unchanged. Garbage
+collection can invalidate a handoff by changing the epoch; it cannot renew trust.
+
+The optional startup trace covers child validation, repository opening, SQLite
+checks, full recomputation, recovery/garbage collection and question preparation.
+It records bounded spans, parent relationships, counters and uncovered time.
+`cold_readiness_seconds` stays inclusive. The trace freezes its interval at readiness and is finalized only after in-flight callbacks join. Spans crossing the boundary retain their actual observed end and report only their contribution before readiness. An incomplete trace is reported as such;
+telemetry failure does not grant readiness or change the product verdict.

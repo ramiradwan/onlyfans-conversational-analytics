@@ -110,3 +110,41 @@ def test_snapshot_refuses_open_connection(working):
     with work.f.repositories.database.read():
         with pytest.raises(Exception, match="closed connections"):
             work.close_for_snapshot()
+
+
+
+def test_adoption_revalidates_real_database_without_building_and_retains_donor(prepared,tmp_path,monkeypatch):
+    import shutil
+    from app.analytics.pipeline import AnalyticsPipeline
+    from tools import qualify_continuous_analytics as reference
+    root,original,record,manifest=prepared
+    # Source witnesses are test doubles; no synthetic witness is ever written to
+    # a real campaign. The copied SQLCipher data and independent oracle are real.
+    old={'revision':'test-old','signature_valid':True,'working_tree':'','files':{}}
+    new={'revision':'test-new','signature_valid':True,'working_tree':'','files':{}}
+    old_root=tmp_path/'old-source';new_root=tmp_path/'new-source';old_root.mkdir();new_root.mkdir()
+    runtime=record['producer']['runtime']
+    config={'subject_sha256':q.digest(old),'manifest':manifest,'profile':'constrained-windows-8g',
+            'messages':400,'case':'populated','state':'fresh','known_kinds':True}
+    donor_producer=dict(record['producer'],subject_sha256=q.digest(old))
+    def copy_original(destination):
+        for name in b.DATABASES:shutil.copyfile(original/name,destination/name)
+        return record['verification'],record['source_counts']
+    donor,donor_record,_=b.prepare(tmp_path/'donor',b.binding(config,runtime),donor_producer,copy_original)
+    before={name:b.file_record(donor/name) for name in b.DATABASES}
+    target=dict(config,subject_sha256=q.digest(new),subject_directory=str(new_root),question_baselines=str(tmp_path/'target'/'question-baselines'))
+    monkeypatch.setattr(q,'source_context',lambda root:old if Path(root)==old_root else new)
+    monkeypatch.setattr(AnalyticsPipeline,'build_candidate',lambda *a,**k:(_ for _ in ()).throw(AssertionError('input adoption must not build product analytics')))
+    real=reference.reference_artifact;calls=[]
+    def counted(*args,**kwargs):calls.append(True);return real(*args,**kwargs)
+    monkeypatch.setattr(reference,'reference_artifact',counted)
+    (tmp_path/'trace').mkdir()
+    progress=CollectorProgress(tmp_path/'trace','input-adoption-test')
+    path,adopted,result=b.adopt_verified_input(target,dict(donor_producer,instance='new-verifier',subject_sha256=q.digest(new)),donor,old_root,progress)
+    assert result['status']=='PASS' and result['qualification_credit']==0 and result['initial_analytics_builds']==0
+    assert result['old_pass_results_reused'] is False and len(calls)==1
+    assert result['independent_verification']['reference_mode']=='independent_rebuild'
+    assert adopted['producer']['donor_baseline_sha256']==q.digest(donor_record)
+    assert adopted['verification']['expected']==donor_record['verification']['expected']
+    assert {name:b.file_record(donor/name) for name in b.DATABASES}==before
+    assert path.is_dir() and (path/'baseline.json').is_file()

@@ -31,3 +31,14 @@ Incremental validation can avoid rereading and revalidating unchanged graph payl
 Cold builds, process restarts, backup verification and explicit artifact reads retain complete row validation. Full fallback verification reconstructs segment digests from persisted rows before computing the versioned root.
 
 The change adds one rebuildable analytics migration and no dependency, model, database file, network service or writer process.
+
+
+### Startup handoff refinement
+
+The result of the successful initial active-generation verification can be retained
+as a bounded, process-local, single-use handoff. It does not survive a process
+restart and does not itself authorize reuse. Readiness rechecks exact full binding,
+physical file identity, schema/trigger/content stamp, witness, source/configuration,
+retention, cancellation and original expiry before promoting it atomically with
+its component proofs. The existing complete path remains the fallback. Tests count
+from before store construction so opening-time verification cannot be hidden.

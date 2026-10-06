@@ -183,6 +183,24 @@ class BaselineTests(unittest.TestCase):
         self.assertTrue(check(changed))  # A mutation cannot reuse the old canonical reference.
 
 
+    def test_adoption_checks_source_runtime_manifest_and_variant(self):
+        old={'revision':'old','signature_valid':True,'working_tree':'','files':{}}
+        new={'revision':'new','signature_valid':True,'working_tree':'','files':{}}
+        self.config['subject_sha256']=q.digest(old)
+        self.producer['subject_sha256']=q.digest(old)
+        self.key=b.binding(self.config,self.runtime)
+        path,record,_=self.prepare()
+        target=dict(self.config,subject_sha256=q.digest(new))
+        self.assertEqual(b.check_adoption(record,old,new,target,self.runtime),b.binding(target,self.runtime))
+        for changed in ({'signature_valid':False},{'working_tree':'M app/code.py'},{'revision':'wrong'}):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                b.check_adoption(record,dict(old,**changed),new,target,self.runtime)
+        for changed in ({'case':'tied_time'},{'messages':10000},{'manifest':{'fixture':{'seed':999}}}):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                b.check_adoption(record,old,new,dict(target,**changed),self.runtime)
+        with self.assertRaises(ValueError):b.check_adoption(record,old,new,target,{'python':'different-runtime'})
+
+
 class BundleTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)

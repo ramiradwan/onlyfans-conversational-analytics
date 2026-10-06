@@ -441,3 +441,26 @@ class TestCompleteCampaignRouting:
         monkeypatch.setattr(c,'dispatch',fail)
         result=c.run_ready(tmp_path,tmp_path,{},manifest,{'jobs':{j:{} for j in q.required_jobs(manifest)}},active_profile='constrained-windows-8g')
         assert result['status']=='FAIL' and result['accepted_jobs']==0 and len(calls)==1
+
+
+    def test_input_template_contains_all_jobs_without_invented_approval(self):
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest();context={'source':{'revision':'test'}}
+        value=c.input_template(context,manifest)
+        assert set(value['jobs'])==set(q.required_jobs(manifest)) and len(value['jobs'])==38
+        assert all(ref is None for fields in value['jobs'].values() for ref in fields.values())
+        assert c.checked_inputs(value,context,manifest)==value
+
+    def test_external_stop_marker_preserves_closure_and_stops_dispatch(self,tmp_path,monkeypatch):
+        from tools import analytics_qualification_campaign as c
+        from tools import analytics_qualification as q
+        manifest=self.manifest();root=tmp_path/'closure';root.mkdir()
+        (tmp_path/'closure.stop-after-current').write_text('stop at current completed boundary')
+        before={'status':'BLOCKED','evidence_validity':{'status':'PASS'},'jobs':{j:{'status':'BLOCKED'} for j in q.required_jobs(manifest)}}
+        monkeypatch.setattr(q,'verify',lambda *a,**k:before);monkeypatch.setattr(q,'source_context',lambda *a:{})
+        monkeypatch.setattr(c,'checked_inputs',lambda value,*a:value)
+        monkeypatch.setattr(c,'dispatch',lambda *a:(_ for _ in ()).throw(AssertionError('must not dispatch')))
+        result=c.run_ready(tmp_path,root,{},manifest,{'jobs':{j:{} for j in q.required_jobs(manifest)}},active_profile='constrained-windows-8g')
+        assert result['status']=='BLOCKED' and result['accepted_jobs']==0
+        assert not list(root.iterdir())
