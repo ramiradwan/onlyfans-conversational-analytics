@@ -24,6 +24,10 @@ class SQLiteConfigurationError(RuntimeError):
     """Raised when SQLite cannot provide the required durability profile."""
 
 
+class StartupValidationUnavailable(SQLiteConfigurationError):
+    """Existing connections prevent a protected startup validation scope."""
+
+
 def open_encrypted_sqlite(
     path: str | Path,
     encryption_key: bytes,
@@ -59,7 +63,7 @@ def open_encrypted_sqlite(
         _configure_connection_cipher(connection, encryption_key)
         connection.row_factory = sqlite3.Row
         return connection
-    except Exception:
+    except BaseException:
         connection.close()
         raise
 
@@ -201,7 +205,7 @@ class LocalSQLite:
                 )
             connection._secured_file_identity = self._restrict_permissions()
             return connection
-        except Exception:
+        except BaseException:
             connection.close()
             raise
 
@@ -238,7 +242,7 @@ class LocalSQLite:
                 if int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1:
                     raise SQLiteConfigurationError("SQLite query-only mode was refused")
             return connection
-        except Exception:
+        except BaseException:
             connection.close()
             raise
 
@@ -329,7 +333,7 @@ class LocalSQLite:
         with lifecycle:
             with _CONNECTION_COUNTS_LOCK:
                 if _CONNECTION_COUNTS.get(target, 0):
-                    raise SQLiteConfigurationError(
+                    raise StartupValidationUnavailable(
                         "SQLite lifecycle operation requires closed connections"
                     )
             yield target

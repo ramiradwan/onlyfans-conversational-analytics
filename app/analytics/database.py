@@ -134,6 +134,25 @@ class ProjectionsDatabase(ProjectionsSQLite):
         busy_timeout_ms: int = 5_000,
         migrations_dir: str | Path | None = None,
     ) -> None:
+        self._initialize(path, busy_timeout_ms=busy_timeout_ms, migrations_dir=migrations_dir)
+        self.migration_runner.run()
+
+    @classmethod
+    def open_with_validated_read(
+        cls, path: str | Path, reader, *, busy_timeout_ms: int = 5_000,
+        migrations_dir: str | Path | None = None,
+    ):
+        """Complete migrations and consume one protected validation snapshot."""
+
+        database = cls.__new__(cls)
+        database._initialize(path, busy_timeout_ms=busy_timeout_ms, migrations_dir=migrations_dir)
+        _, result = database.migration_runner.run_with_validated_read(reader)
+        return database, result
+
+    def _initialize(
+        self, path: str | Path, *, busy_timeout_ms: int,
+        migrations_dir: str | Path | None,
+    ) -> None:
         super().__init__(
             path,
             busy_timeout_ms=busy_timeout_ms,
@@ -148,7 +167,6 @@ class ProjectionsDatabase(ProjectionsSQLite):
             self,
             migrations_dir=self.migrations_dir,
         )
-        self.migration_runner.run()
 
     def connect(self):
         connection = super().connect()

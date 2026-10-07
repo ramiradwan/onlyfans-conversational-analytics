@@ -112,3 +112,37 @@ def test_blocked_native_close_remains_tracked_until_native_teardown_finishes(
     assert not closer.is_alive(), "native SQLite close did not complete"
     assert errors == []
     assert database_module.LocalSQLite.open_connection_count(path) == 0
+
+
+@pytest.mark.parametrize("opening", ["runtime", "detached", "encrypted"])
+def test_connection_configuration_cancellation_closes_native_handle(
+    tmp_path, monkeypatch, opening: str,
+) -> None:
+    import asyncio
+
+    path = tmp_path / "cancelled-open.sqlite3"
+    database = database_module.ProjectionsSQLite(path, encryption_key=b"r" * 32)
+    original_connect = database_module.sqlite3.connect
+    connections = []
+
+    def connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+
+    def cancelled(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(database_module.sqlite3, "connect", connect)
+    if opening == "encrypted":
+        monkeypatch.setattr(database_module, "_configure_connection_cipher", cancelled)
+        operation = lambda: database_module.open_encrypted_sqlite(path, b"r" * 32)
+    else:
+        monkeypatch.setattr(database, "_configure_cipher", cancelled)
+        operation = database.connect if opening == "runtime" else lambda: database.open_detached(path)
+    with pytest.raises(asyncio.CancelledError):
+        operation()
+    assert len(connections) == 1
+    assert database_module.LocalSQLite.open_connection_count(path) == 0
+    with pytest.raises(database_module.sqlite3.ProgrammingError):
+        connections[0].execute("SELECT 1")

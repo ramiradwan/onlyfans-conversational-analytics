@@ -1361,3 +1361,371 @@ async def test_deleting_projections_allows_deterministic_canonical_rebuild(
     projections_path.unlink()
     rebuilt = build()
     assert rebuilt == first
+
+
+def _trace_projection_startup(monkeypatch):
+    statements = []
+    original_connect = ProjectionsDatabase.connect
+
+    def connect(database):
+        connection = original_connect(database)
+        connection.set_trace_callback(
+            lambda sql: statements.append((database.path, connection, sql))
+        )
+        return connection
+
+    monkeypatch.setattr(ProjectionsDatabase, "connect", connect)
+    return statements
+
+
+def _projection_startup_full_checks(statements, path):
+    return [
+        (connection, sql.strip().lower().rstrip(";"))
+        for observed, connection, sql in statements
+        if observed == path.resolve() and sql.strip().lower().rstrip(";")
+        in {"pragma integrity_check", "pragma foreign_key_check"}
+    ]
+
+
+@pytest.mark.parametrize("mode", ["direct", "lazy", "factory", "factory_lazy"])
+def test_ordinary_projection_open_uses_one_full_integrity_foreign_key_pair(
+    tmp_path: Path, monkeypatch, mode: str,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    make_store(path, repositories).close()
+    statements = _trace_projection_startup(monkeypatch)
+    if mode == "lazy":
+        store = LazySQLiteAnalyticsProjectionStore(
+            path, activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories),
+            busy_timeout_ms=137,
+        )
+        store.ensure_ready()
+    elif mode in {"factory", "factory_lazy"}:
+        stores = create_analytics_stores(
+            "sqlite", projections_path=path,
+            canonical_path=tmp_path / "canonical.sqlite3",
+            activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories),
+            busy_timeout_ms=137,
+            lazy=mode == "factory_lazy",
+        )
+        store = stores.projections
+        if mode == "factory_lazy":
+            assert stores.database is None
+            store.ensure_ready()
+        else:
+            assert stores.database is store.database
+    else:
+        store = make_store(path, repositories)
+    try:
+        checks = _projection_startup_full_checks(statements, path)
+        assert [sql for _, sql in checks] == [
+            "pragma integrity_check", "pragma foreign_key_check",
+        ]
+        assert checks[0][0] is checks[1][0]
+        assert store.database is not None
+        assert store.database.busy_timeout_ms == (5_000 if mode == "direct" else 137)
+        assert store.database.open_connection_count(path) == 0
+    finally:
+        if mode == "factory":
+            store.close_retention_scheduler()
+        store.close()
+
+
+def test_existing_projection_database_and_standalone_reconciliation_each_validate_fully(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    database = ProjectionsDatabase(path)
+    statements = _trace_projection_startup(monkeypatch)
+    store = SQLiteAnalyticsProjectionStore(
+        database, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+    try:
+        assert [sql for _, sql in _projection_startup_full_checks(statements, path)] == [
+            "pragma integrity_check", "pragma foreign_key_check",
+        ]
+        statements.clear()
+        assert store.reconcile_startup() == {
+            "retired": 0, "activated": 0, "completed": 0, "cancelled": 0,
+        }
+        assert [sql for _, sql in _projection_startup_full_checks(statements, path)] == [
+            "pragma integrity_check", "pragma foreign_key_check",
+        ]
+    finally:
+        store.close()
+
+
+def test_projection_path_open_with_live_handle_retains_full_validation_fallback(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    database = ProjectionsDatabase(path)
+    statements = _trace_projection_startup(monkeypatch)
+    with database.read():
+        store = make_store(path, repositories)
+        try:
+            assert [sql for _, sql in _projection_startup_full_checks(statements, path)] == [
+                "pragma integrity_check", "pragma foreign_key_check",
+                "pragma integrity_check", "pragma foreign_key_check",
+            ]
+            assert database.open_connection_count(path) == 1
+        finally:
+            store.close()
+    assert database.open_connection_count(path) == 0
+
+
+def test_projection_recovery_writes_begin_after_validated_startup_snapshot_closes(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    first = make_store(path, repositories)
+    pipeline_for(repositories, first).project_account("account-a")
+    generation = first.database.active_generation("account-a")
+    assert generation is not None
+    first.close()
+    advance(repositories, 1)
+    retirements = []
+    original_retire = SQLiteAnalyticsProjectionStore._retire
+
+    def retire(store, generation_id, **kwargs):
+        assert store.database.open_connection_count(path) == 0
+        retirements.append(generation_id)
+        return original_retire(store, generation_id, **kwargs)
+
+    monkeypatch.setattr(SQLiteAnalyticsProjectionStore, "_retire", retire)
+    statements = _trace_projection_startup(monkeypatch)
+    reopened = make_store(path, repositories)
+    try:
+        assert generation.generation_id in retirements
+        assert reopened.database.active_generation("account-a") is None
+        assert reopened.database.generation(generation.generation_id).status == "retired"
+        assert [sql for _, sql in _projection_startup_full_checks(statements, path)] == [
+            "pragma integrity_check", "pragma foreign_key_check",
+        ]
+        assert reopened.database.open_connection_count(path) == 0
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize("capture", ["file", "store"])
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_lazy_startup_never_publishes_or_leaks_candidate_when_identity_capture_fails(
+    tmp_path: Path, monkeypatch, capture: str, cancelled: bool,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    candidate = make_store(path, repositories)
+    candidate.database.retain_wal_anchor()
+    assert candidate.database.open_connection_count(path) == 1
+    lazy = LazySQLiteAnalyticsProjectionStore(
+        path, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+    closes = []
+    original_close = candidate.close
+
+    def close():
+        closes.append(True)
+        original_close()
+
+    def fail(*args, **kwargs):
+        if cancelled:
+            raise asyncio.CancelledError()
+        raise RuntimeError("final identity capture failed")
+
+    monkeypatch.setattr(candidate, "close", close)
+    monkeypatch.setattr(lazy, "_open_store", lambda: candidate)
+    if capture == "file":
+        monkeypatch.setattr(lazy, "_file_identity_for_path", fail)
+    else:
+        monkeypatch.setattr(candidate.database, "store_identity", fail)
+    try:
+        error = asyncio.CancelledError if cancelled else ProjectionStorageUnavailable
+        with pytest.raises(error):
+            lazy.ensure_ready()
+        assert closes
+        assert lazy.database is None
+        assert lazy._file_identity is None and lazy._store_identity is None
+        assert lazy.recovery_count == 0
+        assert candidate.database.open_connection_count(path) == 0
+    finally:
+        original_close()
+        lazy.close()
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_retention_startup_failure_closes_timers_and_owned_handles(
+    tmp_path: Path, monkeypatch, cancelled: bool,
+) -> None:
+    from app.analytics.retention_store import RetentionBoundSQLiteAnalyticsProjectionStore
+    from app.persistence.database import LocalSQLite
+
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    captured = []
+    cancelled_timers = []
+
+    class Timer:
+        def cancel(self):
+            cancelled_timers.append(True)
+
+    def fail(store):
+        captured.append(store)
+        store.database.retain_wal_anchor()
+        store._retention_timers["account-a"] = Timer()
+        if cancelled:
+            raise asyncio.CancelledError()
+        raise RuntimeError("retention startup failed")
+
+    monkeypatch.setattr(RetentionBoundSQLiteAnalyticsProjectionStore, "_arm_existing_retention", fail)
+    with pytest.raises(asyncio.CancelledError if cancelled else RuntimeError):
+        RetentionBoundSQLiteAnalyticsProjectionStore(
+            path, activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories),
+        )
+    assert len(captured) == 1
+    assert cancelled_timers == [True]
+    assert captured[0]._retention_closed
+    assert not captured[0]._retention_timers
+    assert LocalSQLite.open_connection_count(path) == 0
+
+
+def test_unpublished_retention_candidate_closes_armed_timers(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from app.analytics.retention_store import (
+        RetentionBoundLazySQLiteAnalyticsProjectionStore,
+        RetentionBoundSQLiteAnalyticsProjectionStore,
+    )
+
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    candidate = RetentionBoundSQLiteAnalyticsProjectionStore(
+        path, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+    candidate.database.retain_wal_anchor()
+    cancelled_timers = []
+
+    class Timer:
+        def cancel(self):
+            cancelled_timers.append(True)
+
+    candidate._retention_timers["account-a"] = Timer()
+    lazy = RetentionBoundLazySQLiteAnalyticsProjectionStore(
+        path, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+
+    def fail():
+        raise RuntimeError("identity capture failed")
+
+    monkeypatch.setattr(lazy, "_open_store", lambda: candidate)
+    monkeypatch.setattr(lazy, "_file_identity_for_path", fail)
+    try:
+        with pytest.raises(ProjectionStorageUnavailable):
+            lazy.ensure_ready()
+        assert cancelled_timers == [True]
+        assert candidate._retention_closed
+        assert not candidate._retention_timers
+        assert candidate.database.open_connection_count(path) == 0
+        assert lazy.database is None
+    finally:
+        lazy.close()
+        candidate.close()
+
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("startup read failed"), asyncio.CancelledError()])
+def test_projection_startup_reader_failure_or_cancellation_closes_owned_connection(
+    tmp_path: Path, monkeypatch, failure,
+) -> None:
+    from app.persistence.database import LocalSQLite
+
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    make_store(path, repositories).close()
+    readers = []
+
+    def read(connection):
+        readers.append(connection)
+        raise failure
+
+    monkeypatch.setattr(SQLiteAnalyticsProjectionStore, "_read_startup_generations", staticmethod(read))
+    with pytest.raises(type(failure)):
+        make_store(path, repositories)
+    assert len(readers) == 1
+    assert LocalSQLite.open_connection_count(path) == 0
+    with pytest.raises(sqlite3.ProgrammingError):
+        readers[0].execute("SELECT 1")
+
+
+def test_standalone_projection_reconciliation_rejects_foreign_key_corruption(tmp_path: Path) -> None:
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    store = make_store(path, repositories)
+    with store.database.transaction() as connection:
+        connection.execute("CREATE TABLE startup_parent (id INTEGER PRIMARY KEY)")
+        connection.execute("CREATE TABLE startup_child (parent_id REFERENCES startup_parent(id))")
+    raw = store.database.open_detached(path)
+    try:
+        raw.execute("PRAGMA foreign_keys=OFF")
+        raw.execute("INSERT INTO startup_child VALUES (999)")
+        raw.commit()
+    finally:
+        raw.close()
+    try:
+        with pytest.raises(GraphReferentialIntegrityError, match="foreign_key_invalid"):
+            store.reconcile_startup()
+        assert store.database.open_connection_count(path) == 0
+    finally:
+        store.close()
+
+
+def test_lazy_startup_refuses_replacement_between_reconciliation_and_identity_capture(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    candidate = make_store(path, repositories)
+    opened_identity = candidate._opening_file_identity
+    assert opened_identity is not None
+    candidate.database.retain_wal_anchor()
+    assert candidate.database.open_connection_count(path) == 1
+    lazy = LazySQLiteAnalyticsProjectionStore(
+        path, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+    closes = []
+    original_close = candidate.close
+
+    def close():
+        closes.append(True)
+        original_close()
+
+    monkeypatch.setattr(candidate, "close", close)
+    monkeypatch.setattr(lazy, "_open_store", lambda: candidate)
+    monkeypatch.setattr(
+        lazy, "_file_identity_for_path",
+        lambda: (opened_identity[0], opened_identity[1] + 1),
+    )
+    try:
+        with pytest.raises(ProjectionStorageUnavailable):
+            lazy.ensure_ready()
+        assert closes
+        assert lazy.database is None
+        assert lazy._file_identity is None and lazy._store_identity is None
+        assert lazy.recovery_count == 0
+        assert candidate.database.open_connection_count(path) == 0
+    finally:
+        original_close()
+        lazy.close()

@@ -73,6 +73,7 @@ from app.persistence.projection_activation import (
     ProjectionActivationIntent,
     ProjectionActivationRepository,
 )
+from app.persistence.database import StartupValidationUnavailable
 
 
 PROJECTION_BUILD_VERSION = "analytics.projection.v3"
@@ -116,16 +117,32 @@ class SQLiteAnalyticsProjectionStore:
         lease_seconds: float = 120.0,
         rollback_retention: int = 1,
         gc_batch_size: int = 8,
+        busy_timeout_ms: int = 5_000,
     ) -> None:
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be positive")
         if rollback_retention < 0 or gc_batch_size <= 0:
             raise ValueError("generation retention and GC batch must be bounded")
-        self.database = (
-            database
-            if isinstance(database, ProjectionsDatabase)
-            else ProjectionsDatabase(database)
-        )
+        startup_rows = None
+        startup_file_identity = None
+        if isinstance(database, ProjectionsDatabase):
+            self.database = database
+        elif reconcile:
+            def read_startup(connection):
+                return self._read_startup_generations(connection), connection._secured_file_identity
+
+            try:
+                self.database, (startup_rows, startup_file_identity) = (
+                    ProjectionsDatabase.open_with_validated_read(
+                        database, read_startup, busy_timeout_ms=busy_timeout_ms)
+                )
+            except StartupValidationUnavailable:
+                self.database = ProjectionsDatabase(database, busy_timeout_ms=busy_timeout_ms)
+        else:
+            self.database = ProjectionsDatabase(database, busy_timeout_ms=busy_timeout_ms)
+        if startup_file_identity is None:
+            startup_file_identity = self.database._restrict_permissions()
+        self._opening_file_identity = startup_file_identity
         self.activation = activation
         self.canonical_identity_reader = canonical_identity_reader
         self.crash_hook = crash_hook
@@ -156,7 +173,16 @@ class SQLiteAnalyticsProjectionStore:
             active_generation_resolver=self._active_generation_for_graph,
         )
         if reconcile:
-            self.reconcile_startup()
+            try:
+                if startup_rows is None:
+                    self.reconcile_startup()
+                else:
+                    self._reconcile_startup_rows(startup_rows)
+                if self.database._restrict_permissions() != startup_file_identity:
+                    raise ProjectionValidationError("projection_file_changed_during_startup")
+            except BaseException:
+                self.close()
+                raise
 
     def _retain_startup_verification(self, generation, witness, stamp, values):
         from app.analytics.generation_verification import StartupVerification, envelope_from_values
@@ -1533,7 +1559,6 @@ class SQLiteAnalyticsProjectionStore:
             force=True,
         )
 
-    @startup_timed('startup.store_reconciliation')
     def reconcile_startup(self) -> dict[str, int]:
         """Quarantine unwitnessed active rows and recover only exact identities."""
 
@@ -1547,15 +1572,25 @@ class SQLiteAnalyticsProjectionStore:
             with startup_span("startup.foreign_keys"):
                 if connection.execute("PRAGMA foreign_key_check").fetchall():
                     raise GraphReferentialIntegrityError("projection_foreign_key_invalid")
-        counts = {"retired": 0, "activated": 0, "completed": 0, "cancelled": 0}
-        now = _now()
-        with self.database.read() as connection:
-            rows = connection.execute(
+            rows = self._read_startup_generations(connection)
+        return self._reconcile_startup_rows(rows)
+
+    @staticmethod
+    def _read_startup_generations(connection):
+        with startup_span("startup.reconciliation_read"):
+            return connection.execute(
                 """
                 SELECT * FROM projection_generations
                 ORDER BY creator_account_id, canonical_revision, started_at, generation_id
                 """
             ).fetchall()
+
+    @startup_timed('startup.store_reconciliation')
+    def _reconcile_startup_rows(self, rows) -> dict[str, int]:
+        with self._verification_envelope_lock:
+            self._startup_verifications.clear()
+        counts = {"retired": 0, "activated": 0, "completed": 0, "cancelled": 0}
+        now = _now()
 
         # Active rows are never trusted merely because their local status says active.
         for generation in [row for row in rows if row["status"] == "active"]:

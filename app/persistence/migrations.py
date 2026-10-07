@@ -10,18 +10,23 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Callable, TypeVar
 from uuid import uuid4
 
+from app.core.lifecycle_receipts import startup_span
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import LocalSQLite
 from app.persistence.managed_recovery import prune_managed_recovery_files
 from app.persistence.private_files import (
     PrivateFileSecurityError,
     apply_private_file_security,
+    private_file_identity,
     sync_directory,
     sync_file,
 )
+
+
+_ValidatedReadResult = TypeVar("_ValidatedReadResult")
 
 
 MIGRATION_NAME = re.compile(r"^(?P<version>[0-9]{4})_(?P<name>[a-z0-9_]+)\.sql$")
@@ -266,21 +271,100 @@ class MigrationRunner:
             self.lock_path, timeout_seconds=self.lock_timeout_seconds
         ):
             with self.database.read() as connection:
-                self._ensure_ledger(connection)
-                catalog = self._load_catalog(connection)
-                applied = self._validate_applied(connection, catalog)
-                pending = [item for item in catalog if item.version not in applied]
-                if not pending:
-                    self._validate_database(connection)
-                    return []
-                self.last_backup_path = self._backup(connection, applied, catalog[-1].version)
-                completed: list[int] = []
-                for migration in pending:
-                    self._apply(connection, migration)
-                    completed.append(migration.version)
-                self._validate_applied(connection, catalog)
+                completed = self._process_migrations(connection)
                 self._validate_database(connection)
                 return completed
+
+    def run_with_validated_read(
+        self,
+        reader: Callable[[sqlite3.Connection], _ValidatedReadResult],
+    ) -> tuple[list[int], _ValidatedReadResult]:
+        """Read materialized startup rows in the exact post-migration validation snapshot.
+
+        The callback runs while BEGIN IMMEDIATE excludes concurrent writers. It
+        may only read, cannot finish or replace that transaction, and must
+        materialize its result. The snapshot and owned connection close before
+        results return, so recovery writes run afterward without reusable proof.
+        """
+
+        with process_migration_mutex(self.lock_path), InstallationMigrationLock(
+            self.lock_path, timeout_seconds=self.lock_timeout_seconds
+        ), self.database.exclusive_lifecycle(self.database.path):
+            before_open = private_file_identity(self.database.path, missing_ok=True)
+            with self.database.read() as connection:
+                identity = getattr(connection, "_secured_file_identity", None)
+                if identity is None or (
+                    before_open is not None and identity != before_open
+                ):
+                    raise MigrationError("startup validation file changed during opening")
+                self._require_startup_file(identity)
+                completed = self._process_migrations(connection)
+                self._require_startup_file(identity)
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    connection.execute("PRAGMA query_only = ON")
+                    self._require_startup_snapshot(connection, identity)
+                    self._validate_database(connection)
+                    self._require_startup_snapshot(connection, identity)
+                    rejected = False
+
+                    def authorize(action, *_details):
+                        nonlocal rejected
+                        if action in (
+                            sqlite3.SQLITE_SELECT,
+                            sqlite3.SQLITE_READ,
+                            sqlite3.SQLITE_FUNCTION,
+                        ):
+                            return sqlite3.SQLITE_OK
+                        rejected = True
+                        return sqlite3.SQLITE_DENY
+
+                    connection.set_authorizer(authorize)
+                    try:
+                        result = reader(connection)
+                    finally:
+                        connection.set_authorizer(None)
+                    if rejected:
+                        raise MigrationError("startup validation reader changed its scope")
+                    self._require_startup_snapshot(connection, identity)
+                    return completed, result
+                finally:
+                    if connection.in_transaction:
+                        connection.rollback()
+
+    def _require_startup_file(self, identity: tuple[int, int]) -> None:
+        if self.database._restrict_permissions() != identity:
+            raise MigrationError("startup validation file was replaced")
+
+    def _require_startup_snapshot(
+        self, connection: sqlite3.Connection, identity: tuple[int, int]
+    ) -> None:
+        if not connection.in_transaction or (
+            int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1
+        ):
+            raise MigrationError("startup validation snapshot is invalid")
+        self._require_startup_file(identity)
+
+    def _process_migrations(self, connection: sqlite3.Connection) -> list[int]:
+        with startup_span("startup.migration_ledger_validation"):
+            self._ensure_ledger(connection)
+            catalog = self._load_catalog(connection)
+            applied = self._validate_applied(connection, catalog)
+            pending = [item for item in catalog if item.version not in applied]
+        if pending:
+            with startup_span("startup.migration_backup"):
+                self.last_backup_path = self._backup(
+                    connection, applied, catalog[-1].version
+                )
+        completed: list[int] = []
+        with startup_span("startup.migrations", pending_count=len(pending)):
+            for migration in pending:
+                self._apply(connection, migration)
+                completed.append(migration.version)
+        if completed:
+            with startup_span("startup.migration_ledger_validation"):
+                self._validate_applied(connection, catalog)
+        return completed
 
     def _load_catalog(self, connection: sqlite3.Connection | None = None) -> list[Migration]:
         if connection is None:
@@ -402,10 +486,12 @@ class MigrationRunner:
 
     @staticmethod
     def _validate_database(connection: sqlite3.Connection) -> None:
-        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-        if integrity != "ok":
-            raise MigrationError(f"post-migration integrity check failed: {integrity}")
-        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        with startup_span("startup.migration_integrity"):
+            integrity = connection.execute("PRAGMA integrity_check").fetchall()
+        if len(integrity) != 1 or integrity[0][0] != "ok":
+            raise MigrationError(f"post-migration integrity check failed: {integrity!r}")
+        with startup_span("startup.migration_foreign_keys"):
+            violations = connection.execute("PRAGMA foreign_key_check").fetchall()
         if violations:
             raise MigrationError(
                 f"post-migration foreign-key check failed: {violations!r}"

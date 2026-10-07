@@ -416,3 +416,278 @@ def test_configuration_publication_rolls_back_document_if_required_update_fails(
         ACCOUNT_ID, PUBLISHED_CONFIG_REVISION
     ) is None
     assert authority.required_document(ACCOUNT_ID).config_revision == BOOTSTRAP_CONFIG_REVISION
+
+
+def _startup_runner(tmp_path: Path):
+    directory = tmp_path / "startup-migrations"
+    write_migration(
+        directory,
+        "0001_initial.sql",
+        "CREATE TABLE parent (id INTEGER PRIMARY KEY);"
+        "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id));",
+    )
+    database = CanonicalSQLite(tmp_path / "startup.sqlite3", encryption_key=b"r" * 32)
+    return database, MigrationRunner(database, migrations_dir=directory)
+
+
+def _trace_startup_statements(database, monkeypatch):
+    statements = []
+    original_connect = database.connect
+
+    def connect():
+        connection = original_connect()
+        connection.set_trace_callback(lambda sql: statements.append((connection, sql)))
+        return connection
+
+    monkeypatch.setattr(database, "connect", connect)
+    return statements
+
+
+def _startup_full_checks(statements):
+    return [
+        (connection, sql.strip().lower().rstrip(";"))
+        for connection, sql in statements
+        if sql.strip().lower().rstrip(";")
+        in {"pragma integrity_check", "pragma foreign_key_check"}
+    ]
+
+
+def test_validated_startup_read_uses_one_connection_snapshot_and_lock_scope(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from app.persistence.database import LocalSQLite, SQLiteConfigurationError
+
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    statements = _trace_startup_statements(database, monkeypatch)
+    readers = []
+
+    def read(connection):
+        readers.append(connection)
+        assert connection.in_transaction
+        assert LocalSQLite.open_connection_count(database.path) == 1
+        with pytest.raises(MigrationLockError):
+            with InstallationMigrationLock(runner.lock_path):
+                pass
+        with pytest.raises(SQLiteConfigurationError, match="requires closed connections"):
+            with LocalSQLite.exclusive_lifecycle(database.path):
+                pass
+        return connection.execute("SELECT COUNT(*) FROM child").fetchone()[0]
+
+    assert runner.run_with_validated_read(read) == ([], 0)
+    assert len(readers) == 1
+    assert _startup_full_checks(statements) == [
+        (readers[0], "pragma integrity_check"),
+        (readers[0], "pragma foreign_key_check"),
+    ]
+    assert LocalSQLite.open_connection_count(database.path) == 0
+    with pytest.raises(sqlite3.ProgrammingError):
+        readers[0].execute("SELECT 1")
+
+
+def test_validated_startup_read_finishes_pending_migrations_before_snapshot(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    write_migration(
+        runner.migrations_dir, "0002_new_table.sql",
+        "CREATE TABLE migrated_value (value INTEGER); INSERT INTO migrated_value VALUES (7);",
+    )
+    statements = _trace_startup_statements(database, monkeypatch)
+    readers = []
+
+    def read(connection):
+        readers.append(connection)
+        assert connection.in_transaction
+        return connection.execute("SELECT value FROM migrated_value").fetchone()[0]
+
+    assert runner.run_with_validated_read(read) == ([2], 7)
+    checks = _startup_full_checks(statements)
+    assert checks == [(readers[0], "pragma integrity_check"),
+                      (readers[0], "pragma foreign_key_check")]
+    assert runner.last_backup_path is not None and runner.last_backup_path.exists()
+    database.validate_integrity()
+
+
+def test_standalone_migration_runs_each_keep_full_database_validation(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    statements = _trace_startup_statements(database, monkeypatch)
+    assert runner.run() == []
+    assert runner.run() == []
+    assert [sql for _, sql in _startup_full_checks(statements)] == [
+        "pragma integrity_check", "pragma foreign_key_check",
+        "pragma integrity_check", "pragma foreign_key_check",
+    ]
+
+
+@pytest.mark.parametrize("statement", [
+    "COMMIT", "ROLLBACK", "SAVEPOINT scope_escape", "BEGIN",
+    "PRAGMA query_only=OFF", "PRAGMA user_version=123",
+    "INSERT INTO parent VALUES (1)", "DROP TABLE child",
+])
+def test_validated_startup_reader_cannot_mutate_or_end_its_snapshot(
+    tmp_path: Path, statement: str,
+) -> None:
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+
+    def read(connection):
+        with pytest.raises(sqlite3.DatabaseError):
+            connection.execute(statement)
+        assert connection.in_transaction
+        return connection.execute("SELECT COUNT(*) FROM parent").fetchone()[0]
+
+    with pytest.raises(MigrationError):
+        runner.run_with_validated_read(read)
+    assert database.open_connection_count(database.path) == 0
+    with database.read() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM parent").fetchone()[0] == 0
+
+
+def test_validated_startup_read_refuses_callback_that_escapes_snapshot(tmp_path: Path) -> None:
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+
+    def read(connection):
+        connection.set_authorizer(None)
+        connection.rollback()
+        return 1
+
+    with pytest.raises(MigrationError):
+        runner.run_with_validated_read(read)
+    assert database.open_connection_count(database.path) == 0
+
+
+def test_validated_startup_read_rejects_changed_physical_file_observation(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from app.persistence.database import SQLiteConfigurationError
+
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    reader_finished = False
+    original_security_check = database._restrict_permissions
+
+    def observe_identity():
+        identity = original_security_check()
+        # Windows prevents os.replace while this native handle is open. Model
+        # the same changed physical identity returned by the security observer.
+        return (identity[0], identity[1] + 1) if reader_finished else identity
+
+    monkeypatch.setattr(database, "_restrict_permissions", observe_identity)
+
+    def read(connection):
+        nonlocal reader_finished
+        connection.execute("SELECT COUNT(*) FROM child").fetchone()
+        reader_finished = True
+        return 1
+
+    with pytest.raises((MigrationError, SQLiteConfigurationError)):
+        runner.run_with_validated_read(read)
+    assert reader_finished
+    assert database.open_connection_count(database.path) == 0
+
+
+def test_validated_startup_read_excludes_untracked_concurrent_writer(tmp_path: Path) -> None:
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    errors = []
+    attempted = threading.Event()
+
+    def write():
+        connection = database.open_detached(database.path)
+        try:
+            connection.execute("PRAGMA busy_timeout=100")
+            attempted.set()
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("INSERT INTO parent VALUES (1)")
+            connection.commit()
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            connection.close()
+
+    def read(connection):
+        writer = threading.Thread(target=write)
+        writer.start()
+        try:
+            assert attempted.wait(10)
+            writer.join(10)
+            assert not writer.is_alive()
+            assert len(errors) == 1
+            assert isinstance(errors[0], sqlite3.OperationalError)
+            return connection.execute("SELECT COUNT(*) FROM parent").fetchone()[0]
+        finally:
+            writer.join(10)
+
+    assert runner.run_with_validated_read(read) == ([], 0)
+
+
+def test_validated_startup_read_unavailable_with_existing_owned_connection(tmp_path: Path) -> None:
+    from app.persistence.database import StartupValidationUnavailable
+
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    callbacks = []
+    with database.read():
+        with pytest.raises(StartupValidationUnavailable):
+            runner.run_with_validated_read(lambda connection: callbacks.append(connection))
+        assert callbacks == []
+        # Standalone migrations remain supported while other handles exist.
+        assert runner.run() == []
+    assert database.open_connection_count(database.path) == 0
+
+
+def test_validated_startup_read_does_not_invoke_reader_after_foreign_key_failure(
+    tmp_path: Path,
+) -> None:
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    connection = database.open_detached(database.path)
+    try:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute("INSERT INTO child VALUES (1, 999)")
+        connection.commit()
+    finally:
+        connection.close()
+    callbacks = []
+    with pytest.raises(MigrationError, match="foreign-key check failed"):
+        runner.run_with_validated_read(lambda connection: callbacks.append(connection))
+    assert callbacks == []
+    assert database.open_connection_count(database.path) == 0
+
+
+def test_validated_startup_read_rejects_corrupt_database_before_reader(tmp_path: Path) -> None:
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    database.path.write_bytes(b"synthetic-not-a-sqlite-database")
+    callbacks = []
+    with pytest.raises((MigrationError, sqlite3.DatabaseError)):
+        runner.run_with_validated_read(lambda connection: callbacks.append(connection))
+    assert callbacks == []
+    assert database.open_connection_count(database.path) == 0
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("reader failed"), asyncio.CancelledError()])
+def test_validated_startup_read_closes_connection_on_failure_or_cancellation(
+    tmp_path: Path, failure,
+) -> None:
+    database, runner = _startup_runner(tmp_path)
+    runner.run()
+    readers = []
+
+    def read(connection):
+        readers.append(connection)
+        raise failure
+
+    with pytest.raises(type(failure)):
+        runner.run_with_validated_read(read)
+    assert database.open_connection_count(database.path) == 0
+    with pytest.raises(sqlite3.ProgrammingError):
+        readers[0].execute("SELECT 1")
+    assert runner.run() == []

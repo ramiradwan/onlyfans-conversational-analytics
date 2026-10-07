@@ -68,7 +68,15 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
             canonical_identity_reader=canonical_identity_reader,
             **kwargs,
         )
-        self._arm_existing_retention()
+        try:
+            self._arm_existing_retention()
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        self.close_retention_scheduler()
+        super().close()
 
     def stage_artifact(self, artifact: RebuildArtifact, **kwargs) -> str:
         expired, _ = self._artifact_retention_state(
@@ -433,16 +441,13 @@ class RetentionBoundLazySQLiteAnalyticsProjectionStore(
         return super()._mark_failed_unlocked(failed_store)
 
     def _open_store(self) -> RetentionBoundSQLiteAnalyticsProjectionStore:
-        database = ProjectionsDatabase(
-            self.path,
-            busy_timeout_ms=self.busy_timeout_ms,
-        )
         return RetentionBoundSQLiteAnalyticsProjectionStore(
-            database,
+            self.path,
             activation=self.activation,
             canonical_identity_reader=self.canonical_identity_reader,
             lease_seconds=self.lease_seconds,
             rollback_retention=self.rollback_retention,
             gc_batch_size=self.gc_batch_size,
             clock=self._retention_clock,
+            busy_timeout_ms=self.busy_timeout_ms,
         )

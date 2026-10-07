@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.core.lifecycle_receipts import startup_timed
+from app.core.lifecycle_receipts import startup_timed, startup_span
 
 import os
 from contextlib import contextmanager
@@ -96,7 +96,7 @@ class LazySQLiteAnalyticsProjectionStore:
     def ensure_ready(self) -> None:
         """Scheduler-only mutation seam that opens, repairs, or recreates storage."""
 
-        with self._lock:
+        with self._startup_open_lock():
             if self._closed:
                 raise ProjectionStorageUnavailable()
             if (
@@ -115,25 +115,48 @@ class LazySQLiteAnalyticsProjectionStore:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 if recover_first:
                     self._quarantine_unlocked()
-                store = self._open_store()
+                store, file_identity, store_identity = self._open_checked_store()
             except Exception:
                 if recover_first:
                     self._record_recovery_failure_unlocked()
                     raise ProjectionStorageUnavailable() from None
                 try:
                     self._quarantine_unlocked()
-                    store = self._open_store()
+                    store, file_identity, store_identity = self._open_checked_store()
                 except Exception:
                     self._record_recovery_failure_unlocked()
                     raise ProjectionStorageUnavailable() from None
             self._store = store
-            self._file_identity = self._file_identity_for_path()
-            self._store_identity = store.database.store_identity()
+            self._file_identity = file_identity
+            self._store_identity = store_identity
             self._needs_recovery = False
             self._failure_notified = False
             self._failure_count = 0
             self._next_retry_at = 0.0
             self._recovery_count += 1
+
+    @contextmanager
+    def _startup_open_lock(self):
+        with startup_span("startup.storage_open_wait"):
+            self._lock.acquire()
+        try:
+            yield
+        finally:
+            self._lock.release()
+
+    def _open_checked_store(self):
+        store = self._open_store()
+        try:
+            file_identity = self._file_identity_for_path()
+            if file_identity != store._opening_file_identity:
+                raise SQLiteConfigurationError("projection_file_changed_after_reconciliation")
+            store_identity = store.database.store_identity()
+            if self._file_identity_for_path() != file_identity:
+                raise SQLiteConfigurationError("projection_file_changed_during_opening")
+            return store, file_identity, store_identity
+        except BaseException:
+            store.close()
+            raise
 
     def generation_references_supported(self) -> bool:
         return self._read("generation_references_supported", None)
@@ -456,17 +479,14 @@ class LazySQLiteAnalyticsProjectionStore:
         self._needs_recovery = True
 
     def _open_store(self) -> SQLiteAnalyticsProjectionStore:
-        database = ProjectionsDatabase(
-            self.path,
-            busy_timeout_ms=self.busy_timeout_ms,
-        )
         return SQLiteAnalyticsProjectionStore(
-            database,
+            self.path,
             activation=self.activation,
             canonical_identity_reader=self.canonical_identity_reader,
             lease_seconds=self.lease_seconds,
             rollback_retention=self.rollback_retention,
             gc_batch_size=self.gc_batch_size,
+            busy_timeout_ms=self.busy_timeout_ms,
         )
 
     def _quarantine_unlocked(self) -> None:
