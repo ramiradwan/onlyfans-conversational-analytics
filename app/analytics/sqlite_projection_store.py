@@ -20,7 +20,9 @@ from weakref import WeakSet
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.enrichment_proof_transition import capture_transition, finish_transition
 from app.analytics.database import (
+    GENERATION_VERIFICATION_CACHE_KIB, PERSISTED_GENERATION_READ_CACHE_KIB,
     ProjectionsDatabase, generation_retirement_cache, generation_verification_cache,
+    startup_validation_cache,
 )
 from app.analytics.compact_graph import CompactArtifact, write_compact_graph
 from app.analytics.graph_privacy import safe_graph_records
@@ -1612,13 +1614,14 @@ class SQLiteAnalyticsProjectionStore:
         with self._verification_envelope_lock:
             self._startup_verifications.clear()
         with self.database.read() as connection:
-            with startup_span("startup.sqlite_integrity"):
-                integrity = connection.execute("PRAGMA integrity_check").fetchall()
-            if len(integrity) != 1 or integrity[0][0] != "ok":
-                raise ProjectionValidationError("projection_integrity_invalid")
-            with startup_span("startup.foreign_keys"):
-                if connection.execute("PRAGMA foreign_key_check").fetchall():
-                    raise GraphReferentialIntegrityError("projection_foreign_key_invalid")
+            with startup_validation_cache(connection):
+                with startup_span("startup.sqlite_integrity"):
+                    integrity = connection.execute("PRAGMA integrity_check").fetchall()
+                if len(integrity) != 1 or integrity[0][0] != "ok":
+                    raise ProjectionValidationError("projection_integrity_invalid")
+                with startup_span("startup.foreign_keys"):
+                    if connection.execute("PRAGMA foreign_key_check").fetchall():
+                        raise GraphReferentialIntegrityError("projection_foreign_key_invalid")
             rows = self._read_startup_generations(connection)
         return self._reconcile_startup_rows(rows)
 
@@ -1942,6 +1945,9 @@ class SQLiteAnalyticsProjectionStore:
                     generation_id,
                     check=check, materialize_graph=materialize_graph,
                     materialize_projection=materialize_projection,
+                    cache_kib=(PERSISTED_GENERATION_READ_CACHE_KIB
+                        if not materialize_projection and not materialize_graph
+                        else GENERATION_VERIFICATION_CACHE_KIB),
                 )
                 verify_generation_values(generation, values)
                 check()
@@ -2645,6 +2651,7 @@ def recompute_generation(
     graph_validation=None,
     enrichment_validation=None,
     conversation_validation=None,
+    cache_kib: int = GENERATION_VERIFICATION_CACHE_KIB,
 ) -> dict[str, object]:
     """Verify stored data with a connection-local page-cache target."""
 
@@ -2652,7 +2659,7 @@ def recompute_generation(
     startup_count("materialized_projections", int(materialize_projection))
     startup_count("materialized_graphs", int(materialize_graph))
     with startup_span("startup.full_recomputation", generation_id=generation_id,
-                      materialize_projection=materialize_projection, materialize_graph=materialize_graph), generation_verification_cache(connection):
+                      materialize_projection=materialize_projection, materialize_graph=materialize_graph), generation_verification_cache(connection, cache_kib=cache_kib):
         return _recompute_generation(connection, generation_id, check=check,
                                      materialize_graph=materialize_graph,
                                      materialize_projection=materialize_projection,

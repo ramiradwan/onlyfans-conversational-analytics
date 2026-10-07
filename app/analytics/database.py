@@ -14,25 +14,83 @@ from app.persistence.migrations import MigrationRunner
 from app.analytics.opaque_refs import normalize_account_ref
 
 
+# Restore the caller's cache target before handing off the validated reader.
+STARTUP_VALIDATION_CACHE_KIB = 512 * 1024
 GENERATION_WRITE_CACHE_KIB = 16 * 1024
 GENERATION_VERIFICATION_CACHE_KIB = 32 * 1024
+MAX_GENERATION_VERIFICATION_CACHE_KIB = 512 * 1024
+# Only the owned, nonmaterializing persisted read uses this larger target.
+PERSISTED_GENERATION_READ_CACHE_KIB = 512 * 1024
 GENERATION_RETIREMENT_CACHE_KIB = 128 * 1024
 MAX_CONTENT_WRITE_CACHE_KIB = 128 * 1024
 
 
 @contextmanager
-def generation_verification_cache(connection):
-    """Use a bounded page-cache target for one stored-generation verification."""
+def startup_validation_cache(connection):
+    """Bound the full startup checks' cache and restore before reader handoff."""
 
     previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
-    target = -GENERATION_VERIFICATION_CACHE_KIB
-    if previous != target:
-        connection.execute(f"PRAGMA cache_size={target}")
-    try:
-        yield
-    finally:
-        if previous != target:
+    target = -STARTUP_VALIDATION_CACHE_KIB
+    changed = previous != target
+
+    def restore():
+        if changed or int(connection.execute("PRAGMA cache_size").fetchone()[0]) != previous:
             connection.execute(f"PRAGMA cache_size={previous}")
+            if int(connection.execute("PRAGMA cache_size").fetchone()[0]) != previous:
+                raise RuntimeError("analytics_startup_validation_cache_not_restored")
+
+    try:
+        if changed:
+            connection.execute(f"PRAGMA cache_size={target}")
+            if int(connection.execute("PRAGMA cache_size").fetchone()[0]) != target:
+                raise RuntimeError("analytics_startup_validation_cache_not_set")
+        yield
+    except BaseException:
+        try:
+            restore()
+        except BaseException:
+            # Keep the primary validation/cancellation failure. The owner
+            # closes this connection; no validated reader can receive it.
+            pass
+        raise
+    else:
+        # A restoration failure after successful checks blocks handoff.
+        restore()
+
+
+@contextmanager
+def generation_verification_cache(connection, *, cache_kib: int = GENERATION_VERIFICATION_CACHE_KIB):
+    """Use a bounded local target without changing any other connection's cache."""
+
+    if (type(cache_kib) is not int
+            or not 0 < cache_kib <= MAX_GENERATION_VERIFICATION_CACHE_KIB):
+        raise ValueError("analytics_verification_cache_target_invalid")
+    previous = int(connection.execute("PRAGMA cache_size").fetchone()[0])
+    target = -cache_kib
+    changed = previous != target
+
+    def restore():
+        if changed or int(connection.execute("PRAGMA cache_size").fetchone()[0]) != previous:
+            connection.execute(f"PRAGMA cache_size={previous}")
+            if int(connection.execute("PRAGMA cache_size").fetchone()[0]) != previous:
+                raise RuntimeError("analytics_verification_cache_not_restored")
+
+    try:
+        if changed:
+            connection.execute(f"PRAGMA cache_size={target}")
+            if int(connection.execute("PRAGMA cache_size").fetchone()[0]) != target:
+                raise RuntimeError("analytics_verification_cache_not_set")
+        yield
+    except BaseException:
+        try:
+            restore()
+        except BaseException:
+            # Preserve validation/cancellation; the owning connection is closed.
+            pass
+        raise
+    else:
+        # Success cannot return validation values through a failed restoration.
+        restore()
 
 
 def content_write_cache_target(record_count: int, *, membership_page_count: int = 0) -> int:
@@ -124,6 +182,13 @@ class ProjectionGeneration:
         return self.creator_account_id
 
 
+class _AnalyticsMigrationRunner(MigrationRunner):
+    @staticmethod
+    def _validate_database(connection) -> None:
+        with startup_validation_cache(connection):
+            MigrationRunner._validate_database(connection)
+
+
 class ProjectionsDatabase(ProjectionsSQLite):
     """The production projections SQLite file and its migration catalog."""
 
@@ -163,7 +228,7 @@ class ProjectionsDatabase(ProjectionsSQLite):
         )
         self._wal_anchor_lock = RLock()
         self._wal_anchor = None
-        self.migration_runner = MigrationRunner(
+        self.migration_runner = _AnalyticsMigrationRunner(
             self,
             migrations_dir=self.migrations_dir,
         )

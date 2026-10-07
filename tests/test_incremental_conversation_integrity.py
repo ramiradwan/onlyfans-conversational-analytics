@@ -221,3 +221,106 @@ def test_self_consistent_false_summary_cannot_publish(tmp_path, monkeypatch):
         assert f.stores.database.active_generation(ACCOUNT).generation_id == before
     finally:
         cleanup(f)
+
+
+
+def test_cold_batched_integrity_equals_original_encrypted_group_path(tmp_path, monkeypatch):
+    from app.analytics import conversation_integrity_store as integrity, shared_graph
+    from tests.continuous_analytics_fixture import make_fixture
+
+    f = make_fixture(tmp_path)
+    try:
+        f.pipeline.project_account(ACCOUNT)
+        original = shared_graph.selected_content_ids
+        batched = integrity._verify_cold_groups
+        calls = []
+        def observed(db, generation, account, kind, keys, check=lambda: None, *, page_layout=False):
+            calls.append((generation, account, kind, tuple(keys), page_layout))
+            return original(db, generation, account, kind, keys, check, page_layout=page_layout)
+        monkeypatch.setattr(shared_graph, 'selected_content_ids', observed)
+        with f.stores.database.read() as db:
+            db.execute('BEGIN')
+            generation = db.execute(
+                "SELECT * FROM projection_generations WHERE status='active'").fetchone()
+            account = generation['creator_account_id']
+            # An empty prepared mapping takes the unchanged per-group SQL fallback.
+            monkeypatch.setattr(integrity, '_verify_cold_groups',
+                lambda *args: pytest.fail('prepared validation entered cold batching'))
+            expected = integrity.verify_generation_integrity(db, generation, account, prepared={})
+            previous_calls = list(calls)
+            calls.clear()
+            monkeypatch.setattr(integrity, '_verify_cold_groups', batched)
+            actual = integrity.verify_generation_integrity(db, generation, account)
+            assert actual == expected
+            assert actual.headers and actual.integrity_groups and actual.membership_prefixes
+            assert 0 < len(calls) < len(previous_calls)
+            assert all(g == generation['generation_id'] and a == account and pages
+                       and 0 < len(keys) <= 256 for g, a, _, keys, pages in calls)
+    finally:
+        cleanup(f)
+
+
+@pytest.mark.parametrize('fault', ['missing', 'content', 'unexpected', 'account', 'generation'])
+def test_bad_cold_batched_selection_cannot_publish(tmp_path, monkeypatch, fault):
+    from contextvars import ContextVar
+    from app.analytics import conversation_integrity_store as integrity, shared_graph
+    from app.analytics.opaque_refs import account_ref
+    from tests.continuous_analytics_fixture import make_fixture
+
+    f = make_fixture(tmp_path)
+    try:
+        f.pipeline.project_account(ACCOUNT)
+        before = f.stores.database.active_generation(ACCOUNT).generation_id
+        verify = integrity.verify_generation_integrity
+        batch = integrity._verify_cold_groups
+        lookup = shared_graph.selected_content_ids
+        in_cold_groups = ContextVar('test_cold_groups', default=False)
+        calls = []
+        def full_cold(*args, **kwargs):
+            kwargs.update(proof=None, graph_validation=None, prepared=None, verified_changes=None)
+            return verify(*args, **kwargs)
+        def scoped_batch(*args, **kwargs):
+            token = in_cold_groups.set(True)
+            try:
+                return batch(*args, **kwargs)
+            finally:
+                in_cold_groups.reset(token)
+        def damaged(*args, **kwargs):
+            # Keep the predecessor readable so this exercises the new
+            # candidate's validation before it can be marked or published.
+            if not in_cold_groups.get() or args[1] == before:
+                return lookup(*args, **kwargs)
+            calls.append(args[1])
+            scoped = list(args)
+            if fault == 'account':
+                scoped[2] = account_ref('different-cold-selection-account')
+            elif fault == 'generation':
+                scoped[1] = 'absent-cold-selection-generation'
+            actual = lookup(*scoped, **kwargs)
+            if fault in ('account', 'generation'):
+                assert actual == {}
+                return actual
+            assert actual
+            key = next(iter(actual))
+            if fault == 'missing':
+                del actual[key]
+            elif fault == 'content':
+                actual[key] = ('0' if actual[key] != '0' * 64 else '1') * 64
+            else:
+                prefix = 'e1:' if scoped[3] == 'edge' else 'g1:'
+                unexpected = prefix + 'f' * 64
+                assert unexpected not in scoped[4]
+                actual[unexpected] = '0' * 64
+            return actual
+        monkeypatch.setattr(integrity, 'verify_generation_integrity', full_cold)
+        monkeypatch.setattr(integrity, '_verify_cold_groups', scoped_batch)
+        monkeypatch.setattr(shared_graph, 'selected_content_ids', damaged)
+        with pytest.raises(ValueError, match='conversation_integrity_selected_content_changed'):
+            f.pipeline.build_candidate(ACCOUNT, force=True)
+        assert calls
+        assert before not in calls
+        assert all(f.repositories.projection_activation.get(generation) is None
+                   for generation in set(calls))
+        assert f.stores.database.active_generation(ACCOUNT).generation_id == before
+    finally:
+        cleanup(f)

@@ -18,6 +18,74 @@ class VerifiedConversationIntegrity:
     membership_prefixes: tuple = ()
 
 
+# Additional cold-selection buffers only; existing whole-unit bounds still apply.
+MAX_FULL_SELECTION_IDS = 256
+MAX_FULL_SELECTION_BYTES = 256 * 1024
+_FULL_SELECTION_BASE_BYTES = 4096
+_FULL_SELECTION_MEMBER_BYTES = (
+    3 * getsizeof('g1:' + '0' * 64) + getsizeof('0' * 64) + 256
+)
+_FULL_SELECTION_GROUP_BYTES = 256
+
+
+def _verify_cold_groups(connection, generation_id, account, conversation,
+                        summaries, members, current, versions, check):
+    """Combine small full-validation selections, retaining each original summary."""
+    from app.analytics.shared_graph import selected_content_ids
+
+    pending, identities = [], []
+    used, kind = _FULL_SELECTION_BASE_BYTES, None
+
+    def verify(key, summary, selected, actual):
+        check()
+        if len(actual) != len(selected) or summarize_group(
+                account, conversation, *key, actual, check) != summary:
+            raise ValueError('conversation_integrity_selected_content_changed')
+
+    def flush():
+        nonlocal used, kind
+        if not pending:
+            return
+        check()
+        actual = selected_content_ids(connection, generation_id, account, kind,
+                                      identities, check, page_layout=True)
+        if actual.keys() != set(identities):
+            raise ValueError('conversation_integrity_selected_content_changed')
+        for key, summary, selected in pending:
+            check()
+            # Validate the original group, rather than a combined batch digest.
+            group = {identity: actual[identity] for identity in selected}
+            verify(key, summary, selected, group)
+        pending.clear()
+        identities.clear()
+        used, kind = _FULL_SELECTION_BASE_BYTES, None
+
+    for key, summary in summaries.items():
+        check()
+        selected = members[key]
+        segment = current.get(key)
+        segment_id = segment if isinstance(segment, str) else getattr(segment, 'segment_id', None)
+        # Ordering and duplicate checks already ran on the actual unit bytes.
+        # Charge fixed-width IDs, content hashes and conservative container space.
+        cost = len(selected) * _FULL_SELECTION_MEMBER_BYTES + _FULL_SELECTION_GROUP_BYTES
+        if (segment_id is None or len(selected) > MAX_FULL_SELECTION_IDS
+                or _FULL_SELECTION_BASE_BYTES + cost > MAX_FULL_SELECTION_BYTES):
+            flush()
+            verify(key, summary, selected, versions(*key, selected))
+            continue
+        if pending and (kind != key[0]
+                or len(identities) + len(selected) > MAX_FULL_SELECTION_IDS
+                or used + cost > MAX_FULL_SELECTION_BYTES):
+            flush()
+        kind = key[0]
+        pending.append((key, summary, selected))
+        for identity in selected:
+            check()
+            identities.append(identity)
+        used += cost
+    flush()
+
+
 def verify_generation_integrity(connection, generation, account, *, proof=None,
                                 graph_validation=None, segments=(), prepared=None,
                                 verified_changes=None, check=lambda: None):
@@ -149,19 +217,24 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
                 and previous.header == predecessor and predecessor.checksum_version == 2 else {})
         summaries, members = groups_for_members(unit, check,
             proven_summaries=old_summaries if complete_predecessor else None)
-        for key, summary in summaries.items():
-            check()
-            prior = old_segments.get(key)
-            now = current.get(key)
-            unchanged = (prior is not None and now is not None
-                         and getattr(now, 'segment_id', None) == prior.segment_id)
-            if unchanged and old_summaries.get(key) == summary:
-                continue
-            selected = members[key]
-            actual = versions(*key, selected)
-            if len(actual) != len(selected) or summarize_group(account, h.conversation_ref,
-                    *key, actual, check) != summary:
-                raise ValueError('conversation_integrity_selected_content_changed')
+        if (proof is None and graph_validation is None
+                and prepared is None and verified_changes is None):
+            _verify_cold_groups(connection, generation['generation_id'], account,
+                h.conversation_ref, summaries, members, current, versions, check)
+        else:
+            for key, summary in summaries.items():
+                check()
+                prior = old_segments.get(key)
+                now = current.get(key)
+                unchanged = (prior is not None and now is not None
+                             and getattr(now, 'segment_id', None) == prior.segment_id)
+                if unchanged and old_summaries.get(key) == summary:
+                    continue
+                selected = members[key]
+                actual = versions(*key, selected)
+                if len(actual) != len(selected) or summarize_group(account, h.conversation_ref,
+                        *key, actual, check) != summary:
+                    raise ValueError('conversation_integrity_selected_content_changed')
         headers.append(h)
         verified_groups.append((h.conversation_ref, tuple(sorted(summaries))))
         if capture_prefixes:

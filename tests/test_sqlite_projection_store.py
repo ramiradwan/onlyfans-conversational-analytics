@@ -1729,3 +1729,232 @@ def test_lazy_startup_refuses_replacement_between_reconciliation_and_identity_ca
     finally:
         original_close()
         lazy.close()
+
+
+
+def _observe_startup_validation_cache(
+    monkeypatch, path: Path, initial: int, *, restore_failure=False, validation_failure=None,
+):
+    from app.persistence.database import _TrackedConnection
+
+    path = path.resolve()
+    original_read = ProjectionsDatabase.read
+    original_execute = _TrackedConnection.execute
+    original_authorizer = _TrackedConnection.set_authorizer
+    observed = {"checks": [], "handoffs": [], "closing_cache": [], "connections": []}
+    restore_error = RuntimeError("synthetic cache restoration failed")
+
+    @contextmanager
+    def read(database):
+        with original_read(database) as connection:
+            if database.path != path:
+                yield connection
+                return
+            original_execute(connection, f"PRAGMA cache_size={initial}")
+            observed["connections"].append(connection)
+            try:
+                yield connection
+            finally:
+                observed["closing_cache"].append(
+                    original_execute(connection, "PRAGMA cache_size").fetchone()[0])
+
+    def execute(connection, sql, *args, **kwargs):
+        normalized = sql.strip().lower().rstrip(";")
+        if connection._tracked_path == path:
+            if normalized in {"pragma integrity_check", "pragma foreign_key_check"}:
+                observed["checks"].append((connection, normalized,
+                    original_execute(connection, "PRAGMA cache_size").fetchone()[0],
+                    original_execute(connection, "PRAGMA foreign_keys").fetchone()[0],
+                    original_execute(connection, "PRAGMA synchronous").fetchone()[0]))
+                if validation_failure is not None:
+                    raise validation_failure
+            if (restore_failure and normalized == f"pragma cache_size={initial}"
+                    and any(row[0] is connection for row in observed["checks"])):
+                raise restore_error
+        return original_execute(connection, sql, *args, **kwargs)
+
+    def set_authorizer(connection, callback):
+        if connection._tracked_path == path and callback is not None:
+            observed["handoffs"].append((connection,
+                original_execute(connection, "PRAGMA cache_size").fetchone()[0],
+                connection.in_transaction,
+                original_execute(connection, "PRAGMA query_only").fetchone()[0]))
+        return original_authorizer(connection, callback)
+
+    monkeypatch.setattr(ProjectionsDatabase, "read", read)
+    monkeypatch.setattr(_TrackedConnection, "execute", execute)
+    monkeypatch.setattr(_TrackedConnection, "set_authorizer", set_authorizer)
+    return observed, restore_error
+
+
+@pytest.mark.parametrize("initial", [-4096, 800])
+@pytest.mark.parametrize("mode", ["ordinary", "protected"])
+def test_analytics_full_validation_scopes_cache_before_protected_reader(
+    tmp_path: Path, monkeypatch, initial: int, mode: str,
+) -> None:
+    from app.analytics.database import STARTUP_VALIDATION_CACHE_KIB
+
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    observed, _ = _observe_startup_validation_cache(monkeypatch, database.path, initial)
+    readers = []
+
+    def reader(connection):
+        readers.append(connection)
+        assert connection.in_transaction
+        return connection.execute("SELECT COUNT(*) FROM projection_generations").fetchone()[0]
+
+    if mode == "protected":
+        assert database.migration_runner.run_with_validated_read(reader) == ([], 0)
+        assert observed["handoffs"] == [(readers[0], initial, True, 1)]
+    else:
+        assert database.migration_runner.run() == []
+        assert observed["handoffs"] == []
+    assert [row[1] for row in observed["checks"]] == [
+        "pragma integrity_check", "pragma foreign_key_check"]
+    assert observed["checks"][0][0] is observed["checks"][1][0]
+    assert [row[2:] for row in observed["checks"]] == [
+        (-STARTUP_VALIDATION_CACHE_KIB, 1, 2)] * 2
+    assert observed["closing_cache"] == [initial]
+    assert database.open_connection_count(database.path) == 0
+
+
+@pytest.mark.parametrize("mode", ["protected", "standalone"])
+@pytest.mark.parametrize("corruption", ["integrity", "foreign_key"])
+@pytest.mark.parametrize("restore_failure", [False, True])
+def test_full_validation_rejects_actual_corruption_and_preserves_primary_failure(
+    tmp_path: Path, monkeypatch, mode: str, corruption: str, restore_failure: bool,
+) -> None:
+    from app.analytics.database import STARTUP_VALIDATION_CACHE_KIB
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+    from app.persistence.migrations import MigrationError
+
+    path = tmp_path / "analytics.sqlite3"
+    database = ProjectionsDatabase(path)
+    store = None
+    if mode == "standalone":
+        repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+        store = SQLiteAnalyticsProjectionStore(
+            database, activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories))
+    with database.transaction() as connection:
+        connection.execute("CREATE TABLE cache_parent (id INTEGER PRIMARY KEY)")
+        connection.execute("CREATE TABLE cache_child (value INTEGER CHECK(value > 0),"
+                           " parent_id INTEGER REFERENCES cache_parent(id))")
+    raw = database.open_detached(path)
+    try:
+        raw.execute("PRAGMA foreign_keys=OFF")
+        raw.execute("PRAGMA ignore_check_constraints=ON")
+        raw.execute("INSERT INTO cache_child VALUES (?, ?)",
+                    (0, None) if corruption == "integrity" else (1, 999))
+        raw.commit()
+    finally:
+        raw.close()
+    initial = 800
+    observed, _ = _observe_startup_validation_cache(
+        monkeypatch, path, initial, restore_failure=restore_failure)
+    readers = []
+    if mode == "protected":
+        error_type = MigrationError
+        message = "integrity check failed" if corruption == "integrity" else "foreign-key check failed"
+        run = lambda: database.migration_runner.run_with_validated_read(readers.append)
+    else:
+        error_type = ProjectionValidationError if corruption == "integrity" else GraphReferentialIntegrityError
+        message = "integrity_invalid" if corruption == "integrity" else "foreign_key_invalid"
+        monkeypatch.setattr(store, "_read_startup_generations", readers.append)
+        run = store.reconcile_startup
+    try:
+        with pytest.raises(error_type, match=message):
+            run()
+        assert readers == []
+        assert observed["handoffs"] == []
+        assert [row[1] for row in observed["checks"]] == (
+            ["pragma integrity_check"] if corruption == "integrity" else
+            ["pragma integrity_check", "pragma foreign_key_check"])
+        assert all(row[2:] == (-STARTUP_VALIDATION_CACHE_KIB, 1, 2)
+                   for row in observed["checks"])
+        assert observed["closing_cache"] == [
+            -STARTUP_VALIDATION_CACHE_KIB if restore_failure else initial]
+        assert database.open_connection_count(path) == 0
+    finally:
+        if store is not None:
+            store.close()
+
+
+@pytest.mark.parametrize("restore_failure", [False, True])
+def test_protected_full_validation_cancellation_never_reaches_reader(
+    tmp_path: Path, monkeypatch, restore_failure: bool,
+) -> None:
+    from app.analytics.database import STARTUP_VALIDATION_CACHE_KIB
+
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    cancelled = asyncio.CancelledError()
+    observed, _ = _observe_startup_validation_cache(
+        monkeypatch, database.path, -4096,
+        restore_failure=restore_failure, validation_failure=cancelled)
+    readers = []
+    with pytest.raises(asyncio.CancelledError) as failure:
+        database.migration_runner.run_with_validated_read(readers.append)
+    assert failure.value is cancelled
+    assert readers == []
+    assert observed["handoffs"] == []
+    assert observed["closing_cache"] == [
+        -STARTUP_VALIDATION_CACHE_KIB if restore_failure else -4096]
+    assert database.open_connection_count(database.path) == 0
+
+
+@pytest.mark.parametrize("mode", ["protected", "standalone"])
+def test_successful_full_pair_does_not_handoff_when_cache_restoration_fails(
+    tmp_path: Path, monkeypatch, mode: str,
+) -> None:
+    path = tmp_path / "analytics.sqlite3"
+    database = ProjectionsDatabase(path)
+    store = None
+    if mode == "standalone":
+        repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+        store = SQLiteAnalyticsProjectionStore(
+            database, activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories))
+    observed, restore_error = _observe_startup_validation_cache(
+        monkeypatch, path, -4096, restore_failure=True)
+    readers = []
+    if mode == "protected":
+        run = lambda: database.migration_runner.run_with_validated_read(readers.append)
+    else:
+        monkeypatch.setattr(store, "_read_startup_generations", readers.append)
+        run = store.reconcile_startup
+    try:
+        with pytest.raises(RuntimeError) as failure:
+            run()
+        assert failure.value is restore_error
+        assert [row[1] for row in observed["checks"]] == [
+            "pragma integrity_check", "pragma foreign_key_check"]
+        assert readers == []
+        assert observed["handoffs"] == []
+        assert database.open_connection_count(path) == 0
+    finally:
+        if store is not None:
+            store.close()
+
+
+@pytest.mark.parametrize("statement", ["PRAGMA cache_size=-16", "PRAGMA query_only=OFF", "COMMIT"])
+def test_protected_reader_still_rejects_cache_and_snapshot_mutation(
+    tmp_path: Path, monkeypatch, statement: str,
+) -> None:
+    from app.persistence.migrations import MigrationError
+
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    observed, _ = _observe_startup_validation_cache(monkeypatch, database.path, 800)
+    readers = []
+
+    def reader(connection):
+        readers.append(connection)
+        with pytest.raises(sqlite3.DatabaseError):
+            connection.execute(statement)
+        assert connection.in_transaction
+        return connection.execute("SELECT COUNT(*) FROM projection_generations").fetchone()[0]
+
+    with pytest.raises(MigrationError, match="reader changed its scope"):
+        database.migration_runner.run_with_validated_read(reader)
+    assert observed["handoffs"] == [(readers[0], 800, True, 1)]
+    assert observed["closing_cache"] == [800]
+    assert database.open_connection_count(database.path) == 0

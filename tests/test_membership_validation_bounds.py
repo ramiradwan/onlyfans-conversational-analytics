@@ -118,3 +118,181 @@ def test_capacity_and_ownership_refusal_select_complete_fallback(monkeypatch, li
         else: db.commit()
         assert validation.changed_predecessor_members(db, 'account', before, current, prepared, lambda: None) is None
     finally: db.close()
+
+
+
+def full_selection_case(spec, conversation='cold-selection'):
+    from app.analytics.conversation_integrity import summarize_group
+    from app.analytics.opaque_refs import account_ref, conversation_ref
+
+    account = account_ref('synthetic-full-selection')
+    chat = conversation_ref('synthetic-full-selection', conversation)
+    summaries, members, current, records = {}, {}, {}, {}
+    for kind, bucket, count in sorted(spec):
+        prefix = 'g1:' if kind == 'node' else 'e1:'
+        selected = tuple(prefix + bucket + f'{number:062x}' for number in range(count))
+        versions = {identity: sha256(identity.encode()).hexdigest() for identity in selected}
+        key = kind, bucket
+        summaries[key] = summarize_group(account, chat, *key, versions)
+        members[key] = selected
+        current[key] = 'verified-segment-' + kind + '-' + bucket
+        records.update(versions)
+    return account, chat, summaries, members, current, records
+
+
+@pytest.mark.parametrize('count, expected', [(256, [256]), (257, [256, 1])])
+def test_full_group_lookup_batches_at_identity_bound(monkeypatch, count, expected):
+    from app.analytics import conversation_integrity_store as store, shared_graph
+
+    spec = [('node', f'{bucket:02x}', count - 255 if bucket == 0 else 1)
+            for bucket in range(256)]
+    account, chat, summaries, members, current, records = full_selection_case(spec)
+    calls = []
+    def lookup(db, generation, actual_account, kind, keys, check, *, page_layout):
+        assert generation == 'witnessed-generation' and actual_account == account
+        assert kind == 'node' and page_layout is True
+        calls.append(tuple(keys))
+        return {key: records[key] for key in keys}
+    def fallback(*args):
+        raise AssertionError('small bounded group used the large-group fallback')
+    monkeypatch.setattr(shared_graph, 'selected_content_ids', lookup)
+    store._verify_cold_groups(None, 'witnessed-generation', account, chat,
+        summaries, members, current, fallback, lambda: None)
+    assert [len(keys) for keys in calls] == expected
+    assert [key for keys in calls for key in keys] == [
+        key for selected in members.values() for key in selected]
+
+
+@pytest.mark.parametrize('limit', ['large_group', 'bytes'])
+def test_full_selection_capacity_retains_per_group_validation(monkeypatch, limit):
+    from app.analytics import conversation_integrity_store as store, shared_graph
+
+    spec = [('node', '00', 257)] if limit == 'large_group' else [
+        ('node', '00', 2), ('node', '01', 2)]
+    account, chat, summaries, members, current, records = full_selection_case(spec)
+    if limit == 'bytes':
+        monkeypatch.setattr(store, 'MAX_FULL_SELECTION_BYTES', 1)
+    monkeypatch.setattr(shared_graph, 'selected_content_ids',
+        lambda *args, **kwargs: pytest.fail('capacity refusal must use original selection'))
+    calls = []
+    def fallback(kind, bucket, selected):
+        calls.append((kind, bucket, tuple(selected)))
+        return {identity: records[identity] for identity in selected}
+    store._verify_cold_groups(None, 'generation', account, chat,
+        summaries, members, current, fallback, lambda: None)
+    assert [(kind, bucket) for kind, bucket, _ in calls] == list(summaries)
+    def missing(*args):
+        return {}
+    with pytest.raises(ValueError, match='conversation_integrity_selected_content_changed'):
+        store._verify_cold_groups(None, 'generation', account, chat,
+            summaries, members, current, missing, lambda: None)
+
+
+def test_full_selections_do_not_cross_kind_or_conversation(monkeypatch):
+    from app.analytics import conversation_integrity_store as store, shared_graph
+
+    calls = []
+    for conversation in ('first-conversation', 'second-conversation'):
+        account, chat, summaries, members, current, records = full_selection_case(
+            [('edge', '00', 2), ('node', '00', 2)], conversation)
+        def lookup(db, generation, actual_account, kind, keys, check, *, page_layout):
+            assert actual_account == account and generation == 'generation'
+            assert all(identity.startswith('e1:' if kind == 'edge' else 'g1:') for identity in keys)
+            calls.append((chat, kind))
+            return {identity: records[identity] for identity in keys}
+        monkeypatch.setattr(shared_graph, 'selected_content_ids', lookup)
+        store._verify_cold_groups(None, 'generation', account, chat,
+            summaries, members, current, lambda *args: pytest.fail('unexpected fallback'),
+            lambda: None)
+    assert [kind for _, kind in calls] == ['edge', 'node', 'edge', 'node']
+    assert calls[0][0] == calls[1][0] and calls[2][0] == calls[3][0]
+    assert calls[0][0] != calls[2][0]
+
+
+def test_missing_segment_flushes_prior_groups_before_original_refusal(monkeypatch):
+    from app.analytics import conversation_integrity_store as store, shared_graph
+
+    account, chat, summaries, members, current, records = full_selection_case(
+        [('node', '00', 1), ('node', '01', 1), ('node', '02', 1)])
+    del current[('node', '01')]
+    calls = []
+    def lookup(db, generation, actual_account, kind, keys, check, *, page_layout):
+        calls.append(tuple(keys))
+        return {identity: records[identity] for identity in keys}
+    monkeypatch.setattr(shared_graph, 'selected_content_ids', lookup)
+    def fallback(kind, bucket, selected):
+        assert (kind, bucket) == ('node', '01')
+        raise ValueError('conversation_integrity_segment_missing')
+    with pytest.raises(ValueError, match='conversation_integrity_segment_missing'):
+        store._verify_cold_groups(None, 'generation', account, chat,
+            summaries, members, current, fallback, lambda: None)
+    assert calls == [members[('node', '00')]]
+
+
+@pytest.mark.parametrize('phase', ['before_lookup', 'after_lookup'])
+def test_full_selection_cancellation_preserves_original_base_exception(monkeypatch, phase):
+    from app.analytics import conversation_integrity_store as store, shared_graph
+
+    class Cancelled(BaseException):
+        pass
+    cancelled = Cancelled()
+    account, chat, summaries, members, current, records = full_selection_case(
+        [('node', '00', 1), ('node', '01', 1)])
+    fetched = False
+    calls = []
+    def check():
+        if phase == 'before_lookup' or fetched:
+            raise cancelled
+    def lookup(db, generation, actual_account, kind, keys, check, *, page_layout):
+        nonlocal fetched
+        calls.append(tuple(keys))
+        fetched = True
+        return {identity: records[identity] for identity in keys}
+    monkeypatch.setattr(shared_graph, 'selected_content_ids', lookup)
+    with pytest.raises(Cancelled) as raised:
+        store._verify_cold_groups(None, 'generation', account, chat,
+            summaries, members, current, lambda *args: pytest.fail('unexpected fallback'), check)
+    assert raised.value is cancelled
+    assert len(calls) == (0 if phase == 'before_lookup' else 1)
+
+
+
+def test_full_selection_flushes_at_cumulative_byte_bound(monkeypatch):
+    from app.analytics import conversation_integrity_store as store, shared_graph
+
+    monkeypatch.setattr(store, 'MAX_FULL_SELECTION_BYTES', 8 * 1024)
+    account, chat, summaries, members, current, records = full_selection_case(
+        [('node', '00', 2), ('node', '01', 2), ('node', '02', 2)])
+    calls = []
+    def lookup(db, generation, actual_account, kind, keys, check, *, page_layout):
+        calls.append(tuple(keys))
+        return {identity: records[identity] for identity in keys}
+    monkeypatch.setattr(shared_graph, 'selected_content_ids', lookup)
+    store._verify_cold_groups(None, 'generation', account, chat,
+        summaries, members, current, lambda *args: pytest.fail('each group fits the byte cap'),
+        lambda: None)
+    assert [len(keys) for keys in calls] == [4, 2]
+    assert [identity for keys in calls for identity in keys] == [
+        identity for selected in members.values() for identity in selected]
+
+
+def test_cold_batch_retains_every_original_group_summary_in_order(monkeypatch):
+    from app.analytics import conversation_integrity_store as store, shared_graph
+
+    account, chat, summaries, members, current, records = full_selection_case(
+        [('node', '00', 1), ('node', '01', 1)])
+    records[members[('node', '01')][0]] = '0' * 64
+    checked = []
+    summarize = store.summarize_group
+    def observed(actual_account, conversation, kind, bucket, versions, check):
+        checked.append((actual_account, conversation, kind, bucket))
+        return summarize(actual_account, conversation, kind, bucket, versions, check)
+    monkeypatch.setattr(store, 'summarize_group', observed)
+    monkeypatch.setattr(shared_graph, 'selected_content_ids',
+        lambda db, generation, actual_account, kind, keys, check, **kwargs:
+            {identity: records[identity] for identity in keys})
+    with pytest.raises(ValueError, match='conversation_integrity_selected_content_changed'):
+        store._verify_cold_groups(None, 'generation', account, chat,
+            summaries, members, current, lambda *args: pytest.fail('unexpected fallback'),
+            lambda: None)
+    assert checked == [(account, chat, 'node', '00'), (account, chat, 'node', '01')]
