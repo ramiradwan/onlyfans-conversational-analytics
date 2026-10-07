@@ -10,7 +10,7 @@ from typing import Iterator
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.private_files import (
     PrivateFileSecurityError,
-    apply_private_file_security,
+    private_file_identity,
     reject_path_aliases,
 )
 from app.security.local_data_key import (
@@ -101,6 +101,7 @@ class _TrackedConnection(sqlite3.Connection):
     _tracked_path: Path | None = None
     _transition_lock: RLock | None = None
     _tracking_closed: bool = False
+    _secured_file_identity: tuple[int, int] | None = None
 
     def _close_native(self) -> None:
         super().close()
@@ -198,7 +199,7 @@ class LocalSQLite:
                 raise SQLiteConfigurationError(
                     f"{self.store_name} SQLite foreign keys are disabled"
                 )
-            self._restrict_permissions()
+            connection._secured_file_identity = self._restrict_permissions()
             return connection
         except Exception:
             connection.close()
@@ -292,19 +293,21 @@ class LocalSQLite:
                     f"{self.store_name} SQLite foreign-key check failed: {violations!r}"
                 )
 
-    def _restrict_permissions(self) -> None:
-        for candidate in (
-            self.path,
-            Path(f"{self.path}-wal"),
-            Path(f"{self.path}-shm"),
-        ):
-            if candidate.exists():
-                try:
-                    apply_private_file_security(candidate)
-                except PrivateFileSecurityError as error:
-                    raise SQLiteConfigurationError(
-                        f"{self.store_name} SQLite private-file security failed"
-                    ) from error
+    def _restrict_permissions(self) -> tuple[int, int]:
+        identity = None
+        for suffix in ('', '-wal', '-shm'):
+            candidate = self.path if not suffix else Path(f'{self.path}{suffix}')
+            try:
+                observed = private_file_identity(candidate, missing_ok=bool(suffix))
+            except PrivateFileSecurityError as error:
+                raise SQLiteConfigurationError(
+                    f'{self.store_name} SQLite private-file security failed'
+                ) from error
+            if not suffix:
+                identity = observed
+        if identity is None:
+            raise SQLiteConfigurationError('SQLite file disappeared during its security check')
+        return identity
 
     @staticmethod
     def open_connection_count(path: str | Path) -> int:

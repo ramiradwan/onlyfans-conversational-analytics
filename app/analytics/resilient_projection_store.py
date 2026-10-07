@@ -36,6 +36,7 @@ from app.persistence.projection_activation import ProjectionActivationRepository
 FailureCallback = Callable[[str | None], None]
 FileIdentity = tuple[int, int]
 StoreIdentity = tuple[int, str, str, str | None]
+_UNOBSERVED_FILE_IDENTITY = object()
 
 
 class LazySQLiteAnalyticsProjectionStore:
@@ -192,10 +193,11 @@ class LazySQLiteAnalyticsProjectionStore:
                     nonlocal checks
                     if account != account_id or current_budget is not budget:
                         raise ValueError("publication_scope_binding_changed")
-                    # Opening secured these files; the final read checks live permissions
-                    # again without reopening or caching an earlier authorization result.
-                    if checks:
-                        store.database._restrict_permissions()
+                    # The connection's opening observation binds security and
+                    # physical identity to one file handle. The final observation
+                    # is newly opened; no trust is carried over from the first.
+                    file_identity = (connection._secured_file_identity if checks == 0
+                                     else store.database._restrict_permissions())
                     checks += 1
                     with bounded_sql(connection, budget), self._lock:
                         # The identity check performs stat and rejects a missing
@@ -203,7 +205,8 @@ class LazySQLiteAnalyticsProjectionStore:
                         # the same blocking Windows metadata open needlessly.
                         available = (not self._closed and self._store is store
                             and not connection.in_transaction
-                            and self._identity_matches_unlocked(store, connection=connection))
+                            and self._identity_matches_unlocked(store, connection=connection,
+                                                               file_identity=file_identity))
                     if not available:
                         raise ProjectionStorageUnavailable()
                     return store.question_snapshot(account, identity, budget, connection=connection)
@@ -406,10 +409,12 @@ class LazySQLiteAnalyticsProjectionStore:
         return self._failure_callback
 
     def _identity_matches_unlocked(
-        self, store: SQLiteAnalyticsProjectionStore, *, connection=None
+        self, store: SQLiteAnalyticsProjectionStore, *, connection=None,
+        file_identity=_UNOBSERVED_FILE_IDENTITY,
     ) -> bool:
         try:
-            file_identity = self._file_identity_for_path()
+            if file_identity is _UNOBSERVED_FILE_IDENTITY:
+                file_identity = self._file_identity_for_path()
             observed = (store.database.store_identity() if connection is None
                         else store.database.store_identity(connection=connection))
         except Exception as error:

@@ -13,12 +13,13 @@ import pytest
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
 
 
-def _measure_acl_growth(path: Path) -> dict[str, int]:
+def _measure_acl_growth(path: Path, *, combined: bool = False) -> dict[str, int]:
     import ctypes
     import gc
     import tracemalloc
 
-    from app.persistence.private_files import apply_private_file_security
+    from app.persistence.private_files import apply_private_file_security, private_file_identity
+    check_file = private_file_identity if combined else apply_private_file_security
 
     class Counters(ctypes.Structure):
         _fields_ = [
@@ -54,10 +55,10 @@ def _measure_acl_growth(path: Path) -> dict[str, int]:
     tracemalloc.start()
     try:
         for _ in range(1000):
-            apply_private_file_security(path)
+            check_file(path)
         before = sample()
         for _ in range(2000):
-            apply_private_file_security(path)
+            check_file(path)
         after = sample()
         return {
             "private_bytes": after[0] - before[0],
@@ -69,7 +70,8 @@ def _measure_acl_growth(path: Path) -> dict[str, int]:
 
 @pytest.mark.windows_production
 @pytest.mark.skipif(os.name != "nt", reason="Windows DACL semantics")
-def test_private_file_checks_have_bounded_memory(tmp_path: Path) -> None:
+@pytest.mark.parametrize('combined', [False, True])
+def test_private_file_checks_have_bounded_memory(tmp_path: Path, combined: bool) -> None:
     result = subprocess.run(
         [
             sys.executable,
@@ -77,8 +79,9 @@ def test_private_file_checks_have_bounded_memory(tmp_path: Path) -> None:
             "import app; print(app.__file__); "
             "from pathlib import Path; import json, sys; "
             "from tests.test_private_file_memory import _measure_acl_growth; "
-            "print(json.dumps(_measure_acl_growth(Path(sys.argv[1]))))",
+            "print(json.dumps(_measure_acl_growth(Path(sys.argv[1]), combined=sys.argv[2]=='1')))",
             str(tmp_path / "private.bin"),
+            "1" if combined else "0",
         ],
         cwd=Path(__file__).resolve().parents[1],
         capture_output=True,
@@ -166,3 +169,89 @@ def test_live_windows_permission_change_is_repaired_without_rewriting_good_acl(t
     files.apply_private_file_security(target)
     assert repairs == [target]
     assert target.stat().st_ino == identity and target.read_bytes() == b"owned test data"
+
+
+
+def test_private_file_identity_matches_live_file_and_detects_replacement(tmp_path):
+    from app.persistence import private_files as files
+    target=tmp_path/'current.bin';target.write_bytes(b'original')
+    files.apply_private_file_security(target)
+    initial=files.private_file_identity(target)
+    metadata=target.stat()
+    assert initial==(metadata.st_dev,metadata.st_ino)
+    replacement=tmp_path/'replacement.bin';replacement.write_bytes(b'replacement')
+    files.apply_private_file_security(replacement)
+    os.replace(replacement,target)
+    assert files.private_file_identity(target)!=initial
+    assert target.read_bytes()==b'replacement'
+
+
+def test_private_identity_missing_sidecar_is_distinct_from_unverified_file(tmp_path):
+    from app.persistence import private_files as files
+    missing=tmp_path/'missing-wal'
+    assert files.private_file_identity(missing,missing_ok=True) is None
+    with pytest.raises(files.PrivateFileSecurityError):files.private_file_identity(missing)
+    assert not missing.exists()
+    with pytest.raises(files.PrivateFileSecurityError):files.private_file_identity(tmp_path,missing_ok=True)
+
+
+@pytest.mark.skipif(os.name!='nt',reason='Windows native security handles')
+@pytest.mark.windows_production
+def test_private_identity_observes_DACL_through_one_live_handle(tmp_path,monkeypatch):
+    from app.persistence import private_files as files
+    target=tmp_path/'current.bin';target.write_bytes(b'fixture');files.apply_private_file_security(target)
+    original=files._windows_acl_is_owner_only;handles=[]
+    def observe(path,*,handle=None):
+        assert handle is not None;handles.append(handle)
+        return original(path,handle=handle)
+    monkeypatch.setattr(files,'_windows_acl_is_owner_only',observe)
+    initial=files.private_file_identity(target)
+    assert len(handles)==1 and initial==(target.stat().st_dev,target.stat().st_ino)
+    # A later, real ACL change is observed and repaired; no cached authorization.
+    subprocess.run(['icacls',str(target),'/inheritance:e'],check=True,capture_output=True,timeout=10)
+    assert not original(target)
+    assert files.private_file_identity(target)==initial
+    assert len(handles)==3 and original(target)
+    assert files.private_file_identity(target)==initial and len(handles)==4
+
+
+@pytest.mark.skipif(os.name!='nt',reason='Windows native handles')
+@pytest.mark.windows_production
+@pytest.mark.parametrize('inject_error',[False,True])
+def test_private_identity_releases_native_handle_on_success_and_failure(tmp_path,monkeypatch,inject_error):
+    import ctypes,gc
+    from app.persistence import private_files as files
+    target=tmp_path/'handles.bin';target.write_bytes(b'fixture');files.apply_private_file_security(target)
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.GetCurrentProcess.restype=ctypes.c_void_p
+    count=kernel.GetProcessHandleCount;count.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32)];count.restype=ctypes.c_int
+    def handles():
+        value=ctypes.c_uint32();assert count(kernel.GetCurrentProcess(),ctypes.byref(value));return value.value
+    files.private_file_identity(target)
+    if inject_error:
+        def fail(*args,**kwargs):raise OSError('native ACL read failure')
+        monkeypatch.setattr(files,'_windows_acl_is_owner_only',fail)
+    before=handles()
+    for _ in range(200):
+        if inject_error:
+            with pytest.raises(files.PrivateFileSecurityError):files.private_file_identity(target)
+        else:files.private_file_identity(target)
+    gc.collect()
+    assert handles()<=before+2
+
+
+@pytest.mark.skipif(os.name!='nt',reason='Windows permission repair')
+@pytest.mark.parametrize('defect',['read_error','write_error','recheck_false','replacement'])
+def test_combined_identity_repair_never_trusts_a_failed_or_changed_file(tmp_path,monkeypatch,defect):
+    from app.persistence import private_files as files
+    identity=(12,34);reads=[]
+    def observation(path,**kwargs):
+        reads.append(True)
+        if defect=='read_error':raise OSError('access denied')
+        if len(reads)==1:return identity,False
+        return ((56,78),True) if defect=='replacement' else (identity,False)
+    def repair(path):
+        if defect=='write_error':raise OSError('cannot establish private file')
+    monkeypatch.setattr(files,'_windows_private_file_observation',observation)
+    monkeypatch.setattr(files,'_set_windows_owner_only_acl',repair)
+    with pytest.raises(files.PrivateFileSecurityError):files.private_file_identity(tmp_path/'untrusted.bin')

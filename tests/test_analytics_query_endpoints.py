@@ -562,11 +562,12 @@ def test_final_publication_still_rechecks_witness_on_the_request_connection(lazy
 
 def test_final_publication_refuses_replaced_physical_file(lazy_ready, monkeypatch):
     ready,store=lazy_ready
-    original=store._file_identity_for_path;seen=[]
+    original=store.database._restrict_permissions;seen=[]
     def changed():
         seen.append(True)
-        return original() if len(seen)==1 else (-1,-1)
-    monkeypatch.setattr(store,'_file_identity_for_path',changed)
+        observed=original()
+        return observed if len(seen)==1 else (-1,-1)
+    monkeypatch.setattr(store.database,'_restrict_permissions',changed)
     result=ready.client.post('/api/v1/insights/questions',json=plan())
     assert result.status_code==503 and 'rows' not in result.json()
     assert not ready.resources.evidence._entries
@@ -667,7 +668,7 @@ def test_final_live_file_permission_check_is_not_skipped(lazy_ready,monkeypatch)
     def permissions():
         checks.append(True)
         if len(checks)>1:raise PrivateFileSecurityError('live permissions cannot be secured')
-        original()
+        return original()
     monkeypatch.setattr(store.database,'_restrict_permissions',permissions)
     response=ready.client.post('/api/v1/insights/questions',json=plan())
     assert len(checks)==2 and response.status_code==503 and 'rows' not in response.json()
@@ -675,19 +676,65 @@ def test_final_live_file_permission_check_is_not_skipped(lazy_ready,monkeypatch)
 
 
 
-def test_publication_uses_identity_check_without_duplicate_exists_probe(lazy_ready,monkeypatch):
+def test_publication_uses_each_fresh_permission_identity_without_duplicate_stat(lazy_ready,monkeypatch):
     from pathlib import Path
+    from app.persistence import database as persistence
     ready,store=lazy_ready
-    original_exists=Path.exists;original_identity=store._file_identity_for_path
+    original_exists=Path.exists;observe=persistence.private_file_identity
     probes=[];identities=[]
     def exists(path):
         if path is store.path:probes.append(True)
         return original_exists(path)
-    def identity():
-        identities.append(True);return original_identity()
+    def identity(path, **kwargs):
+        value=observe(path, **kwargs)
+        if path == store.path:identities.append(value)
+        return value
+    def duplicate_stat():raise AssertionError('security already returned this boundary file identity')
     monkeypatch.setattr(Path,'exists',exists)
-    monkeypatch.setattr(store,'_file_identity_for_path',identity)
+    monkeypatch.setattr(persistence,'private_file_identity',identity)
+    monkeypatch.setattr(store,'_file_identity_for_path',duplicate_stat)
     answer=ready.resources.execute(policy(),plan())
     assert len(answer.page.rows)==2
-    assert len(probes)==1  # Prevent creating a missing file before the open.
-    assert len(identities)==2  # Initial AND final full physical/logical checks remain.
+    assert len(probes)==1  # Still prevent creating a missing file before opening.
+    assert len(identities)==2 and identities==[store._file_identity]*2
+
+
+@pytest.mark.parametrize('boundary',[1,2])
+def test_live_file_observation_time_is_in_original_question_budget(lazy_ready, monkeypatch, boundary):
+    from app.persistence import database as persistence
+    from app.analytics.query_service import AnalyticsQuestionService,RegisteredQuestion
+    from app.analytics.query_reader import PublishedQuestionReader
+    from app.analytics.query_handlers import no_later_creator_reply
+    ready,store=lazy_ready;db=store.database;original=persistence.private_file_identity
+    now=[0.0];seen=[];connections=[];connect=db.connect
+    def opened():
+        value=connect();connections.append(value);return value
+    def identity(path,**kwargs):
+        value=original(path,**kwargs)
+        if path==store.path:
+            seen.append(value)
+            if len(seen)==boundary:now[0]+=1.1
+        return value
+    monkeypatch.setattr(persistence,'private_file_identity',identity)
+    monkeypatch.setattr(db,'connect',opened)
+    reader=PublishedQuestionReader(ready.source,store,ACCOUNT,policy(),ready.resources.evidence,
+        ready.pipeline.pipeline_revision,ready.pipeline.pipeline_config_digest)
+    service=AnalyticsQuestionService(reader,[RegisteredQuestion('no_later_creator_reply.v1','canonical.v2',no_later_creator_reply)],
+        clock=lambda:NOW,monotonic=lambda:now[0],limits=QuestionLimits(wall_clock_ms=1000))
+    with pytest.raises(QuestionLimitExceeded):service.execute(policy(),plan())
+    assert len(seen)==boundary and not store._needs_recovery
+    assert not ready.resources.evidence._entries
+    for connection in connections:
+        with pytest.raises(Exception):connection.execute('SELECT 1')
+
+
+def test_live_permission_identities_are_not_reused_between_questions(lazy_ready, monkeypatch):
+    from app.persistence import database as persistence
+    ready,store=lazy_ready;original=persistence.private_file_identity;seen=[]
+    def identity(path,**kwargs):
+        value=original(path,**kwargs)
+        if path==store.path:seen.append(value)
+        return value
+    monkeypatch.setattr(persistence,'private_file_identity',identity)
+    for _ in range(2):assert ready.resources.execute(policy(),plan()).page.rows
+    assert len(seen)==4

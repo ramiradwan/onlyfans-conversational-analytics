@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import os
 import stat
@@ -205,7 +206,7 @@ def _set_windows_owner_only_acl(path: Path) -> None:
         local_free(private_descriptor)
 
 
-def _windows_acl_is_owner_only(path: Path) -> bool:
+def _windows_acl_is_owner_only(path: Path, *, handle=None) -> bool:
     import ctypes
 
     class Acl(ctypes.Structure):
@@ -229,9 +230,9 @@ def _windows_acl_is_owner_only(path: Path) -> bool:
     local_free = kernel32.LocalFree
     local_free.argtypes = [ctypes.c_void_p]
     local_free.restype = ctypes.c_void_p
-    get_security = advapi32.GetNamedSecurityInfoW
+    get_security = advapi32.GetNamedSecurityInfoW if handle is None else advapi32.GetSecurityInfo
     get_security.argtypes = [
-        ctypes.c_wchar_p,
+        ctypes.c_wchar_p if handle is None else ctypes.c_void_p,
         ctypes.c_int,
         ctypes.c_uint32,
         ctypes.POINTER(ctypes.c_void_p),
@@ -249,7 +250,7 @@ def _windows_acl_is_owner_only(path: Path) -> bool:
     dacl = ctypes.c_void_p()
     descriptor = ctypes.c_void_p()
     result = get_security(
-        str(path),
+        str(path) if handle is None else handle,
         1,
         0x00000001 | 0x00000004,
         ctypes.byref(owner),
@@ -284,3 +285,96 @@ def _windows_acl_is_owner_only(path: Path) -> bool:
         )
     finally:
         local_free(descriptor)
+
+
+
+def private_file_identity(path: str | Path, *, missing_ok: bool = False) -> tuple[int, int] | None:
+    """Observe current owner-only permissions and identity on the same open file.
+
+    Each call opens the path anew. No handle or authorization result is cached.
+    The caller must make a new observation at its final currentness boundary.
+    """
+    target = Path(path)
+    try:
+        if os.name == 'nt':
+            first = _windows_private_file_observation(target, missing_ok=missing_ok)
+            if first is None:
+                return None
+            identity, private = first
+            if not private:
+                # Keep the established repair path; re-open and independently
+                # verify both security and identity afterward. Replacement or a
+                # failed repair cannot inherit the first observation.
+                _set_windows_owner_only_acl(target)
+                checked = _windows_private_file_observation(target)
+                if checked != (identity, True):
+                    raise OSError('file changed or private DACL repair not verified')
+            return identity
+        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+        try:
+            handle = os.open(target, flags)
+        except FileNotFoundError:
+            if missing_ok:
+                return None
+            raise
+        try:
+            metadata = os.fstat(handle)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise OSError('private file must be a regular file')
+            os.fchmod(handle, 0o600)
+            metadata = os.fstat(handle)
+            if stat.S_IMODE(metadata.st_mode) != 0o600:
+                raise OSError('owner-only mode verification failed')
+            return int(metadata.st_dev), int(metadata.st_ino)
+        finally:
+            os.close(handle)
+    except OSError as error:
+        raise PrivateFileSecurityError('private file identity/security could not be verified') from error
+
+
+# Fixed ABI layouts: do not create a new cached pointer type per observation.
+class _WindowsFileTime(ctypes.Structure):
+    _fields_ = [('low', ctypes.c_uint32), ('high', ctypes.c_uint32)]
+
+class _WindowsFileInformation(ctypes.Structure):
+    _fields_ = [('attributes', ctypes.c_uint32), ('creation', _WindowsFileTime),
+                ('access', _WindowsFileTime), ('write', _WindowsFileTime),
+                ('volume', ctypes.c_uint32), ('size_high', ctypes.c_uint32),
+                ('size_low', ctypes.c_uint32), ('links', ctypes.c_uint32),
+                ('index_high', ctypes.c_uint32), ('index_low', ctypes.c_uint32)]
+
+
+def _windows_private_file_observation(path: Path, *, missing_ok: bool = False):
+    import ctypes
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                       ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    create.restype = ctypes.c_void_p
+    close = kernel.CloseHandle
+    close.argtypes = [ctypes.c_void_p]; close.restype = ctypes.c_int
+    info = kernel.GetFileInformationByHandle
+    info.argtypes = [ctypes.c_void_p, ctypes.POINTER(_WindowsFileInformation)]
+    info.restype = ctypes.c_int
+    # READ_CONTROL | FILE_READ_ATTRIBUTES; share read/write/delete; OPEN_EXISTING.
+    # OPEN_REPARSE_POINT prevents following a changed final path component. No
+    # backup privilege, file creation, priority boost or cache hint is requested.
+    handle = create(str(path), 0x00020000 | 0x0080, 1 | 2 | 4,
+                    None, 3, 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        error = ctypes.get_last_error()
+        if missing_ok and error in (2, 3):
+            return None
+        raise ctypes.WinError(error)
+    try:
+        metadata = _WindowsFileInformation()
+        if not info(handle, ctypes.byref(metadata)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if metadata.attributes & (0x400 | 0x10):
+            raise OSError('private file cannot be a reparse point or directory')
+        identity = (int(metadata.volume), (int(metadata.index_high) << 32) | int(metadata.index_low))
+        return identity, _windows_acl_is_owner_only(path, handle=handle)
+    finally:
+        if not close(handle):
+            raise ctypes.WinError(ctypes.get_last_error())
