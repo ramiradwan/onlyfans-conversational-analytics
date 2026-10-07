@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check insights.py, insights_service.py, query_runtime.py, query_reader.py, query_canonical.py, query_identity.py, query_publication.py and their tests before changing route or behavior claims. -->
+<!-- CODE-VERIFY: Check insights.py, insights_service.py, query_runtime.py, query_reader.py, question_connections.py, question_work.py, canonical_source.py, query_canonical.py, query_identity.py, query_publication.py and their tests before changing route or behavior claims. -->
 
 # Query conversations and open their sources
 
@@ -40,7 +40,11 @@ The deterministic feature cannot be advertised as a qualified no-reply list unti
 
 Question resources admit at most two concurrent reads. The question service enforces its shared record, time, pagination, and evidence limits. SQL progress handlers and lock timeouts use the remaining request budget. Cancellation propagates when a request or runtime closes.
 
+The runtime retains at most two canonical and two analytics database handles for these reads. Each request borrows exclusive, thread-bound read leases. Leases retain no transaction, cursor, source data, publication, or result between requests. The encrypted connection configuration stays in force; every lease checks current file permissions and physical identity, including SQLite sidecars. Publication and canonical witnesses are read again within the request. Failed, replaced, or cancelled leases are discarded, and shutdown cancels and joins active owners before releasing their handles.
+
 The scheduler prepares the exact account-content digest before questions are ready. It scans canonical content outside request budgets and rechecks the account, source token, revision, and tracking schema before caching it. A cold or expired question returns the existing preparing state and requests owned recovery. Requests never substitute an unverified stored digest or start a full-account identity scan. Source selection and result construction still use the unchanged record and time limits.
+
+During an active question or source-link read, this background scan pauses for one millisecond after 64 records or two milliseconds of work, whichever occurs first. A record or native call remains indivisible. The scan keeps its original snapshot and cancellation checks, then rechecks the live source token before publishing the complete identity. The 60-second identity expiry remains unchanged; a pause or an incomplete scan cannot renew it.
 
 After identity verification, indexed account/conversation queries select candidates and follow-up messages. Memory use is bounded by the record limit and the retained page candidates. SQLite's date conversion is only a coarse candidate filter; Python applies exact timezone-aware boundaries. Each continuation reevaluates the bounded scope rather than retaining source data between requests.
 

@@ -30,6 +30,10 @@ class QuestionResources:
         self._lock = RLock()
         self._slots = BoundedSemaphore(2)
         self._maintenance = None
+        from app.analytics.question_connections import QuestionConnectionPool
+        from app.analytics.question_work import QuestionWork
+        self._connections = QuestionConnectionPool()
+        self._work = getattr(source, '_question_work', None) or QuestionWork()
         self.closed = False
 
     def _remember(self, policy):
@@ -51,6 +55,8 @@ class QuestionResources:
                 discarded.append(previous)
         for previous in discarded:
             self.evidence.clear_account(previous)
+        if discarded:
+            self._connections.invalidate()
         return account
 
     def execute(self, policy, request, *, cancellation_check=None):
@@ -59,7 +65,8 @@ class QuestionResources:
         if not self._slots.acquire(blocking=False):
             raise ProjectionBackpressure()
         try:
-            return self._execute(policy, request, cancellation_check=cancellation_check)
+            with self._work.foreground():
+                return self._execute(policy, request, cancellation_check=cancellation_check)
         finally:
             self._slots.release()
 
@@ -78,7 +85,11 @@ class QuestionResources:
             raise ProjectionUnavailable(reason_code="analytics_question_source_unavailable")
         reader = PublishedQuestionReader(self.source, self.pipeline.projections, account,
             policy, self.evidence, self.pipeline.pipeline_revision, self.pipeline.pipeline_config_digest,
-            preparing=self._pending_questions.is_pending if self._pending_questions is not None else None)
+            preparing=self._pending_questions.is_pending if self._pending_questions is not None else None,
+            connections=self._connections if (
+                callable(getattr(self.source, 'use_question_connection', None))
+                and callable(getattr(self.pipeline.projections, 'question_connection_database', None))
+                and callable(getattr(self.pipeline.projections.activation, 'read_scope', None))) else None)
         service = AnalyticsQuestionService(reader,
             [RegisteredQuestion("no_later_creator_reply.v1", "canonical.v2", no_later_creator_reply)],
             cursor_secret=self.secret, clock=self.clock)
@@ -90,9 +101,10 @@ class QuestionResources:
         if not self._slots.acquire(blocking=False):
             raise ProjectionBackpressure()
         try:
-            account = self._remember(policy)
-            return self.evidence.resolve(policy, reference,
-                cancellation_check=lambda: self._cancelled(account, cancellation_check))
+            with self._work.foreground():
+                account = self._remember(policy)
+                return self.evidence.resolve(policy, reference,
+                    cancellation_check=lambda: self._cancelled(account, cancellation_check))
         finally:
             self._slots.release()
 
@@ -118,6 +130,7 @@ class QuestionResources:
             self._refresh_requests.discard(account)
         if policy is not None:
             self.evidence.clear_account(policy)
+            self._connections.invalidate()
 
     def start(self):
         if self._maintenance is None and not self.closed:
@@ -134,9 +147,15 @@ class QuestionResources:
             policies = list(self._policies.values())
             self._policies.clear()
             self._refresh_requests.clear()
-        for policy in policies:
-            self.evidence.clear_account(policy)
-        if self._maintenance is not None and not self._maintenance.done():
-            loop = self._maintenance.get_loop()
-            if not loop.is_closed():
-                loop.call_soon_threadsafe(self._maintenance.cancel)
+        try:
+            self._connections.close()
+        finally:
+            for policy in policies:
+                self.evidence.clear_account(policy)
+            if self._maintenance is not None and not self._maintenance.done():
+                loop = self._maintenance.get_loop()
+                if not loop.is_closed():
+                    loop.call_soon_threadsafe(self._maintenance.cancel)
+
+    def wait_closed(self, timeout=5.0):
+        return self._connections.wait_closed(timeout)

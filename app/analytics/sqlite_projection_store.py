@@ -15,6 +15,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Callable
 from uuid import uuid4
+from weakref import WeakSet
 
 from app.analytics.cancellation import CancellationCheck, check_cancelled
 from app.analytics.enrichment_proof_transition import capture_transition, finish_transition
@@ -143,6 +144,9 @@ class SQLiteAnalyticsProjectionStore:
         if startup_file_identity is None:
             startup_file_identity = self.database._restrict_permissions()
         self._opening_file_identity = startup_file_identity
+        self._question_connections = WeakSet()
+        self._question_connections_lock = RLock()
+        self._question_connections_closed = False
         self.activation = activation
         self.canonical_identity_reader = canonical_identity_reader
         self.crash_hook = crash_hook
@@ -709,18 +713,32 @@ class SQLiteAnalyticsProjectionStore:
         return published_pricing(self, account_id, snapshot, references, budget)
 
     @contextmanager
-    def question_publications(self, account_id, budget):
+    def question_publications(self, account_id, budget, *, lease=None):
         """One bounded autocommit connection; both publication reads remain live."""
-        with self.database.read() as connection:
+        from app.analytics.errors import ProjectionUnavailable
+        if lease is not None and lease.database is not self.database:
+            raise ProjectionUnavailable(availability="error")
+        with self._question_connections_lock:
+            if self._question_connections_closed:
+                raise ProjectionUnavailable(availability="error")
+        with (self.database.read() if lease is None else lease.read()) as connection:
             checks = 0
             def read(account, identity, current_budget):
                 nonlocal checks
                 if account != account_id or current_budget is not budget:
                     raise ValueError("publication_scope_binding_changed")
+                with self._question_connections_lock:
+                    if self._question_connections_closed:
+                        raise ProjectionUnavailable(availability="error")
+                if checks and lease is not None:
+                    lease.close_cursors()
                 # Opening secured these files; the final read checks live permissions
                 # again without reopening or caching an earlier authorization result.
-                if checks:
-                    self.database._restrict_permissions()
+                observed = (lease.observe() if checks and lease is not None
+                            else self.database._restrict_permissions() if checks
+                            else connection._secured_file_identity)
+                if observed != self._opening_file_identity:
+                    raise ProjectionUnavailable(availability="error")
                 checks += 1
                 if connection.in_transaction:
                     from app.analytics.errors import ProjectionUnavailable
@@ -728,6 +746,21 @@ class SQLiteAnalyticsProjectionStore:
                 return self.question_snapshot(account, identity, budget, connection=connection)
             yield read
         budget.check()
+
+    def question_connection_database(self, account_id, budget):
+        from app.analytics.errors import ProjectionUnavailable
+        budget.check()
+        with self._question_connections_lock:
+            if self._question_connections_closed or not self.database.path.exists():
+                raise ProjectionUnavailable(availability="error")
+        return self.database
+
+    def register_question_connections(self, pool):
+        from app.analytics.errors import ProjectionUnavailable
+        with self._question_connections_lock:
+            if self._question_connections_closed:
+                raise ProjectionUnavailable(availability="error")
+            self._question_connections.add(pool)
 
     def question_snapshot(self, account_id, canonical_identity, budget, *, connection=None):
         """Return witnessed metadata for a bounded live-source question read."""
@@ -1354,9 +1387,23 @@ class SQLiteAnalyticsProjectionStore:
         return self.database.passive_wal_checkpoint()
 
     def close(self) -> None:
+        with self._question_connections_lock:
+            self._question_connections_closed = True
+            pools = list(self._question_connections)
+        error = None
+        for pool in pools:
+            try:
+                pool.invalidate_database(self.database)
+            except BaseException as failure:
+                error = error or failure
         with self._verification_envelope_lock:
             self._startup_verifications.clear()
-        self.database.release_wal_anchor()
+        try:
+            self.database.release_wal_anchor()
+        except BaseException as failure:
+            error = error or failure
+        if error is not None:
+            raise error
 
     def fence_publication_epoch(self, publication_epoch: str) -> None:
         self._locally_fenced_epochs.add(publication_epoch)

@@ -254,10 +254,12 @@
     "tests/test_qualification_prepared_inputs_integration.py": 2,
     "tests/test_qualification_process_improvements.py": 1,
     "tests/test_qualification_runtime_clock.py": 1,
+    "tests/test_question_connections.py": 1,
     "tests/test_question_coverage.py": 2,
     "tests/test_question_identity_lifecycle.py": 1,
     "tests/test_question_identity_preparation.py": 1,
     "tests/test_question_route_guards.py": 1,
+    "tests/test_question_work.py": 2,
     "tests/test_readiness_identity.py": 2,
     "tests/test_recovered_update_reuse.py": 1,
     "tests/test_recovery_publication_boundaries.py": 1,
@@ -645,7 +647,9 @@
       "tests/test_process_lifetime.py",
       "tests/test_qualification_prepared_inputs.py",
       "tests/test_qualification_prepared_inputs_integration.py",
-      "tests/test_question_coverage.py"
+      "tests/test_question_connections.py",
+      "tests/test_question_coverage.py",
+      "tests/test_question_work.py"
     ]
   }
 }

@@ -503,6 +503,7 @@ def test_one_analytics_connection_per_question_with_two_live_checks(ready, lazy_
     result = ready.resources.execute(policy(), plan())
     assert len(result.page.rows) == 2
     assert len(connections) == 1  # Initial and final statements, one owned autocommit connection.
+    ready.resources.close()
     for connection in connections:
         with pytest.raises(Exception):connection.execute('SELECT 1')
 
@@ -562,12 +563,12 @@ def test_final_publication_still_rechecks_witness_on_the_request_connection(lazy
 
 def test_final_publication_refuses_replaced_physical_file(lazy_ready, monkeypatch):
     ready,store=lazy_ready
-    original=store.database._restrict_permissions;seen=[]
+    original=store.database._observe_private_files;seen=[]
     def changed():
         seen.append(True)
         observed=original()
-        return observed if len(seen)==1 else (-1,-1)
-    monkeypatch.setattr(store.database,'_restrict_permissions',changed)
+        return observed if len(seen)==1 else ((-1,-1), *observed[1:])
+    monkeypatch.setattr(store.database,'_observe_private_files',changed)
     result=ready.client.post('/api/v1/insights/questions',json=plan())
     assert result.status_code==503 and 'rows' not in result.json()
     assert not ready.resources.evidence._entries
@@ -608,11 +609,26 @@ def test_sql_interrupt_during_identity_read_remains_a_query_budget_error(lazy_re
 
 
 @pytest.mark.parametrize('lazy', [False, True])
-def test_request_connection_observes_committed_changes_at_final_check(ready, lazy_ready, monkeypatch, lazy):
+@pytest.mark.parametrize('retained_cursor', [False, True])
+def test_request_connection_observes_committed_changes_at_final_check(ready, lazy_ready, monkeypatch, lazy, retained_cursor):
     from app.analytics.query_reader import _QuestionSession
     item,lazy_store=lazy_ready
     store=lazy_store if lazy else ready.stores.projections
     ready.pipeline.projections=store
+    held = []
+    if retained_cursor:
+        inner = store._store if lazy else store
+        read_snapshot = inner.question_snapshot
+        def retain(*args, **kwargs):
+            connection = kwargs['connection']
+            if not held:
+                cursor = connection.execute('SELECT generation_id FROM projection_generations '
+                    'UNION ALL SELECT generation_id FROM projection_generations')
+                assert cursor.fetchone() is not None
+                held.append(cursor)
+                assert not connection.in_transaction
+            return read_snapshot(*args, **kwargs)
+        monkeypatch.setattr(inner, 'question_snapshot', retain)
     original=_QuestionSession.assert_current
     commits=[]
     def change_then_recheck(session,snapshot,budget):
@@ -630,9 +646,22 @@ def test_request_connection_observes_committed_changes_at_final_check(ready, laz
     response=ready.client.post('/api/v1/insights/questions',json=plan())
     assert response.status_code==503 and 'rows' not in response.json()
     assert commits==[True] and not ready.resources.evidence._entries
+    for cursor in held:
+        with pytest.raises(Exception): cursor.fetchone()
 
 
-def test_publication_connection_never_survives_or_crosses_requests(lazy_ready,monkeypatch):
+def test_discard_closes_idle_question_handles_and_revokes_evidence(lazy_ready):
+    from app.persistence.database import LocalSQLite
+    ready, store = lazy_ready
+    answer = ready.resources.execute(policy(), plan())
+    assert answer.page.rows
+    assert LocalSQLite.open_connection_count(ready.stored.database.path) >= 1
+    ready.resources.discard(ACCOUNT)
+    assert ready.resources._connections.wait_closed(0)
+    assert not ready.resources.evidence._entries
+
+
+def test_publication_native_connection_reused_with_revoked_request_leases(lazy_ready,monkeypatch):
     ready,store=lazy_ready
     original=store.database.connect;connections=[]
     def opened():
@@ -640,7 +669,8 @@ def test_publication_connection_never_survives_or_crosses_requests(lazy_ready,mo
     monkeypatch.setattr(store.database,'connect',opened)
     for _ in range(2):
         assert ready.client.post('/api/v1/insights/questions',json=plan()).status_code==200
-    assert len(connections)==2 and connections[0] is not connections[1]
+    assert len(connections)==1
+    ready.resources.close()
     for connection in connections:
         with pytest.raises(Exception):connection.execute('SELECT 1')
 
@@ -664,12 +694,12 @@ def test_request_connection_closes_on_handler_failure(lazy_ready,monkeypatch):
 def test_final_live_file_permission_check_is_not_skipped(lazy_ready,monkeypatch):
     ready,store=lazy_ready
     from app.persistence.private_files import PrivateFileSecurityError
-    original=store.database._restrict_permissions;checks=[]
+    original=store.database._observe_private_files;checks=[]
     def permissions():
         checks.append(True)
         if len(checks)>1:raise PrivateFileSecurityError('live permissions cannot be secured')
         return original()
-    monkeypatch.setattr(store.database,'_restrict_permissions',permissions)
+    monkeypatch.setattr(store.database,'_observe_private_files',permissions)
     response=ready.client.post('/api/v1/insights/questions',json=plan())
     assert len(checks)==2 and response.status_code==503 and 'rows' not in response.json()
     assert not ready.resources.evidence._entries

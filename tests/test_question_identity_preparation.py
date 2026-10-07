@@ -19,6 +19,17 @@ from tests.analytics_coverage_fixture import seed_coverage
 pytestmark = [pytest.mark.ci_tier('integration')]
 
 
+def cooperative_work(sleep):
+    from app.analytics.question_work import QuestionWork
+    ticks = [0.0]
+
+    def clock():
+        ticks[0] += 0.003
+        return ticks[0]
+
+    return QuestionWork(clock=clock, sleep=sleep)
+
+
 @pytest.fixture
 def source_fixture(tmp_path, monkeypatch):
     import app.analytics.source_snapshot as snapshots
@@ -332,3 +343,88 @@ def test_committed_changes_are_rechecked_before_preparation(source_fixture, muta
         assert expected != previous
         assert f.source.prepare_question_identity(ACCOUNT) == expected
         assert f.scan.call_count == 2
+
+
+def test_cooperative_refresh_preserves_expiry_while_scan_is_paused(source_fixture):
+    f = source_fixture
+    expected = f.source.prepare_question_identity(ACCOUNT)
+    f.now[0] = 30
+    pauses = []
+
+    def pause(duration):
+        pauses.append(duration)
+        if len(pauses) != 1:
+            return
+        with bounded_scope(f.source) as scope:
+            assert scope.identity == expected
+        f.now[0] = 60
+        with pytest.raises(ProjectionUnavailable):
+            with bounded_scope(f.source):
+                pytest.fail("an incomplete refresh extended the old identity")
+
+    f.source._question_work = cooperative_work(pause)
+    with f.source._question_work.foreground():
+        assert f.source.prepare_question_identity(ACCOUNT) == expected
+    assert pauses and f.scan.call_count == 2
+    assert expected == canonical_identity(f.source.account_read_model(ACCOUNT))
+    f.now[0] = 119
+    with bounded_scope(f.source) as scope:
+        assert scope.identity == expected
+    f.now[0] = 120
+    with pytest.raises(ProjectionUnavailable):
+        with bounded_scope(f.source):
+            pass
+
+
+def test_cancellation_at_cooperative_pause_does_not_renew_identity(source_fixture):
+    f = source_fixture
+    expected = f.source.prepare_question_identity(ACCOUNT)
+    f.now[0] = 30
+    stop = Event()
+    f.source._question_work = cooperative_work(lambda duration: stop.set())
+    with f.source._question_work.foreground():
+        with pytest.raises(ProjectionBuildCancelled):
+            f.source.prepare_question_identity(ACCOUNT, cancellation_check=stop.is_set)
+    assert not f.source._question_preparation_lock.locked()
+    with bounded_scope(f.source) as scope:
+        assert scope.identity == expected
+    f.now[0] = 60
+    with pytest.raises(ProjectionUnavailable):
+        with bounded_scope(f.source):
+            pass
+    assert f.source.prepare_question_identity(ACCOUNT) == expected
+
+
+@pytest.mark.parametrize("mutation", ["edit", "delete", "schema"])
+def test_committed_change_during_cooperative_pause_cannot_publish_identity(source_fixture, mutation):
+    from app.analytics.errors import CanonicalRevisionChanged
+    f = source_fixture
+    f.source.prepare_question_identity(ACCOUNT)
+    f.now[0] = 30
+    changed = []
+
+    def pause(duration):
+        if changed:
+            return
+        with f.repositories.database.transaction() as db:
+            if mutation == "edit":
+                db.execute("UPDATE account_messages SET text=? WHERE message_id=?",
+                           ("Synthetic changed during audit", "m-1-1"))
+            elif mutation == "delete":
+                db.execute("DELETE FROM account_messages WHERE message_id=?", ("m-1-1",))
+            else:
+                db.execute("DROP TRIGGER analytics_source_token_account_messages_update")
+        changed.append(mutation)
+
+    f.source._question_work = cooperative_work(pause)
+    with f.source._question_work.foreground():
+        with pytest.raises(CanonicalRevisionChanged):
+            f.source.prepare_question_identity(ACCOUNT)
+    assert changed == [mutation] and f.scan.call_count == 2
+    assert not f.source._question_preparation_lock.locked()
+    with pytest.raises(ProjectionUnavailable):
+        with bounded_scope(f.source):
+            pass
+    if mutation != "schema":
+        expected = canonical_identity(f.source.account_read_model(ACCOUNT))
+        assert f.source.prepare_question_identity(ACCOUNT) == expected

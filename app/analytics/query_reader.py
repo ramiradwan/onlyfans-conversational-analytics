@@ -1,6 +1,6 @@
 """Join bounded canonical facts to an exact published analytics generation."""
 
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, ExitStack
 from dataclasses import replace
 
 from app.analytics.errors import ProjectionUnavailable
@@ -10,11 +10,12 @@ from app.analytics.query_execution import QuestionResultInvalid
 
 
 class PublishedQuestionReader:
-    def __init__(self, source, store, account, policy, evidence, pipeline_revision, config_digest, *, preparing=None):
+    def __init__(self, source, store, account, policy, evidence, pipeline_revision, config_digest, *, preparing=None, connections=None):
         self.source, self.store, self.account = source, store, account
         self.policy, self.evidence_resolver = policy, evidence
         self.pipeline_revision, self.config_digest = pipeline_revision, config_digest
         self.preparing = preparing
+        self.connections = connections
 
     def publication(self, scope, budget, read=None):
         read = read or getattr(self.store, "question_snapshot", None)
@@ -35,13 +36,22 @@ class PublishedQuestionReader:
             raise ProjectionUnavailable(availability="building")
         acquire = getattr(self.store, "question_publications", None)
         try:
-            with self.source.open_question_scope(self.account, budget) as scope:
-                with acquire(self.account, budget) if acquire is not None else nullcontext(None) as read:
+            with ExitStack() as owned:
+                analytics_lease = None
+                if self.connections is not None:
+                    canonical_lease, analytics_lease = owned.enter_context(
+                        self.connections.borrow(self.source, self.store, self.account, budget))
+                    owned.enter_context(self.source.use_question_connection(canonical_lease))
+                scope = owned.enter_context(self.source.open_question_scope(self.account, budget))
+                if analytics_lease is not None:
+                    owned.enter_context(self.store.activation.read_scope(connection=scope.connection))
+                with (acquire(self.account, budget, lease=analytics_lease) if analytics_lease is not None
+                      else acquire(self.account, budget) if acquire is not None else nullcontext(None)) as read:
                     session = _QuestionSession(self, scope, self.publication(scope, budget, read), read)
                     yield session
                     session.assert_current(session.snapshot, budget)
             budget.check()  # Connection cleanup remains inside the original request budget.
-        except Exception:
+        except BaseException:
             self.evidence_resolver.clear_account(self.policy)
             raise
 
@@ -52,6 +62,9 @@ class _QuestionSession:
         self.publication_read = publication_read
 
     def assert_current(self, snapshot, budget):
+        close_cursors = getattr(self.scope.connection, 'close_cursors', None)
+        if callable(close_cursors):
+            close_cursors()
         self.scope.check(budget)
         if self.owner.publication(self.scope, budget, self.publication_read) != snapshot:
             raise ProjectionUnavailable(availability="building")

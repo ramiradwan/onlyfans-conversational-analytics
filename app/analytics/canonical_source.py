@@ -30,6 +30,8 @@ class HistoryAnalyticsSource:
         self.connection = connection
         from app.analytics.source_tokens import SourceIdentityCache
         self._identity_cache = SourceIdentityCache()
+        from app.analytics.question_work import QuestionWork
+        self._question_work = QuestionWork()
         self._question_preparation_lock = Lock()
         self._question_scope_local = local()
         from app.analytics.catalog_cache import SourceCatalogCache
@@ -149,7 +151,8 @@ class HistoryAnalyticsSource:
                 if cached is not None and not self._identity_cache.preparation_due(account_id, token):
                     check()
                     return cached
-                identity, digests, _ = scan_identity(db, account_id, int(row[0]), check=check)
+                identity, digests, _ = scan_identity(db, account_id, int(row[0]), check=check,
+                    consume=self._question_work.background(cancellation_check=cancellation_check))
                 check()
             finally:
                 db.rollback()
@@ -170,6 +173,18 @@ class HistoryAnalyticsSource:
                 check=lambda: check_cancelled(cancellation_check))
 
     @contextmanager
+    def use_question_connection(self, lease):
+        """Bind a runtime-owned read lease only to this thread's question scope."""
+        if (lease.database is not self.history.database
+                or getattr(self._question_scope_local, 'lease', None) is not None):
+            raise ValueError('question_connection_binding_invalid')
+        self._question_scope_local.lease = lease
+        try:
+            yield
+        finally:
+            del self._question_scope_local.lease
+
+    @contextmanager
     def open_question_scope(self, account_id, budget):
         """Pin live canonical identity and bound every source read."""
 
@@ -179,7 +194,8 @@ class HistoryAnalyticsSource:
         if self.connection is not None:
             raise ValueError("question_live_read_required")
         interrupted = []
-        with self.history.database.read() as connection, bounded_sql(connection, budget, interrupted=interrupted):
+        lease = getattr(self._question_scope_local, 'lease', None)
+        with lease.read() if lease is not None else self.history.database.read() as connection, bounded_sql(connection, budget, interrupted=interrupted):
             if getattr(self._question_scope_local, "connection", None) is not None:
                 raise RuntimeError("nested_question_scope")
             self._question_scope_local.connection = connection
@@ -198,6 +214,9 @@ class HistoryAnalyticsSource:
                         reason_code="analytics_question_identity_preparing")
                 scope.check(budget)
                 yield scope
+                if lease is not None:
+                    lease.close_cursors()
+                    lease.observe()
                 scope.check(budget)
             finally:
                 del self._question_scope_local.connection

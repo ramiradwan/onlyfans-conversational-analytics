@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
@@ -57,6 +58,20 @@ _STARTUP_TASK_SOURCE_KEY: int | None = None
 LOGGER = logging.getLogger(__name__)
 
 
+def _abort_runtime(runtime: AnalyticsRuntime) -> bool:
+    """Attempt every owner cleanup; retain runtimes with live native handles."""
+    closed = True
+    try:
+        if runtime.questions is not None:
+            runtime.questions.close()
+    except Exception:
+        closed = False
+        LOGGER.warning('analytics_question_event reason_code=question_connections_close_incomplete')
+    finally:
+        runtime.scheduler.abort()
+    return closed and (runtime.questions is None or runtime.questions.wait_closed(0))
+
+
 def configure_default_analytics_runtime(
     source: CanonicalReadModelSource,
     *,
@@ -91,10 +106,8 @@ def configure_default_analytics_runtime(
                 previous_runtime is not None
                 and previous_runtime.source is previous.source
             ):
-                if previous_runtime.questions is not None:
-                    previous_runtime.questions.close()
-                previous_runtime.scheduler.abort()
-                _RUNTIMES.pop(id(previous.source), None)
+                if _abort_runtime(previous_runtime):
+                    _RUNTIMES.pop(id(previous.source), None)
             if _STARTUP_TASK_SOURCE_KEY == id(previous.source):
                 if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
                     _STARTUP_TASK.cancel()
@@ -110,15 +123,15 @@ def configure_default_analytics_runtime(
         ):
             return existing
         if existing is not None and existing.source is source:
-            if existing.questions is not None:
-                existing.questions.close()
-            existing.scheduler.abort()
-            _RUNTIMES.pop(id(source), None)
+            if _abort_runtime(existing):
+                _RUNTIMES.pop(id(source), None)
             if _STARTUP_TASK_SOURCE_KEY == id(source):
                 if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
                     _STARTUP_TASK.cancel()
                 _STARTUP_TASK = None
                 _STARTUP_TASK_SOURCE_KEY = None
+            if _RUNTIMES.get(id(source)) is existing:
+                raise ProjectionCoordinatorClosed()
         return _runtime_for_source_locked(source, configuration=configuration)
 
 
@@ -152,6 +165,9 @@ def _runtime_for_source_locked(
         and not existing.scheduler.closed
     ):
         return existing
+    if (existing is not None and existing.source is source
+            and existing.questions is not None and not existing.questions.wait_closed(0)):
+        raise ProjectionCoordinatorClosed()
     pipeline = _build_pipeline(source, configuration=configuration)
     runtime = AnalyticsRuntime(
         source=source,
@@ -292,9 +308,19 @@ async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
         runtime = _RUNTIMES.get(key)
     if runtime is None or runtime.source is not source:
         return True
+    deadline = time.monotonic() + max(0.0, timeout)
+    connections_closed = True
     if runtime.questions is not None:
-        runtime.questions.close()
-    drained = await runtime.scheduler.close(timeout=timeout)
+        try:
+            runtime.questions.close()
+        except Exception:
+            connections_closed = False
+            LOGGER.warning('analytics_question_event reason_code=question_connections_close_incomplete')
+    drained = await runtime.scheduler.close(timeout=max(0.0, deadline-time.monotonic()))
+    if runtime.questions is not None:
+        connections_drained = await asyncio.to_thread(
+            runtime.questions.wait_closed, max(0.0, deadline-time.monotonic()))
+        drained = drained and connections_closed and connections_drained
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     startup_task = _STARTUP_TASK
     _STARTUP_TASK = None
@@ -302,7 +328,8 @@ async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
     if startup_task is not None and not startup_task.done():
         startup_task.cancel()
     with _RUNTIME_LOCK:
-        if _RUNTIMES.get(key) is runtime:
+        drained = drained and time.monotonic() <= deadline
+        if drained and _RUNTIMES.get(key) is runtime:
             _RUNTIMES.pop(key, None)
     return drained
 
@@ -312,11 +339,9 @@ def reset_analytics_runtimes() -> None:
 
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     with _RUNTIME_LOCK:
-        for runtime in _RUNTIMES.values():
-            if runtime.questions is not None:
-                runtime.questions.close()
-            runtime.scheduler.abort()
-        _RUNTIMES.clear()
+        for key, runtime in list(_RUNTIMES.items()):
+            if _abort_runtime(runtime):
+                _RUNTIMES.pop(key, None)
     clear_analysis_policies()
     if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
         _STARTUP_TASK.cancel()

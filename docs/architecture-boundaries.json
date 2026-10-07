@@ -587,6 +587,8 @@
         "app/analytics/networkx_adapter.py",
         "app/analytics/opaque_refs.py",
         "app/analytics/query_*.py",
+        "app/analytics/question_connections.py",
+        "app/analytics/question_work.py",
         "app/analytics/evidence*.py",
         "app/analytics/__init__.py",
         "app/analytics/README.md",
@@ -1313,6 +1315,7 @@
       {
         "invariant": "canonical-authority",
         "path_patterns": [
+          "app/analytics/question_connections.py",
           "app/persistence/history.py",
           "app/persistence/database.py",
           "app/persistence/migrations.py",
@@ -1359,6 +1362,7 @@
       {
         "invariant": "deletion-closure",
         "path_patterns": [
+          "app/analytics/question_connections.py",
           "app/persistence/deletion_operations.py",
           "app/persistence/history.py",
           "app/analytics/pipeline.py",
@@ -1457,6 +1461,7 @@
       {
         "invariant": "derived-state-determinism",
         "path_patterns": [
+          "app/analytics/question_work.py",
           "app/analytics/pipeline.py",
           "app/analytics/runtime.py",
           "app/analytics/rebuild.*",
@@ -1502,6 +1507,7 @@
       {
         "invariant": "projection-reproducibility",
         "path_patterns": [
+          "app/analytics/question_work.py",
           "app/analytics/pipeline.py",
           "app/analytics/*projection_store.py",
           "app/analytics/rebuild.*",
@@ -1526,6 +1532,7 @@
       {
         "invariant": "projection-publication-revision",
         "path_patterns": [
+          "app/analytics/question_connections.py",
           "app/persistence/projection_activation.py",
           "app/persistence/projection_pipeline.py",
           "app/analytics/*projection_store.py",
@@ -1562,6 +1569,7 @@
       {
         "invariant": "derived-referential-closure",
         "path_patterns": [
+          "app/analytics/question_connections.py",
           "app/persistence/projection_activation.py",
           "app/analytics/*projection_store.py",
           "app/analytics/*graph_store.py",
@@ -1592,6 +1600,7 @@
       {
         "invariant": "provenance-integrity",
         "path_patterns": [
+          "app/analytics/question_connections.py",
           "app/analytics/provenance.py",
           "app/analytics/pipeline.py",
           "app/analytics/query_*.py",

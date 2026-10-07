@@ -281,6 +281,7 @@
     "tests/test_qualification_host_guard.py": 2,
     "tests/test_qualification_prepared_inputs_integration.py": 1,
     "tests/test_qualification_runtime_clock.py": 3,
+    "tests/test_question_connections.py": 3,
     "tests/test_question_coverage.py": 3,
     "tests/test_question_identity_preparation.py": 4,
     "tests/test_question_route_guards.py": 2,
@@ -469,6 +470,10 @@
       }
     ],
     "analytics": [
+      {
+        "selector": "tests/test_question_connections.py",
+        "reason": "Runtime-owned encrypted read handles require native Windows file identity, fresh private-file ACL checks, cursor revocation and truthful shutdown ownership."
+      },
       {
         "selector": "tests/test_analytics_closure_process.py",
         "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."

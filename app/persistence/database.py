@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from threading import RLock
+from threading import RLock, local
 from typing import Iterator
 
 from app.persistence import sqlite_api as sqlite3
@@ -106,6 +106,7 @@ class _TrackedConnection(sqlite3.Connection):
     _transition_lock: RLock | None = None
     _tracking_closed: bool = False
     _secured_file_identity: tuple[int, int] | None = None
+    _secured_file_identities: tuple | None = None
 
     def _close_native(self) -> None:
         super().close()
@@ -152,6 +153,7 @@ class LocalSQLite:
         except PrivateFileSecurityError as error:
             raise SQLiteConfigurationError("SQLite path is not safe") from error
         self.busy_timeout_ms = busy_timeout_ms
+        self._private_observation_local = local()
         self.key_scope = key_scope or self.store_name
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -203,7 +205,9 @@ class LocalSQLite:
                 raise SQLiteConfigurationError(
                     f"{self.store_name} SQLite foreign keys are disabled"
                 )
+            self._private_observation_local.files = None
             connection._secured_file_identity = self._restrict_permissions()
+            connection._secured_file_identities = self._private_observation_local.files
             return connection
         except BaseException:
             connection.close()
@@ -298,7 +302,11 @@ class LocalSQLite:
                 )
 
     def _restrict_permissions(self) -> tuple[int, int]:
-        identity = None
+        return self._observe_private_files()[0]
+
+    def _observe_private_files(self) -> tuple:
+        """Freshly secure and identify the database and both WAL sidecars."""
+        identities = []
         for suffix in ('', '-wal', '-shm'):
             candidate = self.path if not suffix else Path(f'{self.path}{suffix}')
             try:
@@ -307,11 +315,12 @@ class LocalSQLite:
                 raise SQLiteConfigurationError(
                     f'{self.store_name} SQLite private-file security failed'
                 ) from error
-            if not suffix:
-                identity = observed
-        if identity is None:
+            identities.append(observed)
+        if identities[0] is None:
             raise SQLiteConfigurationError('SQLite file disappeared during its security check')
-        return identity
+        result = tuple(identities)
+        self._private_observation_local.files = result
+        return result
 
     @staticmethod
     def open_connection_count(path: str | Path) -> int:

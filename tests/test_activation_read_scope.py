@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
+from types import SimpleNamespace
 
 import pytest
 from sqlcipher3 import dbapi2 as sqlite3
@@ -26,6 +27,16 @@ def capture_connections(monkeypatch, ledger):
         return value
     monkeypatch.setattr(ledger.database, 'connect', connect)
     return connections
+
+
+@pytest.mark.parametrize('activation_case', ['sqlite'], indirect=True)
+def test_borrowed_facade_must_bind_the_repository_database_object(activation_case):
+    database = activation_case.ledger.database
+    facade = SimpleNamespace(database=SimpleNamespace(path=database.path),
+        _tracked_path=database.path, in_transaction=False, isolation_level=None)
+    with pytest.raises(ValueError, match='database_binding_invalid'):
+        with activation_case.ledger.read_scope(connection=facade):
+            pytest.fail('same path bypassed configured database identity')
 
 
 @pytest.mark.parametrize('activation_case', ['sqlite'], indirect=True)

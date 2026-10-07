@@ -193,8 +193,28 @@ class LazySQLiteAnalyticsProjectionStore:
         with self.question_publications(account_id, budget) as read:
             return read(account_id, canonical_identity, budget)
 
+    def question_connection_database(self, account_id, budget):
+        """Borrow only an already available store; recovery retains creation."""
+        budget.check()
+        with self._lock:
+            store = self._store
+            available = (not self._closed and store is not None
+                         and store.database.path == self.path)
+        if not available:
+            self._mark_failed(store, account_id)
+            raise ProjectionStorageUnavailable()
+        budget.check()
+        return store.database
+
+    def register_question_connections(self, pool):
+        with self._lock:
+            store = self._store
+            if self._closed or store is None:
+                raise ProjectionStorageUnavailable()
+            store.register_question_connections(pool)
+
     @contextmanager
-    def question_publications(self, account_id, budget):
+    def question_publications(self, account_id, budget, *, lease=None):
         """Own a connection, not a transaction or cached snapshot, for one question.
 
         Initial and final reads both see current committed publication metadata
@@ -210,16 +230,21 @@ class LazySQLiteAnalyticsProjectionStore:
             self._mark_failed(store, account_id)
             raise ProjectionStorageUnavailable()
         try:
-            with store.database.read() as connection:
+            if lease is not None and lease.database is not store.database:
+                raise ProjectionStorageUnavailable()
+            with (store.database.read() if lease is None else lease.read()) as connection:
                 checks = 0
                 def read(account, identity, current_budget):
                     nonlocal checks
                     if account != account_id or current_budget is not budget:
                         raise ValueError("publication_scope_binding_changed")
+                    if checks and lease is not None:
+                        lease.close_cursors()
                     # The connection's opening observation binds security and
                     # physical identity to one file handle. The final observation
                     # is newly opened; no trust is carried over from the first.
                     file_identity = (connection._secured_file_identity if checks == 0
+                                     else lease.observe() if lease is not None
                                      else store.database._restrict_permissions())
                     checks += 1
                     with bounded_sql(connection, budget), self._lock:

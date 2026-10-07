@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.persistence import sqlite_api as sqlite3
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -755,15 +755,20 @@ class SQLiteProjectionActivationRepository:
             )
 
     @contextmanager
-    def read_scope(self) -> Iterator[None]:
+    def read_scope(self, *, connection=None) -> Iterator[None]:
         """Share a connection, not a transaction or previously read witness."""
         current = _ACTIVATION_READ_SCOPE.get()
         owner = get_ident()
         if (current is not None and current.active
-                and current.repository is self and current.owner == owner):
+                and current.repository is self and current.owner == owner
+                and (connection is None or current.connection is connection)):
             yield
             return
-        with self.database.read() as connection:
+        with self.database.read() if connection is None else nullcontext(connection) as connection:
+            bound_database = getattr(connection, 'database', None)
+            if (getattr(connection, '_tracked_path', None) != self.database.path
+                    or bound_database is not None and bound_database is not self.database):
+                raise ValueError('activation_read_scope_database_binding_invalid')
             if connection.in_transaction or connection.isolation_level is not None:
                 raise ValueError('activation_read_scope_requires_autocommit')
             scope = _ActivationReadScope(self, connection, owner)

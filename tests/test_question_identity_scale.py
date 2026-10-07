@@ -1,6 +1,7 @@
 """100k identity boundary regression, not full-question latency qualification."""
 
 from pathlib import Path
+from contextlib import nullcontext
 
 import pytest
 
@@ -30,7 +31,10 @@ def test_fresh_and_expired_100k_identity_fits_the_unchanged_request_budget(tmp_p
             with pytest.raises(ProjectionUnavailable):
                 with source.open_question_scope(work.account, QuestionBudget(QuestionLimits())):
                     pass
-            assert source.prepare_question_identity(work.account) == expected
+            # The expired 100k audit must still finish and match the independent
+            # oracle when admitted foreground work asks it to yield.
+            with source._question_work.foreground() if instant else nullcontext():
+                assert source.prepare_question_identity(work.account) == expected
             for _ in range(100):
                 budget = QuestionBudget(QuestionLimits())
                 with source.open_question_scope(work.account, budget) as scope:
