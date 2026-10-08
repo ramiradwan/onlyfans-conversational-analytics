@@ -4,6 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+// The added inventory pass emits closed identities only. Execution retains the
+// original console reporter and its existing assertion-redaction boundary.
+const reporters = process.env.BROWSER_CI_PHASE === 'inventory'
+  ? [] : process.env.CI ? [['line']] : [['list']];
+if (process.env.BROWSER_CI_PHASE) {
+  reporters.push([path.join(ROOT, 'ci', 'reporter.mjs'), {
+    mode: process.env.BROWSER_CI_PHASE,
+    lane: process.env.BROWSER_CI_LANE,
+    file: process.env.BROWSER_CI_EVENTS,
+  }]);
+}
 
 export default defineConfig({
   testDir: './tests',
@@ -15,7 +26,7 @@ export default defineConfig({
   expect: {
     timeout: 12_000,
   },
-  reporter: process.env.CI ? [['line']] : [['list']],
+  reporter: reporters,
   outputDir: './test-results',
   use: {
     actionTimeout: 10_000,

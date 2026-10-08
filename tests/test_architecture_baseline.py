@@ -99,6 +99,8 @@ REQUIRED_CI_CONTROLS = (
     "fixed-sqlcipher-wheel",
     "windows-tests",
     "windows-browser-e2e",
+    "browser-e2e-execution",
+    "browser-reporting-safety",
     "Run Brain Tier A general state machine",
     "Run Agent Tier A general state machine",
     "Run deterministic analytics rebuilds",

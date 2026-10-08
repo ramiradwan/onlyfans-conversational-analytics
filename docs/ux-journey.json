@@ -181,7 +181,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "off"
         }
       ]
@@ -218,7 +218,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "preview"
         }
       ]
@@ -255,7 +255,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "paused"
         },
         {
@@ -292,7 +292,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "desktop_app_needed"
         }
       ]
@@ -319,7 +319,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "setup_incomplete"
         }
       ]
@@ -346,7 +346,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "pairing_required"
         }
       ]
@@ -410,7 +410,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "pairing_compare"
         }
       ]
@@ -452,7 +452,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "pairing_not_ready"
         }
       ]
@@ -484,7 +484,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "pairing_failed"
         }
       ]
@@ -537,7 +537,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "desktop_app_unavailable"
         }
       ]
@@ -575,7 +575,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "activation_checking"
         }
       ]
@@ -607,7 +607,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "activation_required"
         }
       ]
@@ -634,7 +634,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "activation_unavailable"
         }
       ]
@@ -661,7 +661,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "activation_active"
         }
       ]
@@ -707,7 +707,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "full_ready"
         }
       ]
@@ -842,7 +842,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "passkey"
         }
       ]
@@ -888,7 +888,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "fresh"
         }
       ]
@@ -939,7 +939,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "pairing-comparison"
         }
       ]
@@ -1044,7 +1044,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "history-consent"
         }
       ]
@@ -1070,7 +1070,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "syncing"
         }
       ]
@@ -1107,7 +1107,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "populated"
         }
       ]
@@ -1139,7 +1139,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "activation-dialog"
         }
       ]
@@ -1160,7 +1160,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "delete-confirmation"
         }
       ]

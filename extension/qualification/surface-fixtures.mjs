@@ -4,46 +4,8 @@ import { build } from 'esbuild';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const make = (surface, mode = 'full', extras = {}) => ({ surface, mode, paired: false, reachable: true, ...extras });
-export const SURFACE_STATES = Object.freeze({
-  off: Object.freeze(make('popup', 'off')),
-  preview: Object.freeze(make('popup', 'preview')),
-  paused: Object.freeze(make('popup', 'paused', { resume: 'preview' })),
-  popup_connect: Object.freeze(make('popup')),
-  popup_comparing: Object.freeze(make('popup', 'full', { pairing: 'compare' })),
-  full_ready: Object.freeze(make('popup', 'full', { paired: true, ready: true })),
-  desktop_controlled: Object.freeze(make('popup', 'full', { paired: true, ready: true, desktopControl: true })),
-  desktop_controlled_paused: Object.freeze(make('popup', 'paused', { paired: true, resume: 'full', desktopControl: true })),
-  software_activation: Object.freeze(make('setup', 'off', { agreement: true })),
-  software_activation_ready: Object.freeze(make('setup', 'off', { agreement: true, accepted: true })),
-  legal_unavailable: Object.freeze(make('setup', 'off', { configured: false })),
-  mode_choice: Object.freeze(make('setup', 'off', { choice: true })),
-  mode_choice_full: Object.freeze(make('setup', 'off', { choice: true, hash: 'full' })),
-  full_review: Object.freeze(make('setup', 'preview', { hash: 'full' })),
-  preview_complete: Object.freeze(make('setup', 'preview')),
-  permission_required: Object.freeze(make('setup', 'preview', { phase: 'permission_required' })),
-  reload_required: Object.freeze(make('setup', 'preview', { reload: true })),
-  desktop_app_needed: Object.freeze(make('setup', 'full', { reachable: false, download: true })),
-  desktop_app_unavailable: Object.freeze(make('setup', 'full', { paired: true, reachable: false })),
-  setup_incomplete: Object.freeze(make('setup', 'full', { pairing: 'setup_incomplete' })),
-  pairing_required: Object.freeze(make('setup')),
-  pairing_waiting: Object.freeze(make('setup', 'full', { pairing: 'pairing' })),
-  pairing_compare: Object.freeze(make('setup', 'full', { pairing: 'compare' })),
-  pairing_failed: Object.freeze(make('setup', 'full', { pairing: 'pairing_failed' })),
-  pairing_not_ready: Object.freeze(make('setup', 'full', { pairing: 'desktop_not_ready' })),
-  activation_checking: Object.freeze(make('setup', 'full', { paired: true, checking: true })),
-  activation_required: Object.freeze(make('setup', 'full', { paired: true, commercial: 'required' })),
-  activation_unavailable: Object.freeze(make('setup', 'full', { paired: true, commercial: 'unavailable' })),
-  activation_active: Object.freeze(make('setup', 'full', { paired: true })),
-  setup_complete: Object.freeze(make('setup', 'full', { paired: true, ready: true })),
-  full_unavailable: Object.freeze(make('setup', 'full', { paired: true, phase: 'unavailable' })),
-  connection: Object.freeze(make('options', 'full', { paired: true, ready: true, hash: 'connection' })),
-  connection_desktop_controlled: Object.freeze(make('options', 'full', { paired: true, ready: true, hash: 'connection', desktopControl: true })),
-  manage: Object.freeze(make('options', 'preview')),
-  delete_confirmation: Object.freeze(make('options', 'full', { paired: true, dialog: true })),
-  runtime_unavailable: Object.freeze(make('setup', 'off', { runtimeUnavailable: true })),
-  reauthorization: Object.freeze(make('setup', 'paused', { agreement: true, reauthorization: true })),
-});
+import { SURFACE_STATES } from './surface-states.mjs';
+export { SURFACE_STATES } from './surface-states.mjs';
 
 const bundles = new Map();
 async function bundle(surface) {

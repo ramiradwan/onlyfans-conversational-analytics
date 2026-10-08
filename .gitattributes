@@ -26,6 +26,9 @@ extension/runtime/onboarding-workspace.mjs text eol=lf
 extension/qualification/workspace-feasibility.* text eol=lf
 extension/qualification/evidence/workspace-feasibility.json text eol=lf
 
+# Browser registry digests bind Windows producers, Linux gates and source blobs.
+tools/e2e-capture/ci/registry.json text eol=lf
+
 # Native Snow qualification lock is a reviewed supply-chain input and must be
 # byte-identical across Windows and non-Windows checkouts.
 native/companion-snow/** text eol=lf

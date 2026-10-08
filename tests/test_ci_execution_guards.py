@@ -27,7 +27,7 @@ BACKEND_JOBS = {
 }
 WINDOWS_CONSUMERS = {
     "windows-platform-contract", "analytics-windows-contract",
-    "windows-browser-e2e", "windows-full-shards",
+    "browser-e2e-execution", "browser-e2e-serial-control", "windows-full-shards",
     "analytics-scale-qualification",
 }
 WINDOWS_FULL_CUTOVER_RUN = (
@@ -62,6 +62,9 @@ def _assert_gate_covers_every_lane(workflow: dict[str, Any]) -> None:
             assert job["steps"][0]["run"] == WINDOWS_FULL_CUTOVER_RUN
         elif job_name == "windows-full-shards":
             assert job.get("if") == "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}", "exhaustive Windows may skip only pull requests"
+        elif job_name == "windows-browser-e2e":
+            assert job.get("if") == "${{ always() }}", "browser aggregate must evaluate execution failures"
+            assert set(job["needs"]) == {"browser-reporting-safety", "browser-e2e-execution", "browser-e2e-serial-control"}
         else:
             assert "if" not in job, f"required lane {job_name} cannot skip during PR cutover"
         assert not job.get("continue-on-error"), f"required lane {job_name} cannot ignore failures"
@@ -152,7 +155,10 @@ def test_windows_consumers_fail_closed_on_the_shared_producer() -> None:
     jobs = _workflow_document()["jobs"]
     for name in WINDOWS_CONSUMERS:
         job = jobs[name]
-        assert job["needs"] == "fixed-sqlcipher-wheel"
+        if name in {"browser-e2e-execution", "browser-e2e-serial-control"}:
+            assert set(job["needs"]) == {"fixed-sqlcipher-wheel", "browser-reporting-safety"}
+        else:
+            assert job["needs"] == "fixed-sqlcipher-wheel"
         assert job["runs-on"].startswith("windows")
         steps = job["steps"]
         verify = next(step for step in steps if step.get("name") == "Verify fixed SQLCipher CI source")
@@ -207,11 +213,17 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
 
 def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_or_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v2-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v3-pr-cutover"
     events = workflow["on"]
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
-    assert events["workflow_dispatch"] == {}
-    assert events["push"]["branches"] == ["main"]
+    dispatch = events["workflow_dispatch"]
+    assert set(dispatch) == {"inputs"}
+    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control"}
+    for declaration in dispatch["inputs"].values():
+        assert declaration["type"] == "boolean" and declaration["default"] is False
+        assert declaration.get("required", False) is False
+    assert events["push"] == {"branches": ["main"]}
+    assert events["pull_request"] == {"branches": ["main"], "types": ["opened", "synchronize", "reopened"]}
     for event in ("push", "pull_request"):
         assert "paths" not in events[event] and "paths-ignore" not in events[event]
     assert "edited" not in events["pull_request"]["types"]

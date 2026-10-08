@@ -12,7 +12,16 @@ name: CI
       - opened
       - synchronize
       - reopened
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      browser_qualification:
+        description: Require first-attempt browser passes for rollout comparison
+        type: boolean
+        default: false
+      browser_serial_control:
+        description: Run the complete serial browser control (requires browser_qualification)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -20,7 +29,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-  CI_POLICY_VERSION: sharded-v2-pr-cutover
+  CI_POLICY_VERSION: sharded-v3-pr-cutover
+  BROWSER_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_qualification }}
+  BROWSER_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
 jobs:
   web-build-and-test:
     runs-on: ubuntu-latest
@@ -31,17 +42,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-            packaging/sqlcipher/fixed-runtime-sources.json
-      - name: Check documentation
-        run: python tools/check_docs.py
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
@@ -62,20 +62,6 @@ jobs:
           key: build-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
           restore-keys: |
             build-${{ runner.os }}-
-      - name: Install pinned native Noise toolchain
-        run: rustup toolchain install 1.98.1 --profile minimal
-      - name: Install backend dependencies
-        env:
-          RUSTUP_TOOLCHAIN: 1.98.1
-        run: python -m pip install -r requirements-dev.txt
-      - name: Validate architecture boundary manifest
-        run: python tools/validate_architecture_boundaries.py
-      - name: Check protected architecture impact declaration
-        if: github.event_name == 'pull_request'
-        run: |
-          python tools/check_boundary_declaration.py --event-path "$GITHUB_EVENT_PATH" --base-ref "${{ github.event.pull_request.base.sha }}" --head-ref "${{ github.event.pull_request.head.sha }}"
-      - name: Check Python architecture boundary contracts
-        run: lint-imports
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
       - name: Check Bridge architecture boundary contracts
@@ -167,6 +153,16 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: 1.98.1
         run: python -m pip install -r requirements-dev.txt
+      - name: Check documentation
+        run: python tools/check_docs.py
+      - name: Validate architecture boundary manifest
+        run: python tools/validate_architecture_boundaries.py
+      - name: Check protected architecture impact declaration
+        if: github.event_name == 'pull_request'
+        run: |
+          python tools/check_boundary_declaration.py --event-path "$GITHUB_EVENT_PATH" --base-ref "${{ github.event.pull_request.base.sha }}" --head-ref "${{ github.event.pull_request.head.sha }}"
+      - name: Check Python architecture boundary contracts
+        run: lint-imports
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
       - name: Install extension dependencies
@@ -833,16 +829,205 @@ jobs:
           path: artifacts/ci-tests/
           retention-days: 14
           if-no-files-found: error
-  windows-browser-e2e:
-    needs: fixed-sqlcipher-wheel
+  browser-reporting-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate browser qualification request
+        run: |
+          if [[ "$BROWSER_SERIAL_CONTROL" == 'true' && "$BROWSER_QUALIFICATION" != 'true' ]]; then
+            echo '::error::browser_serial_control requires browser_qualification'
+            exit 1
+          fi
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            extension/package-lock.json
+            tools/e2e-capture/package-lock.json
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install pinned reporting dependencies
+        run: |
+          npm ci --prefix tools/e2e-capture
+          npm ci --prefix extension
+          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0
+      - name: Test restricted browser reporting
+        run: npm run test:ci-tools --prefix tools/e2e-capture
+      - name: Probe the actual pinned Playwright reporter
+        run: npm run test:ci-sentinels --prefix tools/e2e-capture
+      - name: Test existing browser diagnostic redaction
+        run: node --test extension/tests/stable-connection-diagnostic.test.mjs extension/tests/worker-recovery-diagnostic.test.mjs
+      - name: Test Python session diagnostics explicitly
+        run: python -m pytest --override-ini=addopts= tools/e2e-capture/tests/test_session_diagnostics.py
+  browser-e2e-execution:
+    name: browser-e2e-${{ matrix.lane }}
+    needs:
+      - fixed-sqlcipher-wheel
+      - browser-reporting-safety
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        lane:
+          - core
+          - catchup
     runs-on: windows-latest
     timeout-minutes: 45
     env:
+      BROWSER_CI_LANE: ${{ matrix.lane }}
+      BROWSER_CI_REPORT_DIR: ${{ github.workspace }}\artifacts\browser-evidence\${{ matrix.lane }}
       ENVIRONMENT: test
       OFCA_TEST_DATABASE_MASTER_KEY_HEX: 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0
       OFCA_PRODUCT_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
-      OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT: ${{ github.workspace }}\artifacts\legal\execution
-      OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\legal\runtime-ui-proof.json
+      OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT: ${{ github.workspace }}\artifacts\browser-evidence\${{ matrix.lane }}\legal\execution
+      OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\browser-evidence\${{ matrix.lane }}\legal\runtime-ui-proof.json
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Keep browser test caches on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-e2e"
+          $npmCache = Join-Path $env:RUNNER_TEMP "npm-cache"
+          $playwrightCache = Join-Path $env:RUNNER_TEMP "ms-playwright"
+          New-Item -ItemType Directory -Force $testTemp, $npmCache, $playwrightCache | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp", `
+            "NPM_CONFIG_CACHE=$npmCache", "PLAYWRIGHT_BROWSERS_PATH=$playwrightCache" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
+          if ([int]$source.workflow_run_attempt -lt 1 -or [int]$source.workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT) { throw "Fixed SQLCipher producer attempt is invalid" }
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+            tools/e2e-capture/package-lock.json
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ runner.temp }}\ms-playwright
+          key: ofca-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/e2e-capture/package-lock.json')
+            }}
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: 'Run Product #5 evidence scenarios'
+        if: matrix.lane == 'core'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results" | Out-Null
+          $output = & node --test `
+            extension/tests/activation-evidence.test.mjs `
+            extension/tests/legal-activation-controller.test.mjs `
+            extension/tests/legal-activation-revocation.test.mjs `
+            extension/tests/legal-activation-crash-recovery.test.mjs 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results\activation-evidence.tap"
+          if ($exitCode -ne 0) { exit $exitCode }
+      - name: Build and audit deterministic extension artifact
+        run: |
+          npm run build --prefix extension
+          npm run audit --prefix extension
+      - name: Build production Bridge
+        run: npm run build --prefix frontend
+      - name: Install pinned E2E dependencies
+        run: npm ci --prefix tools/e2e-capture
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: tools/e2e-capture
+        run: npx playwright install chromium
+      - name: Run browser E2E and preserve output
+        id: browser-execution
+        shell: pwsh
+        working-directory: tools/e2e-capture
+        run: |
+          New-Item -ItemType Directory -Force $env:BROWSER_CI_REPORT_DIR | Out-Null
+          & node ci/run.mjs --lane $env:BROWSER_CI_LANE --output-dir $env:BROWSER_CI_REPORT_DIR 2>&1 |
+            Tee-Object -FilePath "$env:BROWSER_CI_REPORT_DIR\browser-e2e.txt"
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) { exit $exitCode }
+      - name: Seal browser producer evidence
+        id: browser-seal
+        if: always()
+        shell: pwsh
+        run: python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" --publish-dir "$env:BROWSER_CI_REPORT_DIR-published" --diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"
+      - name: Retain immutable browser producer evidence
+        if: ${{ success() && steps.browser-seal.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-inputs-${{ matrix.lane }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BROWSER_CI_REPORT_DIR }}-published/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Retain restricted browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-diagnostics-${{ matrix.lane }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/
+          retention-days: 14
+          if-no-files-found: warn
+  browser-e2e-serial-control:
+    name: browser-e2e-serial-control
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
+    needs:
+      - fixed-sqlcipher-wheel
+      - browser-reporting-safety
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      BROWSER_CI_LANE: legacy
+      BROWSER_CI_REPORT_DIR: ${{ github.workspace }}\artifacts\browser-evidence\legacy
+      ENVIRONMENT: test
+      OFCA_TEST_DATABASE_MASTER_KEY_HEX: 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0
+      OFCA_PRODUCT_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT: ${{ github.workspace }}\artifacts\browser-evidence\legacy\legal\execution
+      OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\browser-evidence\legacy\legal\runtime-ui-proof.json
     steps:
       - name: Checkout exact Product revision
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -934,17 +1119,82 @@ jobs:
         working-directory: tools/e2e-capture
         run: npx playwright install chromium
       - name: Run browser E2E and preserve output
+        id: browser-execution
         shell: pwsh
         working-directory: tools/e2e-capture
         run: |
-          $output = & npm test 2>&1
+          New-Item -ItemType Directory -Force $env:BROWSER_CI_REPORT_DIR | Out-Null
+          & node ci/run.mjs --lane $env:BROWSER_CI_LANE --output-dir $env:BROWSER_CI_REPORT_DIR 2>&1 |
+            Tee-Object -FilePath "$env:BROWSER_CI_REPORT_DIR\browser-e2e.txt"
           $exitCode = $LASTEXITCODE
-          $output | Tee-Object -FilePath "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results\browser-e2e.txt"
           if ($exitCode -ne 0) { exit $exitCode }
-      - name: 'Generate Product #5 Legal evidence bundle'
+      - name: Seal browser producer evidence
+        id: browser-seal
+        if: always()
         shell: pwsh
-        run: |
-          node tools/legal-evidence/generate-activation-bundle.mjs --execution-root "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT" --runtime-proof "$env:OFCA_LEGAL_RUNTIME_PROOF_PATH"
+        run: python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" --publish-dir "$env:BROWSER_CI_REPORT_DIR-published" --diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"
+      - name: Retain immutable browser producer evidence
+        if: ${{ success() && steps.browser-seal.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-inputs-legacy-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BROWSER_CI_REPORT_DIR }}-published/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Retain restricted browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-diagnostics-legacy-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/
+          retention-days: 14
+          if-no-files-found: warn
+  windows-browser-e2e:
+    if: ${{ always() }}
+    needs:
+      - browser-reporting-safety
+      - browser-e2e-execution
+      - browser-e2e-serial-control
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    env:
+      OFCA_PRODUCT_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+      - name: Retrieve immutable browser producer evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: browser-e2e-inputs-*
+          path: artifacts/browser-evidence
+          merge-multiple: false
+      - name: Validate browser execution and assemble Legal inputs
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/ci_browser_gate.py --reports-dir artifacts/browser-evidence --execution-root artifacts/legal/execution --runtime-proof artifacts/legal/runtime-ui-proof.json --verified-output artifacts/browser-evidence/assembly-receipt.json
+      - name: 'Generate Product #5 Legal evidence bundle'
+        run: node tools/legal-evidence/generate-activation-bundle.mjs --execution-root artifacts/legal/execution --runtime-proof artifacts/legal/runtime-ui-proof.json
+      - name: Retain verified browser assembly provenance
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-verified-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/browser-evidence/assembly-receipt.json
+          retention-days: 14
+          if-no-files-found: error
       - name: 'Upload Product #5 Legal evidence bundle'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:

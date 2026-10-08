@@ -8,6 +8,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright';
+import { createScreens, FIXED_NOW } from './screen-matrix.mjs';
 
 import { runCaptureJobs } from './capture-jobs.mjs';
 import { captureStaticSurfaces } from './static-surfaces.mjs';
@@ -18,189 +19,15 @@ import { captureDynamicTransitions, REQUIRED_REGIONS } from './dynamic-transitio
 import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
 import { captureVisionDiagnostics } from './vision-diagnostics.mjs';
+import { ordinaryCases, ordinaryName } from './ci/inventory.mjs';
+import { CaptureRecorder, parseCaptureOptions, sourceIdentity } from './ci/recording.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const frontend = resolve(here, '../../frontend');
-const outDir = resolve(process.argv[2] ?? join(here, 'output'));
 
-export const FIXED_NOW = '2026-06-30T12:05:00.000Z';
 const MAX_HEIGHT = 6000;
-const MODES = ['light', 'dark'];
-const VIEWPORTS = [
-  { name: 'desktop', width: 1440, height: 900 },
-  { name: 'narrow', width: 390, height: 844 },
-  { name: 'tablet', width: 820, height: 900, targetedOnly: true },
-];
-
-const heading = (name) => (page) => page.getByRole('heading', { level: 1, name });
-const text = (value) => (page) => page.getByText(value, { exact: true }).first();
-
-/** Each screen names the locator that proves its state rendered before capture. */
-export const SCREENS = [
-  ...['current', 'pending', 'unavailable', 'degraded'].map((state) => ({ workspace: 'graph', state,
-    ready: heading('Graph explorer'), act: (page) => page.evaluate((status) => window.__workspaceFixture.projection(status), state) })),
-  { workspace: 'home', state: 'loading', ready: text('Loading dashboard…') },
-  {
-    workspace: 'home',
-    state: 'fresh',
-    ready: (page) => page.getByRole('link', { name: 'Continue setup' }),
-    assert: async (page, viewport) => {
-      if (viewport.name !== 'desktop') return;
-      const prompt = page.locator('[data-visual="setup-prompt"]');
-      await assertMaxWidth(prompt, 560);
-      await assertCentered(prompt, page.getByRole('main'));
-    },
-  },
-  { workspace: 'home', state: 'syncing', ready: (page) => page.getByRole('progressbar', { name: /History \d+% synced/ }) },
-  { workspace: 'home', state: 'populated', ready: (page) => page.getByRole('region', { name: 'Overview' }) },
-  {
-    workspace: 'analytics',
-    state: 'loading',
-    ready: (page) => page.getByRole('main').getByRole('status').first(),
-    assert: assertLoadingGeometry,
-  },
-  { workspace: 'analytics', state: 'building', ready: text('Updating your analytics') },
-  { workspace: 'analytics', state: 'unavailable', ready: text('Analytics are unavailable') },
-  { workspace: 'analytics', state: 'baseline', ready: text('Early estimates') },
-  {
-    workspace: 'analytics',
-    state: 'model',
-    ready: (page) => page.getByRole('region', { name: 'Your replies' }),
-    assert: async (page, viewport) => {
-      await assertMetricHierarchy(page);
-      if (viewport.name === 'desktop') {
-        const replies = page.getByRole('region', { name: 'Your replies' });
-        const box = await replies.boundingBox();
-        if (!box || box.width < 280) throw new Error('Your replies panel became too narrow');
-      }
-    },
-  },
-  {
-    workspace: 'analytics',
-    state: 'error',
-    ready: (page) => page.getByRole('main').getByRole('alert').getByRole('button', { name: 'Try again' }),
-    assert: async (page, viewport) => {
-      const state = page.locator('[data-visual="analytics-empty-state"]');
-      await assertMaxWidth(state, 640);
-      if (viewport.name === 'desktop') await assertCentered(state, page.getByRole('main'));
-    },
-  },
-  ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({ workspace: 'inbox', state, ready: heading('Inbox') })),
-  ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({
-    workspace: 'settings',
-    state,
-    ready: (page) => state === 'loading' ? page.getByText('Loading settings…', { exact: true }).first() : page.getByRole('heading', { name: 'Stored messages' }),
-    assert: async (page, viewport) => {
-      if (viewport.name !== 'desktop') return;
-      const frame = page.locator('[data-visual="settings-frame"]');
-      await assertMaxWidth(frame, 880);
-      await assertCentered(frame, page.getByRole('main'));
-    },
-  })),
-  { workspace: 'passkey', state: 'resting', ready: heading('Protect access to your messages') },
-  {
-    workspace: 'passkey', state: 'cancelled',
-    act: (page) => page.getByRole('button', { name: 'Sign in with passkey' }).click(),
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in was cancelled or timed out.' }),
-  },
-  {
-    workspace: 'analytics', state: 'model', variant: 'date-popover', viewports: ['desktop', 'narrow'],
-    act: (page) => page.getByRole('button', { name: 'Change dates' }).click(),
-    ready: (page) => page.getByRole('dialog', { name: 'Show messages from' }).getByLabel('Start date'),
-  },
-  {
-    workspace: 'analytics', state: 'model', variant: 'tone-table', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Table', exact: true }).click(),
-    ready: (page) => page.getByRole('table', { name: 'Message tone over time data' }),
-  },
-  {
-    workspace: 'inbox', state: 'populated', variant: 'selected-conversation', viewports: ['narrow'],
-    act: (page) => page.getByRole('list', { name: 'Conversation list' }).getByRole('button').first().click(),
-    ready: (page) => page.getByRole('button', { name: 'Back to conversations' }),
-  },
-  {
-    workspace: 'inbox', state: 'populated', variant: 'tablet-list', viewports: ['tablet'], modes: ['light'],
-    ready: (page) => page.getByRole('list', { name: 'Conversation list' }),
-  },
-  {
-    workspace: 'inbox', state: 'populated', variant: 'tablet-selected-conversation', viewports: ['tablet'], modes: ['light'],
-    act: (page) => page.getByRole('list', { name: 'Conversation list' }).getByRole('button').first().click(),
-    ready: (page) => page.getByRole('button', { name: 'Back to conversations' }),
-  },
-  {
-    workspace: 'home', state: 'populated', variant: 'mobile-navigation-open', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Open navigation' }).click(),
-    ready: (page) => page.locator('#mobile-navigation'),
-  },
-  {
-    workspace: 'home', state: 'populated', variant: 'status-open', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: /Status: .*Show details/ }).click(),
-    ready: (page) => page.getByRole('dialog', { name: 'Status details' }),
-  },
-  {
-    workspace: 'settings', state: 'fresh', variant: 'activation-dialog', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Turn on full analytics' }).click(),
-    ready: (page) => page.getByRole('dialog', { name: 'Turn on full analytics' }).getByRole('link', { name: 'Open secure setup' }),
-  },
-  {
-    workspace: 'settings', state: 'fresh', variant: 'activation-return', viewports: ['narrow'], modes: ['light'],
-    act: async (page) => {
-      await page.getByRole('button', { name: 'Turn on full analytics' }).click();
-      await page.getByRole('link', { name: 'Open secure setup' }).dispatchEvent('click');
-    },
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Secure setup opened.' }),
-  },
-  {
-    workspace: 'settings', state: 'fresh', variant: 'activation-error', viewports: ['narrow'], modes: ['light'],
-    act: async (page) => {
-      await page.getByRole('button', { name: 'Turn on full analytics' }).click();
-      await page.getByRole('textbox', { name: 'Activation code' }).fill('invalid');
-      await page.getByRole('button', { name: 'Activate', exact: true }).click();
-    },
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Enter the full activation code and try again.' }),
-  },
-  {
-    workspace: 'settings', state: 'fresh', variant: 'pairing-comparison', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Connect extension' }).click(),
-    ready: (page) => page.getByText('Check the code', { exact: true }),
-  },
-  {
-    workspace: 'settings', state: 'fresh', variant: 'history-consent', viewports: ['narrow'], modes: ['light'],
-    act: async (page) => {
-      await page.getByRole('button', { name: 'Connect extension' }).click();
-      await page.getByText('Check the code', { exact: true }).waitFor({ state: 'visible' });
-      await page.getByRole('checkbox', { name: 'The codes match' }).check();
-      await page.getByRole('button', { name: 'Confirm connection' }).click();
-    },
-    ready: (page) => page.getByRole('checkbox', { name: /I allow read-only syncing/ }),
-  },
-  {
-    workspace: 'settings', state: 'fresh', variant: 'archive-dialog', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Turn on archive' }).click(),
-    ready: (page) => page.getByRole('dialog', { name: 'Turn on archive' }).getByRole('spinbutton', { name: 'Days to keep' }),
-  },
-  {
-    workspace: 'settings', state: 'populated', variant: 'delete-confirmation', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Delete all messages' }).click(),
-    ready: (page) => page.getByRole('dialog').filter({ hasText: 'Delete all messages?' }),
-  },
-  {
-    // Pushed browser state and its controls stack under their text at narrow widths.
-    workspace: 'settings', state: 'populated', variant: 'browser-controls', viewports: ['narrow'], modes: ['light', 'dark'],
-    ready: text('Collecting in the browser.'),
-  },
-  {
-    workspace: 'settings', state: 'populated', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.evaluate(async () => {
-      const { bridgeTransportStore } = await import('/src/store/transportStore.ts');
-      bridgeTransportStore.markDisconnected();
-    }),
-    ready: (page) => page.getByText('Extension linked to this app', { exact: true }),
-  },
-];
-
-const only = process.env.VISUAL_CAPTURE_ONLY?.split(',').filter(Boolean);
-const selectedScreens = only?.length ? SCREENS.filter((screen) => only.includes(screen.workspace)) : SCREENS;
+export { FIXED_NOW } from './screen-matrix.mjs';
+export const SCREENS = createScreens({ assertMaxWidth, assertCentered, assertLoadingGeometry, assertMetricHierarchy });
 
 function freePort() {
   return new Promise((resolvePort, reject) => {
@@ -331,7 +158,18 @@ async function screenshot(page, file, fullPage) {
   await page.screenshot({ path: file, animations: 'disabled', caret: 'hide', fullPage });
 }
 
-async function capture() {
+export async function capture(argv = process.argv.slice(2)) {
+  const options = parseCaptureOptions(argv, process.env, join(here, 'output'));
+  const outDir = options.output;
+  const repository = resolve(here, '../..');
+  // Never recursively clear the repository, a parent, or a drive root.
+  if (outDir === repository || relative(outDir, repository).split(/[\\/]/).every(part => part !== '..')) throw new Error('visual_ci_unsafe_output_directory');
+  const source = sourceIdentity(process.env, repository);
+  const previousRevision = process.env.VISUAL_CAPTURE_REVISION;
+  const recorder = new CaptureRecorder({ group: options.group, source, partial: options.partial });
+  const only = process.env.VISUAL_CAPTURE_ONLY?.split(',').filter(Boolean);
+  const selectedScreens = only?.length ? SCREENS.filter(screen => only.includes(screen.workspace)) : SCREENS;
+  const remaining = options.group !== 'dynamic', dynamicGroup = options.group !== 'remaining';
   const phaseTimings = {};
   let phase = 'prepare', started = performance.now();
   const nextPhase = (next) => {
@@ -342,25 +180,27 @@ async function capture() {
   };
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
-  await new Promise((done, reject) => {
-    const build = spawn(process.execPath, [join(frontend, 'node_modules/vite/bin/vite.js'), 'build'], { cwd: frontend, stdio: 'inherit' });
-    build.once('error', reject);
-    build.once('exit', (code) => code === 0 ? done() : reject(new Error(`Production fixture build failed: ${code}`)));
-  });
-  const { base, vite } = await startHarness();
-  const browser = await chromium.launch();
-  const entries = [];
-  const diagnostics = [];
-  const failures = [];
-  let review = null;
-  let dynamic = [];
-  nextPhase('frontend');
+  await recorder.writeInventory(outDir);
+  const entries = [], diagnostics = [], failures = [];
+  let review = null, dynamic = [], freshness = [];
+  let browser, vite, base, exitCode = 1;
+  const progress = setInterval(() => console.log(recorder.progress(phase)), 30_000);
+  process.env.VISUAL_CAPTURE_REVISION = source.source_commit;
   try {
-    const cases = VIEWPORTS.flatMap((viewport) => MODES.flatMap((mode) => selectedScreens
-      .filter((screen) => (!viewport.targetedOnly || screen.viewports?.includes(viewport.name))
-        && (!screen.viewports || screen.viewports.includes(viewport.name)) && (!screen.modes || screen.modes.includes(mode)))
-      .map((screen) => ({ viewport, mode, screen }))));
+    await new Promise((done, reject) => {
+      const build = spawn(process.execPath, [join(frontend, 'node_modules/vite/bin/vite.js'), 'build'], { cwd: frontend, stdio: 'inherit' });
+      build.once('error', reject);
+      build.once('exit', code => code === 0 ? done() : reject(new Error('visual_ci_fixture_build_failed')));
+    });
+    ({ base, vite } = await startHarness());
+    browser = await chromium.launch();
+    if (remaining) {
+    nextPhase('frontend');
+    const cases = ordinaryCases(selectedScreens);
     await runCaptureJobs(cases, async ({ viewport, mode, screen }) => {
+        const name = ordinaryName({ viewport, mode, screen });
+        const finish = recorder.begin(`ordinary-${name}`, { workspace: screen.workspace, state: screen.state, variant: screen.variant ?? null, mode, viewport: viewport.name, width: viewport.width, height: viewport.height });
+        const observations = [], files = []; let caseFailed = false;
         const context = await browser.newContext({
           colorScheme: mode,
           deviceScaleFactor: 1,
@@ -376,8 +216,6 @@ async function capture() {
           page.on('pageerror', (error) => errors.push(String(error)));
           await page.clock.setFixedTime(FIXED_NOW);
           const url = `${base}?workspace=${screen.workspace}&state=${screen.state}&mode=${mode}`;
-          const variant = screen.variant ? `-${screen.variant}` : '';
-          const name = `${screen.workspace}-${screen.state}${variant}-${mode}-${viewport.name}`;
           try {
             await page.goto(url, { waitUntil: 'networkidle' });
             await page.evaluate(() => document.fonts.ready);
@@ -389,6 +227,7 @@ async function capture() {
             if (screen.assert) await screen.assert(page, viewport);
             const watcher = await readWatcher(page);
             await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, ...watcher }) + '\n');
+            files.push(`${name}-geometry.json`);
             if (watcher.failures.length) throw new Error(watcher.failures.join('\n'));
 
             const overflow = await horizontalOverflow(page);
@@ -396,6 +235,7 @@ async function capture() {
 
             const foldFile = join(outDir, screen.workspace, `${name}-fold.png`);
             await screenshot(page, foldFile, false);
+            observations.push('fold'); files.push(relative(outDir, foldFile).replaceAll('\\', '/'));
             entries.push({
               file: relative(outDir, foldFile).replaceAll('\\', '/'),
               capture: 'fold',
@@ -413,6 +253,7 @@ async function capture() {
             if (clipped > 0) errors.push(`${clipped}px of content is clipped and cannot be scrolled to`);
             const fullFile = join(outDir, screen.workspace, `${name}-full.png`);
             await screenshot(page, fullFile, true);
+            observations.push('full'); files.push(relative(outDir, fullFile).replaceAll('\\', '/'));
             entries.push({
               file: relative(outDir, fullFile).replaceAll('\\', '/'),
               capture: 'full',
@@ -428,48 +269,71 @@ async function capture() {
 
             if (screen.workspace === 'analytics' && screen.state === 'model' && !screen.variant) {
               const captures = await captureVisionDiagnostics(page, outDir, name);
+              observations.push(...captures.map(value => `vision:${value.type}`)); files.push(...captures.map(value => value.file));
               diagnostics.push(...captures.map((capture) => ({ ...capture, mode, viewport: viewport.name })));
             }
             if (errors.length) throw new Error(errors.join('\n'));
             console.log(`captured ${name} fold + full`);
           } catch (error) {
+            caseFailed = true;
             await page.screenshot({ path: join(outDir, `${name}-failure.png`) });
             await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, error: error.message, ...await readWatcher(page) }) + '\n');
             failures.push(`${name}: ${error.message.split('\n')[0]}`);
             console.error(`failed ${name}: ${error.message}`);
           } finally {
+            finish({ outcome: caseFailed ? 'failed' : 'passed', observations, files });
             await page.close();
           }
         await context.close();
     });
     entries.sort((a, b) => a.file.localeCompare(b.file));
-    nextPhase('dynamic');
-    dynamic = await captureDynamicTransitions(browser, base, outDir);
-    failures.push(...dynamic.flatMap((report) => report.failures.map((failure) => `${report.file}: ${failure}`)));
-    nextPhase('freshness');
-    const freshness = await captureFreshnessTransitions(browser, base, outDir);
-    failures.push(...freshness.flatMap((report) => report.failures.map((failure) => `${report.file}: ${failure}`)));
-    nextPhase('review');
-    review = await captureReviewChecks(browser, base, outDir);
-    failures.push(...review.failures);
-    nextPhase('static');
-    const staticReport = await captureStaticSurfaces(browser, outDir);
-    failures.push(...staticReport.failures);
-    nextPhase('cleanup');
-    review.static = { file: 'static-surfaces/acceptance.json', passed: staticReport.checks.length, screenshots: staticReport.entries.length, failures: staticReport.failures.length };
+    }
+    if (dynamicGroup) {
+      nextPhase('dynamic');
+      dynamic = await captureDynamicTransitions(browser, base, outDir, undefined, false, recorder);
+      failures.push(...dynamic.flatMap(report => report.failures.map(failure => `${report.file}: ${failure}`)));
+    }
+    if (remaining) {
+      nextPhase('freshness');
+      freshness = await captureFreshnessTransitions(browser, base, outDir, recorder);
+      failures.push(...freshness.flatMap(report => report.failures.map(failure => `${report.file}: ${failure}`)));
+      nextPhase('review');
+      review = await captureReviewChecks(browser, base, outDir, recorder);
+      failures.push(...review.failures);
+      nextPhase('static');
+      const staticReport = await captureStaticSurfaces(browser, outDir, recorder);
+      failures.push(...staticReport.failures);
+      review.static = { file: 'static-surfaces/acceptance.json', passed: staticReport.checks.length, screenshots: staticReport.entries.length, failures: staticReport.failures.length };
+    }
+    exitCode = failures.length ? 1 : 0;
+  } catch {
+    failures.push('visual_ci_capture_incomplete');
+    console.error('visual-ci: capture did not complete; restricted receipt will record incomplete execution');
   } finally {
-    await browser.close();
-    vite.kill();
+    nextPhase('cleanup');
+    try { if (browser) await browser.close(); }
+    catch { exitCode = 1; failures.push('visual_ci_cleanup_failed'); }
+    finally { vite?.kill(); }
+    nextPhase('manifest');
+    try {
+      const manifest = () => ({ revision: source.source_commit, fixedNow: FIXED_NOW, phaseTimings,
+        entries, diagnostics, dynamic, freshness, static: review?.static ?? null,
+        review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures });
+      await writeFile(join(outDir, 'manifest.json'), JSON.stringify(manifest(), null, 2) + '\n');
+      phaseTimings.manifest = (performance.now() - started) / 1000;
+      await writeFile(join(outDir, 'manifest.json'), JSON.stringify(manifest(), null, 2) + '\n');
+      const receipt = await recorder.finish(outDir, { exitCode, phaseTimings });
+      if (receipt.exit_code) process.exitCode = receipt.exit_code;
+      console.log(`visual-ci complete group=${options.group} status=${receipt.complete ? 'passed' : 'failed'} completed=${receipt.cases.length}`);
+    } finally {
+      clearInterval(progress);
+      if (previousRevision === undefined) delete process.env.VISUAL_CAPTURE_REVISION;
+      else process.env.VISUAL_CAPTURE_REVISION = previousRevision;
+    }
   }
-  nextPhase('manifest');
-  await writeFile(
-    join(outDir, 'manifest.json'),
-    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, phaseTimings, entries, diagnostics, dynamic, static: review?.static ?? null, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
-  );
-  if (failures.length) {
-    console.error(`${failures.length} screen(s) did not reach their ready state:\n${failures.join('\n')}`);
-    process.exitCode = 1;
-  }
+  if (failures.length) process.exitCode = 1;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) await capture();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  capture().catch(() => { console.error('visual-ci: unable to complete capture evidence'); process.exitCode = 1; });
+}

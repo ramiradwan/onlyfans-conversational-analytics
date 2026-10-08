@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
 from typing import Any
 
 import pytest
@@ -20,6 +21,9 @@ CORE_SOURCE_JOBS = (
     "analytics-windows-contract",
     "analytics-scale-qualification",
     "windows-full-shards",
+    "browser-reporting-safety",
+    "browser-e2e-execution",
+    "browser-e2e-serial-control",
     "windows-browser-e2e",
     "required-ci-gate",
 )
@@ -95,6 +99,76 @@ def test_stable_consumer_artifacts_can_be_republished_on_an_exact_source_rerun()
                 assert settings["overwrite"] is True
                 observed.add(settings["name"])
             else:
-                assert settings["name"].startswith("ci-tests-")
+                assert settings["name"].startswith(("ci-tests-", "browser-e2e-inputs-", "browser-e2e-diagnostics-", "browser-e2e-verified-"))
                 assert not settings.get("overwrite"), "retained attempt evidence cannot be replaced"
     assert observed == expected
+
+
+def _assert_browser_publication_is_validated(workflow: dict[str, Any]) -> None:
+    jobs = workflow["jobs"]
+    producer = jobs["browser-e2e-execution"]
+    steps = _steps(producer)
+    execute = next(step for step in steps if step.get("id") == "browser-execution")
+    seal = next(step for step in steps if step.get("id") == "browser-seal")
+    complete = next(step for step in steps if step.get("name") == "Retain immutable browser producer evidence")
+    diagnostic = next(step for step in steps if step.get("name") == "Retain restricted browser diagnostics")
+    assert steps.index(execute) < steps.index(seal) < steps.index(complete)
+    assert seal["if"] == "always()"
+    assert seal["run"] == (
+        'python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" '
+        '--publish-dir "$env:BROWSER_CI_REPORT_DIR-published" '
+        '--diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"'
+    )
+    assert complete["if"] == "${{ success() && steps.browser-seal.outcome == 'success' }}"
+    assert complete["with"]["path"] == "${{ env.BROWSER_CI_REPORT_DIR }}-published/"
+    assert diagnostic["if"] == "always()"
+    assert diagnostic["with"]["path"] == "${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/"
+    for step, prefix in ((complete, "browser-e2e-inputs"), (diagnostic, "browser-e2e-diagnostics")):
+        assert step["with"]["name"] == f"{prefix}-${{{{ matrix.lane }}}}-${{{{ env.PRODUCT_SHA }}}}-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}"
+        assert not step["with"].get("overwrite"), "producer evidence must remain immutable"
+        assert step["with"]["retention-days"] == 14
+    aggregate = jobs["windows-browser-e2e"]
+    assert aggregate["permissions"] == {"contents": "read", "actions": "read"}
+    steps = _steps(aggregate)
+    retrieve = next(step for step in steps if step.get("name") == "Retrieve immutable browser producer evidence")
+    assert retrieve["with"]["pattern"] == "browser-e2e-inputs-*"
+    assert retrieve["with"]["merge-multiple"] is False
+    validate = next(step for step in steps if step.get("name") == "Validate browser execution and assemble Legal inputs")
+    assert validate["run"] == (
+        "python tools/ci_browser_gate.py --reports-dir artifacts/browser-evidence "
+        "--execution-root artifacts/legal/execution --runtime-proof artifacts/legal/runtime-ui-proof.json "
+        "--verified-output artifacts/browser-evidence/assembly-receipt.json"
+    )
+    assert validate["env"] == {"CI_NEEDS_JSON": "${{ toJSON(needs) }}", "GH_TOKEN": "${{ github.token }}"}
+    generate = next(step for step in steps if step.get("name") == "Generate Product #5 Legal evidence bundle")
+    publish = next(step for step in steps if step.get("name") == "Upload Product #5 Legal evidence bundle")
+    assert steps.index(retrieve) < steps.index(validate) < steps.index(generate) < steps.index(publish)
+    for step in (validate, generate, publish):
+        assert "if" not in step and not step.get("continue-on-error"), "Legal publication requires successful validation"
+    assert publish["with"]["name"] == "legal-activation-v2-${{ env.PRODUCT_SHA }}"
+    assert publish["with"]["overwrite"] is True
+
+
+@pytest.mark.parametrize("mutation", ["raw-diagnostics", "unsealed-inputs", "failed-inputs", "overwrite-producer", "merged-attempts", "skip-validator", "publish-after-failure"])
+def test_browser_artifacts_cannot_publish_unvalidated_or_failed_raw_evidence(mutation: str) -> None:
+    workflow = _workflow_document()
+    _assert_browser_publication_is_validated(workflow)
+    broken = deepcopy(workflow)
+    producer = _steps(broken["jobs"]["browser-e2e-execution"])
+    aggregate = _steps(broken["jobs"]["windows-browser-e2e"])
+    if mutation == "raw-diagnostics":
+        next(step for step in producer if step.get("name") == "Retain restricted browser diagnostics")["with"]["path"] = "${{ env.BROWSER_CI_REPORT_DIR }}/"
+    elif mutation == "unsealed-inputs":
+        next(step for step in producer if step.get("name") == "Retain immutable browser producer evidence")["with"]["path"] = "${{ env.BROWSER_CI_REPORT_DIR }}/"
+    elif mutation == "failed-inputs":
+        next(step for step in producer if step.get("name") == "Retain immutable browser producer evidence")["if"] = "always()"
+    elif mutation == "overwrite-producer":
+        next(step for step in producer if step.get("name") == "Retain immutable browser producer evidence")["with"]["overwrite"] = True
+    elif mutation == "merged-attempts":
+        next(step for step in aggregate if step.get("name") == "Retrieve immutable browser producer evidence")["with"]["merge-multiple"] = True
+    elif mutation == "skip-validator":
+        next(step for step in aggregate if step.get("name") == "Validate browser execution and assemble Legal inputs")["if"] = "false"
+    else:
+        next(step for step in aggregate if step.get("name") == "Upload Product #5 Legal evidence bundle")["if"] = "always()"
+    with pytest.raises(AssertionError):
+        _assert_browser_publication_is_validated(broken)

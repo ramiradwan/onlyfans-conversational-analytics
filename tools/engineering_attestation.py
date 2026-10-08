@@ -34,6 +34,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -113,6 +114,14 @@ WINDOWS_FULL_CUTOVER_STEPS = """      - name: Require every full Windows shard
             push|workflow_dispatch) test '${{ needs.windows-full-shards.result }}' = 'success' ;;
             *) echo "Unsupported Product CI event"; exit 1 ;;
           esac"""
+PRODUCT_CI_POLICY_PATH = "ci/product-ci-policy.json"
+SHARDED_V3_PRODUCT_CI_JOB_IDS = SHARDED_V2_PRODUCT_CI_JOB_IDS | {
+    "browser-reporting-safety", "browser-e2e-execution", "browser-e2e-serial-control",
+}
+REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES | {
+    "browser-reporting-safety", "browser-e2e-core", "browser-e2e-catchup", "browser-e2e-serial-control",
+}
+BROWSER_SERIAL_CONTROL_IF = "${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}"
 
 PRODUCER_ROOT = Path(__file__).resolve().parent.parent
 LEGAL_BINDINGS_GATE = PRODUCER_ROOT / "tools" / "legal-release-bindings" / "verify.mjs"
@@ -798,7 +807,9 @@ def _ci_literal_list(source: str) -> list[str]:
     return values
 
 
-def _validate_sharded_v2_source(job_source: str, *, pr_cutover: bool = False) -> None:
+def _validate_sharded_v2_source(
+    job_source: str, *, pr_cutover: bool = False, browser_aggregate: bool = False,
+) -> None:
     jobs = _ci_literal_mapping(job_source, 2)
     for job_id, name, runner, timeout, count in (
         ("analytics-integration", "analytics-integration", "ubuntu-latest", "20", 4),
@@ -837,13 +848,110 @@ def _validate_sharded_v2_source(job_source: str, *, pr_cutover: bool = False) ->
     if pr_cutover:
         if aggregate.get("steps") != WINDOWS_FULL_CUTOVER_STEPS:
             raise ContractError("Windows PR cutover must accept only its expected producer skip and require full main/manual success")
-        for job_id in ("windows-platform-contract", "analytics-windows-contract", "windows-browser-e2e"):
+        focused_jobs = ["windows-platform-contract", "analytics-windows-contract"]
+        if not browser_aggregate:
+            focused_jobs.append("windows-browser-e2e")
+        for job_id in focused_jobs:
             fields = _ci_literal_mapping(jobs[job_id], 4)
             if "if" in fields or fields.get("continue-on-error", "false") != "false":
                 raise ContractError("Windows PR cutover cannot make a focused Windows or browser job optional")
 
 
-def product_ci_job_policy(workflow_source: bytes) -> set[str]:
+def _validate_sharded_v3_source(
+    job_source: str, policy_source: bytes | None, *, pr_cutover: bool = False,
+) -> None:
+    """Require the reviewed policy at the candidate SHA, not today's checkout."""
+    if policy_source is None:
+        raise ContractError("sharded-v3 Product CI requires its source-versioned policy")
+    policy = load_json_strict(policy_source, label="Product CI source policy")
+    expected = {
+        "schema_version": 1,
+        "policy_version": "sharded-v3-pr-cutover" if pr_cutover else "sharded-v3",
+        "workflow": PRODUCT_CI_WORKFLOW,
+        "job_ids": sorted(SHARDED_V3_PRODUCT_CI_JOB_IDS),
+        "required_job_names": sorted(REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES),
+        "allowed_skipped_jobs": ["browser-e2e-serial-control"],
+        "conditional_jobs": {"browser-e2e-serial-control": {
+            "if": BROWSER_SERIAL_CONTROL_IF,
+            "required_conclusion_for_main_push": "skipped",
+        }},
+    }
+    if policy != expected or type(policy.get("schema_version")) is not int:
+        raise ContractError("sharded-v3 Product CI source policy differs from the complete qualification contract")
+    _validate_sharded_v2_source(job_source, pr_cutover=pr_cutover, browser_aggregate=True)
+    jobs = _ci_literal_mapping(job_source, 2)
+    matrix_job = _ci_literal_mapping(jobs["browser-e2e-execution"], 4)
+    strategy = _ci_literal_mapping(matrix_job.get("strategy", ""), 6)
+    matrix = _ci_literal_mapping(strategy.get("matrix", ""), 8)
+    if (matrix_job.get("name") != "browser-e2e-${{ matrix.lane }}"
+            or matrix_job.get("runs-on") != "windows-latest"
+            or matrix_job.get("timeout-minutes") != "45"
+            or "if" in matrix_job
+            or matrix_job.get("continue-on-error", "false") != "false"
+            or set(_ci_literal_list(matrix_job.get("needs", ""))) != {
+                "fixed-sqlcipher-wheel", "browser-reporting-safety"}
+            or set(strategy) != {"fail-fast", "max-parallel", "matrix"}
+            or strategy.get("fail-fast") != "false"
+            or strategy.get("max-parallel") != "2"
+            or set(matrix) != {"lane"}
+            or _ci_literal_list(matrix["lane"]) != ["core", "catchup"]):
+        raise ContractError("sharded-v3 Product CI requires both bounded Windows browser lanes")
+    safety = _ci_literal_mapping(jobs["browser-reporting-safety"], 4)
+    gate = _ci_literal_mapping(jobs["windows-browser-e2e"], 4)
+    if (safety.get("name", "browser-reporting-safety") != "browser-reporting-safety"
+            or "if" in safety or safety.get("continue-on-error", "false") != "false"
+            or gate.get("name", "windows-browser-e2e") != "windows-browser-e2e"
+            or gate.get("if") != "${{ always() }}"
+            or gate.get("continue-on-error", "false") != "false"
+            or set(_ci_literal_list(gate.get("needs", ""))) != {
+                "browser-reporting-safety", "browser-e2e-execution", "browser-e2e-serial-control"}):
+        raise ContractError("sharded-v3 Product CI requires reporting safety and the always-running browser gate")
+    serial = _ci_literal_mapping(jobs["browser-e2e-serial-control"], 4)
+    if (serial.get("name", "browser-e2e-serial-control") != "browser-e2e-serial-control"
+            or serial.get("if") != BROWSER_SERIAL_CONTROL_IF
+            or serial.get("runs-on") != "windows-latest"
+            or serial.get("timeout-minutes") != "45"
+            or "strategy" in serial
+            or serial.get("continue-on-error", "false") != "false"
+            or set(_ci_literal_list(serial.get("needs", ""))) != {
+                "fixed-sqlcipher-wheel", "browser-reporting-safety"}):
+        raise ContractError("sharded-v3 Product CI serial control must remain an explicit bounded dispatch opt-in")
+
+
+def _validate_cutover_triggers(source: str, *, browser_qualification: bool = False) -> None:
+    trigger_blocks = re.findall(r"(?m)^(?:'on'|on):[ \t]*\n((?:[ ]+[^\n]*\n|\n)*)", source)
+    if len(trigger_blocks) != 1:
+        raise ContractError("Windows PR cutover requires one literal trigger declaration")
+    triggers = _ci_literal_mapping(trigger_blocks[0], 2)
+    if set(triggers) != {"push", "pull_request", "workflow_dispatch"}:
+        raise ContractError("Windows PR cutover requires push, pull_request and manual triggers without a duplicate schedule")
+    if browser_qualification:
+        dispatch = _ci_literal_mapping(triggers["workflow_dispatch"], 4)
+        if set(dispatch) != {"inputs"}:
+            raise ContractError("Browser PR cutover requires exactly its reviewed manual inputs")
+        inputs = _ci_literal_mapping(dispatch["inputs"], 6)
+        expected_descriptions = {
+            "browser_qualification": "Require first-attempt browser passes for rollout comparison",
+            "browser_serial_control": "Run the complete serial browser control (requires browser_qualification)",
+        }
+        if set(inputs) != set(expected_descriptions):
+            raise ContractError("Browser PR cutover requires exactly its reviewed manual inputs")
+        for name, description in expected_descriptions.items():
+            if _ci_literal_mapping(inputs[name], 8) != {
+                "description": description, "type": "boolean", "default": "false",
+            }:
+                raise ContractError("Browser PR cutover manual inputs must retain their reviewed boolean defaults")
+    elif triggers["workflow_dispatch"] != "{}":
+        raise ContractError("Windows PR cutover requires its literal manual trigger")
+    for event, keys in (("push", {"branches"}), ("pull_request", {"branches", "types"})):
+        declaration = _ci_literal_mapping(triggers[event], 4)
+        if set(declaration) != keys or _ci_literal_list(declaration.get("branches", "")) != ["main"]:
+            raise ContractError("Windows PR cutover must retain unfiltered main push and pull-request coverage")
+        if event == "pull_request" and _ci_literal_list(declaration["types"]) != ["opened", "synchronize", "reopened"]:
+            raise ContractError("Windows PR cutover must retain every pull-request source event")
+
+
+def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = None) -> set[str]:
     """Read the policy from the qualified source, never from observed results.
 
     The producer deliberately has no YAML runtime dependency. These literal
@@ -873,6 +981,8 @@ def product_ci_job_policy(workflow_source: bytes) -> set[str]:
         "sharded-v1": (SHARDED_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES),
         "sharded-v2": (SHARDED_V2_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES),
         "sharded-v2-pr-cutover": (SHARDED_V2_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES),
+        "sharded-v3": (SHARDED_V3_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES),
+        "sharded-v3-pr-cutover": (SHARDED_V3_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES),
     }
     if len(versions) != 1 or versions[0] not in policies or source.count("CI_POLICY_VERSION") != 1:
         raise ContractError("Product CI source declares an unknown or ambiguous job policy")
@@ -885,21 +995,77 @@ def product_ci_job_policy(workflow_source: bytes) -> set[str]:
         raise ContractError("sharded Product CI source does not declare the exact required job set")
     if version in {"sharded-v2", "sharded-v2-pr-cutover"}:
         _validate_sharded_v2_source(job_block, pr_cutover=version == "sharded-v2-pr-cutover")
-    if version == "sharded-v2-pr-cutover":
-        trigger_blocks = re.findall(r"(?m)^(?:'on'|on):[ \t]*\n((?:[ ]+[^\n]*\n|\n)*)", blocks[0])
-        if len(trigger_blocks) != 1:
-            raise ContractError("Windows PR cutover requires one literal trigger declaration")
-        triggers = _ci_literal_mapping(trigger_blocks[0], 2)
-        if (set(triggers) != {"push", "pull_request", "workflow_dispatch"}
-                or triggers["workflow_dispatch"] != "{}"):
-            raise ContractError("Windows PR cutover requires push, pull_request and manual triggers without a duplicate schedule")
-        for event, keys in (("push", {"branches"}), ("pull_request", {"branches", "types"})):
-            declaration = _ci_literal_mapping(triggers[event], 4)
-            if set(declaration) != keys or _ci_literal_list(declaration.get("branches", "")) != ["main"]:
-                raise ContractError("Windows PR cutover must retain unfiltered main push and pull-request coverage")
-            if event == "pull_request" and _ci_literal_list(declaration["types"]) != ["opened", "synchronize", "reopened"]:
-                raise ContractError("Windows PR cutover must retain every pull-request source event")
+    elif version in {"sharded-v3", "sharded-v3-pr-cutover"}:
+        _validate_sharded_v3_source(job_block, policy_source, pr_cutover=version == "sharded-v3-pr-cutover")
+    if version in {"sharded-v2-pr-cutover", "sharded-v3-pr-cutover"}:
+        _validate_cutover_triggers(blocks[0], browser_qualification=version == "sharded-v3-pr-cutover")
     return set(required_names)
+
+
+def _ci_execution_timestamp(value: Any) -> str:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value
+    ):
+        raise ContractError("retained Product CI execution has an invalid timestamp")
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise ContractError("retained Product CI execution has an invalid timestamp") from exc
+    return value
+
+
+def _ci_execution_fingerprint(job: dict[str, Any]) -> tuple[Any, ...]:
+    """Corroborate an API alias using the complete original execution record."""
+    if job.get("status") != "completed" or job.get("conclusion") != "success":
+        raise ContractError("retained Product CI execution has contradictory outcomes")
+    start = _ci_execution_timestamp(job.get("started_at"))
+    end = _ci_execution_timestamp(job.get("completed_at"))
+    runner_id, runner_name = job.get("runner_id"), job.get("runner_name")
+    if (start > end or type(runner_id) is not int or runner_id <= 0
+            or not isinstance(runner_name, str) or not runner_name.strip()):
+        raise ContractError("retained Product CI execution has an invalid runner or interval")
+    steps = job.get("steps")
+    step_fields = {"name", "number", "status", "conclusion", "started_at", "completed_at"}
+    if not isinstance(steps, list) or not 1 <= len(steps) <= 1000:
+        raise ContractError("retained Product CI execution is missing complete step evidence")
+    previous_number = 0
+    for step in steps:
+        if (not isinstance(step, dict) or set(step) != step_fields
+                or not isinstance(step["name"], str) or not step["name"].strip()
+                or type(step["number"]) is not int or step["number"] <= previous_number
+                or step["status"] != "completed" or step["conclusion"] not in {"success", "skipped"}):
+            raise ContractError("retained Product CI execution has invalid complete step evidence")
+        step_start = _ci_execution_timestamp(step["started_at"])
+        step_end = _ci_execution_timestamp(step["completed_at"])
+        if not start <= step_start <= step_end <= end:
+            raise ContractError("retained Product CI step evidence contradicts its execution interval")
+        previous_number = step["number"]
+    # Runner-group metadata can change when GitHub copies a retained job into a
+    # later attempt. Its native runner identity and all executed steps cannot.
+    return start, end, runner_id, runner_name, steps
+
+
+def _retained_ci_execution_alias(previous: dict[str, Any], current: dict[str, Any]) -> bool:
+    # Failed/incomplete executions always supersede old success. Skipped jobs
+    # have no producer to retain; GitHub can copy their end time while changing
+    # the start time, so leave their source-policy conclusion authoritative.
+    if current.get("status") != "completed" or current.get("conclusion") != "success":
+        return False
+    # Missing evidence never implies retention. Shared timestamps or a complete
+    # shared step record instead demand corroboration of every execution field.
+    same_start = (isinstance(previous.get("started_at"), str)
+                  and bool(previous["started_at"])
+                  and previous["started_at"] == current.get("started_at"))
+    same_end = (isinstance(previous.get("completed_at"), str)
+                and bool(previous["completed_at"])
+                and previous["completed_at"] == current.get("completed_at"))
+    same_steps = (isinstance(previous.get("steps"), list) and bool(previous["steps"])
+                  and previous["steps"] == current.get("steps"))
+    if not (same_start or same_end or same_steps):
+        return False
+    if _ci_execution_fingerprint(previous) != _ci_execution_fingerprint(current):
+        raise ContractError("retained Product CI execution aliases have contradictory evidence")
+    return True
 
 
 def latest_ci_jobs(
@@ -908,8 +1074,10 @@ def latest_ci_jobs(
     """Resolve each job's latest execution, including retained rerun dependencies.
 
     A failed-jobs rerun does not re-execute dependencies that already succeeded.
-    Query every attempt, then choose the newest execution for each exact job name;
-    a newer failure always supersedes an earlier success.
+    GitHub also gives retained successful jobs new IDs and attempt numbers while
+    copying their original runner, times and full steps. Normalize only those
+    corroborated aliases to the original producer so immutable artifacts still
+    bind to their actual attempt. A distinct newer failure supersedes success.
     """
     jobs: list[Any] = []
     page = 1
@@ -955,7 +1123,15 @@ def latest_ci_jobs(
             raise ContractError("Product CI has duplicate job execution identities")
         identities.add((name, attempt))
         execution_ids.add(execution_id)
-        if name not in newest or newest[name]["run_attempt"] < attempt:
+    executions: dict[str, list[dict[str, Any]]] = {}
+    for job in sorted(jobs, key=lambda value: (value["name"], value["run_attempt"])):
+        name = job["name"]
+        history = executions.setdefault(name, [])
+        # A later alias of an old success must not resurrect it after a real
+        # intervening failure. Resolve against all actual executions first,
+        # then select the newest actual execution, never the newest alias row.
+        if not any(_retained_ci_execution_alias(previous, job) for previous in history):
+            history.append(job)
             newest[name] = job
     return newest
 
@@ -1040,21 +1216,30 @@ def qualify_product_ci_source(client: GitHubApi, *, source_commit: str) -> int:
     _, workflow_source = fetch_git_blob(
         client, PRODUCT_REPOSITORY, PRODUCT_CI_WORKFLOW, source_commit
     )
-    required_names = product_ci_job_policy(workflow_source)
+    policy_source = None
+    if re.search(rb"(?m)^  CI_POLICY_VERSION: sharded-v3(?:-pr-cutover)?\r?$", workflow_source):
+        _, policy_source = fetch_git_blob(
+            client, PRODUCT_REPOSITORY, PRODUCT_CI_POLICY_PATH, source_commit
+        )
+    required_names = product_ci_job_policy(workflow_source, policy_source)
     jobs = latest_ci_jobs(
         client, run_id=run_id, run_attempt=run_attempt, source_commit=source_commit
     )
     if set(jobs) != required_names:
         raise ContractError("Product CI run does not have the exact required job set")
     for job in jobs.values():
+        # Qualification above requires a main push. The one v3 optional job's
+        # source condition makes its only valid conclusion on that event skipped.
+        expected_conclusion = ("skipped" if policy_source is not None
+            and job.get("name") == "browser-e2e-serial-control" else "success")
         if (
             job.get("status") != "completed"
-            or job.get("conclusion") != "success"
+            or job.get("conclusion") != expected_conclusion
             or job.get("run_id") != run_id
             or job.get("head_sha") != source_commit
         ):
             raise ContractError(
-                f"required Product CI job {job.get('name')!r} did not succeed "
+                f"required Product CI job {job.get('name')!r} did not have required conclusion {expected_conclusion!r} "
                 "for the qualified source commit"
             )
     return run_id

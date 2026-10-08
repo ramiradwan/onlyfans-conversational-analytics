@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from 'node:util';
 import { safeCompanionCloseReason, safeCompanionChannelDiagnostic } from '../../../extension/transport/companion-channel.mjs';
 
 const EVENTS = new Set(['connect-start', 'connect-admitted', 'connect-failed', 'circuit-reset', 'channel-close', 'facade-close', 'invalidate', 'credential-rotation-failed']);
@@ -136,8 +137,15 @@ export function redactStableConnectionAssertionError(error, actual, expected) {
   if (!(error instanceof Error)) return error;
   const tokens = [...new Set([actual, expected].filter((value) => typeof value === 'string' && value.length))]
     .sort((left, right) => right.length - left.length);
-  const redact = (value) => typeof value === 'string'
-    ? tokens.reduce((text, token) => text.split(token).join('[redacted]'), value) : value;
+  const redact = (value) => {
+    if (typeof value !== 'string') return value;
+    // Matcher diff colors can split a token. The terminal reporter removes those
+    // controls and rejoins it, so inspect the displayed text before replacement.
+    // Keep formatting byte-for-byte when the field contains no sensitive token.
+    const displayed = stripVTControlCharacters(value);
+    const text = tokens.some(token => displayed.includes(token)) ? displayed : value;
+    return tokens.reduce((result, token) => result.split(token).join('[redacted]'), text);
+  };
   const visit = (failure) => {
     failure.message = redact(failure.message);
     failure.stack = redact(failure.stack);
