@@ -152,7 +152,7 @@ export function CommercialActivationControls({
         title="Full analytics"
       />
 
-      <ReservedNotice id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
+      <ReservedNotice essential id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
         : checking ? { title: '', body: 'Checking activation…', severity: 'info' }
           : activeButBlocked ? { title: "New messages aren't being analyzed", body: "Your activation is fine, but analysis can't run right now. Your existing numbers are still available.", severity: 'warning' }
             : activationUnavailable || readiness === null ? { title: '', body: "Your activation couldn't be checked. Nothing has changed.", severity: 'warning' } : null} />
@@ -200,7 +200,7 @@ export function CommercialActivationControls({
                   </Button>
                 </Box>
               )}
-              <ReservedNotice id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />
+              <ReservedNotice essential id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />
             </Stack>
             <Stack spacing={1.5}>
               <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
@@ -219,7 +219,7 @@ export function CommercialActivationControls({
                 value={code}
               />
             </Stack>
-            <StatusLine id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />
+            <StatusLine essential id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />
           </Stack>
         </DialogContent>
         <DialogActions>

@@ -1,0 +1,27 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/proof-challenge-response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "challenge": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "profile": {
+      "const": "urn:bridge-clean:onboarding-proof:v1"
+    },
+    "request_digest": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    }
+  },
+  "required": [
+    "profile",
+    "challenge",
+    "expires_at",
+    "request_digest"
+  ],
+  "title": "proof challenge response v1",
+  "type": "object"
+}

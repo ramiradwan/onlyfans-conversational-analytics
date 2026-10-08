@@ -1,0 +1,2606 @@
+[
+  {
+    "case_id": "initial-enrollment",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "expired-auth",
+    "context": {
+      "auth_time": 699,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "reauthentication_required"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "future-auth",
+    "context": {
+      "auth_time": 1001,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "reauthentication_required"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "missing-auth",
+    "context": {
+      "auth_time": null,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "reauthentication_required"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "expired-preparation",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 400,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "expired"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "not-authorized",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": false,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-authority",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": false,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "wrong-principal",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": false,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "wrong-creator-org-or-transaction",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": false,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "wrong-destination",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": false,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "wrong_destination"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "missing-other-digest",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": false,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "wrong-action-digest",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": false,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "consumed-confirmation",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": false,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "wrong-confirmation",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": false,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "replaced-auth-revision",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 2,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "existing-installation",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": true,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "already_enrolled"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "signing-or-persistence-failure",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": true
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "temporarily_unavailable"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "invalid-proof",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": false,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "foreign-proof-key",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": false,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "expired-proof",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1000,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "other-proof-domain",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "transfer-redeem",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "unadmitted-valid-signature",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": false,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "challenge-bound-other-request",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "challenge-bound-other-key",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": false,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "challenge-stale-admission-revision",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 0,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "confirmation-expiry-boundary",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1000,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "auth-exact-300-second-boundary",
+    "context": {
+      "auth_time": 700,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "same-operation-fresh-proof-receipt",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "recovery-required"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "proof-replay",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "same-operation-changed-digest",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "operation_conflict"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ]
+  },
+  {
+    "case_id": "concurrent-one-winner",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "operation_conflict"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000002",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "lost-response-receipt-then-existing-recovery",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 2,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "recovery-required",
+        "recovered"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "wait",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1361,
+        "proof_valid": true,
+        "purpose": "initial-handoff-wait",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 1301
+        }
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-3",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "recover",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1361,
+        "proof_valid": true,
+        "purpose": "bootstrap-recovery",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 1301
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "expired-auth-cannot-enroll",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "reauthentication_required",
+        "reauthentication_required"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "wait",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1361,
+        "proof_valid": true,
+        "purpose": "initial-handoff-wait",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 1301
+        }
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-3",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1361,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 1301
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "expired-auth-completion-retry-only-receipt",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "recovery-required"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1361,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 1301
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "recovery-before-enrollment",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "not_enrolled"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-3",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "recover",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1361,
+        "proof_valid": true,
+        "purpose": "bootstrap-recovery",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 1301
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "wrong-recovery-domain",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-3",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "recover",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1361,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 1301
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "legacy-consume-replay",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "409-installation-claim-already-consumed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "legacy-consume",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-after-completion",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "wait",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1361,
+        "proof_valid": true,
+        "purpose": "initial-handoff-wait",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "current_authority": false
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "receipt-expired",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "expired"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "wait",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 2860,
+        "proof_valid": true,
+        "purpose": "initial-handoff-wait",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 2800
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "rollback-then-fresh-proof",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "temporarily_unavailable",
+        "completed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "transient_failure": true
+        }
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "transient_failure": false
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "long-offline-lost-response",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 2,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "recovery-required",
+        "recovered"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "receipt",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 4060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-receipt",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 4000
+        }
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-3",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "recover",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 4060,
+        "proof_valid": true,
+        "purpose": "bootstrap-recovery",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 4000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "durable-receipt-before-enrollment",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "not_enrolled"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "receipt",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 4060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-receipt",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 4000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "durable-receipt-other-operation",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 1,
+      "claim_consumptions": 1,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 1,
+      "issue_confirmations_consumed": 1,
+      "results": [
+        "completed",
+        "operation_conflict"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-2",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "receipt",
+        "operation_id": "0199b234-5678-7000-8000-000000000002",
+        "proof_expires": 4060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-receipt",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "set": {
+          "now": 4000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "same-key-other-installation-id",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": false,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "wrong_destination"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-key",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": false,
+      "digests_match": true,
+      "existing_installation": false,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "reserved-installation-collision",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": true,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "already_enrolled"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "case_id": "existing-key-under-new-installation",
+    "context": {
+      "auth_time": 900,
+      "authorization_revision": 1,
+      "authorized": true,
+      "both_digests": true,
+      "confirmation_expires": 1100,
+      "confirmation_matches": true,
+      "confirmation_unused": true,
+      "current_authority": true,
+      "digests_match": true,
+      "existing_installation": true,
+      "key_matches": true,
+      "now": 1000,
+      "prepared_at": 800,
+      "principal_matches": true,
+      "scope_matches": true,
+      "transient_failure": false
+    },
+    "expected": {
+      "bootstrap_issuances": 0,
+      "claim_consumptions": 0,
+      "commercial_issuances": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "already_enrolled"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "admitted_key_matches": true,
+        "admitted_revision": 1,
+        "authorization_revision": 1,
+        "challenge": "proof-1",
+        "challenge_admitted": true,
+        "key_matches": true,
+        "kind": "complete",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "proof_expires": 1060,
+        "proof_valid": true,
+        "purpose": "initial-handoff-complete",
+        "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  }
+]

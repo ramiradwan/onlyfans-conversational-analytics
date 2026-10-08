@@ -34,9 +34,8 @@ function renderView(api: WebAuthnApi, onAuthenticated = vi.fn()) {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 async function readFailure() {
-  await waitFor(() => expect(screen.queryByRole('alert') || screen.queryByRole('button', { name: 'Show details' })).toBeTruthy());
-  const details = screen.queryByRole('button', { name: 'Show details' });
-  if (details) fireEvent.click(details);
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeTruthy());
+  expect(screen.queryByRole('button', { name: 'Show details' })).toBeNull();
   return screen.findByRole('alert');
 }
 
@@ -165,8 +164,7 @@ describe('WebAuthn access view', () => {
 
     fireEvent.click(view.signIn());
     expect(await readFailure()).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
 
     fireEvent.click(view.signIn());
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
@@ -175,7 +173,7 @@ describe('WebAuthn access view', () => {
     await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
   });
 
-  it('keeps newly opened failure details until the next attempt and lets the same failure reopen', async () => {
+  it('keeps recovery visible without a details step even when text exceeds the old reserved height', async () => {
     mockFeedbackOverflow();
     const pending = deferred();
     const failure = new Error('No passkey was selected.');
@@ -186,15 +184,14 @@ describe('WebAuthn access view', () => {
 
     fireEvent.click(view.signIn());
     const alert = await readFailure();
-    expect(screen.getByRole('dialog').contains(alert)).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const message = alert.textContent;
+    expect(screen.queryByRole('dialog')).toBeNull();
 
     fireEvent.click(view.signIn());
     expect(screen.queryByRole('button', { name: 'Show details' })).toBeNull();
     expect(view.signIn().disabled).toBe(true);
     pending.resolve();
-    expect((await readFailure()).textContent).toBe(alert.textContent);
+    expect((await readFailure()).textContent).toBe(message);
     expect(login).toHaveBeenCalledTimes(2);
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });

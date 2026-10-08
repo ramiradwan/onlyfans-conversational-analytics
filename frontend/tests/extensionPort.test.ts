@@ -33,6 +33,19 @@ function fakeRuntime() {
 }
 
 describe('extension port', () => {
+  it('discovers a runtime installed after the page subscribed without a polling timer', () => {
+    const installed = fakeRuntime();
+    let runtime: RuntimeLike | undefined;
+    const port = createExtensionPort({ resolveRuntime: () => runtime, extensionId: EXTENSION_ID });
+    port.subscribe(() => {});
+    expect(port.getState().status).toBe('absent');
+    runtime = installed.runtime;
+    port.retry();
+    expect(installed.ports).toHaveLength(1);
+    installed.ports[0].deliver({ type: 'state', version: 1, stage: 'needs_terms', attempt: null });
+    expect(port.getState().status).toBe('connected');
+  });
+
   it('is absent without an extension runtime or with an invalid extension ID', () => {
     expect(createExtensionPort({ runtime: undefined, extensionId: EXTENSION_ID }).getState().status).toBe('absent');
     const { runtime, ports } = fakeRuntime();

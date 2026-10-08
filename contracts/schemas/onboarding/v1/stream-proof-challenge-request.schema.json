@@ -1,0 +1,71 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/stream-proof-challenge-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:onboarding-proof:v1"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "hosted-stream"
+        },
+        "request": {
+          "additionalProperties": false,
+          "properties": {
+            "cursor": {
+              "additionalProperties": false,
+              "properties": {
+                "epoch": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "revision": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "epoch",
+                "revision"
+              ],
+              "type": "object"
+            },
+            "installation_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "onboarding_transaction_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "organization_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "profile": {
+              "const": "urn:bridge-clean:hosted-onboarding:v1"
+            }
+          },
+          "required": [
+            "profile",
+            "onboarding_transaction_id",
+            "organization_id",
+            "installation_id"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "operation",
+        "request"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile",
+    "target"
+  ],
+  "title": "stream proof challenge request v1",
+  "type": "object"
+}

@@ -55,9 +55,9 @@ export default function SettingsWithVaultView({
       <Stack data-visual="settings-frame" spacing={3} sx={{ maxWidth: 880, mx: 'auto', width: '100%' }}>
         <Typography component="h1" variant="h4">Settings</Typography>
         <SettingsSurface elevation={0}>
-          <Box id="browser-extension" data-settings-section><ReservedSection id="settings-browser" size={{ xs: 880, sm: 660 }} label="Loading settings…"><CompanionPairingControls api={pairingApi} browserApi={browserApi} port={port} /></ReservedSection></Box>
-          <Box data-settings-section><ReservedSection id="settings-history" size={{ xs: 600, sm: 480 }} label="Loading settings…"><SettingsView api={historyApi} /></ReservedSection></Box>
-          <Box data-settings-section><ReservedSection id="settings-activation" size={{ xs: 320, sm: 240 }} label="Loading settings…"><CommercialActivationControls api={activationApi} /></ReservedSection></Box>
+          <Box id="browser-extension" data-settings-section><ReservedSection grow id="settings-browser" size={{ xs: 880, sm: 660 }} label="Loading settings…"><CompanionPairingControls api={pairingApi} browserApi={browserApi} port={port} /></ReservedSection></Box>
+          <Box id="full-analytics" data-settings-section><ReservedSection grow id="settings-activation" size={{ xs: 320, sm: 240 }} label="Loading settings…"><CommercialActivationControls api={activationApi} /></ReservedSection></Box>
+          <Box id="message-history" data-settings-section><ReservedSection id="settings-history" size={{ xs: 600, sm: 480 }} label="Loading settings…"><SettingsView api={historyApi} /></ReservedSection></Box>
           <Box data-settings-section><ReservedSection id="settings-vault" size={{ xs: 640, sm: 520 }} label="Loading settings…"><CreatorVaultControls api={vaultApi} /></ReservedSection></Box>
         </SettingsSurface>
       </Stack>

@@ -12,8 +12,6 @@ import { VisuallyHidden } from './ui';
 interface SetupPromptProps {
   /** Whether the browser extension is already connected, which completes the first step. */
   extensionConnected?: boolean;
-  /** Whether message-history consent has been given and syncing has started. */
-  historyEnabled?: boolean;
   /** Whether Full analytics can actually admit licensed analysis. */
   fullAnalyticsReady?: boolean;
   title: string;
@@ -55,7 +53,7 @@ function Step({ index, label, reason, state }: { index: number; label: string; r
       data-reserved-region={`setup-step-${index}`}
       direction="row"
       spacing={1.5}
-      sx={{ alignItems: 'center', height: { xs: current ? 248 : 96, sm: current ? 192 : 72 }, width: '100%' }}
+      sx={{ alignItems: 'center', minHeight: { xs: current ? 248 : 96, sm: current ? 192 : 72 }, width: '100%' }}
     >
       <Box
         aria-hidden="true"
@@ -113,14 +111,12 @@ function transitionFor(theme: Theme, properties: string[]): string {
 
 export function SetupPrompt({
   extensionConnected = false,
-  historyEnabled = false,
   fullAnalyticsReady = false,
   title,
 }: SetupPromptProps) {
   const headingId = useId();
   const steps = [
-    { done: extensionConnected, label: 'Connect the browser extension', reason: 'Install the extension in the browser profile you use for your creator account.' },
-    { done: historyEnabled, label: 'Turn on message history', reason: 'Allow browser access so message history can be read.' },
+    { done: extensionConnected, label: 'Connect the browser extension', reason: 'Use the browser where you sign in to OnlyFans. Add the extension if needed.' },
     { done: fullAnalyticsReady, label: 'Turn on Full analytics', reason: 'Use an activation code to turn on Full analytics on this computer.' },
   ];
   const completed = steps.filter((step) => step.done).length;
@@ -162,8 +158,7 @@ export function SetupPrompt({
             {title}
           </Typography>
           <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1 }}>
-            Finish connection setup to receive messages. Add message history to include older conversations.
-            Synced message history stays on this computer.
+            Connect your account and turn on Full analytics. Older conversations can be added later.
           </Typography>
         </Box>
         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
@@ -181,13 +176,13 @@ export function SetupPrompt({
           ))}
         </Stack>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          In Settings, choose Connect extension under Browser extension.
+          {extensionConnected ? 'Open Full analytics in Settings.' : 'Open Browser extension in Settings.'}
         </Typography>
         <Button
           component={RouterLink}
           endIcon={<ArrowForwardIcon />}
           size="large"
-          to="/settings#browser-extension"
+          to={extensionConnected ? '/settings#full-analytics' : '/settings#browser-extension'}
           variant="contained"
         >
           Continue setup

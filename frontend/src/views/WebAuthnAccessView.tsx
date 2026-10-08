@@ -54,7 +54,7 @@ export function WebAuthnAccessView({
   };
 
   return (
-    <Box sx={{ color: 'text.primary', display: 'flex', flexDirection: 'column', minHeight: '100dvh', width: '100%' }}>
+    <Box sx={{ color: 'text.primary', display: 'flex', flexDirection: 'column', minHeight: '100dvh', minWidth: 0, width: '100%' }}>
       <Box component="header" sx={{
         alignItems: 'center', display: { xs: 'none', sm: 'flex' }, flexShrink: 0,
         height: componentTokens.shell.headerHeight,
@@ -67,7 +67,7 @@ export function WebAuthnAccessView({
         component="main"
         data-journey-state="desktop.passkey_sign_in"
         sx={{
-          display: 'grid', flex: 1, gridTemplateRows: '1fr auto 1fr', justifyItems: 'center',
+          display: 'grid', flex: 1, gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: '1fr auto 1fr', justifyItems: 'center',
           px: { xs: 2, sm: 4 }, pt: { xs: 2, sm: 0 },
           pb: { xs: 2, sm: `${componentTokens.shell.headerHeight}px` },
         }}
@@ -78,6 +78,7 @@ export function WebAuthnAccessView({
           sx={(theme) => ({
             gridRow: 2,
             maxWidth: 520,
+            minWidth: 0,
             p: { xs: 4, sm: 5 },
             width: '100%',
             ...theme.effects.cardBorder(theme),
@@ -129,15 +130,16 @@ export function WebAuthnAccessView({
                 borderTop: `${effectTokens.borders.thin} solid ${theme.vars.palette.divider}`,
                 display: { sm: 'none' }, pt: 3,
                 '& [data-visual="brand-tile"] + *': { display: 'block' },
-                '& .MuiTypography-noWrap': { overflow: 'visible' },
+                '& > .MuiStack-root': { flexWrap: 'wrap', gap: 1.25 },
+                '& .MuiTypography-noWrap': { overflow: 'visible', whiteSpace: 'normal', minWidth: 'min-content', marginLeft: '0 !important', flex: '1 1 min-content' },
               })}
             >
               <BrandMark />
             </Box>
           </Stack>
         </Paper>
-        <Box sx={{ alignSelf: 'start', gridRow: 3, height: { xs: 40, sm: 20 }, maxWidth: 520, width: '100%', mt: 2 }}>
-          <StatusLine id="passkey-feedback" text={error} tone="error" />
+        <Box sx={{ alignSelf: 'start', gridRow: 3, minHeight: { xs: 40, sm: 20 }, maxWidth: 520, width: '100%', mt: 2 }}>
+          <StatusLine essential id="passkey-feedback" text={error} tone="error" />
         </Box>
       </Box>
     </Box>

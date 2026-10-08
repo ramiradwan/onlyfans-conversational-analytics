@@ -1,0 +1,71 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/hosted-stream-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "proof": {
+      "additionalProperties": false,
+      "properties": {
+        "challenge": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "signature": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url64"
+        }
+      },
+      "required": [
+        "challenge",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "additionalProperties": false,
+          "properties": {
+            "epoch": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "revision": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "epoch",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "onboarding_transaction_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "profile": {
+          "const": "urn:bridge-clean:hosted-onboarding:v1"
+        }
+      },
+      "required": [
+        "profile",
+        "onboarding_transaction_id",
+        "organization_id",
+        "installation_id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "request",
+    "proof"
+  ],
+  "title": "hosted stream request v1",
+  "type": "object"
+}

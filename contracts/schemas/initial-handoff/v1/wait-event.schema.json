@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff/v1/wait-event.schema.json",
+  "title": "Initial installation handoff wait-event v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "status",
+        "expires_at",
+        "revision"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:initial-installation-handoff:v1"
+        },
+        "status": {
+          "const": "waiting"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "status",
+        "scope",
+        "expires_at",
+        "revision"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:initial-installation-handoff:v1"
+        },
+        "status": {
+          "const": "authorized"
+        },
+        "scope": {
+          "$ref": "definitions.schema.json#/$defs/authorizedScope"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "status",
+        "receipt",
+        "revision"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:initial-installation-handoff:v1"
+        },
+        "status": {
+          "const": "recovery-required"
+        },
+        "receipt": {
+          "$ref": "definitions.schema.json#/$defs/receipt"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "status",
+        "revision"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:initial-installation-handoff:v1"
+        },
+        "status": {
+          "enum": [
+            "expired",
+            "reauthentication-required",
+            "revoked"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  ]
+}

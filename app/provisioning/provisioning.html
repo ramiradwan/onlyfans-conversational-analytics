@@ -1051,6 +1051,14 @@
       #open-extension-setup, #confirm-identity { grid-area:1 / 1; }
       #refresh-identity { grid-area:1 / 2; }
       @media(max-width:599px) { #identity-step .actions { grid-template-columns:1fr; grid-template-rows:40px 40px; } #refresh-identity { grid-area:2 / 1; } }
+      /* Recovery instructions remain visible at narrow widths and enlarged text. */
+      .provisioning-stage { height:auto; min-height:var(--dipsy-static-provisioning-stage-block); }
+      .provisioning-stage .step { position:relative; inset:auto; min-height:inherit; grid-template-rows:auto auto auto minmax(6rem,1fr) auto auto; gap:.75rem; }
+      .provisioning-stage [data-step-feedback] { height:auto; min-height:1.25rem; }
+      .provisioning-stage .page-status, .provisioning-stage .validation-message { position:static; width:auto; height:auto; clip-path:none; overflow:visible; overflow-wrap:anywhere; }
+      .provisioning-stage #claim-step[data-feedback="true"] .validation-message { display:none; }
+      .provisioning-stage .step h2, .provisioning-stage .step-description { height:auto; }
+      @media(max-width:599px) { .provisioning-stage { min-height:var(--dipsy-static-provisioning-stage-block-narrow); } }
     </style>
   </head>
   <body>
@@ -1102,14 +1110,14 @@
           <p id="identity-step-description" class="step-description">Choose the creator account this computer should use.</p>
           <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="identity-status" role="status">Sign in to your creator account on OnlyFans, then return here.</p><p id="extension-install-reason">Install the extension in the browser profile you use for your creator account.</p></div>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
-          <div class="actions" data-reserved-region="provisioning-actions"><button id="open-extension-setup" type="button" aria-describedby="identity-status" hidden>Open extension setup</button><button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Check again</button><button id="confirm-identity" type="button" disabled aria-describedby="identity-step-description">Use this account</button></div>
+          <div class="actions" data-reserved-region="provisioning-actions"><button id="open-extension-setup" type="button" aria-describedby="identity-status" hidden>Open extension setup</button><button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Try again</button><button id="confirm-identity" type="button" disabled aria-describedby="identity-step-description">Use this account</button></div>
         </section>
         <section id="binding-step" class="step" data-region-content data-step="approval" data-state="locked">
           <p id="binding-step-state" class="step-state">Step 3 of 4</p><h2 id="binding-heading">Connect your account</h2>
           <p id="binding-step-description" class="step-description">Approve which account this computer can use in the setup tab, then return here.</p>
           <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="creator-approval-unavailable" class="step-description approval-unavailable">Return to the setup tab where you got your code to allow this app to connect to your account.</p><p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Opens in a new tab.</p><button type="button" id="recovery-open" class="secondary">Can’t find the setup tab?</button></div>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
-          <div class="actions" data-reserved-region="provisioning-actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open account setup</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Check again</button></div>
+          <div class="actions" data-reserved-region="provisioning-actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open account setup</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Try again</button></div>
         </section>
         <section id="finalize-step" class="step" data-region-content data-step="finalization" data-state="locked">
           <p id="finalize-step-state" class="step-state">Step 4 of 4</p><h2 id="finalize-heading">Finish desktop setup</h2>

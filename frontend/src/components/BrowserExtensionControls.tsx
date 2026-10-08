@@ -86,8 +86,8 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     <Button onClick={() => port.open(step)} size="small" variant="outlined">{label}</Button>
   ) : undefined);
 
-  const feedback = <Box sx={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
-<StatusLine id="browser-feedback" tone="error" text={browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now. Open your browser and try again.'
+  const feedback = <Box sx={{ mt: 'auto' }}>
+<StatusLine essential id="browser-feedback" tone="error" text={browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now. Open your browser and try again.'
             : notice === 'no_response' ? "The browser extension didn't confirm the change. Check it in your browser."
               : "The change couldn't be sent. Try again."} />
   </Box>;
@@ -103,8 +103,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const paused = browser.capture === 'paused';
   const captureAction: CaptureAction | null = browser.capture === 'active' ? 'pause' : paused ? 'resume' : null;
   const resumeNeedsReview = paused && browser.legal_review_required;
-  const needsBrowserAction = browser.site_access !== 'granted' || browser.history_permission !== 'granted'
-    || resumeNeedsReview;
+  const needsBrowserAction = browser.site_access !== 'granted' || resumeNeedsReview;
 
   const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
     <Button
@@ -142,8 +141,8 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
       />
       <SettingRow
         sx={row}
-        title="Message history access"
-        description={browser.history_permission === 'granted' ? 'Allowed.' : 'Not allowed yet.'}
+        title="Message history access (optional)"
+        description={browser.history_permission === 'granted' ? 'Allowed.' : 'Allow this if you want to add older conversations.'}
         action={browser.history_permission === 'granted' ? undefined : openInExtension('history', 'Allow in extension')}
       />
         <Typography variant="body2" sx={{ height: 40, color: 'text.secondary', visibility: needsBrowserAction && !sameBrowser ? 'visible' : 'hidden' }}>

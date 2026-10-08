@@ -1,0 +1,31 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/transfer-error.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:onboarding-transfer:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "expired",
+        "replaced",
+        "used",
+        "wrong_destination",
+        "authentication_required",
+        "authorization_denied",
+        "proof_invalid",
+        "operation_conflict",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "title": "transfer error v1",
+  "type": "object"
+}

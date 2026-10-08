@@ -387,9 +387,9 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       )}
       </Stack>
       </ReservedRegion>
-      <StatusLine id="pairing-result" tone={failed ? 'error' : 'secondary'} text={failed
+      <StatusLine essential id="pairing-result" tone={failed ? 'error' : 'secondary'} text={failed
         ? "The connection couldn't be checked. Keep this page open and try again."
-        : approved ? connection === 'connected' ? 'Extension connected. Continue with Message history below.' : 'Connection approved. Waiting for the extension.'
+        : approved ? connection === 'connected' ? 'Extension connected.' : 'Connection approved. Waiting for the extension.'
           : status && terminal(status) ? extensionRefused ? 'The extension stopped the connection. Try again.'
             : status.state === 'expired' ? 'Time ran out before the connection finished. Try again.'
               : status.state === 'revoked' ? 'This browser extension was disconnected.'

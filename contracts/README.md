@@ -25,3 +25,16 @@ python -m contracts.verify
 ```
 
 The generator verifies the pinned published source manifest and exact approved export digests before copying bytes. Do not hand-edit vendored fixtures, manifests, pins, or hashes. Released `v1` contract bytes are append-only; a semantic change requires a new profile-version directory.
+
+The onboarding continuity family is included in `conformance_manifests` with its
+own raw-byte digest. Its schema, proof, transfer and cursor tests qualify the
+protocol independently of the canonical generator; they do not enable the new
+production flow. This pin migration permits replacement of only the exact
+previous catalog and source-manifest inventories. Every released schema,
+profile and fixture stays immutable.
+
+The initial installation handoff family is separately pinned and tested for
+closed schemas, independent key-proof verification, exact authorization digests,
+single enrollment and lost-response recovery. Its preparation and receipt objects
+do not establish local access or commercial activation. Runtime adoption remains
+separate from this contract pin.

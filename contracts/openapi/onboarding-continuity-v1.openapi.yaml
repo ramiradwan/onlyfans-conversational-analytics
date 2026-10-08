@@ -1,0 +1,381 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../schemas/onboarding/v1/transfer-error.schema.json"
+            }
+          }
+        },
+        "description": "Closed safe refusal. Unknown or unauthorized codes are indistinguishable."
+      }
+    },
+    "securitySchemes": {
+      "Csrf": {
+        "description": "Server-bound token and exact Origin/Fetch-Metadata verification; not a substitute for authentication.",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "type": "apiKey"
+      },
+      "HostedSession": {
+        "description": "Secure HttpOnly SameSite first-party session; independently verified Entra principal required.",
+        "in": "cookie",
+        "name": "__Host-onboarding",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "ADR0022 additive contracts. No authority follows from a code, continuation or projection. All bodies and headers are redacted.",
+    "title": "Onboarding continuity API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/onboarding/proof-challenges": {
+      "post": {
+        "operationId": "issueOnboardingProofChallenge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/onboarding/v1/proof-challenge-request.schema.json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/onboarding/v1/proof-challenge-response.schema.json"
+                }
+              }
+            },
+            "description": "Authenticated result; no local runtime authority."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "Csrf": [],
+            "HostedSession": []
+          }
+        ],
+        "summary": "Issue a 60-second one-use exact-operation challenge after authorized transaction lookup.",
+        "x-max-request-bytes": 8192,
+        "x-max-response-frame-bytes": 16384,
+        "x-profile": "urn:bridge-clean:onboarding-proof:v1"
+      }
+    },
+    "/v1/onboarding/stream-proof-challenges": {
+      "post": {
+        "operationId": "issueOnboardingStreamProofChallenge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/onboarding/v1/stream-proof-challenge-request.schema.json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/onboarding/v1/proof-challenge-response.schema.json"
+                }
+              }
+            },
+            "description": "Non-authorizing proof challenge; authentication is required at stream admission."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "summary": "Issue a uniform challenge without authority or existence disclosure; registered installation proof authenticates only at stream open.",
+        "x-max-request-bytes": 8192,
+        "x-max-response-frame-bytes": 16384,
+        "x-profile": "urn:bridge-clean:onboarding-proof:v1"
+      }
+    },
+    "/v1/onboarding/streams": {
+      "post": {
+        "operationId": "streamHostedOnboarding",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/onboarding/v1/hosted-stream-request.schema.json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "../schemas/onboarding/v1/hosted-event.schema.json"
+                }
+              }
+            },
+            "description": "Authenticated result; no local runtime authority."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "summary": "Local product initiates proof-authenticated replay of committed hosted facts.",
+        "x-max-request-bytes": 8192,
+        "x-max-response-frame-bytes": 16384,
+        "x-profile": "urn:bridge-clean:hosted-onboarding:v1"
+      }
+    },
+    "/v1/onboarding/transfers": {
+      "post": {
+        "operationId": "issueOnboardingTransfer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/onboarding/v1/transfer-issue-request.schema.json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/onboarding/v1/transfer-issue-response.schema.json"
+                }
+              }
+            },
+            "description": "Authenticated result; no local runtime authority."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "Csrf": [],
+            "HostedSession": []
+          }
+        ],
+        "summary": "Issue or atomically replace a receiving-side setup locator.",
+        "x-max-request-bytes": 8192,
+        "x-max-response-frame-bytes": 16384,
+        "x-profile": "urn:bridge-clean:onboarding-transfer:v1"
+      }
+    },
+    "/v1/onboarding/transfers:recover": {
+      "post": {
+        "operationId": "recoverOnboardingTransfer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/onboarding/v1/transfer-recover-request.schema.json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/onboarding/v1/transfer-result.schema.json"
+                }
+              }
+            },
+            "description": "Authenticated result; no local runtime authority."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "Csrf": [],
+            "HostedSession": []
+          }
+        ],
+        "summary": "Recover a committed operation with fresh destination-key proof; never replay bootstrap secrets.",
+        "x-max-request-bytes": 8192,
+        "x-max-response-frame-bytes": 16384,
+        "x-profile": "urn:bridge-clean:onboarding-transfer:v1"
+      }
+    },
+    "/v1/onboarding/transfers:redeem": {
+      "post": {
+        "operationId": "redeemOnboardingTransfer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/onboarding/v1/transfer-redeem-request.schema.json"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/onboarding/v1/transfer-result.schema.json"
+                }
+              }
+            },
+            "description": "Authenticated result; no local runtime authority."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "Csrf": [],
+            "HostedSession": []
+          }
+        ],
+        "summary": "Bind workflow continuation to the independently authenticated destination key.",
+        "x-max-request-bytes": 8192,
+        "x-max-response-frame-bytes": 16384,
+        "x-profile": "urn:bridge-clean:onboarding-transfer:v1"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://control-plane.example.invalid"
+    }
+  ]
+}

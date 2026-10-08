@@ -1,0 +1,70 @@
+{
+  "canonical_encoding": {
+    "domain": "BRIDGE-CLEAN-ONBOARDING-PROOF-V1",
+    "domain_terminator_byte": 0,
+    "field_length_prefix": "uint32_be",
+    "fields": [
+      "challenge",
+      "method",
+      "path",
+      "request_digest",
+      "purpose",
+      "destination_key_thumbprint",
+      "audience"
+    ],
+    "request_digest": "SHA256-RFC8785-request-object",
+    "text_encoding": "utf-8"
+  },
+  "domain_separation": {
+    "commercial_proof_substitution": false,
+    "grants_or_claims_signed": false,
+    "local_pairing_proof_substitution": false,
+    "provisioning_proof_substitution": false
+  },
+  "governing_adr": "docs/adr/0022-publish-onboarding-continuity-contracts.md",
+  "messages": {
+    "challenge.request": "schemas/onboarding/v1/proof-challenge-request.schema.json",
+    "challenge.response": "schemas/onboarding/v1/proof-challenge-response.schema.json",
+    "stream.challenge.request": "schemas/onboarding/v1/stream-proof-challenge-request.schema.json"
+  },
+  "operations": {
+    "hosted-stream": {
+      "method": "POST",
+      "path": "/v1/onboarding/streams"
+    },
+    "transfer-recover": {
+      "method": "POST",
+      "path": "/v1/onboarding/transfers:recover"
+    },
+    "transfer-redeem": {
+      "method": "POST",
+      "path": "/v1/onboarding/transfers:redeem"
+    }
+  },
+  "profile": "urn:bridge-clean:onboarding-proof:v1",
+  "proof": {
+    "algorithm": "ES256",
+    "audience": "urn:bridge-clean:commercial-control-plane:onboarding",
+    "canonical_base64url_required": true,
+    "challenge_binding": [
+      "actor",
+      "organization",
+      "transaction",
+      "request_digest",
+      "destination_key_thumbprint",
+      "operation"
+    ],
+    "challenge_single_use": true,
+    "challenge_ttl_seconds": 60,
+    "consume_challenge_with_mutation": "atomic",
+    "rendering": "base64url-unpadded",
+    "require_low_s": true,
+    "signature_bytes": 64,
+    "signature_encoding": "p1363",
+    "stream_challenge_is_authentication": false,
+    "stream_challenge_pre_authentication_response": "uniform-no-authority",
+    "stream_key_source": "registered-installation",
+    "transfer_challenge_issued_for_authenticated_actor": true,
+    "transfer_key_source": "request.destination"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/transfer-issue-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "destination_kind": {
+      "enum": [
+        "desktop",
+        "browser-extension"
+      ]
+    },
+    "onboarding_transaction_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "profile": {
+      "const": "urn:bridge-clean:onboarding-transfer:v1"
+    },
+    "purpose": {
+      "const": "resume-onboarding"
+    },
+    "replaces_transfer_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    }
+  },
+  "required": [
+    "profile",
+    "operation_id",
+    "onboarding_transaction_id",
+    "purpose",
+    "destination_kind"
+  ],
+  "title": "transfer issue request v1",
+  "type": "object"
+}

@@ -23,7 +23,7 @@ const DECODER_REFUSALS = Object.freeze({
 const OPERATION_REFUSALS = Object.freeze({
   binding_acquisition_unavailable: 'The connection is not approved yet. Allow it in the setup tab, then try again.',
   hosted_origin_unavailable: 'This app is missing its setup link. Return to the website where you got your code for help.',
-  hosted_unavailable: 'The setup service could not complete this step. Try again shortly. If it keeps happening, return to the setup tab for help.',
+  hosted_unavailable: 'Setup is unavailable. Try again shortly.',
   installation_key_unavailable: 'This computer’s secure device protection is unavailable. Restart the desktop app and try again.',
   membership_reference_unavailable: 'Desktop setup is incomplete. Close this page, reopen the desktop app, and continue setup.',
   candidate_resolution_conflict: 'This setup changed while approval was being checked. Close this page, reopen the desktop app, and continue setup.',
@@ -149,8 +149,9 @@ export function parseIdentityResponse(response) {
   return { accountId: profile.creator_account_id };
 }
 
-export function createChromeExtensionMessenger(chromeRuntime = globalThis.chrome?.runtime) {
+export function createChromeExtensionMessenger(runtime) {
   return (extensionId, message) => new Promise((resolve, reject) => {
+    const chromeRuntime = runtime ?? globalThis.chrome?.runtime;
     if (chromeRuntime?.sendMessage === undefined) return reject(new Error('extension messaging is unavailable'));
     chromeRuntime.sendMessage(extensionId, message, (response) => {
       if (chromeRuntime.lastError !== undefined) return reject(new Error(chromeRuntime.lastError.message));
@@ -284,6 +285,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     elements.claimPackage.disabled = recoveryRequired || mutationInFlight || installationRegistered || configurationComplete;
     elements.claimSubmit.disabled = !valid || recoveryRequired || mutationInFlight || installationRegistered || configurationComplete;
     elements.refreshIdentity.disabled = recoveryRequired || configurationComplete || associationRequestId !== null;
+    elements.refreshIdentity.hidden = extensionStage !== null || detectedAccountId !== null
+      || configurationComplete || associationRequestId !== null;
     elements.confirmIdentity.disabled = recoveryRequired || mutationInFlight || configurationComplete
       || !installationRegistered || detectedAccountId === null || associationRequestId !== null;
     elements.acquireAssociation.disabled = recoveryRequired || mutationInFlight || configurationComplete
@@ -308,9 +311,9 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (summary && target) {
       const validation = active === elements.claimStep ? elements.claimPackageValidation.textContent : '';
       const message = elements.status.textContent || validation;
-      summary.hidden = message.length <= 60;
-      elements.status.dataset.long = String(!summary.hidden && Boolean(elements.status.textContent));
-      elements.claimPackageValidation.dataset.long = String(!summary.hidden && !elements.status.textContent);
+      summary.hidden = true;
+      elements.status.dataset.long = 'false';
+      elements.claimPackageValidation.dataset.long = 'false';
       const copy = document.querySelector('#feedback-copy');
       if (copy) copy.textContent = message;
       if (summary.parentElement !== target) target.append(summary);
@@ -412,26 +415,24 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
 
     renderState();
     if (!EXTENSION_ID_PATTERN.test(extensionId)) {
-      setIdentityStatus('Enable the Conversation Analytics extension, then check again.'); renderExtensionSetup(); return;
+      setIdentityStatus('Enable the Conversation Analytics extension, then try again.'); renderExtensionSetup(); return;
     }
     try {
       const identity = parseIdentityResponse(await sendExtensionMessage(extensionId, IDENTITY_QUERY));
       if (identity === null) {
-        setIdentityStatus(missingExtensionStep() ?? 'The extension could not find your account. Sign in on OnlyFans, then check again.');
+        setIdentityStatus(missingExtensionStep() ?? 'The extension could not find your account. Sign in on OnlyFans, then try again.');
         renderExtensionSetup(); return;
       }
       if (identity.accountId === null) {
-        setIdentityStatus(missingExtensionStep() ?? 'Sign in to your creator account on OnlyFans, then check again.');
+        setIdentityStatus(missingExtensionStep() ?? 'Sign in to your creator account on OnlyFans, then try again.');
         renderExtensionSetup(); return;
       }
       detectedAccountId = identity.accountId;
 
-      setIdentityStatus(installationRegistered
-        ? 'Choose the creator account this computer should use.'
-        : 'Connect this computer first.');
+      setIdentityStatus(`Signed in now: ${detectedAccountId}`);
       renderState(); renderExtensionSetup();
     } catch {
-      setIdentityStatus(missingExtensionStep() ?? 'Enable the Conversation Analytics extension, then check again.');
+      setIdentityStatus(missingExtensionStep() ?? 'Enable the Conversation Analytics extension, then try again.');
       renderExtensionSetup();
     }
   }
@@ -465,7 +466,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (isInstallationRegisteredResponse(payload)) {
       installationRegistered = true;
       setStatus('');
-      if (detectedAccountId !== null) setIdentityStatus('Choose the creator account this computer should use.');
+      if (detectedAccountId !== null) setIdentityStatus(`Signed in now: ${detectedAccountId}`);
       renderState();
       focusCurrentStep();
     } else if (payload !== MUTATION_FAILED) setStatus('The code could not be checked. Try again.', true);

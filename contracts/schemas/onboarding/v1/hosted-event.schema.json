@@ -1,0 +1,26 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/hosted-event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "snapshot",
+        "committed"
+      ]
+    },
+    "profile": {
+      "const": "urn:bridge-clean:hosted-onboarding:v1"
+    },
+    "snapshot": {
+      "$ref": "hosted-snapshot.schema.json"
+    }
+  },
+  "required": [
+    "profile",
+    "kind",
+    "snapshot"
+  ],
+  "title": "hosted event v1",
+  "type": "object"
+}

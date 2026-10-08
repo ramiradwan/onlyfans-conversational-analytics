@@ -1,0 +1,851 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "brain-snapshot",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "snapshot",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 0,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": null,
+        "reason": "none"
+      }
+    },
+    {
+      "id": "brain-event-unknown-outcome",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "brain-invalid-revision",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": -1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "brain-invalid-epoch",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "old",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "brain-invalid-source",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "hosted",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "brain-invalid-reason",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "reload_required"
+      }
+    },
+    {
+      "id": "brain-invalid-account_generation",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": true,
+        "consent_generation": 2,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "brain-invalid-consent_generation",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 9007199254740992,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "brain-wrong-owner-facts",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "commercial_balance": 1
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "brain-unscoped-extra",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "brain",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "installation": "verified",
+          "enrollment": "verified",
+          "pairing": "verified",
+          "activation": "verified",
+          "analysis": "verified"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none",
+        "copy": "Ready"
+      }
+    },
+    {
+      "id": "extension-snapshot",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "snapshot",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 0,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": null,
+        "reason": "none"
+      }
+    },
+    {
+      "id": "extension-event-unknown-outcome",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "extension-invalid-revision",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": -1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "extension-invalid-epoch",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "old",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "extension-invalid-source",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "hosted",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "extension-invalid-reason",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "reload_required"
+      }
+    },
+    {
+      "id": "extension-invalid-account_generation",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": true,
+        "consent_generation": 2,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "extension-invalid-consent_generation",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 9007199254740992,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "extension-wrong-owner-facts",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "commercial_balance": 1
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none"
+      }
+    },
+    {
+      "id": "extension-unscoped-extra",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-state.v1",
+        "kind": "event",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "facts": {
+          "mode": "preview",
+          "consent": "valid",
+          "site_access": "granted",
+          "account": "matching",
+          "attachment": "ready",
+          "capture": "active"
+        },
+        "pending_operation": {
+          "operation_id": "33333333-3333-4333-8333-333333333333",
+          "status": "unknown"
+        },
+        "reason": "none",
+        "copy": "Ready"
+      }
+    },
+    {
+      "id": "brain-command",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-command.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "owner": "brain",
+        "action": "pair",
+        "account_generation": 1,
+        "consent_generation": 2
+      }
+    },
+    {
+      "id": "brain-wrong-action",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-command.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "owner": "brain",
+        "action": "accept_terms",
+        "account_generation": 1,
+        "consent_generation": 2
+      }
+    },
+    {
+      "id": "brain-result-as-command",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-command.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "owner": "brain",
+        "action": "pair",
+        "account_generation": 1,
+        "consent_generation": 2,
+        "status": "confirmed"
+      }
+    },
+    {
+      "id": "extension-command",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-command.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "owner": "extension",
+        "action": "pause",
+        "account_generation": 1,
+        "consent_generation": 2
+      }
+    },
+    {
+      "id": "extension-wrong-action",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-command.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "owner": "extension",
+        "action": "accept_terms",
+        "account_generation": 1,
+        "consent_generation": 2
+      }
+    },
+    {
+      "id": "extension-result-as-command",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-command.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "owner": "extension",
+        "action": "pause",
+        "account_generation": 1,
+        "consent_generation": 2,
+        "status": "confirmed"
+      }
+    },
+    {
+      "id": "result-confirmed",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-result.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-rejected",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-result.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "status": "rejected",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-unknown",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-result.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 1,
+        "account_generation": 1,
+        "consent_generation": 2,
+        "status": "unknown",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "discovery",
+      "valid": true,
+      "value": {
+        "profile": "local-installation-discovery.v1",
+        "hint": "extension_present",
+        "version": 1
+      }
+    },
+    {
+      "id": "discovery-reject-account",
+      "valid": false,
+      "value": {
+        "profile": "local-installation-discovery.v1",
+        "hint": "extension_present",
+        "version": 1,
+        "account": "value"
+      }
+    },
+    {
+      "id": "discovery-reject-installed",
+      "valid": false,
+      "value": {
+        "profile": "local-installation-discovery.v1",
+        "hint": "extension_present",
+        "version": 1,
+        "installed": "value"
+      }
+    },
+    {
+      "id": "discovery-reject-session",
+      "valid": false,
+      "value": {
+        "profile": "local-installation-discovery.v1",
+        "hint": "extension_present",
+        "version": 1,
+        "session": "value"
+      }
+    },
+    {
+      "id": "discovery-reject-grant",
+      "valid": false,
+      "value": {
+        "profile": "local-installation-discovery.v1",
+        "hint": "extension_present",
+        "version": 1,
+        "grant": "value"
+      }
+    },
+    {
+      "id": "discovery-reject-metadata",
+      "valid": false,
+      "value": {
+        "profile": "local-installation-discovery.v1",
+        "hint": "extension_present",
+        "version": 1,
+        "metadata": "value"
+      }
+    },
+    {
+      "id": "workspace-draft-not-consent",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-workspace.v1",
+        "version": 1,
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "route": "extension",
+        "draft_scope": {
+          "scope_id": "22222222-2222-4222-8222-222222222222",
+          "disclosure_bundle_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "draft": {
+          "terms_checked": true,
+          "risk_checked": true,
+          "full_checked": false
+        }
+      }
+    },
+    {
+      "id": "workspace-url-injection",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-workspace.v1",
+        "version": 1,
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "route": "https://untrusted.example",
+        "draft_scope": {
+          "scope_id": "22222222-2222-4222-8222-222222222222",
+          "disclosure_bundle_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "draft": {
+          "terms_checked": true,
+          "risk_checked": true,
+          "full_checked": false
+        }
+      }
+    },
+    {
+      "id": "workspace-authority-injection",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-workspace.v1",
+        "version": 1,
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "route": "extension",
+        "draft_scope": {
+          "scope_id": "22222222-2222-4222-8222-222222222222",
+          "disclosure_bundle_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "draft": {
+          "terms_checked": true,
+          "risk_checked": true,
+          "full_checked": false
+        },
+        "consent": "accepted"
+      }
+    },
+    {
+      "id": "workspace-foreign-draft",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-workspace.v1",
+        "version": 1,
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "route": "extension",
+        "draft_scope": {
+          "scope_id": "22222222-2222-4222-8222-222222222222",
+          "disclosure_bundle_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "draft": {
+          "terms_checked": true,
+          "risk_checked": true,
+          "full_checked": false,
+          "account": "alice"
+        }
+      }
+    },
+    {
+      "id": "continuation-controlled_restart",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-continuation.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "continuation_id": "33333333-3333-4333-8333-333333333333",
+        "target": "bridge",
+        "purpose": "controlled_restart"
+      }
+    },
+    {
+      "id": "continuation-secret-controlled_restart",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-continuation.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "continuation_id": "33333333-3333-4333-8333-333333333333",
+        "target": "bridge",
+        "purpose": "controlled_restart",
+        "session_token": "not-allowed"
+      }
+    },
+    {
+      "id": "continuation-first_enrollment",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-continuation.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "continuation_id": "33333333-3333-4333-8333-333333333333",
+        "target": "bridge",
+        "purpose": "first_enrollment"
+      }
+    },
+    {
+      "id": "continuation-secret-first_enrollment",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-continuation.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "continuation_id": "33333333-3333-4333-8333-333333333333",
+        "target": "bridge",
+        "purpose": "first_enrollment",
+        "session_token": "not-allowed"
+      }
+    },
+    {
+      "id": "enrollment-result",
+      "valid": true,
+      "value": {
+        "profile": "local-first-enrollment-result.v1",
+        "status": "registered",
+        "csrf_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "id": "unknown-version",
+      "valid": false,
+      "value": {
+        "profile": "local-installation-discovery.v2",
+        "hint": "extension_present",
+        "version": 1
+      }
+    }
+  ]
+}

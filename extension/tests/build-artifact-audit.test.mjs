@@ -53,6 +53,19 @@ test('signer wrapper without a packaged rule fails closed', () => {
   assert.throws(() => auditSigningRuleBinding(source, null, { required: true }));
 });
 
+test('packaged signer cannot be switched back to reload by caller options', async () => {
+  const asModule = (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+  const dependency = asModule('export async function createChromeBrowserSigningProvider(options) { return options; }');
+  const wrapper = await import(asModule(signerWrapperSource(fixture)
+    .replaceAll("'packaged-signer-implementation'", JSON.stringify(dependency))));
+  const options = await wrapper.createChromeBrowserSigningProvider({
+    captureMode: 'safe-reload', packagedRule: { untrusted: true }, expectedIdentity: '42',
+  });
+  assert.equal(options.captureMode, 'observe-only');
+  assert.deepEqual(options.packagedRule, fixtureRule);
+  assert.equal(options.expectedIdentity, '42');
+});
+
 test('executable audit rejects runtime discovery and executable-code factories', () => {
   const forbidden = [
     'runtime-discovery()',

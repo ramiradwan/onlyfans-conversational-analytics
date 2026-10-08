@@ -53,12 +53,17 @@ const probeStyle = { position: 'absolute', inset: 0, visibility: 'hidden', conta
 const detailStyle = { maxHeight: '60vh', overflow: 'auto', overflowWrap: 'anywhere' } as const;
 
 export interface NoticeContent { title: string; body: string; severity: 'info' | 'warning' | 'error'; details?: string }
-export function ReservedNotice({ id, notice }: { id: string; notice: NoticeContent | null }) {
+export function ReservedNotice({ id, notice, essential = false }: { id: string; notice: NoticeContent | null; essential?: boolean }) {
   const [open, setOpen] = useState(false);
   const { probe, overflow } = useContentFit(notice);
   const details = Boolean(notice?.details) || overflow;
   const alertStyle = { height: '100%', p: '12px', '& .MuiAlert-message': { p: 0, minWidth: 0 }, '& p': { lineHeight: '1.25rem', overflowWrap: 'anywhere' } };
   const copy = <><Typography variant="subtitle2" component="p">{notice?.title}</Typography><Typography variant="body2">{notice?.body}</Typography></>;
+  if (essential) return <Box data-reserved-region={id} sx={{ minHeight: '1.25rem', minWidth: 0 }}>
+    {notice && <Alert data-region-content severity={notice.severity} sx={{ ...alertStyle, height: 'auto' }}>
+      {copy}{notice.details && <Typography variant="body2">{notice.details}</Typography>}
+    </Alert>}
+  </Box>;
   return <ReservedRegion id={id} size={{ xs: sizes.notice.narrow, sm: sizes.notice.wide }}>
     <Box ref={probe} aria-hidden sx={probeStyle}><Alert role="presentation" severity={notice?.severity ?? 'info'} sx={alertStyle}><Typography variant="subtitle2" component="p" data-fit-text={notice?.title} /><Typography variant="body2" data-fit-text={notice?.body} /></Alert></Box>
     <Alert data-region-content severity={notice?.severity ?? 'info'} sx={{ ...alertStyle, visibility: notice ? 'visible' : 'hidden' }}>
@@ -70,11 +75,17 @@ export function ReservedNotice({ id, notice }: { id: string; notice: NoticeConte
   </ReservedRegion>;
 }
 
-export function StatusLine({ id, text, tone = 'secondary' }: { id: string; text: string | null; tone?: 'secondary' | 'error' }) {
+export function StatusLine({ id, text, tone = 'secondary', essential = false }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean }) {
   const [expandedText, setExpandedText] = useState<string | null>(null);
   const open = text !== null && expandedText === text;
   if (expandedText !== null && expandedText !== text) setExpandedText(null);
   const { probe, overflow: details } = useContentFit(text);
+  if (essential) return <Box data-reserved-region={id} sx={{ minHeight: '1.25rem', minWidth: 0 }}>
+    <Typography data-region-content variant="body2" role={tone === 'error' ? 'alert' : 'status'}
+      sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', visibility: text ? 'visible' : 'hidden', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>
+      {text || '\u00a0'}
+    </Typography>
+  </Box>;
   return <><ReservedRegion id={id} size={{ xs: sizes.statusLine.narrow, sm: sizes.statusLine.wide }}>
     <Box ref={probe} aria-hidden sx={probeStyle}><Typography variant="body2" data-fit-text={text} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere' }} /></Box>
     <Box data-region-content sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', visibility: text ? 'visible' : 'hidden' }}>
@@ -101,8 +112,8 @@ export function LoadingFrame({ label }: { label: string }) {
   </Box>;
 }
 
-export function ReservedSection({ id, size, loading, label, children }: { id: string; size: Size; loading?: boolean; label: string; children: ReactNode }) {
-  return <ReservedRegion id={id} size={size}><RevealGroup fallback={<LoadingFrame label={label} />}>
+export function ReservedSection({ id, size, loading, label, children, grow = false }: { id: string; size: Size; loading?: boolean; label: string; children: ReactNode; grow?: boolean }) {
+  return <ReservedRegion id={id} size={size} sx={grow ? { blockSize: 'auto', minBlockSize: Object.fromEntries(Object.entries(size).map(([key, value]) => [key, `${value / 16}rem`])) } : undefined}><RevealGroup fallback={<LoadingFrame label={label} />}>
     {loading ? <LoadingFrame label={label} /> : <Box data-region-content>{children}</Box>}
   </RevealGroup></ReservedRegion>;
 }

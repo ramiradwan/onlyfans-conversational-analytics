@@ -1,0 +1,145 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/proof-challenge-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:onboarding-proof:v1"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "transfer-redeem"
+            },
+            "request": {
+              "additionalProperties": false,
+              "properties": {
+                "destination": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "destination_id": {
+                      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+                    },
+                    "kind": {
+                      "enum": [
+                        "desktop",
+                        "browser-extension"
+                      ]
+                    },
+                    "public_key": {
+                      "$ref": "../../common/v1/definitions.schema.json#/$defs/publicP256Jwk"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "destination_id",
+                    "public_key"
+                  ],
+                  "type": "object"
+                },
+                "operation_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "profile": {
+                  "const": "urn:bridge-clean:onboarding-transfer:v1"
+                },
+                "purpose": {
+                  "const": "resume-onboarding"
+                },
+                "setup_code": {
+                  "maxLength": 12,
+                  "minLength": 12,
+                  "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "profile",
+                "operation_id",
+                "purpose",
+                "setup_code",
+                "destination"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "transfer-recover"
+            },
+            "request": {
+              "additionalProperties": false,
+              "properties": {
+                "destination": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "destination_id": {
+                      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+                    },
+                    "kind": {
+                      "enum": [
+                        "desktop",
+                        "browser-extension"
+                      ]
+                    },
+                    "public_key": {
+                      "$ref": "../../common/v1/definitions.schema.json#/$defs/publicP256Jwk"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "destination_id",
+                    "public_key"
+                  ],
+                  "type": "object"
+                },
+                "operation_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "profile": {
+                  "const": "urn:bridge-clean:onboarding-transfer:v1"
+                },
+                "purpose": {
+                  "const": "recover-onboarding"
+                },
+                "redemption_operation_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                }
+              },
+              "required": [
+                "profile",
+                "operation_id",
+                "purpose",
+                "redemption_operation_id",
+                "destination"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "operation",
+            "request"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "target"
+  ],
+  "title": "proof challenge request v1",
+  "type": "object"
+}
