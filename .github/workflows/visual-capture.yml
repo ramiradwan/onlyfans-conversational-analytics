@@ -40,12 +40,12 @@ jobs:
             exit 1
           fi
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -57,7 +57,7 @@ jobs:
 
       - name: Keep Playwright Chromium in the Actions cache
         id: playwright-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: visual-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/visual-capture/package-lock.json') }}
@@ -124,12 +124,12 @@ jobs:
       VISUAL_CI_GROUP: ${{ matrix.group }}
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -140,7 +140,7 @@ jobs:
 
       - name: Keep Playwright Chromium in the Actions cache
         id: playwright-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: visual-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/visual-capture/package-lock.json') }}
@@ -179,7 +179,7 @@ jobs:
         run: python tools/ci_visual_gate.py seal --artifact-dir artifacts/visual-raw/${{ matrix.group }} --publish-dir artifacts/visual-published/${{ matrix.group }} --diagnostics-dir artifacts/visual-diagnostics/${{ matrix.group }}
       - name: Retain immutable complete visual inputs
         if: ${{ success() && steps.visual-seal.outcome == 'success' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: visual-inputs-${{ matrix.group }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-published/${{ matrix.group }}/
@@ -187,7 +187,7 @@ jobs:
           if-no-files-found: error
       - name: Retain restricted visual diagnostics
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: visual-diagnostics-${{ matrix.group }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-diagnostics/${{ matrix.group }}/
@@ -203,12 +203,12 @@ jobs:
       VISUAL_CI_GROUP: all
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -219,7 +219,7 @@ jobs:
 
       - name: Keep Playwright Chromium in the Actions cache
         id: playwright-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: visual-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/visual-capture/package-lock.json') }}
@@ -258,7 +258,7 @@ jobs:
         run: python tools/ci_visual_gate.py seal --artifact-dir artifacts/visual-raw/all --publish-dir artifacts/visual-published/all --diagnostics-dir artifacts/visual-diagnostics/all
       - name: Retain immutable complete visual inputs
         if: ${{ success() && steps.visual-seal.outcome == 'success' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: visual-inputs-all-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-published/all/
@@ -266,7 +266,7 @@ jobs:
           if-no-files-found: error
       - name: Retain restricted visual diagnostics
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: visual-diagnostics-all-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-diagnostics/all/
@@ -285,11 +285,11 @@ jobs:
       actions: read
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -316,14 +316,14 @@ jobs:
       - name: Bind the final color report and approved captures
         run: python tools/ci_visual_gate.py finalize --output-dir artifacts/visual-capture --verified-output artifacts/visual-ci-verified.json
       - name: Retain verified visual assembly provenance
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: visual-verified-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/visual-ci-verified.json
           retention-days: 14
           if-no-files-found: error
       - name: Upload visual states
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: visual-states-${{ env.PRODUCT_SHA }}
           path: artifacts/visual-capture/

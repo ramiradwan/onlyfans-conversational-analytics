@@ -38,12 +38,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -52,7 +52,7 @@ jobs:
             extension/package-lock.json
             tools/analytics_cosmos_node/package-lock.json
       - name: Cache build caches
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             frontend/.vite
@@ -106,7 +106,7 @@ jobs:
       - name: Qualify bounded 10k-message snapshot repair
         run: npm run qualify:snapshot:ci --prefix extension
       - name: Upload frontend build
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: frontend-dist-${{ env.PRODUCT_SHA }}
           path: app/static/dist/
@@ -114,7 +114,7 @@ jobs:
           if-no-files-found: error
           overwrite: true
       - name: Upload audited extension artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: extension-dist-${{ env.PRODUCT_SHA }}
           path: extension/dist/
@@ -126,7 +126,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
@@ -140,7 +140,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -263,7 +263,7 @@ jobs:
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-contract-integrity/junit.xml
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ci-tests-backend-fast-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/ci-tests/
@@ -284,7 +284,7 @@ jobs:
           - 4
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           ref: ${{ env.PRODUCT_SHA }}
@@ -298,7 +298,7 @@ jobs:
             requirements-dev.txt
             packaging/sqlcipher/fixed-runtime-sources.json
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -328,7 +328,7 @@ jobs:
         run: python tools/test_backend.py --lane analytics-integration --shard ${{ matrix.shard }}
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ci-tests-analytics-integration-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{
             github.run_attempt }}
@@ -340,7 +340,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
@@ -358,7 +358,7 @@ jobs:
           New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "ofca-vcpkg-cache") | Out-Null
       - name: Cache native dependencies
         id: vcpkg-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}\ofca-vcpkg-cache
           key: ofca-vcpkg-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.image-version }}-${{
@@ -385,7 +385,7 @@ jobs:
           }
           $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM (Join-Path $wheelhouse "ci-source.json")
       - name: Retain fixed SQLCipher wheel and provenance
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
@@ -400,7 +400,7 @@ jobs:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Keep temporary test files on runner storage
@@ -436,7 +436,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -532,7 +532,7 @@ jobs:
           }
           $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP\windows-persistence-ci-source.json"
       - name: Retain Windows persistence evidence
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: windows-persistence-evidence-${{ env.PRODUCT_SHA }}
           path: |
@@ -547,7 +547,7 @@ jobs:
         if: always()
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ci-tests-windows-platform-contract-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
             }}
@@ -562,7 +562,7 @@ jobs:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Keep temporary test files on runner storage
@@ -598,7 +598,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -631,7 +631,7 @@ jobs:
         run: python tools/test_backend.py --lane analytics-windows-contract
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ci-tests-analytics-windows-contract-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
             }}
@@ -655,7 +655,7 @@ jobs:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Keep temporary test files on runner storage
@@ -691,7 +691,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -724,7 +724,7 @@ jobs:
         run: python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ci-tests-windows-full-regression-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
             }}
@@ -753,7 +753,7 @@ jobs:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Keep temporary test files on runner storage
@@ -789,7 +789,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -822,7 +822,7 @@ jobs:
         run: python tools/test_backend.py scale -- --ignore=tests/test_packaged_runtime.py --ignore=tests/test_installation_key.py
       - name: Retain backend timing and selection
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ci-tests-analytics-scale-qualification-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
             }}
@@ -840,11 +840,11 @@ jobs:
             exit 1
           fi
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -892,7 +892,7 @@ jobs:
       OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\browser-evidence\${{ matrix.lane }}\legal\runtime-ui-proof.json
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Keep browser test caches on runner storage
@@ -931,7 +931,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -941,7 +941,7 @@ jobs:
             tools/e2e-capture/package-lock.json
       - name: Cache Playwright Chromium
         id: playwright-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}\ms-playwright
           key: ofca-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/e2e-capture/package-lock.json')
@@ -998,7 +998,7 @@ jobs:
         run: python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" --publish-dir "$env:BROWSER_CI_REPORT_DIR-published" --diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"
       - name: Retain immutable browser producer evidence
         if: ${{ success() && steps.browser-seal.outcome == 'success' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: browser-e2e-inputs-${{ matrix.lane }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.BROWSER_CI_REPORT_DIR }}-published/
@@ -1006,7 +1006,7 @@ jobs:
           if-no-files-found: error
       - name: Retain restricted browser diagnostics
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: browser-e2e-diagnostics-${{ matrix.lane }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/
@@ -1030,7 +1030,7 @@ jobs:
       OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\browser-evidence\legacy\legal\runtime-ui-proof.json
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Keep browser test caches on runner storage
@@ -1069,7 +1069,7 @@ jobs:
         run: |
           "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -1079,7 +1079,7 @@ jobs:
             tools/e2e-capture/package-lock.json
       - name: Cache Playwright Chromium
         id: playwright-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}\ms-playwright
           key: ofca-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/e2e-capture/package-lock.json')
@@ -1135,7 +1135,7 @@ jobs:
         run: python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" --publish-dir "$env:BROWSER_CI_REPORT_DIR-published" --diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"
       - name: Retain immutable browser producer evidence
         if: ${{ success() && steps.browser-seal.outcome == 'success' }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: browser-e2e-inputs-legacy-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.BROWSER_CI_REPORT_DIR }}-published/
@@ -1143,7 +1143,7 @@ jobs:
           if-no-files-found: error
       - name: Retain restricted browser diagnostics
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: browser-e2e-diagnostics-legacy-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/
@@ -1164,7 +1164,7 @@ jobs:
       OFCA_PRODUCT_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
@@ -1172,7 +1172,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
       - name: Retrieve immutable browser producer evidence
@@ -1189,14 +1189,14 @@ jobs:
       - name: 'Generate Product #5 Legal evidence bundle'
         run: node tools/legal-evidence/generate-activation-bundle.mjs --execution-root artifacts/legal/execution --runtime-proof artifacts/legal/runtime-ui-proof.json
       - name: Retain verified browser assembly provenance
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: browser-e2e-verified-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/browser-evidence/assembly-receipt.json
           retention-days: 14
           if-no-files-found: error
       - name: 'Upload Product #5 Legal evidence bundle'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: legal-activation-v2-${{ env.PRODUCT_SHA }}
           path: artifacts/legal/activation-v2/${{ env.PRODUCT_SHA }}/
@@ -1223,7 +1223,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.PRODUCT_SHA }}
       - name: Setup Python
