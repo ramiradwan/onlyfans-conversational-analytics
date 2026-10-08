@@ -76,7 +76,7 @@ return [
   {
     workspace: 'passkey', state: 'cancelled',
     act: (page) => page.getByRole('button', { name: 'Sign in with passkey' }).click(),
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in was cancelled or timed out.' }),
+    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in did not finish.' }),
   },
   {
     workspace: 'analytics', state: 'model', variant: 'date-popover', viewports: ['desktop', 'narrow'],
