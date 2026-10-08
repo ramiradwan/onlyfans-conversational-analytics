@@ -56,7 +56,9 @@ export function dynamicSequence(view, width) {
     return steps;
   }
   for (const state of ['fresh', 'syncing', 'populated', 'fresh', 'populated']) add(`snapshot:${state}`);
-  const pending = view === 'home' ? ['activation.readiness'] : view === 'inbox' ? ['message.getPage'] : ['pairing.pins', 'history.get', 'activation.readiness', 'vault.get'];
+  // The initial settings requests follow the mounted section order. The later
+  // response-order matrix still exercises all 24 permutations independently.
+  const pending = view === 'home' ? ['activation.readiness'] : view === 'inbox' ? ['message.getPage'] : ['pairing.pins', 'activation.readiness', 'history.get', 'vault.get'];
   for (const key of pending) add(`response:${key}`);
   for (const state of ['reconnecting', 'disconnected', 'connected', 'error', 'connected']) add(`bridge:${state}`, `grace:${state}:2999`, `grace:${state}:3000`);
   if (view === 'inbox') add('message:pending', 'message:error');
