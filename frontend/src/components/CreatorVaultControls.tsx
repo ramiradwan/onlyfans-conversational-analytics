@@ -1,6 +1,6 @@
 import {
   Alert,
-  AlertTitle,
+  Box,
   Button,
   Dialog,
   DialogActions,
@@ -18,6 +18,7 @@ import {
 import { useEffect, useId, useState } from 'react';
 
 import { Panel, SectionHeader, SettingRow, useRevealHold } from './ui';
+import { StatusLine } from './ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   creatorVaultApi as defaultCreatorVaultApi,
@@ -201,21 +202,10 @@ export function CreatorVaultControls({
         sx={{ '& > .MuiAlert-root, & > [role="status"]': { m: 3 } }}>
         <SectionHeader sx={{ p: 3 }} summary="Saved only on this computer." title="Stored messages" />
 
-        {error && !editingArchive && <Alert severity="error" role="alert">{error}</Alert>}
-        {notice && <Alert severity="success" role="status">{notice}</Alert>}
-        {status?.deletion_operation && (
-          <Alert
-            action={api.retryDeletion && (
-              <Button color="inherit" disabled={busy} onClick={() => void retryDeletion()} size="small">
-                Finish deleting
-              </Button>
-            )}
-            severity="warning"
-          >
-            <AlertTitle>Deleting isn&apos;t finished</AlertTitle>
-            The messages are gone, but some of your numbers still include them.
-          </Alert>
-        )}
+        <Box sx={{ display: 'flex', gap: 1, px: 3 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}><StatusLine id="vault-feedback" tone={error ? 'error' : 'secondary'} text={!editingArchive && error ? error : notice ?? (status?.deletion_operation ? "Deleting isn't finished. The messages are gone, but some of your numbers still include them." : null)} /></Box>
+          {api.retryDeletion && <Button sx={{ alignSelf: 'flex-start', visibility: status?.deletion_operation ? 'visible' : 'hidden' }} color="inherit" disabled={busy} onClick={() => void retryDeletion()} size="small">Finish deleting</Button>}
+        </Box>
 
         {loading && (
           <Stack spacing={1} role="status" aria-label="Loading stored message settings">
@@ -314,13 +304,13 @@ export function CreatorVaultControls({
                 value={keepChoice}
               >
                 <FormControlLabel control={<Radio />} label="Keep for a set number of days" value="finite" />
-                {keepChoice === 'finite' && daysField}
+                <Box sx={{ height: '5rem', visibility: keepChoice === 'finite' ? 'visible' : 'hidden' }}>{daysField}</Box>
                 <FormControlLabel control={<Radio />} label="Keep until I delete them" value="indefinite" />
               </RadioGroup>
             ) : (
               daysField
             )}
-            {error && <Alert severity="error" role="alert">{error}</Alert>}
+            <StatusLine id="archive-feedback" text={error} tone="error" />
           </Stack>
         </DialogContent>
         <DialogActions>

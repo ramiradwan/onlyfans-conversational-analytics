@@ -9,7 +9,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright';
 
+import { runCaptureJobs } from './capture-jobs.mjs';
 import { captureStaticSurfaces } from './static-surfaces.mjs';
+import { installWatcher, readWatcher } from './shift-watcher.mjs';
+import { captureFreshnessTransitions } from './freshness-transitions.mjs';
+import { captureDynamicTransitions, REQUIRED_REGIONS } from './dynamic-transitions.mjs';
 
 import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
@@ -33,7 +37,9 @@ const text = (value) => (page) => page.getByText(value, { exact: true }).first()
 
 /** Each screen names the locator that proves its state rendered before capture. */
 export const SCREENS = [
-  { workspace: 'home', state: 'loading', ready: text('Processing your data…') },
+  ...['current', 'pending', 'unavailable', 'degraded'].map((state) => ({ workspace: 'graph', state,
+    ready: heading('Graph explorer'), act: (page) => page.evaluate((status) => window.__workspaceFixture.projection(status), state) })),
+  { workspace: 'home', state: 'loading', ready: text('Loading dashboard…') },
   {
     workspace: 'home',
     state: 'fresh',
@@ -83,7 +89,7 @@ export const SCREENS = [
   ...['loading', 'fresh', 'syncing', 'populated'].map((state) => ({
     workspace: 'settings',
     state,
-    ready: (page) => page.getByRole('heading', { name: 'Stored messages' }),
+    ready: (page) => state === 'loading' ? page.getByText('Loading settings…', { exact: true }).first() : page.getByRole('heading', { name: 'Stored messages' }),
     assert: async (page, viewport) => {
       if (viewport.name !== 'desktop') return;
       const frame = page.locator('[data-visual="settings-frame"]');
@@ -142,7 +148,7 @@ export const SCREENS = [
       await page.getByRole('button', { name: 'Turn on full analytics' }).click();
       await page.getByRole('link', { name: 'Open secure setup' }).dispatchEvent('click');
     },
-    ready: (page) => page.getByRole('status').filter({ hasText: 'Secure setup opened.' }),
+    ready: (page) => page.getByRole('alert').filter({ hasText: 'Secure setup opened.' }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'activation-error', viewports: ['narrow'], modes: ['light'],
@@ -184,7 +190,11 @@ export const SCREENS = [
     ready: text('Collecting in the browser.'),
   },
   {
-    workspace: 'settings', state: 'loading', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],
+    workspace: 'settings', state: 'populated', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],
+    act: (page) => page.evaluate(async () => {
+      const { bridgeTransportStore } = await import('/src/store/transportStore.ts');
+      bridgeTransportStore.markDisconnected();
+    }),
     ready: (page) => page.getByText('Extension linked to this app', { exact: true }),
   },
 ];
@@ -322,17 +332,35 @@ async function screenshot(page, file, fullPage) {
 }
 
 async function capture() {
+  const phaseTimings = {};
+  let phase = 'prepare', started = performance.now();
+  const nextPhase = (next) => {
+    phaseTimings[phase] = (performance.now() - started) / 1000;
+    console.log('capture phase ' + phase + ': ' + phaseTimings[phase].toFixed(3) + 's');
+    phase = next;
+    started = performance.now();
+  };
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
+  await new Promise((done, reject) => {
+    const build = spawn(process.execPath, [join(frontend, 'node_modules/vite/bin/vite.js'), 'build'], { cwd: frontend, stdio: 'inherit' });
+    build.once('error', reject);
+    build.once('exit', (code) => code === 0 ? done() : reject(new Error(`Production fixture build failed: ${code}`)));
+  });
   const { base, vite } = await startHarness();
   const browser = await chromium.launch();
   const entries = [];
   const diagnostics = [];
   const failures = [];
   let review = null;
+  let dynamic = [];
+  nextPhase('frontend');
   try {
-    for (const viewport of VIEWPORTS) {
-      for (const mode of MODES) {
+    const cases = VIEWPORTS.flatMap((viewport) => MODES.flatMap((mode) => selectedScreens
+      .filter((screen) => (!viewport.targetedOnly || screen.viewports?.includes(viewport.name))
+        && (!screen.viewports || screen.viewports.includes(viewport.name)) && (!screen.modes || screen.modes.includes(mode)))
+      .map((screen) => ({ viewport, mode, screen }))));
+    await runCaptureJobs(cases, async ({ viewport, mode, screen }) => {
         const context = await browser.newContext({
           colorScheme: mode,
           deviceScaleFactor: 1,
@@ -341,11 +369,9 @@ async function capture() {
           timezoneId: 'UTC',
           viewport: { width: viewport.width, height: viewport.height },
         });
-        for (const screen of selectedScreens) {
-          if (viewport.targetedOnly && !screen.viewports?.includes(viewport.name)) continue;
-          if (screen.viewports && !screen.viewports.includes(viewport.name)) continue;
-          if (screen.modes && !screen.modes.includes(mode)) continue;
+
           const page = await context.newPage();
+          await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace] });
           const errors = [];
           page.on('pageerror', (error) => errors.push(String(error)));
           await page.clock.setFixedTime(FIXED_NOW);
@@ -361,6 +387,9 @@ async function capture() {
             await assertBrandMarkIfPresent(page);
             await assertNumericTypography(page, viewport);
             if (screen.assert) await screen.assert(page, viewport);
+            const watcher = await readWatcher(page);
+            await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, ...watcher }) + '\n');
+            if (watcher.failures.length) throw new Error(watcher.failures.join('\n'));
 
             const overflow = await horizontalOverflow(page);
             if (overflow > 0) errors.push(`${overflow}px of unintended horizontal page overflow`);
@@ -404,27 +433,38 @@ async function capture() {
             if (errors.length) throw new Error(errors.join('\n'));
             console.log(`captured ${name} fold + full`);
           } catch (error) {
+            await page.screenshot({ path: join(outDir, `${name}-failure.png`) });
+            await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, error: error.message, ...await readWatcher(page) }) + '\n');
             failures.push(`${name}: ${error.message.split('\n')[0]}`);
             console.error(`failed ${name}: ${error.message}`);
           } finally {
             await page.close();
           }
-        }
         await context.close();
-      }
-    }
+    });
+    entries.sort((a, b) => a.file.localeCompare(b.file));
+    nextPhase('dynamic');
+    dynamic = await captureDynamicTransitions(browser, base, outDir);
+    failures.push(...dynamic.flatMap((report) => report.failures.map((failure) => `${report.file}: ${failure}`)));
+    nextPhase('freshness');
+    const freshness = await captureFreshnessTransitions(browser, base, outDir);
+    failures.push(...freshness.flatMap((report) => report.failures.map((failure) => `${report.file}: ${failure}`)));
+    nextPhase('review');
     review = await captureReviewChecks(browser, base, outDir);
     failures.push(...review.failures);
+    nextPhase('static');
     const staticReport = await captureStaticSurfaces(browser, outDir);
     failures.push(...staticReport.failures);
+    nextPhase('cleanup');
     review.static = { file: 'static-surfaces/acceptance.json', passed: staticReport.checks.length, screenshots: staticReport.entries.length, failures: staticReport.failures.length };
   } finally {
     await browser.close();
     vite.kill();
   }
+  nextPhase('manifest');
   await writeFile(
     join(outDir, 'manifest.json'),
-    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, entries, diagnostics, static: review?.static ?? null, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
+    `${JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, fixedNow: FIXED_NOW, phaseTimings, entries, diagnostics, dynamic, static: review?.static ?? null, review: review && { file: 'review/acceptance.json', passed: review.checks.length, failures: review.failures.length }, failures }, null, 2)}\n`,
   );
   if (failures.length) {
     console.error(`${failures.length} screen(s) did not reach their ready state:\n${failures.join('\n')}`);

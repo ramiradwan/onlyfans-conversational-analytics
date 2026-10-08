@@ -16,7 +16,7 @@ export function DashboardMetricsLoading() {
           color: 'text.secondary',
           mb: 1.5
         }}>
-        Processing your data…
+        Loading dashboard…
       </Typography>
       <Grid container spacing={2}>
         {Array.from({ length: 4 }, (_, index) => (

@@ -74,7 +74,7 @@ export function extensionLabel(connection: ExtensionConnection): string {
     case 'connected':
       return 'Connected';
     case 'offline':
-      return 'Connection interrupted';
+      return 'Not connected';
     case 'not_responding':
       return 'Not responding';
     case 'applying_settings':
@@ -102,7 +102,7 @@ export function insightsLabel(projection: ProjectionState): string {
   if (projection.status === 'pending' || projection.projected_revision < projection.canonical_revision) {
     return 'Updating';
   }
-  return 'Up to date';
+  return 'Insights updated';
 }
 
 export function newMessagesLabel(freshness: Pick<LiveFreshness, 'status'>): string {

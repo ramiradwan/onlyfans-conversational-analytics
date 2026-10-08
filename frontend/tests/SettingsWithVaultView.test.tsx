@@ -14,6 +14,11 @@ import SettingsWithVaultView from '../src/views/SettingsWithVaultView';
 
 type Section = 'pairing' | 'history' | 'activation' | 'vault';
 
+it('keeps all four section frames present while one request is pending', () => {
+  const view = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...apis('vault')} /></ThemeProvider>);
+  expect(view.container.querySelectorAll('[data-settings-section]')).toHaveLength(4);
+});
+
 const unused = async () => { throw new Error('not used'); };
 
 const history: HistorySettings = {
@@ -96,7 +101,7 @@ afterEach(() => {
 
 describe('SettingsWithVaultView', () => {
   it.each<Section>(['pairing', 'history', 'activation', 'vault'])(
-    'waits for the %s section before showing any section',
+    'settles the other sections while %s is pending',
     async (slow) => {
       const { release, ...props } = apis(slow);
       render(
@@ -106,13 +111,13 @@ describe('SettingsWithVaultView', () => {
       );
       await act(async () => undefined);
 
-      expect(screen.getByRole('status').textContent).toBe('Processing your data…');
-      expect(screen.queryByRole('heading', { name: 'Browser extension' })).toBeNull();
-      expect(screen.queryByRole('heading', { name: 'Stored messages' })).toBeNull();
-
+      const headings = { pairing: 'Browser extension', history: 'Message history', activation: 'Full analytics', vault: 'Stored messages' };
+      for (const [section, name] of Object.entries(headings)) {
+        expect(Boolean(screen.queryByRole('heading', { name }))).toBe(section !== slow);
+      }
       await act(async () => release());
 
-      expect(screen.queryByText('Processing your data…')).toBeNull();
+      expect(screen.queryByText('Loading settings…')).toBeNull();
       expect(screen.getByRole('button', { name: 'Connect extension' })).toBeTruthy();
       expect(screen.getByRole('heading', { name: 'Message history' })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Turn on full analytics' })).toBeTruthy();

@@ -56,6 +56,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 - [ADR 0042: Share immutable graph membership pages](0042-shared-graph-membership-pages.md)
 
+- [ADR 0043: Use bounded, source-linked analytics questions](0043-bounded-analytics-questions.md)
+
 - [ADR 0044: Message catch-up and freshness](0044-message-catch-up-and-freshness.md)
 
 - [ADR 0046: Preserve both canonical version-9 migration histories](0046-canonical-migration-lineages.md)
@@ -70,7 +72,6 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0017: Select packaged boot mode from runtime configuration](0017-configuration-selected-boot-modes.md)
 - [ADR 0024: Protect Full-mode communication with locally paired sessions](0024-authenticated-companion-sessions.md)
 
-- [ADR 0043: Use bounded, source-linked analytics questions](0043-bounded-analytics-questions.md)
 - [ADR 0045: Let the desktop app lead extension setup and controls with pushed state](0045-desktop-led-extension-setup.md)
 
 ## Superseded

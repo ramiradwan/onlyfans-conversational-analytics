@@ -4,6 +4,7 @@ import { Children, useId } from 'react';
 import { Panel } from '../ui/Panel';
 
 export interface OverviewProgress {
+  complete?: boolean;
   label: string;
   /** Percent complete, or null when the total is not known yet. */
   percent: number | null;
@@ -48,15 +49,15 @@ function Stat({ children, label, divider = false }: {
   );
 }
 
-function SplitLegend({ color, label, value }: { color: string; label: string; value: string }) {
+function SplitLegend({ color, label, value }: { color: string; label: string; value: string | undefined }) {
   return (
     <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', minWidth: 0 }}>
       <Box aria-hidden="true" sx={{
         alignSelf: 'center', bgcolor: color, borderRadius: '50%', flexShrink: 0, height: 8, width: 8,
       }} />
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>{label}</Typography>
-      <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-        {value}
+      <Typography data-reserved-region={`metric-${label}`} variant="body2" sx={{ display: 'inline-block', width: '9ch', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+        <span data-region-content>{value === undefined ? <Skeleton component="span" animation={false} width="8ch" sx={{ display: 'inline-block' }} /> : value}</span>
       </Typography>
     </Stack>
   );
@@ -85,42 +86,38 @@ export function DashboardOverview({
       }}
     >
       <Stat label="Conversations">
-        {isLoading ? (
-          <Skeleton variant="text" width={120} sx={{ typography: 'kpi' }} />
-        ) : (
-          <Typography variant="kpi" data-visual="conversation-total">{conversations}</Typography>
-        )}
-        {progress && (
-          <Stack data-journey-state="desktop.history_syncing" spacing={1} sx={{ maxWidth: 280, mt: 2.5 }}>
+        <Typography variant="kpi" data-reserved-region="metric-conversations" sx={{ width: 'min(9ch, 100%)', height: '1.4em', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums', '& > span': { display: 'block', height: '100%' } }} data-visual="conversation-total"><span data-region-content>{isLoading ? <Skeleton component="span" animation={false} width="100%" sx={{ display: 'inline-block' }} /> : conversations}</span></Typography>
+        <Box sx={{ height: 48, alignSelf: 'start' }}> {progress && (
+          <Stack spacing={1} sx={{ maxWidth: 280, mt: 2.5 }}>
             <LinearProgress
+              data-journey-state="desktop.history_syncing"
+              sx={{ visibility: progress.complete ? 'hidden' : 'visible',
+                '& .MuiLinearProgress-bar': { animation: 'none', transform: 'none !important', clipPath: `inset(0 ${100 - (progress.percent ?? 35)}% 0 0)` },
+                '& .MuiLinearProgress-bar2': { display: 'none' } }}
               aria-label={progress.label}
               variant={progress.percent === null ? 'indeterminate' : 'determinate'}
               value={progress.percent ?? undefined}
             />
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>{progress.label}</Typography>
           </Stack>
-        )}
+        )}</Box>
       </Stat>
       <Stat label="Messages" divider>
-        {isLoading ? (
-          <Skeleton variant="text" width={100} sx={{ typography: 'metric' }} />
-        ) : (
-          <Typography variant="metric" data-visual="message-total">{messages}</Typography>
-        )}
-        <Box sx={{ minWidth: 0, mt: 1 }}>
+        <Typography variant="metric" data-reserved-region="metric-messages" sx={{ width: 'min(9ch, 100%)', height: '1.4em', lineHeight: 1.4, fontVariantNumeric: 'tabular-nums', '& > span': { display: 'block', height: '100%' } }} data-visual="message-total"><span data-region-content>{isLoading ? <Skeleton component="span" animation={false} width="100%" sx={{ display: 'inline-block' }} /> : messages}</span></Typography>
+        <Box sx={{ minWidth: 0, mt: 1, alignSelf: 'start' }}>
           <Box aria-hidden="true" sx={{
-            bgcolor: 'action.hover', borderRadius: 999, display: 'flex', height: 8, overflow: 'hidden',
+            bgcolor: 'action.hover', borderRadius: 999, position: 'relative', height: 8, overflow: 'hidden',
           }}>
             {receivedShare !== null && (
               <>
-                <Box sx={{ bgcolor: RECEIVED_COLOR, width: `${receivedShare}%` }} />
-                <Box sx={{ bgcolor: SENT_COLOR, flex: 1, ml: '2px' }} />
+                <Box sx={{ bgcolor: SENT_COLOR, position: 'absolute', inset: 0 }} />
+                <Box sx={{ bgcolor: RECEIVED_COLOR, position: 'absolute', inset: 0, clipPath: `inset(0 ${100 - receivedShare}% 0 0)` }} />
               </>
             )}
           </Box>
           <Stack direction="row" sx={{ columnGap: 3, flexWrap: 'wrap', mt: 1.5, rowGap: 1 }}>
-            <SplitLegend color={RECEIVED_COLOR} label="Received" value={isLoading ? '…' : received} />
-            <SplitLegend color={SENT_COLOR} label="Sent" value={isLoading ? '…' : sent} />
+            <SplitLegend color={RECEIVED_COLOR} label="Received" value={isLoading ? undefined : received} />
+            <SplitLegend color={SENT_COLOR} label="Sent" value={isLoading ? undefined : sent} />
           </Stack>
         </Box>
       </Stat>

@@ -85,6 +85,36 @@ afterEach(() => {
 });
 
 describe('Bridge WebSocket lifecycle', () => {
+  it('negotiates, stores and fences catch-up freshness across reconnects', () => {
+    const { service, sockets, store } = harness();
+    service.connect();
+    const socket = sockets[0];
+    socket.open();
+    expect(JSON.parse(socket.sent[0]).payload.capabilities).toContain('state.catchup_freshness');
+    completeHandshake(socket);
+    const snapshot = fixture('state.snapshot');
+    const freshness = { status: 'current', reason: null, gap_epoch: 1, uncertain_since: null,
+      check_id: null, last_closed_at: '2026-07-19T10:00:00Z', observing_since: '2026-07-19T10:00:00Z', evaluated_at: '2026-07-19T10:00:00Z' };
+    snapshot.payload.catchup_freshness = freshness;
+    socket.receive(snapshot);
+    expect(store.getState().catchupFreshness).toEqual(freshness);
+    const delta = fixture('state.delta');
+    delta.payload.view_revision = snapshot.payload.view_revision + 1;
+    const paused = { ...freshness, status: 'paused', reason: 'extension_offline' };
+    delta.payload.changes = [{ type: 'catchup_freshness.replace', catchup_freshness: paused }];
+    socket.receive(delta);
+    expect(store.getState().catchupFreshness).toEqual(paused);
+    socket.receive({ ...snapshot, payload: { ...snapshot.payload, view_revision: delta.payload.view_revision + 1, catchup_freshness: { ...freshness, reason: 'unknown_reason' } } });
+    expect(store.getState().readModelState).toBe('resyncing');
+    service.disconnect();
+    service.connect();
+    sockets[1].open();
+    completeHandshake(sockets[1]);
+    expect(store.getState().catchupFreshness).toBeNull();
+    store.bindAccount('different');
+    expect(store.getState().catchupFreshness).toBeNull();
+    service.disconnect();
+  });
   it('uses the golden handshake and dispatches all initial state slices', () => {
     const { service, sockets, store } = harness();
     service.connect();

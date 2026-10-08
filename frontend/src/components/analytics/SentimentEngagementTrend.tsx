@@ -310,6 +310,7 @@ export function SentimentEngagementTrend({
         </ToggleButtonGroup>
       </Stack>
 
+      <Box data-reserved-region="tone-view" data-region-role="scroll" sx={{ height: componentTokens.analytics.chartHeight + 32, overflowY: 'auto', scrollbarGutter: 'stable' }}>
       {view === 'chart' ? (
         <>
           <Plot>
@@ -468,7 +469,7 @@ export function SentimentEngagementTrend({
           </DateExtent>
         </>
       ) : (
-        <TableScroller>
+        <TableScroller data-region-content>
           <table aria-label="Message tone over time data">
             <thead>
               <tr>
@@ -497,6 +498,7 @@ export function SentimentEngagementTrend({
           </table>
         </TableScroller>
       )}
+      </Box>
     </Stack>
   );
 }

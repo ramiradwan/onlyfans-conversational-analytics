@@ -16,6 +16,7 @@ import {
   type AnalyticsWindowSources,
 } from '../../analytics';
 import { componentTokens } from '../../theme';
+import { ReservedRegion } from '../ui/ReservedRegion';
 
 const Root = styled(Box)(({ theme }) => ({
   backgroundColor: theme.vars.palette.background.default,
@@ -100,6 +101,7 @@ export function AnalyticsPresentation({
           onApply={onDateRangeChange}
           isRefreshing={state.isRefreshing}
         />
+        <ReservedRegion id="analytics-content" regionRole="scroll" size={{ xs: 1750, sm: 1120 }}><Box key={state.data ? 'results' : state.status} data-region-content>
         <AnalyticsStateFrame state={state} onRetry={onRetry}>
           {model && (
             <Stack spacing={1.5}>
@@ -133,6 +135,7 @@ export function AnalyticsPresentation({
             </Stack>
           )}
         </AnalyticsStateFrame>
+        </Box></ReservedRegion>
         </>}
       </Stack>
     </Root>

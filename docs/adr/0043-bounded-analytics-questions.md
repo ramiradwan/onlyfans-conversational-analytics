@@ -1,7 +1,8 @@
 # ADR 0043: Use bounded, source-linked analytics questions
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-18
+- Accepted: 2026-10-08, with repository-owner authorization to land [PR #47](https://github.com/ramiradwan/onlyfans-conversational-analytics/pull/47). Product qualification continues separately.
 
 ## Decision
 

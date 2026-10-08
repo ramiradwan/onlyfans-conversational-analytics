@@ -1,5 +1,5 @@
 import { noticeText, secureExternalUrl } from './surface-client.mjs';
-import { journeyBadge, readinessLabels } from './presentation.mjs';
+import { statusPresentation, readinessLabels } from './presentation.mjs';
 export const element = (id) => document.getElementById(id);
 export const show = (id, visible) => element(id).classList.toggle('hidden', !visible);
 export const text = (id, value) => { element(id).textContent = value; };
@@ -13,10 +13,10 @@ export function renderLoading(status, failed) {
   if (!status) document.querySelector('main').removeAttribute('data-ready');
 }
 
-export function renderJourney(journey) {
+export function renderJourney(journey, model) {
   element('journey-card').dataset.tone = journey.tone;
   element('journey-card').dataset.journeyState = journey.id;
-  text('journey-badge', journeyBadge(journey));
+  text('journey-badge', statusPresentation(model).label);
   text('journey-title', journey.title); text('journey-body', journey.body);
 }
 export function renderReadiness(model) {

@@ -117,6 +117,12 @@ export async function launchProvisioningBrowser(userDataDir, { creatorAccountId 
   return context;
 }
 
+export async function returnToProvisioningPage(page) {
+  await page.bringToFront();
+  // Browser automation keeps tabs focused, so signal the completed return.
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+}
+
 export class ProvisioningHost {
   constructor({ dataDirectory, extensionId }) {
     this.dataDirectory = dataDirectory;

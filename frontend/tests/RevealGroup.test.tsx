@@ -9,9 +9,9 @@ function Section({ label, pending }: { label: string; pending: boolean }) {
   return <p>{pending ? `${label} loading` : `${label} ready`}</p>;
 }
 
-function Group({ first, second, maxWaitMs }: { first: boolean; second: boolean; maxWaitMs?: number }) {
+function Group({ first, second }: { first: boolean; second: boolean }) {
   return (
-    <RevealGroup fallback={<p role="status">Waiting</p>} maxWaitMs={maxWaitMs}>
+    <RevealGroup fallback={<p role="status">Waiting</p>}>
       <Section label="First" pending={first} />
       <Section label="Second" pending={second} />
     </RevealGroup>
@@ -63,15 +63,15 @@ describe('RevealGroup', () => {
     expect(shown('First loading')).toBe(true);
   });
 
-  it('reveals after the time limit when a section never settles', () => {
+  it('does not reveal unknown state after an arbitrary timeout', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    render(<Group first second={false} maxWaitMs={500} />);
+    render(<Group first second={false} />);
     expect(shown('First loading')).toBe(false);
 
-    act(() => vi.advanceTimersByTime(500));
+    act(() => vi.advanceTimersByTime(5000));
 
-    expect(screen.queryByRole('status')).toBeNull();
-    expect(shown('First loading')).toBe(true);
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(shown('First loading')).toBe(false);
   });
 
   it('leaves sections outside a group visible', () => {

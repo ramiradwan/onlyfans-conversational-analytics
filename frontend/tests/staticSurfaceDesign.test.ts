@@ -61,7 +61,7 @@ describe('static surface content and behavior boundaries', () => {
     expect(doc.querySelectorAll('link')).toHaveLength(1);
     expect(doc.querySelector('link')?.getAttribute('href')).toMatch(/^data:font\/woff2;base64,/);
     expect(doc.querySelector('#full-disclosure')).toBeNull();
-    expect(doc.querySelector('textarea')?.getAttribute('aria-describedby'))
+    expect(doc.querySelector('input#claim-package')?.getAttribute('aria-describedby'))
       .toBe('claim-package-help claim-package-validation claim-package-count');
   });
 });

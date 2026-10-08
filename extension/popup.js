@@ -1,6 +1,6 @@
 import { UI_RELOAD_TABS_MESSAGE_TYPE } from './runtime/consent-controller.mjs';
 import { createSurfaceClient, openSurface, send } from './ui/surface-client.mjs';
-import { customerJourney, isPreview, phaseLabel } from './ui/presentation.mjs';
+import { customerJourney, isPreview, phaseLabel, statusPresentation } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { transition, openCreatorAccount } from './ui/actions.mjs';
 
@@ -27,15 +27,15 @@ function render(model) {
   show('ready-details', showReadiness);
   renderReadiness(model);
   text('desktop-status', model.desktopRuntimeReachable ? 'Running' : 'Not running');
-  if (!status) { text('mode-label', 'Checking status…'); return; }
+  if (!status) { text('mode-label', statusPresentation(model).label); return; }
   document.querySelector('main').dataset.ready = 'true';
   text('mode-label', phaseLabel(status));
   for (const [id, key] of [['messages-count', 'message_observations'], ['chats-count', 'chat_observations'],
     ['inbound-count', 'inbound_observations'], ['outbound-count', 'outbound_observations']]) {
-    text(id, new Intl.NumberFormat().format(status.preview?.[key] ?? 0));
+    text(id, (status.preview?.[key] ?? 0) > 9_999_999 ? '10M+' : new Intl.NumberFormat().format(status.preview?.[key] ?? 0));
   }
   const journey = customerJourney(model);
-  renderJourney(journey);
+  renderJourney(journey, model);
   primaryAction = 'setup'; setupSection = '';
   let label = 'Continue setup';
   if (!legal?.configured || legal.requires_reauthorization) {
@@ -64,6 +64,10 @@ function render(model) {
   element('journey-card').classList.toggle('popup-action-only', status.consent.mode === 'preview'
     && !status.reload_required && status.phase !== 'permission_required' && !legal?.requires_reauthorization);
   text('journey-primary', label); show('journey-primary', true);
+  const summary = statusPresentation(model);
+  text('journey-badge', summary.label);
+  text('journey-title', summary.label);
+  text('journey-body', summary.body);
 }
 page.bind('journey-primary', () => {
   if (primaryAction === 'resume') return transition('resume', client.model);
@@ -74,6 +78,7 @@ page.bind('journey-primary', () => {
   return openSurface('setup', setupSection);
 });
 page.bind('pause', () => transition('pause', client.model));
+page.bind('continue-setup', () => openSurface('setup'));
 page.bind('open-manage', () => openSurface('options'));
 page.bind('open-connection', () => openSurface('options', 'connection'));
 page.bind('clear-preview', () => openSurface('options', 'data'));

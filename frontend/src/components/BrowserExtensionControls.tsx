@@ -1,6 +1,6 @@
 import PauseCircleOutlinedIcon from '@mui/icons-material/PauseCircleOutlined';
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
-import { Alert, Button, Stack, Typography } from '@mui/material';
+import { Box, Button, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { SettingRow } from './ui';
@@ -13,6 +13,7 @@ import {
 } from '../services/browserControlApi';
 import type { ExtensionPort, ExtensionStep } from '../services/extensionPort';
 import type { ExtensionConnection } from '../utils/statusCopy';
+import { StatusLine } from './ui/ReservedRegion';
 
 // How long to wait for the extension's pushed state before reporting no response.
 const RESPONSE_DEADLINE_MS = 10_000;
@@ -61,6 +62,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   }, [pending]);
 
   const setCapture = async (action: CaptureAction) => {
+    if (connection !== 'connected' || browser === null) return;
     operation.current?.abort();
     const controller = new AbortController();
     operation.current = controller;
@@ -84,14 +86,18 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     <Button onClick={() => port.open(step)} size="small" variant="outlined">{label}</Button>
   ) : undefined);
 
+  const feedback = <Box sx={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
+<StatusLine id="browser-feedback" tone="error" text={browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now. Open your browser and try again.'
+            : notice === 'no_response' ? "The browser extension didn't confirm the change. Check it in your browser."
+              : "The change couldn't be sent. Try again."} />
+  </Box>;
   if (browser === null) {
-    // A connection issue is already explained above; don't repeat it.
-    if (connection !== 'connected') return null;
-    return (
-      <Typography data-browser-controls="waiting" variant="body2" sx={{ color: 'text.secondary' }}>
+    return <Stack sx={{ height: '100%', position: 'relative' }}>
+      {connection === 'connected' && <Typography data-browser-controls="waiting" variant="body2" sx={{ color: 'text.secondary' }}>
         Waiting for the browser extension to report its settings.
-      </Typography>
-    );
+      </Typography>}
+      {feedback}
+    </Stack>;
   }
 
   const paused = browser.capture === 'paused';
@@ -102,7 +108,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
 
   const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
     <Button
-      disabled={pending !== null}
+      disabled={pending !== null || connection !== 'connected'}
       onClick={() => void setCapture(captureAction)}
       size="small"
       startIcon={captureAction === 'pause' ? <PauseCircleOutlinedIcon /> : <PlayCircleOutlinedIcon />}
@@ -112,10 +118,14 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
         : captureAction === 'pause' ? 'Pause collecting' : 'Resume collecting'}
     </Button>
   ) : resumeNeedsReview ? openInExtension('setup', 'Review terms') : undefined;
+  const row = { height: { xs: '8rem', sm: '4rem' }, justifyContent: 'flex-start',
+    '& > .MuiBox-root:first-of-type': { height: 64, flex: { sm: 1 } },
+    '& > .MuiBox-root:last-of-type:not(:first-of-type)': { height: 40, width: 200, flex: 'none', '& button': { width: 200, height: 40, justifyContent: 'flex-start' } } };
 
   return (
-    <Stack data-browser-controls="available" data-journey-state="desktop.browser_controls" spacing={1.5}>
+    <Stack data-browser-controls="available" data-journey-state="desktop.browser_controls" spacing={1.5} sx={{ height: '100%', position: 'relative' }}>
       <SettingRow
+        sx={row}
         title="New messages"
         description={browser.capture === 'active' ? 'Collecting in the browser.'
           : resumeNeedsReview ? 'Paused. Review the updated terms in the extension to resume.'
@@ -123,6 +133,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
         action={captureButton}
       />
       <SettingRow
+        sx={row}
         title="Site access"
         description={browser.site_access === 'granted' ? 'Allowed for OnlyFans.'
           : browser.site_access === 'reload_required' ? 'Reload your OnlyFans tabs to apply it.'
@@ -130,22 +141,15 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
         action={browser.site_access === 'granted' ? undefined : openInExtension('access', 'Allow in extension')}
       />
       <SettingRow
+        sx={row}
         title="Message history access"
         description={browser.history_permission === 'granted' ? 'Allowed.' : 'Not allowed yet.'}
         action={browser.history_permission === 'granted' ? undefined : openInExtension('history', 'Allow in extension')}
       />
-      {needsBrowserAction && !sameBrowser && (
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        <Typography variant="body2" sx={{ height: 40, color: 'text.secondary', visibility: needsBrowserAction && !sameBrowser ? 'visible' : 'hidden' }}>
           Change these in the browser where the extension is installed.
         </Typography>
-      )}
-      {notice !== null && (
-        <Alert severity="warning" role="alert">
-          {notice === 'unreachable' ? 'The browser extension is not connected right now. Open your browser and try again.'
-            : notice === 'no_response' ? "The browser extension didn't confirm the change. Check it in your browser."
-              : "The change couldn't be sent. Try again."}
-        </Alert>
-      )}
+      {feedback}
     </Stack>
   );
 }

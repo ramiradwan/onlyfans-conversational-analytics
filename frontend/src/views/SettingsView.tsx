@@ -19,6 +19,7 @@ import {
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { Panel, SectionHeader, useRevealHold, type SectionStatus } from '../components/ui';
+import { StatusLine } from '../components/ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import type { HistorySettings } from '../protocol';
 import {
@@ -45,7 +46,7 @@ function changeFailure(cause: unknown, fallback: string): string {
 
 function waitingText(settings: HistorySettings): string {
   if (settings.desired_state === 'running') {
-    return 'Waiting for the browser extension to start. If nothing changes, open the extension and choose Allow message history.';
+    return 'Waiting for the extension. Check Message history access under Browser extension.';
   }
   if (settings.desired_state === 'paused') return 'Pausing when the browser extension next connects.';
   return 'Waiting for the browser extension to apply this change.';
@@ -177,6 +178,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
   return (
     <Panel>
       <SectionHeader
+        sx={{ height: { xs: '6rem', sm: '4.5rem' }, '& > [aria-live]': { width: '5rem', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
         status={status}
         summary={
           settings !== null && !hasConsent
@@ -186,7 +188,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
         title="Message history"
       />
 
-      {error && <Alert severity="error" role="alert">{error}</Alert>}
+      <StatusLine id="history-feedback" tone={error ? 'error' : 'secondary'} text={error ?? (hasConsent && settings && settings.desired_state !== settings.effective_state ? waitingText(settings) : null)} />
 
       {loading ? (
         <Stack spacing={1} role="status" aria-label="Loading message history settings">
@@ -196,6 +198,7 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
         </Stack>
       ) : settings !== null ? (
         <Stack data-journey-state="desktop.message_history" spacing={2}>
+          <Box sx={{ height: { xs: '5rem', sm: '6rem' } }}>
           {waitingForExtension ? (
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               Available once the browser extension is connected.
@@ -209,8 +212,8 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
           ) : historyComplete ? (
             <Typography variant="body2">
               {discoveredConversations === null
-                ? 'History synced.'
-                : `All ${NUMBER_FORMAT.format(discoveredConversations)} conversations synced.`}
+                ? 'History saved.'
+                : `History saved for ${NUMBER_FORMAT.format(completeConversations)} chats`}
             </Typography>
           ) : (
             <Stack spacing={0.75}>
@@ -232,15 +235,13 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
             </Stack>
           )}
 
-          {hasConsent && settings.desired_state !== settings.effective_state && (
-            <Alert severity="info" role="status">{waitingText(settings)}</Alert>
-          )}
+          </Box>
 
           {!canManageHistorySync && (
             <Alert severity="info">Only the account owner can change message history.</Alert>
           )}
 
-          {!hasConsent && !waitingForExtension && canManageHistorySync && (
+          <Box sx={{ height: { xs: '5rem', sm: '2.5rem' }, visibility: !hasConsent && !waitingForExtension && canManageHistorySync ? 'visible' : 'hidden' }}>
             <FormControlLabel
               control={(
                 <Checkbox
@@ -250,13 +251,13 @@ export default function SettingsView({ api = defaultHistorySettingsApi }: Settin
               )}
               label="I allow read-only syncing of my older messages to this computer."
             />
-          )}
+          </Box>
 
           {canManageHistorySync && !waitingForExtension && (
             <Stack
               direction={{ xs: 'column', sm: 'row' }}
               spacing={1.5}
-              sx={{ alignItems: { xs: 'flex-start', sm: 'center' } }}
+              sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, '& > button': { height: '2.5rem', width: 'min(16rem, 100%)', justifyContent: 'flex-start' } }}
             >
               {!hasConsent ? (
                 <Button

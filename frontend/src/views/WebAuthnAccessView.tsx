@@ -1,6 +1,8 @@
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import { Alert, Box, Button, Link, Paper, Stack, Typography } from '@mui/material';
+import { Box, Button, Link, Paper, Stack, Typography } from '@mui/material';
 import { useState } from 'react';
+
+import { StatusLine } from '../components/ui/ReservedRegion';
 
 import { BRAND_INSET, BrandMark } from '../layouts/BrandMark';
 import { webauthnApi, type WebAuthnApi } from '../services/webauthnApi';
@@ -10,11 +12,6 @@ import { surfaceArrival } from '../theme/presentationMotion';
 /** Browser ceremony outcomes where the person closed the prompt or let it time out. */
 const CANCELLED_CEREMONIES = new Set(['NotAllowedError', 'AbortError']);
 
-/** Brings a newly shown alert into view when the window is too short to show it below the card. */
-function revealAlert(alert: HTMLDivElement | null) {
-  alert?.scrollIntoView?.({ block: 'nearest' });
-}
-
 function failureMessage(cause: unknown, enroll: boolean): string {
   const name = typeof cause === 'object' && cause !== null && 'name' in cause ? cause.name : null;
   if (typeof name === 'string' && CANCELLED_CEREMONIES.has(name)) {
@@ -23,8 +20,8 @@ function failureMessage(cause: unknown, enroll: boolean): string {
       : 'Sign-in was cancelled or timed out. Try again.';
   }
   return enroll
-    ? "Couldn't set up a passkey. Try again, or sign in if you've already set one up on this computer."
-    : "Sign-in didn't finish. Try again, or set up a passkey if this is your first time on this computer.";
+    ? "Couldn't set up a passkey. If you already have one for this app, use the same browser profile and sign in."
+    : "Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit.";
 }
 
 interface WebAuthnAccessViewProps {
@@ -77,6 +74,7 @@ export function WebAuthnAccessView({
       >
         <Paper
           data-visual="passkey-card"
+          data-reserved-region="passkey-card"
           sx={(theme) => ({
             gridRow: 2,
             maxWidth: 520,
@@ -84,10 +82,11 @@ export function WebAuthnAccessView({
             width: '100%',
             ...theme.effects.cardBorder(theme),
             ...surfaceArrival(),
+            transform: 'none !important',
             ...theme.effects.ambientGlow(theme),
           })}
         >
-          <Stack spacing={3} sx={{ alignItems: { sm: 'center' }, textAlign: { sm: 'center' } }}>
+          <Stack data-region-content spacing={3} sx={{ alignItems: { sm: 'center' }, textAlign: { sm: 'center' } }}>
             <Box aria-hidden="true" data-visual="passkey-lock" sx={{
               alignItems: 'center', display: 'flex', justifyContent: 'center',
               width: componentTokens.Passkey.tileSize, height: componentTokens.Passkey.tileSize,
@@ -104,6 +103,7 @@ export function WebAuthnAccessView({
                 face, or device PIN.
               </Typography>
             </Box>
+<Typography variant="body2" sx={{ color: 'text.secondary' }}>Use the browser profile where you set up this app, and choose the passkey you created for it.</Typography>
             <Button disabled={busy} onClick={() => void authenticate(false)} size="large" variant="contained" sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}>
               Sign in with passkey
             </Button>
@@ -129,15 +129,15 @@ export function WebAuthnAccessView({
                 borderTop: `${effectTokens.borders.thin} solid ${theme.vars.palette.divider}`,
                 display: { sm: 'none' }, pt: 3,
                 '& [data-visual="brand-tile"] + *': { display: 'block' },
+                '& .MuiTypography-noWrap': { overflow: 'visible' },
               })}
             >
               <BrandMark />
             </Box>
           </Stack>
         </Paper>
-        {/* Zero height keeps the alert out of row sizing; it overflows into the space below the card. */}
-        <Box sx={{ alignSelf: 'start', gridRow: 3, height: 0, maxWidth: 520, width: '100%' }}>
-          {error && <Alert ref={revealAlert} severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        <Box sx={{ alignSelf: 'start', gridRow: 3, height: { xs: 40, sm: 20 }, maxWidth: 520, width: '100%', mt: 2 }}>
+          <StatusLine id="passkey-feedback" text={error} tone="error" />
         </Box>
       </Box>
     </Box>

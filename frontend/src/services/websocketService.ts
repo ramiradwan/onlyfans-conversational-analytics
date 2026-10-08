@@ -177,7 +177,7 @@ export class BridgeWebSocketService {
           auth_ticket: this.authTicket,
           bridge_session_id: this.bridgeSessionId,
           requested_creator_account_id: this.creatorAccountId,
-          capabilities: ['state.snapshot', 'state.delta', 'presence.state', 'message.page'],
+          capabilities: ['state.snapshot', 'state.delta', 'presence.state', 'message.page', 'state.catchup_freshness'],
           client_version: this.clientVersion,
           last_view_revision: this.store.getState().viewRevision,
         },
@@ -202,9 +202,9 @@ export class BridgeWebSocketService {
       return;
     }
 
-    let message: BrainToBridgeMessage;
+    let message: BrainToBridgeMessage<true>;
     try {
-      message = parseBrainToBridgeMessage(decoded);
+      message = parseBrainToBridgeMessage(decoded, { catchupFreshness: true });
     } catch {
       const invalidType =
         typeof decoded === 'object' &&
@@ -262,7 +262,7 @@ export class BridgeWebSocketService {
   }
 
   private dispatchBoundMessage(
-    message: Exclude<BrainToBridgeMessage, BridgeSessionMessage | ProtocolErrorMessage>,
+    message: Exclude<BrainToBridgeMessage<true>, BridgeSessionMessage | ProtocolErrorMessage>,
   ): void {
     switch (message.type) {
       case 'state.snapshot':
@@ -292,7 +292,7 @@ export class BridgeWebSocketService {
     }
   }
 
-  private handleDelta(message: StateDeltaMessage): void {
+  private handleDelta(message: StateDeltaMessage<true>): void {
     const result = this.store.applyDelta(message.payload);
     if (result === 'gap') this.requestResync('revision_gap');
     else if (result === 'invalid') this.requestResync('invalid_delta');

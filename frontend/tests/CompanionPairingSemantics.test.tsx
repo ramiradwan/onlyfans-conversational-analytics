@@ -49,9 +49,9 @@ describe('CompanionPairingControls connection semantics', () => {
     );
 
     expect(await screen.findByText('Extension linked to this app')).toBeTruthy();
-    expect(screen.getByText('Connection interrupted')).toBeTruthy();
+    expect(screen.queryByText('Connection interrupted')).toBeNull();
     expect(screen.queryByText('Connected to this app')).toBeNull();
-    expect(screen.queryByText('Not connected')).toBeNull();
+    expect(screen.getByText('Not connected')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Disconnect browser extension 1' })).toBeTruthy();
   });
 });

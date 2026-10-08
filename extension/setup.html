@@ -30,14 +30,15 @@
         </div>
       <button id="open-options" class="secondary header-action">Extension settings</button>
     </header>
-    <nav id="setup-progress" aria-label="Setup progress" class="hidden">
+    <div data-reserved-region="setup-rail" class="reserved-rail"><nav id="setup-progress" data-region-content aria-label="Setup progress" class="hidden">
       <ol>
         <li data-step="agree"><button id="step-agree">Agree</button></li>
         <li data-step="mode"><button id="step-mode">Choose a mode</button></li>
         <li data-step="connect"><button id="step-connect">Connect</button></li>
         <li data-step="activate"><button id="step-activate">Activate</button></li>
       </ol>
-    </nav>
+    </nav></div>
+    <div data-reserved-region="extension-stage" data-region-role="scroll" class="extension-stage"><div data-region-content>
     <button id="back-current" class="back-button hidden">Back to current step</button>
     <p id="review-notice" class="fine-print hidden">Data-handling information changed. Review it before restarting analytics.</p>
     <p id="loading" role="status">Checking setup…</p>
@@ -133,7 +134,8 @@
         <button id="journey-secondary" class="secondary hidden"></button>
       </div>
     </section>
-    <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+    </div></div>
+    <div data-reserved-region="surface-feedback" class="reserved-status"><p id="feedback" data-region-content class="feedback" role="status" aria-live="polite"></p></div>
     <footer>
         <span>Use only with a creator account you are authorized to analyze.</span>
         <span>Independent software. It is not affiliated with or endorsed by OnlyFans.</span>

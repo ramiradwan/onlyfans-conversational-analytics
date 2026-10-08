@@ -1,303 +1,53 @@
 import MenuIcon from '@mui/icons-material/Menu';
-import {
-  AppBar,
-  Box,
-  Button,
-  IconButton,
-  Popover,
-  Stack,
-  Toolbar,
-  Typography,
-} from '@mui/material';
-import { useId, useState, useSyncExternalStore } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { AppBar, Box, IconButton, Toolbar, Typography } from '@mui/material';
+import { useSyncExternalStore } from 'react';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { StatusChip } from '@/components/ui';
+import { FreshnessStatus } from '@/components/ui/FreshnessStatus';
 import { componentTokens } from '@/theme';
-import {
-  coverageProgressLabel,
-  humanizeProjectionReason,
-  isConfigurationAligned,
-  isFullyCurrent,
-} from '@/utils/dataReadiness';
-import {
-  extensionConnection,
-  extensionIssue,
-  extensionLabel,
-  insightsLabel,
-  newMessagesLabel,
-  protocolErrorText,
-  setupIncomplete,
-} from '@/utils/statusCopy';
+import { connectionGrace } from '@/utils/connectionGrace';
+import { coverageProgressLabel } from '@/utils/dataReadiness';
+import { freshnessRows, presentFreshness, viewerTimeZone } from '@/utils/freshnessPresentation';
+import { protocolErrorText } from '@/utils/statusCopy';
 import { bridgeTransportStore, type BridgeTransportState } from '@store/transportStore';
 
 import { BRAND_INSET, BrandMark } from './BrandMark';
 
-interface AppAppBarProps {
-  headerHeight?: number;
-  onDrawerToggle: () => void;
+export function getStatusPresentation(state: Readonly<BridgeTransportState>) {
+  if (state.protocolError?.fatal) return { label: 'Action needed', detail: protocolErrorText(state.protocolError), color: 'error' as const };
+  const presentation = presentFreshness({ freshness: state.catchupFreshness, bridge: state.connection,
+    snapshotUsable: state.viewRevision !== null && state.readModelState === 'realtime', now: new Date(), timeZone: viewerTimeZone() });
+  return { label: presentation.label, detail: presentation.sentence, color: presentation.tone === 'settled' ? 'success' as const : 'warning' as const };
 }
 
-type StatusPresentation = {
-  color: 'success' | 'warning' | 'error' | 'default';
-  detail: string;
-  label: string;
-};
-
-export function getStatusPresentation(
-  state: Readonly<BridgeTransportState>,
-): StatusPresentation {
-  const configurationAligned = isConfigurationAligned(state.agent);
-  const readiness = {
-    coverage: state.coverage,
-    projection: state.projection,
-    liveFreshness: state.liveFreshness,
-    configurationAligned,
-  };
-  const extension = extensionConnection(state.agent);
-  const extensionProblem = extensionIssue(extension);
-  const projectionUnavailable =
-    state.system?.readiness === 'unavailable' || state.projection.status === 'unavailable';
-
-  if (state.protocolError !== null) {
-    return {
-      color: 'error',
-      detail: protocolErrorText(state.protocolError),
-      label: 'Action needed',
-    };
-  }
-
-  if (
-    state.viewRevision === null &&
-    !projectionUnavailable &&
-    state.connection !== 'disconnected' &&
-    state.connection !== 'error'
-  ) {
-    return {
-      color: 'default',
-      detail: 'Loading your latest data.',
-      label: 'Connecting',
-    };
-  }
-
-  if (state.viewRevision !== null && setupIncomplete(state.coverage)) {
-    const extensionReady = extension === 'connected';
-    return {
-      color: 'warning',
-      detail: extensionReady
-        ? 'Turn on message history to continue setup.'
-        : 'Connect the browser extension to continue setup.',
-      label: 'Needs setup',
-    };
-  }
-
-  if (extensionProblem !== null) {
-    return extension === 'applying_settings'
-      ? {
-          color: 'warning',
-          detail: extensionProblem.detail,
-          label: 'Applying settings',
-        }
-      : {
-          color: 'error',
-          detail: extensionProblem.detail,
-          label: 'Action needed',
-        };
-  }
-
-  if (state.viewRevision === null || projectionUnavailable) {
-    return {
-      color: 'error',
-      detail: humanizeProjectionReason(
-        state.projection.reason,
-        "Your conversations can't be shown right now.",
-      ),
-      label: 'Data unavailable',
-    };
-  }
-
-  if (
-    state.liveFreshness.status !== 'current' ||
-    state.connection === 'disconnected' ||
-    state.connection === 'error' ||
-    state.connection === 'reconnecting' ||
-    state.readModelState === 'degraded'
-  ) {
-    return {
-      color: 'warning',
-      detail: 'Your data is shown, but new messages may take longer to appear.',
-      label: 'Updates delayed',
-    };
-  }
-
-  if (state.coverage.status !== 'complete' && state.coverage.phase === 'paused') {
-    return {
-      color: 'warning',
-      detail: 'Message history sync is paused. You can resume it in Settings.',
-      label: 'History paused',
-    };
-  }
-
-  if (state.coverage.status !== 'complete') {
-    return {
-      color: 'warning',
-      detail: `${coverageProgressLabel(state.coverage)}. Numbers grow as older messages arrive.`,
-      label: 'Syncing history',
-    };
-  }
-
-  if (
-    isFullyCurrent(readiness) &&
-    state.readModelState !== 'resyncing' &&
-    state.system?.readiness !== 'degraded'
-  ) {
-    return {
-      color: 'success',
-      detail: 'Your message history is synced and your insights are current.',
-      label: 'Up to date',
-    };
-  }
-
-  return {
-    color: 'warning',
-    detail: 'Your latest messages are being added to your insights.',
-    label: 'Updating insights',
-  };
+export function getStatusRows(state: Readonly<BridgeTransportState>) {
+  return [...freshnessRows(state.catchupFreshness, new Date(), viewerTimeZone()), { label: 'Message history', value: coverageProgressLabel(state.coverage) }];
 }
 
-/** Coverage, projection, and live freshness stay separately visible alongside the combined label. */
-export function getStatusRows(
-  state: Readonly<BridgeTransportState>,
-): readonly { label: string; value: string }[] {
-  return [
-    { label: 'Browser extension', value: extensionLabel(extensionConnection(state.agent)) },
-    { label: 'Message history', value: coverageProgressLabel(state.coverage) },
-    { label: 'Insights', value: insightsLabel(state.projection) },
-    { label: 'New messages', value: newMessagesLabel(state.liveFreshness) },
-  ];
-}
-
-export function AppAppBar({
-  headerHeight = componentTokens.shell.headerHeight,
-  onDrawerToggle,
-}: AppAppBarProps) {
-  const transportState = useSyncExternalStore(
-    bridgeTransportStore.subscribe,
-    bridgeTransportStore.getState,
-    bridgeTransportStore.getState,
-  );
-  const status = getStatusPresentation(transportState);
-  const [statusAnchor, setStatusAnchor] = useState<HTMLElement | null>(null);
-  const statusOpen = statusAnchor !== null;
-  const statusDetailsId = useId();
-
-  return (
-    <AppBar
-      component="header"
-      position="fixed"
-      color="inherit"
-      elevation={0}
-      sx={(theme) => ({
-        ...theme.effects.headerBorder(theme),
-        bgcolor: 'background.default',
-        color: 'text.primary',
-        height: headerHeight,
-        justifyContent: 'center',
-      })}
-    >
-      <Toolbar
-        disableGutters
-        sx={{
-          gap: 1.5,
-          minHeight: `${headerHeight}px !important`,
-          pl: { xs: 2, sm: `${BRAND_INSET}px` },
-          pr: { xs: 2, sm: 3, lg: 4 },
-        }}
-      >
-        <IconButton
-          color="inherit"
-          aria-label="Open navigation"
-          aria-controls="mobile-navigation"
-          edge="start"
-          onClick={onDrawerToggle}
-          sx={{ display: { sm: 'none' } }}
-        >
-          <MenuIcon />
-        </IconButton>
-
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <BrandMark />
-        </Box>
-
-        <StatusChip
-          aria-controls={statusOpen ? statusDetailsId : undefined}
-          aria-expanded={statusOpen}
-          aria-haspopup="dialog"
-          aria-label={`Status: ${status.label}. Show details`}
-          aria-live="polite"
-          label={status.label}
-          onClick={(event) => setStatusAnchor(event.currentTarget)}
-          tone={status.color}
-          settled={status.color === 'success'}
-        />
-        <Popover
-          id={statusDetailsId}
-          open={statusOpen}
-          anchorEl={statusAnchor}
-          onClose={() => setStatusAnchor(null)}
-          anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-          transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-          slotProps={{ paper: { 'aria-label': 'Status details', role: 'dialog' } }}
-        >
-          <Stack spacing={1.5} sx={{ maxWidth: 320, p: 2 }}>
-            <Box>
-              <Typography variant="subtitle2">{status.label}</Typography>
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                {status.detail}
-              </Typography>
-            </Box>
-            <Box
-              component="dl"
-              sx={{
-                columnGap: 2,
-                display: 'grid',
-                gridTemplateColumns: 'auto 1fr',
-                m: 0,
-                rowGap: 0.5,
-              }}
-            >
-              {getStatusRows(transportState).map((row) => (
-                <Box key={row.label} sx={{ display: 'contents' }}>
-                  <Typography component="dt" variant="body2" sx={{ color: 'text.secondary' }}>
-                    {row.label}
-                  </Typography>
-                  <Typography component="dd" variant="body2" sx={{ m: 0 }}>
-                    {row.value}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-            {extensionConnection(transportState.agent) !== 'connected' && (
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                In your browser, open the Conversation Analytics extension and choose Continue setup.
-              </Typography>
-            )}
-            <Button
-              component={RouterLink}
-              onClick={() => setStatusAnchor(null)}
-              size="small"
-              sx={{ alignSelf: 'flex-start' }}
-              to="/settings"
-              variant="outlined"
-            >
-              Open settings
-            </Button>
-          </Stack>
-        </Popover>
-
-        <ThemeToggle />
+export function AppAppBar({ headerHeight = componentTokens.shell.headerHeight, onDrawerToggle }: { headerHeight?: number; onDrawerToggle: () => void }) {
+  const state = useSyncExternalStore(bridgeTransportStore.subscribe, bridgeTransportStore.getState);
+  const phase = useSyncExternalStore(connectionGrace.subscribe, connectionGrace.getSnapshot);
+  const slot = <FreshnessStatus freshness={state.catchupFreshness} bridge={state.connection} snapshotUsable={state.viewRevision !== null && state.readModelState === 'realtime'}
+    override={state.protocolError?.fatal ? { label: 'Action needed', title: 'Action needed', sentence: protocolErrorText(state.protocolError), icon: 'dot', tone: 'error', action: { label: 'Reload page', destination: 'reload' } } : undefined} />;
+  return <>
+    <AppBar component="header" position="fixed" color="inherit" elevation={0} sx={(theme) => ({ ...theme.effects.headerBorder(theme), bgcolor: 'background.default', color: 'text.primary',
+      height: { xs: headerHeight + componentTokens.FreshnessStatus.narrowRowHeight, sm: headerHeight } })}>
+      <Toolbar disableGutters sx={{ gap: 1.5, minHeight: `${headerHeight}px !important`, pl: { xs: 2, sm: `${BRAND_INSET}px` }, pr: { xs: 2, sm: 3, lg: 4 } }}>
+        <IconButton aria-label="Open navigation" aria-controls="mobile-navigation" edge="start" onClick={onDrawerToggle} sx={{ display: { sm: 'none' } }}><MenuIcon /></IconButton>
+        <Box sx={{ flex: 1, minWidth: 0 }}><BrandMark /></Box>
+        <Box sx={{ display: { xs: 'none', sm: 'block' } }}>{slot}</Box><ThemeToggle />
       </Toolbar>
+      <Box data-reserved-region="freshness-row" sx={{ display: { xs: 'flex', sm: 'none' }, height: componentTokens.FreshnessStatus.narrowRowHeight, alignItems: 'center', px: 2 }}>{slot}</Box>
     </AppBar>
-  );
+    <Box data-reserved-region="issue-band" data-region-role="overlay" sx={(theme) => ({ position: 'fixed', top: { xs: headerHeight + componentTokens.FreshnessStatus.narrowRowHeight, sm: headerHeight },
+      left: { xs: 0, sm: componentTokens.shell.desktopRailWidth + componentTokens.shell.railInset }, right: 0, height: { xs: componentTokens.reserved.issueBand.narrow, sm: componentTokens.reserved.issueBand.wide },
+      zIndex: theme.zIndex.appBar - 1, p: '12px 16px', backgroundColor: `color-mix(in oklch, ${theme.vars.palette.background.paper} 85%, transparent)`, backdropFilter: 'blur(16px)',
+      visibility: phase === 'interrupted' ? 'visible' : 'hidden', opacity: phase === 'interrupted' ? 1 : 0, transform: phase === 'interrupted' ? 'translateY(0)' : 'translateY(-8px)',
+      transition: 'transform 200ms ease-out, opacity 200ms ease-out', '@media (prefers-reduced-motion: reduce)': { transition: 'none' }, pointerEvents: phase === 'interrupted' ? 'auto' : 'none' })}>
+      <Box data-region-content role={phase === 'interrupted' ? 'status' : undefined}>
+        <Typography variant="subtitle2" sx={{ lineHeight: '20px' }}>Connection interrupted</Typography>
+        <Typography variant="body2" sx={{ lineHeight: '20px' }}>New messages are paused. Keep your browser open while the extension reconnects.</Typography>
+      </Box>
+    </Box>
+  </>;
 }

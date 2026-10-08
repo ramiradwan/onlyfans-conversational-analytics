@@ -1,3 +1,4 @@
+import { openCreatorAccount } from './ui/actions.mjs';
 import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
 import { registerDesktopPort } from './runtime/desktop-port.mjs';
 import { probeDesktopRuntime } from './runtime/customer-journey.mjs';
@@ -277,7 +278,7 @@ export const desktopPort = registerDesktopPort({
   }),
   // Each step opens the one extension page that owns it. Site access and the
   // history permission need a click there because Chrome requires the gesture.
-  openStep: (step, { anchorTab }) => openSurface(['setup', 'access'].includes(step)
+  openStep: (step, { anchorTab }) => step === 'creator' ? openCreatorAccount() : openSurface(['setup', 'access'].includes(step)
     ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab }
     : { surface: 'options', section: step === 'history' ? 'history' : 'connection', presentation: 'window', anchorTab }),
   onPaired: () => consentController.reconcile(),

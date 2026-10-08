@@ -2,7 +2,7 @@
 export function installSurfaceFixture(input) {
   const state = structuredClone(input), calls = [], ports = new Set();
   const event = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn),
-    removeListener: (fn) => listeners.delete(fn), emit: (value) => { for (const fn of listeners) fn(value); } }; };
+    removeListener: (fn) => listeners.delete(fn), emit: (...values) => { for (const fn of listeners) fn(...values); } }; };
   const pairState = () => ({ state: state.pairing ?? (state.paired ? 'paired' : 'unpaired'),
     comparison_code: state.pairing === 'compare' && state.surface === 'setup' ? '483217' : null,
     owns_attempt: state.surface === 'setup' && ['pairing', 'compare'].includes(state.pairing),
@@ -10,7 +10,7 @@ export function installSurfaceFixture(input) {
   const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? null, consent_epoch: 'fixture-epoch' },
     phase: state.phase ?? (state.mode === 'full' ? (state.paired ? 'full' : 'identity') : state.mode),
     reload_required: state.reload === true, onlyfans_permission: state.phase !== 'permission_required', history_permission: false,
-    preview: { message_observations: 128, chat_observations: 24, inbound_observations: 80, outbound_observations: 48 },
+    preview: state.preview ?? { message_observations: 128, chat_observations: 24, inbound_observations: 80, outbound_observations: 48 },
     delivery: { transport_state: state.paired ? 'authenticated' : 'disconnected', pending_entries: 0, capture_drop_counts: {} } });
   const legal = () => ({ configured: state.configured !== false, consent_mode: state.mode,
     requires_reauthorization: state.reauthorization === true,
@@ -19,7 +19,12 @@ export function installSurfaceFixture(input) {
     flow: { terms_event_id: !state.agreement || state.accepted || state.terms ? 'fixture-terms' : null,
       risk_event_id: !state.agreement || state.accepted || state.risk ? 'fixture-risk' : null,
       stage: state.agreement ? 'pre_mode' : state.choice ? 'mode_selection' : 'complete' } });
-  window.__surfaceFixture = { state, calls, change(next) { Object.assign(state, next); for (const port of ports) port.onMessage.emit(pairState()); } };
+  window.__surfaceFixture = { state, calls, change(next, replace = false) {
+    if (replace) for (const key of Object.keys(state)) delete state[key];
+    Object.assign(state, next);
+    for (const port of ports) port.onMessage.emit(pairState());
+    window.chrome.storage.onChanged.emit({ fixture: { newValue: true } }, 'local');
+  } };
   window.chrome = {
     runtime: { id: 'fixture', getURL: (name) => `${location.origin}/${name}`, getManifest: () => ({ version: '2.0.3' }),
       async sendMessage(message) {

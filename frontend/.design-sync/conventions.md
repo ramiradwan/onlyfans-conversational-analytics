@@ -24,7 +24,7 @@ Write for a creator who knows nothing about how the product works.
 - Status labels are one or two words ("Up to date", "Updating", "Not connected", "Needs attention"). The sentence that explains a problem sits next to the problem, not in the label.
 - Derive every status sentence from structured state. Never render diagnostic text from a service.
 - Describe data handling exactly as the product implements it. Do not promise automatic deletion, syncing, or analysis that the flow does not perform.
-- Loading copy is "Processing your data…"; empty states say what will appear and when.
+- Loading copy is "Loading dashboard…"; empty states say what will appear and when.
 
 ## Progressive disclosure
 
