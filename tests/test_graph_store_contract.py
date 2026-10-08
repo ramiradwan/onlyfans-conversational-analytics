@@ -36,6 +36,8 @@ from app.models.analytics import (
     GraphTraversalBounds,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 NOW = datetime.now(timezone.utc)
 

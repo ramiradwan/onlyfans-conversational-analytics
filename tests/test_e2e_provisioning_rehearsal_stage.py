@@ -14,6 +14,10 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
 E2E_ROOT = PRODUCT_ROOT / "tools" / "e2e-capture"

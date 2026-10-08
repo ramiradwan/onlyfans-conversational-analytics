@@ -36,7 +36,7 @@ from app.persistence.managed_recovery import (
     managed_recovery_is_current,
     prune_managed_recovery_files,
 )
-from app.persistence.migrations import MigrationRunner, load_migration_catalog
+from app.persistence.migrations import MigrationRunner, resolve_migration_catalog
 from app.persistence.private_files import apply_private_file_security, sync_file
 
 
@@ -219,7 +219,7 @@ def _projection_retention_is_current(
     }
     for row in projection.execute(
         """
-        SELECT g.creator_account_id,g.pipeline_revision,p.document_json
+        SELECT g.generation_id,g.creator_account_id,g.pipeline_revision,p.document_json
         FROM projection_generations g
         JOIN analytics_projections p
           ON p.generation_id=g.generation_id
@@ -229,7 +229,16 @@ def _projection_retention_is_current(
     ):
         if str(row["creator_account_id"]) not in accounts:
             return False
-        document = AnalyticsProjection.model_validate_json(row["document_json"])
+        from app.analytics.sqlite_projection_store import recompute_generation
+
+        try:
+            values = recompute_generation(
+                projection, str(row["generation_id"]),
+                materialize_projection=True,
+            )
+        except Exception:
+            return False
+        document = values["projection"]
         if document.pipeline_revision != row["pipeline_revision"]:
             return False
         if document.pipeline_revision == CLEAR_PIPELINE_REVISION:
@@ -499,7 +508,6 @@ def restore_migration_backup_with_deletion_barriers(
     _require_current_recovery(source, now=current_time)
     policies, barriers = _current_authority(database)
     targets = [destination] + ([] if projection_target is None else [projection_target])
-    catalog = load_migration_catalog()
     try:
         with _exclusive_targets(targets):
             source_connection = database.open_detached(source, read_only=True)
@@ -508,6 +516,7 @@ def restore_migration_backup_with_deletion_barriers(
                 apply_private_file_security(temporary)
                 source_connection.backup(staged)
                 MigrationRunner._ensure_ledger(staged)
+                catalog = resolve_migration_catalog(staged)
                 applied = MigrationRunner._validate_applied(staged, catalog)
                 for migration in catalog:
                     if migration.version not in applied:

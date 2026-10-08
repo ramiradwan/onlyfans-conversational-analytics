@@ -11,6 +11,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 from app.core.config import settings
 from app.persistence.factory import create_canonical_repositories
 from app.services import agent_configuration as config
@@ -171,6 +173,7 @@ def test_t1_copy_preserves_rule_order_and_custom_policies():
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
+@pytest.mark.windows_compat
 def test_t3_upgrade_is_restart_idempotent(tmp_path, backend):
     path = tmp_path / "canonical.sqlite3"
     repository = (config.InMemoryAgentConfigRepository() if backend == "memory" else
@@ -316,6 +319,7 @@ def assert_history_confirmed(manager, document):
 
 
 @pytest.mark.parametrize("missing_identity", [False, True])
+@pytest.mark.windows_compat
 def test_t6_pending_history_survives_restart(tmp_path, monkeypatch, missing_identity):
     _, manager, old, current, _ = pending_history_restart(
         tmp_path, monkeypatch, missing_identity=missing_identity,
@@ -345,6 +349,7 @@ def test_t7_only_matching_history_moves(tmp_path, monkeypatch, difference):
     )
 
 
+@pytest.mark.windows_compat
 def test_t8_repeated_admission_and_restart_preserve_binding(tmp_path, monkeypatch):
     path, manager, _, current, _ = pending_history_restart(tmp_path, monkeypatch)
     asyncio.run(admit_apply_heartbeat(manager, current))

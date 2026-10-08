@@ -1,0 +1,1073 @@
+{
+  "schema": "analytics-question-cases.v1",
+  "synthetic": true,
+  "cases": [
+    {
+      "id": "latest-inbound",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "reply-after-selected-window",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-09T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "reply-after-cutoff",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-11T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "reply-at-cutoff",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-10T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "attachment-reply",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-05T12:00:00Z",
+          "role": "creator",
+          "kind": "attachment",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "system-event",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-05T12:00:00Z",
+          "role": "system",
+          "kind": "system",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "unknown-sender",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-05T12:00:00Z",
+          "role": "unknown",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [
+          "chat-a"
+        ],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "unknown-event-kind",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-05T12:00:00Z",
+          "role": "creator",
+          "kind": "unknown",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [
+          "chat-a"
+        ],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "equal-time-source-order",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "equal-time-inferred-order",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "inferred",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 2,
+          "ordering": "inferred",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [
+          "chat-a"
+        ],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "partial-history",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "partial",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "unknown-coverage",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "unknown",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "duplicate-delivery",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [
+        "m1",
+        "m1"
+      ],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "deleted-inbound",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": true,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "deleted-reply",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "partial",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-05T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": true,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "late-arrival-earlier-reply",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-03T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "account-isolation",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-b",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "creator",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "selection-boundaries",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-start",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-01T00:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-end",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-08T00:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-start"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-start": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "retention-boundary",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-06-20T00:00:00Z",
+      "end": "2026-06-21T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "partial",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-06-20T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "latest-inbound-after-selected-window",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        },
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m2",
+          "version": 1,
+          "at": "2026-09-09T12:00:00Z",
+          "role": "participant",
+          "kind": "message",
+          "order": 2,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m2"
+          ]
+        },
+        "availability": "available"
+      }
+    },
+    {
+      "id": "empty-history",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [],
+      "expected": {
+        "matches": [],
+        "undetermined": [],
+        "evidence": {},
+        "availability": "available"
+      }
+    },
+    {
+      "id": "attachment-inbound",
+      "question": "no_later_creator_reply.v1",
+      "account": "synthetic-account-a",
+      "start": "2026-09-01T00:00:00Z",
+      "end": "2026-09-08T00:00:00Z",
+      "cutoff": "2026-09-10T12:00:00Z",
+      "now": "2026-09-18T12:00:00Z",
+      "coverage": "complete",
+      "source_revision": 4,
+      "projection_generation": 2,
+      "replays": [],
+      "messages": [
+        {
+          "account": "synthetic-account-a",
+          "conversation": "chat-a",
+          "id": "m1",
+          "version": 1,
+          "at": "2026-09-04T12:00:00Z",
+          "role": "participant",
+          "kind": "attachment",
+          "order": 1,
+          "ordering": "source",
+          "deleted": false,
+          "pricing": "negative",
+          "finding_version": 1,
+          "language": "en"
+        }
+      ],
+      "expected": {
+        "matches": [
+          "chat-a"
+        ],
+        "undetermined": [],
+        "evidence": {
+          "chat-a": [
+            "m1"
+          ]
+        },
+        "availability": "available"
+      }
+    }
+  ]
+}

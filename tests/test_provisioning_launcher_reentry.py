@@ -11,6 +11,8 @@ from app.launcher import Launcher, LaunchFailure
 from app.provisioning.launcher_handoff import FILENAME, load_launcher_handoff, save_launcher_handoff, remove_launcher_handoff
 from app.provisioning.session import ProvisioningSessionManager, PROVISIONING_SESSION_COOKIE_NAME
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def test_relaunch_reuses_same_process_authority_after_browser_session_expires(tmp_path: Path) -> None:
     config = configuration(tmp_path)

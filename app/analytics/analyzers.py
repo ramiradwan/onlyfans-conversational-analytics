@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Protocol, runtime_checkable
 
+from app.analytics.enrichment_cache import AnalyzerCachePolicy
 from app.analytics.provenance import stable_config_digest
 from app.analytics.opaque_refs import entity_ref, topic_ref
 from app.models.analytics import (
@@ -67,6 +68,7 @@ _TOKEN_RE = re.compile(r"[\w']+", flags=re.UNICODE)
 class RuleBasedSentimentAnalyzer:
     """Small lexicon baseline intended to be replaced by a model adapter later."""
 
+    cache_policy = AnalyzerCachePolicy(taxonomy_revision="sentiment.labels.v1")
     name = "rule_based_sentiment"
     revision = "sentiment.rules.v1"
     mode = AnalysisMode.BASELINE
@@ -162,6 +164,7 @@ class RuleBasedSentimentAnalyzer:
 class RuleBasedTopicEntityAnalyzer:
     """Keyword taxonomy plus explicit mention/URL/amount/hashtag extraction."""
 
+    cache_policy = AnalyzerCachePolicy(taxonomy_revision="topics.entities.v1")
     name = "rule_based_topics_entities"
     revision = "topics-entities.rules.v1"
     mode = AnalysisMode.BASELINE
@@ -289,6 +292,7 @@ class RuleBasedTopicEntityAnalyzer:
 class RuleBasedEngagementAnalyzer:
     """Observable message-function classifier with documented lexical rules."""
 
+    cache_policy = AnalyzerCachePolicy(taxonomy_revision="engagement.states.v1")
     name = "rule_based_engagement"
     revision = "engagement.rules.v1"
     mode = AnalysisMode.BASELINE

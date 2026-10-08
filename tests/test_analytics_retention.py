@@ -13,6 +13,10 @@ from app.analytics.retention_store import RetentionBoundSQLiteAnalyticsProjectio
 from app.models.analytics import AnalyticsProjection, WindowScope
 from app.persistence.factory import create_canonical_repositories
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT = "account-a"
 NOW = datetime(2026, 8, 31, 0, 0, tzinfo=timezone.utc)
@@ -140,7 +144,10 @@ def test_sqlite_generation_expires_from_original_source_time_without_clock_reset
         ).fetchone()
     persisted = AnalyticsProjection.model_validate_json(row["document_json"])
     assert persisted.window.scope is WindowScope.ALL_TIME
-    assert min(item.sent_at for item in persisted.message_enrichments) == source_at
+    assert persisted.message_enrichments == []
+    materialized = store.get(ACCOUNT)
+    assert materialized is not None
+    assert min(item.sent_at for item in materialized.message_enrichments) == source_at
 
     clock.value = due_at
     assert store.get(ACCOUNT) is None

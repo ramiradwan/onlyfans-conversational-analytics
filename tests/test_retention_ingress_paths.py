@@ -14,6 +14,10 @@ from app.transport.manager import (
     InMemoryTransportManager,
 )
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT = DEV_ACCOUNT_ID
 INSTALLATION = UUID("20000000-0000-4000-8000-000000000071")

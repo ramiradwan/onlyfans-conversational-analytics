@@ -95,21 +95,18 @@ def create_analytics_stores(
             projections=projections,
             graph=projections.graph,
         )
-    database = ProjectionsDatabase(
-        projections_path,
-        busy_timeout_ms=busy_timeout_ms,
-    )
     projections = RetentionBoundSQLiteAnalyticsProjectionStore(
-        database,
+        projections_path,
         activation=activation,
         canonical_identity_reader=canonical_identity_reader,
         lease_seconds=lease_seconds,
         rollback_retention=rollback_retention,
         gc_batch_size=gc_batch_size,
         clock=retention_clock,
+        busy_timeout_ms=busy_timeout_ms,
     )
     return AnalyticsStores(
         projections=projections,
         graph=projections.graph,
-        database=database,
+        database=projections.database,
     )

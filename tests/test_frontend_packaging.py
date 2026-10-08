@@ -8,6 +8,10 @@ from fastapi.testclient import TestClient
 from app.api.endpoints import frontend
 from app.core.config import settings
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def _frontend_client() -> TestClient:
     application = FastAPI()

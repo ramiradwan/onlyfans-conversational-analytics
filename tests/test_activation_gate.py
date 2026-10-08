@@ -74,6 +74,8 @@ from app.transport.manager import (
     AuthenticationError,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 CONTRACTS = Path(__file__).resolve().parents[1] / "contracts" / "grant-profile-v1"
 FIXTURE_TRUST_SET_PATH = "grant-profile-v1/keys/trust-set.json"

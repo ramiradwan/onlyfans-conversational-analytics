@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_ROOT = ROOT / "tests" / "architecture_invalid" / "python"
 CANONICAL_READ_MODEL_OWNER = ROOT / "app" / "canonical" / "read_models.py"

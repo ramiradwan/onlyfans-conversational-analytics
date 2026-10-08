@@ -9,6 +9,8 @@ import pytest
 
 from app.security.permit_consumption import decide_permit_consumption
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 VECTORS = Path(__file__).resolve().parents[1] / "contracts" / "permit-consumption"
 EXPECTED_INPUT_KEYS = {

@@ -17,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from tools import packaging_policy
 from tools.packaging_policy import PackagingFinding, load_runtime_policy, verify_runtime_files
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = ROOT / "packaging" / "runtime-files.json"

@@ -8,6 +8,10 @@ from app.persistence.history import HistoryRepository
 from app.persistence.migrations import MigrationRunner
 from app.persistence.retention import CreatorVaultRetention
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 ACCOUNT = "creator-account"
 NOW = datetime(2026, 9, 1, tzinfo=timezone.utc)
 

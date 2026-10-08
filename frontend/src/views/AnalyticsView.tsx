@@ -1,4 +1,5 @@
 import { AnalyticsPresentation } from '../components/analytics';
+import { ConversationQuestions } from '../components/analytics/ConversationQuestions';
 import { analyticsStoreActions, useAnalyticsStore } from '../store/analyticsStore';
 
 export default function AnalyticsView() {
@@ -7,6 +8,7 @@ export default function AnalyticsView() {
 
   return (
     <AnalyticsPresentation
+      questions={<ConversationQuestions />}
       state={state}
       dateRange={dateRange}
       onDateRangeChange={(range) => void analyticsStoreActions.setDateRange(range)}

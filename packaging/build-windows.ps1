@@ -612,8 +612,10 @@ Assert-EmbeddedExtensionIdentity -BuildPython $BuildPython -ProjectRoot $Project
 
 $previousProjectRoot = $env:BRAIN_PROJECT_ROOT
 $previousSourceRoot = $env:BRAIN_SOURCE_ROOT
+$previousBuildMode = $env:BRAIN_BUILD_MODE
 $env:BRAIN_PROJECT_ROOT = $ProjectRoot
 $env:BRAIN_SOURCE_ROOT = $packagingSource.SourceRoot
+$env:BRAIN_BUILD_MODE = if ($ReleaseMode) { "release" } else { "development" }
 try {
     $pyInstallerArguments = @(
         "--noconfirm", "--clean", "--distpath", $distPath,
@@ -631,6 +633,7 @@ try {
 } finally {
     $env:BRAIN_PROJECT_ROOT = $previousProjectRoot
     $env:BRAIN_SOURCE_ROOT = $previousSourceRoot
+    $env:BRAIN_BUILD_MODE = $previousBuildMode
 }
 
 $stagingRoot = Join-Path $distPath "Brain"

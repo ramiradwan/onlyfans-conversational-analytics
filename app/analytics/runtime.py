@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
@@ -14,10 +15,11 @@ from app.analytics.errors import (
     ProjectionStorageUnavailable,
 )
 from app.analytics.factory import create_analytics_stores
-from app.analytics.identity import canonical_identity
+from app.analytics.identity import canonical_identity, source_identity
 from app.analytics.licensed_pipeline import LicensedAnalyticsPipeline
 from app.analytics.pipeline import AnalyticsPipeline, CanonicalReadModelSource
 from app.analytics.scheduling import InProcessProjectionScheduler
+from app.analytics.query_runtime import QuestionResources
 from app.core.config import settings
 from app.persistence.projection_activation import ProjectionActivationRepository
 from app.security.analysis_authorization import clear_analysis_policies
@@ -33,6 +35,7 @@ class AnalyticsRuntime:
     source: CanonicalReadModelSource
     pipeline: AnalyticsPipeline
     scheduler: InProcessProjectionScheduler
+    questions: QuestionResources | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +56,20 @@ _DEFAULT_CONFIGURATION: _DefaultRuntimeConfiguration | None = None
 _STARTUP_TASK: asyncio.Task[None] | None = None
 _STARTUP_TASK_SOURCE_KEY: int | None = None
 LOGGER = logging.getLogger(__name__)
+
+
+def _abort_runtime(runtime: AnalyticsRuntime) -> bool:
+    """Attempt every owner cleanup; retain runtimes with live native handles."""
+    closed = True
+    try:
+        if runtime.questions is not None:
+            runtime.questions.close()
+    except Exception:
+        closed = False
+        LOGGER.warning('analytics_question_event reason_code=question_connections_close_incomplete')
+    finally:
+        runtime.scheduler.abort()
+    return closed and (runtime.questions is None or runtime.questions.wait_closed(0))
 
 
 def configure_default_analytics_runtime(
@@ -89,8 +106,8 @@ def configure_default_analytics_runtime(
                 previous_runtime is not None
                 and previous_runtime.source is previous.source
             ):
-                previous_runtime.scheduler.abort()
-                _RUNTIMES.pop(id(previous.source), None)
+                if _abort_runtime(previous_runtime):
+                    _RUNTIMES.pop(id(previous.source), None)
             if _STARTUP_TASK_SOURCE_KEY == id(previous.source):
                 if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
                     _STARTUP_TASK.cancel()
@@ -106,13 +123,15 @@ def configure_default_analytics_runtime(
         ):
             return existing
         if existing is not None and existing.source is source:
-            existing.scheduler.abort()
-            _RUNTIMES.pop(id(source), None)
+            if _abort_runtime(existing):
+                _RUNTIMES.pop(id(source), None)
             if _STARTUP_TASK_SOURCE_KEY == id(source):
                 if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
                     _STARTUP_TASK.cancel()
                 _STARTUP_TASK = None
                 _STARTUP_TASK_SOURCE_KEY = None
+            if _RUNTIMES.get(id(source)) is existing:
+                raise ProjectionCoordinatorClosed()
         return _runtime_for_source_locked(source, configuration=configuration)
 
 
@@ -146,11 +165,15 @@ def _runtime_for_source_locked(
         and not existing.scheduler.closed
     ):
         return existing
+    if (existing is not None and existing.source is source
+            and existing.questions is not None and not existing.questions.wait_closed(0)):
+        raise ProjectionCoordinatorClosed()
     pipeline = _build_pipeline(source, configuration=configuration)
     runtime = AnalyticsRuntime(
         source=source,
         pipeline=pipeline,
-        scheduler=InProcessProjectionScheduler(pipeline),
+        scheduler=InProcessProjectionScheduler(pipeline, reconciliation_interval=30),
+        questions=QuestionResources(source, pipeline),
     )
     _RUNTIMES[key] = runtime
     return runtime
@@ -180,11 +203,7 @@ def _build_pipeline(
         projections_path=configuration.projections_path,
         canonical_path=configuration.canonical_path,
         activation=configuration.activation,
-        canonical_identity_reader=lambda account_id: (
-            canonical_identity(source.account_read_model(account_id))
-            if source.account_exists(account_id)
-            else None
-        ),
+        canonical_identity_reader=lambda account_id: source_identity(source, account_id),
         lazy=True,
     )
     return pipeline_type(
@@ -209,7 +228,10 @@ def projection_scheduler(
 async def start_default_analytics_runtime() -> InProcessProjectionScheduler:
     """Start the configured scheduler and recover projections."""
 
-    scheduler = projection_scheduler()
+    runtime = analytics_runtime()
+    if runtime.questions is not None:
+        runtime.questions.start()
+    scheduler = runtime.scheduler
     await scheduler.start(recover=True)
     return scheduler
 
@@ -223,6 +245,9 @@ def launch_default_analytics_runtime() -> asyncio.Task[None]:
         return _STARTUP_TASK
 
     async def start() -> None:
+        runtime = analytics_runtime()
+        if runtime.questions is not None:
+            runtime.questions.start()
         try:
             await scheduler.start(recover=True)
         except (ProjectionCoordinatorClosed, ProjectionStorageUnavailable):
@@ -262,12 +287,12 @@ async def request_projection_rebuild(
         if not configuration.post_commit_rebuild_enabled:
             return False
     runtime = analytics_runtime(source)
+    if runtime.questions is not None:
+        runtime.questions.discard(creator_account_id)
     if runtime.scheduler.closed:
         return False
-    account = await runtime.scheduler.canonical_account(creator_account_id)
-    await runtime.scheduler.request_recovery(
-        creator_account_id, account.view_revision
-    )
+    revision = await runtime.scheduler.canonical_revision(creator_account_id)
+    await runtime.scheduler.request_recovery(creator_account_id, revision)
     return True
 
 
@@ -283,7 +308,19 @@ async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
         runtime = _RUNTIMES.get(key)
     if runtime is None or runtime.source is not source:
         return True
-    drained = await runtime.scheduler.close(timeout=timeout)
+    deadline = time.monotonic() + max(0.0, timeout)
+    connections_closed = True
+    if runtime.questions is not None:
+        try:
+            runtime.questions.close()
+        except Exception:
+            connections_closed = False
+            LOGGER.warning('analytics_question_event reason_code=question_connections_close_incomplete')
+    drained = await runtime.scheduler.close(timeout=max(0.0, deadline-time.monotonic()))
+    if runtime.questions is not None:
+        connections_drained = await asyncio.to_thread(
+            runtime.questions.wait_closed, max(0.0, deadline-time.monotonic()))
+        drained = drained and connections_closed and connections_drained
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     startup_task = _STARTUP_TASK
     _STARTUP_TASK = None
@@ -291,7 +328,8 @@ async def shutdown_default_analytics_runtime(*, timeout: float = 5.0) -> bool:
     if startup_task is not None and not startup_task.done():
         startup_task.cancel()
     with _RUNTIME_LOCK:
-        if _RUNTIMES.get(key) is runtime:
+        drained = drained and time.monotonic() <= deadline
+        if drained and _RUNTIMES.get(key) is runtime:
             _RUNTIMES.pop(key, None)
     return drained
 
@@ -301,11 +339,23 @@ def reset_analytics_runtimes() -> None:
 
     global _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     with _RUNTIME_LOCK:
-        for runtime in _RUNTIMES.values():
-            runtime.scheduler.abort()
-        _RUNTIMES.clear()
+        for key, runtime in list(_RUNTIMES.items()):
+            if _abort_runtime(runtime):
+                _RUNTIMES.pop(key, None)
     clear_analysis_policies()
     if _STARTUP_TASK is not None and not _STARTUP_TASK.done():
         _STARTUP_TASK.cancel()
     _STARTUP_TASK = None
     _STARTUP_TASK_SOURCE_KEY = None
+
+
+def invalidate_question_sources(account_id: str) -> None:
+    """Discard derived navigation state without opening an analytics store."""
+
+    with _RUNTIME_LOCK:
+        resources = [runtime.questions for runtime in _RUNTIMES.values() if runtime.questions is not None]
+    for resource in resources:
+        try:
+            resource.discard(account_id)
+        except Exception:
+            LOGGER.warning("analytics_question_event reason_code=evidence_invalidation_failed")

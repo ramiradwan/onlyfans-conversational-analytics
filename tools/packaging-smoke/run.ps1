@@ -10,6 +10,9 @@ param(
 
     [string] $TranscriptPath = (Join-Path (Get-Location) 'packaging-smoke-transcript.json'),
 
+    # Optional incremental diagnostics survive an interrupted harness invocation.
+    [string] $ProgressPath,
+
     # The default preserves system-drive scope while bounding the recursive repository scan.
     [string[]] $InspectionRoot = @([IO.Path]::GetFullPath((Join-Path -Path $env:SystemDrive -ChildPath '\'))),
 
@@ -37,6 +40,37 @@ $ExitCode = @{
 $script:results = [System.Collections.Generic.List[object]]::new()
 $script:ownedListenerProcessIds = [System.Collections.Generic.List[int]]::new()
 
+function Write-SmokeProgress {
+    param(
+        [Parameter(Mandatory)] [string] $Stage,
+        [Parameter(Mandatory)] [ValidateSet('begin', 'end', 'result')] [string] $Phase,
+        [hashtable] $Details = @{}
+    )
+
+    if (-not $ProgressPath) {
+        return
+    }
+    try {
+        $directory = Split-Path -Parent $ProgressPath
+        if ($directory) {
+            [void] [IO.Directory]::CreateDirectory($directory)
+        }
+        $record = [ordered]@{
+            timestamp_utc = [DateTime]::UtcNow.ToString('o')
+            harness_process_id = $PID
+            stage = $Stage
+            phase = $Phase
+            details = $Details
+        }
+        $line = $record | ConvertTo-Json -Depth 4 -Compress
+        # Close the handle after every record instead of buffering until exit.
+        [IO.File]::AppendAllText($ProgressPath, $line + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
+    } catch {
+        # Observability must not change the acceptance decision or interrupt cleanup.
+        Write-Warning -Message ('Unable to write smoke progress: {0}' -f $_.Exception.GetType().Name) -WarningAction Continue
+    }
+}
+
 function Add-Result {
     param(
         [Parameter(Mandatory)] [string] $Step,
@@ -50,6 +84,7 @@ function Add-Result {
             evidence = $Evidence
         })
     $script:results.Add($record)
+    Write-SmokeProgress -Stage $Step -Phase result -Details @{ outcome = $Outcome }
     Write-Host ('[{0}] {1}' -f $Outcome.ToUpperInvariant(), $Step)
 }
 
@@ -77,6 +112,7 @@ function Write-Transcript {
     }
     $transcript | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $TranscriptPath -Encoding utf8
     Write-Host ('Transcript: {0}' -f $TranscriptPath)
+    Write-SmokeProgress -Stage 'harness' -Phase end -Details @{ status = $RunEvidence.status }
 }
 
 function Complete-Abort {
@@ -191,10 +227,13 @@ function Assert-ArtifactDigest {
 function Get-ListeningProcessIdsForPort {
     param([Parameter(Mandatory)] [int] $Port)
 
-    return @(
+    Write-SmokeProgress -Stage 'listener-query' -Phase begin -Details @{ port = $Port }
+    $listenerProcessIds = @(
         Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty OwningProcess -Unique
     )
+    Write-SmokeProgress -Stage 'listener-query' -Phase end -Details @{ port = $Port; process_ids = $listenerProcessIds }
+    return $listenerProcessIds
 }
 
 function Assert-ProvisioningPortAvailable {
@@ -227,10 +266,12 @@ function Invoke-InstallArtifact {
     try {
         # /VERYSILENT also suppresses the installation progress window, which
         # /SILENT still displays and which steals desktop focus.
+        Write-SmokeProgress -Stage 'installer-wait' -Phase begin
         $installerProcess = Start-Process -FilePath $ArtifactPath -ArgumentList @(
             '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
             ("/DIR=`"" + $Layout.InstallationPrefix + "`"")
         ) -Wait -PassThru
+        Write-SmokeProgress -Stage 'installer-wait' -Phase end -Details @{ exit_code = $installerProcess.ExitCode }
         if ($installerProcess.ExitCode -ne 0) {
             throw "installer exited with code $($installerProcess.ExitCode)"
         }
@@ -274,7 +315,9 @@ function Invoke-OpenBridge {
     try {
         # -WindowStyle Hidden keeps the launcher console off the desktop; without
         # it Start-Process gives a console launcher its own terminal window.
+        Write-SmokeProgress -Stage 'launcher-start' -Phase begin
         $process = Start-Process -FilePath $launcherPath -PassThru -WindowStyle Hidden
+        Write-SmokeProgress -Stage 'launcher-start' -Phase end -Details @{ process_id = $process.Id }
         Add-Result -Step 'open-bridge' -Outcome pass -Evidence @{
             launcher_path = (Resolve-Path -LiteralPath $launcherPath).Path; process_id = $process.Id
         }
@@ -289,7 +332,12 @@ function Get-DescendantProcessIds {
     param([Parameter(Mandatory)] [int] $ParentProcessId)
 
     $descendants = [System.Collections.Generic.List[int]]::new()
-    foreach ($child in @(Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $ParentProcessId" -ErrorAction Stop)) {
+    Write-SmokeProgress -Stage 'process-family-query' -Phase begin -Details @{ parent_process_id = $ParentProcessId }
+    $children = @(Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $ParentProcessId" -ErrorAction Stop)
+    Write-SmokeProgress -Stage 'process-family-query' -Phase end -Details @{
+        parent_process_id = $ParentProcessId; process_ids = @($children | ForEach-Object { [int] $_.ProcessId })
+    }
+    foreach ($child in $children) {
         $childId = [int] $child.ProcessId
         $descendants.Add($childId)
         foreach ($descendantId in @(Get-DescendantProcessIds -ParentProcessId $childId)) {
@@ -332,20 +380,25 @@ function Stop-LauncherProcess {
         foreach ($processId in $processIds) {
             $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
             if ($null -ne $process -and -not $process.HasExited) {
+                Write-SmokeProgress -Stage 'process-stop' -Phase begin -Details @{ process_id = $processId }
                 Stop-Process -InputObject $process -Force -ErrorAction Stop
+                Write-SmokeProgress -Stage 'process-stop' -Phase end -Details @{ process_id = $processId }
                 $processesRequestedToStop.Add($process)
             }
         }
         $processExitStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         foreach ($process in $processesRequestedToStop) {
             $remainingMilliseconds = [Math]::Max(0, 5000 - [int]$processExitStopwatch.ElapsedMilliseconds)
+            Write-SmokeProgress -Stage 'process-exit-wait' -Phase begin -Details @{ process_id = $process.Id }
             if (-not $process.WaitForExit($remainingMilliseconds)) {
+                Write-SmokeProgress -Stage 'process-exit-wait' -Phase end -Details @{ process_id = $process.Id; exited = $false }
                 Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{
                     finding = 'launcher_process_not_exited'; process_id = $process.Id
                     stopped_process_ids = @($stoppedProcessIds); timeout_seconds = 5
                 }
                 return
             }
+            Write-SmokeProgress -Stage 'process-exit-wait' -Phase end -Details @{ process_id = $process.Id; exited = $true }
             $stoppedProcessIds.Add($process.Id)
         }
         $portRelease = Wait-ForProvisioningPortRelease
@@ -401,7 +454,9 @@ function Remove-TemporaryRunRoot {
     if ($null -eq $Layout -or -not (Test-Path -LiteralPath $Layout.RunRoot -PathType Container)) {
         return $true
     }
+    Write-SmokeProgress -Stage 'temporary-root-removal' -Phase begin
     Remove-Item -LiteralPath $Layout.RunRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Write-SmokeProgress -Stage 'temporary-root-removal' -Phase end
     return -not (Test-Path -LiteralPath $Layout.RunRoot)
 }
 
@@ -415,16 +470,20 @@ function Invoke-UninstallArtifact {
                 throw "installer cleanup cannot find uninstaller: $($Installation.UninstallerPath)"
             }
             $runtimeDataExisted = Test-Path -LiteralPath $Installation.RuntimeDataDirectory -PathType Container
+            Write-SmokeProgress -Stage 'uninstaller-wait' -Phase begin
             $uninstallerProcess = Start-Process -FilePath $Installation.UninstallerPath -ArgumentList @(
                 '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
             ) -Wait -PassThru
+            Write-SmokeProgress -Stage 'uninstaller-wait' -Phase end -Details @{ exit_code = $uninstallerProcess.ExitCode }
             # A zero exit code reports that the uninstaller started, not that it
             # removed anything, so the end state is measured rather than assumed.
             if ($uninstallerProcess.ExitCode -ne 0) {
                 throw "uninstaller exited with code $($uninstallerProcess.ExitCode)"
             }
+            Write-SmokeProgress -Stage 'installation-removal-wait' -Phase begin
             $prefixRemoved = Wait-InstallationPrefixRemoved `
                 -InstallationPrefix $Installation.InstallationPrefix -TimeoutSeconds 60
+            Write-SmokeProgress -Stage 'installation-removal-wait' -Phase end -Details @{ removed = $prefixRemoved }
             $surviving = @(Get-SurvivingInstallationEntry -InstallationPrefix $Installation.InstallationPrefix)
             $runtimeDataRetained = Test-Path -LiteralPath $Installation.RuntimeDataDirectory -PathType Container
 
@@ -489,7 +548,9 @@ function Invoke-VerifyProvisioningListener {
                 }
                 return $false
             }
+            Write-SmokeProgress -Stage 'listener-health-request' -Phase begin -Details @{ process_id = $ownerProcessId }
             $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:17871/health' -TimeoutSec 2
+            Write-SmokeProgress -Stage 'listener-health-request' -Phase end -Details @{ status_code = $response.StatusCode }
             $health = $response.Content | ConvertFrom-Json
             if ($response.StatusCode -eq 200 -and $health.status -eq 'ok') {
                 if (-not $script:ownedListenerProcessIds.Contains($ownerProcessId)) {
@@ -569,6 +630,7 @@ function Invoke-ConsumeInstallationClaim {
     }
 }
 
+Write-SmokeProgress -Stage 'harness' -Phase begin
 Assert-CleanEnvironment
 Assert-ArtifactDigest
 Assert-ProvisioningPortAvailable

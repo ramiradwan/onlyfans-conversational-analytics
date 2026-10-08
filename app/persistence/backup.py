@@ -29,7 +29,7 @@ from app.persistence.database import (
     open_encrypted_sqlite,
 )
 from app.persistence.managed_recovery import prune_managed_recovery_files
-from app.persistence.migrations import load_migration_catalog
+from app.persistence.migrations import MigrationError, resolve_migration_catalog
 from app.persistence.private_files import (
     PrivateFileSecurityError,
     apply_private_file_security,
@@ -636,7 +636,10 @@ def _verify_database(connection: sqlite3.Connection, store_name: str) -> None:
         if store_name == "projections"
         else None
     )
-    catalog = load_migration_catalog(directory)
+    try:
+        catalog = resolve_migration_catalog(connection, directory)
+    except MigrationError as error:
+        raise SQLiteBackupError("backup migration checksum differs") from error
     ledger = connection.execute(
         "SELECT version, name, checksum FROM schema_migrations ORDER BY version"
     ).fetchall()
@@ -644,7 +647,8 @@ def _verify_database(connection: sqlite3.Connection, store_name: str) -> None:
         raise SQLiteBackupError("backup migration catalog differs")
     for row, expected in zip(ledger, catalog, strict=True):
         if (
-            int(row[0]) != expected.version
+            type(row[0]) is not int
+            or row[0] != expected.version
             or row[1] != expected.name
             or row[2] != expected.checksum
         ):

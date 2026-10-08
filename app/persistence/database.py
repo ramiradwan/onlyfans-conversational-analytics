@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from threading import RLock
+from threading import RLock, local
 from typing import Iterator
 
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.private_files import (
     PrivateFileSecurityError,
-    apply_private_file_security,
+    private_file_identity,
     reject_path_aliases,
 )
 from app.security.local_data_key import (
@@ -22,6 +22,10 @@ from app.security.local_data_key import (
 
 class SQLiteConfigurationError(RuntimeError):
     """Raised when SQLite cannot provide the required durability profile."""
+
+
+class StartupValidationUnavailable(SQLiteConfigurationError):
+    """Existing connections prevent a protected startup validation scope."""
 
 
 def open_encrypted_sqlite(
@@ -59,7 +63,7 @@ def open_encrypted_sqlite(
         _configure_connection_cipher(connection, encryption_key)
         connection.row_factory = sqlite3.Row
         return connection
-    except Exception:
+    except BaseException:
         connection.close()
         raise
 
@@ -69,6 +73,9 @@ def _configure_connection_cipher(
 ) -> None:
     if len(encryption_key) != 32:
         raise SQLiteConfigurationError("SQLite encryption key must contain 32 bytes")
+    from app.persistence.json_header import configure_json_functions
+
+    configure_json_functions(connection)
     key_hex = encryption_key.hex()
     connection.execute(f'PRAGMA key = "x\'{key_hex}\'"')
     sqlite3.require_cipher(connection)
@@ -98,6 +105,8 @@ class _TrackedConnection(sqlite3.Connection):
     _tracked_path: Path | None = None
     _transition_lock: RLock | None = None
     _tracking_closed: bool = False
+    _secured_file_identity: tuple[int, int] | None = None
+    _secured_file_identities: tuple | None = None
 
     def _close_native(self) -> None:
         super().close()
@@ -144,6 +153,7 @@ class LocalSQLite:
         except PrivateFileSecurityError as error:
             raise SQLiteConfigurationError("SQLite path is not safe") from error
         self.busy_timeout_ms = busy_timeout_ms
+        self._private_observation_local = local()
         self.key_scope = key_scope or self.store_name
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -195,9 +205,11 @@ class LocalSQLite:
                 raise SQLiteConfigurationError(
                     f"{self.store_name} SQLite foreign keys are disabled"
                 )
-            self._restrict_permissions()
+            self._private_observation_local.files = None
+            connection._secured_file_identity = self._restrict_permissions()
+            connection._secured_file_identities = self._private_observation_local.files
             return connection
-        except Exception:
+        except BaseException:
             connection.close()
             raise
 
@@ -234,7 +246,7 @@ class LocalSQLite:
                 if int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1:
                     raise SQLiteConfigurationError("SQLite query-only mode was refused")
             return connection
-        except Exception:
+        except BaseException:
             connection.close()
             raise
 
@@ -267,6 +279,8 @@ class LocalSQLite:
             self._restrict_permissions()
             yield connection
             connection.commit()
+            from app.core.lifecycle_receipts import committed
+            committed(connection)
             self._restrict_permissions()
         except BaseException:
             connection.rollback()
@@ -287,19 +301,26 @@ class LocalSQLite:
                     f"{self.store_name} SQLite foreign-key check failed: {violations!r}"
                 )
 
-    def _restrict_permissions(self) -> None:
-        for candidate in (
-            self.path,
-            Path(f"{self.path}-wal"),
-            Path(f"{self.path}-shm"),
-        ):
-            if candidate.exists():
-                try:
-                    apply_private_file_security(candidate)
-                except PrivateFileSecurityError as error:
-                    raise SQLiteConfigurationError(
-                        f"{self.store_name} SQLite private-file security failed"
-                    ) from error
+    def _restrict_permissions(self) -> tuple[int, int]:
+        return self._observe_private_files()[0]
+
+    def _observe_private_files(self) -> tuple:
+        """Freshly secure and identify the database and both WAL sidecars."""
+        identities = []
+        for suffix in ('', '-wal', '-shm'):
+            candidate = self.path if not suffix else Path(f'{self.path}{suffix}')
+            try:
+                observed = private_file_identity(candidate, missing_ok=bool(suffix))
+            except PrivateFileSecurityError as error:
+                raise SQLiteConfigurationError(
+                    f'{self.store_name} SQLite private-file security failed'
+                ) from error
+            identities.append(observed)
+        if identities[0] is None:
+            raise SQLiteConfigurationError('SQLite file disappeared during its security check')
+        result = tuple(identities)
+        self._private_observation_local.files = result
+        return result
 
     @staticmethod
     def open_connection_count(path: str | Path) -> int:
@@ -321,7 +342,7 @@ class LocalSQLite:
         with lifecycle:
             with _CONNECTION_COUNTS_LOCK:
                 if _CONNECTION_COUNTS.get(target, 0):
-                    raise SQLiteConfigurationError(
+                    raise StartupValidationUnavailable(
                         "SQLite lifecycle operation requires closed connections"
                     )
             yield target

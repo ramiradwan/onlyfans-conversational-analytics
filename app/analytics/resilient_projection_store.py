@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from app.core.lifecycle_receipts import startup_timed, startup_span
+
 import os
+from contextlib import contextmanager
 from app.persistence import sqlite_api as sqlite3
 import time
 from pathlib import Path
@@ -33,6 +36,7 @@ from app.persistence.projection_activation import ProjectionActivationRepository
 FailureCallback = Callable[[str | None], None]
 FileIdentity = tuple[int, int]
 StoreIdentity = tuple[int, str, str, str | None]
+_UNOBSERVED_FILE_IDENTITY = object()
 
 
 class LazySQLiteAnalyticsProjectionStore:
@@ -88,10 +92,11 @@ class LazySQLiteAnalyticsProjectionStore:
         with self._lock:
             self._failure_callback = callback
 
+    @startup_timed("startup.storage_open")
     def ensure_ready(self) -> None:
         """Scheduler-only mutation seam that opens, repairs, or recreates storage."""
 
-        with self._lock:
+        with self._startup_open_lock():
             if self._closed:
                 raise ProjectionStorageUnavailable()
             if (
@@ -110,25 +115,174 @@ class LazySQLiteAnalyticsProjectionStore:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 if recover_first:
                     self._quarantine_unlocked()
-                store = self._open_store()
+                store, file_identity, store_identity = self._open_checked_store()
             except Exception:
                 if recover_first:
                     self._record_recovery_failure_unlocked()
                     raise ProjectionStorageUnavailable() from None
                 try:
                     self._quarantine_unlocked()
-                    store = self._open_store()
+                    store, file_identity, store_identity = self._open_checked_store()
                 except Exception:
                     self._record_recovery_failure_unlocked()
                     raise ProjectionStorageUnavailable() from None
             self._store = store
-            self._file_identity = self._file_identity_for_path()
-            self._store_identity = store.database.store_identity()
+            self._file_identity = file_identity
+            self._store_identity = store_identity
             self._needs_recovery = False
             self._failure_notified = False
             self._failure_count = 0
             self._next_retry_at = 0.0
             self._recovery_count += 1
+
+    @contextmanager
+    def _startup_open_lock(self):
+        with startup_span("startup.storage_open_wait"):
+            self._lock.acquire()
+        try:
+            yield
+        finally:
+            self._lock.release()
+
+    def _open_checked_store(self):
+        store = self._open_store()
+        try:
+            file_identity = self._file_identity_for_path()
+            if file_identity != store._opening_file_identity:
+                raise SQLiteConfigurationError("projection_file_changed_after_reconciliation")
+            store_identity = store.database.store_identity()
+            if self._file_identity_for_path() != file_identity:
+                raise SQLiteConfigurationError("projection_file_changed_during_opening")
+            return store, file_identity, store_identity
+        except BaseException:
+            store.close()
+            raise
+
+    def generation_references_supported(self) -> bool:
+        return self._read("generation_references_supported", None)
+
+    def conversation_enrichment_units_supported(self) -> bool:
+        return self._read("conversation_enrichment_units_supported", None)
+
+    def check_generation_reference(self, account_id, reference):
+        return self._read("check_generation_reference", account_id, account_id, reference)
+
+    def read_generation_artifact(self, account_id, reference):
+        return self._read("read_generation_artifact", account_id, account_id, reference)
+
+    def open_conversation_fragments(self, account_id):
+        return self._available_store(account_id).open_conversation_fragments(account_id)
+
+    def load_conversation_fragment(self, account_id, *args, **kwargs):
+        return self._read("load_conversation_fragment", account_id, account_id, *args, **kwargs)
+
+    def load_enrichment_entries(self, account_id, keys, **kwargs):
+        return self._read("load_enrichment_entries", account_id, account_id, keys, **kwargs)
+
+    def load_conversation_enrichment_entries(self, account_id, *args, **kwargs):
+        return self._read("load_conversation_enrichment_entries", account_id,
+                          account_id, *args, **kwargs)
+
+    def load_enrichment_unit_contents(self, account, unit_ids):
+        return self._read("load_enrichment_unit_contents", None, account, unit_ids)
+
+    def question_pricing(self, account_id, snapshot, references, budget):
+        return self._read("question_pricing", account_id, account_id, snapshot, references, budget)
+
+    def question_snapshot(self, account_id, canonical_identity, budget):
+        with self.question_publications(account_id, budget) as read:
+            return read(account_id, canonical_identity, budget)
+
+    def question_connection_database(self, account_id, budget):
+        """Borrow only an already available store; recovery retains creation."""
+        budget.check()
+        with self._lock:
+            store = self._store
+            available = (not self._closed and store is not None
+                         and store.database.path == self.path)
+        if not available:
+            self._mark_failed(store, account_id)
+            raise ProjectionStorageUnavailable()
+        budget.check()
+        return store.database
+
+    def register_question_connections(self, pool):
+        with self._lock:
+            store = self._store
+            if self._closed or store is None:
+                raise ProjectionStorageUnavailable()
+            store.register_question_connections(pool)
+
+    @contextmanager
+    def question_publications(self, account_id, budget, *, lease=None):
+        """Own a connection, not a transaction or cached snapshot, for one question.
+
+        Initial and final reads both see current committed publication metadata
+        and recheck the physical file and store identity. No state crosses requests.
+        """
+        from app.analytics.query_sql import bounded_sql
+        from app.analytics.query_execution import QuestionLimitExceeded
+        budget.check()
+        with self._lock:
+            store = self._store
+            available = not self._closed and store is not None and self.path.exists()
+        if not available:
+            self._mark_failed(store, account_id)
+            raise ProjectionStorageUnavailable()
+        try:
+            if lease is not None and lease.database is not store.database:
+                raise ProjectionStorageUnavailable()
+            with (store.database.read() if lease is None else lease.read()) as connection:
+                checks = 0
+                def read(account, identity, current_budget):
+                    nonlocal checks
+                    if account != account_id or current_budget is not budget:
+                        raise ValueError("publication_scope_binding_changed")
+                    if checks and lease is not None:
+                        lease.close_cursors()
+                    # The connection's opening observation binds security and
+                    # physical identity to one file handle. The final observation
+                    # is newly opened; no trust is carried over from the first.
+                    file_identity = (connection._secured_file_identity if checks == 0
+                                     else lease.observe() if lease is not None
+                                     else store.database._restrict_permissions())
+                    checks += 1
+                    with bounded_sql(connection, budget), self._lock:
+                        # The identity check performs stat and rejects a missing
+                        # or replaced path itself. A separate exists() repeats
+                        # the same blocking Windows metadata open needlessly.
+                        available = (not self._closed and self._store is store
+                            and not connection.in_transaction
+                            and self._identity_matches_unlocked(store, connection=connection,
+                                                               file_identity=file_identity))
+                    if not available:
+                        raise ProjectionStorageUnavailable()
+                    return store.question_snapshot(account, identity, budget, connection=connection)
+                yield read
+            budget.check()
+        except QuestionLimitExceeded:
+            # The request running out of time is not evidence of database corruption.
+            raise
+        except ProjectionStorageUnavailable:
+            self._mark_failed(store, account_id)
+            raise
+        except _STORAGE_FAILURES:
+            self._mark_failed(store, account_id)
+            raise ProjectionStorageUnavailable() from None
+
+    def prepare_update_reuse(self, account, *args):
+        return self._read("prepare_update_reuse", account, account, *args)
+
+    def update_reuse_prepared(self, account, identity):
+        return self._read("update_reuse_prepared", account, account, identity)
+
+    def predecessor_update_reuse_prepared(self, account, *args):
+        return self._read("predecessor_update_reuse_prepared", account, account, *args)
+
+    def projection_currentness(self, account_id, *args, **kwargs):
+        return self._read(
+            "projection_currentness", account_id, account_id, *args, **kwargs
+        )
 
     def get(self, creator_account_id: str, **kwargs):
         return self._read("get", creator_account_id, creator_account_id, **kwargs)
@@ -157,6 +311,9 @@ class LazySQLiteAnalyticsProjectionStore:
             artifact,
             **kwargs,
         )
+
+    def stage_built_artifact(self, artifact, **kwargs):
+        return self._write("stage_built_artifact", kwargs.get("creator_account_id"), artifact, **kwargs)
 
     def stage_artifact(self, artifact, **kwargs):
         account_id = kwargs.get("creator_account_id")
@@ -218,12 +375,21 @@ class LazySQLiteAnalyticsProjectionStore:
     def clear(self, creator_account_id: str) -> None:
         self._write("clear", creator_account_id, creator_account_id)
 
+    def integrity_upgrade_required(self, account_id):
+        return self._read("integrity_upgrade_required", account_id, account_id)
+
+    def passive_wal_checkpoint(self):
+        return self._write("passive_wal_checkpoint", None)
+
     def close(self) -> None:
         with self._lock:
             self._closed = True
+            store = self._store
             self._store = None
             self._file_identity = None
             self._store_identity = None
+        if store is not None:
+            store.close()
 
     def _read(self, method: str, account_id: str | None, *args, **kwargs):
         store = self._available_store(account_id)
@@ -276,6 +442,11 @@ class LazySQLiteAnalyticsProjectionStore:
     ) -> FailureCallback | None:
         if self._store is not failed_store:
             return None
+        if failed_store is not None:
+            try:
+                failed_store.close()
+            except Exception:
+                pass
         self._store = None
         self._file_identity = None
         self._store_identity = None
@@ -286,12 +457,21 @@ class LazySQLiteAnalyticsProjectionStore:
         return self._failure_callback
 
     def _identity_matches_unlocked(
-        self, store: SQLiteAnalyticsProjectionStore
+        self, store: SQLiteAnalyticsProjectionStore, *, connection=None,
+        file_identity=_UNOBSERVED_FILE_IDENTITY,
     ) -> bool:
         try:
-            file_identity = self._file_identity_for_path()
-            observed = store.database.store_identity()
-        except Exception:
+            if file_identity is _UNOBSERVED_FILE_IDENTITY:
+                file_identity = self._file_identity_for_path()
+            observed = (store.database.store_identity() if connection is None
+                        else store.database.store_identity(connection=connection))
+        except Exception as error:
+            from app.analytics.query_execution import QuestionLimitExceeded
+            if isinstance(error, QuestionLimitExceeded) or (
+                    connection is not None and isinstance(error, sqlite3.OperationalError)):
+                # Let the enclosing SQL budget translate its own interruption.
+                # It must not be mistaken for a replaced or corrupted store.
+                raise
             return False
         expected = self._store_identity
         if (
@@ -324,17 +504,14 @@ class LazySQLiteAnalyticsProjectionStore:
         self._needs_recovery = True
 
     def _open_store(self) -> SQLiteAnalyticsProjectionStore:
-        database = ProjectionsDatabase(
-            self.path,
-            busy_timeout_ms=self.busy_timeout_ms,
-        )
         return SQLiteAnalyticsProjectionStore(
-            database,
+            self.path,
             activation=self.activation,
             canonical_identity_reader=self.canonical_identity_reader,
             lease_seconds=self.lease_seconds,
             rollback_retention=self.rollback_retention,
             gc_batch_size=self.gc_batch_size,
+            busy_timeout_ms=self.busy_timeout_ms,
         )
 
     def _quarantine_unlocked(self) -> None:

@@ -18,6 +18,8 @@ from app.security.grant_verifier import (
     verify_grant_denial,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 _PROFILE = "urn:bridge-clean:grant-denial:v1"
 _ORDER = int("FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16)

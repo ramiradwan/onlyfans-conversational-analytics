@@ -25,6 +25,8 @@ import exclusive_resource
 from app.core.config import Settings
 from app.persistence.sqlcipher_runtime import MINIMUM_SQLCIPHER, MINIMUM_SQLITE, _version_tuple
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
+
 
 PACKAGED_ARTIFACT_ENVIRONMENT_VARIABLE = "BRAIN_PACKAGED_ARTIFACT_DIR"
 INSTALLED_LAUNCHER_E2E_ENVIRONMENT_VARIABLE = "BRAIN_INSTALLED_LAUNCHER_E2E"
@@ -519,6 +521,7 @@ def _launcher_source_mode_falsifier_project(tmp_path: Path) -> Path:
     return project_copy
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_packaged_runtime_resolves_bundle_resources_from_an_unrelated_cwd(
     packaged_artifact: Path, tmp_path: Path
@@ -538,6 +541,7 @@ def test_packaged_runtime_resolves_bundle_resources_from_an_unrelated_cwd(
     )
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_packaged_provisioning_surface_resolves_bundled_assets(
     packaged_artifact: Path, tmp_path: Path
@@ -556,6 +560,7 @@ def test_packaged_provisioning_surface_resolves_bundled_assets(
     )
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
     packaged_build_python: Path, tmp_path: Path
@@ -609,6 +614,7 @@ def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
     )
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_packaged_runtime_missing_template_is_a_resource_failure_not_configuration_refusal(
     packaged_artifact: Path, tmp_path: Path

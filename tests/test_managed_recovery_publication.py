@@ -11,6 +11,10 @@ from app.persistence.migrations import MigrationRunner
 from app.persistence.retention import CreatorVaultRetention
 from app.persistence.retention_restore import restore_migration_backup_with_deletion_barriers
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 NOW = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
 ACCOUNT = "managed-recovery-account"
 CHAT = "managed-recovery-chat"

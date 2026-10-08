@@ -3,16 +3,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
+
+pytestmark = [pytest.mark.ci_tier("fast")]
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CORE_SOURCE_JOBS = (
-    "build-and-test",
+    "web-build-and-test",
+    "backend-fast",
+    "analytics-integration",
     "fixed-sqlcipher-wheel",
-    "windows-tests",
+    "windows-platform-contract",
+    "analytics-windows-contract",
+    "analytics-scale-qualification",
+    "windows-full-shards",
     "windows-browser-e2e",
+    "required-ci-gate",
 )
 
 
@@ -38,7 +47,7 @@ def test_core_ci_uses_one_canonical_product_source_coordinate() -> None:
 
 
 def test_transient_build_artifacts_are_source_bound_and_short_lived() -> None:
-    steps = _steps(_workflow_document()["jobs"]["build-and-test"])
+    steps = _steps(_workflow_document()["jobs"]["web-build-and-test"])
     expected = {
         "Upload frontend build": "frontend-dist-${{ env.PRODUCT_SHA }}",
         "Upload audited extension artifact": "extension-dist-${{ env.PRODUCT_SHA }}",
@@ -59,10 +68,33 @@ def test_sqlcipher_and_persistence_artifacts_record_source_and_run_identity() ->
     sql_upload = next(step for step in sql_steps if step.get("name") == "Retain fixed SQLCipher wheel and provenance")
     assert sql_upload["with"]["name"] == "fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}"
 
-    windows_steps = _steps(workflow["jobs"]["windows-tests"])
+    windows_steps = _steps(workflow["jobs"]["windows-platform-contract"])
     verify = next(step for step in windows_steps if step.get("name") == "Verify fixed SQLCipher CI source")
     assert "source SHA mismatch" in verify["run"]
     assert "run ID mismatch" in verify["run"]
     persistence = next(step for step in windows_steps if step.get("name") == "Record Windows persistence CI source")
     assert "source_commit = $env:PRODUCT_SHA" in persistence["run"]
     assert "workflow_run_id" in persistence["run"]
+
+
+def test_stable_consumer_artifacts_can_be_republished_on_an_exact_source_rerun() -> None:
+    expected = {
+        "frontend-dist-${{ env.PRODUCT_SHA }}",
+        "extension-dist-${{ env.PRODUCT_SHA }}",
+        "fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}",
+        "windows-persistence-evidence-${{ env.PRODUCT_SHA }}",
+        "legal-activation-v2-${{ env.PRODUCT_SHA }}",
+    }
+    observed = set()
+    for job in _workflow_document()["jobs"].values():
+        for step in _steps(job):
+            if not str(step.get("uses", "")).startswith("actions/upload-artifact@"):
+                continue
+            settings = step["with"]
+            if settings["name"] in expected:
+                assert settings["overwrite"] is True
+                observed.add(settings["name"])
+            else:
+                assert settings["name"].startswith("ci-tests-")
+                assert not settings.get("overwrite"), "retained attempt evidence cannot be replaced"
+    assert observed == expected

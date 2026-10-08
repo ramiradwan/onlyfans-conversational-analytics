@@ -25,6 +25,8 @@ from app.security.runtime_policy import (
     RuntimePolicy,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 NOW = datetime(2026, 9, 14, 12, 0, tzinfo=timezone.utc)
 ORGANIZATION_ID = "org.acme"
 INSTALLATION_ID = "install.primary"

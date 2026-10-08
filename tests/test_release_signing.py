@@ -15,6 +15,8 @@ from typing import Any
 import pytest
 import yaml
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY_SCRIPT = ROOT / "packaging" / "verify-signatures.ps1"
@@ -627,13 +629,39 @@ def _without_marker_selection(arguments: list[str]) -> list[str]:
 
 
 def _collect(arguments: list[str]) -> subprocess.CompletedProcess[str]:
+    # This subprocess inspects a release selection; it is not another CI lane.
+    # Inheriting the outer reporter would overwrite its evidence and summary.
+    environment = os.environ.copy()
+    for name in ("PYTEST_ADDOPTS", "CI_TEST_LANE", "CI_REPORT_DIR", "GITHUB_STEP_SUMMARY"):
+        environment.pop(name, None)
     return subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q", *arguments],
         cwd=ROOT,
+        env=environment,
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def test_nested_release_collection_preserves_outer_ci_evidence(tmp_path, monkeypatch) -> None:
+    evidence = tmp_path / "outer-ci"
+    evidence.mkdir()
+    report = evidence / "report.json"
+    report.write_text("outer execution evidence", encoding="utf-8")
+    summary = tmp_path / "outer-summary.md"
+    summary.write_text("outer summary", encoding="utf-8")
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-p tools.ci_pytest")
+    monkeypatch.setenv("CI_TEST_LANE", "outer-lane")
+    monkeypatch.setenv("CI_REPORT_DIR", str(evidence))
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+
+    result = _collect(["tests/test_packaged_runtime.py"])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert report.read_text(encoding="utf-8") == "outer execution evidence"
+    assert summary.read_text(encoding="utf-8") == "outer summary"
+    assert os.environ["CI_TEST_LANE"] == "outer-lane"
 
 
 def _collected_node_ids(

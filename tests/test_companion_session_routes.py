@@ -34,6 +34,8 @@ from test_companion_session_authority import admitted, _sign
 from test_companion_pairing_service import local
 from test_companion_pairing_proof import contract, grant_references
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 EXTENSION_ID = "a" * 32
 ORIGIN = f"chrome-extension://{EXTENSION_ID}"
 

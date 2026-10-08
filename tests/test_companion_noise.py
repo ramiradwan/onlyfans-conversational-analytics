@@ -12,6 +12,8 @@ from app.security.companion_noise import (
 from app.security.companion_pairing import NOISE_KEY_PURPOSE
 from app.security.local_data_key import protect_local_secret
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 @dataclass(frozen=True)
 class Material:

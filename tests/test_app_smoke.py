@@ -4,6 +4,10 @@ from app.core.broadcast import broadcast
 from app.core.config import settings
 from app.main import app
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def test_health_endpoint() -> None:
     client = TestClient(app)

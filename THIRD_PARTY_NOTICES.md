@@ -570,3 +570,9 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
+
+## IANA timezone data
+
+`tzdata` 2026.4 supplies offline timezone data for analytics question validation. The Python package is licensed under Apache-2.0. The frozen application retains the package metadata and upstream license files through `copy_metadata("tzdata")`.
+
+Project: https://github.com/python/tzdata

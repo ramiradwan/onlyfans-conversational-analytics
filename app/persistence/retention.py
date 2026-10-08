@@ -273,11 +273,19 @@ class CreatorVaultRetention:
             raise RetentionPolicyError("deletion provenance is required")
         now = self._clock()
         with self.database.transaction() as connection:
+            from app.core.lifecycle_receipts import begin_canonical, end_canonical, enabled
+            begin_canonical(connection, creator_account_id, "creator_vault", f"{scope_kind}:{scope_key}")
             self._ensure_policy(connection, creator_account_id, _iso(now))
             revision = self._record_barrier(connection, creator_account_id, scope_kind,
                                             scope_key, provenance, now)
             self._purge_scope(connection, creator_account_id, scope_kind, scope_key)
             self._queue_reseed(connection, creator_account_id, _iso(now))
+            if enabled():
+                head = connection.execute(
+                    "SELECT canonical_revision FROM account_heads WHERE creator_account_id=?",
+                    (creator_account_id,),
+                ).fetchone()
+                end_canonical(connection, int(head[0]))
             return revision
 
     @staticmethod

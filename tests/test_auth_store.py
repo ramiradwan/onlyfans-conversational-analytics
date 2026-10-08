@@ -31,6 +31,8 @@ from app.security.runtime_policy import (
     StaleRuntimePolicyError,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 @dataclass
 class MutableClock:

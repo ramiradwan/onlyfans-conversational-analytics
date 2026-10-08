@@ -28,6 +28,8 @@ from app.provisioning.session import (
     PROVISIONING_SESSION_COOKIE_NAME,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 HANDOFF_TOKEN = "t" * 32
 EXTENSION_ID = "lfiompogjmmgnbkacdnikbfoihmlloda"

@@ -57,6 +57,8 @@ from app.protocol.payloads import (
     SnapshotRecordCounts,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 WORKER = Path(__file__).with_name("projection_crash_worker.py")
@@ -138,6 +140,30 @@ def test_projection_database_path_has_a_separate_default(monkeypatch) -> None:
     configured = Settings(_env_file=None)
     assert configured.projection_database_path == Path("projections.sqlite3")
     assert configured.projection_database_path != configured.canonical_database_path
+
+
+def test_analytics_projection_connections_disable_wal_autocheckpoint(tmp_path: Path) -> None:
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    with database.read() as connection:
+        assert connection.execute("PRAGMA wal_autocheckpoint").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_scheduler_epoch_retains_and_releases_wal_anchor(tmp_path: Path) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    store = make_store(tmp_path / "analytics.sqlite3", repositories)
+    pipeline = pipeline_for(repositories, store)
+    scheduler = InProcessProjectionScheduler(
+        pipeline, worker_count=1, queue_capacity=2, reconciliation_interval=30
+    )
+
+    assert store.database.open_connection_count(store.database.path) == 0
+    await scheduler.start(recover=False)
+    assert store.database.open_connection_count(store.database.path) == 1
+    checkpoint = store.passive_wal_checkpoint()
+    assert checkpoint is not None and len(checkpoint) == 3
+    assert await scheduler.close(timeout=5)
+    assert store.database.open_connection_count(store.database.path) == 0
 
 
 @pytest.mark.asyncio
@@ -229,7 +255,9 @@ def test_production_graph_mutators_cannot_touch_active_generation(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     partition_ref = account_ref("account-a")
     nodes = store.graph.nodes(partition_ref)
@@ -287,6 +315,7 @@ def test_canonical_and_projection_paths_must_be_distinct(tmp_path: Path) -> None
         )
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "crash_stage",
@@ -374,6 +403,7 @@ def test_reserved_activation_is_cancelled_after_advance_and_reopen(
     assert reopened.get("account-a") is None
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_concurrent_process_cannot_retire_live_build_or_rollback_winner(
     tmp_path: Path,
@@ -496,6 +526,7 @@ def test_copied_persisted_owner_fields_without_capability_cannot_write(
     original_writer.refresh()
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_50000_node_stage_renews_short_writer_lease_through_validation(
     tmp_path: Path,
@@ -520,7 +551,9 @@ def test_50000_node_stage_renews_short_writer_lease_through_validation(
         )
         for index in range(50_000)
     ]
-    graph_digest = graph_content_digest(nodes, [])
+    from app.analytics.shared_graph import projection_graph_digest
+
+    graph_digest = projection_graph_digest(base.projection.pipeline_revision, nodes, [])
     projection = base.projection.model_copy(
         update={
             "graph_digest": graph_digest,
@@ -559,7 +592,9 @@ def test_startup_quarantines_active_generation_without_exact_witness(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     assert active is not None and repositories.database is not None
 
@@ -610,6 +645,7 @@ def test_tampered_pending_generation_is_cancelled_and_never_activated(
             "intent_reserved",
             str(canonical_path),
             str(projections_path),
+            "--owned-graph",
         ],
         cwd=Path(__file__).parents[1],
         check=False,
@@ -642,7 +678,9 @@ def test_active_rows_are_schema_immutable_and_digest_checked_on_read(
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(tmp_path / "analytics-projections.sqlite3", repositories)
-    pipeline_for(repositories, store).project_account("account-a")
+    pipeline = pipeline_for(repositories, store)
+    pipeline.compact_graph = False
+    pipeline.project_account("account-a")
     active = store.database.active_generation("account-a")
     assert active is not None
     statement = """
@@ -804,24 +842,36 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
     scheduler = InProcessProjectionScheduler(
         pipeline, worker_count=1, queue_capacity=2
     )
-    await scheduler.start(recover=False)
-    entered = threading.Event()
+    loop = asyncio.get_running_loop()
+    entered = asyncio.Event()
     release = threading.Event()
-    first_revocation_started = threading.Event()
+    first_revocation_started = asyncio.Event()
     release_first_revocation = threading.Event()
-    canonical_revoked = threading.Event()
+    canonical_revoked = asyncio.Event()
     original_publish = pipeline.publish_candidate
     observed_candidates = []
+    watchdog_seconds = 30
+    close_task: asyncio.Task[bool] | None = None
+
+    async def wait_for_barrier(event: asyncio.Event, name: str) -> None:
+        # Real SQLite preparation is not the close deadline under test. Wait
+        # for the observed transition without occupying a default-executor
+        # thread needed by the scheduler's background revocation.
+        try:
+            await asyncio.wait_for(event.wait(), timeout=watchdog_seconds)
+        except TimeoutError:
+            pytest.fail(
+                f"Timed out waiting for {name}; "
+                f"scheduler state: {scheduler.state('account-a')}",
+                pytrace=False,
+            )
 
     def paused_publish(candidate):
         observed_candidates.append(candidate)
-        entered.set()
+        loop.call_soon_threadsafe(entered.set)
         release.wait()
         return original_publish(candidate)
 
-    pipeline.publish_candidate = paused_publish  # type: ignore[method-assign]
-    await scheduler.schedule("account-a", 0)
-    assert await asyncio.to_thread(entered.wait, 2)
     revocations = 0
     original_revoke = repositories.projection_activation.revoke_publication_epoch
 
@@ -829,27 +879,31 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
         nonlocal revocations
         revocations += 1
         if revocations == 1:
-            first_revocation_started.set()
+            loop.call_soon_threadsafe(first_revocation_started.set)
             release_first_revocation.wait()
             raise sqlite3.OperationalError("synthetic_canonical_revocation_failure")
         result = original_revoke(*args, **kwargs)
-        canonical_revoked.set()
+        loop.call_soon_threadsafe(canonical_revoked.set)
         return result
 
-    monkeypatch.setattr(
-        repositories.projection_activation,
-        "revoke_publication_epoch",
-        flaky_canonical_revoke,
-    )
-    close_task = asyncio.create_task(scheduler.close(timeout=0.02))
     try:
-        assert await asyncio.to_thread(first_revocation_started.wait, 5)
+        await scheduler.start(recover=False)
+        monkeypatch.setattr(pipeline, "publish_candidate", paused_publish)
+        await scheduler.schedule("account-a", 0)
+        await wait_for_barrier(entered, "publication after the open check")
+        monkeypatch.setattr(
+            repositories.projection_activation,
+            "revoke_publication_epoch",
+            flaky_canonical_revoke,
+        )
+        close_task = asyncio.create_task(scheduler.close(timeout=0.02))
+        await wait_for_barrier(first_revocation_started, "first canonical revocation")
         assert not await close_task
 
         # Complete the synthetic late first failure only after the caller's hard
         # deadline. Persisted revocation must still receive its fail-closed retry.
         release_first_revocation.set()
-        assert await asyncio.to_thread(canonical_revoked.wait, 5)
+        await wait_for_barrier(canonical_revoked, "persisted canonical revocation")
         assert revocations >= 2
         assert repositories.database is not None
         with repositories.database.read() as connection:
@@ -861,14 +915,21 @@ async def test_publication_paused_after_open_check_cannot_activate_after_close(
         assert store.database.active_generation("account-a") is None
     finally:
         release_first_revocation.set()
-        release.set()
-        if not close_task.done():
-            await close_task
-
-    deadline = time.monotonic() + 5
-    while scheduler.executor_thread_count and time.monotonic() < deadline:
-        await asyncio.sleep(0.01)
-    assert scheduler.executor_thread_count == 0
+        try:
+            if close_task is not None:
+                await close_task
+        finally:
+            try:
+                # Fence before releasing a late publisher, including when the
+                # close task was absent or cancelled before its coroutine began.
+                if not scheduler.closed:
+                    await scheduler.close(timeout=0.02)
+            finally:
+                release.set()
+                deadline = time.monotonic() + watchdog_seconds
+                while scheduler.executor_thread_count and time.monotonic() < deadline:
+                    await asyncio.sleep(0.01)
+                assert scheduler.executor_thread_count == 0
     assert store.database.active_generation("account-a") is None
     assert len(observed_candidates) == 1
     witnessed = repositories.projection_activation.get(
@@ -957,29 +1018,38 @@ async def test_deleted_projection_file_returns_unavailable_then_rebuilds_once(
         graph=stores.graph,
     )
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
-    await scheduler.start(recover=True)
-    await _wait_for_lazy_projection(scheduler, repositories)
-    await scheduler.wait("account-a")
-    build_count = 0
-    original_build = pipeline._build
+    try:
+        await scheduler.start(recover=True)
+        await _wait_for_lazy_projection(scheduler, repositories)
+        await scheduler.wait("account-a")
+        current = stores.projections.database
+        assert current is not None
+        # Windows cannot unlink the scheduler's intentionally open WAL anchor.
+        # Release only that idle handle to inject file loss while preserving the
+        # scheduler and lazy store identity state exercised by recovery below.
+        current.release_wal_anchor()
+        assert current.open_connection_count(path) == 0
+        build_count = 0
+        original_build = pipeline._build
 
-    def counted_build(*args, **kwargs):
-        nonlocal build_count
-        build_count += 1
-        return original_build(*args, **kwargs)
+        def counted_build(*args, **kwargs):
+            nonlocal build_count
+            build_count += 1
+            return original_build(*args, **kwargs)
 
-    pipeline._build = counted_build  # type: ignore[method-assign]
-    path.unlink()
-    account = history_source_for(repositories).account_read_model("account-a")
-    with pytest.raises(ProjectionStorageUnavailable):
-        await scheduler.active_projection("account-a", account)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    projection = await _wait_for_lazy_projection(scheduler, repositories)
-    assert projection.source_revision == account.view_revision
-    assert build_count == 1
-    assert stores.projections.recovery_count == 2
-    assert await scheduler.close(timeout=2)
+        pipeline._build = counted_build  # type: ignore[method-assign]
+        path.unlink()
+        account = history_source_for(repositories).account_read_model("account-a")
+        with pytest.raises(ProjectionStorageUnavailable):
+            await scheduler.active_projection("account-a", account)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        projection = await _wait_for_lazy_projection(scheduler, repositories)
+        assert projection.source_revision == account.view_revision
+        assert build_count == 1
+        assert stores.projections.recovery_count == 2
+    finally:
+        assert await scheduler.close(timeout=2)
 
 
 @pytest.mark.asyncio
@@ -1004,46 +1074,53 @@ async def test_valid_empty_projection_file_replacement_is_quarantined_and_rebuil
         graph=stores.graph,
     )
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
-    await scheduler.start(recover=True)
-    await _wait_for_lazy_projection(scheduler, repositories)
-    await scheduler.wait("account-a")
+    try:
+        await scheduler.start(recover=True)
+        await _wait_for_lazy_projection(scheduler, repositories)
+        await scheduler.wait("account-a")
+        current = stores.projections.database
+        assert current is not None
+        # Keep the live scheduler/store identity, but release its idle WAL
+        # anchor so Windows permits this deliberate external file replacement.
+        current.release_wal_anchor()
+        assert current.open_connection_count(path) == 0
 
-    build_count = 0
-    original_build = pipeline._build
+        build_count = 0
+        original_build = pipeline._build
 
-    def counted_build(*args, **kwargs):
-        nonlocal build_count
-        build_count += 1
-        return original_build(*args, **kwargs)
+        def counted_build(*args, **kwargs):
+            nonlocal build_count
+            build_count += 1
+            return original_build(*args, **kwargs)
 
-    pipeline._build = counted_build  # type: ignore[method-assign]
-    replacement_path = tmp_path / "valid-empty-replacement.sqlite3"
-    replacement = ProjectionsDatabase(replacement_path)
-    current = stores.projections.database
-    assert current is not None
-    for database in (current, replacement):
-        with database.read() as connection:
-            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    for candidate in (
-        Path(f"{path}-wal"),
-        Path(f"{path}-shm"),
-        Path(f"{replacement_path}-wal"),
-        Path(f"{replacement_path}-shm"),
-    ):
-        candidate.unlink(missing_ok=True)
-    os.replace(replacement_path, path)
+        pipeline._build = counted_build  # type: ignore[method-assign]
+        replacement_path = tmp_path / "valid-empty-replacement.sqlite3"
+        replacement = ProjectionsDatabase(replacement_path)
+        for database in (current, replacement):
+            with database.read() as connection:
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            assert database.open_connection_count(database.path) == 0
+        for candidate in (
+            Path(f"{path}-wal"),
+            Path(f"{path}-shm"),
+            Path(f"{replacement_path}-wal"),
+            Path(f"{replacement_path}-shm"),
+        ):
+            candidate.unlink(missing_ok=True)
+        os.replace(replacement_path, path)
 
-    account = history_source_for(repositories).account_read_model("account-a")
-    with pytest.raises(ProjectionStorageUnavailable):
-        await scheduler.active_projection("account-a", account)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    await scheduler.request_recovery("account-a", account.view_revision)
-    recovered = await _wait_for_lazy_projection(scheduler, repositories)
-    assert recovered.source_revision == account.view_revision
-    assert build_count == 1
-    assert stores.projections.recovery_count == 2
-    assert len(list(path.parent.glob(f".{path.name}.*.quarantine"))) == 1
-    assert await scheduler.close(timeout=2)
+        account = history_source_for(repositories).account_read_model("account-a")
+        with pytest.raises(ProjectionStorageUnavailable):
+            await scheduler.active_projection("account-a", account)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        await scheduler.request_recovery("account-a", account.view_revision)
+        recovered = await _wait_for_lazy_projection(scheduler, repositories)
+        assert recovered.source_revision == account.view_revision
+        assert build_count == 1
+        assert stores.projections.recovery_count == 2
+        assert len(list(path.parent.glob(f".{path.name}.*.quarantine"))) == 1
+    finally:
+        assert await scheduler.close(timeout=2)
 
 
 @pytest.mark.asyncio
@@ -1067,6 +1144,7 @@ async def test_graph_digest_tamper_quarantines_projection_and_self_heals(
         projections=stores.projections,
         graph=stores.graph,
     )
+    pipeline.compact_graph = False
     scheduler = InProcessProjectionScheduler(pipeline, worker_count=2, queue_capacity=4)
     await scheduler.start(recover=True)
     await _wait_for_lazy_projection(scheduler, repositories)
@@ -1128,7 +1206,7 @@ async def test_non_sqlite_projection_file_cannot_block_canonical_readiness(
 
 
 def test_retired_generation_gc_is_bounded_and_preserves_pending(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch,
 ) -> None:
     repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
     store = make_store(
@@ -1144,8 +1222,28 @@ def test_retired_generation_gc_is_bounded_and_preserves_pending(
         pipeline.project_account("account-a")
     advance(repositories, 5)
     pending = pipeline.build_candidate("account-a")
+
+    from app.analytics.database import (
+        GENERATION_RETIREMENT_CACHE_KIB, generation_retirement_cache,
+    )
+    import app.analytics.sqlite_projection_store as projection_store_module
+    observed_cache_sizes = []
+
+    @contextmanager
+    def observed_retirement_cache(connection):
+        with generation_retirement_cache(connection):
+            observed_cache_sizes.append(
+                int(connection.execute("PRAGMA cache_size").fetchone()[0])
+            )
+            yield
+
+    monkeypatch.setattr(
+        projection_store_module, "generation_retirement_cache", observed_retirement_cache
+    )
+    store.rollback_retention = 0
     store.collect_garbage(account_ref("account-a"))
 
+    assert observed_cache_sizes == [-GENERATION_RETIREMENT_CACHE_KIB]
     generations = store.database.generations("account-a")
     assert sum(item.status == "active" for item in generations) == 1
     assert sum(item.status == "validated" for item in generations) == 1
@@ -1263,3 +1361,600 @@ async def test_deleting_projections_allows_deterministic_canonical_rebuild(
     projections_path.unlink()
     rebuilt = build()
     assert rebuilt == first
+
+
+def _trace_projection_startup(monkeypatch):
+    statements = []
+    original_connect = ProjectionsDatabase.connect
+
+    def connect(database):
+        connection = original_connect(database)
+        connection.set_trace_callback(
+            lambda sql: statements.append((database.path, connection, sql))
+        )
+        return connection
+
+    monkeypatch.setattr(ProjectionsDatabase, "connect", connect)
+    return statements
+
+
+def _projection_startup_full_checks(statements, path):
+    return [
+        (connection, sql.strip().lower().rstrip(";"))
+        for observed, connection, sql in statements
+        if observed == path.resolve() and sql.strip().lower().rstrip(";")
+        in {"pragma integrity_check", "pragma foreign_key_check"}
+    ]
+
+
+@pytest.mark.parametrize("mode", ["direct", "lazy", "factory", "factory_lazy"])
+def test_ordinary_projection_open_uses_one_full_integrity_foreign_key_pair(
+    tmp_path: Path, monkeypatch, mode: str,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    make_store(path, repositories).close()
+    statements = _trace_projection_startup(monkeypatch)
+    if mode == "lazy":
+        store = LazySQLiteAnalyticsProjectionStore(
+            path, activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories),
+            busy_timeout_ms=137,
+        )
+        store.ensure_ready()
+    elif mode in {"factory", "factory_lazy"}:
+        stores = create_analytics_stores(
+            "sqlite", projections_path=path,
+            canonical_path=tmp_path / "canonical.sqlite3",
+            activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories),
+            busy_timeout_ms=137,
+            lazy=mode == "factory_lazy",
+        )
+        store = stores.projections
+        if mode == "factory_lazy":
+            assert stores.database is None
+            store.ensure_ready()
+        else:
+            assert stores.database is store.database
+    else:
+        store = make_store(path, repositories)
+    try:
+        checks = _projection_startup_full_checks(statements, path)
+        assert [sql for _, sql in checks] == [
+            "pragma integrity_check", "pragma foreign_key_check",
+        ]
+        assert checks[0][0] is checks[1][0]
+        assert store.database is not None
+        assert store.database.busy_timeout_ms == (5_000 if mode == "direct" else 137)
+        assert store.database.open_connection_count(path) == 0
+    finally:
+        if mode == "factory":
+            store.close_retention_scheduler()
+        store.close()
+
+
+def test_existing_projection_database_and_standalone_reconciliation_each_validate_fully(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    database = ProjectionsDatabase(path)
+    statements = _trace_projection_startup(monkeypatch)
+    store = SQLiteAnalyticsProjectionStore(
+        database, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+    try:
+        assert [sql for _, sql in _projection_startup_full_checks(statements, path)] == [
+            "pragma integrity_check", "pragma foreign_key_check",
+        ]
+        statements.clear()
+        assert store.reconcile_startup() == {
+            "retired": 0, "activated": 0, "completed": 0, "cancelled": 0,
+        }
+        assert [sql for _, sql in _projection_startup_full_checks(statements, path)] == [
+            "pragma integrity_check", "pragma foreign_key_check",
+        ]
+    finally:
+        store.close()
+
+
+def test_projection_path_open_with_live_handle_retains_full_validation_fallback(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    database = ProjectionsDatabase(path)
+    statements = _trace_projection_startup(monkeypatch)
+    with database.read():
+        store = make_store(path, repositories)
+        try:
+            assert [sql for _, sql in _projection_startup_full_checks(statements, path)] == [
+                "pragma integrity_check", "pragma foreign_key_check",
+                "pragma integrity_check", "pragma foreign_key_check",
+            ]
+            assert database.open_connection_count(path) == 1
+        finally:
+            store.close()
+    assert database.open_connection_count(path) == 0
+
+
+def test_projection_recovery_writes_begin_after_validated_startup_snapshot_closes(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    first = make_store(path, repositories)
+    pipeline_for(repositories, first).project_account("account-a")
+    generation = first.database.active_generation("account-a")
+    assert generation is not None
+    first.close()
+    advance(repositories, 1)
+    retirements = []
+    original_retire = SQLiteAnalyticsProjectionStore._retire
+
+    def retire(store, generation_id, **kwargs):
+        assert store.database.open_connection_count(path) == 0
+        retirements.append(generation_id)
+        return original_retire(store, generation_id, **kwargs)
+
+    monkeypatch.setattr(SQLiteAnalyticsProjectionStore, "_retire", retire)
+    statements = _trace_projection_startup(monkeypatch)
+    reopened = make_store(path, repositories)
+    try:
+        assert generation.generation_id in retirements
+        assert reopened.database.active_generation("account-a") is None
+        assert reopened.database.generation(generation.generation_id).status == "retired"
+        assert [sql for _, sql in _projection_startup_full_checks(statements, path)] == [
+            "pragma integrity_check", "pragma foreign_key_check",
+        ]
+        assert reopened.database.open_connection_count(path) == 0
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize("capture", ["file", "store"])
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_lazy_startup_never_publishes_or_leaks_candidate_when_identity_capture_fails(
+    tmp_path: Path, monkeypatch, capture: str, cancelled: bool,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    candidate = make_store(path, repositories)
+    candidate.database.retain_wal_anchor()
+    assert candidate.database.open_connection_count(path) == 1
+    lazy = LazySQLiteAnalyticsProjectionStore(
+        path, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+    closes = []
+    original_close = candidate.close
+
+    def close():
+        closes.append(True)
+        original_close()
+
+    def fail(*args, **kwargs):
+        if cancelled:
+            raise asyncio.CancelledError()
+        raise RuntimeError("final identity capture failed")
+
+    monkeypatch.setattr(candidate, "close", close)
+    monkeypatch.setattr(lazy, "_open_store", lambda: candidate)
+    if capture == "file":
+        monkeypatch.setattr(lazy, "_file_identity_for_path", fail)
+    else:
+        monkeypatch.setattr(candidate.database, "store_identity", fail)
+    try:
+        error = asyncio.CancelledError if cancelled else ProjectionStorageUnavailable
+        with pytest.raises(error):
+            lazy.ensure_ready()
+        assert closes
+        assert lazy.database is None
+        assert lazy._file_identity is None and lazy._store_identity is None
+        assert lazy.recovery_count == 0
+        assert candidate.database.open_connection_count(path) == 0
+    finally:
+        original_close()
+        lazy.close()
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_retention_startup_failure_closes_timers_and_owned_handles(
+    tmp_path: Path, monkeypatch, cancelled: bool,
+) -> None:
+    from app.analytics.retention_store import RetentionBoundSQLiteAnalyticsProjectionStore
+    from app.persistence.database import LocalSQLite
+
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    captured = []
+    cancelled_timers = []
+
+    class Timer:
+        def cancel(self):
+            cancelled_timers.append(True)
+
+    def fail(store):
+        captured.append(store)
+        store.database.retain_wal_anchor()
+        store._retention_timers["account-a"] = Timer()
+        if cancelled:
+            raise asyncio.CancelledError()
+        raise RuntimeError("retention startup failed")
+
+    monkeypatch.setattr(RetentionBoundSQLiteAnalyticsProjectionStore, "_arm_existing_retention", fail)
+    with pytest.raises(asyncio.CancelledError if cancelled else RuntimeError):
+        RetentionBoundSQLiteAnalyticsProjectionStore(
+            path, activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories),
+        )
+    assert len(captured) == 1
+    assert cancelled_timers == [True]
+    assert captured[0]._retention_closed
+    assert not captured[0]._retention_timers
+    assert LocalSQLite.open_connection_count(path) == 0
+
+
+def test_unpublished_retention_candidate_closes_armed_timers(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from app.analytics.retention_store import (
+        RetentionBoundLazySQLiteAnalyticsProjectionStore,
+        RetentionBoundSQLiteAnalyticsProjectionStore,
+    )
+
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    candidate = RetentionBoundSQLiteAnalyticsProjectionStore(
+        path, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+    candidate.database.retain_wal_anchor()
+    cancelled_timers = []
+
+    class Timer:
+        def cancel(self):
+            cancelled_timers.append(True)
+
+    candidate._retention_timers["account-a"] = Timer()
+    lazy = RetentionBoundLazySQLiteAnalyticsProjectionStore(
+        path, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+
+    def fail():
+        raise RuntimeError("identity capture failed")
+
+    monkeypatch.setattr(lazy, "_open_store", lambda: candidate)
+    monkeypatch.setattr(lazy, "_file_identity_for_path", fail)
+    try:
+        with pytest.raises(ProjectionStorageUnavailable):
+            lazy.ensure_ready()
+        assert cancelled_timers == [True]
+        assert candidate._retention_closed
+        assert not candidate._retention_timers
+        assert candidate.database.open_connection_count(path) == 0
+        assert lazy.database is None
+    finally:
+        lazy.close()
+        candidate.close()
+
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("startup read failed"), asyncio.CancelledError()])
+def test_projection_startup_reader_failure_or_cancellation_closes_owned_connection(
+    tmp_path: Path, monkeypatch, failure,
+) -> None:
+    from app.persistence.database import LocalSQLite
+
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    make_store(path, repositories).close()
+    readers = []
+
+    def read(connection):
+        readers.append(connection)
+        raise failure
+
+    monkeypatch.setattr(SQLiteAnalyticsProjectionStore, "_read_startup_generations", staticmethod(read))
+    with pytest.raises(type(failure)):
+        make_store(path, repositories)
+    assert len(readers) == 1
+    assert LocalSQLite.open_connection_count(path) == 0
+    with pytest.raises(sqlite3.ProgrammingError):
+        readers[0].execute("SELECT 1")
+
+
+def test_standalone_projection_reconciliation_rejects_foreign_key_corruption(tmp_path: Path) -> None:
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    store = make_store(path, repositories)
+    with store.database.transaction() as connection:
+        connection.execute("CREATE TABLE startup_parent (id INTEGER PRIMARY KEY)")
+        connection.execute("CREATE TABLE startup_child (parent_id REFERENCES startup_parent(id))")
+    raw = store.database.open_detached(path)
+    try:
+        raw.execute("PRAGMA foreign_keys=OFF")
+        raw.execute("INSERT INTO startup_child VALUES (999)")
+        raw.commit()
+    finally:
+        raw.close()
+    try:
+        with pytest.raises(GraphReferentialIntegrityError, match="foreign_key_invalid"):
+            store.reconcile_startup()
+        assert store.database.open_connection_count(path) == 0
+    finally:
+        store.close()
+
+
+def test_lazy_startup_refuses_replacement_between_reconciliation_and_identity_capture(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+    path = tmp_path / "analytics.sqlite3"
+    candidate = make_store(path, repositories)
+    opened_identity = candidate._opening_file_identity
+    assert opened_identity is not None
+    candidate.database.retain_wal_anchor()
+    assert candidate.database.open_connection_count(path) == 1
+    lazy = LazySQLiteAnalyticsProjectionStore(
+        path, activation=repositories.projection_activation,
+        canonical_identity_reader=identity_reader(repositories),
+    )
+    closes = []
+    original_close = candidate.close
+
+    def close():
+        closes.append(True)
+        original_close()
+
+    monkeypatch.setattr(candidate, "close", close)
+    monkeypatch.setattr(lazy, "_open_store", lambda: candidate)
+    monkeypatch.setattr(
+        lazy, "_file_identity_for_path",
+        lambda: (opened_identity[0], opened_identity[1] + 1),
+    )
+    try:
+        with pytest.raises(ProjectionStorageUnavailable):
+            lazy.ensure_ready()
+        assert closes
+        assert lazy.database is None
+        assert lazy._file_identity is None and lazy._store_identity is None
+        assert lazy.recovery_count == 0
+        assert candidate.database.open_connection_count(path) == 0
+    finally:
+        original_close()
+        lazy.close()
+
+
+
+def _observe_startup_validation_cache(
+    monkeypatch, path: Path, initial: int, *, restore_failure=False, validation_failure=None,
+):
+    from app.persistence.database import _TrackedConnection
+
+    path = path.resolve()
+    original_read = ProjectionsDatabase.read
+    original_execute = _TrackedConnection.execute
+    original_authorizer = _TrackedConnection.set_authorizer
+    observed = {"checks": [], "handoffs": [], "closing_cache": [], "connections": []}
+    restore_error = RuntimeError("synthetic cache restoration failed")
+
+    @contextmanager
+    def read(database):
+        with original_read(database) as connection:
+            if database.path != path:
+                yield connection
+                return
+            original_execute(connection, f"PRAGMA cache_size={initial}")
+            observed["connections"].append(connection)
+            try:
+                yield connection
+            finally:
+                observed["closing_cache"].append(
+                    original_execute(connection, "PRAGMA cache_size").fetchone()[0])
+
+    def execute(connection, sql, *args, **kwargs):
+        normalized = sql.strip().lower().rstrip(";")
+        if connection._tracked_path == path:
+            if normalized in {"pragma integrity_check", "pragma foreign_key_check"}:
+                observed["checks"].append((connection, normalized,
+                    original_execute(connection, "PRAGMA cache_size").fetchone()[0],
+                    original_execute(connection, "PRAGMA foreign_keys").fetchone()[0],
+                    original_execute(connection, "PRAGMA synchronous").fetchone()[0]))
+                if validation_failure is not None:
+                    raise validation_failure
+            if (restore_failure and normalized == f"pragma cache_size={initial}"
+                    and any(row[0] is connection for row in observed["checks"])):
+                raise restore_error
+        return original_execute(connection, sql, *args, **kwargs)
+
+    def set_authorizer(connection, callback):
+        if connection._tracked_path == path and callback is not None:
+            observed["handoffs"].append((connection,
+                original_execute(connection, "PRAGMA cache_size").fetchone()[0],
+                connection.in_transaction,
+                original_execute(connection, "PRAGMA query_only").fetchone()[0]))
+        return original_authorizer(connection, callback)
+
+    monkeypatch.setattr(ProjectionsDatabase, "read", read)
+    monkeypatch.setattr(_TrackedConnection, "execute", execute)
+    monkeypatch.setattr(_TrackedConnection, "set_authorizer", set_authorizer)
+    return observed, restore_error
+
+
+@pytest.mark.parametrize("initial", [-4096, 800])
+@pytest.mark.parametrize("mode", ["ordinary", "protected"])
+def test_analytics_full_validation_scopes_cache_before_protected_reader(
+    tmp_path: Path, monkeypatch, initial: int, mode: str,
+) -> None:
+    from app.analytics.database import STARTUP_VALIDATION_CACHE_KIB
+
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    observed, _ = _observe_startup_validation_cache(monkeypatch, database.path, initial)
+    readers = []
+
+    def reader(connection):
+        readers.append(connection)
+        assert connection.in_transaction
+        return connection.execute("SELECT COUNT(*) FROM projection_generations").fetchone()[0]
+
+    if mode == "protected":
+        assert database.migration_runner.run_with_validated_read(reader) == ([], 0)
+        assert observed["handoffs"] == [(readers[0], initial, True, 1)]
+    else:
+        assert database.migration_runner.run() == []
+        assert observed["handoffs"] == []
+    assert [row[1] for row in observed["checks"]] == [
+        "pragma integrity_check", "pragma foreign_key_check"]
+    assert observed["checks"][0][0] is observed["checks"][1][0]
+    assert [row[2:] for row in observed["checks"]] == [
+        (-STARTUP_VALIDATION_CACHE_KIB, 1, 2)] * 2
+    assert observed["closing_cache"] == [initial]
+    assert database.open_connection_count(database.path) == 0
+
+
+@pytest.mark.parametrize("mode", ["protected", "standalone"])
+@pytest.mark.parametrize("corruption", ["integrity", "foreign_key"])
+@pytest.mark.parametrize("restore_failure", [False, True])
+def test_full_validation_rejects_actual_corruption_and_preserves_primary_failure(
+    tmp_path: Path, monkeypatch, mode: str, corruption: str, restore_failure: bool,
+) -> None:
+    from app.analytics.database import STARTUP_VALIDATION_CACHE_KIB
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+    from app.persistence.migrations import MigrationError
+
+    path = tmp_path / "analytics.sqlite3"
+    database = ProjectionsDatabase(path)
+    store = None
+    if mode == "standalone":
+        repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+        store = SQLiteAnalyticsProjectionStore(
+            database, activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories))
+    with database.transaction() as connection:
+        connection.execute("CREATE TABLE cache_parent (id INTEGER PRIMARY KEY)")
+        connection.execute("CREATE TABLE cache_child (value INTEGER CHECK(value > 0),"
+                           " parent_id INTEGER REFERENCES cache_parent(id))")
+    raw = database.open_detached(path)
+    try:
+        raw.execute("PRAGMA foreign_keys=OFF")
+        raw.execute("PRAGMA ignore_check_constraints=ON")
+        raw.execute("INSERT INTO cache_child VALUES (?, ?)",
+                    (0, None) if corruption == "integrity" else (1, 999))
+        raw.commit()
+    finally:
+        raw.close()
+    initial = 800
+    observed, _ = _observe_startup_validation_cache(
+        monkeypatch, path, initial, restore_failure=restore_failure)
+    readers = []
+    if mode == "protected":
+        error_type = MigrationError
+        message = "integrity check failed" if corruption == "integrity" else "foreign-key check failed"
+        run = lambda: database.migration_runner.run_with_validated_read(readers.append)
+    else:
+        error_type = ProjectionValidationError if corruption == "integrity" else GraphReferentialIntegrityError
+        message = "integrity_invalid" if corruption == "integrity" else "foreign_key_invalid"
+        monkeypatch.setattr(store, "_read_startup_generations", readers.append)
+        run = store.reconcile_startup
+    try:
+        with pytest.raises(error_type, match=message):
+            run()
+        assert readers == []
+        assert observed["handoffs"] == []
+        assert [row[1] for row in observed["checks"]] == (
+            ["pragma integrity_check"] if corruption == "integrity" else
+            ["pragma integrity_check", "pragma foreign_key_check"])
+        assert all(row[2:] == (-STARTUP_VALIDATION_CACHE_KIB, 1, 2)
+                   for row in observed["checks"])
+        assert observed["closing_cache"] == [
+            -STARTUP_VALIDATION_CACHE_KIB if restore_failure else initial]
+        assert database.open_connection_count(path) == 0
+    finally:
+        if store is not None:
+            store.close()
+
+
+@pytest.mark.parametrize("restore_failure", [False, True])
+def test_protected_full_validation_cancellation_never_reaches_reader(
+    tmp_path: Path, monkeypatch, restore_failure: bool,
+) -> None:
+    from app.analytics.database import STARTUP_VALIDATION_CACHE_KIB
+
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    cancelled = asyncio.CancelledError()
+    observed, _ = _observe_startup_validation_cache(
+        monkeypatch, database.path, -4096,
+        restore_failure=restore_failure, validation_failure=cancelled)
+    readers = []
+    with pytest.raises(asyncio.CancelledError) as failure:
+        database.migration_runner.run_with_validated_read(readers.append)
+    assert failure.value is cancelled
+    assert readers == []
+    assert observed["handoffs"] == []
+    assert observed["closing_cache"] == [
+        -STARTUP_VALIDATION_CACHE_KIB if restore_failure else -4096]
+    assert database.open_connection_count(database.path) == 0
+
+
+@pytest.mark.parametrize("mode", ["protected", "standalone"])
+def test_successful_full_pair_does_not_handoff_when_cache_restoration_fails(
+    tmp_path: Path, monkeypatch, mode: str,
+) -> None:
+    path = tmp_path / "analytics.sqlite3"
+    database = ProjectionsDatabase(path)
+    store = None
+    if mode == "standalone":
+        repositories = prepare_empty_canonical(tmp_path / "canonical.sqlite3")
+        store = SQLiteAnalyticsProjectionStore(
+            database, activation=repositories.projection_activation,
+            canonical_identity_reader=identity_reader(repositories))
+    observed, restore_error = _observe_startup_validation_cache(
+        monkeypatch, path, -4096, restore_failure=True)
+    readers = []
+    if mode == "protected":
+        run = lambda: database.migration_runner.run_with_validated_read(readers.append)
+    else:
+        monkeypatch.setattr(store, "_read_startup_generations", readers.append)
+        run = store.reconcile_startup
+    try:
+        with pytest.raises(RuntimeError) as failure:
+            run()
+        assert failure.value is restore_error
+        assert [row[1] for row in observed["checks"]] == [
+            "pragma integrity_check", "pragma foreign_key_check"]
+        assert readers == []
+        assert observed["handoffs"] == []
+        assert database.open_connection_count(path) == 0
+    finally:
+        if store is not None:
+            store.close()
+
+
+@pytest.mark.parametrize("statement", ["PRAGMA cache_size=-16", "PRAGMA query_only=OFF", "COMMIT"])
+def test_protected_reader_still_rejects_cache_and_snapshot_mutation(
+    tmp_path: Path, monkeypatch, statement: str,
+) -> None:
+    from app.persistence.migrations import MigrationError
+
+    database = ProjectionsDatabase(tmp_path / "analytics.sqlite3")
+    observed, _ = _observe_startup_validation_cache(monkeypatch, database.path, 800)
+    readers = []
+
+    def reader(connection):
+        readers.append(connection)
+        with pytest.raises(sqlite3.DatabaseError):
+            connection.execute(statement)
+        assert connection.in_transaction
+        return connection.execute("SELECT COUNT(*) FROM projection_generations").fetchone()[0]
+
+    with pytest.raises(MigrationError, match="reader changed its scope"):
+        database.migration_runner.run_with_validated_read(reader)
+    assert observed["handoffs"] == [(readers[0], 800, True, 1)]
+    assert observed["closing_cache"] == [800]
+    assert database.open_connection_count(database.path) == 0

@@ -90,6 +90,9 @@ tools/visual-capture/output/
 
 # Generated Product -> Legal evidence bundles are handoff artifacts, not source.
 /artifacts/legal/
+/artifacts/ci-*/
+/artifacts/ci-*.txt
+/artifacts/ci-*.json
 
 # ------------------------
 # Logs

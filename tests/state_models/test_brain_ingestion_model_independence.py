@@ -7,6 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 MODEL_FILE = Path(__file__).resolve().parent / "brain_ingestion_model.py"
 

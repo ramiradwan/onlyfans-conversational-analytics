@@ -20,6 +20,8 @@ from app.security.capability_license_redemption import (
 from app.security.hosted_grants import TransportResponse
 from app.security.installation_key import InstallationKeyError, InstallationProof
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 CONTINUATION = "clr1." + "A" * 43
 REDEMPTION_ID = "0199a1b2-c3d4-7300-8000-000000000021"
 CHALLENGE_ID = "0199a1b2-c3d4-7300-8000-000000000022"

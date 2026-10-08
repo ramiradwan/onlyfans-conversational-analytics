@@ -35,12 +35,14 @@ class RetentionMaintenance:
         *,
         managed_recovery_roots: Iterable[str | Path] = (),
         clock: Callable[[], datetime] = utc_now,
+        on_source_change: Callable[[str], None] | None = None,
     ) -> None:
         self.database = database
         self._managed_recovery_roots = tuple(
             Path(os.path.abspath(os.fspath(root))) for root in managed_recovery_roots
         )
         self._clock = clock
+        self._on_source_change = on_source_change
 
     def run_once(self) -> RetentionMaintenanceResult:
         observed_at = self._clock()
@@ -62,7 +64,13 @@ class RetentionMaintenance:
         )
         expired_message_count = 0
         for account_id in account_ids:
-            expired_message_count += len(retention.enforce(account_id, now=observed_at))
+            expired = retention.enforce(account_id, now=observed_at)
+            expired_message_count += len(expired)
+            if expired and self._on_source_change is not None:
+                try:
+                    self._on_source_change(account_id)
+                except Exception:
+                    LOGGER.warning("retention_maintenance_event reason_code=source_notification_failed")
 
         removed_recovery_file_count = 0
         seen_roots: set[Path] = set()
@@ -102,10 +110,12 @@ async def start_default_retention_maintenance() -> asyncio.Task[None]:
 
     global _DEFAULT_TASK
     from app.bootstrap import transport_manager
+    from app.analytics.runtime import invalidate_question_sources
 
     maintenance = RetentionMaintenance(
         transport_manager.canonical_database,
         managed_recovery_roots=_default_recovery_roots(),
+        on_source_change=invalidate_question_sources,
     )
 
     # Startup does not become ready until current expiry obligations have been

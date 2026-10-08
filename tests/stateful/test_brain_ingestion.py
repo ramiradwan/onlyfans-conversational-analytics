@@ -29,6 +29,8 @@ from tests.state_models.brain_ingestion_model import (
 from tests.state_models.production_brain_adapter import ProductionBrainAdapter
 from tests.state_models.transition_oracle import assert_transition_oracle
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 for profile, examples, steps in (
     ("tier_a_general", 15, 20),
@@ -794,11 +796,13 @@ class BrainIngestionDeletionStateMachine(RuleBasedStateMachine):
         self.harness.reconstruct_repository()
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 class TestBrainIngestionGeneral(BrainIngestionStateMachine.TestCase):
     pass
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_tier_a
 class TestBrainIngestionDeletion(BrainIngestionDeletionStateMachine.TestCase):
     pass

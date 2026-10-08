@@ -12,6 +12,8 @@ from app.api.endpoints.capability_license import (
 )
 from app.security.capability_license_composition import CapabilityLicenseDeliveryReceipt
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def test_customer_redemption_success_contains_only_checking_state() -> None:
     result = _redemption_response(

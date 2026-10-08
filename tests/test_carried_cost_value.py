@@ -20,6 +20,8 @@ from app.security.admission_confirmation import (
 from app.security.permit_reserve_port import ReserveRequest, reserve_admission
 from app.security.runtime_policy import AuthContext, AuthorizationEpoch, RuntimePolicy
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 CONFIRMED_AT = 1_760_000_000
 CARRIED_COST = 250_000

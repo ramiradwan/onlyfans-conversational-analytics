@@ -22,6 +22,8 @@ from app.persistence.auth import (
 )
 from app.security.grant_types import VerifiedGrantDenial
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @dataclass
 class Clock:

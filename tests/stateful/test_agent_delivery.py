@@ -15,6 +15,8 @@ from hypothesis.stateful import RuleBasedStateMachine, initialize, rule
 from tests.state_models.agent_adapter import AgentHarness
 from tests.state_models.agent_delivery_model import AgentDeliveryModel, ModelError
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 NAMESPACE = UUID("11111111-1111-1111-1111-111111111111")
 SUCCESSFUL_REPLAY_TRACE = Path("tests/fixtures/agent-delivery-successful-replay-trace.json")
@@ -721,6 +723,7 @@ def test_agent_model_is_independent_of_production_helpers() -> None:
     assert not [token for token in forbidden if token in source]
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_agent_tier_a
 class General(RuleBasedStateMachine):
     @initialize()
@@ -807,6 +810,7 @@ class General(RuleBasedStateMachine):
             self.driver.disconnect(); self.driver.restart(); self.driver.connect(f"fence-r-{self.driver.operation_number}")
 
 
+@pytest.mark.ci_tier('stateful')
 @pytest.mark.stateful_agent_tier_a
 class Deletion(General):
     @initialize()
