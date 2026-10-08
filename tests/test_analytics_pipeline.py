@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 
 from app.analytics.pipeline import AnalyticsPipeline
+from app.analytics import rebuild as rebuild_module
 from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.analytics.opaque_refs import account_ref
 from app.analytics.rebuild import rebuild_from_args
@@ -25,6 +27,7 @@ from app.protocol.payloads import (
 from app.services.data_ingest import CanonicalAnalyticsConsumer
 from app.services.onlyfans_client import OnlyFansClient
 from app.canonical.read_models import AccountReadModel
+from tests.analytics_fixture_clock import fixture_clock
 
 pytestmark = [pytest.mark.ci_tier('integration')]
 
@@ -171,7 +174,7 @@ async def test_pipeline_consumes_both_canonical_backends_idempotently(
     repositories: CanonicalRepositories,
 ) -> None:
     payload = await seed(repositories, "creator-alpha")
-    pipeline = AnalyticsPipeline(history_source_for(repositories))
+    pipeline = AnalyticsPipeline(history_source_for(repositories), clock=fixture_clock)
 
     first = pipeline.project_account(payload.creator_account_id)
     second = pipeline.project_account(payload.creator_account_id)
@@ -198,7 +201,7 @@ async def test_pipeline_is_revision_aware_and_forced_rebuild_is_equivalent(
     repositories: CanonicalRepositories,
 ) -> None:
     payload = await seed(repositories, "creator-alpha")
-    pipeline = AnalyticsPipeline(history_source_for(repositories))
+    pipeline = AnalyticsPipeline(history_source_for(repositories), clock=fixture_clock)
     initial = pipeline.project_account(payload.creator_account_id)
     delta_document = {
         "connection_id": str(payload.connection_id),
@@ -241,7 +244,7 @@ async def test_synthetic_accounts_remain_isolated_in_metrics_and_graph() -> None
     repositories = create_canonical_repositories("memory")
     alpha = await seed(repositories, "creator-alpha")
     beta = await seed(repositories, "creator-beta")
-    pipeline = AnalyticsPipeline(history_source_for(repositories))
+    pipeline = AnalyticsPipeline(history_source_for(repositories), clock=fixture_clock)
 
     alpha_artifact = pipeline.project_account(alpha.creator_account_id).artifact
     beta_artifact = pipeline.project_account(beta.creator_account_id).artifact
@@ -287,7 +290,11 @@ async def test_legacy_service_names_are_read_only_canonical_adapters() -> None:
 @pytest.mark.asyncio
 async def test_rebuild_entry_point_is_stable_across_fresh_sqlite_connections(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        rebuild_module, "AnalyticsPipeline", partial(AnalyticsPipeline, clock=fixture_clock)
+    )
     database_path = tmp_path / "canonical.sqlite3"
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=database_path

@@ -24,6 +24,7 @@ from app.protocol.payloads import (
 )
 from app.services import insights_service
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
+from tests.analytics_fixture_clock import fixture_clock
 
 pytestmark = [pytest.mark.ci_tier('fast')]
 
@@ -159,6 +160,8 @@ async def seed_default_runtime() -> FixtureSnapshot:
     account = HistoryAnalyticsSource(transport_manager.history).account_read_model(
         payload.creator_account_id
     )
+    # This runtime belongs to reset_runtime and is disposed after each test.
+    analytics_runtime.analytics_pipeline()._retention_clock = fixture_clock
     scheduler = analytics_runtime.projection_scheduler()
     await scheduler.schedule(payload.creator_account_id, account.view_revision)
     await scheduler.wait(payload.creator_account_id)
