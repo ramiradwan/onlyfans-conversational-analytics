@@ -98,6 +98,36 @@ class RaisingClient(FakeClient):
         raise OSError("loopback unavailable")
 
 
+def test_live_authenticated_workspace_does_not_open_another_browser(tmp_path):
+    from uuid import uuid4
+    journey = str(uuid4())
+    launcher, _, _, browser_urls, _ = launcher_with_response(
+        tmp_path, FakeResponse(200, {"workspace_active": True, "journey_id": journey}, {}))
+    notices=[]
+    launcher.show_workspace_status=lambda: notices.append("known-open")
+    assert launcher.launch() == BRIDGE_ORIGIN
+    assert browser_urls == []
+    assert launcher.journey_id == journey
+    assert notices==["known-open"]
+
+
+def test_unknown_hosted_tab_requires_explicit_recovery_before_new_handoff(tmp_path):
+    from uuid import uuid4
+    journey = str(uuid4())
+    launcher, client, _, _, requests = launcher_with_response(
+        tmp_path, FakeResponse(200, {"workspace_uncertain": True, "journey_id": journey}, {}))
+    launcher.confirm_workspace_reopen = lambda: False
+    assert launcher._request_provisioning_browser_target("t" * 43) is None
+    assert len(requests) == 1
+    def agree():
+        client.response = FakeResponse(200, {"handoff_code": "r" * 43}, {})
+        return True
+    launcher.confirm_workspace_reopen = agree
+    assert launcher._request_provisioning_browser_target("t" * 43).endswith("?code=" + "r" * 43)
+    assert requests[-1][1]["X-Onboarding-Reopen"] == "explicit"
+    assert requests[-1][1]["X-Onboarding-Journey"] == journey
+
+
 class FakeOwnership:
     def __init__(
         self,
@@ -362,7 +392,7 @@ def test_provisioning_completion_restarts_the_same_brain_in_runtime_mode(
 
     target = launcher.launch()
 
-    assert target == f"{BRIDGE_ORIGIN}{HANDOFF_PATH}?code={'p' * 43}"
+    assert target == BRIDGE_ORIGIN
     assert starts[0].provisioning_handoff_token == "t" * 32
     assert requests == [
         (
@@ -372,18 +402,8 @@ def test_provisioning_completion_restarts_the_same_brain_in_runtime_mode(
                 "Authorization": "Provisioning " + "t" * 32,
             },
         ),
-        (
-            HANDOFF_PATH,
-            {
-                "Host": BRIDGE_CONTROL_HOST,
-                "Authorization": "Bootstrap " + "b" * 40,
-            },
-        ),
     ]
-    assert browsers == [
-        f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?code={'p' * 43}",
-        target,
-    ]
+    assert browsers == [f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?code={'p' * 43}"]
 
 
 @pytest.mark.parametrize(

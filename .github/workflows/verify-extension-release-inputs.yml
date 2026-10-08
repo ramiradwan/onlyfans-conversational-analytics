@@ -57,11 +57,11 @@ jobs:
       - name: Build and audit verified inputs
         shell: pwsh
         run: |
-          node extension/build.mjs --package --outdir="$env:QUALIFICATION_OUTPUT" --packaged-signing-rule="$env:PACKAGED_SIGNING_RULE" --legal-release-bindings="$env:LEGAL_BINDINGS_DOCUMENT" --privacy-policy-url="$env:RELEASE_PRIVACY_POLICY_URL"
+          node extension/build.mjs --package --outdir="$env:QUALIFICATION_OUTPUT" --packaged-signing-rule="$env:PACKAGED_SIGNING_RULE" --legal-release-bindings="$env:LEGAL_BINDINGS_DOCUMENT" --privacy-policy-url="$env:RELEASE_PRIVACY_POLICY_URL" --customer-release-config="app/core/customer-release.json"
           if ($LASTEXITCODE -ne 0) { throw 'Candidate build failed' }
           $manifest = Get-Content -LiteralPath extension/manifest.json -Raw | ConvertFrom-Json
           $artifact = Join-Path $env:QUALIFICATION_OUTPUT ("conversation-analytics-{0}.zip" -f $manifest.version)
-          node extension/build.mjs --audit-package --artifact="$artifact" --packaged-signing-rule="$env:PACKAGED_SIGNING_RULE" --legal-release-bindings="$env:LEGAL_BINDINGS_DOCUMENT" --privacy-policy-url="$env:RELEASE_PRIVACY_POLICY_URL"
+          node extension/build.mjs --audit-package --artifact="$artifact" --packaged-signing-rule="$env:PACKAGED_SIGNING_RULE" --legal-release-bindings="$env:LEGAL_BINDINGS_DOCUMENT" --privacy-policy-url="$env:RELEASE_PRIVACY_POLICY_URL" --customer-release-config="app/core/customer-release.json"
           if ($LASTEXITCODE -ne 0) { throw 'Candidate audit failed' }
           # Publish identities only; private inputs and the candidate stay ephemeral.
           [ordered]@{ product_revision = $env:GITHUB_SHA; legal_bindings_digest = (Get-FileHash -LiteralPath $env:LEGAL_BINDINGS_DOCUMENT -Algorithm SHA256).Hash.ToLowerInvariant(); signing_rule_digest = (Get-FileHash -LiteralPath $env:PACKAGED_SIGNING_RULE -Algorithm SHA256).Hash.ToLowerInvariant(); privacy_policy_url = $env:RELEASE_PRIVACY_POLICY_URL; candidate_sha256 = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant() } | ConvertTo-Json -Compress

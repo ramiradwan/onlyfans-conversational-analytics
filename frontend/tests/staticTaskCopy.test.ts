@@ -13,7 +13,15 @@ describe('task-focused static copy', () => {
     for (const [id, item] of Object.entries(baseline.blocks) as [string, { element_sha256: string }][]) {
       const element = doc.getElementById(id);
       expect(element, id).not.toBeNull();
-      expect(createHash('sha256').update(element!.outerHTML).digest('hex')).toBe(item.element_sha256);
+      const disclosure = element!.cloneNode(true) as HTMLElement;
+      // The approved interaction keeps submission enabled to explain missing
+      // checkboxes. Preserve the original disclosure bytes/hash while allowing
+      // only that button's initial interactive state to differ.
+      if (id === 'pre-mode') {
+        expect(element!.querySelector('#activate-software')?.hasAttribute('disabled')).toBe(false);
+        disclosure.querySelector('#activate-software')?.setAttribute('disabled', '');
+      }
+      expect(createHash('sha256').update(disclosure.outerHTML).digest('hex')).toBe(item.element_sha256);
     }
   });
   it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'app/provisioning/provisioning.html'])('has no semicolons in rendered copy in %s', (file) => {
@@ -34,7 +42,8 @@ describe('task-focused static copy', () => {
     expect(doc.querySelector('#provisioning-status')?.textContent).toBe('');
     expect(doc.querySelector('.page-header')?.textContent).not.toMatch(/Four short|Current step/);
     expect(doc.querySelector('#binding-step')?.textContent).not.toMatch(/Creator approval|contact support|Check again after/);
-    expect(doc.querySelector('#creator-approval-unavailable')?.textContent).toContain('setup tab where you got your code');
+    expect(doc.querySelector('#creator-approval-unavailable')?.textContent).toBe('Account setup is unavailable.');
+    expect(doc.querySelector('#creator-approval-return-help')?.textContent).toBe('Continue setup in this tab.');
     expect(doc.querySelector('#recovery-dialog')?.textContent).toContain('browser history');
     for (const selector of ['#claim-action-help', '#identity-confirm-help', '#binding-action-help', '#finalize-action-help']) {
       expect(doc.querySelector(selector)).toBeNull();

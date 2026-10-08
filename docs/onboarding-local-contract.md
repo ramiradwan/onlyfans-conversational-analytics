@@ -15,6 +15,7 @@ Display copy is not sent over these contracts. Reason codes map to reviewed loca
 | `local-onboarding-state.v1` | Authenticated Brain or extension / local projections | Local workflow projection; in memory while channel is current, invalidated on disconnect |
 | `local-onboarding-command.v1` | Local authenticated user intent / named owner | Local command; bounded owner operation ledger, retain for reconciliation until operation expiry |
 | `local-onboarding-result.v1` | Authenticated named owner / requesting projection | Local result; same operation lifetime, never hosted |
+| `local-onboarding-result.v2` | Authenticated named owner / requesting projection | Additive command/request and committed-generation scopes; same bounded local lifetime |
 | `local-installation-discovery.v1` | Extension / loopback discovery adapter | Non-authorizing hint, not retained, rate-limited to one accepted hint per second per connection |
 | `local-onboarding-workspace.v1` | Workspace coordinator / local UI | Non-authorizing UI draft; clear on completion or abandonment, at most 30 days idle |
 | `local-onboarding-continuation.v1` | Brain / registered local destination | Non-authorizing restart/enrollment locator; bound to existing setup UI session, at most 30 minutes |
@@ -39,6 +40,32 @@ operation, generations, and committed revision. A transport acknowledgement is n
 result. A lost channel changes pending operations to unknown. Results cannot overwrite
 a terminal result or make a stale account current. The projection reference module
 models these rules; adapters must validate the schema before calling it.
+
+Generation-changing commands negotiate `local-onboarding.command-result.v2`. A v2
+result's `command_epoch`, `command_account_generation` and `command_consent_generation` identify
+the exact original request. Its unprefixed generation fields and revision identify
+the committed owner snapshot. Confirm only when both scopes match their respective
+records, the account remains current, and the committed revision is visible. Pause
+and resume can rotate consent; that never permits confirming a command against a
+different creator. Unknown outcomes may later reconcile from an owner result, but
+the client never replays the command to obtain that result. Existing v1 fields and
+semantics are unchanged. Owners that lack v2 cannot advertise this automation.
+
+The negotiated named port accepts a command only in the closed wrapper
+`{type:"command", epoch, command}`. The owner rejects a different epoch before
+examining generation counters; raw v1 mutations on this port are refused. A
+read-only `{type:"operation", operation_id}` reconciles the durable receipt
+without replaying the action. A missing receipt returns the closed envelope
+`{type:"operation", operation_id, status:"unavailable"}` and leaves the outcome
+unknown. Receipts are bounded to the setup lifetime. Across worker restart,
+generation counters cannot be compared: the owner checks durable account,
+consent and effect evidence before issuing a result in its current epoch. The
+projection still requires the exact original command epoch and generations.
+
+Authenticated local event streams may also emit `workspace-focus` with the
+closed body `{journey_id}`. A matching local page can ask the extension to focus
+the existing admitted workspace through `{type:"focus"}`; this cannot navigate,
+open a tab, or establish authority. The port replies `{type:"focus", focused}`.
 
 `verified` means verified by the fact's owner. It does not authorize other components
 to skip their own checks. `unknown` must never render as Ready. Snapshot/replay requests

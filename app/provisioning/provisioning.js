@@ -37,6 +37,239 @@ const OPERATION_REFUSALS = Object.freeze({
 const GENERIC_REFUSAL = 'This step could not be completed. Reopen the desktop app and try again.';
 const REQUEST_FAILURE = 'The desktop app could not be reached. Make sure it is running and try again.';
 const MUTATION_FAILED = Symbol('mutation failed');
+const JOURNEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+/** Only the registered local workspace identifier; never an authentication value. */
+export function parseJourneyHash(hash) {
+  const value = typeof hash === 'string' && hash.startsWith('#journey=') ? hash.slice(9) : '';
+  return JOURNEY_PATTERN.test(value) ? value : null;
+}
+
+export function parseBrainOnboardingState(value) {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['profile', 'kind', 'journey_id', 'source', 'epoch', 'revision',
+    'account_generation', 'consent_generation', 'facts', 'pending_operation', 'reason'])
+    || value.profile !== 'local-onboarding-state.v1' || value.source !== 'brain'
+    || !['snapshot', 'event'].includes(value.kind) || !JOURNEY_PATTERN.test(value.journey_id)
+    || !JOURNEY_PATTERN.test(value.epoch)
+    || ![value.revision, value.account_generation, value.consent_generation].every((n) => Number.isSafeInteger(n) && n >= 0)
+    || !isRecord(value.facts) || !hasOnlyKeys(value.facts, ['installation', 'enrollment', 'pairing', 'activation', 'analysis'])
+    || !Object.values(value.facts).every((fact) => ['unknown', 'missing', 'verified'].includes(fact))
+    || !['none', 'app_unreachable', 'enrollment_required', 'pairing_required', 'activation_required',
+      'authorization_expired', 'authorization_revoked', 'operation_unconfirmed'].includes(value.reason)) return null;
+  const pending = value.pending_operation;
+  if (pending !== null && (!isRecord(pending) || !hasOnlyKeys(pending, ['operation_id', 'status'])
+    || !JOURNEY_PATTERN.test(pending.operation_id) || !['pending', 'unknown'].includes(pending.status))) return null;
+  return value;
+}
+
+export function submitHostedHandoff({ document, payload, journeyId, registeredHostedUrl }) {
+  const keys = ['state', 'journey_id', 'handoff_reference', 'hosted_start_url'];
+  const continuation = payload?.continuation_reference;
+  if (continuation !== undefined) keys.push('continuation_reference');
+  if (!isRecord(payload) || !hasOnlyKeys(payload, keys)
+    || (continuation !== undefined && !/^[A-Za-z0-9_-]{43}$/u.test(continuation))
+    || payload.state !== 'waiting' || payload.journey_id !== journeyId || !JOURNEY_PATTERN.test(journeyId)
+    || typeof payload.handoff_reference !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(payload.handoff_reference)) return false;
+  let registered;
+  try { registered = new URL(registeredHostedUrl); } catch { return false; }
+  if (registered.protocol !== 'https:' || registered.username || registered.password || registered.search || registered.hash
+    || registered.pathname !== '/public/onboarding'
+    || payload.hosted_start_url !== `${registered.origin}/public/onboarding/start`) return false;
+  const form = document.createElement('form');
+  form.method = 'post'; form.action = payload.hosted_start_url; form.target = '_self'; form.hidden = true;
+  // Submission carries only bounded nonauthorizing entry context. No proof,
+  // claim/bootstrap authority, local session or return URL leaves this page.
+  for (const [name, value] of Object.entries({ journey_id: journeyId, handoff_reference: payload.handoff_reference,
+    ...(continuation === undefined ? {} : { continuation_reference: continuation }) })) {
+    const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value;
+    form.append(input);
+  }
+  document.body.append(form);
+  form.submit();
+  return true;
+}
+
+/** Automatic same-workspace relay; all authority stays in the local cookie/CSRF. */
+export async function continueReceivingTransfer({ fetch, document, journeyId, registeredHostedUrl, onStatus, onRecovery = () => {},
+  loadParser = () => import('/provisioning/onboarding/json.mjs'), timeoutMs = 10_000 }) {
+  const prefix = '/api/v1/provisioning/setup-transfer';
+  let submitted = false;
+  const fail = () => { onStatus('Setup could not be continued.'); return 'unavailable'; };
+  try {
+    const { parseOnboardingJson } = await loadParser();
+    const read = async (path, body, csrf) => {
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), timeoutMs);
+      try {
+        const response = await fetch(path, { method: body ? 'POST' : 'GET', credentials: 'same-origin',
+          cache: 'no-store', redirect: 'error', signal: abort.signal,
+          headers: { Accept: 'application/json', 'X-Onboarding-Journey': journeyId,
+            ...(body ? { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf } : {}) },
+          ...(body ? { body: JSON.stringify(body) } : {}) });
+        if (!response.ok || response.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') {
+          throw new Error('Transfer unavailable');
+        }
+        return parseOnboardingJson(await response.text());
+      } finally { clearTimeout(timer); }
+    };
+    const context = await read(`${prefix}/context`);
+    if (isRecord(context) && hasOnlyKeys(context, ['state']) && context.state === 'none') return 'none';
+    if (!isRecord(context) || context.journey_id !== journeyId || !JOURNEY_PATTERN.test(journeyId)) return fail();
+    const registered = new URL(registeredHostedUrl);
+    if (registered.protocol !== 'https:' || registered.username || registered.password || registered.search || registered.hash
+      || registered.pathname !== '/public/onboarding') return fail();
+    if (context.state === 'unconfirmed' && hasOnlyKeys(context, ['state', 'journey_id', 'hosted_return_url'])
+      && context.hosted_return_url === registered.href) {
+      onStatus('Setup could not be confirmed.');
+      onRecovery('Return to setup', () => document.defaultView.location.assign(`${registered.href}#journey=${journeyId}`));
+      return 'recovery';
+    }
+    if (context.state === 'continue_ready' && hasOnlyKeys(context, ['state', 'journey_id', 'result'])
+      && isRecord(context.result) && hasOnlyKeys(context.result,
+        ['state', 'journey_id', 'handoff_reference', 'hosted_start_url', 'continuation_reference'])
+      && context.result.state === 'waiting' && context.result.journey_id === journeyId
+      && context.result.hosted_start_url === `${registered.origin}/public/onboarding/start`
+      && [context.result.handoff_reference, context.result.continuation_reference].every((part) => /^[A-Za-z0-9_-]{43}$/u.test(part))) {
+      onStatus('Continue setup.');
+      onRecovery('Continue setup', () => submitHostedHandoff({ document, payload: context.result, journeyId, registeredHostedUrl }));
+      return 'recovery';
+    }
+    if (typeof context.csrf_token !== 'string' || !context.csrf_token || context.csrf_token.length > 1024) return fail();
+    let target, fields;
+    onStatus('Continuing setup…');
+    if (context.state === 'continue' && hasOnlyKeys(context, ['state', 'journey_id', 'continuation', 'csrf_token'])
+      && isRecord(context.continuation)
+      && hasOnlyKeys(context.continuation, ['profile', 'reference', 'return_target', 'expires_at'])
+      && context.continuation.profile === 'urn:bridge-clean:onboarding-continuation:v1'
+      && context.continuation.return_target === 'desktop-setup'
+      && /^[A-Za-z0-9_-]{43}$/u.test(context.continuation.reference)
+      && Number.isFinite(Date.parse(context.continuation.expires_at))) {
+      const result = await read(`${prefix}/continue`, { continuation: context.continuation }, context.csrf_token);
+      if (result?.continuation_reference !== context.continuation.reference || !submitHostedHandoff({
+        document, payload: result, journeyId, registeredHostedUrl,
+      })) return fail();
+      submitted = true; return 'submitted';
+    } else if (context.state === 'code_entry' && hasOnlyKeys(context, ['state', 'journey_id', 'setup_code', 'csrf_token'])
+      && /^[0-9A-HJKMNP-TV-Z]{12}$/u.test(context.setup_code)) {
+      const prepared = await read(`${prefix}/prepare`, { setup_code: context.setup_code }, context.csrf_token);
+      if (!isRecord(prepared) || !hasOnlyKeys(prepared, ['journey_id', 'request', 'hosted_start_url'])
+        || prepared.journey_id !== journeyId || prepared.hosted_start_url !== `${registered.href}/receive`
+        || !isTransferRequest(prepared.request) || prepared.request.destination.kind !== 'desktop') return fail();
+      target = prepared.hosted_start_url; fields = { journey_id: journeyId, request: JSON.stringify(prepared.request) };
+    } else if (context.state === 'proof' && hasOnlyKeys(context,
+      ['state', 'journey_id', 'request', 'challenge', 'csrf_token', 'hosted_return_url'])
+      && context.hosted_return_url === registered.href && isTransferRequest(context.request)
+      && context.request.destination.kind === 'desktop' && isRecord(context.challenge)
+      && hasOnlyKeys(context.challenge, ['profile', 'challenge', 'expires_at', 'request_digest'])
+      && context.challenge.profile === 'urn:bridge-clean:onboarding-proof:v1'
+      && /^[A-Za-z0-9_-]{43}$/u.test(context.challenge.challenge)
+      && /^[a-f0-9]{64}$/u.test(context.challenge.request_digest)
+      && Number.isFinite(Date.parse(context.challenge.expires_at))) {
+      const proof = await read(`${prefix}/sign`, { request: context.request, challenge: context.challenge }, context.csrf_token);
+      if (!isRecord(proof) || !hasOnlyKeys(proof, ['challenge', 'signature'])
+        || proof.challenge !== context.challenge.challenge || !/^[A-Za-z0-9_-]{86}$/u.test(proof.signature)) return fail();
+      target = context.hosted_return_url;
+      fields = { journey_id: journeyId, request: JSON.stringify(context.request), proof: JSON.stringify(proof) };
+    } else return fail();
+    const form = document.createElement('form'); form.method = 'post'; form.target = '_self';
+    form.action = `${target}#journey=${journeyId}`; form.hidden = true;
+    for (const [name, value] of Object.entries(fields)) {
+      const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.append(input);
+    }
+    document.body.append(form); form.submit(); submitted = true;
+    return 'submitted';
+  } catch { return fail(); }
+  finally { if (submitted) onStatus('Continuing setup…'); }
+}
+
+function isTransferRequest(value) {
+  return isRecord(value) && hasOnlyKeys(value, ['profile', 'operation_id', 'purpose', 'setup_code', 'destination'])
+    && value.profile === 'urn:bridge-clean:onboarding-transfer:v1' && value.purpose === 'resume-onboarding'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value.operation_id)
+    && /^[0-9A-HJKMNP-TV-Z]{12}$/u.test(value.setup_code) && isRecord(value.destination)
+    && hasOnlyKeys(value.destination, ['kind', 'destination_id', 'public_key'])
+    && ['desktop', 'browser-extension'].includes(value.destination.kind)
+    && /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/u.test(value.destination.destination_id)
+    && isRecord(value.destination.public_key) && hasOnlyKeys(value.destination.public_key, ['crv', 'kty', 'x', 'y'])
+    && value.destination.public_key.crv === 'P-256' && value.destination.public_key.kty === 'EC'
+    && [value.destination.public_key.x, value.destination.public_key.y].every((part) => /^[A-Za-z0-9_-]{43}$/u.test(part));
+}
+
+export async function connectProvisioningOnboarding({ fetch, journeyId, onState, onUnavailable, onFocus, modules, runtime = false }) {
+  const [{ createOnboardingClient }, { readOnboardingEvents }, { parseOnboardingJson }] = modules ?? await Promise.all([
+    import('/provisioning/onboarding/client.mjs'), import('/provisioning/onboarding/sse.mjs'), import('/provisioning/onboarding/json.mjs'),
+  ]);
+  const client = createOnboardingClient({ journeyId, validate: (value) => parseBrainOnboardingState(value) !== null });
+  let stop = false;
+  let retries = 0;
+  let timer;
+  const delays = runtime ? [200, 500, 1000, 2000, 4000, 8000, 16000] : [200, 500, 1000];
+  const prefix = runtime ? '/api/v1/onboarding' : '/api/v1/provisioning';
+  const headers = runtime ? { 'X-Onboarding-Journey': journeyId } : {};
+  const changed = client.subscribe(() => {
+    const owner = client.getState().sources.brain;
+    if (owner?.certain && owner.snapshot) onState(owner.snapshot);
+    else onUnavailable({ retrying: !stop && retries < delays.length });
+  });
+  function connect() {
+    if (stop) return;
+    const abort = new AbortController();
+    let ready, refuse, dropped, closed = false;
+    const subscribed = new Promise((resolve, reject) => { ready = resolve; refuse = reject; });
+    void subscribed.catch(() => undefined);
+    let deadline = setTimeout(close, 10_000);
+    function close() {
+      if (closed) return;
+      closed = true; clearTimeout(deadline); abort.abort(); refuse(new Error('Subscription unavailable')); dropped?.();
+      if (!stop && retries < delays.length) timer = setTimeout(connect, delays[retries++]);
+      else if (!stop) onUnavailable({ retrying: false });
+    }
+    client.attach('brain', {
+      subscribe(receive, disconnect) {
+        dropped = disconnect;
+        void readOnboardingEvents({ fetch, path: `${prefix}/events`, headers, signal: abort.signal,
+          ready() { clearTimeout(deadline); ready(); }, receive,
+          onFocus: (id) => { if (id === journeyId) onFocus?.(); } }).catch(close);
+        return close;
+      },
+      async readSnapshot() {
+        await subscribed;
+        deadline = setTimeout(close, 10_000);
+        try {
+          const response = await fetch(`${prefix}/state`, {
+            credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: abort.signal,
+            headers,
+          });
+          if (!response.ok) throw new Error('Snapshot unavailable');
+          return parseOnboardingJson(await response.text());
+        } finally { clearTimeout(deadline); }
+      },
+      sendCommand() { throw new Error('Read-only subscription'); },
+      invalidate: close,
+    });
+  }
+  connect();
+  return { close() { stop = true; clearTimeout(timer); changed(); client.disconnect('brain'); } };
+}
+
+/** Only an authenticated local owner event calls this non-navigating focus request. */
+export function focusExistingWorkspace(extensionId, runtime = globalThis.chrome?.runtime) {
+  if (!EXTENSION_ID_PATTERN.test(extensionId) || typeof runtime?.connect !== 'function') return false;
+  let port, timer, closed = false;
+  const close = () => { if (closed) return; closed = true; clearTimeout(timer); try { port?.disconnect(); } catch { /* Already closed. */ } };
+  try {
+    port = runtime.connect(extensionId, { name: 'ofca.onboarding.v1' });
+    timer = setTimeout(close, 5000);
+    port.onDisconnect.addListener(() => { void runtime.lastError; close(); });
+    port.onMessage.addListener((value) => {
+      if (value?.type === 'capabilities' && Array.isArray(value.capabilities)
+        && value.capabilities.includes('local-onboarding.command-result.v2')
+        && value.capabilities.includes('persistent-workspace.v1')) port.postMessage({ type: 'focus' });
+      else if (value?.type === 'focus') close();
+    });
+    return true;
+  } catch { close(); return false; }
+}
 
 function hasOnlyKeys(value, expected) {
   return Object.keys(value).length === expected.length
@@ -206,7 +439,7 @@ export function createChromeExtensionPort(chromeRuntime = globalThis.chrome?.run
   };
 }
 
-export function createProvisioningController({ fetch, sendExtensionMessage, connectExtension, document, elements }) {
+export function createProvisioningController({ fetch, sendExtensionMessage, connectExtension, connectOnboarding, continueTransfer, document, elements }) {
   const csrf = document.querySelector('main')?.dataset.provisioningCsrf ?? '';
   const extensionId = document.querySelector('main')?.dataset.provisioningExtensionId ?? '';
   let detectedAccountId = null;
@@ -225,6 +458,16 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   let finalizationAttempted = false;
   let finalizationRunning = false;
   let returning = null;
+  let onboarding = null;
+  let handoffAttempted = false;
+  let pushedRevision = -1;
+  let pushedEpoch = null;
+  let progressRead = null;
+  let readAgain = false;
+  let restarting = false;
+  const page = document.defaultView ?? globalThis;
+  const journeyId = parseJourneyHash(page.location?.hash);
+  const hostedLink = document.querySelector('#open-secure-setup');
 
   const setStatus = (message, error = false) => {
     elements.status.textContent = message;
@@ -232,6 +475,55 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     placeFeedback();
   };
   const setIdentityStatus = (message) => { elements.identityStatus.textContent = message; };
+
+  async function resumeRuntime() {
+    if (!journeyId || restarting || typeof connectOnboarding !== 'function') return;
+    restarting = true;
+    onboarding?.close();
+    setStatus('Restarting the desktop app…');
+    onboarding = await connectOnboarding({ fetch, journeyId, runtime: true,
+      onFocus: () => focusExistingWorkspace(extensionId),
+      onState: (state) => {
+        // A fresh authenticated runtime snapshot, not focus or a timer, proves
+        // that the new process is listening. Replace this same workspace tab.
+        if (state.facts.installation === 'verified') page.location.replace(`/#journey=${journeyId}`);
+      },
+      onUnavailable: ({ retrying } = {}) => setStatus(retrying
+        ? 'Reconnecting…' : 'Setup could not reconnect. Open the desktop app to continue.'),
+    });
+  }
+
+  async function beginHostedSetup(event) {
+    event?.preventDefault();
+    if (!journeyId || installationRegistered || mutationInFlight || configurationComplete) return;
+    handoffAttempted = true;
+    setStatus('Connecting this computer…');
+    const payload = await mutate('/api/v1/provisioning/initial-handoff', {});
+    if (payload === MUTATION_FAILED) return;
+    if (submitHostedHandoff({ document, payload, journeyId, registeredHostedUrl: hostedLink?.href })) return;
+    if (isRecord(payload) && hasOnlyKeys(payload, ['state', 'journey_id']) && payload.journey_id === journeyId
+      && ['completing', 'completed', 'unknown'].includes(payload.state)) {
+      setStatus(payload.state === 'unknown' ? 'Setup could not be confirmed.' : 'Connecting this computer…');
+      return;
+    }
+    setStatus('Setup could not be started.', true);
+  }
+
+  function onOwnerState(state) {
+    if (state.epoch === pushedEpoch && state.revision <= pushedRevision) return;
+    pushedEpoch = state.epoch; pushedRevision = state.revision;
+    if (progressRead) { readAgain = true; return; }
+    progressRead = (async () => {
+      do {
+        readAgain = false;
+        await checkStatus();
+        if (approvalAcquired && !configurationComplete && !recoveryRequired) await finalizeProvisioning();
+        if (!handoffAttempted && !installationRegistered && !recoveryRequired && hostedLink && !hostedLink.hidden) {
+          await beginHostedSetup();
+        }
+      } while (readAgain);
+    })().finally(() => { progressRead = null; });
+  }
   const renderExtensionSetup = () => {
     if (elements.openExtensionSetup) {
       elements.openExtensionSetup.hidden = detectedAccountId !== null || !EXTENSION_SETUP_STAGES.has(extensionStage);
@@ -273,7 +565,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     const heading = document.querySelector('#finalize-heading');
     if (heading) heading.textContent = configurationComplete ? 'Setup finished' : 'Finish desktop setup';
     elements.finalizeActionHelp.textContent = configurationComplete
-      ? 'The desktop app is restarting. Continue there when it opens.'
+      ? 'Restarting the desktop app…'
       : finalizeFailed ? finalizeRefused ? 'Setup did not finish. Try again.' : 'Setup completion could not be confirmed. Try again.'
         : approvalAcquired ? 'Finishing setup…' : 'The desktop app restarts when setup is finished.';
     if (configurationComplete) elements.finalizeStep.dataset.state = 'completed';
@@ -387,7 +679,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
 
   async function mutate(path, body, { neutralReasons = [] } = {}) {
     if (recoveryRequired || mutationInFlight || configurationComplete) return MUTATION_FAILED;
-    setStatus(path.endsWith('/acquire') ? 'Checking approval…' : path.endsWith('/finalize') ? 'Finishing setup…' : path.endsWith('/claim') ? 'Checking code…' : '');
+    setStatus(path.endsWith('/acquire') ? 'Checking approval…' : path.endsWith('/finalize') ? 'Finishing setup…' : path.endsWith('/claim') ? 'Checking code…' : path.endsWith('/initial-handoff') ? 'Connecting this computer…' : '');
     setBusy(true);
     try {
       const response = await fetch(path, {
@@ -447,6 +739,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
         setStatus('The desktop app is restarting. Continue there when it opens.');
         setIdentityStatus('');
         renderState();
+        void resumeRuntime();
       } else if (!response.ok) setStatus(explainProvisioningFailure(response, payload), true);
       else if (progress?.state === 'provisioning_ready') applyProgress(progress);
       else setStatus('Setup could not be checked. Reopen the desktop app.', true);
@@ -524,6 +817,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
         configurationComplete = true;
         setStatus('The desktop app is restarting. Continue there when it opens.');
         setIdentityStatus(''); renderState(); focusCurrentStep();
+        void resumeRuntime();
       } else {
         finalizeFailed = true;
         if (payload !== MUTATION_FAILED) setStatus('Setup did not finish. Try again.', true);
@@ -540,6 +834,24 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   }
 
   async function start() {
+    if (journeyId && typeof continueTransfer === 'function') {
+      const recoveryButton = document.querySelector('#transfer-recovery-action');
+      const outcome = await continueTransfer({ fetch, document, journeyId, registeredHostedUrl: hostedLink?.href, onStatus: setStatus,
+        onRecovery: (label, action) => {
+          if (!recoveryButton) return;
+          recoveryButton.textContent = label; recoveryButton.hidden = false;
+          recoveryButton.onclick = action;
+        } });
+      if (outcome !== 'none') {
+        for (const name of ['claimForm', 'claimSubmit', 'identityStep', 'bindingStep', 'finalizeStep']) elements[name].hidden = true;
+        elements.claimActionHelp.textContent = 'Continue setup in this tab.';
+        if (hostedLink) {
+          hostedLink.href = `${hostedLink.href}#journey=${journeyId}`; hostedLink.textContent = 'Return to setup';
+          hostedLink.hidden = outcome === 'recovery' || outcome === 'submitted';
+        }
+        return;
+      }
+    }
     elements.claimForm.addEventListener('submit', submitClaim);
     elements.claimPackage.addEventListener('input', () => { setStatus(''); updatePackageGuidance(true); });
     elements.refreshIdentity.addEventListener('click', refreshIdentity);
@@ -553,6 +865,22 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     document.querySelector('#recovery-close')?.addEventListener('click', () => dialog?.close());
     document.querySelector('#feedback-details-open')?.addEventListener('click', () => document.querySelector('#feedback-dialog')?.showModal());
     elements.openExtensionSetup?.addEventListener('click', () => extensionPort?.open('setup'));
+    if (journeyId && typeof connectOnboarding === 'function') {
+      elements.claimForm.hidden = true;
+      elements.claimSubmit.hidden = true;
+      elements.claimActionHelp.textContent = 'Connect this computer to your account.';
+      hostedLink?.addEventListener('click', beginHostedSetup);
+      const approvalLink = document.querySelector('#continue-creator-approval');
+      if (approvalLink && hostedLink?.href) approvalLink.href = `${hostedLink.href}#journey=${journeyId}`;
+      const help = document.querySelector('#secure-setup-help');
+      if (help) help.textContent = 'Sign in to continue.';
+      onboarding = await connectOnboarding({ fetch, journeyId, onState: onOwnerState,
+        onFocus: () => focusExistingWorkspace(extensionId),
+        onUnavailable: ({ retrying } = {}) => {
+          if (!configurationComplete) setStatus(retrying ? 'Reconnecting…' : 'Connection to the desktop app was lost.');
+        } });
+      page.addEventListener?.('pagehide', () => onboarding?.close(), { once: true });
+    }
     if (EXTENSION_ID_PATTERN.test(extensionId) && typeof connectExtension === 'function') {
       extensionPort = connectExtension(extensionId, (stage) => {
         extensionStage = stage;
@@ -564,12 +892,12 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       });
     }
     updatePackageGuidance(false); renderState();
-    await checkStatus();
+    if (!onboarding) await checkStatus();
     if (approvalAcquired && !configurationComplete && !recoveryRequired) void finalizeProvisioning();
     if (!configurationComplete && !recoveryRequired && associationRequestId === null) await refreshIdentity();
   }
 
-  return { start, refreshIdentity, confirmIdentity, acquireAssociation, finalizeProvisioning, submitClaim, checkStatus };
+  return { start, refreshIdentity, confirmIdentity, acquireAssociation, finalizeProvisioning, submitClaim, checkStatus, beginHostedSetup };
 }
 
 if (typeof document !== 'undefined') {
@@ -580,6 +908,8 @@ if (typeof document !== 'undefined') {
       fetch: globalThis.fetch.bind(globalThis),
       sendExtensionMessage: createChromeExtensionMessenger(),
       connectExtension: createChromeExtensionPort(),
+      connectOnboarding: connectProvisioningOnboarding,
+      continueTransfer: continueReceivingTransfer,
       document,
       elements: {
         status: byId('provisioning-status'), identityStatus: byId('identity-status'), claimForm: byId('claim-form'),

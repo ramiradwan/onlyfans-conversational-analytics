@@ -187,6 +187,17 @@ async def issue_local_session_handoff(
     expected = settings.local_session_bootstrap_token.get_secret_value()
     if not hmac.compare_digest(ticket, expected):
         raise HTTPException(status_code=401, detail="Launcher authorization is invalid")
+    from app.provisioning.events import events
+    from app.persistence.onboarding import require_journey
+    journey = request.headers.get("X-Onboarding-Journey")
+    if journey is not None:
+        try:
+            require_journey(journey)
+        except ValueError:
+            raise HTTPException(400, "Journey is invalid") from None
+    focused = events.request_focus(journey)
+    if focused is not None:
+        return JSONResponse({"workspace_active": True, "journey_id": focused}, headers={"Cache-Control": "no-store"})
     code = transport_manager.issue_launcher_handoff(
         ticket, ttl_seconds=settings.launcher_handoff_ttl_seconds
     )

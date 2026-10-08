@@ -1899,6 +1899,7 @@ def run_package_audit(
             f"--artifact={artifact}",
             f"--packaged-signing-rule={signing_rule}",
             f"--legal-release-bindings={legal_bindings}",
+            f"--customer-release-config={EXTENSION_ROOT.parent / 'app' / 'core' / 'customer-release.json'}",
         ],
         cwd=str(EXTENSION_ROOT),
         capture_output=True,

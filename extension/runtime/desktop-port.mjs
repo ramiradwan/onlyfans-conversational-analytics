@@ -49,7 +49,7 @@ export function desktopStage({ consent, legal, pairing }) {
   }
   if (mode === 'paused') return 'paused';
   if (mode !== 'full') return 'needs_full';
-  if (consent.phase === 'permission_required' || consent.reload_required === true) return 'needs_site_access';
+  if (consent.phase === 'permission_required') return 'needs_site_access';
   if (pairing?.state === 'paired') return 'paired';
   if (pairing?.state === 'pairing' || pairing?.state === 'compare') return 'pairing';
   if (pairing?.state === 'setup_incomplete' || pairing?.state === 'unavailable') return 'needs_account';

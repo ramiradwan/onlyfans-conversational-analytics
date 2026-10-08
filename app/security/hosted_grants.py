@@ -460,6 +460,37 @@ class HostedGrantClient:
         )
         return ClaimConsumption(reference_ids, policy, consumed_at)
 
+    def accept_initial_handoff_bootstrap(
+        self, document: Mapping[str, object], *, scope: Mapping[str, object]
+    ) -> ClaimConsumption:
+        """Verify a key-admitted response without constructing a bearer claim."""
+        key = self._installation_key.ensure_ready()
+        expected = {"profile", "status", "claim_id", "onboarding_transaction_id", "organization_id",
+                    "installation_id", "installation_key_id", "installation_key_jkt", "consumed_at",
+                    "grants", "bootstrap_config_version"}
+        if (set(document) != expected or document.get("profile") != CLAIM_PROFILE_V2
+                or document.get("status") != "consumed"
+                or document.get("installation_key_id") != key.installation_key_id
+                or document.get("installation_key_jkt") != key.installation_key_jkt
+                or any(document.get(name) != scope.get(name) for name in
+                       ("organization_id", "installation_id", "onboarding_transaction_id"))):
+            raise HostedGrantUnavailable("Initial enrollment bootstrap is invalid")
+        claim_id = document.get("claim_id")
+        grants = document.get("grants")
+        if (not isinstance(claim_id, str) or not _UUIDV7_RE.fullmatch(claim_id)
+                or not isinstance(grants, dict) or set(grants) != set(HOSTED_CLAIM_V2_GRANT_TYPES)
+                or not all(isinstance(value, str) for value in grants.values())
+                or not isinstance(document.get("consumed_at"), str)
+                or not _TIMESTAMP_RE.fullmatch(str(document["consumed_at"]))
+                or not isinstance(document.get("bootstrap_config_version"), str)):
+            raise HostedGrantUnavailable("Initial enrollment bootstrap is invalid")
+        consumed_at = _parse_contract_timestamp(str(document["consumed_at"]))
+        references = self._verify_bundle(grants, grant_types=HOSTED_CLAIM_V2_GRANT_TYPES,
+            organization_id=str(scope["organization_id"]), installation_id=str(scope["installation_id"]),
+            key=key, identity=None)
+        self._store.record_verified_grants(references)
+        return ClaimConsumption(tuple(reference.reference_id for reference in references), None, consumed_at)
+
     def recover_bootstrap_v2(
         self,
         *,

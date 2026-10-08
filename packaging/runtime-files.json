@@ -6,7 +6,12 @@
     "_internal/app/provisioning/provisioning.html",
     "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
     "_internal/app/provisioning/provisioning.js",
+    "_internal/app/provisioning/resume.js",
     "_internal/contracts/manifest.json",
+    "_internal/shared/onboarding/sse.mjs",
+    "_internal/shared/onboarding/json.mjs",
+    "_internal/shared/onboarding/projection.mjs",
+    "_internal/shared/onboarding/client.mjs",
     "_internal/contracts/consumer-pin.json",
     "THIRD_PARTY_NOTICES.md",
     "NATIVE_SNOW_NOTICES.txt",
@@ -72,7 +77,10 @@
         "0015_capability_license_authority.sql": "404689c5e258bad350210740fe2dde0c7c7dad5027b516476fb106866265a11b",
         "0016_bootstrap_recovery_v2.sql": "7abb504e996ea02a5d6a3f2f9a1f441d9f59a0f060657098e4c2f8208b070069",
         "0017_capability_license_delivery_journal.sql": "b7f7c489ed7e16c5ae6994acf27dfd3dab9bb60d3c10eb25c74835d40c26017a",
-        "0018_companion_confirmation_method.sql": "436da449ede4ae0b7827349b76f5f0797578bd56bc535ba9898d783d7908ddbe"
+        "0018_companion_confirmation_method.sql": "436da449ede4ae0b7827349b76f5f0797578bd56bc535ba9898d783d7908ddbe",
+        "0019_first_enrollment.sql": "46c1b5d89adc06e34dfdd20989c3d7748d899bdb2a68f1414134e7002b938da8",
+        "0020_onboarding_journeys.sql": "4f6c9e07311d71ab08d15e987bd9c59c178d013574c9f4743f908295c4251adc",
+        "0021_onboarding_transfer.sql": "d142017c43f17e689cd7936253f689691ec6fbd738626e45f31e8fa6565da7f4"
       }
     },
     {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createOnboardingWorkspace, WORKSPACE_RECORD_KEY } from '../runtime/onboarding-workspace.mjs';
+import { createOnboardingWorkspace, WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY } from '../runtime/onboarding-workspace.mjs';
 
 const journey = 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fed';
 const scope = { scope_id: 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fea', disclosure_bundle_id: 'a'.repeat(64) };
@@ -99,4 +99,27 @@ test('packaged document contexts restore ownership when Chrome withholds tabs.ge
   await f.workspace.saveDraft(sender, { scope_id: scope.scope_id, draft: checked });
   await assert.rejects(f.workspace.saveDraft({ ...sender, documentId: 'old-document' },
     { scope_id: scope.scope_id, draft: checked }), /workspace_sender_stale/);
+});
+
+test('idle expiry retires unfinished drafts without recreating tabs', async () => {
+  const f = fixture(); await f.open();
+  await f.workspace.saveDraft(f.sender(), { scope_id: scope.scope_id, draft: checked });
+  f.values[WORKSPACE_ACTIVITY_KEY] = Date.now() - 31 * 86400000;
+  assert.equal(await f.workspace.read(), null);
+  assert.equal(f.tabs.length, 1);
+  await assert.rejects(f.workspace.saveDraft(f.sender(), { scope_id: scope.scope_id, draft: checked }), /workspace_not_registered/);
+});
+
+test('same-URL reload retires the older document even while the tab URL remains visible', async () => {
+  const f = fixture(); await f.open(); const sender = { ...f.sender(), documentId: 'retired-document' };
+  f.chromeApi.runtime.getContexts = async () => [{ tabId: sender.tab.id, windowId: 1, frameId: 0,
+    documentId: 'current-document', documentUrl: sender.url }];
+  await assert.rejects(f.workspace.saveDraft(sender, { scope_id: scope.scope_id, draft: checked }), /workspace_sender_stale/);
+  await f.workspace.saveDraft({ ...sender, documentId: 'current-document' }, { scope_id: scope.scope_id, draft: checked });
+});
+
+test('admitted focus preserves the current workspace document and never creates a tab', async () => {
+  const f = fixture(); await f.open(); f.calls.length = 0;
+  const sender = f.sender(); await f.workspace.focus(sender);
+  assert.deepEqual(f.calls, [['update', sender.tab.id, { active: true }], ['window', sender.tab.windowId, { focused: true }]]);
 });

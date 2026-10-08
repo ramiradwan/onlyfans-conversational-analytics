@@ -11,7 +11,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { Panel, SectionHeader, useRevealHold, type SectionStatus } from './ui';
 import { ReservedNotice, StatusLine } from './ui/ReservedRegion';
@@ -23,6 +23,7 @@ import {
   type CapabilityLicenseApi,
   type CapabilityLicenseReadiness,
 } from '../services/capabilityLicenseApi';
+import { onboardingView, subscribeOnboarding } from '../services/onboardingSession';
 
 function safeMessage(error: unknown): string {
   return error instanceof CapabilityLicenseApiError ? error.message : "Activation couldn't be checked. Try again.";
@@ -58,6 +59,10 @@ export function CommercialActivationControls({
   const operation = useRef<AbortController | null>(null);
   const submitting = useRef(false);
   const titleId = useId();
+  const onboarding = useSyncExternalStore(subscribeOnboarding, onboardingView, onboardingView);
+  const brain = onboarding?.sources.brain;
+  const ownerRevision = onboarding === null ? 'standalone' : brain?.certain && brain.snapshot
+    ? `${brain.snapshot.epoch}:${brain.snapshot.revision}` : 'unconfirmed';
   useRevealHold(checking);
 
   const checkReadiness = () => {
@@ -77,9 +82,16 @@ export function CommercialActivationControls({
   };
 
   useEffect(() => {
+    if (ownerRevision === 'unconfirmed') {
+      operation.current?.abort();
+      setReadiness(null);
+      setChecking(false);
+      setError(null);
+      return;
+    }
     checkReadiness();
     return () => operation.current?.abort();
-  }, [api]);
+  }, [api, ownerRevision]);
 
   const submit = async () => {
     if (submitting.current || checking) return;
@@ -96,30 +108,32 @@ export function CommercialActivationControls({
     setChecking(true);
     setError(null);
 
-    let redemptionFailure: unknown = null;
     try {
-      await api.redeem(value, controller.signal);
-      if (controller.signal.aborted) return;
-      setCode('');
-    } catch (cause) {
-      if (controller.signal.aborted) return;
-      redemptionFailure = cause;
-    }
-
-    try {
-      const next = await api.readiness(controller.signal);
-      if (controller.signal.aborted) return;
-      setReadiness(next);
-      if (next.commercial_authority === 'active') {
+      let redemptionFailure: unknown = null;
+      try {
+        await api.redeem(value, controller.signal);
+        if (controller.signal.aborted) return;
         setCode('');
-        setError(null);
-        setDialogOpen(false);
-      } else if (redemptionFailure !== null) {
-        setError(safeMessage(redemptionFailure));
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        redemptionFailure = cause;
       }
-    } catch (cause) {
-      if (!controller.signal.aborted) {
-        setError(redemptionFailure === null ? safeMessage(cause) : safeMessage(redemptionFailure));
+
+      try {
+        const next = await api.readiness(controller.signal);
+        if (controller.signal.aborted) return;
+        setReadiness(next);
+        if (next.commercial_authority === 'active') {
+          setCode('');
+          setError(null);
+          setDialogOpen(false);
+        } else if (redemptionFailure !== null) {
+          setError(safeMessage(redemptionFailure));
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          setError(redemptionFailure === null ? safeMessage(cause) : safeMessage(redemptionFailure));
+        }
       }
     } finally {
       submitting.current = false;
@@ -158,8 +172,8 @@ export function CommercialActivationControls({
 
       <ReservedNotice essential id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
         : checking ? { title: '', body: 'Checking activation…', severity: 'info' }
-          : activeButBlocked ? { title: "New messages aren't being analyzed", body: "Your activation is fine, but analysis can't run right now. Your existing numbers are still available.", severity: 'warning' }
-            : activationUnavailable || readiness === null ? { title: '', body: "Your activation couldn't be checked. Nothing has changed.", severity: 'warning' } : null} />
+          : activeButBlocked ? { title: "New messages aren't being analyzed", body: '', severity: 'warning' }
+            : activationUnavailable || readiness === null ? { title: '', body: "Activation couldn't be checked.", severity: 'warning' } : null} />
       <Box sx={{ height: '2.5rem' }}>
       {!checking && activationRequired && (
         <Box data-journey-state="desktop.full_analytics_activation">

@@ -12,7 +12,7 @@ test('paused Full remains in the desktop-control family after worker replacement
   assert.equal(isFullFamilyStatus(null), false);
 });
 
-test('paused Full refresh retains desktop reachability', async () => {
+test('an open desktop page does not establish Brain reachability', async () => {
   const { createSurfaceClient } = await import('../ui/surface-client.mjs');
   const { DESKTOP_LINK_STORAGE_KEY } = await import('../runtime/desktop-port.mjs');
   const previous = globalThis.chrome;
@@ -23,6 +23,6 @@ test('paused Full refresh retains desktop reachability', async () => {
   try {
     const client = createSurfaceClient(() => {}, error => { throw error; });
     await client.refresh();
-    assert.equal(client.model.desktopRuntimeReachable, true);
+    assert.equal(client.model.desktopRuntimeReachable, false);
   } finally { globalThis.chrome = previous; }
 });

@@ -46,7 +46,7 @@ async function renderSurface(surface, model) {
       if (message.type === 'ofca.legal-activation.status') return { ok: true, result: model.legal };
       throw new Error(`Unexpected surface message: ${message.type}`);
     },
-  }, storage: { onChanged: event() } };
+  }, storage: { onChanged: event(), session: { async get() { return {}; }, async remove() {} } } };
   runInNewContext(surfaceBundles[surface], {
     chrome, URL, TextEncoder, AbortController, setTimeout, clearTimeout, setInterval: () => 0, clearInterval() {},
     location: { hash: '' }, sessionStorage: { getItem: () => null },
@@ -147,6 +147,10 @@ function harness({ local = {}, indexedDb = evidenceDatabase(), bindingRef = { cu
       async remove() { if (flags.removePermission) flags.permission = false; return flags.removePermission; },
     },
     scripting: {
+      async executeScript({ world, files }) {
+        if (world === 'MAIN') flags.documentMode = files[0].match(/mode-(\w+)/u)[1];
+        return [{ frameId: 0, documentId: 'document-1' }];
+      },
       async getRegisteredContentScripts() { return structuredClone(scripts); },
       async registerContentScripts(next) { scripts.push(...next); },
       async unregisterContentScripts() { scripts.length = 0; },
@@ -207,7 +211,7 @@ for (const mode of ['preview', 'full']) for (const paused of [false, true]) for 
     assert.equal(setup('main').dataset.step, 'agree');
     assert.equal(setup('terms-accepted').disabled, lost === 'risk');
     assert.equal(setup('risk-acknowledged').disabled, lost === 'terms');
-    assert.equal(setup('activate-software').disabled, true);
+    assert.equal(setup('activate-software').disabled, false);
     assert.equal(setup('activate-software').classList.contains('hidden'), false);
     const popup = await renderSurface('popup', model);
     assert.equal(popup('journey-primary').textContent, 'Review changes');
@@ -216,7 +220,7 @@ for (const mode of ['preview', 'full']) for (const paused of [false, true]) for 
     await h.consent.reconcile();
     assert.equal((await h.consent.status()).consent.mode, 'paused');
     assert.equal(h.consent.captureScope.isOpen, false);
-    assert.equal(h.scripts.length, h.consent.state.resume_mode === 'full' ? 2 : 0);
+    assert.equal(h.scripts.length, 2);
     assert.equal(await h.authorization.recordAuthorizes(first.evidence.event_id, mode), false);
     await assert.rejects(h.consent.setMode('resume'));
     assert.equal((await h.legal.status()).requires_reauthorization, true);
@@ -237,12 +241,12 @@ for (const mode of ['preview', 'full']) for (const lost of ['terms', 'risk', 'bo
     assert.equal(model.status.consent.mode, 'paused');
     assert.equal(h.consent.captureScope.isOpen, false);
     assert.equal(h.consent.allowsFullCapture(), false);
-    assert.equal(h.scripts.length, h.consent.state.resume_mode === 'full' ? 2 : 0);
+    assert.equal(h.scripts.length, 2);
     assert.deepEqual(await h.evidenceStore.exportAuditTrail(), surviving);
     assert.equal((await renderSurface('popup', model))('journey-primary').textContent, 'Review changes');
     const setup = await renderSurface('setup', model);
     assert.equal(setup('main').dataset.step, 'agree');
-    assert.equal(setup('activate-software').disabled, true);
+    assert.equal(setup('activate-software').disabled, false);
     h.evidenceStore.now = () => new Date('2030-01-09T12:00:00.000Z');
     for (const [id, action, needed] of [
       ['terms-accepted', 'acceptTerms', lost !== 'risk'],
@@ -572,7 +576,7 @@ test('native legal mode choice completes without queue recursion and reactivates
   assert.equal(first.status.consent.authorization_event_id, first.evidence.event_id);
   assert.equal(h.consent.captureScope.isOpen, true);
   assert.equal(h.flags.reloads, 0);
-  assert.equal(first.status.reload_required, true);
+  assert.equal(first.status.reload_required, false);
   await h.consent.deleteLocalData();
   assert.equal(h.indexedDb.connections.size, 0);
   assert.deepEqual(h.local, {});
@@ -736,26 +740,26 @@ test('failed evidence open resets its cache and versionchange permits a fresh co
   assert.notEqual(await h.evidenceStore.databasePromise, prior);
 });
 
-test('idempotent Full mode retry retains its document epoch and explicit reload is the only tab reload', { timeout: 2000 }, async () => {
+test('idempotent Full mode retry retains its epoch and rejects legacy reload requests', { timeout: 2000 }, async () => {
   const h = harness(); const first = await h.activate('full');
   const response = deferred();
   const sender = { id: 'synthetic', url: 'chrome-extension://synthetic/popup.html' };
   const handled = h.chromeApi.runtime.onMessage.listeners.some((listener) => listener(
     { type: UI_RELOAD_TABS_MESSAGE_TYPE }, sender, response.resolve,
   ));
-  assert.equal(handled, true);
-  assert.equal((await response.promise).status.reload_required, false);
-  assert.equal(h.flags.reloads, 1);
+  assert.equal(handled, false);
+  assert.deepEqual(await response.promise, { ok: false, code: 'reload_unsupported' });
+  assert.equal(h.flags.reloads, 0);
   const retried = await h.legal.chooseMode('full');
   assert.equal(retried.status.consent.consent_epoch, first.status.consent.consent_epoch);
   assert.equal(retried.status.reload_required, false);
-  assert.equal(h.flags.reloads, 1);
+  assert.equal(h.flags.reloads, 0);
   await h.consent.setMode('pause');
-  assert.equal(h.flags.reloads, 1);
+  assert.equal(h.flags.reloads, 0);
   assert.equal(h.consent.captureScope.isOpen, false);
 });
 
-test('a soft paused Full registration still permits an explicit tab reload', async () => {
+test('paused Full rejects legacy reload requests', async () => {
   const h = harness();
   await h.activate('full');
   await h.consent.setMode('pause');
@@ -765,11 +769,11 @@ test('a soft paused Full registration still permits an explicit tab reload', asy
     { type: UI_RELOAD_TABS_MESSAGE_TYPE }, sender, response.resolve,
   ));
   await response.promise;
-  assert.equal(h.flags.reloads, 1);
+  assert.equal(h.flags.reloads, 0);
   assert.equal(h.consent.captureScope.isOpen, false);
 });
 
-test('Preview pause keeps resume available before its next explicit reload', async () => {
+test('Preview pause and resume require no document reload', async () => {
   const h = harness();
   await h.activate('preview');
   await h.consent.setMode('pause');
@@ -777,26 +781,19 @@ test('Preview pause keeps resume available before its next explicit reload', asy
   assert.equal(model.status.reload_required, false);
   const popup = await renderSurface('popup', model);
   assert.equal(popup('journey-primary').textContent, 'Resume analytics');
-  assert.equal((await h.consent.setMode('resume')).reload_required, true);
+  assert.equal((await h.consent.setMode('resume')).reload_required, false);
 });
 
-test('a frozen tab cannot hold setup status or pause behind its pending reload acknowledgement', async (t) => {
-  const h = harness();
-  await h.activate('full');
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  h.chromeApi.tabs.reload = () => { h.flags.reloads += 1; h.flags.documentMode = 'full'; return new Promise(() => {}); };
+test('legacy reload requests are rejected immediately even for frozen documents', async () => {
+  const h = harness(); await h.activate('full');
   const response = deferred();
+  h.chromeApi.tabs.reload = () => { throw Error('reload forbidden'); };
   const sender = { id: 'synthetic', url: 'chrome-extension://synthetic/setup.html' };
   assert.equal(h.chromeApi.runtime.onMessage.listeners.some((listener) => listener(
     { type: UI_RELOAD_TABS_MESSAGE_TYPE }, sender, response.resolve,
-  )), true);
-  while (h.flags.reloads === 0) await new Promise((resolve) => setImmediate(resolve));
-  t.mock.timers.tick(2_000);
-  assert.equal((await response.promise).status.reload_required, false);
-  assert.equal((await h.consent.status()).consent.mode, 'full');
+  )), false);
+  assert.deepEqual(await response.promise, { ok: false, code: 'reload_unsupported' });
   await h.consent.setMode('pause');
-  t.mock.timers.tick(60_000);
-  assert.equal(h.flags.reloads, 1, 'a slow browser acknowledgement must never schedule another reload');
   assert.equal((await h.consent.status()).consent.mode, 'paused');
 });
 
@@ -818,7 +815,7 @@ test('permission recovery retains consent and replaces stale script definitions 
   assert.equal(h.scripts[0].world, 'MAIN');
   assert.equal(h.scripts[0].runAt, 'document_start');
   assert.equal(h.flags.reloads, 0);
-  assert.equal((await h.consent.status()).reload_required, true);
+  assert.equal((await h.consent.status()).reload_required, false);
 });
 
 test('historical records without authorization scope cannot become current authorization', { timeout: 2000 }, async () => {
@@ -874,11 +871,12 @@ test('cold Full worker preserves the live bridge and recovers via a bounded iden
   const h = await restartedFullHarness();
   assert.equal(h.restarted.phase, 'identity');
   assert.equal(h.restarted.captureScope.isOpen, false);
-  assert.deepEqual(h.scripts.map((script) => script.id), ['ofca-full-main', 'ofca-full-isolated']);
-  assert.deepEqual(h.messages, [], 'a transient refusal must not stop the document bridge');
+  assert.deepEqual(h.scripts.map((script) => script.id), ['ofca-identity-main', 'ofca-identity-isolated']);
+  assert.equal(h.messages.some(({ message }) => message.action === 'stop'), false, 'a transient refusal must not stop the document bridge');
+  h.messages.length = 0;
   h.chromeApi.tabs.sendMessage = async (tabId, message, options) => {
     assert.equal(tabId, 1);
-    assert.equal(message.action, 'refresh_identity');
+    if (message.action !== 'refresh_identity') return;
     assert.equal(message.version, 1);
     assert.deepEqual(options, { frameId: 0 });
     h.bind();
@@ -896,7 +894,7 @@ test('identity recovery remains closed without an authenticated binding and pres
   assert.equal(await h.retry(), 1000);
   assert.equal(h.restarted.phase, 'identity');
   assert.equal(h.restarted.captureScope.isOpen, false);
-  assert.equal(h.messages.length, 2);
+  assert.equal(h.messages.filter(({ message }) => message.action === 'refresh_identity').length, 2);
   assert.equal(h.flags.reloads, 0);
   await h.restarted.setMode('pause');
   assert.equal(h.restarted.phase, 'paused');
@@ -907,6 +905,7 @@ test('identity recovery remains closed without an authenticated binding and pres
 test('recovery skips frozen and discarded documents without bypassing their lifecycle', async () => {
   const h = await restartedFullHarness();
   h.chromeApi.tabs.query = async () => [{ id: 1, frozen: true }, { id: 2, discarded: true }];
+  h.messages.length = 0;
   await h.retry();
   assert.deepEqual(h.messages, []);
   assert.equal(h.restarted.phase, 'identity');
@@ -914,11 +913,11 @@ test('recovery skips frozen and discarded documents without bypassing their life
   await h.restarted.setMode('pause');
 });
 
-test('unpaired Full consent still stops old Full scripts and requires explicit reload', async () => {
+test('unpaired Full consent reconfigures identity observation without a reload', async () => {
   const h = await restartedFullHarness({ paired: false });
-  assert.equal(h.messages[0].message.action, 'stop');
+  assert.equal(h.messages.some(({ message }) => message.action === 'stop'), false);
   assert.deepEqual(h.scripts.map((script) => script.id), ['ofca-identity-main', 'ofca-identity-isolated']);
-  assert.equal((await h.restarted.status()).reload_required, true);
+  assert.equal((await h.restarted.status()).reload_required, false);
   assert.equal(h.timers.size, 0);
   assert.equal(h.flags.reloads, 0);
 });

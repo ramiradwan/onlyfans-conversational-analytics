@@ -1,5 +1,7 @@
 // Extension-owned setup presentation. Existing runtime controllers retain authority.
-import { UI_RELOAD_TABS_MESSAGE_TYPE } from './runtime/consent-controller.mjs';
+import { OBSERVER_REOPEN_TYPE } from './runtime/document-observer.mjs';
+import { WORKSPACE_MESSAGE_TYPE } from './runtime/onboarding-entry.mjs';
+import { WORKSPACE_RECORD_KEY } from './runtime/onboarding-workspace.mjs';
 import { LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE,
   LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE } from './runtime/legal-activation-controller.mjs';
 import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError } from './ui/surface-client.mjs';
@@ -7,6 +9,8 @@ import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/prese
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
 import { createHandoffFinisher, returnToDesktop } from './ui/handoff.mjs';
+import { bindSetupTransfer, renderReceivingContext } from './ui/setup-transfer.mjs';
+import { SETUP_TRANSFER_MESSAGE } from './runtime/setup-transfer.mjs';
 
 let failed = false;
 let dismissed = false;
@@ -20,6 +24,44 @@ const client = createSurfaceClient((model) => { if (model.status) failed = false
 const page = createPageActions(client, render);
 const steps = ['agree', 'mode', 'connect', 'activate'];
 let currentJourney = null;
+let workspaceRecord = null;
+let checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
+let receivingRead = 0, receivingExpiry = null;
+async function readWorkspace() {
+  if (!location.hash.startsWith('#journey=')) return;
+  const generation = ++receivingRead;
+  clearTimeout(receivingExpiry);
+  renderReceivingContext(document, null);
+  try {
+    const initial = workspaceRecord === null;
+    const next = await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'read' });
+    if (workspaceRecord && workspaceRecord.draft_scope.scope_id !== next.draft_scope.scope_id) setFullReview(false);
+    workspaceRecord = next;
+    checkboxDraft = { ...workspaceRecord.draft };
+    const intent = (await chrome.storage.session.get(['onboarding_full_intent_v1'])).onboarding_full_intent_v1;
+    if (initial && intent === workspaceRecord.journey_id) fullReviewRequested = true;
+    const receiving = await send({ type: SETUP_TRANSFER_MESSAGE, action: 'context' });
+    if (generation !== receivingRead) return;
+    if (receiving?.expires_at > Date.now()) {
+      renderReceivingContext(document, receiving);
+      receivingExpiry = setTimeout(() => renderReceivingContext(document, null), receiving.expires_at - Date.now());
+    }
+    render(client.model);
+  } catch {}
+}
+async function saveDraft() {
+  checkboxDraft = { terms_checked: element('terms-accepted').checked, risk_checked: element('risk-acknowledged').checked, full_checked: fullReviewRequested };
+  if (!workspaceRecord) return;
+  workspaceRecord.draft = { ...checkboxDraft };
+  await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'draft', scope_id: workspaceRecord.draft_scope.scope_id, draft: workspaceRecord.draft });
+}
+void readWorkspace();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[WORKSPACE_RECORD_KEY]) return;
+  const next = changes[WORKSPACE_RECORD_KEY].newValue;
+  if (!workspaceRecord || next?.draft_scope.scope_id !== workspaceRecord.draft_scope.scope_id
+    || next?.draft_scope.disclosure_bundle_id !== workspaceRecord.draft_scope.disclosure_bundle_id) void readWorkspace();
+});
 
 function setFullReview(value) {
   fullReviewRequested = value;
@@ -62,7 +104,7 @@ function render(model) {
   if (agreement) dismissed = false;
   const active = ['preview', 'full'].includes(mode) && !legal.requires_reauthorization;
   const choose = (modeChoiceAvailable(model) && !dismissed) || (mode === 'preview' && fullReviewRequested) || reviewStep === 'mode';
-  const access = status.phase === 'permission_required' || status.reload_required === true;
+  const access = status.phase === 'permission_required';
   const view = agreement || reviewStep === 'agree' ? 'agree' : choose ? 'mode' : access ? 'access' : 'journey';
   currentJourney = customerJourney(model);
   document.querySelector('main').dataset.step = view;
@@ -71,26 +113,29 @@ function render(model) {
   show('pre-mode', view === 'agree'); show('mode-choice', view === 'mode');
   show('access-card', view === 'access'); show('journey-card', view === 'journey');
   if (!page.busy) {
-    element('terms-accepted').checked = Boolean(legal.flow.terms_event_id);
-    element('risk-acknowledged').checked = Boolean(legal.flow.risk_event_id);
+    element('terms-accepted').checked = Boolean(legal.flow.terms_event_id || checkboxDraft.terms_checked);
+    element('risk-acknowledged').checked = Boolean(legal.flow.risk_event_id || checkboxDraft.risk_checked);
   }
   page.lock('terms-accepted', Boolean(legal.flow.terms_event_id) || active);
   page.lock('risk-acknowledged', Boolean(legal.flow.risk_event_id) || active);
-  page.lock('activate-software', !legal.flow.terms_event_id || !legal.flow.risk_event_id || active);
+  page.lock('activate-software', active);
   show('activate-software', !active);
   const reviewFull = fullReviewRequested || (reviewStep === 'mode' && mode === 'full');
   show('preview-disclosure', view === 'mode' && !reviewFull);
   show('full-disclosure', view === 'mode' && reviewFull);
   show('enable-preview', !active); show('enable-full', mode !== 'full' || legal.requires_reauthorization);
   text('full-secondary', mode === 'preview' ? 'Keep Preview' : 'Not now');
-  text('access-title', status.phase === 'permission_required' ? 'Allow site access' : 'Apply site access');
-  text('access-body', status.phase === 'permission_required'
-    ? 'Allow site access so the extension can read activity from your creator account.'
-    : 'Reload when you are ready to apply the access you allowed.');
+  text('access-title', 'Allow site access');
+  text('access-body', 'Allow the extension to read activity from your creator account.');
   show('restore-access', status.phase === 'permission_required');
-  show('reload-tabs', status.phase !== 'permission_required' && status.reload_required === true);
   renderJourney(currentJourney, model);
-  if (currentJourney.id === 'preview_available') text('journey-body', 'Your daily counts are available in the extension. Preview does not need the desktop app.');
+  const preview = mode === 'preview' || (mode === 'paused' && status.consent.resume_mode === 'preview');
+  show('preview-metrics', preview);
+  show('pause', ['preview', 'full'].includes(mode) && model.pairing.desktop_control !== true);
+  show('background-tab-note', status.observer?.helper === 'open');
+  show('reopen-background-tab', status.observer?.helper === 'closed');
+  for (const [id, key] of [['messages-count', 'message_observations'], ['inbound-count', 'inbound_observations'], ['outbound-count', 'outbound_observations']]) text(id, new Intl.NumberFormat().format(status.preview?.[key] ?? 0));
+  if (currentJourney.id === 'preview_available') text('journey-body', status.observer?.attachment === 'ready' ? 'Counts update as you use OnlyFans.' : 'Waiting for OnlyFans activity.');
   if (currentJourney.id === 'full_ready') text('journey-body', 'Setup is finished. Insights and stored messages are in the desktop app.');
   renderPairing(model, currentJourney);
   renderReadiness(model); show('ready-details', currentJourney.id === 'full_ready');
@@ -149,7 +194,7 @@ function runJourneyAction(action) {
   if (action === 'pair') return client.post('pair');
   if (action === 'cancel_pairing') return client.post('cancel');
   if (action === 'return_to_desktop') return returnToDesktop(client.model.config.dashboard_url);
-  if (action === 'open_dashboard') return chrome.tabs.create({ url: client.model.config.dashboard_url });
+  if (action === 'open_dashboard') return send({ type: WORKSPACE_MESSAGE_TYPE, action: 'navigate', route: 'bridge' });
   if (action === 'open_desktop_settings') return chrome.tabs.create({ url: client.model.config.history_settings_url });
   if (action === 'open_creator_account') return openCreatorAccount();
   if (action === 'retry_readiness') return client.sync();
@@ -165,19 +210,31 @@ async function enableMode(mode) {
   await chooseMode(mode);
   setFullReview(false); reviewStep = null; dismissed = false;
 }
-for (const [id, type] of [['terms-accepted', LEGAL_ACCEPT_TERMS_MESSAGE_TYPE], ['risk-acknowledged', LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE]]) {
-  element(id).addEventListener('change', () => {
-    if (element(id).checked) void page.run(() => send({ type }));
-  });
+for (const id of ['terms-accepted', 'risk-acknowledged']) {
+  element(id).addEventListener('change', () => { void saveDraft().catch(() => undefined); });
 }
-page.bind('activate-software', () => send({ type: LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE }));
+element('activate-software').addEventListener('click', () => {
+  const missing = ['terms-accepted', 'risk-acknowledged'].find((id) => !element(id).checked);
+  if (missing) {
+    page.feedback('Check both boxes to continue.', true);
+    element(missing).focus();
+    return;
+  }
+  void page.run(async () => {
+    if (!client.model.legal.flow.terms_event_id) await send({ type: LEGAL_ACCEPT_TERMS_MESSAGE_TYPE });
+    if (!client.model.legal.flow.risk_event_id) await send({ type: LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE });
+    await send({ type: LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE });
+  });
+});
 page.bind('enable-preview', () => enableMode('preview'));
 page.bind('enable-full', () => enableMode('full'));
 page.bind('review-full', () => { setFullReview(true); reviewStep = null; render(client.model); });
 page.bind('not-now-preview', () => { dismissed = true; reviewStep = null; render(client.model); });
 page.bind('full-secondary', () => { setFullReview(false); reviewStep = null; render(client.model); });
 page.bind('restore-access', () => restoreAccess(client.model));
-page.bind('reload-tabs', () => send({ type: UI_RELOAD_TABS_MESSAGE_TYPE }));
+page.bind('reopen-background-tab', () => send({ type: OBSERVER_REOPEN_TYPE }));
+page.bind('setup-transfer-switch', () => openCreatorAccount());
+page.bind('pause', () => transition('pause', client.model));
 page.bind('journey-primary', () => runJourneyAction(element('journey-primary').dataset.action));
 page.bind('journey-secondary', () => runJourneyAction(element('journey-secondary').dataset.action));
 page.bind('pair-companion', () => client.post('pair'));
@@ -191,6 +248,13 @@ for (const step of steps) page.bind(`step-${step}`, () => {
   render(client.model);
 });
 for (const heading of document.querySelectorAll('h2')) heading.setAttribute('tabindex', '-1');
+const receivingSetup = bindSetupTransfer({ document, send });
+void chrome.storage.session.get(['onboarding_code_entry_v1']).then(async (values) => {
+  if (location.hash === `#journey=${values.onboarding_code_entry_v1}`) {
+    receivingSetup?.open();
+    await chrome.storage.session.remove('onboarding_code_entry_v1');
+  }
+}).catch(() => undefined);
 void client.start();
 
 window.addEventListener('hashchange', () => {

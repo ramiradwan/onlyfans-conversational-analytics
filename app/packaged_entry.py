@@ -84,7 +84,27 @@ def select_brain_application(
         transport_factory=hosted_transport,
         proof_authority_factory=installation_proof_authority,
     )
+    from app.persistence.onboarding import OnboardingJourneyStore
+    from app.provisioning.session import ProvisioningSessionManager
+    from app.provisioning.initial_handoff import InitialInstallationEnrollment
+    from app.provisioning.state import brain_snapshot, next_authority_expiry
+    store = open_store()
+    journeys = OnboardingJourneyStore(store)
+    initial_enrollment = None
+    from app.core.customer_release import resolve_hosted_onboarding_start
+    hosted_start = resolve_hosted_onboarding_start(customer_release)
+    if hosted_origin and hosted_start:
+        initial_enrollment = InitialInstallationEnrollment(store, hosted_origin=hosted_origin,
+            hosted_start_url=hosted_start)
+    async def shutdown():
+        if initial_enrollment is not None:
+            await initial_enrollment.stop()
+        await grant_refresh.stop()
     return create_provisioning_app(
+        initial_enrollment=initial_enrollment,
+        onboarding_snapshot=lambda journey_id: brain_snapshot(store, journey_id),
+        onboarding_expiry=lambda: next_authority_expiry(store),
+        session_manager=ProvisioningSessionManager(handoff_token, journeys=journeys),
         claim_submission=durable_claim_submission(open_store, hosted_origin=hosted_origin),
         creator_association_initiation=durable_creator_association_initiation(
             open_store, hosted_origin=hosted_origin
@@ -109,7 +129,7 @@ def select_brain_application(
         hosted_onboarding_url=customer_release.hosted_onboarding_url,
         launcher_handoff_token=handoff_token,
         completion_exit=provisioning_completion_exit,
-        shutdown_action=grant_refresh.stop,
+        shutdown_action=shutdown,
     )
 
 
@@ -178,6 +198,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     hold_running_application_mutex()
     if arguments == ("--brain",):
         return run_brain()
+    if len(arguments) == 2 and arguments[0] == "--open-workspace":
+        from app.launcher import main as launcher_main
+        return launcher_main(workspace_link=arguments[1])
     if arguments:
         raise SystemExit(
             "usage: Brain.exe "

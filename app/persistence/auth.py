@@ -472,6 +472,16 @@ class AuthenticationStore(Protocol):
 
     def register_webauthn_credential(self, credential: WebAuthnCredential) -> None: ...
 
+    def record_first_enrollment_context(
+        self, *, context: str, challenge: str, authority_digest: str, expires_at: datetime
+    ) -> None: ...
+
+    def finish_first_enrollment(
+        self, *, context: str, challenge: str, authority_digest: str,
+        binding: WebAuthnChallengeBinding, credential: WebAuthnCredential,
+        issue: BridgeSessionIssue, validate_current: Callable[[sqlite3.Connection], bool],
+    ) -> IssuedBridgeSession: ...
+
     def webauthn_credential(
         self, credential_id: str, *, principal_id: str
     ) -> WebAuthnCredential | None: ...
@@ -852,51 +862,135 @@ class SQLiteAuthenticationStore:
 
     @capture_authority_change
     def register_webauthn_credential(self, credential: WebAuthnCredential) -> None:
+        with self.database.transaction() as connection:
+            self._register_webauthn_credential(connection, credential)
+
+    def _register_webauthn_credential(
+        self, connection: sqlite3.Connection, credential: WebAuthnCredential
+    ) -> None:
         if credential.signature_count < 0:
             raise ValueError("signature_count must be non-negative")
+        # The immediate transaction serializes competing registration finishes.
+        active_credential = connection.execute(
+            """
+            SELECT 1 FROM webauthn_credentials
+            WHERE external_issuer = ? AND external_subject = ?
+                AND installation_id = ? AND revoked_at IS NULL
+            LIMIT 1
+            """,
+            (
+                credential.external_issuer,
+                credential.external_subject,
+                credential.installation_id,
+            ),
+        ).fetchone()
+        if active_credential is not None:
+            raise AuthenticationStateError("An active WebAuthn credential already exists")
+        connection.execute(
+            """
+            INSERT INTO webauthn_credentials (
+                credential_id, principal_id, external_issuer, external_subject,
+                installation_id, public_key, signature_count, enrolled_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                credential.credential_id,
+                credential.principal_id,
+                credential.external_issuer,
+                credential.external_subject,
+                credential.installation_id,
+                credential.public_key,
+                credential.signature_count,
+                _time_text(credential.enrolled_at),
+            ),
+        )
+        self._ensure_scope(
+            connection,
+            RevocationKey(
+                RevocationScopeType.WEBAUTHN_CREDENTIAL,
+                credential.credential_id,
+            ),
+        )
+        self._increment_authorization_epoch(connection)
+
+    def record_first_enrollment_context(
+        self, *, context: str, challenge: str, authority_digest: str, expires_at: datetime
+    ) -> None:
         with self.database.transaction() as connection:
-            # The immediate transaction serializes competing registration finishes.
-            active_credential = connection.execute(
-                """
-                SELECT 1 FROM webauthn_credentials
-                WHERE external_issuer = ? AND external_subject = ?
-                    AND installation_id = ? AND revoked_at IS NULL
-                LIMIT 1
-                """,
-                (
-                    credential.external_issuer,
-                    credential.external_subject,
-                    credential.installation_id,
-                ),
-            ).fetchone()
-            if active_credential is not None:
-                raise AuthenticationStateError("An active WebAuthn credential already exists")
+            now = self._now()
+            _require_interval(now, expires_at)
+            connection.execute("DELETE FROM first_enrollment_contexts WHERE expires_at <= ?", (_time_text(now),))
             connection.execute(
-                """
-                INSERT INTO webauthn_credentials (
-                    credential_id, principal_id, external_issuer, external_subject,
-                    installation_id, public_key, signature_count, enrolled_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    credential.credential_id,
-                    credential.principal_id,
-                    credential.external_issuer,
-                    credential.external_subject,
-                    credential.installation_id,
-                    credential.public_key,
-                    credential.signature_count,
-                    _time_text(credential.enrolled_at),
-                ),
+                "INSERT INTO first_enrollment_contexts VALUES (?, ?, ?, ?, NULL)",
+                (_secret_digest(context), _secret_digest(challenge), authority_digest, _time_text(expires_at)),
             )
-            self._ensure_scope(
-                connection,
-                RevocationKey(
-                    RevocationScopeType.WEBAUTHN_CREDENTIAL,
-                    credential.credential_id,
-                ),
+
+    @capture_authority_change
+    def finish_first_enrollment(
+        self, *, context: str, challenge: str, authority_digest: str,
+        binding: WebAuthnChallengeBinding, credential: WebAuthnCredential,
+        issue: BridgeSessionIssue, validate_current: Callable[[sqlite3.Connection], bool],
+    ) -> IssuedBridgeSession:
+        """Commit the browser context, ceremony, credential and session together.
+
+        A duplicate never returns a stored session or creates a replacement. If the
+        response is lost, the browser reconciles its cookie and otherwise signs in.
+        """
+        with self.database.transaction() as connection:
+            now = self._now()
+            row = connection.execute(
+                "SELECT * FROM first_enrollment_contexts WHERE context_digest = ?",
+                (_secret_digest(context),),
+            ).fetchone()
+            if (row is None or row["consumed_at"] is not None
+                    or _parse_time(row["expires_at"]) <= now
+                    or row["challenge_digest"] != _secret_digest(challenge)
+                    or row["authority_digest"] != authority_digest
+                    or not validate_current(connection)):
+                raise AuthenticationStateError("First enrollment authority is unavailable")
+            if (issue.credential_id != credential.credential_id
+                    or issue.principal_id != credential.principal_id):
+                raise AuthenticationStateError("First enrollment scope does not match")
+            consumed = self._consume_challenge_in_transaction(
+                connection, challenge, {
+                    "challenge_kind": "webauthn", "principal_id": binding.principal_id,
+                    "credential_id": None, "relying_party_id": binding.relying_party_id,
+                    "expected_origin": binding.expected_origin,
+                }, issue.grant_reference_ids,
             )
-            self._increment_authorization_epoch(connection)
+            if consumed is None:
+                raise AuthenticationStateError("First enrollment challenge is unavailable")
+            self._register_webauthn_credential(connection, credential)
+            issued = self._issue_bridge_session(connection, issue)
+            connection.execute(
+                "UPDATE first_enrollment_contexts SET consumed_at = ? WHERE context_digest = ?",
+                (_time_text(now), _secret_digest(context)),
+            )
+            return issued
+
+    def bridge_session_csrf_is_current(self, policy: RuntimePolicy, value: str) -> bool:
+        if policy.identity is None:
+            return False
+        with self.database.read() as connection:
+            row = connection.execute(
+                "SELECT csrf_digest FROM bridge_sessions WHERE session_id = ? AND revoked_at IS NULL",
+                (policy.identity.session_id,),
+            ).fetchone()
+            return bool(row is not None and row["csrf_digest"] == _secret_digest(value)
+                        and self._policy_is_current(connection, policy, self._now()))
+
+    def bridge_session_is_current(self, policy: RuntimePolicy) -> bool:
+        """Read a durable session without minting or replaying any credential."""
+        if policy.identity is None or policy.identity.session_id is None:
+            return False
+        with self.database.transaction() as connection:
+            try:
+                row = self._require_session_current(connection, policy.identity.session_id, self._now())
+            except AuthenticationStateError:
+                return False
+            return bool((row["principal_id"], row["creator_account_id"], row["role"]) ==
+                        (policy.identity.principal_id, policy.identity.creator_account_id, policy.identity.role)
+                        and self._policy_is_current(connection, policy, self._now()))
 
     def webauthn_credential(
         self, credential_id: str, *, principal_id: str
@@ -1647,89 +1741,94 @@ class SQLiteAuthenticationStore:
         return self._consume_challenge(value, expected, grants, companion=companion)
 
     def issue_bridge_session(self, issue: BridgeSessionIssue) -> IssuedBridgeSession:
+        with self.database.transaction() as connection:
+            return self._issue_bridge_session(connection, issue)
+
+    def _issue_bridge_session(
+        self, connection: sqlite3.Connection, issue: BridgeSessionIssue
+    ) -> IssuedBridgeSession:
         if issue.role not in {"creator", "operator"}:
             raise ValueError("Bridge session role must be creator or operator")
         grants = _unique(issue.grant_reference_ids)
         session_id, session_value, session_digest = _new_secret()
         _, csrf_value, csrf_digest = _new_secret()
-        with self.database.transaction() as connection:
-            now = self._now()
-            _require_interval(now, issue.expires_at)
-            credential = connection.execute(
-                """
-                SELECT principal_id, external_issuer, external_subject,
-                       installation_id, revoked_at
-                FROM webauthn_credentials WHERE credential_id = ?
-                """,
-                (issue.credential_id,),
-            ).fetchone()
-            if (
-                credential is None
-                or credential["principal_id"] != issue.principal_id
-                or credential["revoked_at"] is not None
-            ):
-                raise AuthenticationStateError("WebAuthn credential is not active")
-            self._require_bridge_grants(
-                connection,
-                grants,
-                now,
-                external_issuer=credential["external_issuer"],
-                external_subject=credential["external_subject"],
-                installation_id=credential["installation_id"],
+        now = self._now()
+        _require_interval(now, issue.expires_at)
+        credential = connection.execute(
+            """
+            SELECT principal_id, external_issuer, external_subject,
+                   installation_id, revoked_at
+            FROM webauthn_credentials WHERE credential_id = ?
+            """,
+            (issue.credential_id,),
+        ).fetchone()
+        if (
+            credential is None
+            or credential["principal_id"] != issue.principal_id
+            or credential["revoked_at"] is not None
+        ):
+            raise AuthenticationStateError("WebAuthn credential is not active")
+        self._require_bridge_grants(
+            connection,
+            grants,
+            now,
+            external_issuer=credential["external_issuer"],
+            external_subject=credential["external_subject"],
+            installation_id=credential["installation_id"],
+            creator_account_id=issue.creator_account_id,
+        )
+        keys = [
+            RevocationKey(RevocationScopeType.PRINCIPAL, issue.principal_id),
+            RevocationKey(
+                RevocationScopeType.CREATOR_ACCOUNT, issue.creator_account_id
+            ),
+            RevocationKey(
+                RevocationScopeType.WEBAUTHN_CREDENTIAL, issue.credential_id
+            ),
+            RevocationKey(
+                RevocationScopeType.INSTALLATION, credential["installation_id"]
+            ),
+            RevocationKey(RevocationScopeType.BRIDGE_SESSION, session_id),
+            *self._grant_keys(grants),
+        ]
+        snapshots = self._snapshot_revocations(connection, keys)
+        connection.execute(
+            """
+            INSERT INTO bridge_sessions (
+                session_id, secret_digest, csrf_digest, credential_id,
+                principal_id, creator_account_id, role, issued_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                session_digest,
+                csrf_digest,
+                issue.credential_id,
+                issue.principal_id,
+                issue.creator_account_id,
+                issue.role,
+                _time_text(now),
+                _time_text(issue.expires_at),
+            ),
+        )
+        self._insert_grants(
+            connection, "bridge_session_grants", "session_id", session_id, grants
+        )
+        self._insert_bindings(connection, "bridge_session", session_id, snapshots)
+        self._increment_authorization_epoch(connection)
+        policy = self._runtime_policy(
+            connection,
+            identity=AuthContext(
+                principal_id=issue.principal_id,
                 creator_account_id=issue.creator_account_id,
-            )
-            keys = [
-                RevocationKey(RevocationScopeType.PRINCIPAL, issue.principal_id),
-                RevocationKey(
-                    RevocationScopeType.CREATOR_ACCOUNT, issue.creator_account_id
-                ),
-                RevocationKey(
-                    RevocationScopeType.WEBAUTHN_CREDENTIAL, issue.credential_id
-                ),
-                RevocationKey(
-                    RevocationScopeType.INSTALLATION, credential["installation_id"]
-                ),
-                RevocationKey(RevocationScopeType.BRIDGE_SESSION, session_id),
-                *self._grant_keys(grants),
-            ]
-            snapshots = self._snapshot_revocations(connection, keys)
-            connection.execute(
-                """
-                INSERT INTO bridge_sessions (
-                    session_id, secret_digest, csrf_digest, credential_id,
-                    principal_id, creator_account_id, role, issued_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    session_id,
-                    session_digest,
-                    csrf_digest,
-                    issue.credential_id,
-                    issue.principal_id,
-                    issue.creator_account_id,
-                    issue.role,
-                    _time_text(now),
-                    _time_text(issue.expires_at),
-                ),
-            )
-            self._insert_grants(
-                connection, "bridge_session_grants", "session_id", session_id, grants
-            )
-            self._insert_bindings(connection, "bridge_session", session_id, snapshots)
-            self._increment_authorization_epoch(connection)
-            policy = self._runtime_policy(
-                connection,
-                identity=AuthContext(
-                    principal_id=issue.principal_id,
-                    creator_account_id=issue.creator_account_id,
-                    role=issue.role,  # type: ignore[arg-type]
-                    session_id=session_id,
-                    session_expires_at=int(issue.expires_at.timestamp()),
-                ),
-                expires_at=issue.expires_at,
-                revocations=snapshots,
-                grant_reference_ids=grants,
-            )
+                role=issue.role,  # type: ignore[arg-type]
+                session_id=session_id,
+                session_expires_at=int(issue.expires_at.timestamp()),
+            ),
+            expires_at=issue.expires_at,
+            revocations=snapshots,
+            grant_reference_ids=grants,
+        )
         return IssuedBridgeSession(
             session_id,
             session_value,
@@ -2432,41 +2531,50 @@ class SQLiteAuthenticationStore:
         *, companion: CompanionSessionBinding | None = None,
     ) -> ConsumedChallenge | None:
         with self.database.transaction() as connection:
-            now = self._now()
-            if companion is not None:
-                self._require_companion_session_current(connection, companion, now)
-            row = connection.execute(
-                "SELECT * FROM auth_challenges WHERE secret_digest = ?",
-                (_secret_digest(value),),
-            ).fetchone()
-            if row is None or any(row[key] != value for key, value in expected.items()):
-                return None
-            revocations = self._object_revocations(
-                connection, "challenge", row["challenge_id"]
+            return self._consume_challenge_in_transaction(
+                connection, value, expected, grants, companion=companion
             )
-            if (
-                row["consumed_at"] is not None
-                or row["invalidated_at"] is not None
-                or not self._authorization_inputs_are_current(
-                    connection,
-                    expires_at=_parse_time(row["expires_at"]),
-                    grant_reference_ids=grants,
-                    revocations=revocations,
-                    now=now,
-                )
-            ):
-                return None
-            cursor = connection.execute(
-                """
-                UPDATE auth_challenges SET consumed_at = ?
-                WHERE challenge_id = ? AND consumed_at IS NULL AND invalidated_at IS NULL
-                """,
-                (_time_text(now), row["challenge_id"]),
+
+    def _consume_challenge_in_transaction(
+        self, connection: sqlite3.Connection, value: str,
+        expected: dict[str, object], grants: tuple[str, ...],
+        *, companion: CompanionSessionBinding | None = None,
+    ) -> ConsumedChallenge | None:
+        now = self._now()
+        if companion is not None:
+            self._require_companion_session_current(connection, companion, now)
+        row = connection.execute(
+            "SELECT * FROM auth_challenges WHERE secret_digest = ?",
+            (_secret_digest(value),),
+        ).fetchone()
+        if row is None or any(row[key] != value for key, value in expected.items()):
+            return None
+        revocations = self._object_revocations(
+            connection, "challenge", row["challenge_id"]
+        )
+        if (
+            row["consumed_at"] is not None
+            or row["invalidated_at"] is not None
+            or not self._authorization_inputs_are_current(
+                connection,
+                expires_at=_parse_time(row["expires_at"]),
+                grant_reference_ids=grants,
+                revocations=revocations,
+                now=now,
             )
-            if cursor.rowcount != 1:
-                return None
-            self._increment_authorization_epoch(connection)
-            return ConsumedChallenge(row["challenge_id"])
+        ):
+            return None
+        cursor = connection.execute(
+            """
+            UPDATE auth_challenges SET consumed_at = ?
+            WHERE challenge_id = ? AND consumed_at IS NULL AND invalidated_at IS NULL
+            """,
+            (_time_text(now), row["challenge_id"]),
+        )
+        if cursor.rowcount != 1:
+            return None
+        self._increment_authorization_epoch(connection)
+        return ConsumedChallenge(row["challenge_id"])
 
     def _require_session_current(
         self, connection: sqlite3.Connection, session_id: str, now: datetime

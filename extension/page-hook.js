@@ -21,11 +21,14 @@ import {
 } from './capture/envelopes.mjs';
 
 (function installObservationHook() {
-  const mode = globalThis.__OFCA_CAPTURE_MODE__;
+  let mode = globalThis.__OFCA_CAPTURE_MODE__;
   if (!['identity', 'preview', 'full'].includes(mode)) return;
-  // Reinjecting the same observer must not detach listeners from sockets that
-  // the site already opened. A real mode transition still tears everything down.
-  if (globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode === mode) return;
+  // A compatible observer owns the document for its whole lifetime. Changing
+  // consent fences in-flight responses without detaching existing sockets.
+  if (globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.version === 2) {
+    globalThis.__OFCA_PAGE_HOOK_CONTROLLER__.configure(mode);
+    return;
+  }
   globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.stop?.();
 
   const MAX_PAYLOAD_WRAPPER_DEPTH = 3;
@@ -34,7 +37,7 @@ import {
   const xhrUrls = new WeakMap();
   const socketListeners = new Set();
   let active = true;
-  let forwarding = mode !== 'full';
+  let forwarding = false;
   let captureGeneration = 0;
   let creatorPlatformUserId = null;
   let lastConfirmedCreatorId = null;
@@ -401,7 +404,7 @@ import {
   }
 
   const originalWebSocket = window.WebSocket;
-  if (mode !== 'identity' && typeof originalWebSocket === 'function') {
+  if (typeof originalWebSocket === 'function') {
     installedWebSocket = new Proxy(originalWebSocket, {
       construct(target, argumentsList, newTarget) {
         const socket = Reflect.construct(target, argumentsList, newTarget);
@@ -410,7 +413,7 @@ import {
           const socketGeneration = socketAccountGeneration;
           let socketCreatorId = creatorPlatformUserId;
           const listener = (event) => {
-            if (!active || !forwarding || typeof event.data !== 'string'
+            if (!active || !forwarding || mode === 'identity' || typeof event.data !== 'string'
               || socketGeneration !== socketAccountGeneration) return;
             const currentCreator = mode === 'preview' ? previewCreatorId : creatorPlatformUserId;
             if (currentCreator === null && mode === 'full') return;
@@ -601,9 +604,13 @@ import {
       || Object.keys(message).length !== 3
       || message.type !== PAGE_CONTROL_MESSAGE_TYPE
       || message.version !== PAGE_CONTROL_VERSION
-      || !['stop', 'pause', 'resume', 'status', 'refresh_identity'].includes(message.action)
+      || !['stop', 'pause', 'resume', 'status', 'refresh_identity', 'reset_identity'].includes(message.action)
     ) return;
-    if (message.action === 'stop') stop();
+    if (message.action === 'reset_identity') {
+      forwarding = false; captureGeneration += 1; previewGeneration += 1; identityRequestSequence += 1;
+      socketAccountGeneration += 1; pendingPreview.length = 0; creatorPlatformUserId = null;
+      previewCreatorId = null; lastConfirmedCreatorId = null; pageEpoch = crypto.randomUUID();
+    } else if (message.action === 'stop') stop();
     else if (message.action === 'status') postStatus();
     else if (message.action === 'pause') {
       forwarding = false;
@@ -619,6 +626,18 @@ import {
   }
 
   window.addEventListener('message', controlListener);
-  globalThis.__OFCA_PAGE_HOOK_CONTROLLER__ = Object.freeze({ mode, stop });
-  if (mode === 'full') postStatus();
+  function configure(nextMode) {
+    if (!active || !['identity', 'preview', 'full'].includes(nextMode)) return;
+    if (nextMode !== mode) {
+      forwarding = false;
+      captureGeneration += 1;
+      previewGeneration += 1;
+      identityRequestSequence += 1;
+      pendingPreview.length = 0;
+      mode = nextMode;
+    }
+    postStatus();
+  }
+  globalThis.__OFCA_PAGE_HOOK_CONTROLLER__ = Object.freeze({ version: 2, get mode() { return mode; }, configure, stop });
+  postStatus();
 })();

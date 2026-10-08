@@ -59,6 +59,7 @@ $DigestScriptPath = Join-Path $ProjectRoot "packaging\write-digests.ps1"
 $AgentBundleScriptPath = Join-Path $ProjectRoot "packaging\new-agent-bundle.ps1"
 $ExtensionRoot = Join-Path $ProjectRoot "extension"
 $ExtensionBuildScript = Join-Path $ExtensionRoot "build.mjs"
+$CustomerReleaseConfigPath = Join-Path $ProjectRoot "app\core\customer-release.json"
 
 # The Legal instrument this package serves from disk, and the bindings field
 # naming the approved rendering of it. packaging/runtime-files.json stages the
@@ -213,6 +214,8 @@ function Get-ExtensionReleaseArguments {
     if ($PrivacyPolicyUrl) {
         $arguments += "--privacy-policy-url=$PrivacyPolicyUrl"
     }
+    # Brain's spec stages this exact document. There is no Agent-only override.
+    $arguments += "--customer-release-config=$CustomerReleaseConfigPath"
     return $arguments
 }
 
@@ -639,6 +642,11 @@ try {
 $stagingRoot = Join-Path $distPath "Brain"
 if (-not (Test-Path -LiteralPath (Join-Path $stagingRoot "Brain.exe") -PathType Leaf)) {
     throw "PyInstaller did not produce the required Brain.exe staging artifact"
+}
+$stagedCustomerRelease = Join-Path $stagingRoot "_internal\app\core\customer-release.json"
+if (-not (Test-Path -LiteralPath $stagedCustomerRelease -PathType Leaf) -or
+    (Get-Sha256Digest -Path $stagedCustomerRelease) -ne (Get-Sha256Digest -Path $CustomerReleaseConfigPath)) {
+    throw "Brain and Agent customer routing configuration must match"
 }
 Copy-DeclaredTopLevelFiles -StagingRoot $stagingRoot
 Copy-AgentArtifact -StagingRoot $stagingRoot

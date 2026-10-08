@@ -1094,6 +1094,7 @@
         <p class="intro">Read the <a class="disclosure-link" href="/provisioning/creator-platform-data-risk-disclosure.html" target="_blank" rel="noopener noreferrer">Creator platform &amp; data risk disclosure</a> before you continue. It opens in a new tab.</p>
         <span id="feedback-details" hidden>Details available <button type="button" id="feedback-details-open" class="secondary">Show details</button></span>
         <p id="provisioning-status" class="page-status" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral"></p>
+        <button id="transfer-recovery-action" type="button" hidden></button>
       </header>
 
       <ol class="progress-rail" data-reserved-region="provisioning-rail" aria-label="Desktop setup progress">
@@ -1110,10 +1111,10 @@
           </form>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content><p id="claim-package-validation" class="validation-message help" data-valid="true"></p></div></div>
           <div class="actions" data-reserved-region="provisioning-actions">
-            <a id="open-secure-setup" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="secure-setup-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open secure setup</a>
+            <a id="open-secure-setup" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_self" rel="noreferrer" aria-describedby="secure-setup-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Sign in</a>
             <button id="claim-submit" type="submit" form="claim-form" aria-describedby="claim-step-description" disabled>Continue setup</button>
           </div>
-          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Sign in in the new tab, then copy your setup code.</p>
+          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Sign in to connect this computer.</p>
         </section>
         <section id="identity-step" class="step" data-region-content data-step="identity" data-state="locked">
           <p id="identity-step-state" class="step-state">Step 2 of 4</p><h2 id="identity-heading">Choose your creator account</h2>
@@ -1124,10 +1125,10 @@
         </section>
         <section id="binding-step" class="step" data-region-content data-step="approval" data-state="locked">
           <p id="binding-step-state" class="step-state">Step 3 of 4</p><h2 id="binding-heading">Connect your account</h2>
-          <p id="binding-step-description" class="step-description">Approve which account this computer can use in the setup tab, then return here.</p>
-          <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="creator-approval-unavailable" class="step-description approval-unavailable">Return to the setup tab where you got your code to allow this app to connect to your account.</p><p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Opens in a new tab.</p><button type="button" id="recovery-open" class="secondary">Can’t find the setup tab?</button></div>
+          <p id="binding-step-description" class="step-description">Approve which account this computer can use.</p>
+          <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="creator-approval-unavailable" class="step-description approval-unavailable">Account setup is unavailable.</p><p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Continue setup in this tab.</p><button type="button" id="recovery-open" class="secondary" hidden>Can’t find the setup tab?</button></div>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
-          <div class="actions" data-reserved-region="provisioning-actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open account setup</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Try again</button></div>
+          <div class="actions" data-reserved-region="provisioning-actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_self" rel="noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Approve account</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Try again</button></div>
         </section>
         <section id="finalize-step" class="step" data-region-content data-step="finalization" data-state="locked">
           <p id="finalize-step-state" class="step-state">Step 4 of 4</p><h2 id="finalize-heading">Finish desktop setup</h2>

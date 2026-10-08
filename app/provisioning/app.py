@@ -9,8 +9,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Awaitable, Callable, Protocol
 
-from fastapi import FastAPI, Header, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi import FastAPI, Header, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, StringConstraints
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
@@ -133,6 +133,13 @@ class FinalizeAction(Protocol):
     ) -> str | None: ...
 
 
+class InitialInstallationAdmission(Protocol):
+    """Local browser sees only bounded progress and a nonauthorizing locator."""
+    async def prepare(self, journey_id: str) -> dict[str, object]: ...
+    def resume(self, journey_id: str) -> None: ...
+    async def stop(self) -> None: ...
+
+
 def _validated_progress(value: object) -> dict[str, str | None]:
     if not isinstance(value, dict) or set(value) != {
         "stage", "association_request_id", "creator_account_id"
@@ -173,8 +180,12 @@ def create_provisioning_app(
     completion_exit: Callable[[], None] | None = None,
     session_manager: ProvisioningSessionManager | None = None,
     shutdown_action: Callable[[], Awaitable[None]] | None = None,
+    initial_enrollment: InitialInstallationAdmission | None = None,
+    onboarding_snapshot: Callable[[str], dict[str, object]] | None = None,
+    onboarding_expiry: Callable[[], float | None] | None = None,
 ) -> FastAPI:
     sessions = session_manager or ProvisioningSessionManager(launcher_handoff_token)
+    from app.provisioning.events import events, CAPABILITIES
 
     @asynccontextmanager
     async def lifecycle(application):
@@ -186,6 +197,10 @@ def create_provisioning_app(
 
     application = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifecycle)
 
+    if initial_enrollment is not None and hasattr(initial_enrollment, "store"):
+        from app.provisioning.setup_transfer import DesktopSetupTransfer, install_routes
+        install_routes(application, sessions, DesktopSetupTransfer(initial_enrollment))
+
     def provisioned_extension_id() -> str:
         if extension_id is None or _EXTENSION_ID_PATTERN.fullmatch(extension_id) is None:
             return ""
@@ -196,8 +211,21 @@ def create_provisioning_app(
         return {"status": "ok"}
 
     @application.post(PROVISIONING_HANDOFF_PATH, include_in_schema=False)
-    async def issue_handoff(authorization: str | None = Header(default=None)) -> JSONResponse:
-        code = sessions.issue_handoff_code(authorization)
+    async def issue_handoff(authorization: str | None = Header(default=None),
+                            x_onboarding_journey: str | None = Header(default=None),
+                            x_onboarding_reopen: str | None = Header(default=None)) -> JSONResponse:
+        sessions.require_launcher(authorization)
+        try:
+            workspace = sessions.launcher_workspace(x_onboarding_journey)
+        except ValueError:
+            raise HTTPException(400, "Journey is invalid") from None
+        if workspace is not None:
+            x_onboarding_journey = workspace["journey_id"]
+            if events.request_focus(x_onboarding_journey) is not None:
+                return JSONResponse({"workspace_active": True, "journey_id": x_onboarding_journey}, headers={"Cache-Control": "no-store"})
+            if workspace["state"] in {"preparing", "prepare-unknown", "waiting", "completing", "unknown"} and x_onboarding_reopen != "explicit":
+                return JSONResponse({"workspace_uncertain": True, "journey_id": x_onboarding_journey}, headers={"Cache-Control": "no-store"})
+        code = sessions.issue_handoff_code(authorization, journey_id=x_onboarding_journey)
         response = JSONResponse({"handoff_code": code})
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -205,8 +233,9 @@ def create_provisioning_app(
     @application.get(PROVISIONING_REDEEM_PATH, include_in_schema=False)
     async def redeem_handoff(code: str) -> RedirectResponse:
         session = sessions.redeem_handoff_code(code)
-        response = RedirectResponse("/provisioning", status_code=303)
+        response = RedirectResponse("/provisioning" + ("#journey=" + session.journey_id if session.journey_id else ""), status_code=303)
         response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
         response.set_cookie(
             PROVISIONING_SESSION_COOKIE_NAME,
             session.identifier,
@@ -219,7 +248,13 @@ def create_provisioning_app(
 
     @application.get("/provisioning", include_in_schema=False)
     async def shell(request: Request) -> HTMLResponse:
-        session = sessions.require_session(request)
+        try:
+            session = sessions.require_session(request)
+        except HTTPException as error:
+            if error.status_code != 401:
+                raise
+            from app.provisioning.resume import resume_shell
+            return resume_shell()
         document = _SHELL_TEMPLATE.read_text(encoding="utf-8")
         document = document.replace(
             "{{PROVISIONING_CSRF}}", html.escape(session.csrf_token, quote=True)
@@ -234,6 +269,11 @@ def create_provisioning_app(
             "" if hosted_onboarding_url else "hidden",
         )
         return HTMLResponse(document, headers={"Cache-Control": "no-store"})
+
+    @application.get("/provisioning/resume.js", include_in_schema=False)
+    async def browser_resume_script(request: Request) -> Response:
+        from app.provisioning.resume import resume_script
+        return resume_script(request)
 
     @application.get(PROVISIONING_DISCLOSURE_PATH, include_in_schema=False)
     async def disclosure(request: Request) -> HTMLResponse:
@@ -252,10 +292,58 @@ def create_provisioning_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    @application.get("/provisioning/onboarding/{name}.mjs", include_in_schema=False)
+    async def onboarding_module(request: Request, name: str):
+        sessions.require_session(request)
+        if name not in {"client", "projection", "json", "sse"}:
+            raise HTTPException(404, "Not found")
+        from app.core.resource_paths import resource_path
+        return Response(resource_path("shared/onboarding/" + name + ".mjs").read_bytes(),
+                        media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
     def request_completion_exit() -> None:
         application.state.completion_requested = True
+        events.publish()
         if completion_exit is not None:
             completion_exit()
+
+    @application.get("/api/v1/provisioning/events", include_in_schema=False)
+    async def onboarding_events(request: Request):
+        session = sessions.require_session(request)
+        if onboarding_snapshot is None or session.journey_id is None:
+            return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
+        if initial_enrollment is not None:
+            initial_enrollment.resume(session.journey_id)
+        return StreamingResponse(events.stream(
+            lambda: onboarding_snapshot(session.journey_id), lambda: sessions.require_session(request),
+            journey_id=session.journey_id, expires_in=onboarding_expiry),
+            media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no",
+            "X-Onboarding-Capabilities": CAPABILITIES})
+
+    @application.get("/api/v1/provisioning/state", include_in_schema=False)
+    async def onboarding_state(request: Request):
+        session = sessions.require_session(request)
+        if onboarding_snapshot is None or session.journey_id is None:
+            return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
+        return JSONResponse(onboarding_snapshot(session.journey_id), headers={"Cache-Control": "no-store",
+                            "X-Onboarding-Capabilities": CAPABILITIES})
+
+    @application.post("/api/v1/provisioning/initial-handoff", include_in_schema=False)
+    async def prepare_initial_handoff(request: Request, body: CreatorBindingAcquisitionBody):
+        del body
+        session = sessions.require_mutation(request)
+        if initial_enrollment is None or session.journey_id is None:
+            return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
+        from app.security.initial_handoff import InitialHandoffRefused
+        from app.security.hosted_grants import HostedGrantUnavailable
+        try:
+            result = await initial_enrollment.prepare(session.journey_id)
+        except InitialHandoffRefused as error:
+            return JSONResponse({"state": "unconfirmed", "reason": error.code}, status_code=409,
+                                headers={"Cache-Control": "no-store"})
+        except HostedGrantUnavailable:
+            return JSONResponse({"state": "unconfirmed"}, status_code=503, headers={"Cache-Control": "no-store"})
+        return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
     @application.get(PROVISIONING_STATUS_PATH, include_in_schema=False)
     async def status(request: Request) -> JSONResponse:
@@ -277,6 +365,7 @@ def create_provisioning_app(
     async def submit_claim(request: Request, body: ClaimSubmissionBody) -> JSONResponse:
         sessions.require_mutation(request)
         refusal = claim_submission(package=body.package.strip())
+        events.publish()
         if refusal is not None:
             return JSONResponse(
                 {"state": "provisioning_ready", "reason": refusal},
@@ -371,6 +460,7 @@ def create_provisioning_app(
         del body
         sessions.require_mutation(request)
         outcome = creator_binding_acquisition()
+        events.publish()
         if isinstance(outcome, str):
             return JSONResponse(
                 {"state": "provisioning_ready", "reason": outcome},

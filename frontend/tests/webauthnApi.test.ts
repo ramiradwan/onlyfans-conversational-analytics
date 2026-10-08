@@ -15,6 +15,34 @@ function bytes(value: number[]): ArrayBuffer {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('WebAuthn ceremony API', () => {
+  it.each([
+    [{ authenticated: true, enrolled: true }, true],
+    [{ authenticated: false, enrolled: true }, false],
+    [{ authenticated: false, enrolled: false }, false],
+    [{ authenticated: true, enrolled: false }, false],
+  ])('reconciles a lost finish response without replay or a second ceremony (%j)', async (state, success) => {
+    const create = vi.fn(async () => ({ id: 'Bwg', rawId: bytes([7, 8]), type: 'public-key',
+      response: { clientDataJSON: bytes([9, 10]), attestationObject: bytes([11, 12]) } }));
+    const get = vi.fn();
+    vi.stubGlobal('navigator', { credentials: { create, get } });
+    const request = vi.fn(async (path: string) => {
+      if (path.endsWith('/begin')) return json({ challenge: 'AQID',
+        rp: { id: 'bridge.localhost', name: 'Bridge' },
+        user: { id: 'BAUG', name: 'creator-1', displayName: 'creator-1' },
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }] });
+      if (path.endsWith('/finish')) throw new TypeError('response lost');
+      return json(state);
+    });
+    const attempt = createWebAuthnApi({ fetch: request as typeof fetch }).enroll();
+    if (success) await expect(attempt).resolves.toBeUndefined();
+    else await expect(attempt).rejects.toMatchObject({ name: 'EnrollmentOutcomeError', enrolled: state.enrolled });
+    expect(request.mock.calls.map(([path]) => path)).toEqual([
+      '/api/v1/webauthn/registration/begin', '/api/v1/webauthn/registration/finish', '/api/v1/webauthn/session-state',
+    ]);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it('uses the registration contract and base64url challenge round trip', async () => {
     const create = vi.fn(async () => ({
       id: 'Bwg',
@@ -31,7 +59,7 @@ describe('WebAuthn ceremony API', () => {
       rp: { id: 'bridge.localhost', name: 'Bridge' },
       user: { id: 'BAUG', name: 'creator-1', displayName: 'creator-1' },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-    } : { status: 'registered' }));
+    } : { profile: 'local-first-enrollment-result.v1', status: 'registered', csrf_token: 'x'.repeat(43) }));
 
     await createWebAuthnApi({ fetch }).enroll();
 

@@ -7,6 +7,8 @@ import binascii
 import hashlib
 import hmac
 import json
+import secrets
+from contextlib import nullcontext
 from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -57,6 +59,9 @@ class RegistrationAuthority:
     external_issuer: str
     external_subject: str
     installation_id: str
+    creator_account_id: str = ""
+    role: Literal["creator", "operator"] = "creator"
+    grant_reference_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,11 +129,11 @@ class WebAuthnAuthorityPort:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def registration_authority(
-        self, policy: RuntimePolicy
+        self, policy: RuntimePolicy, *, connection: sqlite3.Connection | None = None
     ) -> WebAuthnAuthorityDecision:
         """Return one registration authority derived from durable grant state."""
 
-        return self._resolve(policy, session=False)
+        return self._resolve(policy, session=False, connection=connection)
 
     def session_authority(
         self, policy: RuntimePolicy
@@ -138,13 +143,13 @@ class WebAuthnAuthorityPort:
         return self._resolve(policy, session=True)
 
     def _resolve(
-        self, policy: RuntimePolicy, *, session: bool
+        self, policy: RuntimePolicy, *, session: bool, connection: sqlite3.Connection | None = None
     ) -> WebAuthnAuthorityDecision:
         now = self._now()
         identity = policy.identity
         # BEGIN IMMEDIATE is the auth store's installation-scoped writer fence.
         # It prevents authority inputs changing between validation and return.
-        with self._store.database.transaction() as connection:
+        with (self._store.database.transaction() if connection is None else nullcontext(connection)) as connection:
             if not _webauthn_policy_is_current(connection, policy, now):
                 return _authority_refusal(WebAuthnAuthorityResult.POLICY_NOT_CURRENT)
             selected: dict[str, sqlite3.Row] = {}
@@ -283,6 +288,9 @@ class WebAuthnAuthorityPort:
                         external_issuer=external_issuer,
                         external_subject=external_subject,
                         installation_id=installation_id,
+                        creator_account_id=account_id,
+                        role=role,
+                        grant_reference_ids=references,
                     ),
                 )
 
@@ -430,6 +438,46 @@ class WebAuthnService:
         except AuthenticationStateError as error:
             raise WebAuthnVerificationError("WebAuthn credential cannot be registered") from error
         return credential
+
+    def begin_first_registration(self, authority: RegistrationAuthority) -> tuple[dict[str, object], str]:
+        if not authority.creator_account_id or not authority.grant_reference_ids:
+            raise WebAuthnVerificationError("First enrollment scope is unavailable")
+        options = self.begin_registration(authority)
+        context = secrets.token_urlsafe(32)
+        self._store.record_first_enrollment_context(
+            context=context, challenge=str(options["challenge"]),
+            authority_digest=_registration_authority_digest(authority), expires_at=self._challenge_expiry(),
+        )
+        return options, context
+
+    def complete_first_registration(
+        self, authority: RegistrationAuthority, response: RegistrationCredential, *, context: str,
+        policy: RuntimePolicy, authority_port: WebAuthnAuthorityPort,
+    ) -> IssuedBridgeSession:
+        raw_id = _credential_id(response.credential_id, response.raw_id, response.credential_type)
+        _, challenge = _verify_client_data(response.client_data_json,
+            expected_type="webauthn.create", expected_origin=self._expected_origin)
+        data = _registration_authenticator_data(response.attestation_object,
+            relying_party_id=self._relying_party_id, expected_credential_id=raw_id)
+        credential = WebAuthnCredential(
+            credential_id=_base64url(raw_id), principal_id=authority.principal_id,
+            external_issuer=authority.external_issuer, external_subject=authority.external_subject,
+            installation_id=authority.installation_id, public_key=data.public_key,
+            signature_count=data.signature_count, enrolled_at=self._now(),
+        )
+        def current(connection: sqlite3.Connection) -> bool:
+            return authority_port.registration_authority(policy, connection=connection).authority == authority
+        try:
+            return self._store.finish_first_enrollment(
+                context=context, challenge=challenge, authority_digest=_registration_authority_digest(authority),
+                binding=self._registration_binding(authority), credential=credential,
+                issue=BridgeSessionIssue(credential.credential_id, authority.principal_id,
+                    authority.creator_account_id, authority.role,
+                    self._now() + timedelta(seconds=self._session_ttl_seconds), authority.grant_reference_ids),
+                validate_current=current,
+            )
+        except AuthenticationStateError as error:
+            raise WebAuthnVerificationError("First enrollment could not be completed") from error
 
     def begin_authentication(
         self, authority: SessionAuthority
@@ -1081,6 +1129,14 @@ def _exact_origin(value: str) -> str:
     ):
         raise ValueError("Bridge origin must be an exact HTTP origin")
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _registration_authority_digest(authority: RegistrationAuthority) -> str:
+    return hashlib.sha256(json.dumps([
+        authority.principal_id, authority.external_issuer, authority.external_subject,
+        authority.installation_id, authority.creator_account_id, authority.role,
+        authority.grant_reference_ids,
+    ], separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
 
 
 def _require_registration_authority(authority: RegistrationAuthority) -> None:

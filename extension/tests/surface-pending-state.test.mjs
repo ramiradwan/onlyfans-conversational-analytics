@@ -65,32 +65,18 @@ async function surface(t, entry, mode = 'off') {
     } };
 }
 
-for (const [id, field] of [['terms-accepted', 'terms_event_id'], ['risk-acknowledged', 'risk_event_id']]) {
-  for (const accepted of [true, false]) test(`${id} survives stale updates and reconciles ${accepted ? 'success' : 'rejection'}`, async (t) => {
-    const h = await surface(t, 'setup');
-    let settle;
-    h.setAction(() => new Promise((resolve) => { settle = resolve; }));
-    h.node(id).checked = true;
-    h.node(id).dispatch('change');
-    assert.equal(h.page.busy, true);
-    const release = h.holdRefresh();
-    t.after(() => { settle({ ok: false }); release(); });
-    h.port.onMessage.emit({ type: 'surface_changed' });
-    await tick();
-    h.port.onMessage.emit({ state: 'unpaired' });
-    assert.equal(h.node(id).checked, true, 'pending choice survives a port update');
-    assert.equal(h.node(id).disabled, true);
-    release();
-    await h.client.refresh();
-    assert.equal(h.node(id).checked, true, 'pending choice survives a stale refresh');
-    if (accepted) h.model.legal.flow[field] = 'confirmed';
-    settle({ ok: accepted });
-    for (let i = 0; i < 30 && h.page.busy; i++) await tick();
-    assert.equal(h.page.busy, false);
-    assert.equal(h.node(id).checked, accepted, 'settled choice follows confirmed state');
-    assert.equal(h.node(id).disabled, accepted);
-  });
-}
+for (const id of ['terms-accepted', 'risk-acknowledged']) test(`${id} is a draft until the explicit consent button`, async (t) => {
+  const h = await surface(t, 'setup'); let commands = 0;
+  h.setAction(() => { commands++; throw Error('unexpected legal acceptance'); });
+  h.node(id).checked = true; h.node(id).dispatch('change');
+  assert.equal(h.page.busy, false);
+  h.port.onMessage.emit({ type: 'surface_changed' });
+  await h.client.refresh(); await tick();
+  assert.equal(h.node(id).checked, true, 'a status update preserves unfinished choices');
+  assert.equal(h.node(id).disabled, false);
+  assert.equal(commands, 0, 'checking a draft never records acceptance');
+  assert.equal(h.node('activate-software').disabled, false, 'validation remains available');
+});
 
 test('a paused popup refreshes control ownership when a replacement session is admitted', async (t) => {
   const h = await surface(t, 'popup', 'paused');

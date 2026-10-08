@@ -1,4 +1,3 @@
-import { UI_RELOAD_TABS_MESSAGE_TYPE } from './runtime/consent-controller.mjs';
 import { createSurfaceClient, openSurface, send } from './ui/surface-client.mjs';
 import { customerJourney, isPreview, phaseLabel, statusPresentation } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
@@ -43,9 +42,6 @@ function render(model) {
   } else if (status.phase === 'permission_required') {
     text('journey-title', 'Site access needs approval');
     text('journey-body', 'Continue in setup to allow access.');
-  } else if (status.reload_required) {
-    primaryAction = 'reload'; label = 'Reload OnlyFans tabs';
-    text('journey-body', 'Reload your open OnlyFans tabs to apply site access.');
   } else if (status.consent.mode === 'paused' && desktopOwned) {
     primaryAction = 'desktop'; label = 'Resume in the desktop app';
   } else if (status.consent.mode === 'paused') {
@@ -62,7 +58,7 @@ function render(model) {
     text('journey-body', 'Continue in the setup tab. You can close this popup.');
   }
   element('journey-card').classList.toggle('popup-action-only', status.consent.mode === 'preview'
-    && !status.reload_required && status.phase !== 'permission_required' && !legal?.requires_reauthorization);
+    && status.phase !== 'permission_required' && !legal?.requires_reauthorization);
   text('journey-primary', label); show('journey-primary', true);
   const summary = statusPresentation(model);
   text('journey-badge', summary.label);
@@ -71,7 +67,6 @@ function render(model) {
 }
 page.bind('journey-primary', () => {
   if (primaryAction === 'resume') return transition('resume', client.model);
-  if (primaryAction === 'reload') return send({ type: UI_RELOAD_TABS_MESSAGE_TYPE });
   if (primaryAction === 'dashboard') return chrome.tabs.create({ url: client.model.config.dashboard_url });
   if (primaryAction === 'desktop') return chrome.tabs.create({ url: client.model.config.history_settings_url });
   if (primaryAction === 'creator') return openCreatorAccount();

@@ -184,7 +184,7 @@ class _RefusingPort:
 
 class _AuthorizedRegistrationPort:
     def registration_authority(
-        self, policy: RuntimePolicy
+        self, policy: RuntimePolicy, *, connection=None
     ) -> WebAuthnAuthorityDecision:
         return WebAuthnAuthorityDecision(
             WebAuthnAuthorityResult.AUTHORIZED,
@@ -193,6 +193,8 @@ class _AuthorizedRegistrationPort:
                 external_issuer=ISSUER,
                 external_subject=SUBJECT,
                 installation_id=INSTALLATION_ID,
+                creator_account_id=ACCOUNT_ID,
+                grant_reference_ids=("installation_grant-http", "membership_snapshot-http", "creator_account_binding-http"),
             ),
         )
 
@@ -420,13 +422,18 @@ def test_registration_routes_complete_one_http_ceremony(
         finished = client.post(
             "/api/v1/webauthn/registration/finish",
             json=_registration_payload(private_key, begun.json()["challenge"]),
-            headers=headers,
+            headers={**headers, "Cookie": "__Host-first_enrollment=" + begun.cookies["__Host-first_enrollment"]},
         )
 
     assert begun.status_code == 200
     assert begun.headers["cache-control"] == "no-store"
     assert finished.status_code == 200
-    assert finished.json() == {"status": "registered"}
+    assert finished.json()["status"] == "registered"
+    assert finished.json()["profile"] == "local-first-enrollment-result.v1"
+    assert len(finished.json()["csrf_token"]) == 43
+    assert settings.bridge_session_cookie_name in finished.cookies
+    with store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM bridge_sessions").fetchone()[0] == 1
     assert store.webauthn_credential(CREDENTIAL_ID, principal_id=PRINCIPAL_ID)
 
 
@@ -717,7 +724,8 @@ def test_second_registration_is_refused_and_original_passkey_still_signs_in(
         pending = client.post("/api/v1/webauthn/registration/begin", headers=headers)
         assert first.status_code == pending.status_code == 200
         assert "excludeCredentials" not in first.json()
-        finished = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+        finished = client.post("/api/v1/webauthn/registration/finish",
+            headers={**headers, "Cookie": "__Host-first_enrollment=" + first.cookies["__Host-first_enrollment"]},
             json=_registration_payload(private_key, first.json()["challenge"]))
         assert finished.status_code == 200
         for route, body in [
@@ -750,10 +758,12 @@ def test_registration_finish_maps_atomic_duplicate_refusal_to_generic_400(
     with TestClient(application, base_url=ORIGIN) as client:
         pending = [client.post("/api/v1/webauthn/registration/begin", headers=headers) for _ in range(2)]
         assert all(response.status_code == 200 for response in pending)
-        first = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+        first = client.post("/api/v1/webauthn/registration/finish",
+            headers={**headers, "Cookie": "__Host-first_enrollment=" + pending[0].cookies["__Host-first_enrollment"]},
             json=_registration_payload(ec.generate_private_key(ec.SECP256R1()), pending[0].json()["challenge"]))
         assert first.status_code == 200
-        second = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+        second = client.post("/api/v1/webauthn/registration/finish",
+            headers={**headers, "Cookie": "__Host-first_enrollment=" + pending[1].cookies["__Host-first_enrollment"]},
             json=_registration_payload(ec.generate_private_key(ec.SECP256R1()), pending[1].json()["challenge"], credential_bytes=b"second-synthetic-credential"))
         assert second.status_code == 400
         assert second.json() == {"detail": "WebAuthn ceremony could not be completed"}

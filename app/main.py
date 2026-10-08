@@ -15,6 +15,7 @@ from app.api.endpoints import (
     frontend,
     history,
     insights,
+    onboarding,
     transport_ws,
     webauthn,
 )
@@ -207,6 +208,8 @@ app.include_router(transport_ws.router, tags=["Transport"])
 app.include_router(history.router)
 app.include_router(insights.router)
 app.include_router(webauthn.router)
+app.include_router(onboarding.router)
+app.include_router(onboarding.resume_router)
 app.include_router(creator_vault.router)
 app.include_router(companion_pairing.router)
 app.include_router(capability_license.router)
@@ -231,6 +234,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     global _grant_refresh
+    await onboarding.stop_hosted()
     if _grant_refresh is not None:
         await _grant_refresh.stop()
         _grant_refresh = None

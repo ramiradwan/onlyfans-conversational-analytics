@@ -1,0 +1,80 @@
+import { createOnboardingWorkspace } from './onboarding-workspace.mjs';
+import { LOCAL_SERVICE_ORIGIN } from '../transport/local-service-endpoints.mjs';
+import { legalReleaseBindings } from './legal-release-bindings.mjs';
+import { onboardingHostedOrigin } from './onboarding-release-config.mjs';
+
+export const WORKSPACE_MESSAGE_TYPE = 'ofca.workspace.v1';
+const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+export function productionWorkspaceRoutes(chromeApi) {
+  return { extension: chromeApi.runtime.getURL('setup.html'), hosted: onboardingHostedOrigin === null ? null : `${onboardingHostedOrigin}/public/onboarding`,
+    provisioning: `${LOCAL_SERVICE_ORIGIN}/provisioning`, bridge: `${LOCAL_SERVICE_ORIGIN}/` };
+}
+export function registerOnboardingWorkspace({ chromeApi, consentController, identityBridge }) {
+  const workspace = createOnboardingWorkspace({ chromeApi, routes: productionWorkspaceRoutes(chromeApi) });
+  let scopePromise = null, account = null;
+  async function scope() {
+    if (scopePromise) return scopePromise;
+    scopePromise = (async () => {
+      const record = await workspace.read();
+      const source = JSON.stringify(legalReleaseBindings()?.instruments ?? null);
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source)));
+      const disclosure_bundle_id = [...digest].map((value) => value.toString(16).padStart(2, '0')).join('');
+      const current = { scope_id: record?.draft_scope.disclosure_bundle_id === disclosure_bundle_id
+        ? record.draft_scope.scope_id : crypto.randomUUID(), disclosure_bundle_id };
+      await workspace.refreshScope(current); return current;
+    })().finally(() => { scopePromise = null; });
+    return scopePromise;
+  }
+  identityBridge.onAccountChange?.(() => {
+    void (async () => {
+      const observed = await identityBridge.currentAccountId();
+      if (observed === account) return; account = observed;
+      const previous = await scope();
+      await workspace.refreshScope({ ...previous, scope_id: crypto.randomUUID() });
+    })().catch(() => undefined);
+  });
+  async function open({ section = '', anchorTab = null } = {}) {
+    const draft_scope = await scope();
+    // An exact existing setup tab wins, including a page open before installation.
+    let record = await workspace.read();
+    if (!record) {
+      await workspace.resumeExisting({ draft_scope, route: 'extension' });
+      record = await workspace.read();
+    }
+    const result = await workspace.open({ journey_id: record?.journey_id ?? crypto.randomUUID(), route: 'extension', explicit: true, draft_scope });
+    // Intent is UI only and does not grant Full consent or start pairing.
+    if (['full', 'desktop'].includes(section)) await chromeApi.storage.session.set({ onboarding_full_intent_v1: result.journey_id });
+    if (anchorTab && result.tab_id !== anchorTab.id) {
+      // Legacy desktop callers may not have a journey reference. They keep the
+      // supported route; no arbitrary existing page can be adopted or navigated.
+    }
+    return result;
+  }
+  const listener = (message, sender, reply) => {
+    if (message?.type !== WORKSPACE_MESSAGE_TYPE) return false;
+    const run = async () => {
+      const admitted = await workspace.admit(sender);
+      if (exact(message, ['type', 'action']) && message.action === 'read') {
+        if (admitted.route === 'hosted') throw Error('workspace_local_only');
+        return admitted.record;
+      }
+      if (exact(message, ['type', 'action', 'route']) && message.action === 'navigate') return workspace.navigate(sender, { route: message.route });
+      if (admitted.route !== 'extension') throw Error('workspace_draft_owner');
+      if (exact(message, ['type', 'action', 'scope_id', 'draft']) && message.action === 'draft') {
+        return workspace.saveDraft(sender, { scope_id: message.scope_id, draft: message.draft });
+      }
+      throw Error('workspace_request_invalid');
+    };
+    void run().then((result) => reply({ ok: true, result }), () => reply({ ok: false, code: 'workspace_unavailable' }));
+    return true;
+  };
+  chromeApi.runtime.onMessage.addListener(listener);
+  chromeApi.runtime.onMessageExternal?.addListener(listener);
+  chromeApi.action?.onClicked?.addListener(() => { void open().catch(() => undefined); });
+  chromeApi.runtime.onInstalled?.addListener(({ reason }) => {
+    if (reason !== 'install') return;
+    void scope().then((draft_scope) => workspace.resumeExisting({ draft_scope, route: 'extension' })).catch(() => undefined);
+  });
+  return Object.freeze({ workspace, open });
+}

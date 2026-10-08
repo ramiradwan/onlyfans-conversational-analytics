@@ -42,15 +42,15 @@ async function readFailure() {
 describe('WebAuthn access view', () => {
 
   it.each([
-    [new Error('Login refused'), "Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit."],
-    [{ name: 'NotAllowedError' }, 'Sign-in was cancelled or timed out. Try again.'],
-  ])('reports the login step after enrollment succeeds', async (failure, message) => {
-    const api = { enroll: vi.fn(async () => {}), login: vi.fn(() => Promise.reject(failure)) };
+    [new Error('Finish response lost'), 'Passkey setup could not be confirmed.'],
+    [{ name: 'NotAllowedError' }, 'Passkey setup could not be confirmed.'],
+  ])('retains an unconfirmed enrollment without starting another ceremony', async (failure, message) => {
+    const api = { enroll: vi.fn(() => Promise.reject(failure)), login: vi.fn(async () => {}) };
     const view = renderView(api);
     fireEvent.click(view.enroll());
     expect((await readFailure()).textContent).toBe(message);
     expect(api.enroll).toHaveBeenCalledTimes(1);
-    expect(api.login).toHaveBeenCalledTimes(1);
+    expect(api.login).not.toHaveBeenCalled();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
@@ -67,7 +67,7 @@ describe('WebAuthn access view', () => {
     expect(screen.queryByText('Already set up on this computer?')).toBeNull();
   });
 
-  it('enrolls before signing in and reports the authenticated session', async () => {
+  it('reports the first authenticated session after one creation ceremony', async () => {
     const order: string[] = [];
     const api: WebAuthnApi = {
       enroll: vi.fn(async () => { order.push('enroll'); }),
@@ -78,7 +78,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.enroll());
 
     await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
-    expect(order).toEqual(['enroll', 'login']);
+    expect(order).toEqual(['enroll']);
   });
 
   it('signs in an enrolled device without enrolling again', async () => {
@@ -102,11 +102,11 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe("Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit.");
+    expect(alert.textContent).toBe('Sign-in did not finish.');
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
-  it('tells the person a closed or timed-out prompt was cancelled', async () => {
+  it('does not infer why the browser refused a ceremony', async () => {
     const rejection = { name: 'NotAllowedError' };
     const api: WebAuthnApi = {
       enroll: vi.fn(),
@@ -117,7 +117,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe('Sign-in was cancelled or timed out. Try again.');
+    expect(alert.textContent).toBe('Sign-in did not finish.');
     expect(alert.closest('[data-visual="passkey-card"]')).toBeNull();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
@@ -132,7 +132,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.enroll());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe("Couldn't set up a passkey. If you already have one for this app, use the same browser profile and sign in.");
+    expect(alert.textContent).toBe('Passkey setup could not be confirmed.');
     expect(api.login).not.toHaveBeenCalled();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });

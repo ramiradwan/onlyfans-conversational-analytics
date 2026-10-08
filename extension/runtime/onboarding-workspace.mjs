@@ -2,6 +2,8 @@
 // consent, authenticate a creator, pair a computer, or start capture.
 export const WORKSPACE_RECORD_KEY = 'onboarding_workspace_v1';
 export const WORKSPACE_TAB_KEY = 'onboarding_workspace_tab_v1';
+export const WORKSPACE_ACTIVITY_KEY = 'onboarding_workspace_activity_v1';
+const MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const ROUTES = ['extension', 'hosted', 'provisioning', 'bridge'];
 const DRAFT_FIELDS = ['terms_checked', 'risk_checked', 'full_checked'];
@@ -14,10 +16,11 @@ const exact = (value, keys) => isObject(value) && Object.keys(value).length === 
 function fail(code) { throw new Error(code); }
 
 /** Build-time routes, never a URL supplied by an incoming command. */
-export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, routes }) {
+export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, routes, now = Date.now }) {
   if (!exact(routes, ROUTES)) fail('workspace_routes_invalid');
   const registered = new Map();
   for (const route of ROUTES) {
+    if (route === 'hosted' && routes[route] === null) continue;
     const url = new URL(routes[route]);
     const extension = chromeApi.runtime.getURL('setup.html');
     if (url.username || url.password || url.search || url.hash || url.href !== routes[route]
@@ -35,7 +38,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     return operation;
   };
   const reference = (route, journeyId) => {
-    if (!ROUTES.includes(route) || !UUID.test(journeyId)) fail('workspace_reference_invalid');
+    if (!ROUTES.includes(route) || !routes[route] || !UUID.test(journeyId)) fail('workspace_reference_invalid');
     return `${routes[route]}#journey=${journeyId}`;
   };
   function parse(value) {
@@ -49,7 +52,13 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     } catch { /* Unregistered or malformed navigation is never adopted. */ }
     return null;
   }
+  const saveRecord = (record) => chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record, [WORKSPACE_ACTIVITY_KEY]: now() });
   const readRecord = async () => {
+    const touched = (await chromeApi.storage.local.get(WORKSPACE_ACTIVITY_KEY))[WORKSPACE_ACTIVITY_KEY];
+    if (Number.isFinite(touched) && (now() - touched > MAX_IDLE_MS || touched > now())) {
+      await chromeApi.storage.local.remove?.([WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY]);
+      return null;
+    }
     const record = (await chromeApi.storage.local.get(WORKSPACE_RECORD_KEY))[WORKSPACE_RECORD_KEY];
     if (!exact(record, ['version', 'journey_id', 'route', 'draft_scope', 'draft']) || record.version !== 1
       || !UUID.test(record.journey_id) || !ROUTES.includes(record.route)
@@ -64,11 +73,15 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     ? chromeApi.runtime.getContexts({ contextTypes: ['TAB'] }) : [];
   const getTab = async (id) => {
     const tab = await chromeApi.tabs.get(id);
-    // Even this extension's own URL may be withheld by tabs.get without tabs
-    // permission. getContexts proves which packaged document occupies the tab.
-    if (!tab.url) {
-      const context = (await extensionContexts()).find((value) => value.tabId === id && value.frameId === 0);
-      if (context) return { ...tab, url: context.documentUrl, documentId: context.documentId };
+    const context = (await extensionContexts()).find((value) => value.tabId === id && value.frameId === 0);
+    // Always compare the current document, including reload to the same URL.
+    if (context) return { ...tab, url: context.documentUrl, documentId: context.documentId };
+    if (tab.url && parse(tab.url) && chromeApi.scripting?.executeScript) {
+      const documents = await chromeApi.scripting.executeScript({ target: { tabId: id, frameIds: [0] },
+        world: 'ISOLATED', func: () => null });
+      const document = documents.find((value) => value.frameId === 0);
+      if (!document?.documentId) fail('workspace_document_unavailable');
+      return { ...tab, documentId: document.documentId };
     }
     return tab;
   };
@@ -122,6 +135,23 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
   return Object.freeze({
     reference,
     read: () => serialize(readRecord),
+    admit: (sender) => serialize(async () => { const { record, parsed } = await admitted(sender); return { record, route: parsed.route }; }),
+    focus: (sender) => serialize(async () => {
+      const { tab, parsed } = await admitted(sender);
+      if (parsed.route === 'hosted') fail('workspace_local_only');
+      await chromeApi.tabs.update(tab.id, { active: true });
+      await chromeApi.windows.update(tab.windowId, { focused: true });
+    }),
+    refreshScope: (scope) => serialize(async () => {
+      if (!validScope(scope)) fail('workspace_scope_invalid');
+      const record = await readRecord();
+      if (!record) return null;
+      if (record.draft_scope.disclosure_bundle_id !== scope.disclosure_bundle_id) record.draft = blankDraft();
+      else if (record.draft_scope.scope_id !== scope.scope_id) record.draft.full_checked = false;
+      record.draft_scope = { ...scope };
+      await saveRecord(record);
+      return record;
+    }),
     // A worker-only install continuation. Adopts a uniquely identified existing
     // journey without focusing it. The route change refreshes only its setup
     // document when Chrome cannot expose runtime to a pre-install document.
@@ -138,7 +168,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       record ??= { version: 1, journey_id: journeyId, route: request.route,
         draft_scope: { ...request.draft_scope }, draft: blankDraft() };
       record.route = request.route;
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       await storeTab(tab, record.journey_id);
       await chromeApi.tabs.update(tab.id, { url: reference(request.route, record.journey_id) });
       return { journey_id: record.journey_id, tab_id: tab.id, route: record.route };
@@ -155,7 +185,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       record ??= { version: 1, journey_id: request.journey_id, route: request.route,
         draft_scope: { ...request.draft_scope }, draft: blankDraft() };
       if (tab) record.route = parse(tab.url).route;
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       const selected = tab ?? await chromeApi.tabs.create({ url, active: true });
       await storeTab(selected, record.journey_id);
       if (tab) await chromeApi.tabs.update(tab.id, { active: true });
@@ -168,7 +198,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       const url = reference(request.route, record.journey_id);
       await chromeApi.tabs.update(tab.id, { url });
       record.route = request.route;
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       return { journey_id: record.journey_id, tab_id: tab.id, route: record.route };
     }),
     saveDraft: (sender, request) => serialize(async () => {
@@ -178,7 +208,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       const { record } = await admitted(sender);
       if (request.scope_id !== record.draft_scope.scope_id) fail('workspace_draft_stale');
       record.draft = { ...draft };
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       return { ...record.draft };
     }),
     resetDraftScope: (sender, request) => serialize(async () => {
@@ -191,7 +221,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       if (request.draft_scope.disclosure_bundle_id !== record.draft_scope.disclosure_bundle_id) record.draft = blankDraft();
       else record.draft.full_checked = false;
       record.draft_scope = { ...request.draft_scope };
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       return { draft_scope: { ...record.draft_scope }, draft: { ...record.draft } };
     }),
   });

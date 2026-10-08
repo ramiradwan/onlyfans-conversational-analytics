@@ -187,6 +187,7 @@ test('hooked identity responses bind the observed account to the current documen
             callback({ ok: true, mode: 'full', consent_epoch: CONSENT.consent_epoch });
             return;
           }
+          if (message.type === 'ofca.observer.state') { callback({ ok: true }); return; }
           const listener = h.internalListeners[0];
           assert.equal(listener(message, CONTENT_SENDER, callback), true);
         },
@@ -199,14 +200,16 @@ test('hooked identity responses bind the observed account to the current documen
     bundledSource('../content.js').then((source) => vm.runInContext(source, contentContext)),
   ]);
 
+  dispatchPageMessage({ type: 'ofca.capture.control', version: 1, action: 'resume' });
   await pageWindow.fetch('/api2/v2/users/me');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(posts[0].message.type, PROVISIONING_IDENTITY_MESSAGE_TYPE);
-  assert.equal(posts[0].message.page_epoch, PAGE_EPOCH_B);
-  assert.deepEqual(posts[0].message.authenticated_profile, {
+  const observedPosts = posts.filter(({ message }) => message.type === PROVISIONING_IDENTITY_MESSAGE_TYPE);
+  assert.equal(observedPosts.length > 0, true);
+  assert.equal(observedPosts[0].message.page_epoch, PAGE_EPOCH_B);
+  assert.deepEqual(observedPosts[0].message.authenticated_profile, {
     creator_account_id: 'creator-from-platform',
   });
-  dispatchPageMessage(posts[0].message);
+  dispatchPageMessage(observedPosts[0].message);
   await new Promise((resolve) => setImmediate(resolve));
 
   const signedIn = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
@@ -223,8 +226,9 @@ test('hooked identity responses bind the observed account to the current documen
   identityBody = { user: null };
   await pageWindow.fetch('/api2/v2/init');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(posts[1].message.page_epoch, PAGE_EPOCH_C);
-  dispatchPageMessage(posts[1].message);
+  const signedOutPost = posts.filter(({ message }) => message.type === 'ofca.provisioning.identity.reset').at(-1);
+  assert.equal(signedOutPost.message.page_epoch, PAGE_EPOCH_C);
+  dispatchPageMessage(signedOutPost.message);
   await new Promise((resolve) => setImmediate(resolve));
 
   const signedOut = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);

@@ -157,7 +157,7 @@ test('the reported browser state is closed and identifier-free', () => {
   assert.equal(browserSurface({ consent: { ...base, consent: { mode: 'paused', resume_mode: 'full' } } }).capture, 'paused');
   assert.equal(browserSurface({ consent: { ...base, consent: { mode: 'paused', resume_mode: 'preview' } } }).capture, 'off');
   assert.equal(browserSurface({ consent: { ...base, phase: 'permission_required' } }).site_access, 'needs_approval');
-  assert.equal(browserSurface({ consent: { ...base, reload_required: true } }).site_access, 'reload_required');
+  assert.equal(browserSurface({ consent: { ...base, reload_required: true } }).site_access, 'granted');
   assert.equal(browserSurface({ consent: { ...base, history_permission: false } }).history_permission, 'missing');
   assert.equal(browserSurface({ consent: base, legal: { requires_reauthorization: true } }).legal_review_required, true);
 });

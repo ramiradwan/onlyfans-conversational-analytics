@@ -1,6 +1,6 @@
 # ADR 0047: Keep onboarding in one persistent browser workspace
 
-- Status: Accepted for implementation; phase 2 qualification gates still apply.
+- Status: Accepted for implementation; Phase 3 clarifications independently reviewed 2026-10-09. Packaged and live qualification gates still apply.
 - Date: 2026-10-08
 - Decision authority: approved revised onboarding plan and completed reference review.
 - Amends: ADR 0045, Desktop port opening behavior, Pushed state's browser-port liveness inference, and Controls after pairing's popup ownership. Other pairing and authorization guarantees remain unchanged.
@@ -62,6 +62,32 @@ snapshot. An old source epoch cannot reactivate itself by sending a larger revis
 Every pending command has an operation ID and account/consent generations. Delivery is
 not confirmation. Unknown outcomes retain uncertainty until the owner reconciles them.
 
+Phase 3 integration clarification: pause/resume rotates the consent controller's
+real capture scope. Preserve this fencing and add `local-onboarding-result.v2`
+rather than change v1 semantics. The result identifies both the original command
+scope and the committed scope/revision. A client requires the negotiated
+`local-onboarding.command-result.v2` capability, a matching original operation,
+the current committed scope and revision, and the same current account before
+confirming it. No result can revive a previous account or imply a missing commit.
+The additive schema and negative vectors are generated with the local contract;
+no hosted profile or legacy desktop/runtime document changes.
+
+Commands on the negotiated v2 port also name the authenticated owner's epoch.
+Receipts identify that original epoch and the current committed epoch separately;
+counter values cannot be compared across worker restarts. Reconnect performs a
+read-only receipt lookup, with durable account/consent/effect checks at the owner.
+It never retries an uncertain mutation to discover its outcome.
+
+Workspace discovery needs host access to the exact first-party local origin and
+the configured hosted browser origin. The browser manifest expresses host patterns;
+the coordinator additionally enforces exact port, path, fragment, current document
+and owning tab before reading local state or accepting commands. It receives no
+broad tabs/history permission. Hosted documents may request registered navigation,
+but cannot read local state or command capture. Release builds read the same
+release-owned customer configuration as Brain; an empty development configuration
+supports Preview and cannot produce a release package. The provisioning workspace
+path is exactly `/provisioning` without a trailing slash.
+
 Use push channels, not periodic onboarding-status requests. Bounded retry, liveness,
 expiry timers, and wake reconciliation remain permitted. Target active local updates
 at p95 <=250 ms and p99 <=1 s after commit, with healthy convergence <=1 s. These are
@@ -82,6 +108,42 @@ an ambiguous response uses reconciliation and fresh proof where needed. Registra
 does not replace hosted identity. Local session cookies stay HttpOnly; only the local
 CSRF value appears in the registration result body. Neither travels via a URL or hosted
 service.
+
+### Phase 3 clarification: native entry and receiving setup codes
+
+The prohibition on credentials in navigation applies to the registered workspace
+and all browser-to-browser handoffs. The existing native launcher has one narrow,
+local bootstrap exception before workspace admission: its single-use entry code
+goes only to the fixed loopback bootstrap route. Runtime entry defaults to 30 seconds
+and is capped at 120 seconds; provisioning entry is capped at 300 seconds. Consumption
+immediately redirects to a credential-free local page. These responses use no-store
+and no-referrer; production local-server access logs are disabled. The native launcher
+checks the loopback process image and user, bounds the code, and constructs the fixed
+origin itself. This code never reaches hosted setup, the extension coordinator, a
+workspace record, or a return URL. This is a proposed Phase 3 clarification of the
+pre-existing native bootstrap, subject to independent architecture review before commit.
+
+A live authenticated local subscription suppresses another launcher-created tab.
+Its focus event asks an installed extension to focus the admitted workspace. Without
+the extension, browser scripting cannot reliably bring the existing tab or browser
+window to the foreground, including a local tab with a live subscription. The native
+app gives factual feedback for that known-open local workspace while suppressing a
+duplicate. It also cannot reliably locate an arbitrary browser tab while that tab is
+visiting hosted setup. If no live local subscription proves the workspace
+is reachable, the native recovery action asks whether to open setup; it does not
+claim that a browser tab is open or that the app connection succeeded.
+
+Receiving setup codes use a dedicated, expiring workflow key. They do not grant
+creator identity, local authentication, consent, installation registration, pairing,
+or commercial rights. The hosted receiver separately authenticates the user and
+checks current organization/creator authority. Browser receivers sign through the
+admitted extension workspace. Desktop receivers use same-tab, exact-path form posts
+containing only the public request/challenge/proof and journey UUID. The local return
+restores the original HttpOnly cookie context; an authenticated read and CSRF-protected
+signing request must match the durable local request. A public entry cookie provides
+no signing authority. The return to hosted setup similarly requires its independent
+hosted session and CSRF check. No local cookie, CSRF value or private key is forwarded.
+An unknown signing result is not automatically retried; recovery obtains fresh proof.
 
 ## Attachment and controls
 

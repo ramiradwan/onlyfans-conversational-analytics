@@ -61,6 +61,9 @@ const EXPECTED_OPTIONAL_PERMISSIONS = Object.freeze(['webRequest']);
 const EXPECTED_OPTIONAL_HOST_PERMISSIONS = Object.freeze([
   'https://onlyfans.com/*',
 ]);
+let workspaceHostedOrigin = null;
+const workspaceHostPermissions = () => ['http://bridge.localhost/*', ...(workspaceHostedOrigin ? [`${workspaceHostedOrigin}/*`] : [])];
+const workspaceExternalMatches = () => [...EXPECTED_EXTERNAL_MATCHES, ...(workspaceHostedOrigin ? [`${workspaceHostedOrigin}/public/onboarding`] : [])];
 const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['http://bridge.localhost:17871/*']);
 const EXPECTED_EXTENSION_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;";
 const FORBIDDEN_PERMISSIONS = Object.freeze([
@@ -425,6 +428,11 @@ async function compileOnce(signingRule, legalBindings) {
   const plugins = legalBindings === null
     ? [packagedSignerPlugin(signingRule)]
     : [packagedSignerPlugin(signingRule), legalBindingsPlugin(legalBindings)];
+  plugins.push({ name: 'onboarding-release-origin', setup(context) {
+    context.onLoad({ filter: /[\\/]runtime[\\/]onboarding-release-config\.mjs$/ }, () => ({
+      contents: `export const onboardingHostedOrigin = ${JSON.stringify(workspaceHostedOrigin)};`, loader: 'js',
+    }));
+  } });
   const common = {
     bundle: true,
     charset: 'utf8',
@@ -513,13 +521,13 @@ function auditManifest(manifest) {
   assert.equal(deriveExtensionId(manifest.key), EXPECTED_EXTENSION_ID);
   assert.deepEqual(manifest.permissions, EXPECTED_PERMISSIONS);
   assert.deepEqual(manifest.optional_permissions, EXPECTED_OPTIONAL_PERMISSIONS);
-  assert.equal(manifest.host_permissions, undefined);
+  assert.deepEqual(manifest.host_permissions, workspaceHostPermissions());
   assert.deepEqual(manifest.optional_host_permissions, EXPECTED_OPTIONAL_HOST_PERMISSIONS);
-  assert.deepEqual(manifest.externally_connectable?.matches, EXPECTED_EXTERNAL_MATCHES);
+  assert.deepEqual(manifest.externally_connectable?.matches, workspaceExternalMatches());
   assert.equal(manifest.background?.service_worker, 'background.js');
   assert.equal(manifest.background?.type, 'module');
   assert.equal(manifest.content_scripts, undefined);
-  assert.equal(manifest.action?.default_popup, 'popup.html');
+  assert.equal(manifest.action?.default_popup, undefined);
   assert.deepEqual(manifest.options_ui, { page: 'options.html', open_in_tab: true });
   const declared = new Set([
     ...(manifest.permissions ?? []),
@@ -707,6 +715,7 @@ async function auditArtifactView(view, {
   assert.equal(metadata.target, CHROME_TARGET);
   assert.equal(metadata.extension_version, manifest.version);
   assert.equal(metadata.determinism_verified, true);
+  assert.equal(metadata.workspace_hosted_origin, workspaceHostedOrigin);
   verifiedSnow = await auditPackagedSnow();
   assert.deepEqual(metadata.companion_snow, verifiedSnow.release);
   const snowBytes = await view.read(SNOW_WASM_FILE);
@@ -892,6 +901,8 @@ export async function auditChromeArchive(
 
 async function writeArtifact(compiled, signingRule, extensionConfig, legalBindings) {
   const sourceManifest = await readJson(path.join(ROOT, 'manifest.json'));
+  sourceManifest.host_permissions = workspaceHostPermissions();
+  sourceManifest.externally_connectable.matches = workspaceExternalMatches();
   auditManifest(sourceManifest);
   // An output option must never turn a build into deletion of an arbitrary tree.
   // Reuse only a directory owned by a prior build; candidates start empty.
@@ -988,6 +999,7 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     target: CHROME_TARGET,
     determinism_verified: true,
     privacy_policy_configured: extensionConfig.privacy_policy_url !== '',
+    workspace_hosted_origin: workspaceHostedOrigin,
     outputs,
   };
   await writeFile(path.join(DIST, BUILD_METADATA_FILE), stableJson(metadata), 'utf8');
@@ -1027,7 +1039,27 @@ async function buildArtifact(
   return metadata;
 }
 
+export function validateOnboardingReleaseConfig(document, { required = false } = {}) {
+  assert.deepEqual(Object.keys(document).sort(), ['hosted_api_origin', 'hosted_onboarding_url', 'schema']);
+  assert.equal(document.schema, 'ofca-customer-release/v1');
+  if (document.hosted_onboarding_url === '' && document.hosted_api_origin === '') {
+    assert.equal(required, false, 'Full onboarding packaging requires a hosted release origin');
+    return null;
+  }
+  const url = new URL(document.hosted_onboarding_url);
+  const api = new URL(document.hosted_api_origin);
+  for (const value of [url, api]) {
+    assert.equal(value.protocol, 'https:');
+    assert.ok(!value.username && !value.password && !value.search && !value.hash && !value.hostname.endsWith('.invalid'));
+  }
+  assert.equal(url.pathname, '/public/onboarding');
+  assert.equal(api.pathname, '/');
+  return url.origin;
+}
+
 async function main() {
+  workspaceHostedOrigin = validateOnboardingReleaseConfig(await readJson(path.resolve(argumentValue('--customer-release-config')
+    ?? path.join(ROOT, '../app/core/customer-release.json'))), { required: process.argv.includes('--package') || process.argv.includes('--audit-package') });
   if (process.argv.includes('--audit-package')) {
     const signingRule = await loadSigningRule({ required: true });
     const legalBindings = await verifyLegalReleaseBindings({ required: true });

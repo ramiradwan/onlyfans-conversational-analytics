@@ -88,8 +88,13 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
         "provisioning.html",
         "creator-platform-data-risk-disclosure.html",
         "provisioning.js",
+        "resume.js",
     ):
         shutil.copy2(ROOT / "app" / "provisioning" / name, provisioning / name)
+    shared = stage / "_internal" / "shared" / "onboarding"
+    shared.mkdir(parents=True)
+    for name in ("client", "projection", "json", "sse"):
+        shutil.copy2(ROOT / "shared" / "onboarding" / (name + ".mjs"), shared / (name + ".mjs"))
     shutil.copytree(ROOT / "app" / "static", internal / "app" / "static")
     shutil.copytree(ROOT / "contracts", internal / "contracts")
     for catalog in SQL_CATALOGS:

@@ -64,6 +64,13 @@ def build():
         source=enum("brain", "extension"), epoch=UUID, revision=COUNT, **scope,
         status=enum("confirmed", "rejected", "unknown"),
         reason=enum("none", "stale_scope", "not_authorized", "not_ready", "unconfirmed")))
+    # Additive result for commands whose committed effect rotates consent.
+    # v1 remains unchanged; its generation fields cannot mean two scopes.
+    variants.append(closed(profile={"const": "local-onboarding-result.v2"},
+        journey_id=UUID, operation_id=UUID, source=enum("brain", "extension"), epoch=UUID,
+        revision=COUNT, **scope, command_epoch=UUID, command_account_generation=COUNT, command_consent_generation=COUNT,
+        status=enum("confirmed", "rejected", "unknown"),
+        reason=enum("none", "stale_scope", "not_authorized", "not_ready", "unconfirmed")))
     variants.append(profile("local-installation-discovery", hint={"const": "extension_present"},
         version={"const": 1}))
     draft_scope = closed(scope_id=UUID, disclosure_bundle_id=DIGEST)
@@ -110,6 +117,21 @@ def build():
         case("result-" + status, dict(profile="local-onboarding-result.v1", journey_id=JOURNEY,
              operation_id=OPERATION, source="extension", epoch=EPOCH, revision=1,
              account_generation=1, consent_generation=2, status=status, reason="none"))
+    result_v2 = dict(profile="local-onboarding-result.v2", journey_id=JOURNEY,
+        operation_id=OPERATION, source="extension", epoch=EPOCH, revision=2,
+        command_epoch=EPOCH, command_account_generation=1, command_consent_generation=2,
+        account_generation=1, consent_generation=3, status="confirmed", reason="none")
+    case("result-v2-generation-changing-commit", result_v2)
+    case("result-v2-missing-command-epoch", {k: v for k, v in result_v2.items() if k != "command_epoch"}, False)
+    case("result-v2-invalid-command-epoch", {**result_v2, "command_epoch": "old"}, False)
+    for field in ("command_account_generation", "command_consent_generation"):
+        missing = dict(result_v2)
+        del missing[field]
+        case("result-v2-missing-" + field, missing, False)
+        for suffix, invalid in (("negative", -1), ("bool", True), ("unsafe", 9007199254740992)):
+            case("result-v2-" + field + "-" + suffix, {**result_v2, field: invalid}, False)
+    case("result-v1-rejects-v2-scope", {**result_v2, "profile": "local-onboarding-result.v1"}, False)
+    case("result-v2-no-telemetry", {**result_v2, "data": {}}, False)
     discovery = dict(profile="local-installation-discovery.v1", hint="extension_present", version=1)
     case("discovery", discovery)
     for field in ("account", "installed", "session", "grant", "metadata"):

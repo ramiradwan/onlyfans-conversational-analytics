@@ -1,4 +1,4 @@
-import { UI_CLEAR_PREVIEW_MESSAGE_TYPE, UI_DELETE_LOCAL_DATA_MESSAGE_TYPE, UI_RELOAD_TABS_MESSAGE_TYPE } from './runtime/consent-controller.mjs';
+import { UI_CLEAR_PREVIEW_MESSAGE_TYPE, UI_DELETE_LOCAL_DATA_MESSAGE_TYPE } from './runtime/consent-controller.mjs';
 import { createSurfaceClient, openSurface, send } from './ui/surface-client.mjs';
 import { phaseLabel } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
@@ -11,8 +11,8 @@ const finishHandoff = createHandoffFinisher(() => client.model.config.dashboard_
 let failed = false;
 const client = createSurfaceClient((model) => { if (model.status) failed = false; render(model); }, () => { failed = true; render(client.model); });
 const page = createPageActions(client, render);
-// Pause lives in the popup, or in the desktop app while it can control this browser.
-const mutations = ['revoke', 'forget-companion', 'history', 'clear-preview', 'delete-local-data', 'restore-access', 'reload-tabs'];
+// Pause lives in the setup page, or in the desktop app while it can control this browser.
+const mutations = ['revoke', 'forget-companion', 'history', 'clear-preview', 'delete-local-data', 'restore-access'];
 function render(model) {
   const { status, legal } = model;
   renderLoading(status, failed);
@@ -24,7 +24,7 @@ function render(model) {
   text('mode-label', phaseLabel(status));
   text('site-access', status.onlyfans_permission ? 'Allowed for onlyfans.com' : 'Not allowed for onlyfans.com');
   show('revoke', status.onlyfans_permission || !['off', 'revoked'].includes(status.consent.mode));
-  show('restore-access', status.phase === 'permission_required'); show('reload-tabs', status.reload_required === true);
+  show('restore-access', status.phase === 'permission_required');
   text('brain-status', model.desktopRuntimeReachable ? 'Available on this computer.'
     : 'Open the desktop app to manage your analysis and stored messages.');
   renderReadiness(model);
@@ -74,7 +74,6 @@ destructive('delete-local-data', 'Delete extension data?',
   'Delete extension data', () => send({ type: UI_DELETE_LOCAL_DATA_MESSAGE_TYPE }), 'Extension data deleted. Desktop-stored messages are unchanged.');
 page.bind('clear-preview', () => send({ type: UI_CLEAR_PREVIEW_MESSAGE_TYPE }), 'Preview counts cleared.');
 page.bind('restore-access', () => restoreAccess(client.model));
-page.bind('reload-tabs', () => send({ type: UI_RELOAD_TABS_MESSAGE_TYPE }));
 page.bind('history', () => client.model.status.history_permission
   ? chrome.tabs.create({ url: client.model.config.history_settings_url }) : allowHistory(client.model));
 page.bind('open-setup', () => openSurface('setup'));

@@ -49,7 +49,7 @@ test('the stage follows the extension-owned prerequisites in order', () => {
   assert.equal(stage({ consent: consent('preview'), legal: legal() }), 'needs_full');
   assert.equal(stage({ consent: consent('paused'), legal: legal() }), 'paused');
   assert.equal(stage({ consent: consent('full', { phase: 'permission_required' }), legal: legal() }), 'needs_site_access');
-  assert.equal(stage({ consent: consent('full', { reload_required: true }), legal: legal() }), 'needs_site_access');
+  assert.equal(stage({ consent: consent('full', { reload_required: true }), legal: legal() }), 'ready_to_pair');
   assert.equal(stage({ consent: consent('full'), legal: legal(), pairing: { state: 'setup_incomplete' } }), 'needs_account');
   assert.equal(stage({ consent: consent('full'), legal: legal(), pairing: { state: 'unpaired' } }), 'ready_to_pair');
   assert.equal(stage({ consent: consent('full'), legal: legal(), pairing: { state: 'pairing_failed' } }), 'ready_to_pair');

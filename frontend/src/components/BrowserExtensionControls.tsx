@@ -12,6 +12,7 @@ import {
   type CaptureAction,
 } from '../services/browserControlApi';
 import type { ExtensionPort, ExtensionStep } from '../services/extensionPort';
+import { currentOnboardingClient, onboardingView, subscribeOnboarding } from '../services/onboardingSession';
 import type { ExtensionConnection } from '../utils/statusCopy';
 import { StatusLine } from './ui/ReservedRegion';
 
@@ -26,7 +27,7 @@ type Notice = 'unreachable' | 'failed' | 'no_response' | null;
  * changes it locally. Permission prompts open the extension's own page, because
  * the browser requires the click there.
  */
-export function BrowserExtensionControls({ api, browser, canManage, connection, port }: {
+export function BrowserExtensionControls({ api, browser: publishedBrowser, canManage, connection, port }: {
   api: BrowserControlApi;
   browser: BrowserSurfacePayload | null;
   canManage: boolean;
@@ -35,22 +36,41 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   port: ExtensionPort;
 }) {
   const extension = useSyncExternalStore(port.subscribe, port.getState, port.getState);
+  const onboarding = useSyncExternalStore(subscribeOnboarding, onboardingView, onboardingView);
+  const owner = onboarding?.sources.extension;
+  const snapshot = owner?.certain ? owner.snapshot : null;
+  const browser = onboarding ? snapshot ? {
+    capture: snapshot.facts.capture as BrowserSurfacePayload['capture'],
+    site_access: snapshot.facts.site_access as BrowserSurfacePayload['site_access'],
+    legal_review_required: snapshot.facts.consent !== 'valid',
+    history_permission: publishedBrowser?.history_permission ?? 'missing',
+    reported_at: publishedBrowser?.reported_at ?? '',
+  } : null : publishedBrowser;
   const [pending, setPending] = useState<CaptureAction | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const operation = useRef<AbortController | null>(null);
+  const ownerOperation = useRef<string | null>(null);
   const sameBrowser = extension.status === 'connected';
 
   useEffect(() => () => operation.current?.abort(), []);
 
   // The pushed state settles a pending request; nothing is inferred from delivery.
   useEffect(() => {
+    if (ownerOperation.current) {
+      const result = onboarding?.operations[ownerOperation.current];
+      if (!result || result.status === 'pending') return;
+      setPending(null);
+      setNotice(result.status === 'confirmed' ? null : result.status === 'unknown' ? 'no_response' : 'failed');
+      if (result.status !== 'unknown') ownerOperation.current = null;
+      return;
+    }
     if (pending === null || browser === null) return;
     if ((pending === 'pause' && browser.capture === 'paused')
       || (pending === 'resume' && browser.capture === 'active')) {
       setPending(null);
       setNotice(null);
     }
-  }, [browser, pending]);
+  }, [browser, pending, onboarding]);
 
   useEffect(() => {
     if (pending === null) return;
@@ -68,6 +88,16 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     operation.current = controller;
     setNotice(null);
     setPending(action);
+    const client = currentOnboardingClient();
+    if (onboarding && client && snapshot) {
+      const id = crypto.randomUUID();
+      ownerOperation.current = id;
+      const sent = await client.command({ profile: 'local-onboarding-command.v1',
+        journey_id: snapshot.journey_id, operation_id: id, owner: 'extension', action,
+        account_generation: snapshot.account_generation, consent_generation: snapshot.consent_generation });
+      if (!sent) { ownerOperation.current = null; setPending(null); setNotice('no_response'); }
+      return;
+    }
     try {
       const delivery = await api.setCapture(action, controller.signal);
       if (controller.signal.aborted) return;
@@ -89,7 +119,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const feedback = <Box>
 <StatusLine essential id="browser-feedback" tone="error" text={browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now. Open your browser and try again.'
             : notice === 'no_response' ? "The browser extension didn't confirm the change. Check it in your browser."
-              : "The change couldn't be sent. Try again."} />
+              : 'The change was not confirmed.'} />
   </Box>;
   if (browser === null) {
     return <Stack sx={{ minHeight: 'inherit', display: 'grid', gridTemplateRows: '1fr auto' }}>
@@ -129,7 +159,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
         sx={row}
         title="New messages"
         description={browser.capture === 'active' ? 'Collecting in the browser.'
-          : resumeNeedsReview ? 'Paused. Review the updated terms in the extension to resume.'
+          : resumeNeedsReview ? 'Paused. Review the terms in the extension to resume.'
             : paused ? 'Paused. Nothing new is collected.' : 'Off in the browser.'}
         action={captureButton}
       />
@@ -137,9 +167,9 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
         sx={row}
         title="Site access"
         description={browser.site_access === 'granted' ? 'Allowed for OnlyFans.'
-          : browser.site_access === 'reload_required' ? 'Reload your OnlyFans tabs to apply it.'
+          : browser.site_access === 'reload_required' ? 'Site access needs attention.'
             : 'Needs your approval.'}
-        action={browser.site_access === 'granted' ? undefined : openInExtension('access', 'Allow in extension')}
+        action={browser.site_access === 'granted' ? undefined : openInExtension('access', browser.site_access === 'reload_required' ? 'Open extension' : 'Allow in extension')}
       />
       <SettingRow
         sx={row}

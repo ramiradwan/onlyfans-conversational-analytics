@@ -20,6 +20,7 @@ import {
   type ExtensionPort,
   type ExtensionStage,
 } from '../services/extensionPort';
+import { onboardingView, subscribeOnboarding } from '../services/onboardingSession';
 import { bridgeTransportStore } from '../store/transportStore';
 import {
   extensionConnection,
@@ -71,6 +72,8 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
   const operation = useRef<AbortController | null>(null);
   const epoch = useRef(0);
   const verifiedVersion = useRef<string | null>(null);
+  const automaticAttempted = useRef(false);
+  const onboarding = useSyncExternalStore(subscribeOnboarding, onboardingView, onboardingView);
   const extension = useSyncExternalStore(port.subscribe, port.getState, port.getState);
   const notice = useSyncExternalStore(
     bridgeTransportStore.subscribe,
@@ -163,6 +166,23 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
     // Brain's window opens first, so the extension never races a closed window.
     if (await run('open') && viaBrowser && !port.pair()) setBrowserPairing(false);
   };
+
+  useEffect(() => {
+    const brain = onboarding?.sources.brain;
+    const observer = onboarding?.sources.extension;
+    if (automaticAttempted.current || current.current || busy || failed || connectedCount !== 0
+      || extension.status !== 'connected' || extension.stage !== 'ready_to_pair'
+      || !brain?.certain || !observer?.certain || !brain.snapshot || !observer.snapshot
+      || brain.snapshot.pending_operation || observer.snapshot.pending_operation
+      || brain.snapshot.facts.installation !== 'verified' || brain.snapshot.facts.enrollment !== 'verified'
+      || brain.snapshot.facts.pairing !== 'missing' || observer.snapshot.facts.mode !== 'full'
+      || observer.snapshot.facts.consent !== 'valid' || observer.snapshot.facts.site_access !== 'granted'
+      || observer.snapshot.facts.account === 'mismatch') return;
+    // Completed Full consent and current owner facts survive navigation. The
+    // new page starts a fresh attempt; it never revives a cancelled port/code.
+    automaticAttempted.current = true;
+    void startPairing();
+  }, [onboarding, extension.status, extension.stage, connectedCount, busy, failed]);
 
   const connect = () => {
     const stage = port.getState().stage;
