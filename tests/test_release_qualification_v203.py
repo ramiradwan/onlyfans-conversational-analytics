@@ -25,6 +25,8 @@ SOURCE_COMMIT = "b" * 40
 BASELINE_COMMIT = "a" * 40
 RELEASE_TAG = "v2.0.3"
 RELEASE_VERSION = "2.0.3"
+BROWSER_CI_POLICIES = ["sharded-v3", "sharded-v3-pr-cutover"]
+PRODUCT_CI_POLICIES = [None, "sharded-v1", "sharded-v2", "sharded-v2-pr-cutover", *BROWSER_CI_POLICIES]
 
 
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:
@@ -155,6 +157,9 @@ class QualificationApi:
             None: producer.REQUIRED_PRODUCT_CI_JOB_NAMES,
             "sharded-v1": producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES,
             "sharded-v2": producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES,
+            "sharded-v2-pr-cutover": producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES,
+            "sharded-v3": producer.REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES,
+            "sharded-v3-pr-cutover": producer.REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES,
         }
         self.product_ci_jobs = [
             {
@@ -168,7 +173,11 @@ class QualificationApi:
             }
             for index, name in enumerate(sorted(policy_names[ci_policy]))
         ]
-        if ci_policy == "sharded-v2":
+        if ci_policy in BROWSER_CI_POLICIES:
+            next(job for job in self.product_ci_jobs if job["name"] == "browser-e2e-serial-control")["conclusion"] = "skipped"
+        if ci_policy in {"sharded-v2", "sharded-v2-pr-cutover", "sharded-v3"}:
+            self.product_ci_source = (ROOT / f"tests/fixtures/product-ci-{ci_policy}.yml").read_bytes()
+        elif ci_policy == "sharded-v3-pr-cutover":
             self.product_ci_source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
         else:
             source_jobs = (producer.SHARDED_PRODUCT_CI_JOB_IDS if ci_policy
@@ -179,6 +188,10 @@ class QualificationApi:
                 + "jobs:\n"
                 + "".join(f"  {name}:\n    runs-on: ubuntu-latest\n" for name in sorted(source_jobs))
             ).encode()
+        self.product_ci_policy = (ROOT / (
+            "tests/fixtures/product-ci-sharded-v3-policy.json" if ci_policy == "sharded-v3"
+            else producer.PRODUCT_CI_POLICY_PATH
+        )).read_bytes()
         self.artifacts = [
             _artifact(f"windows-package-{RELEASE_TAG}", identifier=91),
             _artifact(f"windows-package-unsigned-{RELEASE_TAG}", identifier=90),
@@ -210,6 +223,16 @@ class QualificationApi:
             }
         if path.endswith(f"/git/commits/{SOURCE_COMMIT}"):
             return {"tree": {"sha": "1" * 40}}
+        if path.endswith(f"/git/trees/{'1' * 40}"):
+            return {"tree": [
+                {"path": ".github", "type": "tree", "mode": "040000", "sha": "2" * 40},
+                {"path": "ci", "type": "tree", "mode": "040000", "sha": "5" * 40},
+            ]}
+        if path.endswith(f"/git/trees/{'5' * 40}"):
+            return {"tree": [{"path": "product-ci-policy.json", "type": "blob", "mode": "100644", "sha": "6" * 40}]}
+        if path.endswith(f"/git/blobs/{'6' * 40}"):
+            return {"encoding": "base64", "size": len(self.product_ci_policy),
+                    "content": base64.b64encode(self.product_ci_policy).decode()}
         for tree_sha, name, kind, mode, sha in (
             ("1", ".github", "tree", "040000", "2"),
             ("2", "workflows", "tree", "040000", "3"),
@@ -239,6 +262,172 @@ def _qualify_source(api: QualificationApi) -> producer.QualifiedSource:
         baseline_sha=BASELINE_COMMIT,
         workflow_sha=SOURCE_COMMIT,
     )
+
+
+@pytest.mark.parametrize("name", ["browser-reporting-safety", "browser-e2e-core", "browser-e2e-catchup", "windows-browser-e2e"])
+@pytest.mark.parametrize("failure", ["missing", "failure", "skipped", "cancelled"])
+@pytest.mark.parametrize("ci_policy", BROWSER_CI_POLICIES)
+def test_v3_full_release_qualification_requires_every_browser_boundary(name, failure, ci_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    assert _qualify_source(api).product_ci_run_id == 43
+    if failure == "missing":
+        api.product_ci_jobs = [job for job in api.product_ci_jobs if job["name"] != name]
+    else:
+        next(job for job in api.product_ci_jobs if job["name"] == name)["conclusion"] = failure
+    with pytest.raises(producer.ContractError):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("ci_policy", BROWSER_CI_POLICIES)
+def test_v3_full_release_qualification_retains_older_dependencies_but_newer_failure_wins(ci_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    api.product_ci_run["run_attempt"] = 2
+    original = next(job for job in api.product_ci_jobs if job["name"] == "browser-e2e-catchup")
+    newest = dict(original, id=99999, run_attempt=2)
+    api.product_ci_jobs.append(newest)
+    assert _qualify_source(api).source_commit == SOURCE_COMMIT
+    newest["conclusion"] = "failure"
+    with pytest.raises(producer.ContractError, match="required Product CI job"):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda policy: policy["required_job_names"].remove("browser-e2e-catchup"),
+    lambda policy: policy["job_ids"].remove("browser-reporting-safety"),
+    lambda policy: policy.update(allowed_skipped_jobs=["browser-e2e-core"]),
+    lambda policy: policy.update(policy_version="sharded-v2"),
+    lambda policy: policy.update(schema_version=True),
+])
+@pytest.mark.parametrize("ci_policy", BROWSER_CI_POLICIES)
+def test_v3_full_release_qualification_reads_and_refuses_weakened_source_policy(mutation, ci_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    policy = json.loads(api.product_ci_policy)
+    mutation(policy)
+    api.product_ci_policy = json.dumps(policy).encode()
+    with pytest.raises(producer.ContractError, match="source policy"):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("old,new", [
+    ("    name: browser-e2e-${{ matrix.lane }}", "    name: browser-e2e-core"),
+    ("      max-parallel: 2", "      max-parallel: 3"),
+    ("          - catchup", "          - core"),
+    ("    runs-on: windows-latest", "    runs-on: ubuntu-latest"),
+    ("    timeout-minutes: 45", "    timeout-minutes: 45\n    continue-on-error: true"),
+    ("    strategy:", "    if: false\n    strategy:"),
+])
+@pytest.mark.parametrize("ci_policy", BROWSER_CI_POLICIES)
+def test_v3_full_release_qualification_refuses_weakened_browser_topology(old, new, ci_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    before, body = api.product_ci_source.decode().split("  browser-e2e-execution:\n", 1)
+    matrix, after = body.split("  windows-browser-e2e:\n", 1)
+    assert old in matrix
+    api.product_ci_source = (before + "  browser-e2e-execution:\n" + matrix.replace(old, new, 1)
+                             + "  windows-browser-e2e:\n" + after).encode()
+    with pytest.raises(producer.ContractError):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("ci_policy", BROWSER_CI_POLICIES)
+def test_v3_policy_never_falls_back_when_source_document_is_missing(ci_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    api.product_ci_policy = b"{}"
+    with pytest.raises(producer.ContractError, match="source policy"):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("conclusion", ["success", "failure", "cancelled", None])
+@pytest.mark.parametrize("ci_policy", BROWSER_CI_POLICIES)
+def test_v3_main_push_requires_only_the_explicit_serial_control_skip(conclusion, ci_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    assert _qualify_source(api).source_commit == SOURCE_COMMIT
+    next(job for job in api.product_ci_jobs if job["name"] == "browser-e2e-serial-control")["conclusion"] = conclusion
+    with pytest.raises(producer.ContractError):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("replacement", [
+    "${{ always() }}", "${{ inputs.browser_serial_control }}", "${{ github.event_name == 'workflow_dispatch' }}", "false",
+])
+@pytest.mark.parametrize("ci_policy", BROWSER_CI_POLICIES)
+def test_v3_release_requires_the_exact_opt_in_control_condition(replacement, ci_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    before, control = api.product_ci_source.decode().split("  browser-e2e-serial-control:\n", 1)
+    assert producer.BROWSER_SERIAL_CONTROL_IF in control
+    api.product_ci_source = (before + "  browser-e2e-serial-control:\n"
+        + control.replace(producer.BROWSER_SERIAL_CONTROL_IF, replacement, 1)).encode()
+    with pytest.raises(producer.ContractError, match="serial control"):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("ci_policy", BROWSER_CI_POLICIES)
+def test_v3_release_cannot_omit_the_optional_job_record_or_aggregate_dependency(ci_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    api.product_ci_jobs = [job for job in api.product_ci_jobs if job["name"] != "browser-e2e-serial-control"]
+    with pytest.raises(producer.ContractError, match="exact required job set"):
+        _qualify_source(api)
+    api = QualificationApi(ci_policy=ci_policy)
+    before, aggregate = api.product_ci_source.decode().split("  windows-browser-e2e:\n", 1)
+    api.product_ci_source = (before + "  windows-browser-e2e:\n"
+        + aggregate.replace("      - browser-e2e-serial-control\n", "", 1)).encode()
+    with pytest.raises(producer.ContractError, match="browser gate"):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("ci_policy", ["sharded-v2-pr-cutover", *BROWSER_CI_POLICIES])
+@pytest.mark.parametrize("name", ["windows-full-regression-1", "windows-full-regression-2", "windows-full-regression"])
+@pytest.mark.parametrize("failure", ["missing", "failure", "skipped", "cancelled"])
+def test_pr_cutover_release_keeps_every_main_windows_execution_required(ci_policy, name, failure):
+    api = QualificationApi(ci_policy=ci_policy)
+    assert _qualify_source(api).product_ci_run_id == 43
+    if failure == "missing":
+        api.product_ci_jobs = [job for job in api.product_ci_jobs if job["name"] != name]
+    else:
+        next(job for job in api.product_ci_jobs if job["name"] == name)["conclusion"] = failure
+    with pytest.raises(producer.ContractError):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("old,new", [
+    ("github.event_name == 'push' || github.event_name == 'workflow_dispatch'", "github.event_name != 'pull_request'"),
+    ("github.event_name == 'push' || github.event_name == 'workflow_dispatch'", "false"),
+    ("pull_request) test '${{ needs.windows-full-shards.result }}' = 'skipped'", "pull_request) true"),
+    ("push|workflow_dispatch) test '${{ needs.windows-full-shards.result }}' = 'success'", "push|workflow_dispatch) true"),
+    ("*) echo \"Unsupported Product CI event\"; exit 1", "*) true"),
+    ("  workflow_dispatch:\n", "  schedule:\n    - cron: 17 3 * * *\n  workflow_dispatch:\n"),
+    ("  windows-platform-contract:\n", "  windows-platform-contract:\n    if: false\n"),
+    ("  analytics-windows-contract:\n", "  analytics-windows-contract:\n    continue-on-error: true\n"),
+    ("      - main\n", "      - other\n"),
+    ("      - main\n", "      - main\n    paths:\n      - frontend/**\n"),
+    ("      - reopened\n", "      - reopened\n      - edited\n"),
+    ("        type: boolean", "        type: string"),
+    ("        default: false", "        default: true"),
+    ("      browser_qualification:\n", "      unknown_input:\n"),
+    ("    inputs:\n", "    inputs:\n      extra_input:\n        type: boolean\n        default: false\n"),
+    ("  workflow_dispatch:\n", "  workflow_dispatch: {}\n"),
+])
+def test_v3_cutover_release_refuses_weakened_events_windows_or_manual_inputs(old, new):
+    api = QualificationApi(ci_policy="sharded-v3-pr-cutover")
+    source = api.product_ci_source.decode().replace("\r\n", "\n")
+    assert old in source
+    api.product_ci_source = source.replace(old, new, 1).encode()
+    with pytest.raises(producer.ContractError):
+        _qualify_source(api)
+
+
+def test_cutover_policy_cannot_downgrade_to_historical_v3_or_omit_policy_fetch():
+    api = QualificationApi(ci_policy="sharded-v3-pr-cutover")
+    assert _qualify_source(api).product_ci_run_id == 43
+    api.product_ci_policy = b"{}"
+    with pytest.raises(producer.ContractError, match="source policy"):
+        _qualify_source(api)
+    api = QualificationApi(ci_policy="sharded-v3-pr-cutover")
+    api.product_ci_source = api.product_ci_source.replace(b"sharded-v3-pr-cutover", b"sharded-v3")
+    policy = json.loads(api.product_ci_policy)
+    policy["policy_version"] = "sharded-v3"
+    api.product_ci_policy = json.dumps(policy).encode()
+    with pytest.raises(producer.ContractError, match="matrix execution declaration"):
+        _qualify_source(api)
 
 
 def test_extension_input_qualification_uses_manifest_package_version() -> None:
@@ -298,14 +487,14 @@ def test_current_product_ci_requires_versioned_shards_and_gate() -> None:
         _qualify_source(api)
 
 
-@pytest.mark.parametrize("ci_policy", [None, "sharded-v1", "sharded-v2"], ids=["legacy-source", "sharded-v1", "sharded-v2"])
+@pytest.mark.parametrize("ci_policy", PRODUCT_CI_POLICIES, ids=["legacy-source" if policy is None else policy for policy in PRODUCT_CI_POLICIES])
 def test_required_package_artifacts_accept_current_evidence_artifacts(ci_policy) -> None:
     result = _qualify_source(QualificationApi(ci_policy=ci_policy))
     assert result.artifact_name == f"windows-package-{RELEASE_TAG}"
     assert result.artifact_id == 91
 
 
-@pytest.mark.parametrize("ci_policy", [None, "sharded-v1", "sharded-v2"], ids=["legacy-source", "sharded-v1", "sharded-v2"])
+@pytest.mark.parametrize("ci_policy", PRODUCT_CI_POLICIES, ids=["legacy-source" if policy is None else policy for policy in PRODUCT_CI_POLICIES])
 def test_missing_or_failed_required_ci_jobs_are_rejected(ci_policy) -> None:
     missing = QualificationApi(ci_policy=ci_policy)
     missing.product_ci_jobs = [
@@ -327,7 +516,7 @@ def test_missing_or_failed_required_ci_jobs_are_rejected(ci_policy) -> None:
         _qualify_source(failed)
 
 
-@pytest.mark.parametrize("ci_policy", [None, "sharded-v1", "sharded-v2"], ids=["legacy-source", "sharded-v1", "sharded-v2"])
+@pytest.mark.parametrize("ci_policy", PRODUCT_CI_POLICIES, ids=["legacy-source" if policy is None else policy for policy in PRODUCT_CI_POLICIES])
 def test_missing_required_or_unknown_package_artifacts_are_rejected(ci_policy) -> None:
     missing = QualificationApi(ci_policy=ci_policy)
     missing.artifacts = [

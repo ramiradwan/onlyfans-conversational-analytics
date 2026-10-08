@@ -906,35 +906,6 @@ def test_resolver_and_signer_qualification_each_recheck_product_ci() -> None:
     assert api.product_ci_query_count == 2
 
 
-def _historical_sharded_v2_source() -> bytes:
-    """Freeze the v2 declarations independently of today's PR cutover."""
-    lines = ["name: CI", "env:", "  CI_POLICY_VERSION: sharded-v2", "jobs:"]
-    ordered = sorted(producer.SHARDED_V2_PRODUCT_CI_JOB_IDS - {"windows-full-shards", "windows-full-regression"})
-    for name in ordered + ["windows-full-shards", "windows-full-regression"]:
-        lines.append(f"  {name}:")
-        if name in {"analytics-integration", "windows-full-shards"}:
-            windows = name == "windows-full-shards"
-            count = 2 if windows else 4
-            display = "windows-full-regression" if windows else name
-            lines.extend([
-                f"    name: {display}-${{{{ matrix.shard }}}}",
-                f"    runs-on: {'windows-latest' if windows else 'ubuntu-latest'}",
-                f"    timeout-minutes: {60 if windows else 20}",
-                "    strategy:", "      fail-fast: false", f"      max-parallel: {count}",
-                "      matrix:", "        shard:",
-                *(f"          - {shard}" for shard in range(1, count + 1)),
-            ])
-        elif name == "windows-full-regression":
-            lines.extend(["    if: ${{ always() }}", "    needs: windows-full-shards", "    runs-on: ubuntu-latest"])
-        elif name == "required-ci-gate":
-            needs = producer.SHARDED_V2_PRODUCT_CI_JOB_IDS - {"required-ci-gate", "build-and-test", "windows-tests"}
-            lines.extend(["    name: Required CI", "    if: ${{ always() }}", "    needs:",
-                          *(f"      - {dependency}" for dependency in sorted(needs)), "    runs-on: ubuntu-latest"])
-        else:
-            lines.append("    runs-on: ubuntu-latest")
-    return ("\n".join(lines) + "\n").encode()
-
-
 def _sharded_source_api(version: str = "sharded-v1") -> _SourceApi:
     api = _SourceApi()
     if version == "sharded-v1":
@@ -948,8 +919,9 @@ def _sharded_source_api(version: str = "sharded-v1") -> _SourceApi:
         names = producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES
     else:
         assert version in {"sharded-v2", "sharded-v2-pr-cutover"}
-        api.product_ci_source = (_historical_sharded_v2_source() if version == "sharded-v2"
-                                 else (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes())
+        # Literal source fixtures retain both historical policies independently
+        # of today's browser topology and manual qualification inputs.
+        api.product_ci_source = (ROOT / f"tests/fixtures/product-ci-{version}.yml").read_bytes()
         names = producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES
     api.product_ci_jobs = [
         {"id": 4300 + index, "name": name, "status": "completed", "conclusion": "success",

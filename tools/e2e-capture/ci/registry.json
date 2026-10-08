@@ -1,0 +1,23 @@
+{
+  "schema": "browser-ci-registry/v1",
+  "playwright_version": "1.63.0",
+  "project": "",
+  "repeat_index": 0,
+  "tests": [
+    {"id":"capture-replay","file":"tests/capture.spec.mjs","title_path":["real MV3 capture proves exact ordering, durable replay, and alarm recovery"],"shard":"core","retry_override":null},
+    {"id":"catchup-enabled","file":"tests/catchup.spec.mjs","title_path":["unopened chats recover after downtime with catchup_enabled=true"],"shard":"catchup","retry_override":0},
+    {"id":"catchup-disabled","file":"tests/catchup.spec.mjs","title_path":["unopened chats recover after downtime with catchup_enabled=false"],"shard":"catchup","retry_override":0},
+    {"id":"heartbeat-liveness","file":"tests/heartbeat-liveness.spec.mjs","title_path":["paired Agent heartbeat advances without capture traffic"],"shard":"core","retry_override":null},
+    {"id":"legal-activation","file":"tests/legal-activation.spec.mjs","title_path":["runtime Legal flow proves Preview activation then distinct Full upgrade evidence"],"shard":"core","retry_override":null},
+    {"id":"own-message","file":"tests/own-message.spec.mjs","title_path":["an own message pushed by the platform socket reaches the Brain as outbound"],"shard":"core","retry_override":null},
+    {"id":"pause-resume","file":"tests/pause-resume.spec.mjs","title_path":["soft pause survives worker replacement and resumes the existing socket without reload"],"shard":"core","retry_override":null},
+    {"id":"popup-options","file":"tests/popup-lifecycle.spec.mjs","title_path":["connection details open in Options and repeated entry reuses that tab"],"shard":"core","retry_override":null},
+    {"id":"popup-disclosure","file":"tests/popup-lifecycle.spec.mjs","title_path":["Full disclosure stays in the setup tab while a legal document is reviewed"],"shard":"core","retry_override":null},
+    {"id":"popup-explicit-pairing","file":"tests/popup-lifecycle.spec.mjs","title_path":["pairing starts only on explicit setup action and recovers from the desktop not being ready"],"shard":"core","retry_override":null},
+    {"id":"popup-pairing-ownership","file":"tests/popup-lifecycle.spec.mjs","title_path":["focus changes and closing an observing popup preserve pairing; closing setup cancels it"],"shard":"core","retry_override":null},
+    {"id":"popup-confirmed-readiness","file":"tests/popup-lifecycle.spec.mjs","title_path":["a confirmed connection stays in setup and readiness comes from the desktop result"],"shard":"core","retry_override":null},
+    {"id":"provisioning-registration","file":"tests/provisioning-registration.spec.mjs","title_path":["a clean installation registers, authenticates, and reaches its configured runtime"],"shard":"core","retry_override":null},
+    {"id":"provisioning-resume","file":"tests/provisioning-resume.spec.mjs","title_path":["first-run setup preserves authoritative creator approval across return and browser restart"],"shard":"core","retry_override":null},
+    {"id":"standalone-preview","file":"tests/standalone-preview.spec.mjs","title_path":["standalone preview survives pause, deletion, and restart without a local service"],"shard":"core","retry_override":null}
+  ]
+}
