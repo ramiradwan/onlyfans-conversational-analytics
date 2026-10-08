@@ -30,6 +30,15 @@ WINDOWS_FILES = {
 def windows_manifest(monkeypatch):
     manifest = {"schema_version": 1, "files": copy.deepcopy(WINDOWS_FILES)}
     monkeypatch.setattr(gate, "load_windows_full_manifest", lambda root: manifest)
+    monkeypatch.setattr(gate, "load_backend_manifest", lambda root: {"windows_contracts": {
+        "platform": [{"selector": node} for node in (
+            "tests/test_platform.py::test_fs", "tests/test_boot.py::test_boot",
+            "tests/test_packaged_runtime.py", "tests/test_packaging_smoke.py",
+        )],
+        "analytics": [{"selector": node} for node in (
+            "tests/test_projection1.py::test_store", "tests/test_analytics_closure_process.py",
+        )],
+    }})
     return manifest
 
 
@@ -595,22 +604,32 @@ def test_summary_links_job_failures_and_does_not_override_results(tmp_path):
     gate.write_summary(str(tmp_path), jobs=jobs, reports={}, message="Required CI failed")
 
 
-def test_pr_permits_only_the_explicit_scale_skip_and_no_scale_artifact(tmp_path):
+def _pr_inputs():
     jobs, needs, reports = _jobs(), _needs(), _reports()
     jobs[gate.SCALE_LANE]["conclusion"] = "skipped"
     needs[gate.SCALE_LANE]["result"] = "skipped"
-    scale_report = reports.pop(gate.SCALE_LANE)
+    needs["windows-full-shards"]["result"] = "skipped"
+    for lane in gate.WINDOWS_FULL_LANES:
+        jobs.pop(lane)
+        reports.pop(lane)
+    reports.pop(gate.SCALE_LANE)
+    return jobs, needs, reports
+
+
+@pytest.mark.parametrize("unexpected_lane", [gate.SCALE_LANE, *gate.WINDOWS_FULL_LANES])
+def test_pr_requires_expected_producer_skips_and_no_exhaustive_or_scale_artifact(tmp_path, unexpected_lane):
+    jobs, needs, reports = _pr_inputs()
     _write_reports(tmp_path, reports)
     gate.validate_needs(needs, jobs, event="pull_request")
     selected = gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs, event="pull_request")
     assert gate.validate_coverage(selected, event="pull_request")["scale"] == 0
-    assert len(selected) == 24
-    _write_reports(tmp_path, {gate.SCALE_LANE: scale_report})
+    assert len(selected) == 22
+    _write_reports(tmp_path, {unexpected_lane: _reports()[unexpected_lane]})
     with pytest.raises(gate.GateError, match="unexpected report lane"):
         gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs, event="pull_request")
 
 
-@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
 def test_non_pr_events_require_scale_success_and_complete_evidence(tmp_path, event):
     jobs, needs, reports = _jobs(), _needs(), _reports()
     _write_reports(tmp_path, reports)
@@ -624,6 +643,196 @@ def test_non_pr_events_require_scale_success_and_complete_evidence(tmp_path, eve
     jobs[gate.SCALE_LANE]["conclusion"] = "skipped"
     with pytest.raises(gate.GateError, match="latest mandatory job"):
         gate.validate_needs(needs, jobs, event=event)
+
+
+@pytest.mark.parametrize("event", ["schedule", "pull_request_target", "", "release"])
+def test_unsupported_ci_events_cannot_authorize_producer_skips(event):
+    with pytest.raises(gate.GateError, match="unsupported CI event"):
+        gate.required_report_lanes(event)
+    with pytest.raises(gate.GateError, match="unsupported CI event"):
+        gate.validate_needs(_needs(), _jobs(), event=event)
+
+
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "timed_out", None])
+def test_pr_cannot_accept_an_unexpected_exhaustive_matrix_result(result):
+    jobs, needs, _ = _pr_inputs()
+    needs["windows-full-shards"]["result"] = result
+    with pytest.raises(gate.GateError, match="windows-full-shards"):
+        gate.validate_needs(needs, jobs, event="pull_request")
+
+
+@pytest.mark.parametrize("job", ["windows-platform-contract", "analytics-windows-contract", "windows-browser-e2e",
+                                 "windows-full-regression"])
+@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", None])
+def test_pr_cutover_keeps_focused_contracts_browser_and_stable_aggregate_blocking(job, result):
+    jobs, needs, _ = _pr_inputs()
+    jobs[job]["conclusion"] = result
+    with pytest.raises(gate.GateError, match="latest mandatory job"):
+        gate.validate_needs(needs, jobs, event="pull_request")
+
+
+@pytest.mark.parametrize("name", [*gate.WINDOWS_FULL_LANES, "windows-full-regression-"])
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "timed_out", None])
+def test_pr_refuses_any_unexpected_actual_exhaustive_execution(name, result):
+    jobs, needs, _ = _pr_inputs()
+    jobs[name] = {"status": "completed", "conclusion": result}
+    with pytest.raises(gate.GateError, match="latest mandatory job|exhaustive Windows execution"):
+        gate.validate_needs(needs, jobs, event="pull_request")
+
+
+def _rename_node(reports, original, renamed):
+    for report in reports.values():
+        for row in report["collected"]:
+            if row["nodeid"] == original:
+                row.update(nodeid=renamed, path=renamed.split("::", 1)[0])
+        for key in ("selected", "deselected"):
+            report[key] = [renamed if node == original else node for node in report[key]]
+        for phase in report["reports"]:
+            if phase["nodeid"] == original:
+                phase["nodeid"] = renamed
+
+
+@pytest.mark.parametrize("identity,reason", list(gate.PR_SKIP_BASELINE.items()))
+def test_pr_accepts_only_reviewed_skip_identity_platform_and_reason(identity, reason):
+    node, platform = identity
+    _, _, reports = _pr_inputs()
+    original = ("tests/test_projection1.py::test_store" if reason == "Skipped: Linux process filesystem observation"
+                else "tests/test_platform.py::test_fs" if platform == "Windows" else "tests/test_unit.py::test_fast")
+    _rename_node(reports, original, node)
+    for lane, report in reports.items():
+        if (node in report["selected"] and not gate.SPECS[lane].reference
+                and gate.SPECS[lane].platform == platform):
+            _skip(report, node, reason)
+    gate.validate_coverage(reports, event="pull_request")
+    for report in reports.values():
+        if node in report["selected"] and report["reports"] and report["platform"] == platform:
+            _skip(report, node, reason + " changed")
+    with pytest.raises(gate.GateError, match="unreviewed pull-request skip"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+def test_reviewed_linux_proc_skip_on_windows_still_requires_linux_execution():
+    _, _, reports = _pr_inputs()
+    node = "tests/test_analytics_closure_process.py::test_proc_observation_only_accepts_disappearance[OSError]"
+    _rename_node(reports, "tests/test_projection1.py::test_store", node)
+    _skip(reports["analytics-windows-contract"], node, gate.PR_SKIP_BASELINE[(node, "Windows")])
+    gate.validate_coverage(reports, event="pull_request")
+    _skip(reports["analytics-integration-1"], node, "Skipped: lost Linux observation")
+    with pytest.raises(gate.GateError, match="requires actual Linux execution"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+def test_reviewed_windows_skip_cannot_move_to_another_contract():
+    _, _, reports = _pr_inputs()
+    node = "tests/test_packaging_smoke.py::test_platform_capability_probe_leaves_no_persisted_key"
+    _rename_node(reports, "tests/test_projection1.py::test_store", node)
+    _skip(reports["analytics-windows-contract"], node, gate.PR_SKIP_BASELINE[(node, "Windows")])
+    with pytest.raises(gate.GateError, match="Windows contract classification differs"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push", "workflow_dispatch"])
+@pytest.mark.parametrize("skip_platform", [False, True])
+def test_reviewed_platform_skip_cannot_authorize_skipped_windows_production_boot(event, skip_platform, windows_manifest):
+    reports = _pr_inputs()[2] if event == "pull_request" else _reports()
+    node = "tests/test_packaging_smoke.py::test_platform_capability_probe_leaves_no_persisted_key"
+    _rename_node(reports, "tests/test_boot.py::test_boot", node)
+    windows_manifest["files"][node.split("::", 1)[0]] = windows_manifest["files"].pop("tests/test_boot.py")
+    # Retain the independent native marker and platform assignment. The old
+    # exception must not permit the newly required bootstrap invocation to skip.
+    reason = gate.PR_SKIP_BASELINE[(node, "Windows")]
+    if skip_platform:
+        _skip(reports["windows-platform-contract"], node, reason)
+    _skip(reports["windows-production-boot"], node, reason)
+    if event != "pull_request":
+        for lane in gate.WINDOWS_FULL_LANES:
+            if node in reports[lane]["selected"]:
+                _skip(reports[lane], node, reason)
+    with pytest.raises(gate.GateError, match="Windows production boot requires actual execution"):
+        gate.validate_coverage(reports, event=event)
+
+
+def test_pr_new_default_skip_is_rejected_without_same_run_exhaustive_evidence():
+    _, _, reports = _pr_inputs()
+    _skip(reports["backend-fast"], "tests/test_unit.py::test_fast")
+    with pytest.raises(gate.GateError, match="unreviewed pull-request skip"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+@pytest.mark.parametrize("lane", ["backend-fast", "analytics-integration-4", "windows-platform-contract", "analytics-windows-contract"])
+@pytest.mark.parametrize("fault", ["missing-excluded-node", "markers", "path"])
+def test_pr_focused_reports_retain_exact_independent_raw_inventory(lane, fault):
+    _, _, reports = _pr_inputs()
+    report = reports[lane]
+    node = "tests/test_scale_family1.py::test_large"
+    if fault == "missing-excluded-node":
+        report["collected"] = [row for row in report["collected"] if row["nodeid"] != node]
+        report["deselected"].remove(node)
+    else:
+        row = next(row for row in report["collected"] if row["nodeid"] == node)
+        row[fault] = [] if fault == "markers" else "tests/test_forged.py"
+    with pytest.raises(gate.GateError, match="collection differs|inconsistent file path"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+def test_linux_platform_skip_requires_actual_windows_contract_execution():
+    _, _, reports = _pr_inputs()
+    node = "tests/test_platform.py::test_fs"
+    _skip(reports["backend-fast"], node, "Skipped: Windows-only")
+    gate.validate_coverage(reports, event="pull_request")
+    _skip(reports["windows-platform-contract"], node, "Skipped: Windows-only")
+    with pytest.raises(gate.GateError, match="unreviewed pull-request skip"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+def test_raw_windows_marker_cannot_be_hidden_by_classifier_fields():
+    _, _, reports = _pr_inputs()
+    node = "tests/test_platform.py::test_fs"
+    for report in reports.values():
+        row = next(row for row in report["collected"] if row["nodeid"] == node)
+        row.update(markers=["windows_compat"], windows_compat=False, windows_contract=None)
+    _replace_selection(reports["windows-platform-contract"],
+                       [selected for selected in reports["windows-platform-contract"]["selected"] if selected != node])
+    with pytest.raises(gate.GateError, match="Windows contract classification differs|raw native Windows marker"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+@pytest.mark.parametrize("marker", ["windows_compat", "windows_production"])
+def test_independent_native_marker_refuses_a_contradictory_derived_flag(marker):
+    _, _, reports = _pr_inputs()
+    node = "tests/test_platform.py::test_fs"
+    for report in reports.values():
+        row = next(row for row in report["collected"] if row["nodeid"] == node)
+        row.update(markers=[marker], windows_compat=False)
+    if marker == "windows_production":
+        _replace_selection(reports["legacy-linux-reference"],
+                           [selected for selected in reports["legacy-linux-reference"]["selected"] if selected != node])
+        reports["legacy-linux-reference"]["reports"] = []
+        _replace_selection(reports["backend-fast"],
+                           [selected for selected in reports["backend-fast"]["selected"] if selected != node])
+        _replace_selection(reports["windows-production-boot"],
+                           reports["windows-production-boot"]["selected"] + [node])
+    with pytest.raises(gate.GateError, match="raw native Windows marker contradicts classifier flags"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+def test_focused_windows_collections_cannot_disagree_on_contract_classification():
+    _, _, reports = _pr_inputs()
+    node = "tests/test_platform.py::test_fs"
+    row = next(row for row in reports["analytics-windows-contract"]["collected"] if row["nodeid"] == node)
+    row["windows_contract"] = None
+    with pytest.raises(gate.GateError, match="Windows contract classification differs"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
+def test_reviewed_default_skip_cannot_authorize_a_skipped_explicit_profile(monkeypatch):
+    _, _, reports = _pr_inputs()
+    node = reports["backend-fast-brain-general"]["selected"][0]
+    reason = "Skipped: reviewed only as a default case"
+    monkeypatch.setitem(gate.PR_SKIP_BASELINE, (node, "Linux"), reason)
+    _skip(reports["backend-fast-brain-general"], node, reason)
+    with pytest.raises(gate.GateError, match="mandatory explicit profile test was skipped"):
+        gate.validate_coverage(reports, event="pull_request")
 
 
 def test_main_scale_refuses_missing_cases_extra_cases_and_skips():

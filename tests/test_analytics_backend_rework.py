@@ -15,6 +15,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
 from uuid import UUID
 
@@ -94,6 +95,7 @@ from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.services import insights_service
 from app.transport.manager import DEV_AGENT_AUTH_TICKET
 from app.canonical.read_models import AccountReadModel
+from tests.analytics_fixture_clock import fixture_clock
 
 pytestmark = [pytest.mark.ci_tier('integration')]
 
@@ -313,6 +315,8 @@ async def seed_default(name: str) -> FixtureSnapshot:
     account = HistoryAnalyticsSource(transport_manager.history).account_read_model(
         payload.creator_account_id
     )
+    # This runtime belongs to isolated_default_runtime and is disposed per test.
+    analytics_runtime.analytics_pipeline()._retention_clock = fixture_clock
     scheduler = analytics_runtime.projection_scheduler()
     await scheduler.schedule(payload.creator_account_id, account.view_revision)
     await scheduler.wait(payload.creator_account_id)
@@ -538,7 +542,9 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
     failure_mode: str,
 ) -> None:
     canonical_path = tmp_path / "canonical.sqlite3"
-    projection_path = tmp_path / "projections.sqlite3"
+    # The canonical repository owns projections.sqlite3 for its read model.
+    # Analytics uses a separate schema and encryption key scope.
+    projection_path = tmp_path / "analytics-projections.sqlite3"
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=canonical_path
     )
@@ -557,12 +563,14 @@ async def test_http_projection_failure_is_sanitized_and_recovery_is_coalesced(
         activation=repositories.projection_activation,
         canonical_identity_reader=read_identity,
         lazy=True,
+        retention_clock=fixture_clock,
     )
     assert isinstance(stores.projections, LazySQLiteAnalyticsProjectionStore)
     pipeline = AnalyticsPipeline(
         history_source,
         projections=stores.projections,
         graph=stores.graph,
+        clock=fixture_clock,
     )
     pipeline.compact_graph = False
     scheduler = InProcessProjectionScheduler(
@@ -1503,7 +1511,7 @@ async def test_projection_build_coordination_is_per_account(
     repositories = create_canonical_repositories("memory")
     alpha = await seed(repositories, "creator-alpha")
     beta = await seed(repositories, "creator-beta")
-    pipeline = AnalyticsPipeline(history_source_for(repositories))
+    pipeline = AnalyticsPipeline(history_source_for(repositories), clock=fixture_clock)
     original_build = pipeline._build
     concurrent_builds = threading.Barrier(2)
 
@@ -1659,6 +1667,7 @@ async def test_analyzer_config_digest_invalidates_same_revision_projection() -> 
         history_source_for(repositories),
         projections=projections,
         graph=graph,
+        clock=fixture_clock,
     )
     first = first_pipeline.project_account(payload.creator_account_id)
 
@@ -1674,6 +1683,7 @@ async def test_analyzer_config_digest_invalidates_same_revision_projection() -> 
         projections=projections,
         graph=graph,
         enrichment=EnrichmentStage(sentiment=ChangedSentimentConfig()),
+        clock=fixture_clock,
     )
     changed = changed_pipeline.project_account(payload.creator_account_id)
 
@@ -1777,7 +1787,9 @@ async def test_aware_timestamps_and_equal_time_source_order_survive_sqlite(
         "sqlite", canonical_path=database_path
     )
     seed_canonical_snapshot(repositories.history, ordered_payload)
-    run = AnalyticsPipeline(history_source_for(repositories)).project_account(
+    run = AnalyticsPipeline(
+        history_source_for(repositories), clock=fixture_clock
+    ).project_account(
         ordered_payload.creator_account_id
     )
     projection = run.artifact.projection
@@ -1826,7 +1838,9 @@ async def test_aware_timestamps_and_equal_time_source_order_survive_sqlite(
     )
     restarted_messages = restarted_account.conversations[chat["chat_id"]]["messages"]
     assert [item["source_ordinal"] for item in restarted_messages] == [0, 1]
-    restarted_projection = AnalyticsPipeline(history_source_for(restarted)).project_account(
+    restarted_projection = AnalyticsPipeline(
+        history_source_for(restarted), clock=fixture_clock
+    ).project_account(
         ordered_payload.creator_account_id
     ).artifact.projection
     assert [
@@ -1898,11 +1912,13 @@ async def test_analytics_surfaces_store_only_domain_separated_opaque_references(
             if history_source_for(repositories).account_exists(account_id)
             else None
         ),
+        retention_clock=fixture_clock,
     )
     pipeline = AnalyticsPipeline(
         history_source_for(repositories),
         projections=stores.projections,
         graph=stores.graph,
+        clock=fixture_clock,
     )
     artifact = pipeline.project_account(account_marker).artifact
     partition_ref = account_ref(account_marker)
@@ -1946,6 +1962,7 @@ async def test_analytics_surfaces_store_only_domain_separated_opaque_references(
 
     seed_canonical_snapshot(transport_manager.history, private_payload)
     default_account = HistoryAnalyticsSource(transport_manager.history).account_read_model(account_marker)
+    analytics_runtime.analytics_pipeline()._retention_clock = fixture_clock
     default_scheduler = analytics_runtime.projection_scheduler()
     await default_scheduler.schedule(account_marker, default_account.view_revision)
     await default_scheduler.wait(account_marker)
@@ -2163,7 +2180,9 @@ async def test_range_and_baseline_provenance_are_explicit_on_every_full_slice() 
 async def test_zero_denominators_are_unavailable_instead_of_fabricated() -> None:
     repositories = create_canonical_repositories("memory")
     payload = await seed(repositories, "creator-alpha")
-    projection = AnalyticsPipeline(history_source_for(repositories)).project_account(
+    projection = AnalyticsPipeline(
+        history_source_for(repositories), clock=fixture_clock
+    ).project_account(
         payload.creator_account_id
     ).artifact.projection
     outbound = next(
@@ -2244,7 +2263,11 @@ async def test_public_errors_use_stable_codes_and_redact_inputs() -> None:
 @pytest.mark.asyncio
 async def test_rebuild_source_is_existing_read_only_schema_and_output_is_atomic(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        rebuild_module, "AnalyticsPipeline", partial(AnalyticsPipeline, clock=fixture_clock)
+    )
     database_path = tmp_path / "canonical.sqlite3"
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=database_path
@@ -2745,7 +2768,11 @@ def test_private_output_platform_ports_fail_closed(
 @pytest.mark.asyncio
 async def test_windows_rebuild_output_has_one_protected_owner_ace(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        rebuild_module, "AnalyticsPipeline", partial(AnalyticsPipeline, clock=fixture_clock)
+    )
     database_path = tmp_path / "canonical.sqlite3"
     repositories = create_canonical_repositories(
         "sqlite", canonical_path=database_path

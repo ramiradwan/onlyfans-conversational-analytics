@@ -467,6 +467,60 @@ def test_windows_hang_diagnostics_do_not_terminate_tests_or_raise_job_limits() -
     }
 
 
+def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v2-pr-cutover"
+    triggers = workflow["on"]
+    assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
+    assert triggers["push"] == {"branches": ["main"]}
+    assert triggers["pull_request"] == {"branches": ["main"], "types": ["opened", "synchronize", "reopened"]}
+    jobs = _jobs(workflow)
+    assert jobs["windows-full-shards"]["if"] == "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}", "exhaustive Windows must run on main and manual only"
+    for name in ("windows-platform-contract", "analytics-windows-contract", "windows-browser-e2e"):
+        assert "if" not in jobs[name], "focused Windows and browser acceptance must remain mandatory on PRs"
+        assert jobs[name].get("continue-on-error", False) is False
+    aggregate = jobs["windows-full-regression"]
+    assert aggregate["if"] == "${{ always() }}", "stable Windows aggregate must always report"
+    assert aggregate["needs"] == "windows-full-shards"
+    assert _steps(aggregate)[0]["run"] == (
+        'case "$GITHUB_EVENT_NAME" in\n'
+        "  pull_request) test '${{ needs.windows-full-shards.result }}' = 'skipped' ;;\n"
+        "  push|workflow_dispatch) test '${{ needs.windows-full-shards.result }}' = 'success' ;;\n"
+        '  *) echo "Unsupported Product CI event"; exit 1 ;;\n'
+        "esac\n"
+    ), "stable aggregate must reject unexpected skips and unsupported events"
+    assert jobs["required-ci-gate"]["if"] == "${{ always() }}"
+    assert {"windows-full-shards", "windows-full-regression", "windows-platform-contract", "analytics-windows-contract",
+            "windows-browser-e2e"} <= set(jobs["required-ci-gate"]["needs"])
+    for alias in ("build-and-test", "windows-tests"):
+        assert jobs[alias]["if"] == "${{ always() }}"
+        assert jobs[alias]["needs"] == "required-ci-gate"
+        assert _steps(jobs[alias])[0]["run"] == "test '${{ needs.required-ci-gate.result }}' = 'success'"
+
+
+def test_windows_pr_cutover_preserves_blocking_checks_and_main_execution() -> None:
+    _assert_windows_pr_cutover(_workflow_document())
+
+
+@pytest.mark.parametrize("fault", ["matrix-if", "focused-if", "aggregate-if", "aggregate-success", "nightly", "alias"])
+def test_windows_pr_cutover_falsifiers_refuse_lost_coverage_or_hidden_failures(fault: str) -> None:
+    workflow = deepcopy(_workflow_document())
+    jobs = _jobs(workflow)
+    if fault == "matrix-if":
+        jobs["windows-full-shards"]["if"] = "${{ github.event_name != 'pull_request' }}"
+    elif fault == "focused-if":
+        jobs["analytics-windows-contract"]["if"] = "false"
+    elif fault == "aggregate-if":
+        jobs["windows-full-regression"]["if"] = "${{ success() }}"
+    elif fault == "aggregate-success":
+        _steps(jobs["windows-full-regression"])[0]["run"] = "true"
+    elif fault == "nightly":
+        workflow["on"]["schedule"] = [{"cron": "17 3 * * *"}]
+    else:
+        _steps(jobs["windows-tests"])[0]["run"] = "true"
+    with pytest.raises(AssertionError):
+        _assert_windows_pr_cutover(workflow)
+
+
 def test_partial_persistence_evidence_retains_available_profiles_and_source_receipt() -> None:
     steps = _steps(_jobs(_workflow_document())["windows-platform-contract"])
     copy = next(step for step in steps if step.get("name") == "Preserve persistence evidence filenames")

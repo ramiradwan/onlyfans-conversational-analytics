@@ -105,6 +105,14 @@ SHARDED_V2_PRODUCT_CI_JOB_IDS = SHARDED_PRODUCT_CI_JOB_IDS | {"windows-full-shar
 REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES | {
     "windows-full-regression-1", "windows-full-regression-2",
 }
+WINDOWS_FULL_CUTOVER_CONDITION = "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}"
+WINDOWS_FULL_CUTOVER_STEPS = """      - name: Require every full Windows shard
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) test '${{ needs.windows-full-shards.result }}' = 'skipped' ;;
+            push|workflow_dispatch) test '${{ needs.windows-full-shards.result }}' = 'success' ;;
+            *) echo "Unsupported Product CI event"; exit 1 ;;
+          esac"""
 
 PRODUCER_ROOT = Path(__file__).resolve().parent.parent
 LEGAL_BINDINGS_GATE = PRODUCER_ROOT / "tools" / "legal-release-bindings" / "verify.mjs"
@@ -790,17 +798,18 @@ def _ci_literal_list(source: str) -> list[str]:
     return values
 
 
-def _validate_sharded_v2_source(job_source: str) -> None:
+def _validate_sharded_v2_source(job_source: str, *, pr_cutover: bool = False) -> None:
     jobs = _ci_literal_mapping(job_source, 2)
     for job_id, name, runner, timeout, count in (
         ("analytics-integration", "analytics-integration", "ubuntu-latest", "20", 4),
         ("windows-full-shards", "windows-full-regression", "windows-latest", "60", 2),
     ):
         fields = _ci_literal_mapping(jobs[job_id], 4)
+        expected_if = WINDOWS_FULL_CUTOVER_CONDITION if pr_cutover and job_id == "windows-full-shards" else None
         if (fields.get("name") != name + "-${{ matrix.shard }}"
                 or fields.get("runs-on") != runner
                 or fields.get("timeout-minutes") != timeout
-                or "if" in fields
+                or fields.get("if") != expected_if
                 or fields.get("continue-on-error", "false") != "false"):
             raise ContractError(f"{job_id}: Product CI matrix execution declaration differs from sharded-v2")
         strategy = _ci_literal_mapping(fields.get("strategy", ""), 6)
@@ -825,6 +834,13 @@ def _validate_sharded_v2_source(job_source: str) -> None:
             or gate.get("continue-on-error", "false") != "false"
             or set(_ci_literal_list(gate.get("needs", ""))) != gate_needs):
         raise ContractError("sharded-v2 Product CI must retain the blocking Windows aggregate and complete gate dependencies")
+    if pr_cutover:
+        if aggregate.get("steps") != WINDOWS_FULL_CUTOVER_STEPS:
+            raise ContractError("Windows PR cutover must accept only its expected producer skip and require full main/manual success")
+        for job_id in ("windows-platform-contract", "analytics-windows-contract", "windows-browser-e2e"):
+            fields = _ci_literal_mapping(jobs[job_id], 4)
+            if "if" in fields or fields.get("continue-on-error", "false") != "false":
+                raise ContractError("Windows PR cutover cannot make a focused Windows or browser job optional")
 
 
 def product_ci_job_policy(workflow_source: bytes) -> set[str]:
@@ -856,6 +872,7 @@ def product_ci_job_policy(workflow_source: bytes) -> set[str]:
     policies = {
         "sharded-v1": (SHARDED_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES),
         "sharded-v2": (SHARDED_V2_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES),
+        "sharded-v2-pr-cutover": (SHARDED_V2_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES),
     }
     if len(versions) != 1 or versions[0] not in policies or source.count("CI_POLICY_VERSION") != 1:
         raise ContractError("Product CI source declares an unknown or ambiguous job policy")
@@ -866,8 +883,22 @@ def product_ci_job_policy(workflow_source: bytes) -> set[str]:
     required_ids, required_names = policies[version]
     if set(job_ids) != required_ids:
         raise ContractError("sharded Product CI source does not declare the exact required job set")
-    if version == "sharded-v2":
-        _validate_sharded_v2_source(job_block)
+    if version in {"sharded-v2", "sharded-v2-pr-cutover"}:
+        _validate_sharded_v2_source(job_block, pr_cutover=version == "sharded-v2-pr-cutover")
+    if version == "sharded-v2-pr-cutover":
+        trigger_blocks = re.findall(r"(?m)^(?:'on'|on):[ \t]*\n((?:[ ]+[^\n]*\n|\n)*)", blocks[0])
+        if len(trigger_blocks) != 1:
+            raise ContractError("Windows PR cutover requires one literal trigger declaration")
+        triggers = _ci_literal_mapping(trigger_blocks[0], 2)
+        if (set(triggers) != {"push", "pull_request", "workflow_dispatch"}
+                or triggers["workflow_dispatch"] != "{}"):
+            raise ContractError("Windows PR cutover requires push, pull_request and manual triggers without a duplicate schedule")
+        for event, keys in (("push", {"branches"}), ("pull_request", {"branches", "types"})):
+            declaration = _ci_literal_mapping(triggers[event], 4)
+            if set(declaration) != keys or _ci_literal_list(declaration.get("branches", "")) != ["main"]:
+                raise ContractError("Windows PR cutover must retain unfiltered main push and pull-request coverage")
+            if event == "pull_request" and _ci_literal_list(declaration["types"]) != ["opened", "synchronize", "reopened"]:
+                raise ContractError("Windows PR cutover must retain every pull-request source event")
     return set(required_names)
 
 

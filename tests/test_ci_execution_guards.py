@@ -30,6 +30,13 @@ WINDOWS_CONSUMERS = {
     "windows-browser-e2e", "windows-full-shards",
     "analytics-scale-qualification",
 }
+WINDOWS_FULL_CUTOVER_RUN = (
+    'case "$GITHUB_EVENT_NAME" in\n'
+    "  pull_request) test '${{ needs.windows-full-shards.result }}' = 'skipped' ;;\n"
+    "  push|workflow_dispatch) test '${{ needs.windows-full-shards.result }}' = 'success' ;;\n"
+    '  *) echo "Unsupported Product CI event"; exit 1 ;;\n'
+    "esac\n"
+)
 
 
 def _workflow_document() -> dict[str, Any]:
@@ -52,9 +59,11 @@ def _assert_gate_covers_every_lane(workflow: dict[str, Any]) -> None:
         elif job_name == "windows-full-regression":
             assert job.get("if") == "${{ always() }}", "full Windows aggregate must evaluate shard failures"
             assert job["needs"] == "windows-full-shards"
-            assert job["steps"][0]["run"] == "test '${{ needs.windows-full-shards.result }}' = 'success'"
+            assert job["steps"][0]["run"] == WINDOWS_FULL_CUTOVER_RUN
+        elif job_name == "windows-full-shards":
+            assert job.get("if") == "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}", "exhaustive Windows may skip only pull requests"
         else:
-            assert "if" not in job, f"required lane {job_name} cannot skip during shadow rollout"
+            assert "if" not in job, f"required lane {job_name} cannot skip during PR cutover"
         assert not job.get("continue-on-error"), f"required lane {job_name} cannot ignore failures"
 
 
@@ -196,11 +205,12 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
         assert job["steps"][0]["run"] == "test '${{ needs.required-ci-gate.result }}' = 'success'"
 
 
-def test_nightly_and_release_qualification_are_explicit_without_path_filters() -> None:
+def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_or_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v2"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v2-pr-cutover"
     events = workflow["on"]
-    assert events["schedule"] == [{"cron": "17 3 * * *"}]
+    assert set(events) == {"push", "pull_request", "workflow_dispatch"}
+    assert events["workflow_dispatch"] == {}
     assert events["push"]["branches"] == ["main"]
     for event in ("push", "pull_request"):
         assert "paths" not in events[event] and "paths-ignore" not in events[event]
