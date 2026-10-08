@@ -29,6 +29,7 @@ WEB_EXECUTION = {
     "Check unused frontend files and dependencies", "Check Agent architecture boundary contracts",
     "Build frontend", "Check committed theme artifacts against the generator", "Test frontend",
     "Test extension", "Test provisioning page module", "Test analytics conformance adapter",
+    "Test local onboarding projection ordering and authority", "Test browser E2E projection read recovery",
     "Test the release bindings gate", "Test the packaged signing rule gate",
     "Build and audit deterministic extension artifact", "Qualify bounded 10k-message snapshot repair",
 }

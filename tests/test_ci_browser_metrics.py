@@ -70,6 +70,21 @@ def test_safety_and_existing_legal_scenario_execution_are_not_bootstrap():
     assert next(row for row in result["jobs"] if row["job"] == "browser-reporting-safety")["execution_seconds"] == 9
 
 
+@pytest.mark.parametrize("name", [
+    "Test local onboarding projection ordering and authority",
+    "Test browser E2E projection read recovery",
+])
+def test_upstream_web_contract_execution_is_not_bootstrap(name):
+    run, jobs = evidence()
+    web = jobs["jobs"][-1]
+    web["name"] = "web-build-and-test"
+    web["steps"][0]["name"] = name
+    web["steps"][1]["name"] = "Test frontend"
+    row = next(row for row in metrics.summarize(run, jobs)["jobs"] if row["job"] == "web-build-and-test")
+    assert row["execution_seconds"] == 13
+    assert row["bootstrap_seconds"] == 0
+
+
 @pytest.mark.parametrize("control", [True, False])
 def test_aggregate_prerequisite_wait_includes_requested_control_only(control):
     run, jobs = evidence()

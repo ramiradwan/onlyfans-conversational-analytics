@@ -971,6 +971,8 @@ def _assert_web_feedback_keeps_its_checks(workflow: dict[str, Any]) -> None:
         ("", "node --test app/provisioning/provisioning.test.mjs"),
         ("", "npm ci --prefix tools/analytics_cosmos_node"),
         ("", "npm test --prefix tools/analytics_cosmos_node"),
+        ("", "node --test shared/onboarding/projection.test.mjs"),
+        ("", "node --test tools/e2e-capture/lib/catchup-diagnostics.test.mjs"),
         ("", "node --test tools/legal-release-bindings/verify.test.mjs"),
         ("", "node --test tools/packaged-signing-rule/verify.test.mjs"),
         ("", "npm run build --prefix extension\nnpm run audit --prefix extension"),
