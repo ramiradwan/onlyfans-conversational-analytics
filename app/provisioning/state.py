@@ -1,10 +1,8 @@
 """Brain-owned onboarding facts, evaluated from current local authority."""
 from __future__ import annotations
 
-import base64
-
-from app.persistence.auth import SQLiteAuthenticationStore, AuthenticationStateError, RevocationKey, RevocationScopeType
-from app.persistence.companion_pairing import CompanionPairingPersistence, CompanionPairingPersistenceError
+from app.persistence.auth import SQLiteAuthenticationStore, RevocationKey, RevocationScopeType
+from app.persistence.companion_pairing import CompanionPairingPersistence
 from app.persistence.onboarding import OnboardingJourneyStore
 from app.provisioning.events import events
 from app.security.analysis_authorization import current_analysis_readiness
@@ -46,26 +44,9 @@ def brain_snapshot(store: SQLiteAuthenticationStore, journey_id: str, identity: 
         readiness = current_analysis_readiness(store, identity)
         facts["activation"] = {"active": "verified", "required": "missing", "unavailable": "unknown"}[readiness.commercial_authority]
         facts["analysis"] = "verified" if readiness.analysis_admission == "admitted" else "unknown"
-        with store.database.transaction() as connection:
-            rows = connection.execute("SELECT pairing_id, pairing_generation FROM agent_pairings WHERE creator_account_id = ? AND revoked_at IS NULL",
-                                      (identity.creator_account_id,)).fetchall()
-            facts["pairing"] = "missing" if not rows else "unknown"
-            for row in rows:
-                if row["pairing_generation"] is not None:
-                    continue
-                try:
-                    store._require_pairing_current(connection, row["pairing_id"], now)
-                except AuthenticationStateError:
-                    continue
-                facts["pairing"] = "verified"
-        for row in rows:
-            if row["pairing_generation"] is None:
-                continue
-            try:
-                CompanionPairingPersistence(store).session_authority(base64.urlsafe_b64decode(row["pairing_id"] + "="))
-            except (CompanionPairingPersistenceError, AuthenticationStateError, ValueError):
-                continue
-            facts["pairing"] = "verified"
+        facts["pairing"] = CompanionPairingPersistence(store).current_pairing_state(
+            identity.creator_account_id
+        )
     reason = {"revoked": "authorization_revoked", "expired": "authorization_expired",
               "unknown": "operation_unconfirmed", "prepare-unknown": "operation_unconfirmed"}.get(journey["state"], "none")
     # The published local command ID is v4, while hosted operations are v7. The

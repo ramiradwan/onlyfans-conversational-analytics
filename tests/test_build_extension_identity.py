@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from packaging_fixture import configured_release_source
+
 from app.core.extension_identity import extension_identity_from_manifest
 
 
@@ -30,6 +32,12 @@ LEGAL_BINDINGS_FIXTURE = (
     FIXTURE_DIRECTORY / "legal-instrument-bindings.synthetic.json"
 )
 SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _isolated_release_source(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest):
+    with configured_release_source(request.module, tmp_path_factory.mktemp("release-source")):
+        yield
 
 
 def _write_pyinstaller_standin(tmp_path: Path) -> Path:
@@ -56,6 +64,7 @@ for relative in (
     'app/persistence/projection_sql',
     'app/analytics/sql',
     'contracts',
+    'shared/onboarding',
 ):
     shutil.copytree(root / relative, stage / '_internal' / relative)
 provisioning = stage / '_internal' / 'app' / 'provisioning'
@@ -64,8 +73,12 @@ for name in (
     'provisioning.html',
     'creator-platform-data-risk-disclosure.html',
     'provisioning.js',
+    'resume.js',
 ):
     shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
+core = stage / '_internal' / 'app' / 'core'
+core.mkdir()
+shutil.copyfile(root / 'app' / 'core' / 'customer-release.json', core / 'customer-release.json')
 """.strip()
         + "\n",
         encoding="utf-8",

@@ -115,14 +115,14 @@ test('a clean installation registers, authenticates, and reaches its configured 
       await page.locator('#confirm-identity').click();
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#acquire-association')).toBeHidden();
-      const [hosted] = await Promise.all([
-        context.waitForEvent('page'), page.locator('#continue-creator-approval').click(),
-      ]);
+      const beforePages = context.pages().length;
+      await page.locator('#continue-creator-approval').click();
+      const hosted = page;
+      expect(context.pages()).toHaveLength(beforePages);
       await hosted.waitForLoadState('domcontentloaded');
       await expect(hosted).toHaveURL(descriptor.hosted_onboarding_url);
       await hosted.bringToFront();
 
-      await hosted.close();
       await returnToProvisioningPage(page);
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'completed');
     });

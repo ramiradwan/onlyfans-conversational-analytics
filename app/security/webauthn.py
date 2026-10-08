@@ -13,14 +13,15 @@ from app.persistence import sqlite_api as sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 from urllib.parse import urlsplit
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from app.core.config import Settings, settings
+if TYPE_CHECKING:
+    from app.core.config import Settings
 from app.persistence.auth import (
     AuthenticationStateError,
     AuthenticationStore,
@@ -593,10 +594,14 @@ class WebAuthnService:
 def configured_webauthn_service(
     store: AuthenticationStore,
     *,
-    configuration: Settings = settings,
+    configuration: Settings | None = None,
     clock: Callable[[], datetime] | None = None,
 ) -> WebAuthnService:
     """Build the local WebAuthn service from runtime configuration."""
+    if configuration is None:
+        from app.core.config import settings
+
+        configuration = settings
     origin = _exact_origin(configuration.bridge_origin)
     relying_party_id = urlsplit(origin).hostname
     if relying_party_id is None:

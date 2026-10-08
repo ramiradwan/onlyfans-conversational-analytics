@@ -43,9 +43,12 @@ export async function inspectTaskCopy(page, fixture) {
   assert.equal(rail.height, 52);
   assert.equal(await page.locator('textarea, details').count(), 0);
   if (fixture.name.startsWith('approval-unavailable')) {
-    assert.equal(message, '', 'routine instructions repeat in a banner');
-    assert(await page.locator('#recovery-open').isVisible());
-    assert(!await page.locator('#acquire-association').isVisible());
+    assert(message, 'A failed approval check must be explained');
+    assert(await feedback.isVisible());
+    assert(!await page.locator('#recovery-open').isVisible(), 'Same-tab setup must not ask users to find another tab');
+    const retry = page.locator('#acquire-association');
+    assert(await retry.isVisible());
+    assert.equal(await retry.getAttribute('aria-describedby'), 'provisioning-status');
   }
   if (fixture.name === 'confirm') {
     assert.equal(await page.locator('#extension-install-reason').isVisible(), await page.locator('#open-extension-setup').isVisible(), 'Account confirmation must not request completed extension setup');

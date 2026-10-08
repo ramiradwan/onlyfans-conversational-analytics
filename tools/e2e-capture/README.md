@@ -64,6 +64,11 @@ The Python command needs the `pytest` and `pytest-asyncio` versions in `requirem
 The test checks the complete local capture path rather than isolated modules. It verifies that:
 
 - the built Agent can pair with Brain through Bridge;
+- the existing setup workspace returns to App home, which creates and confirms
+  same-browser pairing automatically through the production ports;
+- the initial passkey registration issues the session without a second ceremony;
+- Preview permission and Full pairing attach to the existing platform document
+  with no product-requested tab reload;
 - creator-visible fixture data reaches the durable Agent outbox and canonical Brain storage;
 - Brain publishes matching derived state and Bridge reads bounded message history through authenticated interfaces;
 - unacknowledged Agent data survives Brain and service-worker restarts and is replayed without duplication;
@@ -72,6 +77,18 @@ The test checks the complete local capture path rather than isolated modules. It
 - unrelated processes, listeners, profiles, and databases are not reused or terminated by the harness.
 
 The exact sequence numbers, row counts, recovery timing, and failure assertions are defined in `tests/capture.spec.mjs`. Keep those details in the test instead of duplicating them here.
+
+`popup-lifecycle.spec.mjs` retains its registry identities but uses persistent
+pages; the shipping action has no toolbar popup. Its Options and disclosure
+checks exercise the UI. Its three explicitly named companion-client checks are
+supplemental port-ownership, cancellation, and result tests against a synthetic
+desktop peer. They do not claim to exercise the App-owned automatic pairing
+journey; the real-Brain capture scenarios exercise that journey. The obsolete
+manual extension pairing and Settings steps are not required by those scenarios.
+
+The harness blocks OnlyFans requests until an explicit synthetic fixture handles
+them. Deliberate test-driven page reloads remain in the durable replay checks;
+separate observations reject reloads requested by the extension itself.
 
 ## Privacy and teardown
 

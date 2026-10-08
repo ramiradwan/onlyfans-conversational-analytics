@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "description": "Customer-observable journey states, the code that renders each state, and the tests that exercise it. State ids, anchors, and evidence names are engineering identifiers and test titles, not interface copy. Validated by tools/validate_ux_journey.py. The persistent extension setup page owns former popup states; compatibility filenames do not imply a toolbar popup. External hosted steps are documented and tested in their owning repository. Legacy manual provisioning transitions remain available for compatibility; the admitted desktop workspace prepares initial handoff automatically.",
+  "description": "Customer-observable journey states, the code that renders each state, and the tests that exercise it. State ids, anchors, and evidence names are engineering identifiers and test titles, not interface copy. Validated by tools/validate_ux_journey.py. The persistent extension setup page owns former popup states; compatibility filenames do not imply a toolbar popup. External hosted steps are documented and tested in their owning repository. Legacy manual provisioning transitions remain available for compatibility; the admitted desktop workspace prepares initial handoff automatically. Extension pair and open_desktop_settings actions describe the fallback without a linked desktop workspace; admitted same-browser setup automatically pairs from the App without a Settings action. Browser tests named companion client are supplemental lifecycle/ownership evidence, not evidence that the fallback buttons were clicked. Unit and visual evidence cover the fallback presentation; the real MV3 capture browser test and OnboardingContinuation test cover App-owned automatic pairing.",
   "surfaces": {
     "desktop.setup": {
       "implementation": [
@@ -13,6 +13,7 @@
         "frontend/src/views/WebAuthnAccessView.tsx",
         "frontend/src/components/SetupPrompt.tsx",
         "frontend/src/components/CompanionPairingControls.tsx",
+        "frontend/src/components/OnboardingContinuation.tsx",
         "frontend/src/views/SettingsView.tsx",
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
@@ -251,7 +252,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/standalone-preview.spec.mjs",
-          "name": "pause unregisters capture and subsequent reads do not increase metrics"
+          "name": "pause stops forwarding in the same document and subsequent reads do not increase metrics"
         },
         {
           "kind": "visual",
@@ -334,6 +335,10 @@
       "transitions": [
         {
           "to": "extension.pairing_in_progress",
+          "by": "system"
+        },
+        {
+          "to": "extension.pairing_in_progress",
           "by": "user",
           "action": "pair"
         }
@@ -401,12 +406,12 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "focus changes and closing an observing popup preserve pairing; closing setup cancels it"
+          "name": "companion client ownership survives focus and observer closure; owner closure cancels pairing"
         },
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "a confirmed connection stays in setup and readiness comes from the desktop result"
+          "name": "companion client confirmation preserves setup and readiness comes from the desktop result"
         },
         {
           "kind": "visual",
@@ -448,7 +453,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "pairing starts only on explicit setup action and recovers from the desktop not being ready"
+          "name": "companion client pairs only after an explicit command and recovers from the desktop not being ready"
         },
         {
           "kind": "visual",
@@ -703,7 +708,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "a confirmed connection stays in setup and readiness comes from the desktop result"
+          "name": "companion client confirmation preserves setup and readiness comes from the desktop result"
         },
         {
           "kind": "visual",
@@ -903,6 +908,10 @@
       "transitions": [
         {
           "to": "desktop.full_analytics_activation",
+          "by": "system"
+        },
+        {
+          "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "confirm-connection"
         },
@@ -922,6 +931,16 @@
         }
       ],
       "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/OnboardingContinuation.test.tsx",
+          "name": "the returning workspace mounts remaining controls without a Settings action and waits for owner completion"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/capture.spec.mjs",
+          "name": "real MV3 capture proves exact ordering, durable replay, and alarm recovery"
+        },
         {
           "kind": "unit",
           "file": "frontend/tests/CompanionPairingControls.test.tsx",

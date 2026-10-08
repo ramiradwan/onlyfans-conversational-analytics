@@ -210,6 +210,22 @@ def _consume_claim(context):
     )
 
 
+@pytest.mark.parametrize("loss", ["expired", "revoked"])
+def test_pairing_readiness_uses_current_retained_authority(context, loss):
+    store, pairing, clock, _ = context
+    assert pairing.current_pairing_state("creator") == "missing"
+    _approve(context)
+    pin = _confirm(context, _await(context))
+    assert pairing.current_pairing_state("creator") == "verified"
+    assert pairing.current_pairing_state("another-creator") == "missing"
+    if loss == "expired":
+        clock.at += timedelta(hours=2)
+    else:
+        store.revoke(RevocationKey(RevocationScopeType.AGENT_PAIRING, base64.urlsafe_b64encode(
+            pin.pairing_id).rstrip(b"=").decode("ascii")))
+    assert pairing.current_pairing_state("creator") != "verified"
+
+
 def test_companion_confirmation_queues_exactly_one_account_fact(context):
     _approve(context)
     _consume_claim(context)

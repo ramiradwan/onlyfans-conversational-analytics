@@ -230,7 +230,7 @@ test('approval pending and hosted outage have distinct recovery copy', async () 
   }) });
   pending.elements.claimPackage.value = VALID_PACKAGE;
   await pending.controller.submitClaim({ preventDefault() {} });
-  assert.match(pending.elements.status.textContent, /connection is not approved yet/i);
+  assert.match(pending.elements.status.textContent, /Approval could not be checked/);
 
   const offline = harness({ fetch: async () => response(503, {
     state: 'provisioning_ready', reason: 'hosted_unavailable',

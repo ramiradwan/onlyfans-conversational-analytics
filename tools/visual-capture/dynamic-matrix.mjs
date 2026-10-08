@@ -36,7 +36,7 @@ export function dynamicSequence(view, width) {
     for (const stage of ['needs_terms', 'needs_full', 'needs_site_access', 'needs_account', 'ready_to_pair', 'paired']) add(`extension:${stage}`);
     add('extension:missing', 'invalid-code', 'valid-code', 'claim:pending', 'claim:confirmed');
     for (const identity of ['absent', 'changed', 'present']) add(`identity:${identity}`);
-    add('account:confirm', 'recovery:open', 'recovery:close');
+    add('account:confirm', 'approval:retry:pending', 'approval:retry:refused');
     for (const reason of ['size', 'encoding', 'profile', 'schema', 'device', 'consumed', 'binding_acquisition_unavailable', 'hosted_origin_unavailable', 'hosted_unavailable', 'installation_key_unavailable', 'membership_reference_unavailable', 'candidate_resolution_conflict', 'grant_verification_refused', 'claim_already_consumed', 'claim_refused', 'incomplete_grant_set', 'membership_refresh_unavailable', 'unknown']) add(`approval:refusal:${reason}`);
     add('approval:pending', 'finalization:pending', 'finalization:completed', 'finalization:response-lost-reconciled');
     return steps;

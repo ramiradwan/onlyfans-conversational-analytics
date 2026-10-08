@@ -67,6 +67,48 @@ test('no transfer context leaves normal setup available without a navigation', a
   assert.equal(run.calls.length, 1); assert.equal(run.document.body.children.length, 0);
 });
 
+for (const [context, reply, action] of [[codeContext, prepared, 'prepare'], [proofContext, signed, 'sign'],
+  [{ state: 'continue', journey_id: journeyId, csrf_token: 'local-only', continuation: {
+    profile: 'urn:bridge-clean:onboarding-continuation:v1', reference: 'r'.repeat(43),
+    return_target: 'desktop-setup', expires_at: '2026-10-08T12:30:00Z' } },
+  { state: 'waiting', journey_id: journeyId, handoff_reference: 'h'.repeat(43),
+    hosted_start_url: `${hosted}/start`, continuation_reference: 'r'.repeat(43) }, 'continue']]) {
+  for (const delayedContext of [false, true]) test(`retired ${action} relay ignores delayed ${delayedContext ? 'context' : 'mutation'} and restore is read-only`, async () => {
+    const run = setup([]);
+    let generation = 0, release;
+    const delayed = new Promise((resolve) => { release = resolve; });
+    const captured = generation;
+    run.options.current = () => generation === captured;
+    run.options.fetch = async (path, options) => {
+      run.calls.push({ path, options });
+      if (path.endsWith('/context') === delayedContext) await delayed;
+      return new Response(JSON.stringify(path.endsWith('/context') ? context : reply), { headers: { 'content-type': 'application/json' } });
+    };
+    const result = continueReceivingTransfer(run.options);
+    await new Promise((resolve) => setImmediate(resolve));
+    generation += 1; // pagehide followed by pageshow never revives captured work
+    release();
+    assert.equal(await result, 'retired');
+    assert.equal(run.document.body.children.length, 0);
+    const before = run.calls.filter((call) => call.options.method === 'POST').length;
+    assert.equal(before, delayedContext ? 0 : 1);
+    assert.equal(await continueReceivingTransfer({ ...run.options, current: () => true, readOnly: true }), 'recovery');
+    assert.equal(run.calls.filter((call) => call.options.method === 'POST').length, before);
+    assert.equal(run.document.body.children.length, 0);
+  });
+}
+
+test('a recovery action retained from a retired transfer cannot navigate', async () => {
+  const run = setup([{ state: 'unconfirmed', journey_id: journeyId, hosted_return_url: hosted }]);
+  let active = true, recovery, navigated = false;
+  run.document.defaultView = { location: { assign() { navigated = true; } } };
+  await continueReceivingTransfer({ ...run.options, current: () => active,
+    onRecovery: (_label, action) => { recovery = action; } });
+  active = false;
+  recovery();
+  assert.equal(navigated, false);
+});
+
 test('unknown proof handling offers a return without signing or replaying the operation', async () => {
   const run = setup([{ state: 'unconfirmed', journey_id: journeyId, hosted_return_url: hosted }]);
   let recovery, destination;

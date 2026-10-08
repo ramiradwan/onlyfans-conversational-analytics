@@ -9,7 +9,7 @@ for (const width of [390, 1440]) for (const outcome of ['pending', 'refused']) {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     try {
       await installProvisioningFixture(page, { stage: 'finalization_ready', name: 'finish' });
-      await openProvisioningFixture(page);
+      await openProvisioningFixture(page, { pendingOperation: 'finalize' });
       await page.waitForFunction(() => window.__provisioningFixture.calls.includes('finalize'));
       if (outcome === 'refused') {
         await page.evaluate(() => {
@@ -26,7 +26,7 @@ for (const width of [390, 1440]) for (const outcome of ['pending', 'refused']) {
       if (outcome === 'pending') {
         await page.evaluate(() => window.__provisioningFixture.release('finalize'));
         await page.getByRole('heading', { name: 'Setup finished' }).waitFor();
-        assert.equal(await description.innerText(), 'The desktop app is restarting. Continue there when it opens.');
+        assert.equal(await description.innerText(), 'Restarting the desktop app…');
       }
     } finally { await browser.close(); }
   });

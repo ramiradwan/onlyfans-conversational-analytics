@@ -21,7 +21,7 @@ const DECODER_REFUSALS = Object.freeze({
 });
 
 const OPERATION_REFUSALS = Object.freeze({
-  binding_acquisition_unavailable: 'The connection is not approved yet. Allow it in the setup tab, then try again.',
+  binding_acquisition_unavailable: 'Approval could not be checked. Try again.',
   hosted_origin_unavailable: 'This app is missing its setup link. Return to the website where you got your code for help.',
   hosted_unavailable: 'Setup is unavailable. Try again shortly.',
   installation_key_unavailable: 'This computer’s secure device protection is unavailable. Restart the desktop app and try again.',
@@ -37,6 +37,7 @@ const OPERATION_REFUSALS = Object.freeze({
 const GENERIC_REFUSAL = 'This step could not be completed. Reopen the desktop app and try again.';
 const REQUEST_FAILURE = 'The desktop app could not be reached. Make sure it is running and try again.';
 const MUTATION_FAILED = Symbol('mutation failed');
+const MUTATION_RETIRED = Symbol('mutation retired');
 const JOURNEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 /** Only the registered local workspace identifier; never an authentication value. */
@@ -91,13 +92,15 @@ export function submitHostedHandoff({ document, payload, journeyId, registeredHo
 
 /** Automatic same-workspace relay; all authority stays in the local cookie/CSRF. */
 export async function continueReceivingTransfer({ fetch, document, journeyId, registeredHostedUrl, onStatus, onRecovery = () => {},
-  loadParser = () => import('/provisioning/onboarding/json.mjs'), timeoutMs = 10_000 }) {
+  loadParser = () => import('/provisioning/onboarding/json.mjs'), timeoutMs = 10_000,
+  current = () => true, readOnly = false }) {
   const prefix = '/api/v1/provisioning/setup-transfer';
   let submitted = false;
-  const fail = () => { onStatus('Setup could not be continued.'); return 'unavailable'; };
+  const fail = () => { if (!current()) return 'retired'; onStatus('Setup could not be continued.'); return 'unavailable'; };
   try {
     const { parseOnboardingJson } = await loadParser();
     const read = async (path, body, csrf) => {
+      if (!current()) throw new Error('Page retired');
       const abort = new AbortController();
       const timer = setTimeout(() => abort.abort(), timeoutMs);
       try {
@@ -109,10 +112,13 @@ export async function continueReceivingTransfer({ fetch, document, journeyId, re
         if (!response.ok || response.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') {
           throw new Error('Transfer unavailable');
         }
-        return parseOnboardingJson(await response.text());
+        const text = await response.text();
+        if (!current()) throw new Error('Page retired');
+        return parseOnboardingJson(text);
       } finally { clearTimeout(timer); }
     };
     const context = await read(`${prefix}/context`);
+    if (!current()) return 'retired';
     if (isRecord(context) && hasOnlyKeys(context, ['state']) && context.state === 'none') return 'none';
     if (!isRecord(context) || context.journey_id !== journeyId || !JOURNEY_PATTERN.test(journeyId)) return fail();
     const registered = new URL(registeredHostedUrl);
@@ -121,7 +127,7 @@ export async function continueReceivingTransfer({ fetch, document, journeyId, re
     if (context.state === 'unconfirmed' && hasOnlyKeys(context, ['state', 'journey_id', 'hosted_return_url'])
       && context.hosted_return_url === registered.href) {
       onStatus('Setup could not be confirmed.');
-      onRecovery('Return to setup', () => document.defaultView.location.assign(`${registered.href}#journey=${journeyId}`));
+      onRecovery('Return to setup', () => { if (current()) document.defaultView.location.assign(`${registered.href}#journey=${journeyId}`); });
       return 'recovery';
     }
     if (context.state === 'continue_ready' && hasOnlyKeys(context, ['state', 'journey_id', 'result'])
@@ -131,7 +137,14 @@ export async function continueReceivingTransfer({ fetch, document, journeyId, re
       && context.result.hosted_start_url === `${registered.origin}/public/onboarding/start`
       && [context.result.handoff_reference, context.result.continuation_reference].every((part) => /^[A-Za-z0-9_-]{43}$/u.test(part))) {
       onStatus('Continue setup.');
-      onRecovery('Continue setup', () => submitHostedHandoff({ document, payload: context.result, journeyId, registeredHostedUrl }));
+      onRecovery('Continue setup', () => current() && submitHostedHandoff({ document, payload: context.result, journeyId, registeredHostedUrl }));
+      return 'recovery';
+    }
+    // Returning to this document only reconciles. An interrupted mutation may
+    // still be committing; its old context cannot authorize a second request.
+    if (readOnly) {
+      onStatus('Setup could not be confirmed.');
+      onRecovery('Return to setup', () => { if (current()) document.defaultView.location.assign(`${registered.href}#journey=${journeyId}`); });
       return 'recovery';
     }
     if (typeof context.csrf_token !== 'string' || !context.csrf_token || context.csrf_token.length > 1024) return fail();
@@ -145,6 +158,7 @@ export async function continueReceivingTransfer({ fetch, document, journeyId, re
       && /^[A-Za-z0-9_-]{43}$/u.test(context.continuation.reference)
       && Number.isFinite(Date.parse(context.continuation.expires_at))) {
       const result = await read(`${prefix}/continue`, { continuation: context.continuation }, context.csrf_token);
+      if (!current()) return 'retired';
       if (result?.continuation_reference !== context.continuation.reference || !submitHostedHandoff({
         document, payload: result, journeyId, registeredHostedUrl,
       })) return fail();
@@ -152,6 +166,7 @@ export async function continueReceivingTransfer({ fetch, document, journeyId, re
     } else if (context.state === 'code_entry' && hasOnlyKeys(context, ['state', 'journey_id', 'setup_code', 'csrf_token'])
       && /^[0-9A-HJKMNP-TV-Z]{12}$/u.test(context.setup_code)) {
       const prepared = await read(`${prefix}/prepare`, { setup_code: context.setup_code }, context.csrf_token);
+      if (!current()) return 'retired';
       if (!isRecord(prepared) || !hasOnlyKeys(prepared, ['journey_id', 'request', 'hosted_start_url'])
         || prepared.journey_id !== journeyId || prepared.hosted_start_url !== `${registered.href}/receive`
         || !isTransferRequest(prepared.request) || prepared.request.destination.kind !== 'desktop') return fail();
@@ -166,6 +181,7 @@ export async function continueReceivingTransfer({ fetch, document, journeyId, re
       && /^[a-f0-9]{64}$/u.test(context.challenge.request_digest)
       && Number.isFinite(Date.parse(context.challenge.expires_at))) {
       const proof = await read(`${prefix}/sign`, { request: context.request, challenge: context.challenge }, context.csrf_token);
+      if (!current()) return 'retired';
       if (!isRecord(proof) || !hasOnlyKeys(proof, ['challenge', 'signature'])
         || proof.challenge !== context.challenge.challenge || !/^[A-Za-z0-9_-]{86}$/u.test(proof.signature)) return fail();
       target = context.hosted_return_url;
@@ -179,7 +195,7 @@ export async function continueReceivingTransfer({ fetch, document, journeyId, re
     document.body.append(form); form.submit(); submitted = true;
     return 'submitted';
   } catch { return fail(); }
-  finally { if (submitted) onStatus('Continuing setup…'); }
+  finally { if (submitted && current()) onStatus('Continuing setup…'); }
 }
 
 function isTransferRequest(value) {
@@ -465,9 +481,24 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   let progressRead = null;
   let readAgain = false;
   let restarting = false;
+  let pageActive = true;
+  let lifecycleGeneration = 0;
+  let identityGeneration = 0;
+  let activeMutation = null;
+  let uncertainMutation = null;
+  let resumeNeedsAction = false;
+  let handoffRecoveryRead = null;
+  let transferActive = false;
+  let ownerGeneration = 0;
+  let extensionGeneration = 0;
+  let initialProgressPending = true;
   const page = document.defaultView ?? globalThis;
   const journeyId = parseJourneyHash(page.location?.hash);
   const hostedLink = document.querySelector('#open-secure-setup');
+  const currentPage = () => {
+    const generation = lifecycleGeneration;
+    return () => pageActive && generation === lifecycleGeneration;
+  };
 
   const setStatus = (message, error = false) => {
     elements.status.textContent = message;
@@ -477,28 +508,44 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   const setIdentityStatus = (message) => { elements.identityStatus.textContent = message; };
 
   async function resumeRuntime() {
-    if (!journeyId || restarting || typeof connectOnboarding !== 'function') return;
+    if (!pageActive || !journeyId || restarting || typeof connectOnboarding !== 'function') return;
     restarting = true;
     onboarding?.close();
     setStatus('Restarting the desktop app…');
-    onboarding = await connectOnboarding({ fetch, journeyId, runtime: true,
-      onFocus: () => focusExistingWorkspace(extensionId),
+    await connectOwner(true);
+  }
+
+  async function connectOwner(runtime = false) {
+    if (!pageActive) return;
+    const generation = ++ownerGeneration;
+    const current = () => pageActive && generation === ownerGeneration;
+    const handle = await connectOnboarding({ fetch, journeyId, runtime,
+      onFocus: () => { if (current()) focusExistingWorkspace(extensionId); },
       onState: (state) => {
+        if (!current()) return;
+        if (!runtime) { onOwnerState(state); return; }
         // A fresh authenticated runtime snapshot, not focus or a timer, proves
         // that the new process is listening. Replace this same workspace tab.
         if (state.facts.installation === 'verified') page.location.replace(`/#journey=${journeyId}`);
       },
-      onUnavailable: ({ retrying } = {}) => setStatus(retrying
-        ? 'Reconnecting…' : 'Setup could not reconnect. Open the desktop app to continue.'),
+      onUnavailable: ({ retrying } = {}) => {
+        if (current()) setStatus(retrying ? 'Reconnecting…' : runtime
+          ? 'Setup could not reconnect. Open the desktop app to continue.'
+          : 'Connection to the desktop app was lost.');
+      },
     });
+    if (current()) onboarding = handle;
+    else handle?.close();
   }
 
   async function beginHostedSetup(event) {
     event?.preventDefault();
-    if (!journeyId || installationRegistered || mutationInFlight || configurationComplete) return;
+    const current = currentPage();
+    if (!current() || !journeyId || installationRegistered || mutationInFlight || uncertainMutation || configurationComplete) return;
     handoffAttempted = true;
     setStatus('Connecting this computer…');
     const payload = await mutate('/api/v1/provisioning/initial-handoff', {});
+    if (!current() || payload === MUTATION_RETIRED) return;
     if (payload === MUTATION_FAILED) return;
     if (submitHostedHandoff({ document, payload, journeyId, registeredHostedUrl: hostedLink?.href })) return;
     if (isRecord(payload) && hasOnlyKeys(payload, ['state', 'journey_id']) && payload.journey_id === journeyId
@@ -513,16 +560,28 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (state.epoch === pushedEpoch && state.revision <= pushedRevision) return;
     pushedEpoch = state.epoch; pushedRevision = state.revision;
     if (progressRead) { readAgain = true; return; }
-    progressRead = (async () => {
+    const read = (async () => {
       do {
         readAgain = false;
-        await checkStatus();
+        const generation = ownerGeneration;
+        const current = () => pageActive && generation === ownerGeneration;
+        const progress = await checkStatus(current);
+        if (!current()) return;
+        if (!progress) continue;
+        if (resumeNeedsAction) { initialProgressPending = false; return; }
+        if (initialProgressPending) {
+          initialProgressPending = false;
+          if (progress.stage === 'creator_approval_pending') await acquireAssociation();
+        }
+        if (!current()) return;
         if (approvalAcquired && !configurationComplete && !recoveryRequired) await finalizeProvisioning();
+        if (!current()) return;
         if (!handoffAttempted && !installationRegistered && !recoveryRequired && hostedLink && !hostedLink.hidden) {
           await beginHostedSetup();
         }
       } while (readAgain);
-    })().finally(() => { progressRead = null; });
+    })().finally(() => { if (progressRead === read) progressRead = null; });
+    progressRead = read;
   }
   const renderExtensionSetup = () => {
     if (elements.openExtensionSetup) {
@@ -546,6 +605,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   }
 
   function renderState() {
+    const mutationBlocked = mutationInFlight || uncertainMutation !== null;
     const stepStates = configurationComplete
       ? ['completed', 'completed', 'completed', 'completed']
       : recoveryRequired
@@ -574,16 +634,16 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     const valid = validateClaimPackageInput(elements.claimPackage.value).valid;
     elements.claimStep.dataset.codeValid = String(valid);
 
-    elements.claimPackage.disabled = recoveryRequired || mutationInFlight || installationRegistered || configurationComplete;
-    elements.claimSubmit.disabled = !valid || recoveryRequired || mutationInFlight || installationRegistered || configurationComplete;
+    elements.claimPackage.disabled = recoveryRequired || mutationBlocked || installationRegistered || configurationComplete;
+    elements.claimSubmit.disabled = !valid || recoveryRequired || mutationBlocked || installationRegistered || configurationComplete;
     elements.refreshIdentity.disabled = recoveryRequired || configurationComplete || associationRequestId !== null;
     elements.refreshIdentity.hidden = extensionStage !== null || detectedAccountId !== null
       || configurationComplete || associationRequestId !== null;
-    elements.confirmIdentity.disabled = recoveryRequired || mutationInFlight || configurationComplete
+    elements.confirmIdentity.disabled = recoveryRequired || mutationBlocked || configurationComplete
       || !installationRegistered || detectedAccountId === null || associationRequestId !== null;
-    elements.acquireAssociation.disabled = recoveryRequired || mutationInFlight || configurationComplete
+    elements.acquireAssociation.disabled = recoveryRequired || mutationBlocked || configurationComplete
       || associationRequestId === null || approvalAcquired;
-    elements.finalizeProvisioning.disabled = recoveryRequired || mutationInFlight || configurationComplete
+    elements.finalizeProvisioning.disabled = recoveryRequired || mutationBlocked || configurationComplete
       || associationRequestId === null || !approvalAcquired;
 
     // Each step owns one instruction. Outcomes appear beside its controls.
@@ -677,8 +737,70 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
 
   async function readJson(response) { try { return await response.json(); } catch { return null; } }
 
+  function reconcileMutation(progress) {
+    if (!uncertainMutation) return;
+    const operation = uncertainMutation;
+    const { path, associationId, accountId } = uncertainMutation;
+    const registered = ['creator_confirmation_required', 'creator_approval_pending', 'finalization_ready'].includes(progress.stage);
+    const associated = ['creator_approval_pending', 'finalization_ready'].includes(progress.stage)
+      && progress.creator_account_id === accountId;
+    const acquired = progress.stage === 'finalization_ready'
+      && progress.association_request_id === associationId && progress.creator_account_id === accountId;
+    if (progress.state === 'configured_restart'
+      || (['/claim', '/initial-handoff'].some((suffix) => path.endsWith(suffix)) && registered)
+      || (path.endsWith('/creator-association') && associated)
+      || (path.endsWith('/acquire') && acquired)) uncertainMutation = null;
+    else if (uncertainMutation.refused) {
+      uncertainMutation = null;
+      approvalFailed = progress.stage === 'creator_approval_pending';
+      finalizeFailed = progress.stage === 'finalization_ready';
+      finalizeRefused = true;
+      setStatus('This step did not finish. Try again.');
+    } else setStatus('This step could not be confirmed. Reopen the desktop app to continue.');
+    // A committed owner fact supersedes an unresolved transport response. The
+    // retired request's finally block must not unlock a later page operation.
+    if (uncertainMutation === null && activeMutation === operation) {
+      activeMutation = null; mutationInFlight = false;
+    }
+    const recovery = document.querySelector('#transfer-recovery-action');
+    if (recovery) {
+      recovery.hidden = uncertainMutation === null;
+      recovery.textContent = 'Check setup';
+      recovery.onclick = onReturn;
+    }
+    renderState();
+  }
+
+  async function recoverHandoff(current) {
+    if (handoffRecoveryRead) return handoffRecoveryRead;
+    const read = (async () => {
+      try {
+        const response = await fetch('/api/v1/provisioning/initial-handoff', {
+          credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+          headers: { Accept: 'application/json', 'X-Provisioning-CSRF': csrf, 'X-Onboarding-Journey': journeyId },
+        });
+        const payload = await readJson(response);
+        if (!current() || !response.ok || !uncertainMutation?.path.endsWith('/initial-handoff')) return;
+        if (submitHostedHandoff({ document, payload, journeyId, registeredHostedUrl: hostedLink?.href })) {
+          if (activeMutation === uncertainMutation) { activeMutation = null; mutationInFlight = false; }
+          uncertainMutation = null;
+          const recovery = document.querySelector('#transfer-recovery-action');
+          if (recovery) recovery.hidden = true;
+        }
+      } catch { /* Preserve the unconfirmed outcome; an explicit check can retry the read. */ }
+    })().finally(() => { if (handoffRecoveryRead === read) handoffRecoveryRead = null; });
+    handoffRecoveryRead = read;
+    return read;
+  }
+
   async function mutate(path, body, { neutralReasons = [] } = {}) {
+    const current = currentPage();
+    if (!current() || uncertainMutation) return MUTATION_RETIRED;
     if (recoveryRequired || mutationInFlight || configurationComplete) return MUTATION_FAILED;
+    resumeNeedsAction = false;
+    const operation = { path, associationId: associationRequestId,
+      accountId: body.detected_creator_account_id ?? associatedAccountId };
+    activeMutation = operation;
     setStatus(path.endsWith('/acquire') ? 'Checking approval…' : path.endsWith('/finalize') ? 'Finishing setup…' : path.endsWith('/claim') ? 'Checking code…' : path.endsWith('/initial-handoff') ? 'Connecting this computer…' : '');
     setBusy(true);
     try {
@@ -688,6 +810,12 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
         body: JSON.stringify(body),
       });
       const payload = await readJson(response);
+      if (!current()) {
+        // A refusal never authorizes progress. After a fresh owner read it can
+        // offer an explicit retry, instead of trapping the user as uncertain.
+        if (response.status >= 400 && response.status < 500) { operation.refused = true; resumeNeedsAction = true; }
+        return MUTATION_RETIRED;
+      }
       if (!response.ok) {
         if (path.endsWith('/finalize')) finalizeRefused = response.status >= 400 && response.status < 500;
         if (response.status === 401 || response.status === 403) recoveryRequired = true;
@@ -697,12 +825,24 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       }
       return payload;
     } catch {
+      if (!current()) return MUTATION_RETIRED;
       setStatus(REQUEST_FAILURE, true); return MUTATION_FAILED;
-    } finally { setBusy(false); }
+    } finally {
+      if (activeMutation === operation) {
+        activeMutation = null;
+        mutationInFlight = false;
+        if (current()) renderState();
+        // Ignore the retired reply. Only a fresh read can reconcile its effect.
+        else if (pageActive) void onReturn();
+      }
+    }
   }
 
   async function refreshIdentity() {
-    if (recoveryRequired || configurationComplete || associationRequestId !== null) return;
+    const pageCurrent = currentPage();
+    const generation = ++identityGeneration;
+    const current = () => pageCurrent() && generation === identityGeneration && associationRequestId === null;
+    if (!current() || recoveryRequired || configurationComplete) return;
     detectedAccountId = null;
 
     renderState();
@@ -711,6 +851,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     }
     try {
       const identity = parseIdentityResponse(await sendExtensionMessage(extensionId, IDENTITY_QUERY));
+      if (!current()) return;
       if (identity === null) {
         setIdentityStatus(missingExtensionStep() ?? 'The extension could not find your account. Sign in on OnlyFans, then try again.');
         renderExtensionSetup(); return;
@@ -724,15 +865,18 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       setIdentityStatus(`Signed in now: ${detectedAccountId}`);
       renderState(); renderExtensionSetup();
     } catch {
+      if (!current()) return;
       setIdentityStatus(missingExtensionStep() ?? 'Enable the Conversation Analytics extension, then try again.');
       renderExtensionSetup();
     }
   }
 
-  async function checkStatus() {
+  async function checkStatus(current = currentPage()) {
+    if (!current()) return null;
     try {
       const response = await fetch('/api/v1/provisioning/status', { credentials: 'same-origin' });
       const payload = await readJson(response);
+      if (!current()) return null;
       const progress = response.ok ? parseStatusResponse(payload) : null;
       if (progress?.state === 'configured_restart') {
         configurationComplete = true;
@@ -743,8 +887,12 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       } else if (!response.ok) setStatus(explainProvisioningFailure(response, payload), true);
       else if (progress?.state === 'provisioning_ready') applyProgress(progress);
       else setStatus('Setup could not be checked. Reopen the desktop app.', true);
+      if (progress) reconcileMutation(progress);
+      if (progress && uncertainMutation?.path.endsWith('/initial-handoff')) await recoverHandoff(current);
+      if (!current()) return null;
       return progress;
     } catch {
+      if (!current()) return null;
       setStatus('Make sure the desktop app is running, then reload this page.', true);
       return null;
     }
@@ -752,10 +900,12 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
 
   async function submitClaim(event) {
     event?.preventDefault();
-    if (recoveryRequired || installationRegistered || configurationComplete) return;
+    const current = currentPage();
+    if (!current() || recoveryRequired || installationRegistered || configurationComplete) return;
     const packageResult = updatePackageGuidance(true);
     if (!packageResult.valid) { setStatus(''); elements.claimPackage.focus?.(); return; }
     const payload = await mutate('/api/v1/provisioning/claim', { package: packageResult.value });
+    if (!current() || payload === MUTATION_RETIRED) return;
     if (isInstallationRegisteredResponse(payload)) {
       installationRegistered = true;
       setStatus('');
@@ -766,9 +916,11 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   }
 
   async function confirmIdentity() {
-    if (recoveryRequired || !installationRegistered || detectedAccountId === null || associationRequestId !== null) return;
+    const current = currentPage();
+    if (!current() || recoveryRequired || !installationRegistered || detectedAccountId === null || associationRequestId !== null) return;
     const confirmedAccountId = detectedAccountId;
     const payload = await mutate('/api/v1/provisioning/creator-association', { detected_creator_account_id: confirmedAccountId });
+    if (!current() || payload === MUTATION_RETIRED) return;
     const created = parseAssociationCreationResponse(payload);
     if (created !== null) {
       associationRequestId = created; associatedAccountId = confirmedAccountId;
@@ -778,13 +930,15 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   }
 
   async function acquireAssociation() {
-    if (recoveryRequired || mutationInFlight || configurationComplete || associationRequestId === null || approvalAcquired) return;
+    const current = currentPage();
+    if (!current() || uncertainMutation || recoveryRequired || mutationInFlight || configurationComplete || associationRequestId === null || approvalAcquired) return;
     approvalFailed = false;
     const payload = await mutate(
       '/api/v1/provisioning/creator-association/acquire',
       {},
       { neutralReasons: ['binding_acquisition_unavailable'] },
     );
+    if (!current() || payload === MUTATION_RETIRED) return;
     if (isApprovedAssociationResponse(payload, associationRequestId)) {
       approvalAcquired = true; setStatus(''); renderState(); focusCurrentStep();
     } else {
@@ -795,17 +949,19 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   }
 
   async function acquireAndFinish() {
+    const current = currentPage();
     await acquireAssociation();
-    if (approvalAcquired) await finalizeProvisioning();
+    if (current() && approvalAcquired) await finalizeProvisioning();
   }
 
   async function finalizeProvisioning() {
-    if (finalizationRunning || recoveryRequired || mutationInFlight || configurationComplete || associationRequestId === null || associatedAccountId === null || !approvalAcquired) return;
+    const current = currentPage();
+    if (!current() || uncertainMutation || finalizationRunning || recoveryRequired || mutationInFlight || configurationComplete || associationRequestId === null || associatedAccountId === null || !approvalAcquired) return;
     finalizationRunning = true;
     try {
       if (finalizationAttempted) {
         const progress = await checkStatus();
-        if (progress?.stage !== 'finalization_ready' || configurationComplete || recoveryRequired) return;
+        if (!current() || progress?.stage !== 'finalization_ready' || configurationComplete || recoveryRequired) return;
       }
       finalizationAttempted = true;
       finalizeFailed = false;
@@ -813,6 +969,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       const payload = await mutate('/api/v1/provisioning/finalize', {
         association_request_id: associationRequestId, detected_creator_account_id: associatedAccountId,
       });
+      if (!current() || payload === MUTATION_RETIRED) return;
       if (isConfiguredRestartResponse(payload)) {
         configurationComplete = true;
         setStatus('The desktop app is restarting. Continue there when it opens.');
@@ -823,35 +980,65 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
         if (payload !== MUTATION_FAILED) setStatus('Setup did not finish. Try again.', true);
         renderState();
       }
-    } finally { finalizationRunning = false; }
+    } finally { if (current()) finalizationRunning = false; }
   }
 
   function onReturn() {
-    if (document.hidden || recoveryRequired || configurationComplete || mutationInFlight) return returning;
+    if (!pageActive || transferActive || document.hidden || recoveryRequired || configurationComplete || (mutationInFlight && !uncertainMutation)) return returning;
     if (returning) return returning;
-    returning = (associationRequestId === null ? refreshIdentity() : approvalAcquired ? Promise.resolve() : acquireAndFinish()).finally(() => { returning = null; });
+    const read = (async () => {
+      const generation = ownerGeneration;
+      const current = () => pageActive && generation === ownerGeneration;
+      const progress = await checkStatus(current);
+      if (!progress || !current() || recoveryRequired || configurationComplete || mutationInFlight || resumeNeedsAction) return;
+      if (approvalAcquired) await finalizeProvisioning();
+      else if (associationRequestId !== null) await acquireAndFinish();
+      else await refreshIdentity();
+    })().finally(() => { if (returning === read) returning = null; });
+    returning = read;
     return returning;
   }
 
-  async function start() {
-    if (journeyId && typeof continueTransfer === 'function') {
-      const recoveryButton = document.querySelector('#transfer-recovery-action');
-      const outcome = await continueTransfer({ fetch, document, journeyId, registeredHostedUrl: hostedLink?.href, onStatus: setStatus,
-        onRecovery: (label, action) => {
-          if (!recoveryButton) return;
-          recoveryButton.textContent = label; recoveryButton.hidden = false;
-          recoveryButton.onclick = action;
-        } });
-      if (outcome !== 'none') {
-        for (const name of ['claimForm', 'claimSubmit', 'identityStep', 'bindingStep', 'finalizeStep']) elements[name].hidden = true;
-        elements.claimActionHelp.textContent = 'Continue setup in this tab.';
-        if (hostedLink) {
-          hostedLink.href = `${hostedLink.href}#journey=${journeyId}`; hostedLink.textContent = 'Return to setup';
-          hostedLink.hidden = outcome === 'recovery' || outcome === 'submitted';
-        }
-        return;
+  function connectExtensionState() {
+    if (!EXTENSION_ID_PATTERN.test(extensionId) || typeof connectExtension !== 'function') return;
+    const generation = ++extensionGeneration;
+    extensionPort = connectExtension(extensionId, (stage) => {
+      if (!pageActive || generation !== extensionGeneration) return;
+      extensionStage = stage;
+      elements.refreshIdentity.hidden = stage !== null;
+      if (!configurationComplete && !recoveryRequired && associationRequestId === null) void refreshIdentity();
+      else renderExtensionSetup();
+    });
+  }
+
+  async function readReceivingTransfer(readOnly = false) {
+    if (!journeyId || typeof continueTransfer !== 'function') return 'none';
+    const current = currentPage();
+    transferActive = true;
+    const recoveryButton = document.querySelector('#transfer-recovery-action');
+    if (recoveryButton) { recoveryButton.hidden = true; recoveryButton.onclick = null; }
+    const outcome = await continueTransfer({ fetch, document, journeyId, registeredHostedUrl: hostedLink?.href,
+      current, readOnly, onStatus: (message) => { if (current()) setStatus(message); },
+      onRecovery: (label, action) => {
+        if (!current() || !recoveryButton) return;
+        recoveryButton.textContent = label; recoveryButton.hidden = false;
+        recoveryButton.onclick = () => { if (current()) action(); };
+      } });
+    if (!current()) return 'retired';
+    transferActive = outcome !== 'none';
+    if (transferActive) {
+      for (const name of ['claimForm', 'claimSubmit', 'identityStep', 'bindingStep', 'finalizeStep']) elements[name].hidden = true;
+      elements.claimActionHelp.textContent = 'Continue setup in this tab.';
+      if (hostedLink) {
+        hostedLink.textContent = 'Return to setup';
+        hostedLink.hidden = outcome === 'recovery' || outcome === 'submitted';
       }
     }
+    return outcome;
+  }
+
+  async function start() {
+    const current = currentPage();
     elements.claimForm.addEventListener('submit', submitClaim);
     elements.claimPackage.addEventListener('input', () => { setStatus(''); updatePackageGuidance(true); });
     elements.refreshIdentity.addEventListener('click', refreshIdentity);
@@ -860,6 +1047,38 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     elements.finalizeProvisioning.addEventListener('click', finalizeProvisioning);
     document.addEventListener('visibilitychange', onReturn);
     (document.defaultView ?? globalThis).addEventListener?.('focus', onReturn);
+    page.addEventListener?.('pagehide', () => {
+      pageActive = false; lifecycleGeneration += 1; ownerGeneration += 1; extensionGeneration += 1;
+      identityGeneration += 1;
+      if (activeMutation) uncertainMutation = activeMutation;
+      progressRead = null; returning = null; handoffRecoveryRead = null; readAgain = false; finalizationRunning = false;
+      detectedAccountId = null;
+      onboarding?.close(); onboarding = null;
+      extensionPort?.close(); extensionPort = null;
+    });
+    page.addEventListener?.('pageshow', (event) => {
+      if (!event.persisted) return;
+      pageActive = true; initialProgressPending = true;
+      if (transferActive) {
+        const restored = currentPage();
+        void readReceivingTransfer(true).then((outcome) => { if (restored() && outcome === 'none') void startNormal(); });
+        return;
+      }
+      pushedEpoch = null; pushedRevision = -1;
+      connectExtensionState();
+      if (journeyId && typeof connectOnboarding === 'function') {
+        if (configurationComplete) { restarting = false; void resumeRuntime(); }
+        else void connectOwner();
+      } else void onReturn();
+    });
+    if (await readReceivingTransfer() !== 'none' || !current()) return;
+    await startNormal();
+  }
+
+  async function startNormal() {
+    const current = currentPage();
+    if (!current()) return;
+    for (const name of ['identityStep', 'bindingStep', 'finalizeStep']) elements[name].hidden = false;
     const dialog = document.querySelector('#recovery-dialog');
     document.querySelector('#recovery-open')?.addEventListener('click', () => dialog?.showModal());
     document.querySelector('#recovery-close')?.addEventListener('click', () => dialog?.close());
@@ -874,25 +1093,12 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       if (approvalLink && hostedLink?.href) approvalLink.href = `${hostedLink.href}#journey=${journeyId}`;
       const help = document.querySelector('#secure-setup-help');
       if (help) help.textContent = 'Sign in to continue.';
-      onboarding = await connectOnboarding({ fetch, journeyId, onState: onOwnerState,
-        onFocus: () => focusExistingWorkspace(extensionId),
-        onUnavailable: ({ retrying } = {}) => {
-          if (!configurationComplete) setStatus(retrying ? 'Reconnecting…' : 'Connection to the desktop app was lost.');
-        } });
-      page.addEventListener?.('pagehide', () => onboarding?.close(), { once: true });
+      await connectOwner();
+      if (!current()) return;
     }
-    if (EXTENSION_ID_PATTERN.test(extensionId) && typeof connectExtension === 'function') {
-      extensionPort = connectExtension(extensionId, (stage) => {
-        extensionStage = stage;
-        // Pushed stages keep this step current, so a manual re-check is only
-        // offered when no extension answers in this browser.
-        elements.refreshIdentity.hidden = stage !== null;
-        if (!configurationComplete && !recoveryRequired && associationRequestId === null) void refreshIdentity();
-        else renderExtensionSetup();
-      });
-    }
+    connectExtensionState();
     updatePackageGuidance(false); renderState();
-    if (!onboarding) await checkStatus();
+    if (!onboarding) { await onReturn(); return; }
     if (approvalAcquired && !configurationComplete && !recoveryRequired) void finalizeProvisioning();
     if (!configurationComplete && !recoveryRequired && associationRequestId === null) await refreshIdentity();
   }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import html
 import re
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Awaitable, Callable, Protocol
@@ -16,6 +17,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from app.provisioning.session import (
+    PROVISIONING_ORIGIN,
     PROVISIONING_SESSION_COOKIE_NAME,
     ProvisioningSessionManager,
 )
@@ -136,6 +138,7 @@ class FinalizeAction(Protocol):
 class InitialInstallationAdmission(Protocol):
     """Local browser sees only bounded progress and a nonauthorizing locator."""
     async def prepare(self, journey_id: str) -> dict[str, object]: ...
+    async def read_browser_entry(self, journey_id: str) -> dict[str, object]: ...
     def resume(self, journey_id: str) -> None: ...
     async def stop(self) -> None: ...
 
@@ -327,6 +330,26 @@ def create_provisioning_app(
             return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
         return JSONResponse(onboarding_snapshot(session.journey_id), headers={"Cache-Control": "no-store",
                             "X-Onboarding-Capabilities": CAPABILITIES})
+
+    @application.get("/api/v1/provisioning/initial-handoff", include_in_schema=False)
+    async def read_initial_handoff(request: Request):
+        session = sessions.require_session(request)
+        if initial_enrollment is None or session.journey_id is None:
+            return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
+        csrf_values = request.headers.getlist("X-Provisioning-CSRF")
+        origin_values = request.headers.getlist("Origin")
+        if (request.query_params or request.headers.getlist("X-Onboarding-Journey") != [session.journey_id]
+                or len(csrf_values) != 1 or re.fullmatch(r"[A-Za-z0-9_-]{43}", csrf_values[0]) is None
+                or not secrets.compare_digest(csrf_values[0], session.csrf_token)
+                or (origin_values and origin_values != [PROVISIONING_ORIGIN])):
+            raise HTTPException(403, "provisioning context is invalid")
+        result = await initial_enrollment.read_browser_entry(session.journey_id)
+        # Recheck after the owner lock; waiting must not extend session authority.
+        current = sessions.require_session(request)
+        if (current.journey_id != session.journey_id
+                or not secrets.compare_digest(current.csrf_token, session.csrf_token)):
+            raise HTTPException(403, "provisioning context is invalid")
+        return JSONResponse(result, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
     @application.post("/api/v1/provisioning/initial-handoff", include_in_schema=False)
     async def prepare_initial_handoff(request: Request, body: CreatorBindingAcquisitionBody):

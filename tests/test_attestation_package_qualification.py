@@ -101,7 +101,22 @@ def _run_extension_build(arguments: list[str]) -> subprocess.CompletedProcess[st
 
 
 @pytest.fixture(scope="module")
-def packaged_release(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+def customer_release_config(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    path = tmp_path_factory.mktemp("customer-release") / "customer-release.json"
+    path.write_text(json.dumps({
+        "schema": "ofca-customer-release/v1",
+        "hosted_onboarding_url": "https://setup.example.com/public/onboarding",
+        "hosted_api_origin": "https://setup.example.com",
+    }), encoding="utf-8")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(producer, "CUSTOMER_RELEASE_CONFIG", path)
+        yield path
+
+
+@pytest.fixture(scope="module")
+def packaged_release(
+    tmp_path_factory: pytest.TempPathFactory, customer_release_config: Path
+) -> dict[str, Any]:
     """One real development build and one real Store package, built in order.
 
     The development build runs first so the extension tree is left in the
@@ -124,6 +139,7 @@ def packaged_release(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]
             f"--packaged-signing-rule={SIGNING_RULE_FIXTURE}",
             f"--legal-release-bindings={LEGAL_FIXTURE}",
             f"--privacy-policy-url={PRIVACY_POLICY_URL}",
+            f"--customer-release-config={customer_release_config}",
         ]
     )
     assert packaged.returncode == 0, packaged.stdout + packaged.stderr
@@ -453,6 +469,24 @@ def test_a_self_consistent_package_still_has_to_pass_the_audit(
             )
     assert refusal.value.step == producer.STEP_PACKAGE_AUDIT
     assert refusal.value.exit_code == 13
+
+
+@pytest.mark.parametrize("field", ["host_permissions", "externally_connectable"])
+def test_package_cannot_choose_its_own_hosted_workspace_origin(packaged_release, field):
+    entries = _store_entries(packaged_release["bytes"])
+    manifest = json.loads(entries["manifest.json"])
+    if field == "host_permissions":
+        manifest[field][1] = "https://another.example.com/*"
+    else:
+        manifest[field]["matches"][1] = "https://another.example.com/public/onboarding"
+    entries["manifest.json"] = json.dumps(manifest).encode()
+    metadata = json.loads(entries["build-meta.json"])
+    metadata["outputs"]["manifest.json"] = (
+        "sha256:" + hashlib.sha256(entries["manifest.json"]).hexdigest()
+    )
+    entries["build-meta.json"] = json.dumps(metadata).encode()
+    with pytest.raises(producer.ContractError, match="qualified companion transport policy"):
+        _qualified_zip(packaged_release, store_zip=_rebuild_store_zip(entries))
 
 
 def test_a_store_zip_substituted_after_the_audit_is_refused(

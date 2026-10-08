@@ -15,12 +15,20 @@ export const LOCAL_SERVICE_ORIGIN = 'http://bridge.localhost:17871';
 export const LOCAL_SERVICE_ORIGIN_PATTERN = `${LOCAL_SERVICE_ORIGIN}/*`;
 
 export async function openPopup(context, targetExtensionId, pageErrors) {
+  const previousErrorCount = pageErrors.length;
   const popup = await context.newPage();
   popup.on('pageerror', (error) => pageErrors.push(error.message));
   await popup.goto(`chrome-extension://${targetExtensionId}/popup.html`, {
     waitUntil: 'domcontentloaded',
   });
-  await expect(popup.locator('#mode-label')).not.toHaveText('Checking status…');
+  try {
+    await expect(popup.locator('#mode-label')).not.toHaveText('Checking status…');
+  } catch (error) {
+    if (pageErrors.length > previousErrorCount) {
+      throw new Error(`Extension page failed to start: ${pageErrors.slice(previousErrorCount).join('; ')}`, { cause: error });
+    }
+    throw error;
+  }
   return popup;
 }
 
@@ -32,7 +40,7 @@ export async function openSetup(popup) {
     const opened = context.waitForEvent('page');
     await popup.locator('#journey-primary').click();
     setup = await opened;
-    await expect(setup).toHaveURL(new RegExp('/setup\\.html(?:#full)?$'));
+    await expect(setup).toHaveURL(/\/setup\.html#journey=[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
   }
   await setup.bringToFront();
   await expect(setup.locator('main')).toHaveAttribute('data-ready', 'true');
@@ -72,10 +80,14 @@ export async function acceptNativeHostPermissionPrompt(context) {
   const script = String.raw`
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
-$root = [System.Windows.Automation.AutomationElement]::RootElement
 $deadline = (Get-Date).AddSeconds(10)
 $targetProcessId = ${targetProcessId}
 do {
+  # Scope UIAutomation to the browser we launched. Searching every descendant
+  # of the desktop can block on unrelated applications before reaching Chrome.
+  $windowHandle = (Get-Process -Id $targetProcessId).MainWindowHandle
+  if ($windowHandle -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100; continue }
+  $root = [System.Windows.Automation.AutomationElement]::FromHandle($windowHandle)
   $promptNameCondition = New-Object System.Windows.Automation.PropertyCondition(
     [System.Windows.Automation.AutomationElement]::NameProperty,
     '"Conversation Analytics" has requested additional permissions.'

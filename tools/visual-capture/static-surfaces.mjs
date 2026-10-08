@@ -12,7 +12,7 @@ import { installSurfaceFixture } from '../../extension/qualification/surface-run
 import { staticFixtures } from './static-fixtures.mjs';
 import { staticCases } from './static-fixture-matrix.mjs';
 import { staticConfiguration } from './ci/inventory.mjs';
-import { installProvisioningFixture } from './provisioning-driver.mjs';
+import { installProvisioningFixture, settleProvisioningFixture } from './provisioning-driver.mjs';
 import { installWatcher, readWatcher } from './shift-watcher.mjs';
 import { REQUIRED_REGIONS } from './dynamic-transitions.mjs';
 import { CANVAS_DELTA, LAYOUT_SHIFT, colorDistance, grade, gradeLayoutShifts } from './stability-contracts.mjs';
@@ -105,7 +105,10 @@ async function inspect(page, fixture, width, session) {
     const task = fixture.surface === 'provisioning' ? await inspectTaskCopy(page, fixture) : null;
     const control = page.locator((await page.locator('dialog[open]').count()) ? 'dialog[open] button:visible:enabled' : 'button:visible:enabled, a.primary-link:visible').first();
     if (await control.count()) {
-      await page.keyboard.press('Tab'); await control.focus();
+      // A fixture may already focus its only action. Move backwards in that
+      // case so the keyboard probe stays in the page instead of browser chrome.
+      const alreadyFocused = await control.evaluate((node) => node === document.activeElement);
+      await page.keyboard.press(alreadyFocused ? 'Shift+Tab' : 'Tab'); await control.focus();
       await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
       const focus = await control.evaluate((node) => ({ visible: node.matches(':focus-visible'), width: getComputedStyle(node).outlineWidth }));
       assert(focus.visible); assert.equal(focus.width, '2px');
@@ -158,10 +161,10 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
         try {
           await page.goto(ORIGIN + (fixture.surface === 'provisioning' ? '/provisioning' : `/${fixture.surface}.html${fixture.state?.hash ? '#' + fixture.state.hash : ''}`), { waitUntil: 'networkidle' });
           if (fixture.provisioning) {
-            await page.evaluate(() => window.__provisioningStarted);
+            await settleProvisioningFixture(page, { pendingOperation: fixture.name === 'finish' ? 'finalize' : null });
             if (fixture.name === 'invalid-code') await page.locator('#claim-package').fill('invalid code');
             if (['approval-pending', 'approval-offline'].includes(fixture.name)) await page.evaluate(() => window.__provisioningController.acquireAssociation());
-            if (fixture.name === 'approval-unavailable-help') await page.locator('#recovery-open').click();
+            if (fixture.name === 'approval-unavailable-help') await page.locator('#acquire-association').focus();
           }
           if (fixture.state) await page.waitForFunction(() => document.querySelector('main[data-ready="true"]') || document.querySelector('#runtime-unavailable:not(.hidden)'));
           if (fixture.state?.dialog) await page.locator('#delete-local-data').click();

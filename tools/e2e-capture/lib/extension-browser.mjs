@@ -13,7 +13,7 @@ function delay(milliseconds) {
 
 export async function launchExtensionBrowser(userDataDir, extensionDirectory = EXTENSION_DIST) {
   const executablePath = process.env.OFCA_E2E_BROWSER_EXECUTABLE;
-  return chromium.launchPersistentContext(userDataDir, {
+  const context = await chromium.launchPersistentContext(userDataDir, {
     ...(executablePath ? { executablePath } : {}),
     headless: false,
     viewport: { width: 1280, height: 800 },
@@ -32,6 +32,26 @@ export async function launchExtensionBrowser(userDataDir, extensionDirectory = E
       '--no-first-run',
     ],
   });
+  // Automatic background-tab attachment can start before an individual test
+  // installs its synthetic platform. No request may escape to the real site.
+  // Playwright evaluates later, explicit fixture routes first.
+  await context.route('https://onlyfans.com/**', (route) => route.abort('blockedbyclient'));
+  return context;
+}
+
+// Observe the actual browser operation without replacing its behavior. A
+// test-driven Page.reload() remains available to exercise durable replay.
+export async function observeProductTabReloads(worker) {
+  await worker.evaluate(() => {
+    if (globalThis.__OFCA_E2E_TAB_RELOADS__) return;
+    const reload = chrome.tabs.reload.bind(chrome.tabs);
+    globalThis.__OFCA_E2E_TAB_RELOADS__ = [];
+    chrome.tabs.reload = (...args) => {
+      globalThis.__OFCA_E2E_TAB_RELOADS__.push(args[0] ?? null);
+      return reload(...args);
+    };
+  });
+  return () => worker.evaluate(() => [...globalThis.__OFCA_E2E_TAB_RELOADS__]);
 }
 
 export function extensionId(worker) {
@@ -218,7 +238,8 @@ export async function restartedExtensionWorker(
             if (!worker.url().endsWith('/background.js')) continue;
             try {
               const ready = await worker.evaluate(
-                () => typeof globalThis.__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__ === 'function',
+                () => globalThis.__OFCA_E2E_RETIRED_REALM__ === undefined
+                  && typeof globalThis.__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__ === 'function',
               );
               if (ready) {
                 return {
@@ -263,11 +284,22 @@ export async function contentBridgeIsActive(worker) {
   });
 }
 
-async function waitForTargetClosure(cdp, targetId, timeoutMs = 10_000) {
+async function waitForTargetClosure(cdp, targetId, context, workerUrl, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const { targetInfos } = await cdp.send('Target.getTargets');
     if (!targetInfos.some((candidate) => candidate.targetId === targetId)) return;
+    // Chromium may preserve the CDP target ID while an open workspace wakes a
+    // new worker immediately. The old realm marker must be gone; target-ID
+    // reuse alone is never accepted as proof that the worker was replaced.
+    for (const candidate of context.serviceWorkers().filter((entry) => entry.url() === workerUrl)) {
+      const replaced = await Promise.race([
+        candidate.evaluate(() => globalThis.__OFCA_E2E_RETIRED_REALM__ === undefined
+          && typeof globalThis.__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__ === 'function').catch(() => false),
+        delay(500).then(() => false),
+      ]);
+      if (replaced) return;
+    }
     await delay(50);
   }
   throw new Error('Extension service worker CDP target did not terminate.');
@@ -286,6 +318,7 @@ export async function terminateExtensionWorker(
   let stopMethod = null;
   let retainedControlPage = null;
   try {
+    await worker.evaluate(() => { globalThis.__OFCA_E2E_RETIRED_REALM__ = crypto.randomUUID(); });
     const { targetInfos } = await cdp.send('Target.getTargets');
     const target = targetInfos.find((candidate) => (
       candidate.type === 'service_worker' && candidate.url === worker.url()
@@ -320,7 +353,7 @@ export async function terminateExtensionWorker(
         await serviceWorkerCdp.send('ServiceWorker.stopAllWorkers');
         stopMethod = 'stopAllWorkers';
       }
-      await waitForTargetClosure(cdp, target.targetId, 3_000);
+      await waitForTargetClosure(cdp, target.targetId, context, worker.url(), 3_000);
       stoppedNormally = true;
     } catch {
       // Fall back for Chromium builds that do not expose extension workers in this domain.
@@ -330,7 +363,7 @@ export async function terminateExtensionWorker(
       if (result.success !== true) {
         throw new Error('Chromium refused to close the service worker target.');
       }
-      await waitForTargetClosure(cdp, target.targetId);
+      await waitForTargetClosure(cdp, target.targetId, context, worker.url());
     }
     if (deferControlPageClose) {
       retainedControlPage = controlPage;

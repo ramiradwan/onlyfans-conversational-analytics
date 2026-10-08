@@ -758,10 +758,11 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
 
     await test.step('hard-expire a third worker and recover only from the production alarm', async () => {
-      // Persistent setup/settings pages poll the worker. Close UI observers so
+      // Persistent setup/App pages hold owner ports. Close UI observers so
       // this step measures only the production alarm's ability to wake it.
       for (const page of context.pages()) {
-        if (page.url().startsWith('chrome-extension://')) await page.close();
+        if (page.url().startsWith('chrome-extension://')
+          || new URL(page.url()).hash.startsWith('#journey=')) await page.close();
       }
       const before = await readBrainSummary(context);
       const oldWorker = worker;

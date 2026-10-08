@@ -2,6 +2,7 @@ import { createOnboardingWorkspace } from './onboarding-workspace.mjs';
 import { LOCAL_SERVICE_ORIGIN } from '../transport/local-service-endpoints.mjs';
 import { legalReleaseBindings } from './legal-release-bindings.mjs';
 import { onboardingHostedOrigin } from './onboarding-release-config.mjs';
+import { FULL_REVIEW_INTENT_KEY, fullReviewIntent } from './onboarding-full-intent.mjs';
 
 export const WORKSPACE_MESSAGE_TYPE = 'ofca.workspace.v1';
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
@@ -44,7 +45,9 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     }
     const result = await workspace.open({ journey_id: record?.journey_id ?? crypto.randomUUID(), route: 'extension', explicit: true, draft_scope });
     // Intent is UI only and does not grant Full consent or start pairing.
-    if (['full', 'desktop'].includes(section)) await chromeApi.storage.session.set({ onboarding_full_intent_v1: result.journey_id });
+    if (['full', 'desktop'].includes(section)) await chromeApi.storage.session.set({
+      [FULL_REVIEW_INTENT_KEY]: fullReviewIntent(result.journey_id, draft_scope),
+    });
     if (anchorTab && result.tab_id !== anchorTab.id) {
       // Legacy desktop callers may not have a journey reference. They keep the
       // supported route; no arbitrary existing page can be adopted or navigated.

@@ -25,7 +25,7 @@ export async function staticFixtures() {
       .replaceAll('{{PROVISIONING_EXTENSION_ID}}', 'a'.repeat(32))
       .replaceAll('{{HOSTED_ONBOARDING_URL}}', linkAvailable ? 'https://setup.example/' : '')
       .replaceAll('{{HOSTED_ONBOARDING_VISIBILITY}}', linkAvailable ? '' : 'hidden');
-    const dom = new JSDOM(html, { url: 'http://localhost/provisioning' });
+    const dom = new JSDOM(html, { url: 'http://localhost/provisioning', pretendToBeVisual: true });
     const document = dom.window.document;
     const associated = ['creator_approval_pending', 'finalization_ready'].includes(stage);
     const payload = stage === null ? { state: 'configured_restart' } : {
@@ -33,18 +33,28 @@ export async function staticFixtures() {
       association_request_id: associated ? 'fixture-association' : null,
       creator_account_id: associated ? 'fixture-account' : null,
     };
+    let beganFinalization;
+    const finalizationPending = new Promise((resolve) => { beganFinalization = resolve; });
     const controller = createProvisioningController({ document,
       elements: Object.fromEntries(elementIds.map(([, name, id]) => [name, document.getElementById(id)])),
-      fetch: async (path) => path.endsWith('/finalize') ? new Promise(() => {}) : path.endsWith('/acquire')
-        ? { ok: false, status: name === 'approval-offline' ? 503 : 409, json: async () => ({
+      fetch: async (path) => {
+        if (path.endsWith('/finalize')) {
+          beganFinalization();
+          return new Promise(() => {});
+        }
+        if (path.endsWith('/acquire')) return { ok: false, status: name === 'approval-offline' ? 503 : 409, json: async () => ({
           reason: name === 'approval-offline' ? 'hosted_unavailable' : 'binding_acquisition_unavailable',
-        }) } : { ok: true, json: async () => payload },
+        }) };
+        return { ok: true, json: async () => payload };
+      },
       sendExtensionMessage: async () => ({ type: 'provisioning.identity.result', version: 1,
         authenticated_profile: { creator_account_id: 'fixture-account' } }),
     });
-    await controller.start();
+    const started = controller.start();
+    if (stage === 'finalization_ready') await Promise.race([started, finalizationPending]);
+    else await started;
     if (['approval-pending', 'approval-offline'].includes(name)) await controller.acquireAssociation();
-    if (name === 'approval-unavailable-help') document.querySelector('#recovery-dialog').setAttribute('open', '');
+    if (name === 'approval-unavailable-help') document.querySelector('#acquire-association').focus();
     if (name === 'invalid-code') {
       const field = document.getElementById('claim-package');
       field.value = 'invalid code'; field.textContent = field.value;

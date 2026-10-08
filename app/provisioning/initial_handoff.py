@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import platform
+import re
 from datetime import datetime, timezone
 
 from app.persistence.auth import ClaimSubmission, SQLiteAuthenticationStore, ProvisioningCandidate, ProvisioningCandidateState
@@ -80,6 +81,25 @@ class InitialInstallationEnrollment:
     def _browser_entry(self, row: dict) -> dict:
         return {"state": "waiting", "journey_id": row["journey_id"],
                 "handoff_reference": row["handoff_reference"], "hosted_start_url": self.hosted_start_url}
+
+    async def read_browser_entry(self, journey_id: str) -> dict:
+        """Recover a committed locator without preparing or issuing any proof."""
+        async with self._lock:
+            row = self.journeys.get(journey_id)
+            now = self.store._now()
+            with self.store.database.read() as connection:
+                receiving = connection.execute(
+                    "SELECT 1 FROM onboarding_transfer_intents WHERE journey_id=? AND expires_at>?",
+                    (journey_id, now.timestamp()),
+                ).fetchone()
+            if (receiving is None and row is not None and row["state"] == "waiting"
+                    and isinstance(row["handoff_reference"], str)
+                    and re.fullmatch(r"[A-Za-z0-9_-]{43}", row["handoff_reference"]) is not None
+                    and datetime.fromisoformat(row["expires_at"]) > now
+                    and row["handoff_expires_at"] is not None
+                    and datetime.fromisoformat(row["handoff_expires_at"]) > now):
+                return self._browser_entry(row)
+            return {"state": "unknown", "journey_id": journey_id}
 
     def resume(self, journey_id: str) -> None:
         row = self.journeys.get(journey_id)

@@ -118,9 +118,10 @@ export async function launchProvisioningBrowser(userDataDir, { creatorAccountId 
 }
 
 export async function returnToProvisioningPage(page) {
+  // Hosted approval uses this same workspace. Returning exercises its actual
+  // navigation lifecycle, including a possible BFCache restoration.
+  await page.goBack({ waitUntil: 'domcontentloaded' });
   await page.bringToFront();
-  // Browser automation keeps tabs focused, so signal the completed return.
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
 }
 
 export class ProvisioningHost {

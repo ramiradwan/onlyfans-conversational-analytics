@@ -2,6 +2,7 @@
 import { OBSERVER_REOPEN_TYPE } from './runtime/document-observer.mjs';
 import { WORKSPACE_MESSAGE_TYPE } from './runtime/onboarding-entry.mjs';
 import { WORKSPACE_RECORD_KEY } from './runtime/onboarding-workspace.mjs';
+import { FULL_REVIEW_INTENT_KEY, createFullReviewIntentConsumer, createFullReviewPersistence } from './runtime/onboarding-full-intent.mjs';
 import { LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE,
   LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE } from './runtime/legal-activation-controller.mjs';
 import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError } from './ui/surface-client.mjs';
@@ -19,7 +20,7 @@ let reviewStep = null;
 // only: every action on this page keeps its usual authorization.
 let handoff = location.hash === '#desktop';
 let fullReviewRequested = location.hash === '#full' || handoff;
-try { fullReviewRequested ||= sessionStorage.getItem('full-review') === 'true'; } catch {}
+const fullReviewPersistence = createFullReviewPersistence();
 const client = createSurfaceClient((model) => { if (model.status) failed = false; render(model); }, () => { failed = true; render(client.model); });
 const page = createPageActions(client, render);
 const steps = ['agree', 'mode', 'connect', 'activate'];
@@ -27,19 +28,26 @@ let currentJourney = null;
 let workspaceRecord = null;
 let checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
 let receivingRead = 0, receivingExpiry = null;
+const consumeFullReviewIntent = createFullReviewIntentConsumer({ apply() {
+  reviewStep = null; dismissed = false; setFullReview(true);
+} });
 async function readWorkspace() {
   if (!location.hash.startsWith('#journey=')) return;
   const generation = ++receivingRead;
+  workspaceRecord = null;
+  fullReviewRequested = false;
+  checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
   clearTimeout(receivingExpiry);
   renderReceivingContext(document, null);
   try {
-    const initial = workspaceRecord === null;
     const next = await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'read' });
-    if (workspaceRecord && workspaceRecord.draft_scope.scope_id !== next.draft_scope.scope_id) setFullReview(false);
+    const intent = (await chrome.storage.session.get([FULL_REVIEW_INTENT_KEY]))[FULL_REVIEW_INTENT_KEY];
+    if (generation !== receivingRead) return;
     workspaceRecord = next;
+    fullReviewRequested = fullReviewPersistence.read(workspaceRecord);
     checkboxDraft = { ...workspaceRecord.draft };
-    const intent = (await chrome.storage.session.get(['onboarding_full_intent_v1'])).onboarding_full_intent_v1;
-    if (initial && intent === workspaceRecord.journey_id) fullReviewRequested = true;
+    consumeFullReviewIntent(intent, workspaceRecord);
+    render(client.model);
     const receiving = await send({ type: SETUP_TRANSFER_MESSAGE, action: 'context' });
     if (generation !== receivingRead) return;
     if (receiving?.expires_at > Date.now()) {
@@ -55,17 +63,21 @@ async function saveDraft() {
   workspaceRecord.draft = { ...checkboxDraft };
   await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'draft', scope_id: workspaceRecord.draft_scope.scope_id, draft: workspaceRecord.draft });
 }
-void readWorkspace();
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes[FULL_REVIEW_INTENT_KEY]?.newValue) {
+    void readWorkspace(); return;
+  }
   if (area !== 'local' || !changes[WORKSPACE_RECORD_KEY]) return;
   const next = changes[WORKSPACE_RECORD_KEY].newValue;
-  if (!workspaceRecord || next?.draft_scope.scope_id !== workspaceRecord.draft_scope.scope_id
-    || next?.draft_scope.disclosure_bundle_id !== workspaceRecord.draft_scope.disclosure_bundle_id) void readWorkspace();
+  if (!workspaceRecord || next?.journey_id !== workspaceRecord.journey_id
+    || next?.draft_scope?.scope_id !== workspaceRecord.draft_scope.scope_id
+    || next?.draft_scope?.disclosure_bundle_id !== workspaceRecord.draft_scope.disclosure_bundle_id) void readWorkspace();
 });
+void readWorkspace();
 
 function setFullReview(value) {
   fullReviewRequested = value;
-  try { if (value) sessionStorage.setItem('full-review', 'true'); else sessionStorage.removeItem('full-review'); } catch {}
+  fullReviewPersistence.write(workspaceRecord, value);
 }
 function renderProgress(model, view, journey) {
   const full = model.status.consent.mode === 'full' || fullReviewRequested;

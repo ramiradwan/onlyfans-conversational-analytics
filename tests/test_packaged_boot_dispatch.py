@@ -56,6 +56,9 @@ def test_fresh_process_unconfigured_provisioning_does_not_import_config(
         if key not in _SETTINGS_ENVIRONMENT_NAMES
     }
     environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
+    # First-run journeys now open isolated SQLCipher storage. Keep the explicit
+    # test-only key in its permitted mode without supplying runtime settings.
+    environment["ENVIRONMENT"] = "test"
 
     result = subprocess.run(
         [sys.executable, "-c", _FRESH_PROCESS_PROBE],

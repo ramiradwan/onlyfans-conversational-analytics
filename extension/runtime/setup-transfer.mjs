@@ -2,6 +2,7 @@
 // authenticates a creator, accepts consent, or grants installation authority.
 import { b64u, unb64u, digest, toHex, lp, normalizeSignature, publicJwk } from '../transport/pairing-contract.mjs';
 import { onboardingHostedOrigin } from './onboarding-release-config.mjs';
+import { FULL_REVIEW_INTENT_KEY, fullReviewIntent } from './onboarding-full-intent.mjs';
 
 export const SETUP_TRANSFER_MESSAGE = 'ofca.setup-transfer.v1';
 const PROFILE = 'urn:bridge-clean:onboarding-transfer:v1';
@@ -191,8 +192,9 @@ export function registerSetupTransfer({ chromeApi, workspace, identityBridge, ho
       if (exact(message, ['type', 'action', 'continuation', 'intended_creator_id'])
         && message.action === 'resume' && admitted.route === 'hosted') {
         await (await getOwner()).resume(journeyId, message.continuation, message.intended_creator_id);
-        require((await workspace.admit(sender)).record.journey_id === journeyId);
-        await chromeApi.storage.session.set({ onboarding_full_intent_v1: journeyId });
+        const current = (await workspace.admit(sender)).record;
+        require(current.journey_id === journeyId);
+        await chromeApi.storage.session.set({ [FULL_REVIEW_INTENT_KEY]: fullReviewIntent(journeyId, current.draft_scope) });
         return workspace.navigate(sender, { route: 'extension' });
       }
       if (exact(message, ['type', 'action']) && message.action === 'enter-code' && admitted.route === 'hosted') {

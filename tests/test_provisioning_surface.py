@@ -234,6 +234,7 @@ def test_provisioning_app_exposes_no_runtime_route() -> None:
         ("/api/v1/provisioning/state", ("GET",)),
         ("/api/v1/provisioning/events", ("GET",)),
         ("/api/v1/provisioning/initial-handoff", ("POST",)),
+        ("/api/v1/provisioning/initial-handoff", ("GET",)),
         ("/provisioning/onboarding/{name}.mjs", ("GET",)),
         ("/api/v1/provisioning/claim", ("POST",)),
         ("/api/v1/provisioning/creator-association", ("POST",)),
