@@ -188,6 +188,9 @@ class QualificationApi:
                 + "jobs:\n"
                 + "".join(f"  {name}:\n    runs-on: ubuntu-latest\n" for name in sorted(source_jobs))
             ).encode()
+        # Model the Git blob served by the API, not checkout line endings.
+        # Mutation cases must target the same literal source on Windows/Linux.
+        self.product_ci_source = self.product_ci_source.replace(b"\r\n", b"\n")
         self.product_ci_policy = (ROOT / (
             "tests/fixtures/product-ci-sharded-v3-policy.json" if ci_policy == "sharded-v3"
             else producer.PRODUCT_CI_POLICY_PATH
