@@ -34,6 +34,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -1001,14 +1002,82 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
     return set(required_names)
 
 
+def _ci_execution_timestamp(value: Any) -> str:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value
+    ):
+        raise ContractError("retained Product CI execution has an invalid timestamp")
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise ContractError("retained Product CI execution has an invalid timestamp") from exc
+    return value
+
+
+def _ci_execution_fingerprint(job: dict[str, Any]) -> tuple[Any, ...]:
+    """Corroborate an API alias using the complete original execution record."""
+    if job.get("status") != "completed" or job.get("conclusion") != "success":
+        raise ContractError("retained Product CI execution has contradictory outcomes")
+    start = _ci_execution_timestamp(job.get("started_at"))
+    end = _ci_execution_timestamp(job.get("completed_at"))
+    runner_id, runner_name = job.get("runner_id"), job.get("runner_name")
+    if (start > end or type(runner_id) is not int or runner_id <= 0
+            or not isinstance(runner_name, str) or not runner_name.strip()):
+        raise ContractError("retained Product CI execution has an invalid runner or interval")
+    steps = job.get("steps")
+    step_fields = {"name", "number", "status", "conclusion", "started_at", "completed_at"}
+    if not isinstance(steps, list) or not 1 <= len(steps) <= 1000:
+        raise ContractError("retained Product CI execution is missing complete step evidence")
+    previous_number = 0
+    for step in steps:
+        if (not isinstance(step, dict) or set(step) != step_fields
+                or not isinstance(step["name"], str) or not step["name"].strip()
+                or type(step["number"]) is not int or step["number"] <= previous_number
+                or step["status"] != "completed" or step["conclusion"] not in {"success", "skipped"}):
+            raise ContractError("retained Product CI execution has invalid complete step evidence")
+        step_start = _ci_execution_timestamp(step["started_at"])
+        step_end = _ci_execution_timestamp(step["completed_at"])
+        if not start <= step_start <= step_end <= end:
+            raise ContractError("retained Product CI step evidence contradicts its execution interval")
+        previous_number = step["number"]
+    # Runner-group metadata can change when GitHub copies a retained job into a
+    # later attempt. Its native runner identity and all executed steps cannot.
+    return start, end, runner_id, runner_name, steps
+
+
+def _retained_ci_execution_alias(previous: dict[str, Any], current: dict[str, Any]) -> bool:
+    # Failed/incomplete executions always supersede old success. Skipped jobs
+    # have no producer to retain; GitHub can copy their end time while changing
+    # the start time, so leave their source-policy conclusion authoritative.
+    if current.get("status") != "completed" or current.get("conclusion") != "success":
+        return False
+    # Missing evidence never implies retention. Shared timestamps or a complete
+    # shared step record instead demand corroboration of every execution field.
+    same_start = (isinstance(previous.get("started_at"), str)
+                  and bool(previous["started_at"])
+                  and previous["started_at"] == current.get("started_at"))
+    same_end = (isinstance(previous.get("completed_at"), str)
+                and bool(previous["completed_at"])
+                and previous["completed_at"] == current.get("completed_at"))
+    same_steps = (isinstance(previous.get("steps"), list) and bool(previous["steps"])
+                  and previous["steps"] == current.get("steps"))
+    if not (same_start or same_end or same_steps):
+        return False
+    if _ci_execution_fingerprint(previous) != _ci_execution_fingerprint(current):
+        raise ContractError("retained Product CI execution aliases have contradictory evidence")
+    return True
+
+
 def latest_ci_jobs(
     client: GitHubApi, *, run_id: int, run_attempt: int, source_commit: str
 ) -> dict[str, dict[str, Any]]:
     """Resolve each job's latest execution, including retained rerun dependencies.
 
     A failed-jobs rerun does not re-execute dependencies that already succeeded.
-    Query every attempt, then choose the newest execution for each exact job name;
-    a newer failure always supersedes an earlier success.
+    GitHub also gives retained successful jobs new IDs and attempt numbers while
+    copying their original runner, times and full steps. Normalize only those
+    corroborated aliases to the original producer so immutable artifacts still
+    bind to their actual attempt. A distinct newer failure supersedes success.
     """
     jobs: list[Any] = []
     page = 1
@@ -1054,7 +1123,15 @@ def latest_ci_jobs(
             raise ContractError("Product CI has duplicate job execution identities")
         identities.add((name, attempt))
         execution_ids.add(execution_id)
-        if name not in newest or newest[name]["run_attempt"] < attempt:
+    executions: dict[str, list[dict[str, Any]]] = {}
+    for job in sorted(jobs, key=lambda value: (value["name"], value["run_attempt"])):
+        name = job["name"]
+        history = executions.setdefault(name, [])
+        # A later alias of an old success must not resurrect it after a real
+        # intervening failure. Resolve against all actual executions first,
+        # then select the newest actual execution, never the newest alias row.
+        if not any(_retained_ci_execution_alias(previous, job) for previous in history):
+            history.append(job)
             newest[name] = job
     return newest
 
