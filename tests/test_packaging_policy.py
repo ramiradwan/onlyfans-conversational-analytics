@@ -512,6 +512,12 @@ def test_sql_catalog_declaration_is_a_complete_derived_closure() -> None:
     assert _declared_sql_digests(load_runtime_policy(POLICY_PATH)) == _source_sql_digests()
 
 
+def test_history_kind_migration_has_a_reviewed_runtime_digest() -> None:
+    relative = "app/persistence/sql/0012_history_record_kind.sql"
+    declared = _declared_sql_digests(load_runtime_policy(POLICY_PATH))
+    assert declared[relative] == hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
+
+
 def test_contract_anchor_hashes_match_the_derived_contract_closure() -> None:
     policy = load_runtime_policy(POLICY_PATH)
     contracts = policy["contracts"]

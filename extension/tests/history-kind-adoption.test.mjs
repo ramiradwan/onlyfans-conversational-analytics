@@ -37,14 +37,14 @@ test('optional conversation head fields retain the canonical boundary', () => {
 });
 
 test('reviewed prerelease pin binds all release coordinates', () => {
-  assert.equal(SIGNER_RELEASE.version, '0.5.0-rc.1');
-  assert.equal(SIGNER_RELEASE.tag, 'v0.5.0-rc.1');
-  assert.equal(SIGNER_RELEASE.release_id, 402765184);
-  assert.equal(SIGNER_RELEASE.asset_id, 608867698);
-  assert.equal(SIGNER_RELEASE.archive, 'local-authenticated-read-connector-0.5.0-rc.1.tgz');
-  assert.equal(SIGNER_RELEASE.sha256, '9a4a1143aae37b47b99ed3ac81e4a949d32e17d7785686d0136de9cc859e46a9');
-  assert.equal(SIGNER_RELEASE.source_revision, 'd8cc1812b7282097c689ceceed766792c9c1e629');
-  assert.equal(SIGNER_RELEASE.source_tree, '37963ea0e3afa03f4613fd9150c64efb5ba920b4');
+  assert.equal(SIGNER_RELEASE.version, '0.5.0-rc.2');
+  assert.equal(SIGNER_RELEASE.tag, 'v0.5.0-rc.2');
+  assert.equal(SIGNER_RELEASE.release_id, 406970361);
+  assert.equal(SIGNER_RELEASE.asset_id, 622179745);
+  assert.equal(SIGNER_RELEASE.archive, 'local-authenticated-read-connector-0.5.0-rc.2.tgz');
+  assert.equal(SIGNER_RELEASE.sha256, '1f803e5d1791b47c3f440c1470bfb9074c0d3e2bacb572ffa5a8f0642f8ef0cc');
+  assert.equal(SIGNER_RELEASE.source_revision, 'd55db0477f96e8c12507a39da90c64698e290449');
+  assert.equal(SIGNER_RELEASE.source_tree, '76775e333a1c69edb57a7e423f30c05f2f6f702e');
 });
 
 test('archive tampering retains version but never acquires byte authorization', async () => {
