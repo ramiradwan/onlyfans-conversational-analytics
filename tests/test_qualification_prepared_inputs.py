@@ -65,6 +65,35 @@ def test_idle_acceptance_still_requires_the_entire_interval(elapsed, accepted):
     if not accepted:
         assert errors == ["idle_expiry_not_exercised"]
 
+
+@pytest.mark.parametrize("asynchronous,synchronous,errors", [
+    (61.015, 61.0, []),
+    (60.985, 61.0, ["asynchronous_idle_minimum_not_met"]),
+    (61.0, 60.985, ["synchronous_idle_minimum_not_met"]),
+    (float("nan"), float("inf"), ["asynchronous_idle_minimum_not_met", "synchronous_idle_minimum_not_met"]),
+])
+def test_native_timer_preflight_checks_both_measured_waits(monkeypatch, asynchronous, synchronous, errors):
+    async def async_wait(seconds):
+        assert seconds == 61
+        return asynchronous
+
+    def sync_wait(seconds):
+        assert seconds == 61
+        return synchronous
+
+    monkeypatch.setattr(idle, "async_wait_at_least", async_wait)
+    monkeypatch.setattr(idle, "wait_at_least", sync_wait)
+    report = asyncio.run(idle.timer_preflight(61))
+    assert report["errors"] == errors
+    assert report["status"] == ("FAIL" if errors else "PASS")
+    assert report["qualification_credit"] == 0
+
+
+@pytest.mark.parametrize("seconds", [0, -1, float("nan"), float("inf"), True])
+def test_native_timer_preflight_rejects_invalid_minimum(seconds):
+    with pytest.raises(ValueError, match="invalid_idle_minimum"):
+        asyncio.run(idle.timer_preflight(seconds))
+
 class BaselineTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

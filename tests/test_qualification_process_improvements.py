@@ -89,8 +89,8 @@ class Scenario:
         with patch.dict("sys.modules", modules), patch.object(worker, "direct", self.direct), \
              patch.object(worker, "scheduled", self.scheduled), patch.object(worker, "child", child), \
              patch.object(worker, "mark_state", lambda *args: self.calls.append(("state", args[1]))), \
-             patch.object(worker.asyncio, "sleep", AsyncMock()) as sleep:
-            yield sleep
+             patch.object(worker, "async_wait_at_least", AsyncMock(return_value=61.015)) as idle_wait:
+            yield idle_wait
 
     def run(self):
         with self.installed():
@@ -126,13 +126,14 @@ class FailFastTests(unittest.TestCase):
         count = 0
         for repeat in range(3):
             case = Scenario(repeat=repeat)
-            with case.installed() as sleep:
+            with case.installed() as idle_wait:
                 result = worker.collect_visibility(case.work, case.journal, case.config, "parent")
-                sleep.assert_awaited_once_with(61)
+                idle_wait.assert_awaited_once_with(61)
             self.assertTrue(result["complete"])
             self.assertEqual([p["case"] for p in result["probes"]], MANIFEST["visibility"]["process_cases"][repeat])
             self.assertEqual(result["runtime_processes"], ["parent", "child"])
             self.assertEqual(q.check_visibility(MANIFEST, case.config["job"], result), [])
+            self.assertIn(("idle", {"seconds": 61.015}), case.calls)
             self.assertEqual(case.calls.count("scheduler-joined"), 2)
             count += len(result["probes"])
         self.assertEqual(count, 12)

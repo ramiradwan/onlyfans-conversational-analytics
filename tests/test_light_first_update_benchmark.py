@@ -109,10 +109,11 @@ class RepeatOnePrefixTests(unittest.TestCase):
     def test_prefix_uses_worker_order_mutations_verification_and_original_idle(self):
         from tests.test_qualification_process_improvements import Scenario, MANIFEST, q
         scenario = Scenario()
-        with scenario.installed() as sleep:
+        with scenario.installed() as idle_wait:
             report = asyncio.run(runner.repeat1_prefix(
                 scenario.work, scenario.journal, scenario.config, 'prefix-parent'))
-        sleep.assert_awaited_once_with(61)
+        idle_wait.assert_awaited_once_with(61)
+        self.assertIn(('idle', {'seconds': 61.015}), scenario.calls)
         self.assertEqual([p['case'] for p in report['probes']], runner.PREFIX_CASES)
         mutations = [x for x in scenario.calls if isinstance(x, tuple) and x[0] == 'mutate']
         self.assertEqual(mutations, [('mutate', (0, 'visibility-ordinary-dominant')),
@@ -138,10 +139,10 @@ class RepeatOnePrefixTests(unittest.TestCase):
     def test_earlier_failure_never_runs_later_prefix_steps(self):
         from tests.test_qualification_process_improvements import Scenario
         scenario = Scenario(miss='ordinary/dominant')
-        with scenario.installed() as sleep:
+        with scenario.installed() as idle_wait:
             report = asyncio.run(runner.repeat1_prefix(
                 scenario.work, scenario.journal, scenario.config, 'prefix-parent'))
-        sleep.assert_not_awaited()
+        idle_wait.assert_not_awaited()
         self.assertEqual(len(report['probes']), 1)
         self.assertNotIn('unchanged_rebuild', scenario.calls)
         self.assertTrue(report['scheduler_closed'])

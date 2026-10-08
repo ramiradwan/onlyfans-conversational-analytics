@@ -58,6 +58,13 @@ Use the pinned dependencies and native runtimes, build the frontend, and review 
 
 Use the same host-admission launcher and owner lock as other work on the qualification machine. Missing prerequisites are BLOCKED. Started work that fails, times out or loses its receipt is FAIL. Resuming preserves every attempt and cannot erase a failure.
 
+Before starting expensive workloads, run the fast qualification protocol tests and a native timer preflight on the pinned guest interpreter through that launcher. The preflight exercises both asynchronous and synchronous waits against the manifest's measured idle minimum, records source and runtime bindings, and gives no qualification credit. These controls catch timer and harness errors; they do not replace the complete workload matrix.
+
+```sh
+python -m pytest tests/test_qualification_prepared_inputs.py tests/test_qualification_process_improvements.py tests/test_light_first_update_benchmark.py tests/test_analytics_closure_qualification.py --basetemp /path/to/new-preflight-test-directory
+python -B -m tools.analytics_qualification_idle --source-root /path/to/signed-source --output /path/to/new-timer-preflight.json
+```
+
 ```sh
 python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --package-inputs /path/to/package-inputs.json
 python tools/qualify_analytics_baseline.py --closure --output /path/to/evidence --resume --run-regressions
