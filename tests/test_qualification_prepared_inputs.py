@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -15,9 +16,54 @@ import pytest
 from tools import analytics_qualification as q
 from tools import analytics_qualification_baselines as b
 from tools import analytics_qualification_bundle as bundle
+from tools import analytics_qualification_idle as idle
 
 
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("advances", [(60.985, .015625), (60.985, 0, .015625), (61.25,)])
+def test_idle_wait_measures_the_minimum_despite_early_wakeups(monkeypatch, asynchronous, advances):
+    from types import SimpleNamespace
+    now, requested, steps = [100.125], [], iter(advances)
+
+    def sleep(seconds):
+        requested.append(seconds)
+        now[0] += next(steps)
+
+    async def async_sleep(seconds):
+        sleep(seconds)
+
+    monkeypatch.setattr(idle, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=sleep,
+        get_clock_info=lambda _: SimpleNamespace(resolution=.015625)))
+    monkeypatch.setattr(idle, "asyncio", SimpleNamespace(sleep=async_sleep))
+    elapsed = asyncio.run(idle.async_wait_at_least(61)) if asynchronous else idle.wait_at_least(61)
+    assert elapsed >= 61
+    assert elapsed == now[0] - 100.125
+    assert len(requested) == len(advances)
+    assert all(seconds >= .015625 for seconds in requested)
+
+
+def test_async_idle_wait_preserves_cancellation(monkeypatch):
+    from types import SimpleNamespace
+
+    async def cancel(seconds):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(idle, "asyncio", SimpleNamespace(sleep=cancel))
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(idle.async_wait_at_least(61))
+
+
+@pytest.mark.parametrize("elapsed, accepted", [(60.985, False), (61.0, True)])
+def test_idle_acceptance_still_requires_the_entire_interval(elapsed, accepted):
+    from tests.test_analytics_closure_qualification import MANIFEST, questions
+    data = dict(questions(), state="idle", idle_seconds=elapsed)
+    errors = q.check_questions(MANIFEST, "questions/reference-windows-16g/empty/idle", data)
+    assert (errors == []) is accepted
+    if not accepted:
+        assert errors == ["idle_expiry_not_exercised"]
 
 class BaselineTests(unittest.TestCase):
     def setUp(self):

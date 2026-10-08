@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from tools import analytics_qualification as q
 from tools.analytics_qualification_fixture import Journal, Workload
+from tools.analytics_qualification_idle import async_wait_at_least
 from tools.analytics_qualification_workloads import direct, matrix, scheduled
 from tools.analytics_qualification_questions import questions
 from tools.analytics_qualification_execution import mark_state
@@ -96,9 +97,8 @@ async def visibility(work, journal, config, instance, *, restarted=False):
                 await direct(work, journal, resources, "unchanged_rebuild")
             if state == "idle":
                 with step("idle.wait"):
-                    started = time.monotonic()
-                    await asyncio.sleep(work.manifest["visibility"]["idle_seconds"])
-                    journal.save("idle", {"seconds": time.monotonic() - started})
+                    elapsed = await async_wait_at_least(work.manifest["visibility"]["idle_seconds"])
+                    journal.save("idle", {"seconds": elapsed})
             probe = await scheduled(work, journal, resources, scheduler, "one_committed_message",
                 lambda: work.add(0 if thread == "dominant" else 1, "visibility-" + case.replace("/", "-")), case=case)
             probe["process_instance"] = instance

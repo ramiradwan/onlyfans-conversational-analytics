@@ -16,6 +16,7 @@ import tempfile
 from tools import analytics_qualification as q
 from tools.analytics_qualification_execution import mark_state
 from tools.analytics_qualification_fixture import question_plan
+from tools.analytics_qualification_idle import wait_at_least
 from tools.analytics_qualification_package_process import PackagedProcess, receipt_account
 from tools.analytics_qualification_package_fixture import Fixture
 from tools.analytics_qualification_tracks import check_unknown_question
@@ -347,7 +348,7 @@ class Workload:
             if state == "rebuilt":
                 self.phase("unchanged_rebuild", self.rebuild, messages=size + index)
             elif state == "idle":
-                time.sleep(self.manifest["visibility"]["idle_seconds"])
+                wait_at_least(self.manifest["visibility"]["idle_seconds"])
             elif state == "restarted":
                 self.start()
                 current, _ = self.browser.call("question", plan=self.plan)

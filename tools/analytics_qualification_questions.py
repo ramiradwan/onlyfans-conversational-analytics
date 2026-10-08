@@ -6,6 +6,7 @@ from datetime import timedelta
 import time
 
 from tools.analytics_qualification_fixture import question_plan
+from tools.analytics_qualification_idle import async_wait_at_least
 from tools.analytics_qualification_workloads import policy
 
 
@@ -89,9 +90,7 @@ async def questions(work, journal, process, case, state, configured_at):
                 trace.failed = True
         journal.save("readiness", {k: v for k, v in report.items() if k not in {"calls", "expected"}})
         if state == "idle":
-            began = time.monotonic()
-            await asyncio.sleep(work.manifest["questions"]["idle_seconds"])
-            report["idle_seconds"] = time.monotonic() - began
+            report["idle_seconds"] = await async_wait_at_least(work.manifest["questions"]["idle_seconds"])
         elif state == "mutated":
             report["mutation"] = {"before": work.counts()}
             work.edit()
