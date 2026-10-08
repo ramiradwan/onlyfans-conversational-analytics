@@ -3,6 +3,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from sys import getsizeof
 
+from app.core.lifecycle_receipts import startup_timed
+
 from app.analytics import conversation_graph_unit_sql as units
 from app.analytics.conversation_integrity import (
     decode_manifest, groups_for_members, summarize_group,
@@ -86,6 +88,7 @@ def _verify_cold_groups(connection, generation_id, account, conversation,
     flush()
 
 
+@startup_timed('startup.conversation_integrity', counter='startup.conversation_integrity.calls')
 def verify_generation_integrity(connection, generation, account, *, proof=None,
                                 graph_validation=None, segments=(), prepared=None,
                                 verified_changes=None, check=lambda: None):

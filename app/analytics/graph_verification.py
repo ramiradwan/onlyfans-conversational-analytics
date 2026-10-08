@@ -8,6 +8,8 @@ import hashlib
 import json
 from typing import Callable
 
+from app.core.lifecycle_receipts import startup_timed
+
 from app.models.analytics import GraphNode, GraphEdge
 from app.analytics.graph_row_encoding import node_bytes, edge_bytes
 
@@ -23,9 +25,12 @@ class VerifiedGraph:
     segment_root: str | None = None
 
 
+@startup_timed('startup.graph_rows', counter='startup.graph_rows.calls')
 def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                       materialize: bool = False,
-                      check: Callable[[], None] = lambda: None) -> VerifiedGraph:
+                      check: Callable[[], None] = lambda: None,
+                      _endpoint_check=None) -> VerifiedGraph:
+    endpoint_check = _endpoint_check
     from app.analytics.sqlite_graph_store import _node, _edge
 
     from app.analytics.shared_graph import (
@@ -50,10 +55,14 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
         check()
         if table == "graph_nodes":
             digest.update(b'],"nodes":[')
-        rows = (ordered_rows(connection, generation_id, account_id, storage_kind)
-            if shared else connection.execute(
-                f"SELECT * FROM {table} WHERE generation_id=? AND creator_account_id=? ORDER BY {key}",
-                (generation_id, account_id)))
+        if shared and table == "graph_edges" and endpoint_check is not None:
+            from app.analytics.shared_graph import _ordered_edges_with_missing_content
+            rows = _ordered_edges_with_missing_content(connection, generation_id, account_id)
+        else:
+            rows = (ordered_rows(connection, generation_id, account_id, storage_kind)
+                if shared else connection.execute(
+                    f"SELECT * FROM {table} WHERE generation_id=? AND creator_account_id=? ORDER BY {key}",
+                    (generation_id, account_id)))
         current_segment = None
         segment_digest = None
         segment_chunk_digest = None
@@ -97,6 +106,8 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
         try:
             for index, row in enumerate(rows):
                 check()
+                if table == "graph_edges" and endpoint_check is not None:
+                    endpoint_check(row)
                 if materialize:
                     record = decode(row)
                     record_kind = getattr(record, kind).value

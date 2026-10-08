@@ -13,6 +13,8 @@ import json
 import time
 from uuid import uuid4
 
+from app.core.lifecycle_receipts import startup_timed
+
 from app.analytics.compact_graph import CompactGraph, _json
 
 
@@ -1080,6 +1082,7 @@ def _incremental_endpoint_links_valid(
     return True
 
 
+@startup_timed('startup.shared_endpoint_sql', counter='startup.shared_endpoint_sql.calls')
 def _verify_all_shared_endpoints(connection, generation_id, account_id):
     """Cold/restart fallback that independently scans complete endpoint closure."""
 
@@ -1099,11 +1102,8 @@ def _verify_all_shared_endpoints(connection, generation_id, account_id):
         SELECT 1 FROM missing LIMIT 1''', parameters * 2).fetchone()
 
 
-def verify_segment_links(
-    connection, generation_id: str, account_id: str, *,
-    validation=None, check=lambda: None, prepared=None, verified_changes=None,
-) -> None:
-    """Check selected endpoints and layout, reusing only proven predecessor closure."""
+def _verify_segment_layout(connection, generation_id, account_id):
+    """Validate selected segment layout and all owned-edge endpoints."""
 
     from app.analytics.graph_store import GraphReferentialIntegrityError
     parameters = (generation_id, account_id)
@@ -1137,7 +1137,18 @@ def verify_segment_links(
         LIMIT 1''', parameters).fetchone()
     if missing:
         raise GraphReferentialIntegrityError('graph_endpoint_absent')
-    if not shared:
+    return shared
+
+
+def verify_segment_links(
+    connection, generation_id: str, account_id: str, *,
+    validation=None, check=lambda: None, prepared=None, verified_changes=None,
+) -> None:
+    """Check selected endpoints and layout, reusing only proven predecessor closure."""
+
+    from app.analytics.graph_store import GraphReferentialIntegrityError
+
+    if not _verify_segment_layout(connection, generation_id, account_id):
         return
     if _incremental_endpoint_links_valid(
         connection, generation_id, account_id, validation, check,
@@ -1149,6 +1160,14 @@ def verify_segment_links(
 
 
 def ordered_rows(connection, generation_id: str, account_id: str, kind: str):
+    return _ordered_rows(connection, generation_id, account_id, kind)
+
+
+def _ordered_edges_with_missing_content(connection, generation_id, account_id):
+    return _ordered_rows(connection, generation_id, account_id, "edge", content_join="LEFT JOIN")
+
+
+def _ordered_rows(connection, generation_id: str, account_id: str, kind: str, *, content_join="CROSS JOIN"):
     """Use bucket order, which is identical to the canonical fixed-format ID order."""
 
     if kind not in ('node', 'edge'):
@@ -1174,7 +1193,7 @@ def ordered_rows(connection, generation_id: str, account_id: str, kind: str):
         FROM generation_graph_segments m
         CROSS JOIN graph_segments s USING(creator_account_id,segment_id)
         {membership}
-        CROSS JOIN graph_{kind}_content c USING(creator_account_id,content_id,{kind}_id)
+        {content_join} graph_{kind}_content c USING(creator_account_id,content_id,{kind}_id)
         WHERE m.generation_id=? AND m.creator_account_id=? AND m.kind=?
           AND s.sealed=1 AND s.kind=m.kind AND s.bucket=m.bucket
           {page_filter}

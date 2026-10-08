@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 
+from app.core.lifecycle_receipts import startup_timed
+
 from app.analytics.conversation_enrichment_units import (
     ConfidenceTotal,
     ConversationEnrichmentReference,
@@ -297,6 +299,7 @@ def _validate_unit(unit, *, check=lambda: None, materialize=False):
     return messages
 
 
+@startup_timed('startup.enrichment_units', counter='startup.enrichment_units.calls')
 def verify_generation_units(
     connection, generation_id, account, validation=None, *,
     check=lambda: None, materialize=False,

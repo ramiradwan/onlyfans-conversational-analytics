@@ -2527,9 +2527,10 @@ class SQLiteAnalyticsProjectionStore:
             self.crash_hook(stage, generation_id)
 
 
+@startup_timed('startup.generation_links', counter='startup.generation_links.calls')
 def _validate_generation_links(
     connection, generation_id, account_id, check, graph_validation=None, graph_rows=None,
-    graph_changes=None,
+    graph_changes=None, materialize_graph=False,
 ):
     """Check the candidate's referential closure without scanning other accounts."""
 
@@ -2544,13 +2545,21 @@ def _validate_generation_links(
         raise GraphReferentialIntegrityError("projection_epoch_absent")
     schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
     optional_since = {"enrichment_reuse": 5, "conversation_fragments": 6, "projection_query_metadata": 7, "generation_graph_segments": 10, "conversation_page_sets": 11, "conversation_pages": 11, "conversation_page_refs": 13, "conversation_owned_pages": 13, "enrichment_refs": 14, "enrichment_owned_records": 14, "conversation_graph_refs": 16, "conversation_enrichment_refs": 17}
+    verified_cold_graph = None
     if schema_version >= 10:
         from app.analytics.shared_graph import verify_segment_links
-        verify_segment_links(
-            connection, generation_id, account_id,
-            validation=graph_validation, check=check, prepared=graph_rows,
-            verified_changes=graph_changes,
-        )
+        if (not materialize_graph and graph_validation is None
+                and graph_rows is None and graph_changes is None):
+            from app.analytics.graph_endpoint_validation import verify_cold_graph_rows
+            verified_cold_graph = verify_cold_graph_rows(
+                connection, generation_id, account_id, check,
+            )
+        if verified_cold_graph is None:
+            verify_segment_links(
+                connection, generation_id, account_id,
+                validation=graph_validation, check=check, prepared=graph_rows,
+                verified_changes=graph_changes,
+            )
     else:
         missing = connection.execute("""SELECT 1 FROM graph_edges AS e
             LEFT JOIN graph_nodes AS source ON source.generation_id=e.generation_id
@@ -2612,6 +2621,7 @@ def _validate_generation_links(
             ).fetchone()
             if foreign is not None:
                 raise GraphReferentialIntegrityError("projection_account_mismatch")
+    return verified_cold_graph
 
 
 def verify_generation_values(generation, values):
@@ -2808,10 +2818,10 @@ def _recompute_generation(
                 graph_rows = _read_changed_segment_rows(
                     connection, account_id, changed, run_check
                 )
-        _validate_generation_links(
+        verified_cold_graph = _validate_generation_links(
             connection, generation_id, account_id, run_check,
             graph_validation=graph_validation, graph_rows=graph_rows,
-            graph_changes=graph_changes,
+            graph_changes=graph_changes, materialize_graph=materialize_graph,
         )
         if materialize_graph:
             nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
@@ -2830,9 +2840,10 @@ def _recompute_generation(
             if reused is None:
                 from app.analytics.graph_verification import verify_graph_rows
 
-                verified = verify_graph_rows(
-                    connection, generation_id, account_id, check=run_check
-                )
+                verified = (verified_cold_graph if verified_cold_graph is not None
+                    else verify_graph_rows(
+                        connection, generation_id, account_id, check=run_check
+                    ))
                 nodes, edges = verified.nodes, verified.edges
                 graph_digest = (
                     verified.segment_root
