@@ -367,6 +367,8 @@ public static class PackagingSmokeNativeProcess {
     private static extern uint WaitForSingleObject(SafeProcessHandle process, uint milliseconds);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool TerminateProcess(SafeProcessHandle process, uint exitCode);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeProcess(SafeProcessHandle process, out uint exitCode);
 
     public static long[] ReadLifetime(SafeProcessHandle process) {
         long creation, exit, kernel, user;
@@ -390,7 +392,12 @@ public static class PackagingSmokeNativeProcess {
             return;
         if (!TerminateProcess(process, 1)) {
             int error = Marshal.GetLastWin32Error();
-            if (WaitForSingleObject(process, 0) != 0)
+            uint exitCode;
+            // A parent waiting on a stopped child can enter exit before its
+            // retained handle signals. Match Process.Kill's narrow error-5
+            // exit race handling; the caller must still join this same handle
+            // within the shared shutdown deadline before declaring cleanup.
+            if (error != 5 || !GetExitCodeProcess(process, out exitCode) || exitCode == 259)
                 throw new Win32Exception(error);
         }
     }
@@ -701,7 +708,7 @@ function Stop-LauncherProcess {
             throw [InvalidOperationException]::new('Owned launcher identity unavailable.')
         }
         [array]::Reverse($records)
-        $processesRequestedToStop = [System.Collections.Generic.List[object]]::new()
+        $processesToJoin = [System.Collections.Generic.List[object]]::new()
         $stoppedProcessIds = [System.Collections.Generic.List[int]]::new()
         foreach ($record in $records) {
             try {
@@ -713,14 +720,16 @@ function Stop-LauncherProcess {
                     Write-SmokeProgress -Stage 'process-stop' -Phase begin -Details @{ process_id = $record.ProcessId }
                     [void] (& $StopRecord $record)
                     Write-SmokeProgress -Stage 'process-stop' -Phase end -Details @{ process_id = $record.ProcessId }
-                    $processesRequestedToStop.Add($record)
                 }
+                # An exit timestamp can precede the handle's final signal.
+                # Join every validated instance, even when no stop is needed.
+                $processesToJoin.Add($record)
             } catch {
                 # Continue releasing the other owned instances, never a replacement.
                 $stopFailure = $_.Exception.GetType().Name
             }
         }
-        foreach ($record in $processesRequestedToStop) {
+        foreach ($record in $processesToJoin) {
             $remainingMilliseconds = [int] [Math]::Floor([Math]::Max(0, [Math]::Min(
                 5000 - $processExitStopwatch.ElapsedMilliseconds, ($processExitDeadline - (& $UtcNow)).TotalMilliseconds)))
             Write-SmokeProgress -Stage 'process-exit-wait' -Phase begin -Details @{ process_id = $record.ProcessId }

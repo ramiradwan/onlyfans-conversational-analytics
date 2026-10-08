@@ -956,7 +956,249 @@ $ast = [Management.Automation.Language.Parser]::ParseFile($SourcePath, [ref]$tok
 if ($parseErrors.Count -ne 0) { throw 'production helper parse failed' }
 # Load actual helpers without executing the installer entrypoint or native setup.
 foreach ($definition in $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
+    if ($Scenario -like 'interop-*' -and $definition.Name -eq 'Initialize-SmokeProcessInterop') {
+        # Replace only native declarations, never the production Stop/Wait bodies.
+        # Normalize source newlines so the exact-boundary checks also hold in CI.
+        $interop=$definition.Extent.Text.Replace("`r`n", "`n")
+        $declarations=@(
+@'
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetProcessTimes(SafeProcessHandle process, out long creation,
+        out long exit, out long kernel, out long user);
+'@,
+@'
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint GetProcessId(SafeProcessHandle process);
+'@,
+@'
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(SafeProcessHandle process, uint milliseconds);
+'@,
+@'
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool TerminateProcess(SafeProcessHandle process, uint exitCode);
+'@,
+@'
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeProcess(SafeProcessHandle process, out uint exitCode);
+'@
+        )
+        $doubles=@(
+@'
+    public static SafeProcessHandle ExpectedHandle;
+    public static int Mode, TerminateCalls, ExitQueryCalls, FinalWaitCalls;
+    private static void RequireRetainedHandle(SafeProcessHandle process) {
+        if (!Object.ReferenceEquals(process, ExpectedHandle))
+            throw new InvalidOperationException("Native boundary changed handle authority.");
+    }
+    private static bool GetProcessTimes(SafeProcessHandle process, out long creation,
+        out long exit, out long kernel, out long user) {
+        RequireRetainedHandle(process);
+        creation = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).ToFileTimeUtc();
+        exit = Mode == 5 ? creation + TimeSpan.TicksPerSecond : 0;
+        kernel = user = 0;
+        return true;
+    }
+'@,
+@'
+    private static uint GetProcessId(SafeProcessHandle process) {
+        RequireRetainedHandle(process);
+        return 701;
+    }
+'@,
+@'
+    private static uint WaitForSingleObject(SafeProcessHandle process, uint milliseconds) {
+        RequireRetainedHandle(process);
+        if (milliseconds > 5000) throw new InvalidOperationException("Wait exceeded shared budget.");
+        if (milliseconds > 0) FinalWaitCalls++;
+        return 258;
+    }
+'@,
+@'
+    private static bool TerminateProcess(SafeProcessHandle process, uint exitCode) {
+        RequireRetainedHandle(process);
+        TerminateCalls++;
+        Marshal.SetLastPInvokeError(Mode == 4 ? 87 : 5);
+        return false;
+    }
+'@,
+@'
+    private static bool GetExitCodeProcess(SafeProcessHandle process, out uint exitCode) {
+        RequireRetainedHandle(process);
+        ExitQueryCalls++;
+        exitCode = Mode == 2 ? 259u : 0u;
+        if (Mode == 3) {
+            // The original termination error must survive this later query error.
+            Marshal.SetLastPInvokeError(17);
+            return false;
+        }
+        return true;
+    }
+'@
+        )
+        for ($index=0; $index -lt $declarations.Count; $index++) {
+            $declaration=$declarations[$index].Replace("`r`n", "`n")
+            if ([regex]::Matches($interop, [regex]::Escape($declaration)).Count -ne 1) { throw 'native declaration boundary changed' }
+            $interop=$interop.Replace($declaration, $doubles[$index].Replace("`r`n", "`n"))
+        }
+        Invoke-Expression $interop
+        continue
+    }
     Invoke-Expression $definition.Extent.Text
+}
+if ($Scenario -like 'interop-*') {
+    Initialize-SmokeProcessInterop
+    $mode=switch ($Scenario) {
+        'interop-exited-unsignaled-wait-refused' { 1 }
+        'interop-denied-live-refused' { 2 }
+        'interop-exit-query-failure-refused' { 3 }
+        'interop-other-error-refused' { 4 }
+        'interop-exiting-lifetime-wait-refused' { 5 }
+        default { throw 'unknown closed native boundary scenario' }
+    }
+    # This non-owning sentinel is never passed to a real native API or OS lookup.
+    $handle=[Microsoft.Win32.SafeHandles.SafeProcessHandle]::new([IntPtr]701, $false)
+    try {
+        [PackagingSmokeNativeProcess]::ExpectedHandle=$handle
+        [PackagingSmokeNativeProcess]::Mode=$mode
+        $refused=$false
+        if ($mode -eq 5) {
+            $lifetime=[PackagingSmokeNativeProcess]::ReadLifetime($handle)
+            if ($lifetime[1] -le 0 -or $lifetime[2] -ne 1 -or [PackagingSmokeNativeProcess]::Wait($handle, 0)) { throw 'exiting lifetime did not retain an unsignaled handle' }
+        } else {
+            try { [PackagingSmokeNativeProcess]::Stop($handle) } catch {
+                $refused=$true
+                $failure=$_.Exception
+                while ($null -ne $failure.InnerException) { $failure=$failure.InnerException }
+                if ($failure -isnot [ComponentModel.Win32Exception] -or $failure.NativeErrorCode -ne $(if ($mode -eq 4) { 87 } else { 5 })) { throw 'native refusal lost original error' }
+            }
+            if ($refused -ne ($mode -ne 1)) { throw 'native stop accepted the wrong exit state' }
+        }
+        if ([PackagingSmokeNativeProcess]::TerminateCalls -ne $(if ($mode -eq 5) { 0 } else { 1 }) -or [PackagingSmokeNativeProcess]::ExitQueryCalls -ne $(if ($mode -in @(4,5)) { 0 } else { 1 })) { throw 'native refusal used an unexpected boundary' }
+        if ($mode -in @(1,5)) {
+            if ([PackagingSmokeNativeProcess]::Wait($handle, 10)) { throw 'unsignaled exit was treated as joined' }
+            $script:results=[Collections.Generic.List[object]]::new()
+            function Write-SmokeProgress { param($Stage, $Phase, $Details) }
+            function Add-Result { param($Step, $Outcome, $Evidence) $script:results.Add([pscustomobject]@{ step=$Step; outcome=$Outcome; evidence=$Evidence }) }
+            $record=[pscustomobject]@{ ProcessId=701; CreationUtcTicks=[DateTime]::new(2026,1,1,0,0,0,[DateTimeKind]::Utc).Ticks; Process=[pscustomobject]@{ Id=701 }; Handle=$handle }
+            $owned=[ordered]@{}
+            $owned[(Get-OwnedProcessIdentityKey -Record $record)]=$record
+            $port={ throw 'unjoined process reached port completion' }
+            Stop-LauncherProcess -LauncherProcess $record.Process -LauncherRecord $record -OwnedRecords $owned -RefreshFamily { param($root,$deadline,$records) } -ReleaseRecord { param($record) } -PortRelease $port
+            if ($script:results.Count -ne 1 -or $script:results[0].step -ne 'close-bridge' -or $script:results[0].outcome -ne 'fail' -or $script:results[0].evidence.finding -ne 'launcher_process_not_exited') { throw 'unjoined exit published successful cleanup' }
+            if ([PackagingSmokeNativeProcess]::FinalWaitCalls -ne 2) { throw 'cleanup did not join the retained native handle' }
+            if ($mode -eq 5 -and ([PackagingSmokeNativeProcess]::TerminateCalls -ne 0 -or [PackagingSmokeNativeProcess]::ExitQueryCalls -ne 0)) { throw 'already-exiting lifetime was terminated again' }
+        }
+    } finally { $handle.Dispose() }
+    [pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+    exit 0
+}
+if ($Scenario -eq 'native-denied-live-retained-handle') {
+    Initialize-SmokeProcessInterop
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class PackagingSmokeOwnedProbeHandles {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern SafeProcessHandle OpenProcess(uint access, bool inherit, uint processId);
+}
+'@
+    $process=Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 30') -WindowStyle Hidden -PassThru
+    $record=$null
+    $restricted=$null
+    try {
+        $record=New-OwnedProcessRecord -Process $process
+        $original=Get-OwnedProcessLifetime -Record $record
+        # PID is only a lookup coordinate: compare the result with our pinned owner.
+        $restricted=[PackagingSmokeOwnedProbeHandles]::OpenProcess(0x00101000, $false, [uint32]$record.ProcessId)
+        if ($restricted.IsInvalid) { throw 'owned restricted query handle unavailable' }
+        $bound=[PackagingSmokeNativeProcess]::ReadLifetime($restricted)
+        if ($bound[3] -ne $record.ProcessId -or $bound[0] -ne $original.CreationUtcTicks -or $bound[2] -ne 0) { throw 'restricted handle changed owned instance' }
+        $refused=$false
+        try { [PackagingSmokeNativeProcess]::Stop($restricted) } catch {
+            $failure=$_.Exception
+            while ($null -ne $failure.InnerException) { $failure=$failure.InnerException }
+            if ($failure -isnot [ComponentModel.Win32Exception] -or $failure.NativeErrorCode -ne 5) { throw 'restricted native stop failed for another reason' }
+            $refused=$true
+        }
+        if (-not $refused -or [PackagingSmokeNativeProcess]::Wait($restricted, 0) -or (Get-OwnedProcessLifetime -Record $record).HasExited) { throw 'denied live native handle was treated as exited' }
+    } finally {
+        # Never stop through the restricted handle or reacquire an authority by PID.
+        if ($null -ne $restricted) { $restricted.Dispose() }
+        if ($null -ne $record) {
+            try {
+                Stop-OwnedProcessRecord -Record $record
+                if (-not (Wait-OwnedProcessRecord -Record $record -RemainingMilliseconds 5000)) { throw 'owned shell cleanup did not join' }
+            } finally { Close-OwnedProcessRecord -Record $record }
+        } else {
+            [PackagingSmokeNativeProcess]::Stop($process.SafeHandle)
+            [void][PackagingSmokeNativeProcess]::Wait($process.SafeHandle, 5000)
+            $process.Dispose()
+        }
+    }
+    [pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+    exit 0
+}
+if ($Scenario -eq 'native-parent-waits-child-cleanup') {
+    Initialize-SmokeProcessInterop
+    $ready=Join-Path $PSScriptRoot 'owned-child-ready.txt'
+    $parentScript=Join-Path $PSScriptRoot 'owned-parent.ps1'
+    @'
+param([string] $Ready)
+$ErrorActionPreference='Stop'
+# Share the parent's hidden console; use no application, listener or network.
+$child=Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 10') -NoNewWindow -PassThru
+try {
+    [IO.File]::WriteAllText($Ready, 'owned-child-ready')
+    $child.WaitForExit()
+} finally { $child.Dispose() }
+'@ | Set-Content -LiteralPath $parentScript -Encoding utf8
+    $process=Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile','-NonInteractive','-File',('"'+$parentScript+'"'),'-Ready',('"'+$ready+'"')) -WindowStyle Hidden -PassThru
+    $root=$null
+    $retained=@()
+    $owned=[ordered]@{}
+    function Write-SmokeProgress { param($Stage, $Phase, $Details) }
+    try {
+        $root=New-OwnedProcessRecord -Process $process
+        $retained=@($root)
+        $owned[(Get-OwnedProcessIdentityKey -Record $root)]=$root
+        $startup=[Diagnostics.Stopwatch]::StartNew()
+        while (-not (Test-Path -LiteralPath $ready) -and $startup.ElapsedMilliseconds -lt 5000) { Start-Sleep -Milliseconds 40 }
+        if (-not (Test-Path -LiteralPath $ready) -or [IO.File]::ReadAllText($ready) -ne 'owned-child-ready') { throw 'owned child startup did not complete' }
+        $family=@(Get-LauncherFamilyRecords -LauncherRecord $root -DeadlineUtc ([DateTime]::UtcNow.AddSeconds(5)) -OwnedRecords $owned)
+        $retained=@($family)
+        if ($family.Count -lt 2 -or @($family | Where-Object { $_.Process.ProcessName -eq 'pwsh' }).Count -lt 2) { throw 'owned root and child identities were not retained' }
+        $script:results=[Collections.Generic.List[object]]::new()
+        function Add-Result { param($Step, $Outcome, $Evidence) $script:results.Add([pscustomobject]@{ step=$Step; outcome=$Outcome }) }
+        # Retain handles through assertions and fallback cleanup; no port is queried.
+        Stop-LauncherProcess -LauncherProcess $process -LauncherRecord $root -OwnedRecords $owned -ReleaseRecord { param($record) } -PortRelease { [pscustomobject]@{ Released=$true; ListenerProcessIds=@() } }
+        if ($script:results.Count -ne 1 -or $script:results[0].step -ne 'close-bridge' -or $script:results[0].outcome -ne 'pass') { throw 'owned parent-child cleanup failed' }
+        foreach ($record in $retained) {
+            $after=Get-OwnedProcessLifetime -Record $record
+            if (-not $after.HasExited -or $after.CreationUtcTicks -ne $record.CreationUtcTicks -or $after.ExitUtcTicks -lt $record.CreationUtcTicks) { throw 'owned parent-child cleanup lost joined identity' }
+        }
+    } finally {
+        # A failed discovery can still have captured owned records before refusing.
+        if ($owned.Count -gt 0) { $retained=@($owned.Values) }
+        [Array]::Reverse($retained)
+        $cleanupFailed=$false
+        foreach ($record in $retained) {
+            try {
+                Stop-OwnedProcessRecord -Record $record
+                if (-not (Wait-OwnedProcessRecord -Record $record -RemainingMilliseconds 5000)) { throw 'owned family cleanup did not join' }
+            } catch {
+                $cleanupFailed=$true
+            } finally { Close-OwnedProcessRecord -Record $record }
+        }
+        if ($null -eq $root) {
+            [PackagingSmokeNativeProcess]::Stop($process.SafeHandle)
+            [void][PackagingSmokeNativeProcess]::Wait($process.SafeHandle, 5000)
+            $process.Dispose()
+        }
+        if ($cleanupFailed) { throw 'owned family fallback cleanup failed' }
+    }
+    [pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+    exit 0
 }
 if ($Scenario -in @('native-live-retained-handle','native-exited-retained-handle')) {
     # Own one idle shell, with no installer, application, network or port use.
@@ -1193,10 +1435,14 @@ if ($Scenario -like 'cleanup-*') {
         "cleanup-many-wait-failure", "cleanup-many-stop-failure", "cleanup-shared-wait-budget",
         "native-live-retained-handle", "native-exited-retained-handle",
         "cleanup-refresh-finds-child", "cleanup-refresh-query-failure", "cleanup-refresh-deadline",
+        "native-parent-waits-child-cleanup", "native-denied-live-retained-handle",
+        "interop-exited-unsignaled-wait-refused", "interop-denied-live-refused",
+        "interop-exit-query-failure-refused", "interop-other-error-refused",
+        "interop-exiting-lifetime-wait-refused",
     ],
 )
 def test_process_identity_graph_and_cleanup(tmp_path: Path, scenario: str) -> None:
-    """Exercise actual PowerShell helpers using process instances owned by no OS."""
+    """Exercise production helpers with synthetic identities and owned idle shells."""
 
     probe = tmp_path / "process-identity-probe.ps1"
     probe.write_text(_PROCESS_IDENTITY_PROBE, encoding="utf-8")
