@@ -108,7 +108,9 @@ def _check_forbidden_material(
     # Keep one bucket per declaration, including invalid and duplicate rules,
     # so scanning each file once preserves the declaration-first output order.
     declaration_findings: list[list[PackagingFinding]] = []
-    compiled_rules: list[tuple[str, re.Pattern[str], list[PackagingFinding]]] = []
+    compiled_rules: list[
+        tuple[str, re.Pattern[str], Mapping[str, str], list[PackagingFinding]]
+    ] = []
     for declaration in declarations:
         bucket: list[PackagingFinding] = []
         declaration_findings.append(bucket)
@@ -137,14 +139,24 @@ def _check_forbidden_material(
         except re.error as error:
             bucket.append(PackagingFinding("policy_invalid", name, str(error)))
             continue
-        compiled_rules.append((name, matcher, bucket))
+        reviewed_files = _reviewed_synthetic_files(declaration, name, bucket)
+        compiled_rules.append((name, matcher, reviewed_files, bucket))
 
     if compiled_rules:
         for path, relative in staged_paths:
-            contents = _read_utf8_text(path) if path.is_file() else None
-            for name, matcher, bucket in compiled_rules:
+            payload = _read_material_payload(path) if path.is_file() else None
+            try:
+                contents = payload.decode("utf-8") if payload is not None else None
+            except UnicodeError:
+                contents = None
+            for name, matcher, reviewed_files, bucket in compiled_rules:
                 if matcher.search(relative) is not None or (
-                    contents is not None and matcher.search(contents) is not None
+                    payload is not None and contents is not None
+                    and matcher.search(contents) is not None
+                    and (
+                        relative not in reviewed_files
+                        or hashlib.sha256(payload).hexdigest() != reviewed_files[relative]
+                    )
                 ):
                     bucket.append(
                         PackagingFinding(
@@ -158,12 +170,48 @@ def _check_forbidden_material(
         findings.extend(bucket)
 
 
-def _read_utf8_text(path: Path) -> str | None:
-    """Return a UTF-8 text payload, leaving binary files to path checks only."""
+def _reviewed_synthetic_files(
+    declaration: Mapping[str, Any], name: str, findings: list[PackagingFinding]
+) -> Mapping[str, str]:
+    """Admit only exact reviewed bytes for this one material rule's payload scan.
+
+    Paths must be canonical relative POSIX file names, never globs. Admission
+    does not suppress path checks, other material rules or contract integrity.
+    Any malformed entry invalidates the whole admission map, leaving the rule
+    active without exceptions.
+    """
+
+    reviewed = declaration.get("reviewed_synthetic_files", {})
+    if isinstance(reviewed, Mapping) and all(
+        isinstance(relative, str)
+        and relative
+        and PurePosixPath(relative).parts
+        and not PurePosixPath(relative).is_absolute()
+        and PurePosixPath(relative).as_posix() == relative
+        and ".." not in PurePosixPath(relative).parts
+        and not any(character in relative for character in "\\:*?[]<>|\"")
+        and not any(ord(character) < 32 or ord(character) == 127 for character in relative)
+        and isinstance(digest, str)
+        and re.fullmatch(r"[0-9a-f]{64}", digest) is not None
+        for relative, digest in reviewed.items()
+    ):
+        return reviewed
+    findings.append(
+        PackagingFinding(
+            "policy_invalid",
+            f"forbidden_material.{name}.reviewed_synthetic_files",
+            "expected exact relative paths mapped to lowercase SHA-256 digests",
+        )
+    )
+    return {}
+
+
+def _read_material_payload(path: Path) -> bytes | None:
+    """Read once so payload matching and fixture hashing use the same bytes."""
 
     try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
+        return path.read_bytes()
+    except OSError:
         return None
 
 
