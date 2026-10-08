@@ -199,6 +199,7 @@
     "tests/test_catchup_rpc.py": 3,
     "tests/test_changed_graph_read_order.py": 1,
     "tests/test_cold_graph_endpoint_validation.py": 1,
+    "tests/test_cold_graph_selection.py": 3,
     "tests/test_compact_graph.py": 2,
     "tests/test_companion_analysis_readiness_rpc.py": 1,
     "tests/test_companion_onboarding_progress.py": 3,

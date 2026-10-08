@@ -29,7 +29,7 @@ class VerifiedGraph:
 def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                       materialize: bool = False,
                       check: Callable[[], None] = lambda: None,
-                      _endpoint_check=None) -> VerifiedGraph:
+                      _endpoint_check=None, _selection=None) -> VerifiedGraph:
     endpoint_check = _endpoint_check
     from app.analytics.sqlite_graph_store import _node, _edge
 
@@ -39,6 +39,10 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
     from app.analytics.graph_store import GraphReferentialIntegrityError
 
     shared = supported(connection) and uses_segments(connection, generation_id, account_id)
+    if _selection is not None and (materialize or not shared):
+        _selection.discard('layout_unavailable')
+    elif _selection is not None:
+        _selection._begin_graph(connection, generation_id, account_id)
     if shared:
         for table in ('graph_owned_nodes', 'graph_owned_edges'):
             if connection.execute(f'SELECT 1 FROM {table} WHERE generation_id=? AND creator_account_id=? LIMIT 1', (generation_id, account_id)).fetchone():
@@ -91,6 +95,8 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
             bucket, segment_id, expected_digest = current_segment
             if segment_digest.hexdigest() != expected_digest:
                 segment_proof_valid = False
+                if _selection is not None:
+                    _selection.discard('segment_proof_invalid')
             elif segment_proof_valid:
                 segments.append(VerifiedSegment(
                     storage_kind, bucket, segment_id, expected_digest, segment_count,
@@ -133,6 +139,10 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
                 if shared:
                     if version != row["content_id"]:
                         segment_proof_valid = False
+                        if _selection is not None:
+                            _selection.discard('content_hash_invalid')
+                    elif _selection is not None:
+                        _selection.collect(storage_kind, row, row[key], version)
                     identity = (
                         row["segment_bucket"], row["segment_id"], row["segment_digest"]
                     )
@@ -160,8 +170,11 @@ def verify_graph_rows(connection, generation_id: str, account_id: str, *,
             rows.close()
     check()
     digest.update(b"]}")
+    segment_root = segment_root_digest(root_parts, check=check)
+    if _selection is not None:
+        _selection._finish_graph()
     return VerifiedGraph(
         "sha256:" + digest.hexdigest(), node_counts, edge_counts,
         nodes, edges, tuple(segments) if segment_proof_valid else (),
-        segment_root_digest(root_parts, check=check),
+        segment_root,
     )

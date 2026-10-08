@@ -2530,7 +2530,7 @@ class SQLiteAnalyticsProjectionStore:
 @startup_timed('startup.generation_links', counter='startup.generation_links.calls')
 def _validate_generation_links(
     connection, generation_id, account_id, check, graph_validation=None, graph_rows=None,
-    graph_changes=None, materialize_graph=False,
+    graph_changes=None, materialize_graph=False, _selection=None,
 ):
     """Check the candidate's referential closure without scanning other accounts."""
 
@@ -2552,7 +2552,7 @@ def _validate_generation_links(
                 and graph_rows is None and graph_changes is None):
             from app.analytics.graph_endpoint_validation import verify_cold_graph_rows
             verified_cold_graph = verify_cold_graph_rows(
-                connection, generation_id, account_id, check,
+                connection, generation_id, account_id, check, _selection=_selection,
             )
         if verified_cold_graph is None:
             verify_segment_links(
@@ -2790,6 +2790,7 @@ def _recompute_generation(
     ):
         raise ProjectionValidationError("projection row digest differs")
     selection = None
+    cold_selection = None
     try:
         graph_rows = None
         graph_changes = None
@@ -2818,10 +2819,18 @@ def _recompute_generation(
                 graph_rows = _read_changed_segment_rows(
                     connection, account_id, changed, run_check
                 )
+        if (not materialize_graph and not materialize_projection
+                and graph_validation is None and enrichment_validation is None
+                and conversation_validation is None):
+            from app.analytics.cold_graph_selection import ColdGraphSelection
+            cold_selection = ColdGraphSelection(
+                connection, generation, account_id, run_check,
+            )
         verified_cold_graph = _validate_generation_links(
             connection, generation_id, account_id, run_check,
             graph_validation=graph_validation, graph_rows=graph_rows,
             graph_changes=graph_changes, materialize_graph=materialize_graph,
+            _selection=cold_selection,
         )
         if materialize_graph:
             nodes, edges = _generation_graph(connection, generation_id, account_id, check=run_check)
@@ -2842,7 +2851,8 @@ def _recompute_generation(
 
                 verified = (verified_cold_graph if verified_cold_graph is not None
                     else verify_graph_rows(
-                        connection, generation_id, account_id, check=run_check
+                        connection, generation_id, account_id, check=run_check,
+                        _selection=cold_selection,
                     ))
                 nodes, edges = verified.nodes, verified.edges
                 graph_digest = (
@@ -2896,15 +2906,23 @@ def _recompute_generation(
             raise ProjectionValidationError("node-kind coverage differs")
         if projection.graph.edge_counts_by_relation != dict(sorted(edge_counts.items())):
             raise ProjectionValidationError("edge-kind coverage differs")
+        if cold_selection is not None:
+            cold_selection.seal()
+            startup_count('startup.cold_selection.ready', int(cold_selection.ready))
         from app.analytics.conversation_integrity_store import verify_generation_integrity
         conversation_integrity = verify_generation_integrity(
             connection, generation, account_id, proof=conversation_validation,
             graph_validation=graph_validation, segments=(() if materialize_graph else graph_segments),
             prepared=graph_rows, verified_changes=graph_changes, check=run_check,
+            _selection=cold_selection,
         )
         if (graph_rows is not None or graph_changes is not None) \
                 and connection.total_changes != read_version:
             raise ProjectionValidationError('stored graph changed during verification')
+        if cold_selection is not None:
+            cold_selection.finish()
+            startup_count('startup.cold_selection.peak_rows', cold_selection.peak_rows)
+            startup_count('startup.cold_selection.peak_bytes', cold_selection.peak_bytes)
         return {
             "projection": projection,
             "nodes": nodes,
@@ -2918,6 +2936,8 @@ def _recompute_generation(
             "conversation_integrity": conversation_integrity,
         }
     finally:
+        if cold_selection is not None:
+            cold_selection.close()
         if selection is not None:
             selection.discard()
 

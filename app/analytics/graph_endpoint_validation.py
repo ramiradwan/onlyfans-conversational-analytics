@@ -33,7 +33,7 @@ def _snapshot(connection):
             _pragma_version(connection, 'user_version'), connection.total_changes)
 
 
-def verify_cold_graph_rows(connection, generation_id, account_id, check):
+def verify_cold_graph_rows(connection, generation_id, account_id, check, *, _selection=None):
     """Return fully verified rows, or refuse and leave the original SQL path.
 
     This owns the collection, its admission and its edge check. No caller-supplied
@@ -112,7 +112,7 @@ def verify_cold_graph_rows(connection, generation_id, account_id, check):
 
         verified = verify_graph_rows(
             connection, generation_id, account_id, check=check,
-            _endpoint_check=edge_check,
+            _endpoint_check=edge_check, _selection=_selection,
         )
         check()
         same_transaction()

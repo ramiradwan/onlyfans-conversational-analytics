@@ -31,7 +31,7 @@ _FULL_SELECTION_GROUP_BYTES = 256
 
 
 def _verify_cold_groups(connection, generation_id, account, conversation,
-                        summaries, members, current, versions, check):
+                        summaries, members, current, versions, check, _selection=None):
     """Combine small full-validation selections, retaining each original summary."""
     from app.analytics.shared_graph import selected_content_ids
 
@@ -49,8 +49,11 @@ def _verify_cold_groups(connection, generation_id, account, conversation,
         if not pending:
             return
         check()
-        actual = selected_content_ids(connection, generation_id, account, kind,
-                                      identities, check, page_layout=True)
+        actual = (None if _selection is None
+                  else _selection.selected(kind, None, identities))
+        if actual is None:
+            actual = selected_content_ids(connection, generation_id, account, kind,
+                                          identities, check, page_layout=True)
         if actual.keys() != set(identities):
             raise ValueError('conversation_integrity_selected_content_changed')
         for key, summary, selected in pending:
@@ -91,7 +94,8 @@ def _verify_cold_groups(connection, generation_id, account, conversation,
 @startup_timed('startup.conversation_integrity', counter='startup.conversation_integrity.calls')
 def verify_generation_integrity(connection, generation, account, *, proof=None,
                                 graph_validation=None, segments=(), prepared=None,
-                                verified_changes=None, check=lambda: None):
+                                verified_changes=None, check=lambda: None,
+                                _selection=None):
     """A process-local proof can skip only groups in unchanged verified segments."""
     if not units.integrity_supported(connection):
         return VerifiedConversationIntegrity((), (), ())
@@ -99,6 +103,12 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
     if not any(ref.header.checksum_version == 2 for ref in references):
         return VerifiedConversationIntegrity((), (), ())
     stamp = content_stamp(connection)
+    from app.analytics.cold_graph_selection import ColdGraphSelection
+    if (type(_selection) is not ColdGraphSelection
+            or proof is not None or graph_validation is not None
+            or prepared is not None or verified_changes is not None
+            or not _selection.matches(connection, generation, account)):
+        _selection = None
     trusted, trusted_groups, trusted_prefixes, old_segments, old_generation = {}, {}, {}, {}, None
     prior_graph = getattr(graph_validation, 'proof', None)
     if proof is not None and prior_graph is not None and stamp is not None:
@@ -133,6 +143,10 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
         segment_id = segment if isinstance(segment, str) else getattr(segment, 'segment_id', None)
         if segment_id is None:
             raise ValueError('conversation_integrity_segment_missing')
+        if _selection is not None:
+            covered = _selection.selected(kind, bucket, selected)
+            if covered is not None:
+                return covered
         if selection is not None:
             covered = selection.selected(kind, segment_id, selected)
             if covered is not None:
@@ -223,7 +237,8 @@ def verify_generation_integrity(connection, generation, account, *, proof=None,
         if (proof is None and graph_validation is None
                 and prepared is None and verified_changes is None):
             _verify_cold_groups(connection, generation['generation_id'], account,
-                h.conversation_ref, summaries, members, current, versions, check)
+                h.conversation_ref, summaries, members, current, versions, check,
+                _selection=_selection)
         else:
             for key, summary in summaries.items():
                 check()

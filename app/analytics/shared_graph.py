@@ -1178,6 +1178,7 @@ def _ordered_rows(connection, generation_id: str, account_id: str, kind: str, *,
 
     membership = f'CROSS JOIN graph_segment_{kind}s r USING(creator_account_id,segment_id)'
     page_order = page_filter = ''
+    page_bucket = 'NULL'
     if pages_supported(connection):
         membership = (
             'CROSS JOIN graph_segment_membership_pages p USING(creator_account_id,segment_id) '
@@ -1185,9 +1186,10 @@ def _ordered_rows(connection, generation_id: str, account_id: str, kind: str, *,
         )
         page_order = 'p.bucket,'
         page_filter = 'AND p.kind=m.kind'
+        page_bucket = 'p.bucket'
 
     return connection.execute(f'''SELECT m.generation_id,m.creator_account_id,
-            m.bucket AS segment_bucket,m.segment_id,
+            m.bucket AS segment_bucket,m.segment_id,{page_bucket} AS page_bucket,
             s.content_digest AS segment_digest,c.content_id,
             {','.join('c.'+field for field in fields.split(','))}
         FROM generation_graph_segments m
