@@ -906,6 +906,35 @@ def test_resolver_and_signer_qualification_each_recheck_product_ci() -> None:
     assert api.product_ci_query_count == 2
 
 
+def _historical_sharded_v2_source() -> bytes:
+    """Freeze the v2 declarations independently of today's PR cutover."""
+    lines = ["name: CI", "env:", "  CI_POLICY_VERSION: sharded-v2", "jobs:"]
+    ordered = sorted(producer.SHARDED_V2_PRODUCT_CI_JOB_IDS - {"windows-full-shards", "windows-full-regression"})
+    for name in ordered + ["windows-full-shards", "windows-full-regression"]:
+        lines.append(f"  {name}:")
+        if name in {"analytics-integration", "windows-full-shards"}:
+            windows = name == "windows-full-shards"
+            count = 2 if windows else 4
+            display = "windows-full-regression" if windows else name
+            lines.extend([
+                f"    name: {display}-${{{{ matrix.shard }}}}",
+                f"    runs-on: {'windows-latest' if windows else 'ubuntu-latest'}",
+                f"    timeout-minutes: {60 if windows else 20}",
+                "    strategy:", "      fail-fast: false", f"      max-parallel: {count}",
+                "      matrix:", "        shard:",
+                *(f"          - {shard}" for shard in range(1, count + 1)),
+            ])
+        elif name == "windows-full-regression":
+            lines.extend(["    if: ${{ always() }}", "    needs: windows-full-shards", "    runs-on: ubuntu-latest"])
+        elif name == "required-ci-gate":
+            needs = producer.SHARDED_V2_PRODUCT_CI_JOB_IDS - {"required-ci-gate", "build-and-test", "windows-tests"}
+            lines.extend(["    name: Required CI", "    if: ${{ always() }}", "    needs:",
+                          *(f"      - {dependency}" for dependency in sorted(needs)), "    runs-on: ubuntu-latest"])
+        else:
+            lines.append("    runs-on: ubuntu-latest")
+    return ("\n".join(lines) + "\n").encode()
+
+
 def _sharded_source_api(version: str = "sharded-v1") -> _SourceApi:
     api = _SourceApi()
     if version == "sharded-v1":
@@ -918,8 +947,9 @@ def _sharded_source_api(version: str = "sharded-v1") -> _SourceApi:
         ).encode()
         names = producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES
     else:
-        assert version == "sharded-v2"
-        api.product_ci_source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
+        assert version in {"sharded-v2", "sharded-v2-pr-cutover"}
+        api.product_ci_source = (_historical_sharded_v2_source() if version == "sharded-v2"
+                                 else (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes())
         names = producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES
     api.product_ci_jobs = [
         {"id": 4300 + index, "name": name, "status": "completed", "conclusion": "success",
@@ -930,7 +960,7 @@ def _sharded_source_api(version: str = "sharded-v1") -> _SourceApi:
 
 
 @pytest.mark.parametrize("missing_lane", ["analytics-integration-3", "analytics-scale-qualification"])
-@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2"])
+@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2", "sharded-v2-pr-cutover"])
 def test_source_versioned_sharded_ci_qualifies_every_actual_lane(missing_lane, version) -> None:
     api = _sharded_source_api(version)
     assert producer.qualify_product_ci_source(api, source_commit="b" * 40) == 43
@@ -940,7 +970,7 @@ def test_source_versioned_sharded_ci_qualifies_every_actual_lane(missing_lane, v
 
 
 @pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
-@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2"])
+@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2", "sharded-v2-pr-cutover"])
 def test_source_policy_accepts_normal_git_line_endings(line_ending, version) -> None:
     source = _sharded_source_api(version).product_ci_source.replace(b"\r\n", b"\n").replace(b"\n", line_ending)
     expected = (producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES if version == "sharded-v1"
@@ -948,7 +978,7 @@ def test_source_policy_accepts_normal_git_line_endings(line_ending, version) -> 
     assert producer.product_ci_job_policy(source) == expected
 
 
-@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2"])
+@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2", "sharded-v2-pr-cutover"])
 def test_missing_gate_never_downgrades_sharded_source_to_legacy_policy(version) -> None:
     api = _sharded_source_api(version)
     api.product_ci_jobs = _SourceApi().product_ci_jobs
@@ -975,12 +1005,12 @@ def test_unknown_or_incomplete_source_policy_fails_closed(mutate) -> None:
         producer.product_ci_job_policy(mutate(_sharded_source_api().product_ci_source))
 
 
-@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2"])
+@pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2", "sharded-v2-pr-cutover"])
 def test_sharded_ci_attestation_accepts_retained_dependencies_but_not_newer_failure(version) -> None:
     api = _sharded_source_api(version)
     api.product_ci_run["run_attempt"] = 2
     rerun_job = next(job for job in api.product_ci_jobs if job["name"] == (
-        "windows-full-regression-2" if version == "sharded-v2" else "windows-full-regression"
+        "windows-full-regression" if version == "sharded-v1" else "windows-full-regression-2"
     ))
     rerun = dict(rerun_job, id=9999, run_attempt=2)
     api.product_ci_jobs.append(rerun)
@@ -992,8 +1022,9 @@ def test_sharded_ci_attestation_accepts_retained_dependencies_but_not_newer_fail
 
 @pytest.mark.parametrize("lane", ["windows-full-regression-1", "windows-full-regression-2", "windows-full-regression"])
 @pytest.mark.parametrize("failure", ["missing", "failure", "skipped", "cancelled"])
-def test_v2_attestation_requires_each_windows_shard_and_aggregate(lane, failure) -> None:
-    api = _sharded_source_api("sharded-v2")
+@pytest.mark.parametrize("version", ["sharded-v2", "sharded-v2-pr-cutover"])
+def test_v2_attestation_requires_each_windows_shard_and_aggregate(lane, failure, version) -> None:
+    api = _sharded_source_api(version)
     if failure == "missing":
         api.product_ci_jobs = [job for job in api.product_ci_jobs if job["name"] != lane]
     else:
@@ -1049,6 +1080,31 @@ def test_v2_source_requires_blocking_aggregate_and_both_gate_dependencies(old, n
     assert old in source
     with pytest.raises(producer.ContractError):
         producer.product_ci_job_policy(source.replace(old, new, 1).encode())
+
+
+@pytest.mark.parametrize("old,new", [
+    ("github.event_name == 'push' || github.event_name == 'workflow_dispatch'", "github.event_name != 'pull_request'"),
+    ("github.event_name == 'push' || github.event_name == 'workflow_dispatch'", "false"),
+    ("pull_request) test '${{ needs.windows-full-shards.result }}' = 'skipped'", "pull_request) true"),
+    ("push|workflow_dispatch) test '${{ needs.windows-full-shards.result }}' = 'success'", "push|workflow_dispatch) true"),
+    ("*) echo \"Unsupported Product CI event\"; exit 1", "*) true"),
+    ("  workflow_dispatch: {}", "  schedule:\n    - cron: 17 3 * * *\n  workflow_dispatch: {}"),
+    ("  windows-platform-contract:\n", "  windows-platform-contract:\n    if: false\n"),
+    ("  analytics-windows-contract:\n", "  analytics-windows-contract:\n    continue-on-error: true\n"),
+    ("  windows-browser-e2e:\n", "  windows-browser-e2e:\n    if: false\n"),
+    ("      - main\n", "      - other\n"),
+])
+def test_cutover_source_refuses_optional_main_coverage_or_focused_pr_jobs(old, new) -> None:
+    source = _sharded_source_api("sharded-v2-pr-cutover").product_ci_source.decode().replace("\r\n", "\n")
+    assert old in source
+    with pytest.raises(producer.ContractError):
+        producer.product_ci_job_policy(source.replace(old, new, 1).encode())
+
+
+def test_old_v2_policy_cannot_authorize_the_new_pr_skip_condition() -> None:
+    source = _sharded_source_api("sharded-v2-pr-cutover").product_ci_source
+    with pytest.raises(producer.ContractError):
+        producer.product_ci_job_policy(source.replace(b"sharded-v2-pr-cutover", b"sharded-v2"))
 
 
 def test_source_commit_must_be_strictly_post_baseline() -> None:

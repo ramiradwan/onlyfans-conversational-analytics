@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from tools.ci_selection import load_manifest as load_backend_manifest
     from tools.ci_windows_shards import load_manifest as load_windows_full_manifest
     from tools.engineering_attestation import ContractError, GitHubApi, latest_ci_jobs, load_json_strict
 except ModuleNotFoundError:  # Direct `python tools/ci_gate.py` invocation.
+    from ci_selection import load_manifest as load_backend_manifest
     from ci_windows_shards import load_manifest as load_windows_full_manifest
     from engineering_attestation import ContractError, GitHubApi, latest_ci_jobs, load_json_strict
 
@@ -88,17 +90,60 @@ LEGACY_EXCLUDED = {"slow", "stateful_tier_a", "stateful_tier_b", "stateful_agent
 SCALE_LANE = "analytics-scale-qualification"
 # These two files retain their existing packaged-runtime qualification boundary.
 # Every other slow case, including newly added modules, must execute on main and
-# nightly. Do not freeze today's analytics file list into an accidental opt-out.
+# manual runs. Do not freeze today's analytics file list into an accidental opt-out.
 SEPARATELY_QUALIFIED_SLOW_FILES = (
     "tests/test_packaged_runtime.py", "tests/test_installation_key.py",
 )
-SUPPORTED_EVENTS = {"pull_request", "push", "schedule", "workflow_dispatch"}
+SUPPORTED_EVENTS = {"pull_request", "push", "workflow_dispatch"}
+# Exact pre-existing skips reviewed at the Windows cutover. Keys bind a test
+# identity to its required execution platform; arbitrary new skips fail closed.
+# Raw audit: PR/manual pairs 36979816565/36979861591,
+# 37138860551/37138944934 and 37150620596/37150647474; receipt SHA-256
+# fa230a70cabe1ea85e2ae0904bc41eaacaa26e4f8f5f6f70127f5e102a2160db.
+PR_SKIP_BASELINE: dict[tuple[str, str], str] = {
+    ("tests/stateful/test_agent_delivery.py::test_agent_falsifier_probe_shrinks_a_real_oracle_fault", "Linux"):
+        "Skipped: run only by local evidence collection",
+    ("tests/test_analytics_closure_process.py::test_proc_observation_only_accepts_disappearance[FileNotFoundError]", "Windows"):
+        "Skipped: Linux process filesystem observation",
+    ("tests/test_analytics_closure_process.py::test_proc_observation_only_accepts_disappearance[OSError]", "Windows"):
+        "Skipped: Linux process filesystem observation",
+    ("tests/test_analytics_closure_process.py::test_proc_observation_only_accepts_disappearance[PermissionError]", "Windows"):
+        "Skipped: Linux process filesystem observation",
+    ("tests/test_analytics_closure_process.py::test_proc_observation_only_accepts_disappearance[ProcessLookupError]", "Windows"):
+        "Skipped: Linux process filesystem observation",
+    ("tests/test_enrichment_cache_storage.py::test_cache_generation_rows_are_immutable[memory]", "Linux"):
+        "Skipped: SQL trigger contract",
+    ("tests/test_enrichment_cache_storage.py::test_idle_expiry_clears_persistent_cache[memory]", "Linux"):
+        "Skipped: persistent source-time timer contract",
+    ("tests/test_legal_instrument_approval.py::test_recorded_state_matches_the_upstream_policy_manifest", "Linux"):
+        "Skipped: OFCA_LEGAL_POLICY_MANIFEST is unset, so risk-disclosure.lock.json is unrefuted",
+    ("tests/test_legal_instrument_approval.py::test_served_disclosure_matches_the_upstream_source_it_is_taken_from", "Linux"):
+        "Skipped: OFCA_LEGAL_POLICY_MANIFEST is unset, so risk-disclosure.lock.json is unrefuted",
+    ("tests/test_packaged_runtime.py::test_frozen_executable_loads_the_production_companion_noise_factory", "Windows"):
+        "Skipped: packaged runtime artifact is unavailable; set BRAIN_PACKAGED_ARTIFACT_DIR to the Brain artifact directory",
+    ("tests/test_packaged_runtime.py::test_frozen_executable_reports_the_fixed_sqlcipher_runtime", "Windows"):
+        "Skipped: packaged runtime artifact is unavailable; set BRAIN_PACKAGED_ARTIFACT_DIR to the Brain artifact directory",
+    ("tests/test_packaging_smoke.py::test_a_required_platform_key_still_installs_where_one_is_usable", "Windows"):
+        "Skipped: this machine has no usable hardware-backed platform key",
+    ("tests/test_packaging_smoke.py::test_platform_capability_probe_leaves_no_persisted_key", "Windows"):
+        "Skipped: the platform crypto provider is unavailable on this machine",
+    ("tests/test_projection_v2.py::test_beta_hundred_thousand_message_brain_qualification", "Linux"):
+        "Skipped: set RUN_BETA_QUALIFICATION=1 for the 100,000-message Beta gate",
+}
+# These Windows exceptions were observed only in their focused contract lane.
+# A test gaining another Windows obligation cannot carry its exception there.
+PR_WINDOWS_SKIP_LANES = {
+    node: ("analytics-windows-contract" if reason == "Skipped: Linux process filesystem observation"
+           else "windows-platform-contract")
+    for (node, platform), reason in PR_SKIP_BASELINE.items() if platform == "Windows"
+}
 
 
 def required_report_lanes(event: str) -> set[str]:
     if event not in SUPPORTED_EVENTS:
         raise GateError(f"unsupported CI event {event!r}")
-    return set(SPECS) - ({SCALE_LANE} if event == "pull_request" else set())
+    omitted = {SCALE_LANE, *WINDOWS_FULL_LANES} if event == "pull_request" else set()
+    return set(SPECS) - omitted
 
 
 def _integer(value: Any, label: str) -> int:
@@ -120,14 +165,29 @@ def validate_needs(needs: Any, jobs: dict[str, dict[str, Any]], *, event: str = 
     if not isinstance(needs, dict) or set(needs) != NEEDED_JOBS:
         raise GateError("gate dependencies do not match the mandatory execution jobs")
     for name, result in needs.items():
-        expected = "skipped" if name == SCALE_LANE and event == "pull_request" else "success"
+        expected = "skipped" if event == "pull_request" and name in {
+            SCALE_LANE, "windows-full-shards",
+        } else "success"
         if not isinstance(result, dict) or result.get("result") != expected:
             raise GateError(f"mandatory dependency {name} did not have required result {expected!r}")
     for name in sorted(ACTUAL_JOBS):
+        if event == "pull_request" and name in WINDOWS_FULL_LANES:
+            # A job-level matrix condition can skip before shard expansion.
+            # If an actual shard exists, it must still be a completed skip.
+            if name not in jobs:
+                continue
+            expected = "skipped"
+        else:
+            expected = "skipped" if name == SCALE_LANE and event == "pull_request" else "success"
         job = jobs.get(name, {})
-        expected = "skipped" if name == SCALE_LANE and event == "pull_request" else "success"
         if job.get("status") != "completed" or job.get("conclusion") != expected:
             raise GateError(f"latest mandatory job {name} did not complete with required result {expected!r}")
+    if event == "pull_request":
+        for name, job in jobs.items():
+            if name.startswith("windows-full-regression-") and (
+                job.get("status") != "completed" or job.get("conclusion") != "skipped"
+            ):
+                raise GateError("pull-request exhaustive Windows execution did not remain skipped")
 
 
 def inventory(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -340,7 +400,7 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
         raise GateError("Linux default coverage must equal the independent legacy selection with exactly one owner")
     for lane in linux_lanes:
         rows = inventory(reports[lane])
-        if set(rows) != set(inventories["Linux"]):
+        if _raw_inventory_signature(rows) != _raw_inventory_signature(inventories["Linux"]):
             raise GateError(f"{lane}: collection differs from the independent Linux reference")
     for lane, spec in SPECS.items():
         if spec.selectors:
@@ -355,15 +415,35 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
     boot_expected = {node for node, row in inventories["Windows"].items()
                      if "windows_production" in row["markers"] and not {"slow", "stateful_tier_b"} & set(row["markers"])}
     _exact_selection(reports["windows-production-boot"], boot_expected, "Windows production boot")
-    shadow_owners = _windows_full_owners(reports, inventories["Windows"], legacy["Windows"])
+    shadow_owners = (_windows_full_owners(reports, inventories["Windows"], legacy["Windows"])
+                     if event != "pull_request" else {})
 
     windows_lanes = ["windows-platform-contract", "analytics-windows-contract", "windows-production-boot"]
     windows_union = set().union(*(set(reports[lane]["selected"]) for lane in windows_lanes))
     windows_rows = inventory(reports["windows-platform-contract"])
-    if set(windows_rows) != set(inventories["Windows"]):
-        raise GateError("Windows contract collection differs from independent Windows reference")
+    for lane in ("windows-platform-contract", "analytics-windows-contract"):
+        if _raw_inventory_signature(inventory(reports[lane])) != _raw_inventory_signature(inventories["Windows"]):
+            raise GateError("Windows contract collection differs from independent Windows reference")
+    try:
+        contracts = load_backend_manifest(Path(__file__).resolve().parents[1])["windows_contracts"]
+    except (ValueError, OSError, KeyError) as exc:
+        raise GateError(f"invalid Windows contract manifest: {exc}") from exc
+    contract_rows = [inventory(reports[lane]) for lane in ("windows-platform-contract", "analytics-windows-contract")]
+    for node in legacy["Windows"]:
+        declared = [contract for contract, selectors in contracts.items()
+                    if any(_matches(node, entry["selector"]) for entry in selectors)]
+        if len(declared) > 1:
+            raise GateError(f"{node}: independent Windows contract selectors overlap")
+        expected_contract = declared[0] if declared else None
+        native = bool({"windows_compat", "windows_production"} & set(inventories["Windows"][node]["markers"]))
+        for rows in contract_rows:
+            if rows[node].get("windows_contract") != expected_contract:
+                raise GateError(f"{node}: Windows contract classification differs from the independent manifest")
+            if native and rows[node].get("windows_compat") is not True:
+                raise GateError(f"{node}: raw native Windows marker contradicts classifier flags")
     required_windows = {node for node in legacy["Windows"]
                         if windows_rows[node].get("windows_compat") is True
+                        or {"windows_compat", "windows_production"} & set(inventories["Windows"][node]["markers"])
                         or windows_rows[node].get("windows_contract")
                         or "windows_production" in windows_rows[node]["markers"]
                         or node not in inventories["Linux"]}
@@ -376,11 +456,33 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
         raise GateError("Windows legacy tests are missing from the new required lanes")
 
     outcomes = {lane: validate_report(report, SPECS[lane]) for lane, report in reports.items()}
+    if any(value != "executed" for value in outcomes["windows-production-boot"].values()):
+        raise GateError("Windows production boot requires actual execution of every selected case")
     shadow = {node: outcomes[lane][node] for node, lane in shadow_owners.items()}
     for node in legacy["Linux"] | legacy["Windows"]:
         lanes = windows_lanes if node in required_windows else linux_lanes + windows_lanes
         observed = [outcomes[lane][node] for lane in lanes if node in outcomes[lane]]
         if not any(value in {"executed", "xfailed"} for value in observed):
+            if event == "pull_request":
+                platform = "Windows" if node in required_windows else "Linux"
+                allowed = PR_SKIP_BASELINE.get((node, platform))
+                reasons = [_skip_reason(reports[lane], node)
+                           for lane in lanes if node in outcomes[lane]]
+                if not observed or not allowed or any(reason != allowed for reason in reasons):
+                    raise GateError(f"{node}: selected coverage has an unreviewed pull-request skip")
+                if platform == "Windows" and {
+                    lane for lane in lanes if node in outcomes[lane]
+                } != {PR_WINDOWS_SKIP_LANES.get(node)}:
+                    raise GateError(f"{node}: reviewed Windows skip moved out of its approved execution lane")
+                if platform == "Windows" and windows_rows[node].get("windows_contract") != (
+                    "analytics" if allowed == "Skipped: Linux process filesystem observation" else "platform"
+                ):
+                    raise GateError(f"{node}: reviewed skip moved out of its required Windows contract")
+                if allowed == "Skipped: Linux process filesystem observation" and not any(
+                    outcomes[lane].get(node) == "executed" for lane in linux_lanes
+                ):
+                    raise GateError(f"{node}: reviewed Windows skip requires actual Linux execution")
+                continue
             # A pre-existing skip is retained only with independent old-path
             # execution corroboration. Collection alone cannot authorize it.
             owner = shadow_owners.get(node)
