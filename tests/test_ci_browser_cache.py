@@ -13,7 +13,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 def _browser_job() -> dict:
     workflow = yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
-    job = workflow["jobs"]["windows-browser-e2e"]
+    job = workflow["jobs"]["browser-e2e-execution"]
     assert str(job["runs-on"]).startswith("windows")
     return job
 

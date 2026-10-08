@@ -1,5 +1,5 @@
-# Pull requests keep focused Windows contracts; main and manual runs also
-# execute the exhaustive Windows regression after the reviewed parity cutover.
+# Shadow rollout: full Windows regression remains required on every PR.
+# Retire PR duplication only in a later change backed by three clean paired runs.
 name: CI
 'on':
   push:
@@ -12,6 +12,8 @@ name: CI
       - opened
       - synchronize
       - reopened
+  schedule:
+    - cron: 17 3 * * *
   workflow_dispatch:
     inputs:
       browser_qualification:
@@ -29,7 +31,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-  CI_POLICY_VERSION: sharded-v3-pr-cutover
+  CI_POLICY_VERSION: sharded-v3
   BROWSER_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_qualification }}
   BROWSER_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
 jobs:
@@ -91,10 +93,6 @@ jobs:
         run: npm ci --prefix tools/analytics_cosmos_node
       - name: Test analytics conformance adapter
         run: npm test --prefix tools/analytics_cosmos_node
-      - name: Test local onboarding projection ordering and authority
-        run: node --test shared/onboarding/projection.test.mjs
-      - name: Test browser E2E projection read recovery
-        run: node --test tools/e2e-capture/lib/catchup-diagnostics.test.mjs
       - name: Test the release bindings gate
         run: node --test tools/legal-release-bindings/verify.test.mjs
       - name: Test the packaged signing rule gate
@@ -640,7 +638,6 @@ jobs:
           if-no-files-found: error
   windows-full-shards:
     name: windows-full-regression-${{ matrix.shard }}
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
     timeout-minutes: 60
@@ -738,12 +735,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Require every full Windows shard
-        run: |
-          case "$GITHUB_EVENT_NAME" in
-            pull_request) test '${{ needs.windows-full-shards.result }}' = 'skipped' ;;
-            push|workflow_dispatch) test '${{ needs.windows-full-shards.result }}' = 'success' ;;
-            *) echo "Unsupported Product CI event"; exit 1 ;;
-          esac
+        run: test '${{ needs.windows-full-shards.result }}' = 'success'
   analytics-scale-qualification:
     if: ${{ github.event_name != 'pull_request' }}
     needs: fixed-sqlcipher-wheel

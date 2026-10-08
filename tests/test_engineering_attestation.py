@@ -13,6 +13,7 @@ import stat
 import struct
 import urllib.parse
 import zipfile
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -906,35 +907,6 @@ def test_resolver_and_signer_qualification_each_recheck_product_ci() -> None:
     assert api.product_ci_query_count == 2
 
 
-def _historical_sharded_v2_source() -> bytes:
-    """Freeze the v2 declarations independently of today's PR cutover."""
-    lines = ["name: CI", "env:", "  CI_POLICY_VERSION: sharded-v2", "jobs:"]
-    ordered = sorted(producer.SHARDED_V2_PRODUCT_CI_JOB_IDS - {"windows-full-shards", "windows-full-regression"})
-    for name in ordered + ["windows-full-shards", "windows-full-regression"]:
-        lines.append(f"  {name}:")
-        if name in {"analytics-integration", "windows-full-shards"}:
-            windows = name == "windows-full-shards"
-            count = 2 if windows else 4
-            display = "windows-full-regression" if windows else name
-            lines.extend([
-                f"    name: {display}-${{{{ matrix.shard }}}}",
-                f"    runs-on: {'windows-latest' if windows else 'ubuntu-latest'}",
-                f"    timeout-minutes: {60 if windows else 20}",
-                "    strategy:", "      fail-fast: false", f"      max-parallel: {count}",
-                "      matrix:", "        shard:",
-                *(f"          - {shard}" for shard in range(1, count + 1)),
-            ])
-        elif name == "windows-full-regression":
-            lines.extend(["    if: ${{ always() }}", "    needs: windows-full-shards", "    runs-on: ubuntu-latest"])
-        elif name == "required-ci-gate":
-            needs = producer.SHARDED_V2_PRODUCT_CI_JOB_IDS - {"required-ci-gate", "build-and-test", "windows-tests"}
-            lines.extend(["    name: Required CI", "    if: ${{ always() }}", "    needs:",
-                          *(f"      - {dependency}" for dependency in sorted(needs)), "    runs-on: ubuntu-latest"])
-        else:
-            lines.append("    runs-on: ubuntu-latest")
-    return ("\n".join(lines) + "\n").encode()
-
-
 def _sharded_source_api(version: str = "sharded-v1") -> _SourceApi:
     api = _SourceApi()
     if version == "sharded-v1":
@@ -948,8 +920,9 @@ def _sharded_source_api(version: str = "sharded-v1") -> _SourceApi:
         names = producer.REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES
     else:
         assert version in {"sharded-v2", "sharded-v2-pr-cutover"}
-        api.product_ci_source = (_historical_sharded_v2_source() if version == "sharded-v2"
-                                 else (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes())
+        # Literal source fixtures retain both historical policies independently
+        # of today's browser topology and manual qualification inputs.
+        api.product_ci_source = (ROOT / f"tests/fixtures/product-ci-{version}.yml").read_bytes()
         names = producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES
     api.product_ci_jobs = [
         {"id": 4300 + index, "name": name, "status": "completed", "conclusion": "success",
@@ -1018,6 +991,485 @@ def test_sharded_ci_attestation_accepts_retained_dependencies_but_not_newer_fail
     rerun["conclusion"] = "failure"
     with pytest.raises(producer.ContractError, match="required Product CI job"):
         producer.qualify_product_ci_source(api, source_commit="b" * 40)
+
+
+def _recorded_retained_ci_aliases() -> list[dict[str, Any]]:
+    # Closed projection of real GitHub job history from ordinary run 37821437591
+    # on be2094e (2026-10-08). Full steps are retained; console/error data is absent.
+    # Core/safety were copied, whereas the failed catchup job actually reran.
+    # Nonexecuted administrative skips were copied with changed start times.
+    step_fields = ('name', 'number', 'status', 'conclusion', 'started_at', 'completed_at')
+    recorded = [
+        (
+            {
+                'name': 'browser-reporting-safety',
+                'id': 113463183533,
+                'run_id': 37821437591,
+                'run_attempt': 1,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'success',
+                'started_at': '2026-10-08T18:04:18Z',
+                'completed_at': '2026-10-08T18:04:55Z',
+                'runner_id': 1000011306,
+                'runner_name': 'GitHub Actions 1000011306',
+                'runner_group_id': 0,
+                'runner_group_name': 'GitHub Actions',
+            },
+            [
+                ('Set up job', 1, 'completed', 'success', '2026-10-08T18:04:19Z', '2026-10-08T18:04:19Z'),
+                ('Validate browser qualification request', 2, 'completed', 'success', '2026-10-08T18:04:19Z', '2026-10-08T18:04:19Z'),
+                ('Checkout exact Product revision', 3, 'completed', 'success', '2026-10-08T18:04:19Z', '2026-10-08T18:04:21Z'),
+                ('Setup Node.js', 4, 'completed', 'success', '2026-10-08T18:04:21Z', '2026-10-08T18:04:22Z'),
+                ('Setup Python', 5, 'completed', 'success', '2026-10-08T18:04:22Z', '2026-10-08T18:04:22Z'),
+                ('Install pinned reporting dependencies', 6, 'completed', 'success', '2026-10-08T18:04:22Z', '2026-10-08T18:04:26Z'),
+                ('Test restricted browser reporting', 7, 'completed', 'success', '2026-10-08T18:04:26Z', '2026-10-08T18:04:27Z'),
+                ('Probe the actual pinned Playwright reporter', 8, 'completed', 'success', '2026-10-08T18:04:27Z', '2026-10-08T18:04:52Z'),
+                ('Test existing browser diagnostic redaction', 9, 'completed', 'success', '2026-10-08T18:04:52Z', '2026-10-08T18:04:52Z'),
+                ('Test Python session diagnostics explicitly', 10, 'completed', 'success', '2026-10-08T18:04:52Z', '2026-10-08T18:04:53Z'),
+                ('Post Setup Python', 18, 'completed', 'success', '2026-10-08T18:04:53Z', '2026-10-08T18:04:53Z'),
+                ('Post Setup Node.js', 19, 'completed', 'success', '2026-10-08T18:04:53Z', '2026-10-08T18:04:54Z'),
+                ('Post Checkout exact Product revision', 20, 'completed', 'success', '2026-10-08T18:04:54Z', '2026-10-08T18:04:54Z'),
+                ('Complete job', 21, 'completed', 'success', '2026-10-08T18:04:54Z', '2026-10-08T18:04:54Z'),
+            ],
+        ),
+        (
+            {
+                'name': 'browser-e2e-core',
+                'id': 113464362708,
+                'run_id': 37821437591,
+                'run_attempt': 1,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'success',
+                'started_at': '2026-10-08T18:08:16Z',
+                'completed_at': '2026-10-08T18:16:07Z',
+                'runner_id': 1000011356,
+                'runner_name': 'GitHub Actions 1000011356',
+                'runner_group_id': 0,
+                'runner_group_name': 'GitHub Actions',
+            },
+            [
+                ('Set up job', 1, 'completed', 'success', '2026-10-08T18:08:17Z', '2026-10-08T18:08:19Z'),
+                ('Checkout exact Product revision', 2, 'completed', 'success', '2026-10-08T18:08:19Z', '2026-10-08T18:08:26Z'),
+                ('Keep browser test caches on runner storage', 3, 'completed', 'success', '2026-10-08T18:08:26Z', '2026-10-08T18:08:26Z'),
+                ('Setup Python', 4, 'completed', 'success', '2026-10-08T18:08:26Z', '2026-10-08T18:08:31Z'),
+                ('Retrieve fixed SQLCipher wheel', 5, 'completed', 'success', '2026-10-08T18:08:31Z', '2026-10-08T18:08:33Z'),
+                ('Verify fixed SQLCipher CI source', 6, 'completed', 'success', '2026-10-08T18:08:33Z', '2026-10-08T18:08:33Z'),
+                ('Declare fixed SQLCipher wheelhouse', 7, 'completed', 'success', '2026-10-08T18:08:33Z', '2026-10-08T18:08:34Z'),
+                ('Setup Node.js', 8, 'completed', 'success', '2026-10-08T18:08:34Z', '2026-10-08T18:08:42Z'),
+                ('Cache Playwright Chromium', 9, 'completed', 'success', '2026-10-08T18:08:42Z', '2026-10-08T18:08:48Z'),
+                ('Install pinned native Noise toolchain', 10, 'completed', 'success', '2026-10-08T18:08:48Z', '2026-10-08T18:09:00Z'),
+                ('Install backend dependencies', 11, 'completed', 'success', '2026-10-08T18:09:00Z', '2026-10-08T18:09:49Z'),
+                ('Install frontend dependencies', 12, 'completed', 'success', '2026-10-08T18:09:49Z', '2026-10-08T18:10:22Z'),
+                ('Install extension dependencies', 13, 'completed', 'success', '2026-10-08T18:10:22Z', '2026-10-08T18:10:24Z'),
+                ('Run Product #5 evidence scenarios', 14, 'completed', 'success', '2026-10-08T18:10:24Z', '2026-10-08T18:10:25Z'),
+                ('Build and audit deterministic extension artifact', 15, 'completed', 'success', '2026-10-08T18:10:25Z', '2026-10-08T18:10:27Z'),
+                ('Build production Bridge', 16, 'completed', 'success', '2026-10-08T18:10:27Z', '2026-10-08T18:10:56Z'),
+                ('Install pinned E2E dependencies', 17, 'completed', 'success', '2026-10-08T18:10:56Z', '2026-10-08T18:10:58Z'),
+                ('Install Playwright Chromium', 18, 'completed', 'skipped', '2026-10-08T18:10:58Z', '2026-10-08T18:10:58Z'),
+                ('Run browser E2E and preserve output', 19, 'completed', 'success', '2026-10-08T18:10:58Z', '2026-10-08T18:15:59Z'),
+                ('Seal browser producer evidence', 20, 'completed', 'success', '2026-10-08T18:15:59Z', '2026-10-08T18:15:59Z'),
+                ('Retain immutable browser producer evidence', 21, 'completed', 'success', '2026-10-08T18:15:59Z', '2026-10-08T18:16:01Z'),
+                ('Retain restricted browser diagnostics', 22, 'completed', 'success', '2026-10-08T18:16:01Z', '2026-10-08T18:16:02Z'),
+                ('Post Cache Playwright Chromium', 41, 'completed', 'success', '2026-10-08T18:16:02Z', '2026-10-08T18:16:02Z'),
+                ('Post Setup Node.js', 42, 'completed', 'success', '2026-10-08T18:16:02Z', '2026-10-08T18:16:02Z'),
+                ('Post Setup Python', 43, 'completed', 'success', '2026-10-08T18:16:02Z', '2026-10-08T18:16:03Z'),
+                ('Post Checkout exact Product revision', 44, 'completed', 'success', '2026-10-08T18:16:03Z', '2026-10-08T18:16:05Z'),
+                ('Complete job', 45, 'completed', 'success', '2026-10-08T18:16:05Z', '2026-10-08T18:16:05Z'),
+            ],
+        ),
+        (
+            {
+                'name': 'browser-e2e-catchup',
+                'id': 113464362716,
+                'run_id': 37821437591,
+                'run_attempt': 1,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'failure',
+                'started_at': '2026-10-08T18:09:42Z',
+                'completed_at': '2026-10-08T18:15:37Z',
+                'runner_id': 1000011357,
+                'runner_name': 'GitHub Actions 1000011357',
+                'runner_group_id': 0,
+                'runner_group_name': 'GitHub Actions',
+            },
+            [
+                ('Set up job', 1, 'completed', 'success', '2026-10-08T18:09:43Z', '2026-10-08T18:09:45Z'),
+                ('Checkout exact Product revision', 2, 'completed', 'success', '2026-10-08T18:09:45Z', '2026-10-08T18:09:56Z'),
+                ('Keep browser test caches on runner storage', 3, 'completed', 'success', '2026-10-08T18:09:56Z', '2026-10-08T18:09:57Z'),
+                ('Setup Python', 4, 'completed', 'success', '2026-10-08T18:09:57Z', '2026-10-08T18:10:11Z'),
+                ('Retrieve fixed SQLCipher wheel', 5, 'completed', 'success', '2026-10-08T18:10:11Z', '2026-10-08T18:10:12Z'),
+                ('Verify fixed SQLCipher CI source', 6, 'completed', 'success', '2026-10-08T18:10:12Z', '2026-10-08T18:10:12Z'),
+                ('Declare fixed SQLCipher wheelhouse', 7, 'completed', 'success', '2026-10-08T18:10:12Z', '2026-10-08T18:10:13Z'),
+                ('Setup Node.js', 8, 'completed', 'success', '2026-10-08T18:10:13Z', '2026-10-08T18:10:42Z'),
+                ('Cache Playwright Chromium', 9, 'completed', 'success', '2026-10-08T18:10:42Z', '2026-10-08T18:10:47Z'),
+                ('Install pinned native Noise toolchain', 10, 'completed', 'success', '2026-10-08T18:10:47Z', '2026-10-08T18:11:02Z'),
+                ('Install backend dependencies', 11, 'completed', 'success', '2026-10-08T18:11:02Z', '2026-10-08T18:12:16Z'),
+                ('Install frontend dependencies', 12, 'completed', 'success', '2026-10-08T18:12:16Z', '2026-10-08T18:12:57Z'),
+                ('Install extension dependencies', 13, 'completed', 'success', '2026-10-08T18:12:57Z', '2026-10-08T18:12:59Z'),
+                ('Run Product #5 evidence scenarios', 14, 'completed', 'skipped', '2026-10-08T18:12:59Z', '2026-10-08T18:12:59Z'),
+                ('Build and audit deterministic extension artifact', 15, 'completed', 'success', '2026-10-08T18:12:59Z', '2026-10-08T18:13:00Z'),
+                ('Build production Bridge', 16, 'completed', 'success', '2026-10-08T18:13:00Z', '2026-10-08T18:13:21Z'),
+                ('Install pinned E2E dependencies', 17, 'completed', 'success', '2026-10-08T18:13:21Z', '2026-10-08T18:13:22Z'),
+                ('Install Playwright Chromium', 18, 'completed', 'skipped', '2026-10-08T18:13:22Z', '2026-10-08T18:13:22Z'),
+                ('Run browser E2E and preserve output', 19, 'completed', 'failure', '2026-10-08T18:13:22Z', '2026-10-08T18:15:32Z'),
+                ('Seal browser producer evidence', 20, 'completed', 'failure', '2026-10-08T18:15:32Z', '2026-10-08T18:15:32Z'),
+                ('Retain immutable browser producer evidence', 21, 'completed', 'skipped', '2026-10-08T18:15:32Z', '2026-10-08T18:15:32Z'),
+                ('Retain restricted browser diagnostics', 22, 'completed', 'success', '2026-10-08T18:15:32Z', '2026-10-08T18:15:33Z'),
+                ('Post Cache Playwright Chromium', 41, 'completed', 'skipped', '2026-10-08T18:15:33Z', '2026-10-08T18:15:33Z'),
+                ('Post Setup Node.js', 42, 'completed', 'skipped', '2026-10-08T18:15:33Z', '2026-10-08T18:15:33Z'),
+                ('Post Setup Python', 43, 'completed', 'skipped', '2026-10-08T18:15:33Z', '2026-10-08T18:15:33Z'),
+                ('Post Checkout exact Product revision', 44, 'completed', 'success', '2026-10-08T18:15:33Z', '2026-10-08T18:15:35Z'),
+                ('Complete job', 45, 'completed', 'success', '2026-10-08T18:15:35Z', '2026-10-08T18:15:35Z'),
+            ],
+        ),
+        (
+            {
+                'name': 'analytics-scale-qualification',
+                'id': 113464364481,
+                'run_id': 37821437591,
+                'run_attempt': 1,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'skipped',
+                'started_at': '2026-10-08T18:06:57Z',
+                'completed_at': '2026-10-08T18:06:57Z',
+                'runner_id': None,
+                'runner_name': None,
+                'runner_group_id': None,
+                'runner_group_name': None,
+            },
+            [
+            ],
+        ),
+        (
+            {
+                'name': 'windows-full-regression-${{ matrix.shard }}',
+                'id': 113464365554,
+                'run_id': 37821437591,
+                'run_attempt': 1,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'skipped',
+                'started_at': '2026-10-08T18:06:57Z',
+                'completed_at': '2026-10-08T18:06:57Z',
+                'runner_id': None,
+                'runner_name': None,
+                'runner_group_id': None,
+                'runner_group_name': None,
+            },
+            [
+            ],
+        ),
+        (
+            {
+                'name': 'browser-e2e-serial-control',
+                'id': 113464365581,
+                'run_id': 37821437591,
+                'run_attempt': 1,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'skipped',
+                'started_at': '2026-10-08T18:06:57Z',
+                'completed_at': '2026-10-08T18:06:57Z',
+                'runner_id': None,
+                'runner_name': None,
+                'runner_group_id': None,
+                'runner_group_name': None,
+            },
+            [
+            ],
+        ),
+        (
+            {
+                'name': 'browser-e2e-catchup',
+                'id': 113472782770,
+                'run_id': 37821437591,
+                'run_attempt': 2,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'success',
+                'started_at': '2026-10-08T18:26:04Z',
+                'completed_at': '2026-10-08T18:35:08Z',
+                'runner_id': 1000011397,
+                'runner_name': 'GitHub Actions 1000011397',
+                'runner_group_id': 0,
+                'runner_group_name': 'GitHub Actions',
+            },
+            [
+                ('Set up job', 1, 'completed', 'success', '2026-10-08T18:26:05Z', '2026-10-08T18:26:07Z'),
+                ('Checkout exact Product revision', 2, 'completed', 'success', '2026-10-08T18:26:07Z', '2026-10-08T18:26:13Z'),
+                ('Keep browser test caches on runner storage', 3, 'completed', 'success', '2026-10-08T18:26:13Z', '2026-10-08T18:26:14Z'),
+                ('Setup Python', 4, 'completed', 'success', '2026-10-08T18:26:14Z', '2026-10-08T18:26:19Z'),
+                ('Retrieve fixed SQLCipher wheel', 5, 'completed', 'success', '2026-10-08T18:26:19Z', '2026-10-08T18:26:20Z'),
+                ('Verify fixed SQLCipher CI source', 6, 'completed', 'success', '2026-10-08T18:26:20Z', '2026-10-08T18:26:20Z'),
+                ('Declare fixed SQLCipher wheelhouse', 7, 'completed', 'success', '2026-10-08T18:26:20Z', '2026-10-08T18:26:21Z'),
+                ('Setup Node.js', 8, 'completed', 'success', '2026-10-08T18:26:21Z', '2026-10-08T18:26:28Z'),
+                ('Cache Playwright Chromium', 9, 'completed', 'success', '2026-10-08T18:26:28Z', '2026-10-08T18:26:33Z'),
+                ('Install pinned native Noise toolchain', 10, 'completed', 'success', '2026-10-08T18:26:33Z', '2026-10-08T18:26:44Z'),
+                ('Install backend dependencies', 11, 'completed', 'success', '2026-10-08T18:26:44Z', '2026-10-08T18:27:33Z'),
+                ('Install frontend dependencies', 12, 'completed', 'success', '2026-10-08T18:27:33Z', '2026-10-08T18:28:11Z'),
+                ('Install extension dependencies', 13, 'completed', 'success', '2026-10-08T18:28:11Z', '2026-10-08T18:28:13Z'),
+                ('Run Product #5 evidence scenarios', 14, 'completed', 'skipped', '2026-10-08T18:28:13Z', '2026-10-08T18:28:13Z'),
+                ('Build and audit deterministic extension artifact', 15, 'completed', 'success', '2026-10-08T18:28:13Z', '2026-10-08T18:28:15Z'),
+                ('Build production Bridge', 16, 'completed', 'success', '2026-10-08T18:28:15Z', '2026-10-08T18:28:44Z'),
+                ('Install pinned E2E dependencies', 17, 'completed', 'success', '2026-10-08T18:28:44Z', '2026-10-08T18:28:46Z'),
+                ('Install Playwright Chromium', 18, 'completed', 'skipped', '2026-10-08T18:28:46Z', '2026-10-08T18:28:46Z'),
+                ('Run browser E2E and preserve output', 19, 'completed', 'success', '2026-10-08T18:28:46Z', '2026-10-08T18:34:21Z'),
+                ('Seal browser producer evidence', 20, 'completed', 'success', '2026-10-08T18:34:21Z', '2026-10-08T18:34:21Z'),
+                ('Retain immutable browser producer evidence', 21, 'completed', 'success', '2026-10-08T18:34:21Z', '2026-10-08T18:34:23Z'),
+                ('Retain restricted browser diagnostics', 22, 'completed', 'success', '2026-10-08T18:34:23Z', '2026-10-08T18:34:24Z'),
+                ('Post Cache Playwright Chromium', 41, 'completed', 'success', '2026-10-08T18:34:24Z', '2026-10-08T18:34:24Z'),
+                ('Post Setup Node.js', 42, 'completed', 'success', '2026-10-08T18:34:24Z', '2026-10-08T18:34:25Z'),
+                ('Post Setup Python', 43, 'completed', 'success', '2026-10-08T18:34:25Z', '2026-10-08T18:34:25Z'),
+                ('Post Checkout exact Product revision', 44, 'completed', 'success', '2026-10-08T18:34:25Z', '2026-10-08T18:34:27Z'),
+                ('Complete job', 45, 'completed', 'success', '2026-10-08T18:34:27Z', '2026-10-08T18:34:27Z'),
+            ],
+        ),
+        (
+            {
+                'name': 'browser-e2e-serial-control',
+                'id': 113472784290,
+                'run_id': 37821437591,
+                'run_attempt': 2,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'skipped',
+                'started_at': '2026-10-08T18:26:02Z',
+                'completed_at': '2026-10-08T18:06:57Z',
+                'runner_id': None,
+                'runner_name': None,
+                'runner_group_id': None,
+                'runner_group_name': None,
+            },
+            [
+            ],
+        ),
+        (
+            {
+                'name': 'analytics-scale-qualification',
+                'id': 113472784632,
+                'run_id': 37821437591,
+                'run_attempt': 2,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'skipped',
+                'started_at': '2026-10-08T18:26:02Z',
+                'completed_at': '2026-10-08T18:06:57Z',
+                'runner_id': None,
+                'runner_name': None,
+                'runner_group_id': None,
+                'runner_group_name': None,
+            },
+            [
+            ],
+        ),
+        (
+            {
+                'name': 'windows-full-regression-${{ matrix.shard }}',
+                'id': 113472785205,
+                'run_id': 37821437591,
+                'run_attempt': 2,
+                'head_sha': 'be2094e9aa174c8dea18752315da8dc7bc4eca82',
+                'status': 'completed',
+                'conclusion': 'skipped',
+                'started_at': '2026-10-08T18:26:02Z',
+                'completed_at': '2026-10-08T18:06:57Z',
+                'runner_id': None,
+                'runner_name': None,
+                'runner_group_id': None,
+                'runner_group_name': None,
+            },
+            [
+            ],
+        ),
+    ]
+    jobs = [{**job, "steps": [dict(zip(step_fields, values)) for values in steps]}
+            for job, steps in recorded]
+    retained_aliases = [
+        ('browser-e2e-core', {'id': 113472839773, 'run_attempt': 2, 'runner_group_id': None}),
+        ('browser-reporting-safety', {'id': 113472847970, 'run_attempt': 2, 'runner_group_id': None}),
+    ]
+    for name, metadata in retained_aliases:
+        original = next(job for job in jobs if job["name"] == name)
+        jobs.append({**copy.deepcopy(original), **metadata})
+    return jobs
+
+class _RetainedCiJobsApi:
+    def __init__(self, jobs: list[dict[str, Any]]) -> None:
+        self.jobs = jobs
+
+    def get(self, path: str) -> Any:
+        assert path == (f"/repos/{producer.PRODUCT_REPOSITORY}/actions/runs/37821437591/jobs"
+                        "?filter=all&per_page=100&page=1")
+        return {"total_count": len(self.jobs), "jobs": copy.deepcopy(self.jobs)}
+
+
+def _resolve_retained_ci_jobs(jobs: list[dict[str, Any]], attempt: int = 2) -> dict[str, dict[str, Any]]:
+    return producer.latest_ci_jobs(
+        _RetainedCiJobsApi(jobs), run_id=37821437591, run_attempt=attempt,
+        source_commit="be2094e9aa174c8dea18752315da8dc7bc4eca82",
+    )
+
+
+@pytest.mark.parametrize("reverse_history", [False, True])
+def test_latest_ci_jobs_resolves_recorded_retained_aliases_to_original_producers(reverse_history) -> None:
+    history = _recorded_retained_ci_aliases()
+    resolved = _resolve_retained_ci_jobs(history[::-1] if reverse_history else history)
+    assert set(resolved) == {
+        "browser-e2e-core", "browser-e2e-catchup", "browser-reporting-safety",
+        "browser-e2e-serial-control", "analytics-scale-qualification",
+        "windows-full-regression-${{ matrix.shard }}",
+    }
+    for name, original_id, step_count in (
+        ("browser-e2e-core", 113464362708, 27),
+        ("browser-reporting-safety", 113463183533, 14),
+    ):
+        original = next(job for job in history if job["name"] == name and job["run_attempt"] == 1)
+        assert resolved[name] == original
+        assert resolved[name]["id"] == original_id and resolved[name]["run_attempt"] == 1
+        assert len(resolved[name]["steps"]) == step_count
+    assert any(step["conclusion"] == "skipped" for step in resolved["browser-e2e-core"]["steps"])
+    assert resolved["browser-e2e-catchup"] == next(
+        job for job in history if job["name"] == "browser-e2e-catchup" and job["run_attempt"] == 2
+    )
+    assert resolved["browser-e2e-catchup"]["id"] == 113472782770
+
+
+def _later_ci_execution(original: dict[str, Any], *, attempt: int, job_id: int) -> dict[str, Any]:
+    execution = copy.deepcopy(original)
+    execution.update(id=job_id, run_attempt=attempt)
+    offset = timedelta(hours=attempt)
+    for record in [execution, *execution["steps"]]:
+        for field in ("started_at", "completed_at"):
+            record[field] = (datetime.strptime(record[field], "%Y-%m-%dT%H:%M:%SZ") + offset).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+    return execution
+
+
+@pytest.mark.parametrize("scenario", [
+    "alias-chain", "failure-then-old-alias", "success-then-old-alias", "failure-then-real-success",
+])
+def test_latest_ci_jobs_does_not_resurrect_old_success_after_new_execution(scenario) -> None:
+    original = next(job for job in _recorded_retained_ci_aliases() if job["name"] == "browser-e2e-core")
+    retained = copy.deepcopy(original)
+    retained.update(id=113472839773, run_attempt=2, runner_group_id=1)
+    alias_three = copy.deepcopy(retained)
+    alias_three.update(id=113472839774, run_attempt=3)
+    if scenario == "alias-chain":
+        history, expected = [original, retained, alias_three], original
+    else:
+        second = _later_ci_execution(original, attempt=2, job_id=113472839775)
+        if scenario != "success-then-old-alias":
+            second["conclusion"] = "failure"
+            second["steps"][-1]["conclusion"] = "failure"
+        if scenario == "failure-then-real-success":
+            third = _later_ci_execution(original, attempt=3, job_id=113472839776)
+            history, expected = [original, second, third], third
+        else:
+            history, expected = [original, second, alias_three], second
+    assert _resolve_retained_ci_jobs(history[::-1], attempt=3)[original["name"]] == expected
+
+
+@pytest.mark.parametrize("same_execution_fields", [False, True])
+@pytest.mark.parametrize("status,conclusion", [
+    ("completed", "failure"), ("completed", "cancelled"), ("completed", "timed_out"),
+    ("completed", "skipped"), ("in_progress", None), ("queued", None),
+])
+def test_latest_ci_jobs_preserves_newer_unsuccessful_execution(status, conclusion, same_execution_fields) -> None:
+    original = next(job for job in _recorded_retained_ci_aliases() if job["name"] == "browser-e2e-core")
+    if same_execution_fields:
+        newer = copy.deepcopy(original)
+        newer.update(run_attempt=2, id=113472839777)
+    else:
+        newer = _later_ci_execution(original, attempt=2, job_id=113472839777)
+    newer.update(status=status, conclusion=conclusion)
+    if status != "completed":
+        newer["completed_at"] = None
+    assert _resolve_retained_ci_jobs([newer, original])[original["name"]] == newer
+
+
+@pytest.mark.parametrize("mutation", [
+    "runner-id", "runner-name", "start", "end", "missing-start", "missing-end", "missing-runner-id", "missing-runner-name",
+    "missing-steps", "empty-steps", "step-name", "step-number", "step-status", "step-conclusion",
+    "step-start", "step-end", "missing-step-field", "extra-step-field", "reordered-steps",
+    "empty-step-name", "boolean-step-number", "invalid-step-time", "invalid-job-time",
+])
+def test_latest_ci_jobs_refuses_contradictory_retained_execution_evidence(mutation) -> None:
+    original, alias = [job for job in _recorded_retained_ci_aliases() if job["name"] == "browser-e2e-core"]
+    if mutation == "runner-id":
+        alias["runner_id"] += 1
+    elif mutation == "runner-name":
+        alias["runner_name"] = "different-runner"
+    elif mutation == "start":
+        alias["started_at"] = "2026-10-08T18:08:15Z"
+    elif mutation == "end":
+        alias["completed_at"] = "2026-10-08T18:16:08Z"
+    elif mutation.startswith("missing-") and mutation != "missing-step-field":
+        field = {"start": "started_at", "end": "completed_at"}.get(
+            mutation.removeprefix("missing-"), mutation.removeprefix("missing-").replace("-", "_")
+        )
+        del alias[field]
+    elif mutation == "empty-steps":
+        alias["steps"] = []
+    elif mutation == "step-name":
+        alias["steps"][0]["name"] = "different-step"
+    elif mutation == "step-number":
+        alias["steps"][1]["number"] = alias["steps"][0]["number"]
+    elif mutation == "step-status":
+        alias["steps"][0]["status"] = "in_progress"
+    elif mutation == "step-conclusion":
+        alias["steps"][0]["conclusion"] = "failure"
+    elif mutation in {"step-start", "step-end"}:
+        alias["steps"][0]["started_at" if mutation == "step-start" else "completed_at"] = "2026-10-08T18:08:14Z"
+    elif mutation == "missing-step-field":
+        del alias["steps"][0]["started_at"]
+    elif mutation == "extra-step-field":
+        alias["steps"][0]["unexpected"] = True
+    elif mutation == "reordered-steps":
+        alias["steps"].reverse()
+    elif mutation == "empty-step-name":
+        alias["steps"][0]["name"] = ""
+    elif mutation == "boolean-step-number":
+        alias["steps"][0]["number"] = True
+    elif mutation == "invalid-step-time":
+        alias["steps"][0]["started_at"] = "invalid"
+    else:
+        assert mutation == "invalid-job-time"
+        alias["started_at"] = "2026-02-30T18:08:16Z"
+    with pytest.raises(producer.ContractError, match="retained Product CI"):
+        _resolve_retained_ci_jobs([original, alias])
+
+
+def test_latest_ci_jobs_does_not_infer_retention_when_complete_execution_evidence_is_absent() -> None:
+    original, alias = [job for job in _recorded_retained_ci_aliases() if job["name"] == "browser-e2e-core"]
+    for field in ("started_at", "completed_at", "runner_id", "runner_name", "steps"):
+        original.pop(field)
+        alias.pop(field)
+    assert _resolve_retained_ci_jobs([original, alias])[original["name"]] == alias
+
+
+@pytest.mark.parametrize("name", [
+    "browser-e2e-serial-control", "analytics-scale-qualification", "windows-full-regression-${{ matrix.shard }}",
+])
+def test_latest_ci_jobs_preserves_recorded_nonexecuted_skips_without_producer_authority(name) -> None:
+    previous, current = [job for job in _recorded_retained_ci_aliases() if job["name"] == name]
+    assert previous["conclusion"] == current["conclusion"] == "skipped"
+    assert previous["steps"] == current["steps"] == []
+    assert previous["completed_at"] == current["completed_at"]
+    assert current["started_at"] > current["completed_at"]
+    assert _resolve_retained_ci_jobs([previous, current])[name] == current
+
+
+def test_latest_ci_jobs_refuses_success_alias_of_a_failed_execution() -> None:
+    original, alias = [job for job in _recorded_retained_ci_aliases() if job["name"] == "browser-e2e-core"]
+    original["conclusion"] = "failure"
+    original["steps"][-1]["conclusion"] = "failure"
+    with pytest.raises(producer.ContractError, match="contradictory outcomes"):
+        _resolve_retained_ci_jobs([original, alias])
 
 
 @pytest.mark.parametrize("lane", ["windows-full-regression-1", "windows-full-regression-2", "windows-full-regression"])

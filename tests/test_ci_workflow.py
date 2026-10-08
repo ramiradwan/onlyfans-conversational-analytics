@@ -15,6 +15,7 @@ make a job invisible to these checks.
 from __future__ import annotations
 
 import shlex
+import json
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -69,7 +70,7 @@ ANALYTICS_CONVERGENCE_FALSIFIER_TARGETS = (
 )
 
 BROWSER_SUITE_DIRECTORY = "tools/e2e-capture"
-BROWSER_SUITE_INVOCATIONS = ("npm test", "npm run test", "playwright test")
+BROWSER_SUITE_INVOCATIONS = ("npm test", "npm run test", "playwright test", "node ci/run.mjs")
 WINDOWS_ONLY_SPEC_GUARD = 'process.platform !== \'win32\''
 
 
@@ -468,16 +469,26 @@ def test_windows_hang_diagnostics_do_not_terminate_tests_or_raise_job_limits() -
 
 
 def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v2-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v3-pr-cutover"
     triggers = workflow["on"]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
     assert triggers["push"] == {"branches": ["main"]}
     assert triggers["pull_request"] == {"branches": ["main"], "types": ["opened", "synchronize", "reopened"]}
+    dispatch = triggers["workflow_dispatch"]
+    assert set(dispatch) == {"inputs"}
+    assert set(dispatch["inputs"]) == {"browser_qualification", "browser_serial_control"}
+    for declaration in dispatch["inputs"].values():
+        assert declaration["type"] == "boolean" and declaration["default"] is False
+        assert declaration.get("required", False) is False
     jobs = _jobs(workflow)
     assert jobs["windows-full-shards"]["if"] == "${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}", "exhaustive Windows must run on main and manual only"
-    for name in ("windows-platform-contract", "analytics-windows-contract", "windows-browser-e2e"):
+    for name in ("windows-platform-contract", "analytics-windows-contract", "browser-reporting-safety", "browser-e2e-execution"):
         assert "if" not in jobs[name], "focused Windows and browser acceptance must remain mandatory on PRs"
         assert jobs[name].get("continue-on-error", False) is False
+    browser = jobs["windows-browser-e2e"]
+    assert browser["if"] == "${{ always() }}", "browser aggregate must evaluate every producer result"
+    assert set(browser["needs"]) == {"browser-reporting-safety", "browser-e2e-execution", "browser-e2e-serial-control"}
+    assert browser.get("continue-on-error", False) is False
     aggregate = jobs["windows-full-regression"]
     assert aggregate["if"] == "${{ always() }}", "stable Windows aggregate must always report"
     assert aggregate["needs"] == "windows-full-shards"
@@ -501,7 +512,8 @@ def test_windows_pr_cutover_preserves_blocking_checks_and_main_execution() -> No
     _assert_windows_pr_cutover(_workflow_document())
 
 
-@pytest.mark.parametrize("fault", ["matrix-if", "focused-if", "aggregate-if", "aggregate-success", "nightly", "alias"])
+@pytest.mark.parametrize("fault", ["matrix-if", "focused-if", "aggregate-if", "aggregate-success", "nightly", "alias",
+                                   "browser-aggregate-if", "browser-execution-if", "extra-input", "missing-input", "input-type", "input-default"])
 def test_windows_pr_cutover_falsifiers_refuse_lost_coverage_or_hidden_failures(fault: str) -> None:
     workflow = deepcopy(_workflow_document())
     jobs = _jobs(workflow)
@@ -515,6 +527,18 @@ def test_windows_pr_cutover_falsifiers_refuse_lost_coverage_or_hidden_failures(f
         _steps(jobs["windows-full-regression"])[0]["run"] = "true"
     elif fault == "nightly":
         workflow["on"]["schedule"] = [{"cron": "17 3 * * *"}]
+    elif fault == "browser-aggregate-if":
+        jobs["windows-browser-e2e"]["if"] = "${{ success() }}"
+    elif fault == "browser-execution-if":
+        jobs["browser-e2e-execution"]["if"] = "false"
+    elif fault == "extra-input":
+        workflow["on"]["workflow_dispatch"]["inputs"]["unreviewed"] = {"type": "boolean", "default": False}
+    elif fault == "missing-input":
+        del workflow["on"]["workflow_dispatch"]["inputs"]["browser_qualification"]
+    elif fault == "input-type":
+        workflow["on"]["workflow_dispatch"]["inputs"]["browser_serial_control"]["type"] = "string"
+    elif fault == "input-default":
+        workflow["on"]["workflow_dispatch"]["inputs"]["browser_serial_control"]["default"] = True
     else:
         _steps(jobs["windows-tests"])[0]["run"] = "true"
     with pytest.raises(AssertionError):
@@ -925,3 +949,257 @@ def test_tier_b_is_explicit_windows_qualification_not_an_ordinary_suite() -> Non
             expression = _marker_expression(_steps(job)[index]["run"].strip())
             if expression is not None and not _selects_production_boot(expression):
                 assert f"not {STATEFUL_TIER_B_MARKER}" in expression
+
+
+def _assert_web_feedback_keeps_its_checks(workflow: dict[str, Any]) -> None:
+    jobs = _jobs(workflow)
+    web = jobs["web-build-and-test"]
+    assert not web.get("needs"), "web feedback must not wait for backend execution"
+    assert "if" not in web and not web.get("continue-on-error")
+    runs = [step for step in _steps(web) if isinstance(step.get("run"), str)]
+    expected = {
+        ("", "npm ci --prefix frontend"),
+        ("frontend", "npm run check:architecture"),
+        ("", "npm run typecheck:design-sync --prefix frontend"),
+        ("frontend", "npm run check:unused"),
+        ("", "npm ci --prefix extension"),
+        ("extension", "npm run check:architecture"),
+        ("", "npm run build --prefix frontend"),
+        ("", "git diff --exit-code -- frontend/src/theme/generated"),
+        ("", "npm test --prefix frontend"),
+        ("", "npm test --prefix extension"),
+        ("", "node --test app/provisioning/provisioning.test.mjs"),
+        ("", "npm ci --prefix tools/analytics_cosmos_node"),
+        ("", "npm test --prefix tools/analytics_cosmos_node"),
+        ("", "node --test shared/onboarding/projection.test.mjs"),
+        ("", "node --test tools/e2e-capture/lib/catchup-diagnostics.test.mjs"),
+        ("", "node --test tools/legal-release-bindings/verify.test.mjs"),
+        ("", "node --test tools/packaged-signing-rule/verify.test.mjs"),
+        ("", "npm run build --prefix extension\nnpm run audit --prefix extension"),
+        ("", "npm run qualify:snapshot:ci --prefix extension"),
+    }
+    assert {(step.get("working-directory", ""), step["run"].strip()) for step in runs} == expected, (
+        "web checks must retain their complete JavaScript coverage without Python bootstrap or duplicate lint/typecheck"
+    )
+    assert len(runs) == len(expected), "web checks must run once"
+    assert all("if" not in step and not step.get("continue-on-error") for step in runs)
+    assert not any("setup-python@" in str(step.get("uses", "")) for step in _steps(web))
+    # The frontend build already performs these checks; a second step adds latency.
+    build = json.loads((ROOT / "frontend/package.json").read_text())["scripts"]["build"]
+    assert "npm run typecheck" in build and "npm run lint" in build
+    assert "web-build-and-test" in jobs["required-ci-gate"]["needs"]
+
+
+@pytest.mark.parametrize("mutation", ["drop", "skip", "ignore", "wait", "duplicate", "bootstrap"])
+def test_web_feedback_stays_independent_and_keeps_every_js_check(mutation: str) -> None:
+    workflow = _workflow_document()
+    _assert_web_feedback_keeps_its_checks(workflow)
+    broken = deepcopy(workflow)
+    web = _jobs(broken)["web-build-and-test"]
+    check = next(step for step in _steps(web) if step.get("name") == "Test frontend")
+    if mutation == "drop":
+        web["steps"].remove(check)
+    elif mutation == "skip":
+        check["if"] = "false"
+    elif mutation == "ignore":
+        check["continue-on-error"] = True
+    elif mutation == "wait":
+        web["needs"] = "backend-fast"
+    elif mutation == "duplicate":
+        web["steps"].append({"run": "npm run lint --prefix frontend"})
+    else:
+        web["steps"].insert(1, {"run": "python -m pip install -r requirements-dev.txt"})
+    with pytest.raises(AssertionError):
+        _assert_web_feedback_keeps_its_checks(broken)
+
+
+def _assert_python_guards_have_one_required_owner(workflow: dict[str, Any]) -> None:
+    jobs = _jobs(workflow)
+    backend = jobs["backend-fast"]
+    assert "backend-fast" in jobs["required-ci-gate"]["needs"]
+    assert "if" not in backend and not backend.get("continue-on-error")
+    commands = (
+        "python tools/check_docs.py",
+        "python tools/validate_architecture_boundaries.py",
+        "python tools/check_boundary_declaration.py",
+        "lint-imports",
+    )
+    for command in commands:
+        owners = [(name, step) for name, job in jobs.items() for step in _steps(job)
+                  if str(step.get("run", "")).strip().startswith(command)]
+        assert len(owners) == 1 and owners[0][0] == "backend-fast", "Python guard must have one mandatory backend owner"
+        step = owners[0][1]
+        assert not step.get("continue-on-error"), "Python guard failures must block"
+        if "check_boundary_declaration" in command:
+            assert step.get("if") == "github.event_name == 'pull_request'"
+        else:
+            assert "if" not in step, "Python guard cannot be skipped"
+        assert _backend_dependency_install_indexes(backend)[0] < _steps(backend).index(step)
+
+
+@pytest.mark.parametrize("mutation", ["drop", "skip", "ignore", "optional-owner"])
+def test_moved_python_guards_remain_mandatory_once(mutation: str) -> None:
+    workflow = _workflow_document()
+    _assert_python_guards_have_one_required_owner(workflow)
+    broken = deepcopy(workflow)
+    jobs = _jobs(broken)
+    step = next(step for step in _steps(jobs["backend-fast"]) if step.get("run") == "lint-imports")
+    if mutation == "drop":
+        jobs["backend-fast"]["steps"].remove(step)
+    elif mutation == "skip":
+        step["if"] = "false"
+    elif mutation == "ignore":
+        step["continue-on-error"] = True
+    else:
+        jobs["required-ci-gate"]["needs"].remove("backend-fast")
+    with pytest.raises(AssertionError):
+        _assert_python_guards_have_one_required_owner(broken)
+
+
+def _assert_browser_execution_is_isolated_and_gated(workflow: dict[str, Any]) -> None:
+    jobs = _jobs(workflow)
+    execution = jobs["browser-e2e-execution"]
+    assert execution["name"] == "browser-e2e-${{ matrix.lane }}"
+    assert execution["runs-on"] == "windows-latest"
+    assert execution["strategy"] == {"fail-fast": False, "max-parallel": 2, "matrix": {"lane": ["core", "catchup"]}}
+    assert execution["timeout-minutes"] == 45
+    assert set(execution["needs"]) == {"fixed-sqlcipher-wheel", "browser-reporting-safety"}
+    assert "if" not in execution and not execution.get("continue-on-error")
+    safety = jobs["browser-reporting-safety"]
+    assert "if" not in safety and not safety.get("continue-on-error")
+    steps = _steps(safety)
+    for command in (
+        "npm run test:ci-tools --prefix tools/e2e-capture",
+        "npm run test:ci-sentinels --prefix tools/e2e-capture",
+        "node --test extension/tests/stable-connection-diagnostic.test.mjs extension/tests/worker-recovery-diagnostic.test.mjs",
+        "python -m pytest --override-ini=addopts= tools/e2e-capture/tests/test_session_diagnostics.py",
+    ):
+        found = [step for step in steps if step.get("run") == command]
+        assert len(found) == 1, "reporter and session diagnostic safeguards must execute explicitly"
+        assert "if" not in found[0] and not found[0].get("continue-on-error")
+    steps = _steps(execution)
+    test = next(step for step in steps if step.get("id") == "browser-execution")
+    assert "node ci/run.mjs --lane $env:BROWSER_CI_LANE --output-dir $env:BROWSER_CI_REPORT_DIR" in test["run"]
+    assert test.get("working-directory") == BROWSER_SUITE_DIRECTORY
+    assert "if" not in test and not test.get("continue-on-error")
+    assert "if ($exitCode -ne 0) { exit $exitCode }" in test["run"]
+    for command in ("npm run build --prefix frontend", "npm run build --prefix extension"):
+        assert any(command in str(step.get("run", "")) for step in steps[:steps.index(test)])
+    aggregate = jobs["windows-browser-e2e"]
+    assert aggregate.get("if") == "${{ always() }}"
+    assert set(aggregate["needs"]) == {"browser-reporting-safety", "browser-e2e-execution", "browser-e2e-serial-control"}
+    assert "windows-browser-e2e" in jobs["required-ci-gate"]["needs"]
+
+
+@pytest.mark.parametrize("mutation", ["omit-lane", "unbounded", "skip-safety", "drop-session", "omit-safety-need", "ignore-test", "skip-aggregate"])
+def test_browser_split_cannot_bypass_isolation_or_reporting_safety(mutation: str) -> None:
+    workflow = _workflow_document()
+    _assert_browser_execution_is_isolated_and_gated(workflow)
+    broken = deepcopy(workflow)
+    jobs = _jobs(broken)
+    execution = jobs["browser-e2e-execution"]
+    if mutation == "omit-lane":
+        execution["strategy"]["matrix"]["lane"].remove("catchup")
+    elif mutation == "unbounded":
+        execution["strategy"]["max-parallel"] = 8
+    elif mutation == "skip-safety":
+        jobs["browser-reporting-safety"]["if"] = "false"
+    elif mutation == "drop-session":
+        safety = jobs["browser-reporting-safety"]
+        safety["steps"] = [step for step in _steps(safety) if "test_session_diagnostics.py" not in str(step.get("run", ""))]
+    elif mutation == "omit-safety-need":
+        execution["needs"].remove("browser-reporting-safety")
+    elif mutation == "ignore-test":
+        next(step for step in _steps(execution) if step.get("id") == "browser-execution")["continue-on-error"] = True
+    else:
+        jobs["windows-browser-e2e"]["if"] = "success()"
+    with pytest.raises(AssertionError):
+        _assert_browser_execution_is_isolated_and_gated(broken)
+
+
+def test_reporting_safety_python_pins_match_the_existing_development_requirements() -> None:
+    safety = _jobs(_workflow_document())["browser-reporting-safety"]
+    install = next(step["run"] for step in _steps(safety) if step.get("name") == "Install pinned reporting dependencies")
+    requirements = (ROOT / "requirements-dev.txt").read_text().splitlines()
+    for name in ("pytest", "pytest-asyncio"):
+        pin = next(line for line in requirements if line.startswith(f"{name}=="))
+        assert pin in install
+
+
+def _assert_browser_serial_control_is_explicit_and_equivalent(workflow: dict[str, Any]) -> None:
+    jobs = _jobs(workflow)
+    expected = json.loads(json.dumps(jobs["browser-e2e-execution"]).replace("${{ matrix.lane }}", "legacy"))
+    expected["name"] = "browser-e2e-serial-control"
+    expected["if"] = "${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}"
+    del expected["strategy"]
+    scenarios = next(step for step in expected["steps"] if step.get("name") == "Run Product #5 evidence scenarios")
+    del scenarios["if"]
+    assert jobs["browser-e2e-serial-control"] == expected, "control bootstrap and journeys must match the split execution"
+    assert "browser-e2e-serial-control" in jobs["windows-browser-e2e"]["needs"]
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    for name in ("browser_qualification", "browser_serial_control"):
+        assert inputs[name]["type"] == "boolean" and inputs[name]["default"] is False
+    assert workflow["env"]["BROWSER_QUALIFICATION"] == "${{ github.event_name == 'workflow_dispatch' && inputs.browser_qualification }}"
+    assert workflow["env"]["BROWSER_SERIAL_CONTROL"] == "${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}"
+    safety = _steps(jobs["browser-reporting-safety"])
+    guard = next(step for step in safety if step.get("name") == "Validate browser qualification request")
+    assert guard == {
+        "name": "Validate browser qualification request",
+        "run": "if [[ \"$BROWSER_SERIAL_CONTROL\" == 'true' && \"$BROWSER_QUALIFICATION\" != 'true' ]]; then\n"
+               "  echo '::error::browser_serial_control requires browser_qualification'\n"
+               "  exit 1\nfi\n",
+    }, "a serial request without strict qualification must fail before browser execution"
+
+
+@pytest.mark.parametrize("mutation", ["drop-condition", "skip-qualification", "ignore-control", "drop-control-need", "cheaper-bootstrap"])
+def test_browser_serial_control_is_opt_in_same_run_and_requires_qualification(mutation: str) -> None:
+    workflow = _workflow_document()
+    _assert_browser_serial_control_is_explicit_and_equivalent(workflow)
+    broken = deepcopy(workflow)
+    jobs = _jobs(broken)
+    control = jobs["browser-e2e-serial-control"]
+    if mutation == "drop-condition":
+        del control["if"]
+    elif mutation == "skip-qualification":
+        next(step for step in _steps(jobs["browser-reporting-safety"]) if step.get("name") == "Validate browser qualification request")["run"] = "true"
+    elif mutation == "ignore-control":
+        control["continue-on-error"] = True
+    elif mutation == "drop-control-need":
+        jobs["windows-browser-e2e"]["needs"].remove("browser-e2e-serial-control")
+    else:
+        control["steps"] = [step for step in _steps(control) if step.get("name") != "Build production Bridge"]
+    with pytest.raises(AssertionError):
+        _assert_browser_serial_control_is_explicit_and_equivalent(broken)
+
+
+def _assert_browser_assembly_provenance(workflow: dict[str, Any]) -> None:
+    steps = _steps(_jobs(workflow)["windows-browser-e2e"])
+    validator = next(step for step in steps if "tools/ci_browser_gate.py" in str(step.get("run", "")))
+    assert "--verified-output artifacts/browser-evidence/assembly-receipt.json" in validator["run"]
+    upload = next(step for step in steps if step.get("name") == "Retain verified browser assembly provenance")
+    assert upload["with"]["path"] == "artifacts/browser-evidence/assembly-receipt.json"
+    assert upload["with"]["name"] == "browser-e2e-verified-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+    assert "if" not in upload and not upload.get("continue-on-error")
+    assert steps.index(validator) < steps.index(upload)
+    legal = next(step for step in steps if step.get("name") == "Upload Product #5 Legal evidence bundle")
+    assert steps.index(upload) < steps.index(legal)
+
+
+@pytest.mark.parametrize("mutation", ["discard-proof", "raw-output", "unbound-name", "ignore-upload"])
+def test_browser_bundle_retains_independent_same_run_assembly_proof(mutation: str) -> None:
+    workflow = _workflow_document()
+    _assert_browser_assembly_provenance(workflow)
+    broken = deepcopy(workflow)
+    steps = _steps(_jobs(broken)["windows-browser-e2e"])
+    validator = next(step for step in steps if "tools/ci_browser_gate.py" in str(step.get("run", "")))
+    upload = next(step for step in steps if step.get("name") == "Retain verified browser assembly provenance")
+    if mutation == "discard-proof":
+        validator["run"] = validator["run"].split(" --verified-output")[0]
+    elif mutation == "raw-output":
+        upload["with"]["path"] = "artifacts/browser-evidence/"
+    elif mutation == "unbound-name":
+        upload["with"]["name"] = "browser-e2e-verified"
+    else:
+        upload["continue-on-error"] = True
+    with pytest.raises(AssertionError):
+        _assert_browser_assembly_provenance(broken)
