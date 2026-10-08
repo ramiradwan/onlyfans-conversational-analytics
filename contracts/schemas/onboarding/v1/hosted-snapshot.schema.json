@@ -1,0 +1,128 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/hosted-snapshot.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "committed_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "epoch": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "facts": {
+      "additionalProperties": false,
+      "properties": {
+        "association": {
+          "enum": [
+            "none",
+            "pending",
+            "approved",
+            "rejected",
+            "revoked",
+            "expired"
+          ]
+        },
+        "authorization": {
+          "enum": [
+            "current",
+            "authentication-required",
+            "denied"
+          ]
+        },
+        "claim": {
+          "enum": [
+            "none",
+            "ready",
+            "consuming",
+            "consumed",
+            "expired",
+            "replaced"
+          ]
+        },
+        "commercial": {
+          "enum": [
+            "none",
+            "awaiting-confirmation",
+            "committed",
+            "declined"
+          ]
+        },
+        "identity": {
+          "enum": [
+            "verified"
+          ]
+        },
+        "milestones": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "milestone": {
+                "enum": [
+                  "installed",
+                  "enrolled",
+                  "account-bound",
+                  "first-capture-ready"
+                ]
+              },
+              "occurred_at": {
+                "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+              }
+            },
+            "required": [
+              "milestone",
+              "occurred_at"
+            ],
+            "type": "object"
+          },
+          "maxItems": 4,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "transfer": {
+          "enum": [
+            "none",
+            "issued",
+            "redeemed",
+            "expired",
+            "replaced"
+          ]
+        }
+      },
+      "required": [
+        "identity",
+        "authorization",
+        "claim",
+        "association",
+        "commercial",
+        "transfer",
+        "milestones"
+      ],
+      "type": "object"
+    },
+    "onboarding_transaction_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "profile": {
+      "const": "urn:bridge-clean:hosted-onboarding:v1"
+    },
+    "revision": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "source": {
+      "const": "hosted-onboarding"
+    }
+  },
+  "required": [
+    "profile",
+    "source",
+    "onboarding_transaction_id",
+    "epoch",
+    "revision",
+    "committed_at",
+    "facts"
+  ],
+  "title": "hosted snapshot v1",
+  "type": "object"
+}

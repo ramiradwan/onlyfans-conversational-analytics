@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const { tier3: { staticUi } } = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8'));
 
 /** Checks visible task hierarchy separately from the protected disclosure content. */
 export async function inspectTaskCopy(page, fixture) {
@@ -33,7 +36,9 @@ export async function inspectTaskCopy(page, fixture) {
   }
   result.feedback = message;
   const stage = await page.locator('.provisioning-stage').boundingBox();
-  assert.equal(stage.height, page.viewportSize().width < 600 ? 440 : 360);
+  const stageToken = page.viewportSize().width < 600 ? staticUi.provisioningStageBlockNarrow : staticUi.provisioningStageBlock;
+  const rootFontSize = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+  assert.equal(stage.height, parseFloat(stageToken) * rootFontSize, 'Stage must preserve the token-backed minimum through each normal step');
   const rail = await page.locator('.progress-rail').boundingBox();
   assert.equal(rail.height, 52);
   assert.equal(await page.locator('textarea, details').count(), 0);
@@ -41,6 +46,9 @@ export async function inspectTaskCopy(page, fixture) {
     assert.equal(message, '', 'routine instructions repeat in a banner');
     assert(await page.locator('#recovery-open').isVisible());
     assert(!await page.locator('#acquire-association').isVisible());
+  }
+  if (fixture.name === 'confirm') {
+    assert.equal(await page.locator('#extension-install-reason').isVisible(), await page.locator('#open-extension-setup').isVisible(), 'Account confirmation must not request completed extension setup');
   }
   return { ...result, stageHeight: stage.height, railHeight: rail.height };
 }

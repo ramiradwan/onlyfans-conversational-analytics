@@ -1,0 +1,52 @@
+# Local onboarding contract v1
+
+Authority: [ADR 0047](adr/0047-persistent-onboarding-workspace.md).
+Artifacts: `shared/onboarding/schema.json`, `vectors.json`, `manifest.json`.
+Generator: `python tools/generate_onboarding_contract.py`; integrity check: append `--check`.
+Independent consumers: Python jsonschema and browser-side Ajv validate identical vectors.
+
+Every document is a closed object, at most 4096 UTF-8 bytes. Reject duplicate JSON keys,
+unknown profiles, fields, enums, non-finite numbers, and values outside JavaScript's
+safe integer range before dispatch. A profile match is a shape check, never authentication.
+Display copy is not sent over these contracts. Reason codes map to reviewed local copy.
+
+| Profile | Producer / consumer | Classification and lifetime |
+| --- | --- | --- |
+| `local-onboarding-state.v1` | Authenticated Brain or extension / local projections | Local workflow projection; in memory while channel is current, invalidated on disconnect |
+| `local-onboarding-command.v1` | Local authenticated user intent / named owner | Local command; bounded owner operation ledger, retain for reconciliation until operation expiry |
+| `local-onboarding-result.v1` | Authenticated named owner / requesting projection | Local result; same operation lifetime, never hosted |
+| `local-installation-discovery.v1` | Extension / loopback discovery adapter | Non-authorizing hint, not retained, rate-limited to one accepted hint per second per connection |
+| `local-onboarding-workspace.v1` | Workspace coordinator / local UI | Non-authorizing UI draft; clear on completion or abandonment, at most 30 days idle |
+| `local-onboarding-continuation.v1` | Brain / registered local destination | Non-authorizing restart/enrollment locator; bound to existing setup UI session, at most 30 minutes |
+| `local-first-enrollment-result.v1` | Local enrollment endpoint / same-origin browser | Local CSRF secret; session lifetime, no logs, persistence, URL, or hosted transfer |
+
+The workspace wire profile wraps the coordinator's local versioned record. The
+coordinator also stores tab/window IDs in session storage; those IDs are never sent to
+the hosted service. Its internal scope ID is not a creator identifier. Build-time route
+IDs resolve to one exact origin and path; only a UUID reference is permitted in the hash.
+
+`source` is chosen by the authenticated adapter, not trusted from a message. Before an
+epoch changes, establish a new authenticated subscription and require a snapshot.
+Snapshots replace complete per-owner facts; events carry the same full fact set at the
+next committed revision. Never merge facts across owners or compare their revisions.
+Account and consent generations cannot move backwards within an epoch. A gap makes the
+projection uncertain and requests replay or a snapshot. Subscribe and buffer before
+fetching a snapshot so changes during the request are drained afterwards.
+
+A command ID is idempotent only for identical owner, action, and generations. An owner
+rechecks current authority at commit. Confirmation requires a matching source, epoch,
+operation, generations, and committed revision. A transport acknowledgement is not a
+result. A lost channel changes pending operations to unknown. Results cannot overwrite
+a terminal result or make a stale account current. The projection reference module
+models these rules; adapters must validate the schema before calling it.
+
+`verified` means verified by the fact's owner. It does not authorize other components
+to skip their own checks. `unknown` must never render as Ready. Snapshot/replay requests
+use existing authenticated transports; discovery contains no account or authority data
+and cannot trigger consent, pairing, or enrollment by itself.
+
+Negotiation is explicit for `local-onboarding.v1`, `persistent-workspace.v1`,
+`first-enrollment-session.v1`, and the signer's `captureMode: observe-only`. These are
+new capabilities; absent support is not success. Legacy protocol fixtures are unchanged.
+The only hosted bridge is its separately pinned allowlisted projection. Local files and
+fixtures must never be vendored into the commercial service as inbound contracts.

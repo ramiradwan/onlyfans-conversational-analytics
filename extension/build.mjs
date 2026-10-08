@@ -301,6 +301,7 @@ export function signerWrapperSource(signingRule) {
     '  }',
     '  return signerModule.createChromeBrowserSigningProvider({',
     '    ...options,',
+    "    captureMode: 'observe-only',",
     '    packagedRule: PACKAGED_SIGNING_RULE,',
     '  });',
     '}',

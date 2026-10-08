@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  createChromeExtensionMessenger,
   createChromeExtensionPort,
   createProvisioningController,
   parseExtensionState,
@@ -10,6 +11,20 @@ import {
 
 const EXTENSION_ID = 'lfiompogjmmgnbkacdnikbfoihmlloda';
 const VALID_PACKAGE = 'cGFzdGVkLXBhY2thZ2U';
+
+test('identity messaging discovers an extension installed after the document loaded', async () => {
+  const prior = globalThis.chrome;
+  try {
+    delete globalThis.chrome;
+    const send = createChromeExtensionMessenger();
+    await assert.rejects(send(EXTENSION_ID, {}), /unavailable/);
+    globalThis.chrome = { runtime: { sendMessage(_id, _message, reply) { reply(signedInIdentity()); } } };
+    assert.deepEqual(await send(EXTENSION_ID, {}), signedInIdentity());
+  } finally {
+    if (prior === undefined) delete globalThis.chrome;
+    else globalThis.chrome = prior;
+  }
+});
 
 function response(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -90,7 +105,7 @@ test('identity detection is read-only and confirmation requires computer setup',
   await controller.refreshIdentity();
 
   assert.deepEqual(extensionCalls, [[EXTENSION_ID, { type: 'provisioning.identity.query', version: 1 }]]);
-  assert.match(elements.identityStatus.textContent, /Connect this computer/);
+  assert.equal(elements.identityStatus.textContent, 'Signed in now: creator-42');
   assert.equal(elements.confirmIdentity.disabled, true, 'identity_confirmation_requires_registration');
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(fetchCalls.length, 0, 'identity_query_never_starts_association');
@@ -222,7 +237,7 @@ test('approval pending and hosted outage have distinct recovery copy', async () 
   }) });
   offline.elements.claimPackage.value = VALID_PACKAGE;
   await offline.controller.submitClaim({ preventDefault() {} });
-  assert.match(offline.elements.status.textContent, /setup service could not complete this step/i);
+  assert.match(offline.elements.status.textContent, /Setup is unavailable/);
   assert.doesNotMatch(offline.elements.status.textContent, /internet connection/i);
 });
 
@@ -576,7 +591,7 @@ test('reload after intermediate success returns to the server-reported ready ste
 
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
   assert.equal(elements.confirmIdentity.disabled, true);
-  assert.match(elements.identityStatus.textContent, /Connect this computer/);
+  assert.equal(elements.identityStatus.textContent, 'Signed in now: creator-42');
 });
 
 

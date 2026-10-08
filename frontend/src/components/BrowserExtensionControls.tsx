@@ -86,16 +86,18 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     <Button onClick={() => port.open(step)} size="small" variant="outlined">{label}</Button>
   ) : undefined);
 
-  const feedback = <Box sx={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
-<StatusLine id="browser-feedback" tone="error" text={browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now. Open your browser and try again.'
+  const feedback = <Box>
+<StatusLine essential id="browser-feedback" tone="error" text={browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now. Open your browser and try again.'
             : notice === 'no_response' ? "The browser extension didn't confirm the change. Check it in your browser."
               : "The change couldn't be sent. Try again."} />
   </Box>;
   if (browser === null) {
-    return <Stack sx={{ height: '100%', position: 'relative' }}>
+    return <Stack sx={{ minHeight: 'inherit', display: 'grid', gridTemplateRows: '1fr auto' }}>
+      <Box>
       {connection === 'connected' && <Typography data-browser-controls="waiting" variant="body2" sx={{ color: 'text.secondary' }}>
         Waiting for the browser extension to report its settings.
       </Typography>}
+      </Box>
       {feedback}
     </Stack>;
   }
@@ -103,8 +105,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const paused = browser.capture === 'paused';
   const captureAction: CaptureAction | null = browser.capture === 'active' ? 'pause' : paused ? 'resume' : null;
   const resumeNeedsReview = paused && browser.legal_review_required;
-  const needsBrowserAction = browser.site_access !== 'granted' || browser.history_permission !== 'granted'
-    || resumeNeedsReview;
+  const needsBrowserAction = browser.site_access !== 'granted' || resumeNeedsReview;
 
   const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
     <Button
@@ -118,12 +119,12 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
         : captureAction === 'pause' ? 'Pause collecting' : 'Resume collecting'}
     </Button>
   ) : resumeNeedsReview ? openInExtension('setup', 'Review terms') : undefined;
-  const row = { height: { xs: '8rem', sm: '4rem' }, justifyContent: 'flex-start',
-    '& > .MuiBox-root:first-of-type': { height: 64, flex: { sm: 1 } },
-    '& > .MuiBox-root:last-of-type:not(:first-of-type)': { height: 40, width: 200, flex: 'none', '& button': { width: 200, height: 40, justifyContent: 'flex-start' } } };
+  const row = { minHeight: { xs: '8rem', sm: '4rem' }, justifyContent: 'flex-start',
+    '& > .MuiBox-root:first-of-type': { minHeight: 64, flex: { sm: 1 } },
+    '& > .MuiBox-root:last-of-type:not(:first-of-type)': { minHeight: 40, width: 200, flex: 'none', '& button': { width: 200, minHeight: 40, justifyContent: 'flex-start' } } };
 
   return (
-    <Stack data-browser-controls="available" data-journey-state="desktop.browser_controls" spacing={1.5} sx={{ height: '100%', position: 'relative' }}>
+    <Stack data-browser-controls="available" data-journey-state="desktop.browser_controls" spacing={1.5} useFlexGap sx={{ minHeight: 'inherit', display: 'grid', gridTemplateRows: { xs: 'repeat(3,minmax(8rem,auto)) minmax(2.5rem,1fr) auto', sm: 'repeat(3,minmax(4rem,auto)) minmax(2.5rem,1fr) auto' } }}>
       <SettingRow
         sx={row}
         title="New messages"
@@ -142,11 +143,11 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
       />
       <SettingRow
         sx={row}
-        title="Message history access"
-        description={browser.history_permission === 'granted' ? 'Allowed.' : 'Not allowed yet.'}
+        title="Message history access (optional)"
+        description={browser.history_permission === 'granted' ? 'Allowed.' : 'Allow this if you want to add older conversations.'}
         action={browser.history_permission === 'granted' ? undefined : openInExtension('history', 'Allow in extension')}
       />
-        <Typography variant="body2" sx={{ height: 40, color: 'text.secondary', visibility: needsBrowserAction && !sameBrowser ? 'visible' : 'hidden' }}>
+        <Typography variant="body2" sx={{ minHeight: '2.5rem', color: 'text.secondary', visibility: needsBrowserAction && !sameBrowser ? 'visible' : 'hidden' }}>
           Change these in the browser where the extension is installed.
         </Typography>
       {feedback}

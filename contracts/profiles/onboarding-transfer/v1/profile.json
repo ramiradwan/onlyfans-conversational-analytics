@@ -1,0 +1,67 @@
+{
+  "code": {
+    "alphabet": "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+    "characters": 12,
+    "entropy_bits": 60,
+    "entry_surface": "receiving-destination",
+    "max_attempts_per_address_per_minute": 20,
+    "max_attempts_per_principal_per_minute": 5,
+    "max_ttl_seconds": 600,
+    "purpose": "resume-onboarding",
+    "same_browser_requires_code": false,
+    "source_authority_transfer": false,
+    "unknown_or_unauthorized": "invalid"
+  },
+  "destination": {
+    "binding": "first-authorized-redemption-atomic",
+    "browser_extension_key": "dedicated-setup-key",
+    "browser_key_grants_installation_authority": false,
+    "changed_destination": "replacement-code-and-independent-authentication",
+    "desktop_key": "installation-public-key",
+    "key_thumbprint": "RFC7638-SHA256",
+    "proof_required": true,
+    "same_principal_and_organization": true
+  },
+  "errors_in_order": [
+    "size_and_json",
+    "schema",
+    "authenticated_principal",
+    "rate_limit",
+    "same_principal_and_organization",
+    "proof",
+    "purpose_and_destination_kind",
+    "operation_binding",
+    "replacement",
+    "already_committed_same_operation",
+    "expiry",
+    "used",
+    "atomic_commit"
+  ],
+  "governing_adr": "docs/adr/0022-publish-onboarding-continuity-contracts.md",
+  "messages": {
+    "error": "schemas/onboarding/v1/transfer-error.schema.json",
+    "issue.request": "schemas/onboarding/v1/transfer-issue-request.schema.json",
+    "issue.response": "schemas/onboarding/v1/transfer-issue-response.schema.json",
+    "recover.request": "schemas/onboarding/v1/transfer-recover-request.schema.json",
+    "redeem.request": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "result": "schemas/onboarding/v1/transfer-result.schema.json"
+  },
+  "profile": "urn:bridge-clean:onboarding-transfer:v1",
+  "replay": {
+    "different_operation_after_redemption": "used",
+    "lost_response": "fresh-proof-same-operation-or-separate-recovery",
+    "recovery_delivers_claim_secret": false,
+    "recovery_delivers_grants": false,
+    "recovery_max_seconds_from_redemption": 1800,
+    "replacement": "atomically-invalidates-old-code",
+    "same_operation_changed_request": "operation_conflict",
+    "same_operation_same_destination": "already-redeemed"
+  },
+  "retention": {
+    "crm_delivery": false,
+    "metric_identifiers": false,
+    "minimal_decision_audit": "security-audit",
+    "query_or_body_logging": false,
+    "working": "onboarding-working-state"
+  }
+}

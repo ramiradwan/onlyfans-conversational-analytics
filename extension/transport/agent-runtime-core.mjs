@@ -109,6 +109,7 @@ export function createLazyAccountSigner({
             storage, creatorAccountId, signal: ownerSignal,
           }), { signal: ownerSignal }),
           persistence,
+          captureMode: 'observe-only',
           expectedIdentity: requestedIdentity,
           signal: AbortSignal.any([ownerSignal, operationSignal]),
         });

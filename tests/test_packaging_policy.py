@@ -32,6 +32,10 @@ SQL_CATALOGS = (
     "app/persistence/projection_sql",
     "app/analytics/sql",
 )
+HANDOFF_SYNTHETIC_FILES = tuple(
+    f"_internal/contracts/initial-installation-handoff-v1/{name}-cases.json"
+    for name in ("digest", "proof", "schema")
+)
 
 
 def _agent_build_metadata() -> dict:
@@ -387,13 +391,13 @@ def test_material_scan_reads_each_file_once_and_preserves_declaration_order(
         repeated_rule,
     ]
     reads: Counter[Path] = Counter()
-    original_reader = packaging_policy._read_utf8_text
+    original_reader = packaging_policy._read_material_payload
 
-    def counted_reader(path: Path) -> str | None:
+    def counted_reader(path: Path) -> bytes | None:
         reads[path] += 1
         return original_reader(path)
 
-    monkeypatch.setattr(packaging_policy, "_read_utf8_text", counted_reader)
+    monkeypatch.setattr(packaging_policy, "_read_material_payload", counted_reader)
     findings = verify_runtime_files(stage, policy)
     material_findings = [
         finding
@@ -455,13 +459,13 @@ def test_material_scan_rereads_mutated_files_on_every_verification(
         {"name": "unmatched", "pattern": "unused"},
     ]
     reads: list[Path] = []
-    original_reader = packaging_policy._read_utf8_text
+    original_reader = packaging_policy._read_material_payload
 
-    def counted_reader(path: Path) -> str | None:
+    def counted_reader(path: Path) -> bytes | None:
         reads.append(path)
         return original_reader(path)
 
-    monkeypatch.setattr(packaging_policy, "_read_utf8_text", counted_reader)
+    monkeypatch.setattr(packaging_policy, "_read_material_payload", counted_reader)
     for contents, matches in (
         (b"clean", False),
         (b"needle", True),
@@ -504,6 +508,138 @@ def test_per_user_material_declarations_cover_every_required_category() -> None:
         "generated_runtime_secret",
         "user_profile_path",
     }, "the per-user-material policy must name every prohibited category"
+
+
+def test_reviewed_material_admissions_pin_only_the_three_public_digest_fixtures() -> None:
+    declarations = load_runtime_policy(POLICY_PATH)["forbidden_material"]
+    admissions = {
+        declaration["name"]: declaration["reviewed_synthetic_files"]
+        for declaration in declarations
+        if "reviewed_synthetic_files" in declaration
+    }
+    assert set(admissions) == {"installation_claim"}
+    assert set(admissions["installation_claim"]) == set(HANDOFF_SYNTHETIC_FILES)
+    manifest = json.loads((ROOT / "contracts/manifest.json").read_text(encoding="utf-8"))
+    pinned_files = {entry["path"]: entry["sha256"] for entry in manifest["files"]}
+    matcher = re.compile(declarations[0]["pattern"])
+    for relative, digest in admissions["installation_claim"].items():
+        source = ROOT / relative.removeprefix("_internal/")
+        payload = source.read_bytes()
+        assert hashlib.sha256(payload).hexdigest() == digest
+        assert pinned_files[relative.removeprefix("_internal/contracts/")] == digest
+        contents = payload.decode("utf-8")
+        matches = tuple(matcher.finditer(contents))
+        assert matches
+        for match in matches:
+            assert contents[match.start() - len("issue-"):match.start()] == "issue-"
+            assert re.fullmatch(r'installation-claim": "[0-9a-f]{64}"', match.group())
+
+
+@pytest.mark.parametrize("relative", HANDOFF_SYNTHETIC_FILES)
+@pytest.mark.parametrize("addition", [b"\n", b"\ninstallation_claim=unreviewed-material-sentinel\n"])
+def test_changed_reviewed_fixtures_still_fail_material_and_contract_checks(
+    tmp_path: Path, relative: str, addition: bytes
+) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    fixture = stage / relative
+    fixture.write_bytes(fixture.read_bytes() + addition)
+
+    findings = verify_runtime_files(stage)
+
+    assert PackagingFinding(
+        "forbidden_material_present", relative,
+        "matches forbidden material declaration: installation_claim",
+    ) in findings
+    assert "contracts_closure_failed" in _codes(findings)
+
+
+@pytest.mark.parametrize("relative", HANDOFF_SYNTHETIC_FILES)
+def test_copied_reviewed_fixture_is_not_admitted_at_another_path(
+    tmp_path: Path, relative: str
+) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    copied = stage / "_internal/app/copied-fixture.json"
+    copied.write_bytes((stage / relative).read_bytes())
+
+    assert PackagingFinding(
+        "forbidden_material_present", "_internal/app/copied-fixture.json",
+        "matches forbidden material declaration: installation_claim",
+    ) in verify_runtime_files(stage)
+
+
+def test_reviewed_payload_admission_preserves_path_and_other_material_rules(tmp_path: Path) -> None:
+    payload = b"installation_claim=unreviewed-material-sentinel\r\n"
+    name = "installation_claim=unreviewed-material-sentinel.txt"
+    (tmp_path / name).write_bytes(payload)
+    (tmp_path / "fixture.json").write_bytes(payload)
+    rule = {
+        "name": "installation_claim", "pattern": "installation_claim",
+        "reviewed_synthetic_files": {
+            relative: hashlib.sha256(payload).hexdigest() for relative in (name, "fixture.json")
+        },
+    }
+    findings: list[PackagingFinding] = []
+    packaging_policy._check_forbidden_material(tmp_path, {
+        "forbidden_material": [rule, {"name": "other_rule", "pattern": "unreviewed-material"}],
+    }, findings)
+    assert set(findings) == {
+        PackagingFinding("forbidden_material_present", name,
+                         "matches forbidden material declaration: installation_claim"),
+        PackagingFinding("forbidden_material_present", name,
+                         "matches forbidden material declaration: other_rule"),
+        PackagingFinding("forbidden_material_present", "fixture.json",
+                         "matches forbidden material declaration: other_rule"),
+    }
+
+
+@pytest.mark.parametrize("invalid", [
+    None, [], {1: "0" * 64}, {"": "0" * 64}, {".": "0" * 64},
+    {"../fixture.json": "0" * 64}, {"folder/../fixture.json": "0" * 64},
+    {"/fixture.json": "0" * 64}, {"folder//fixture.json": "0" * 64},
+    {"./fixture.json": "0" * 64}, {"fixture.json/": "0" * 64},
+    {"folder\\fixture.json": "0" * 64}, {"C:/fixture.json": "0" * 64},
+    {"*.json": "0" * 64}, {"fixture?.json": "0" * 64}, {"[fixture].json": "0" * 64},
+    {"fixture\n.json": "0" * 64}, {"fixture.json": "A" * 64},
+    {"fixture.json": "0" * 63}, {"fixture.json": None},
+])
+def test_invalid_fixture_admission_fails_closed(tmp_path: Path, invalid: object) -> None:
+    (tmp_path / "fixture.json").write_text("needle", encoding="utf-8")
+    findings: list[PackagingFinding] = []
+    packaging_policy._check_forbidden_material(tmp_path, {"forbidden_material": [{
+        "name": "payload", "pattern": "needle", "reviewed_synthetic_files": invalid,
+    }]}, findings)
+    assert _codes(findings) == {"policy_invalid", "forbidden_material_present"}
+
+
+def test_fixture_admission_hashes_the_same_raw_bytes_that_are_scanned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    material = tmp_path / "fixture.json"
+    reviewed = b"needle\r\n"
+    material.write_bytes(reviewed)
+    policy = {"forbidden_material": [{
+        "name": "payload", "pattern": "needle",
+        "reviewed_synthetic_files": {"fixture.json": hashlib.sha256(reviewed).hexdigest()},
+    }]}
+    findings: list[PackagingFinding] = []
+    packaging_policy._check_forbidden_material(tmp_path, policy, findings)
+    assert findings == [], "raw CRLF bytes must match their reviewed digest"
+    material.write_bytes(b"needle\n")
+    original_reader = packaging_policy._read_material_payload
+    reads: list[Path] = []
+
+    def mutate_after_read(path: Path) -> bytes | None:
+        reads.append(path)
+        captured = original_reader(path)
+        path.write_bytes(reviewed)
+        return captured
+
+    monkeypatch.setattr(packaging_policy, "_read_material_payload", mutate_after_read)
+    packaging_policy._check_forbidden_material(tmp_path, policy, findings)
+    assert reads == [material]
+    assert _codes(findings) == {"forbidden_material_present"}, (
+        "a later matching file must not admit the unreviewed bytes actually scanned"
+    )
 
 
 def test_sql_catalog_declaration_is_a_complete_derived_closure() -> None:

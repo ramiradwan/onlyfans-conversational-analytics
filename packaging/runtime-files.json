@@ -114,10 +114,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "827eda31ec62e156fcc16cf7b7dbf09ddddb1019ed920e322be28d21c5bf30f4",
-    "consumer_pin_sha256": "1c349a286c79afec1aae6d0b248f81b00a293af63de9b20c7ad27196838ce9d6",
+    "manifest_sha256": "14693de25efdd6732f3da36baaa7b2d96e034c429b1438e3192f37533c89d0b0",
+    "consumer_pin_sha256": "da6d15b48fe02317bb8d4a8deafff288447c0627298576423fe3980a7ed26758",
     "root_file_sha256": {
-      "loader.py": "5746391617fafb7ff98ce2ecbbe9a151d4f3adac5f0addd2b9605f88072a06b4",
+      "loader.py": "6a8cd27c029bf06836b91c4a1d794df5dda6978f775584a57d785b20cd825fbf",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [
@@ -151,7 +151,12 @@
   "forbidden_material": [
     {
       "name": "installation_claim",
-      "pattern": "(?i)\\binstallation[_-]?claim(?:[_-]?package)?[\\\"']?\\s*[:=]\\s*(?:[\\\"'][^\\\"']{16,}[\\\"']|[A-Za-z0-9_-]{16,})"
+      "pattern": "(?i)\\binstallation[_-]?claim(?:[_-]?package)?[\\\"']?\\s*[:=]\\s*(?:[\\\"'][^\\\"']{16,}[\\\"']|[A-Za-z0-9_-]{16,})",
+      "reviewed_synthetic_files": {
+        "_internal/contracts/initial-installation-handoff-v1/digest-cases.json": "c425138e26b1b826931141863905eeb10af36788dd85d0b34dddc0681ce3c2ac",
+        "_internal/contracts/initial-installation-handoff-v1/proof-cases.json": "11cd8d1ae0e93156d8f9bed193a8d72e0f50f5f7c7db661b9e3bd0b7a5e17613",
+        "_internal/contracts/initial-installation-handoff-v1/schema-cases.json": "837db4ed80632507b0ec97d269455681b6d15709c207f37a42bd4281b81be1bb"
+      }
     },
     {
       "name": "claim_secret",

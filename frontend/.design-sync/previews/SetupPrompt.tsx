@@ -21,7 +21,7 @@ export function ExtensionConnected() {
 export function FullAnalyticsRemaining() {
   return (
     <MemoryRouter>
-      <SetupPrompt extensionConnected historyEnabled title="Finish setup" />
+      <SetupPrompt extensionConnected title="Finish setup" />
     </MemoryRouter>
   );
 }

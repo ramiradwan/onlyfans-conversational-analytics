@@ -120,7 +120,7 @@ describe('browser extension controls', () => {
     expect(screen.getByText('Paused. Review the updated terms in the extension to resume.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Pause$|^Resume$/ })).toBeNull();
     expect(screen.getAllByRole('heading', { level: 3 }).map((node) => node.textContent))
-      .toEqual(['New messages', 'Site access', 'Message history access']);
+      .toEqual(['New messages', 'Site access', 'Message history access (optional)']);
   });
 });
 

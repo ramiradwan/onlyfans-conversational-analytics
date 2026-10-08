@@ -1,0 +1,30 @@
+{
+  "case_count": 107,
+  "files": [
+    {
+      "path": "cursor-cases.json",
+      "sha256": "c558ff4e554b2c254888854b2d0943fcaa6e672c849b76e34f0881266d35c4fb",
+      "size": 4180
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "302517fbaf75f47589e8eca3366a748adae2afa991a77ceb7b0c8ab13bcce5df",
+      "size": 22780
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "b93c3a1901685da3c59353e85c8904f28f8107977a710130083064d10994ddb7",
+      "size": 40201
+    },
+    {
+      "path": "transfer-cases.json",
+      "sha256": "65420f35d01440bd0c052f0a0d332f2170fd3dca4329b53152915872757f1bce",
+      "size": 11156
+    }
+  ],
+  "generator": "tools/generate_onboarding_continuity_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0022-publish-onboarding-continuity-contracts.md",
+  "profile": "urn:bridge-clean:onboarding-continuity-vectors:v1",
+  "test_only": true
+}

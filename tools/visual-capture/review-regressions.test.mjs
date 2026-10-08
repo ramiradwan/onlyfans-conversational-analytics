@@ -175,3 +175,156 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
     }
   } finally { await page.close(); }
 });
+
+for (const width of [320, 390, 1440]) for (const fontScale of [1, 2]) test(`provisioning recovery remains readable at ${width} with scale ${fontScale}`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await installProvisioningFixture(page, { stage: 'creator_approval_pending', name: 'approval-offline' });
+    await openProvisioningFixture(page);
+    await page.evaluate((scale) => { document.documentElement.style.fontSize = `${16 * scale}px`; }, fontScale);
+    for (const reason of ['hosted_unavailable', 'binding_acquisition_unavailable', 'candidate_resolution_conflict']) {
+      await page.evaluate((refusal) => {
+        window.__provisioningFixture.refusal = refusal;
+        return window.__provisioningController.acquireAssociation();
+      }, reason);
+      await settle(page);
+      assert.equal(await page.locator('#feedback-details').isVisible(), false, 'Recovery must not require another action to read');
+      assert(await page.locator('#provisioning-status').isVisible(), 'Recovery must be visibly rendered');
+      const geometry = await page.locator('#provisioning-status').evaluate((status) => {
+        const bounds = status.getBoundingClientRect();
+        const feedback = status.closest('[data-step-feedback]').getBoundingClientRect();
+        const actions = status.closest('.step').querySelector('.actions').getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(status);
+        let opaque = true;
+        for (let element = status; element; element = element.parentElement) {
+          const css = getComputedStyle(element);
+          opaque &&= css.visibility === 'visible' && Number(css.opacity) === 1;
+        }
+        return {
+          text: status.textContent,
+          opaque,
+          clipPath: getComputedStyle(status).clipPath,
+          fits: [...range.getClientRects()].every((box) => box.left >= bounds.left - 1 && box.right <= bounds.right + 1 && box.top >= bounds.top - 1 && box.bottom <= bounds.bottom + 1),
+          separate: bounds.bottom <= feedback.bottom + 1 && feedback.bottom <= actions.top,
+          pageFits: document.documentElement.scrollWidth <= innerWidth + 1,
+        };
+      });
+      assert(geometry.text.trim().length > 0);
+      assert(geometry.opaque, 'Recovery and its ancestors must not be hidden or transparent');
+      assert.equal(geometry.clipPath, 'none');
+      assert(geometry.fits, 'All recovery text must fit its visible container');
+      assert(geometry.separate, 'Recovery must not overlap the actions');
+      assert(geometry.pageFits, 'Enlarged text must not introduce horizontal scrolling');
+      const retry = page.locator('#acquire-association');
+      await retry.scrollIntoViewIfNeeded();
+      const bounds = await retry.boundingBox();
+      assert(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 901, 'The retry action must remain reachable by scrolling');
+    }
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 390]) test(`browser recovery remains between guidance and pairing controls at ${width} with doubled text`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await page.goto(harness.base + '?workspace=settings&state=loading&transitions=1&mode=light');
+    await page.waitForFunction(() => window.__workspaceFixture);
+    const push = (method, ...args) => page.evaluate(({ method, args }) => window.__workspaceFixture[method](...args), { method, args });
+    await push('snapshot', 'populated');
+    await push('connection', 'connected');
+    for (const key of await push('pending')) await push('release', key, 'populated');
+    await push('browser', { capture: 'active', site_access: 'needs_approval', history_permission: 'missing' });
+    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+    await page.getByRole('button', { name: 'Pause collecting', exact: true }).click();
+    await push('resolve', 'browser.setCapture', 'unreachable');
+    const feedback = page.locator('[data-reserved-region="browser-feedback"]');
+    await feedback.getByRole('alert').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    await feedback.scrollIntoViewIfNeeded();
+    assert(await page.getByText('Change these in the browser where the extension is installed.', { exact: true }).isVisible());
+    const following = page.getByText('Extension linked to this app', { exact: true });
+    assert(await following.isVisible());
+    const geometry = await feedback.evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      const facts = node.closest('[data-reserved-region="browser-facts"]');
+      const textBoxes = (element) => {
+        const boxes = [];
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const text = walker.currentNode;
+          if (!text.textContent.trim() || getComputedStyle(text.parentElement).visibility !== 'visible') continue;
+          const range = document.createRange(); range.selectNodeContents(text);
+          boxes.push(...range.getClientRects());
+        }
+        return boxes;
+      };
+      const contains = (outer, inner) => inner.left >= outer.left - 1 && inner.right <= outer.right + 1 && inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1;
+      const controls = facts.querySelector('[data-browser-controls="available"]');
+      const rows = [...controls.children].slice(0, 3);
+      return {
+        instructionsBefore: [...rows, controls.children[3]].every((element) => textBoxes(element).every((box) => box.bottom <= bounds.top + 1)),
+        rowsFit: rows.every((row) => textBoxes(row).every((box) => contains(row.getBoundingClientRect(), box))),
+        guidanceBottom: controls.children[3].getBoundingClientRect().bottom,
+        feedback: bounds.toJSON(),
+        feedbackFits: textBoxes(node).every((box) => contains(bounds, box)),
+        factsBottom: facts.getBoundingClientRect().bottom,
+        horizontalOverflow: facts.scrollWidth > facts.clientWidth,
+      };
+    });
+    assert(geometry.instructionsBefore && geometry.rowsFit, 'Browser instructions and control labels must fit their rows and finish before recovery');
+    assert(geometry.feedbackFits && !geometry.horizontalOverflow, 'All recovery text must remain visible without horizontal scrolling');
+    assert(geometry.guidanceBottom <= geometry.feedback.top, 'Browser-location guidance must finish before recovery');
+    assert(geometry.feedback.bottom <= geometry.factsBottom + 1, 'The browser reservation must contain recovery');
+    const next = await following.boundingBox();
+    assert(next && next.y >= geometry.feedback.bottom, 'Pairing controls must follow the recovery text');
+    assert.equal(await feedback.getByRole('button', { name: 'Show details' }).count(), 0);
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 390, 600]) test(`essential activation content stays separated and can grow at ${width} with doubled text`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 1000 }, reducedMotion: 'reduce' });
+  try {
+    await page.goto(harness.base + '?workspace=settings&state=loading&transitions=1&mode=light');
+    await page.waitForFunction(() => window.__workspaceFixture);
+    const push = (method, ...args) => page.evaluate(({ method, args }) => window.__workspaceFixture[method](...args), { method, args });
+    await push('snapshot', 'populated');
+    await push('connection', 'connected');
+    for (const key of await push('pending')) await push('release', key, 'populated', key === 'activation.readiness'
+      ? { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'active', analysis_admission: 'blocked' } : undefined);
+    await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+    const section = page.locator('[data-reserved-region="settings-activation"]');
+    const notice = section.getByRole('alert');
+    await notice.waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    assert.equal(await notice.innerText(), "New messages aren't being analyzed\n\nYour activation is fine, but analysis can't run right now. Your existing numbers are still available.");
+    assert(await section.getByRole('button', { name: 'Check again', exact: true }).isVisible());
+    const geometry = await section.evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      const content = node.querySelector('[data-region-content]').getBoundingClientRect();
+      const next = document.querySelector('[data-reserved-region="settings-history"]').getBoundingClientRect();
+      const notice = node.querySelector('[data-reserved-region="activation-notice"]').getBoundingClientRect();
+      const title = node.querySelector('h2');
+      const header = title.parentElement;
+      const status = header.nextElementSibling.getBoundingClientRect();
+      const action = node.querySelector('button').getBoundingClientRect();
+      const range = document.createRange(); range.selectNodeContents(header);
+      const titleRange = document.createRange(); titleRange.selectNodeContents(title);
+      return { minimum: parseFloat(getComputedStyle(node).minBlockSize), height: bounds.height, bottom: bounds.bottom,
+        contentBottom: content.bottom, nextTop: next.top, horizontalOverflow: node.scrollWidth > node.clientWidth,
+        headerBeforeNotice: [...range.getClientRects()].every((box) => box.bottom <= notice.top) && status.bottom <= notice.top,
+        statusFits: status.left >= bounds.left && status.right <= bounds.right,
+        titleStatusSeparate: [...titleRange.getClientRects()].every((box) => box.bottom <= status.top || box.top >= status.bottom || box.right <= status.left || box.left >= status.right),
+        actionFollowsNotice: action.top >= notice.bottom && action.bottom <= bounds.bottom };
+    });
+    if (width === 600) assert(geometry.height > geometry.minimum, 'Real warning copy must exercise growth beyond the desktop minimum');
+    assert(geometry.contentBottom <= geometry.bottom + 1 && geometry.nextTop >= geometry.contentBottom,
+      'The full notice and recovery action must fit before the next Settings section');
+    assert(geometry.headerBeforeNotice, 'The heading and summary must finish before the warning');
+    assert(geometry.statusFits && geometry.titleStatusSeparate, 'The status must fit the section and remain separate from its title');
+    assert(geometry.actionFollowsNotice, 'The recovery action must follow the whole warning and fit the section');
+    assert(!geometry.horizontalOverflow, 'Expanded essential copy must not require horizontal scrolling');
+    assert.equal(await notice.getByRole('button', { name: 'Show details' }).count(), 0);
+  } finally { await page.close(); }
+});

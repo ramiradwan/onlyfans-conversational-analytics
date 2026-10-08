@@ -836,6 +836,11 @@
         },
         {
           "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "keeps recovery visible without a details step even when text exceeds the old reserved height"
+        },
+        {
+          "kind": "unit",
           "file": "frontend/tests/AppBootstrap.test.tsx",
           "name": "shows passkey access instead of Bridge routes without a session identity"
         },
@@ -863,13 +868,27 @@
           "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "continue-setup"
+        },
+        {
+          "to": "desktop.numbers_ready",
+          "by": "system"
         }
       ],
       "evidence": [
         {
           "kind": "unit",
           "file": "frontend/tests/CreatorDashboardView.test.tsx",
-          "name": "replaces the numbers with the setup prompt until history sync starts"
+          "name": "requires activation without making optional history a setup step"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not require setup when Full is ready and older-history import was skipped"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/setupGuidance.test.tsx",
+          "name": "skips the completed connection and keeps history out of required setup"
         },
         {
           "kind": "visual",
@@ -887,12 +906,12 @@
       },
       "transitions": [
         {
-          "to": "desktop.message_history",
+          "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "confirm-connection"
         },
         {
-          "to": "desktop.message_history",
+          "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "connect-extension"
         },
@@ -1077,6 +1096,11 @@
           "to": "desktop.stored_messages",
           "by": "user",
           "action": "open-settings"
+        },
+        {
+          "to": "desktop.message_history",
+          "by": "user",
+          "action": "open-settings"
         }
       ],
       "evidence": [
@@ -1111,6 +1135,11 @@
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
           "name": "exposes the customer action when canonical readiness requires activation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "keeps a failed redemption recoverable and re-reads canonical readiness"
         },
         {
           "kind": "visual",

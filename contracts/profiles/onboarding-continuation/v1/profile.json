@@ -1,0 +1,25 @@
+{
+  "governing_adr": "docs/adr/0022-publish-onboarding-continuity-contracts.md",
+  "messages": {
+    "continuation": "schemas/onboarding/v1/continuation.schema.json"
+  },
+  "profile": "urn:bridge-clean:onboarding-continuation:v1",
+  "reference": {
+    "arbitrary_return_url": false,
+    "authentication_required": true,
+    "bearer_authority": false,
+    "entropy_bits": 256,
+    "max_ttl_seconds": 1800,
+    "registered_return_targets": [
+      "extension-setup",
+      "desktop-setup",
+      "hosted-setup"
+    ]
+  },
+  "transport": {
+    "claim_or_grant_delivery": false,
+    "local_session_delivery": false,
+    "navigation_reference_only": true,
+    "query_logging": false
+  }
+}

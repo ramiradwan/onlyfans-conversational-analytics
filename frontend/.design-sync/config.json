@@ -102,7 +102,7 @@
     "SectionHeader": "  status?: { label: string; tone: 'default' | 'error' | 'info' | 'success' | 'warning' } | null;\n  summary?: React.ReactNode;\n  sx?: Record<string, unknown> | ((theme: unknown) => Record<string, unknown>) | ReadonlyArray<Record<string, unknown> | ((theme: unknown) => Record<string, unknown>) | false | null | undefined>;\n  title: string;",
     "SettingRow": "  action?: React.ReactNode;\n  description?: React.ReactNode;\n  sx?: Record<string, unknown> | ((theme: unknown) => Record<string, unknown>) | ReadonlyArray<Record<string, unknown> | ((theme: unknown) => Record<string, unknown>) | false | null | undefined>;\n  title: string;",
     "SettingsWithVaultView": "  historyApi?: unknown;\n  pairingApi?: unknown;\n  activationApi?: unknown;\n  vaultApi?: unknown;",
-    "SetupPrompt": "  extensionConnected?: boolean;\n  fullAnalyticsReady?: boolean;\n  historyEnabled?: boolean;\n  title: string;",
+    "SetupPrompt": "  extensionConnected?: boolean;\n  fullAnalyticsReady?: boolean;\n  title: string;",
     "StatusChip": "  label: React.ReactNode;\n  tone?: 'default' | 'error' | 'info' | 'success' | 'warning';\n  size?: 'small' | 'medium';\n  settled?: boolean;\n  onClick?: (event: unknown) => void;",
     "ThemeToggle": "  // No props.",
     "TopicsTable": "  topics: ReadonlyArray<unknown>;",

@@ -8,6 +8,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 ## Accepted
 
+- [ADR 0047: Keep onboarding in one persistent browser workspace](0047-persistent-onboarding-workspace.md)
+
 - [ADR 0001: Agent owns raw ingestion](0001-agent-owned-raw-ingestion.md)
 - [ADR 0002: Brain owns derived presence](0002-brain-derived-presence.md)
 - [ADR 0003: Bind role and account identity to each socket](0003-immutable-socket-identity.md)

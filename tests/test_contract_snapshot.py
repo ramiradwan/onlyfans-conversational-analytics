@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from tools.regenerate_contract_snapshot import (
+    APPROVED_PREVIOUS_INVENTORIES,
     APPROVED_SOURCE_COMMIT,
     APPROVED_SOURCE_MANIFEST_SHA256,
     APPROVED_SOURCE_REPOSITORY,
@@ -20,6 +21,7 @@ from tools.regenerate_contract_snapshot import (
     EXPORT_SET,
     EXPORT_SOURCES,
     SOURCE_MANIFEST_TARGET,
+    _copy_exact_file,
     build_records,
     selected_pairing_profile,
     selected_progress_profile,
@@ -61,6 +63,29 @@ EXPECTED_APPROVED_BYTES = {
 }
 
 
+def test_pin_migration_cannot_replace_unknown_previous_inventory_bytes(tmp_path: Path) -> None:
+    previous = tmp_path / "previous.json"
+    candidate = tmp_path / "candidate.json"
+    previous.write_bytes(b"unexpected prior inventory\n")
+    candidate.write_bytes(b"reviewed new inventory\n")
+    for relative in APPROVED_PREVIOUS_INVENTORIES:
+        with pytest.raises(SystemExit, match="immutable"):
+            _copy_exact_file(candidate, previous, relative)
+    assert previous.read_bytes() == b"unexpected prior inventory\n"
+
+
+def test_pin_migration_cannot_replace_released_schema_bytes(tmp_path: Path) -> None:
+    previous = tmp_path / "schema.json"
+    candidate = tmp_path / "changed.json"
+    previous.write_bytes(b"released bytes\n")
+    candidate.write_bytes(b"new meaning\n")
+    with pytest.raises(SystemExit, match="immutable"):
+        _copy_exact_file(
+            candidate, previous, "schemas/provisioning/v1/onboarding-progress-report.schema.json"
+        )
+    assert previous.read_bytes() == b"released bytes\n"
+
+
 @pytest.mark.contract_integrity
 def test_selected_snapshot_matches_its_independent_consumer_pin() -> None:
     manifest = verify_snapshot_integrity(ROOT)
@@ -92,9 +117,11 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "5ced81122666923d82eb212ffd0d4643e56952fe6027a1308c12cc06c50315a1"
-    assert pin["contract_manifest_sha256"] == "827eda31ec62e156fcc16cf7b7dbf09ddddb1019ed920e322be28d21c5bf30f4"
+    assert pin["aggregate_bundle_sha256"] == "77f9f748ddbeddba1eb1af6f964397e5588b163def5e8937be4ee3049d9d90e2"
+    assert pin["contract_manifest_sha256"] == "14693de25efdd6732f3da36baaa7b2d96e034c429b1438e3192f37533c89d0b0"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
+        "initial-installation-handoff-v1": "733d48ac8587a4491bc72e65bc2bee005a960b8fdade29e2bb5fedfb1edad258",
+        "onboarding-continuity-v1": "3b1cc9a0be0a5ccbd882b9d69c5b77cb859246d7b0f1f680003eea3bc807437b",
         "capability-license-v1": "c87d4ea9e70a856ab21888ddc048ebada5837713f97e30599af4c66536a2d5d1",
         "installation-claim-package-v1": "5bb58f5f2f3938a69d6381efeb38b0e4d6417aece0482ff337dafb8edb08483d",
         "bootstrap-recovery-v2": "f4205383eee5d5fcf7b6a394fdad3e3cab1a5ccb02ea63dece068a6f02e04596",

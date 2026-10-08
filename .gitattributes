@@ -20,6 +20,12 @@ tests/fixtures/engineering-attestation-v1-ed25519.json text eol=lf
 # Vendored Legal evidence JSON is integrity-checked as exact source bytes.
 shared/legal/*.json text eol=lf
 
+# Onboarding fixtures and their qualification source hashes are byte-stable.
+shared/onboarding/** text eol=lf
+extension/runtime/onboarding-workspace.mjs text eol=lf
+extension/qualification/workspace-feasibility.* text eol=lf
+extension/qualification/evidence/workspace-feasibility.json text eol=lf
+
 # Native Snow qualification lock is a reviewed supply-chain input and must be
 # byte-identical across Windows and non-Windows checkouts.
 native/companion-snow/** text eol=lf

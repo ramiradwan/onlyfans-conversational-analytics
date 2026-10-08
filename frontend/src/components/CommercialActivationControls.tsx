@@ -146,13 +146,17 @@ export function CommercialActivationControls({
   return (
     <Panel sx={{ gap: 1 }}>
       <SectionHeader
-        sx={{ height: { xs: '5.5rem', sm: '3rem' }, position: 'relative', '& > :first-child': { width: '100%' }, '& h2': { pr: '9rem' }, '& > [aria-live]': { position: 'absolute', top: 0, right: 0, width: '8rem', height: '1.5rem', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
+        sx={{ minHeight: { xs: '5.5rem', sm: '3rem' }, position: 'relative', flexDirection: { xs: 'column', sm: 'row' }, rowGap: { xs: 1, sm: 0 },
+          '& > :first-child': { width: '100%' }, '& h2': { pr: { xs: 0, sm: '9rem' } },
+          '& > [aria-live]': { display: 'flex', position: { xs: 'static', sm: 'absolute' }, top: 0, right: 0, m: 0, width: '100%', maxWidth: '8rem', minHeight: '1.5rem',
+            '& .MuiChip-root': { width: '100%', height: 'auto', minHeight: '1.5rem' },
+            '& .MuiChip-label': { width: '100%', textAlign: 'left', whiteSpace: 'normal' } } }}
         status={status}
         summary="Adds tone, reply, and topic insights to your conversations."
         title="Full analytics"
       />
 
-      <ReservedNotice id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
+      <ReservedNotice essential id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
         : checking ? { title: '', body: 'Checking activation…', severity: 'info' }
           : activeButBlocked ? { title: "New messages aren't being analyzed", body: "Your activation is fine, but analysis can't run right now. Your existing numbers are still available.", severity: 'warning' }
             : activationUnavailable || readiness === null ? { title: '', body: "Your activation couldn't be checked. Nothing has changed.", severity: 'warning' } : null} />
@@ -200,7 +204,7 @@ export function CommercialActivationControls({
                   </Button>
                 </Box>
               )}
-              <ReservedNotice id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />
+              <ReservedNotice essential id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />
             </Stack>
             <Stack spacing={1.5}>
               <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
@@ -219,7 +223,7 @@ export function CommercialActivationControls({
                 value={code}
               />
             </Stack>
-            <StatusLine id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />
+            <StatusLine essential id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />
           </Stack>
         </DialogContent>
         <DialogActions>

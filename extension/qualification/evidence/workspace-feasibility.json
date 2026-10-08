@@ -1,0 +1,73 @@
+{
+  "schema": "ofca-workspace-feasibility/v1",
+  "checks": [
+    {
+      "name": "install into an existing journey adopts and resumes the same tab without focusing it",
+      "passed": true
+    },
+    {
+      "name": "checkbox draft is durable and has no granted authority",
+      "passed": true
+    },
+    {
+      "name": "extension, hosted, provisioning and Bridge navigation preserve the same browser tab",
+      "passed": true
+    },
+    {
+      "name": "controlled fixture Brain restart reconnects its event stream without polling or a new tab",
+      "passed": true
+    },
+    {
+      "name": "worker restart restores durable draft and reuses the current trusted page",
+      "passed": true
+    },
+    {
+      "name": "repeated explicit toolbar opens reuse the workspace without resetting its current route",
+      "passed": true
+    },
+    {
+      "name": "closing and reopening the workspace restores its draft without modifying a user tab",
+      "passed": true
+    },
+    {
+      "name": "existing OnlyFans tab retains its document and unsaved draft with zero navigation or reload",
+      "passed": true
+    }
+  ],
+  "browser": "153.0.8010.12",
+  "generated_at": "2026-10-08T13:09:55.543Z",
+  "scope": "Real bundled MV3 coordinator and browser lifecycle; fixture hosted and Brain services; no production sign-in, app installer, pairing, or live OnlyFans account.",
+  "evidence": {
+    "preinstall_runtime_available": false,
+    "brain_restart": {
+      "server_starts": 2,
+      "reconnect_requests": 1,
+      "new_epoch": 2
+    },
+    "worker_restart": {
+      "stop": "Chrome serviceworker-internals Stop control",
+      "stopped_status_observed": true,
+      "worker_nonce_changed": true
+    },
+    "existing_user_tab": {
+      "navigations_or_reloads": 0,
+      "unsaved_draft_preserved": true
+    },
+    "package_csp": "script-src 'self'; object-src 'self'",
+    "source_sha256": "16aa7ec7480e5ccdf22760c2c58d93721f896f2e9e234fc0ce640c3a6d9bf68c",
+    "harness_sha256": "a79df5f4ec77af7eb970efae9ea62f17e2225a7c01efe8a4eb2489ac9bd386a4",
+    "bundle_sha256": "00b957eb567cbba0ea0b434f1c6511710a4fb725c3ddc2cb7017274ae3de15bc",
+    "permissions": [
+      "storage"
+    ],
+    "host_permissions": [
+      "http://bridge.localhost/*",
+      "https://onboarding.example.test/*"
+    ]
+  },
+  "limitations": [
+    "Existing pre-install documents cannot be assumed to gain chrome.runtime. This package automatically navigates only the exact registered setup tab to its extension route; it never reloads OnlyFans.",
+    "The first-party origin permission is necessary to find and validate pre-install workspace tabs without a broad tabs permission. Production manifest and customer permission-copy review belong to integration.",
+    "Controlled restart uses a real stopped/restarted HTTP event-stream fixture, not the Windows Brain executable. Authentication/session re-establishment, installed app protocol and production shutdown ordering remain integration gates."
+  ]
+}
