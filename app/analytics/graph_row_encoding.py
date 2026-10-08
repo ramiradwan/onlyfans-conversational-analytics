@@ -52,9 +52,13 @@ def _base(row: StoredRow, account: str) -> dict[str, Any]:
             "occurred_at": _occurred_at(row["occurred_at"]), "properties": properties}
 
 
+_CANONICAL_ENCODER = json.JSONEncoder(
+    ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+)
+
+
 def _encode(record: dict[str, Any]) -> bytes:
-    return json.dumps(record, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return _CANONICAL_ENCODER.encode(record).encode("utf-8")
 
 
 def _node_record(row: StoredRow, account: str) -> dict[str, Any]:

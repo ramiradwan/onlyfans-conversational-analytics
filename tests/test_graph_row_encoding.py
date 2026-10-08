@@ -1,6 +1,7 @@
 """Compare streamed storage encoding with independent public graph models."""
 
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 import json
 
 import pytest
@@ -155,3 +156,60 @@ def test_verification_matches_materialized_graph_without_model_allocation(tmp_pa
         assert result.nodes == result.edges == []
     finally:
         cleanup(fixture)
+
+
+def _raw_row(kind, properties, at=None):
+    row = node_row(at=at) if kind == "node" else edge_row(at=at, sequence=2**40)
+    row["properties_json"] = properties
+    return row
+
+
+def _independent_public_bytes(kind, row):
+    return public_bytes((_node if kind == "node" else _edge)(row))
+
+
+RAW_JSON_CASES = [
+    ("node", '{"direction":"outbound","direction":"inbound","source_ordinal":0}'),
+    ("node", r'{"direc\u0074ion":"outbound","direction":"inbound"}'),
+    ("node", '{"source_ordinal":-0,"character_count":9007199254740993,"direction":"inbound"}'),
+    ("node", '{"source_ordinal":true,"source_ordinal":7}'),
+    ("edge", '{"scope":"message","interval_seconds":-0.0}'),
+    ("edge", '{"interval_seconds":1e-09,"scope":"conversation"}'),
+    ("edge", '{"interval_seconds":1e100,"scope":"message"}'),
+    ("edge", '{"interval_seconds":NaN,"interval_seconds":null}'),
+]
+
+
+@pytest.mark.parametrize("at", [None, "2026-01-01T00:15:00+00:30",
+                                "9999-12-31T22:59:59.999999+01:00"])
+@pytest.mark.parametrize("kind,properties", RAW_JSON_CASES)
+def test_raw_json_spelling_keeps_independent_public_model_bytes(kind, properties, at):
+    row = _raw_row(kind, properties, at)
+    expected = _independent_public_bytes(kind, row)
+    encode = node_bytes if kind == "node" else edge_bytes
+    assert encode(row, ACCOUNT)[1] == expected
+
+
+@pytest.mark.parametrize("kind", ["node", "edge"])
+def test_rejected_row_does_not_affect_next_canonical_encoding(kind):
+    encode = node_bytes if kind == "node" else edge_bytes
+    property_name = "character_count" if kind == "node" else "interval_seconds"
+    valid = _raw_row(kind, json.dumps({property_name: 0}))
+    expected = _independent_public_bytes(kind, valid)
+    assert encode(valid, ACCOUNT)[1] == expected
+    with pytest.raises(ValueError, match="^graph_property_invalid$"):
+        encode(_raw_row(kind, json.dumps({property_name: []})), ACCOUNT)
+    assert encode(valid, ACCOUNT)[1] == expected
+
+
+def test_concurrent_encoding_keeps_independent_bytes_for_every_call():
+    rows = [(kind, _raw_row(kind, properties)) for kind, properties in RAW_JSON_CASES]
+    expected = [_independent_public_bytes(kind, row) for kind, row in rows]
+
+    def checked(index):
+        kind, row = rows[index % len(rows)]
+        encode = node_bytes if kind == "node" else edge_bytes
+        return encode(row, ACCOUNT)[1] == expected[index % len(rows)]
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert all(pool.map(checked, range(128)))
