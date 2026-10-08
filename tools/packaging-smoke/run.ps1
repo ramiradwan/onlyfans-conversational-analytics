@@ -38,7 +38,8 @@ $ExitCode = @{
     AcceptanceFailed = 41
 }
 $script:results = [System.Collections.Generic.List[object]]::new()
-$script:ownedListenerProcessIds = [System.Collections.Generic.List[int]]::new()
+$script:ownedProcessRecords = [ordered]@{}
+$script:launcherProcessRecord = $null
 
 function Write-SmokeProgress {
     param(
@@ -312,45 +313,338 @@ function Invoke-OpenBridge {
         Add-Result -Step 'open-bridge' -Outcome fail -Evidence @{ finding = 'launcher_missing'; path = $launcherPath }
         return $null
     }
+    $process = $null
     try {
+        Initialize-SmokeProcessInterop
         # -WindowStyle Hidden keeps the launcher console off the desktop; without
         # it Start-Process gives a console launcher its own terminal window.
         Write-SmokeProgress -Stage 'launcher-start' -Phase begin
         $process = Start-Process -FilePath $launcherPath -PassThru -WindowStyle Hidden
+        $script:launcherProcessRecord = New-OwnedProcessRecord -Process $process
+        $script:ownedProcessRecords[(Get-OwnedProcessIdentityKey -Record $script:launcherProcessRecord)] = $script:launcherProcessRecord
         Write-SmokeProgress -Stage 'launcher-start' -Phase end -Details @{ process_id = $process.Id }
         Add-Result -Step 'open-bridge' -Outcome pass -Evidence @{
             launcher_path = (Resolve-Path -LiteralPath $launcherPath).Path; process_id = $process.Id
         }
         return $process
     } catch {
+        if ($null -ne $process -and $null -eq $script:launcherProcessRecord) {
+            # Capture failure still leaves the original Start-Process handle owned
+            # by this harness. Stop that instance directly, never reopen its PID.
+            try {
+                [PackagingSmokeNativeProcess]::Stop($process.SafeHandle)
+                [void] [PackagingSmokeNativeProcess]::Wait($process.SafeHandle, 5000)
+            } catch {
+                # The open-bridge failure remains blocking if cleanup also fails.
+            } finally {
+                $process.Dispose()
+            }
+        }
         Add-Result -Step 'open-bridge' -Outcome fail -Evidence @{ finding = 'launcher_start_failed'; exception = $_.Exception.GetType().Name }
         return $null
     }
 }
 
-function Get-DescendantProcessIds {
-    param([Parameter(Mandatory)] [int] $ParentProcessId)
-
-    $descendants = [System.Collections.Generic.List[int]]::new()
-    Write-SmokeProgress -Stage 'process-family-query' -Phase begin -Details @{ parent_process_id = $ParentProcessId }
-    $children = @(Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $ParentProcessId" -ErrorAction Stop)
-    Write-SmokeProgress -Stage 'process-family-query' -Phase end -Details @{
-        parent_process_id = $ParentProcessId; process_ids = @($children | ForEach-Object { [int] $_.ProcessId })
+function Initialize-SmokeProcessInterop {
+    if ('PackagingSmokeNativeProcess' -as [type]) {
+        return
     }
-    foreach ($child in $children) {
-        $childId = [int] $child.ProcessId
-        $descendants.Add($childId)
-        foreach ($descendantId in @(Get-DescendantProcessIds -ParentProcessId $childId)) {
-            $descendants.Add($descendantId)
+    # All observations, termination and waits use the same retained native handle.
+    # No cleanup operation reopens an authority-bearing handle from a numeric PID.
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+public static class PackagingSmokeNativeProcess {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetProcessTimes(SafeProcessHandle process, out long creation,
+        out long exit, out long kernel, out long user);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint GetProcessId(SafeProcessHandle process);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(SafeProcessHandle process, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool TerminateProcess(SafeProcessHandle process, uint exitCode);
+
+    public static long[] ReadLifetime(SafeProcessHandle process) {
+        long creation, exit, kernel, user;
+        uint id = GetProcessId(process);
+        if (id == 0 || !GetProcessTimes(process, out creation, out exit, out kernel, out user))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        uint state = WaitForSingleObject(process, 0);
+        if (state != 0 && state != 258)
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        if (state == 0 && exit == 0 &&
+            !GetProcessTimes(process, out creation, out exit, out kernel, out user))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        if (creation <= 0 || (state == 0 && exit <= 0))
+            throw new InvalidOperationException("Process lifetime unavailable.");
+        return new long[] { DateTime.FromFileTimeUtc(creation).Ticks,
+            exit == 0 ? 0 : DateTime.FromFileTimeUtc(exit).Ticks, state == 0 || exit > 0 ? 1 : 0, id };
+    }
+
+    public static void Stop(SafeProcessHandle process) {
+        if (WaitForSingleObject(process, 0) == 0)
+            return;
+        if (!TerminateProcess(process, 1)) {
+            int error = Marshal.GetLastWin32Error();
+            if (WaitForSingleObject(process, 0) != 0)
+                throw new Win32Exception(error);
         }
     }
-    return @($descendants)
+
+    public static bool Wait(SafeProcessHandle process, int milliseconds) {
+        uint state = WaitForSingleObject(process, (uint)Math.Max(0, milliseconds));
+        if (state == 0) return true;
+        if (state == 258) return false;
+        throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+}
+'@
 }
 
-function Get-LauncherFamilyProcessIds {
-    param([Parameter(Mandatory)] [System.Diagnostics.Process] $LauncherProcess)
+function Get-OwnedProcessIdentityKey {
+    param([Parameter(Mandatory)] [psobject] $Record)
 
-    return @(@($LauncherProcess.Id) + @(Get-DescendantProcessIds -ParentProcessId $LauncherProcess.Id) | Select-Object -Unique)
+    return ('{0}:{1}' -f [int] $Record.ProcessId, [long] $Record.CreationUtcTicks)
+}
+
+function New-OwnedProcessRecord {
+    param([Parameter(Mandatory)] $Process)
+
+    Initialize-SmokeProcessInterop
+    $handle = $Process.SafeHandle
+    $lifetime = [PackagingSmokeNativeProcess]::ReadLifetime($handle)
+    if ([int] $lifetime[3] -ne [int] $Process.Id) {
+        throw [InvalidOperationException]::new('Process identity unavailable.')
+    }
+    return [pscustomobject]@{
+        ProcessId = [int] $lifetime[3]
+        CreationUtcTicks = [long] $lifetime[0]
+        Process = $Process
+        Handle = $handle
+    }
+}
+
+function Resolve-SmokeProcessRecord {
+    param([Parameter(Mandatory)] [int] $ProcessId)
+
+    $process = Get-Process -Id $ProcessId -ErrorAction Stop
+    try {
+        return New-OwnedProcessRecord -Process $process
+    } catch {
+        $process.Dispose()
+        throw
+    }
+}
+
+function Get-OwnedProcessLifetime {
+    param([Parameter(Mandatory)] [psobject] $Record)
+
+    $lifetime = [PackagingSmokeNativeProcess]::ReadLifetime($Record.Handle)
+    if ([int] $lifetime[3] -ne [int] $Record.ProcessId -or [long] $lifetime[0] -ne [long] $Record.CreationUtcTicks) {
+        throw [InvalidOperationException]::new('Process identity changed.')
+    }
+    return [pscustomobject]@{
+        CreationUtcTicks = [long] $lifetime[0]
+        ExitUtcTicks = [long] $lifetime[1]
+        HasExited = [bool] $lifetime[2]
+    }
+}
+
+function Close-OwnedProcessRecord {
+    param([Parameter(Mandatory)] [psobject] $Record)
+
+    $Record.Process.Dispose()
+}
+
+function Stop-OwnedProcessRecord {
+    param([Parameter(Mandatory)] [psobject] $Record)
+
+    [void] (Get-OwnedProcessLifetime -Record $Record)
+    [PackagingSmokeNativeProcess]::Stop($Record.Handle)
+}
+
+function Wait-OwnedProcessRecord {
+    param([Parameter(Mandatory)] [psobject] $Record, [int] $RemainingMilliseconds)
+
+    [void] (Get-OwnedProcessLifetime -Record $Record)
+    return [PackagingSmokeNativeProcess]::Wait($Record.Handle, $RemainingMilliseconds)
+}
+
+function Get-SmokeProcessChildren {
+    param([Parameter(Mandatory)] [int] $ParentProcessId, [Parameter(Mandatory)] [datetime] $DeadlineUtc)
+
+    $remainingSeconds = ($DeadlineUtc - [DateTime]::UtcNow).TotalSeconds
+    if ($remainingSeconds -lt 1) {
+        throw [TimeoutException]::new('Process family deadline reached.')
+    }
+    # Zero means the server default, so never pass zero or renew the probe deadline.
+    $operationSeconds = [uint32] [Math]::Min(2, [Math]::Floor($remainingSeconds))
+    return @(Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $ParentProcessId" `
+        -Property ProcessId, ParentProcessId, CreationDate -OperationTimeoutSec $operationSeconds -ErrorAction Stop)
+}
+
+function Get-LauncherFamilyRecords {
+    param(
+        [Parameter(Mandatory)] [psobject] $LauncherRecord,
+        [Parameter(Mandatory)] [datetime] $DeadlineUtc,
+        [System.Collections.IDictionary] $OwnedRecords = $script:ownedProcessRecords,
+        [scriptblock] $QueryChildren = { param($parentId, $deadline) Get-SmokeProcessChildren -ParentProcessId $parentId -DeadlineUtc $deadline },
+        [scriptblock] $ResolveProcess = { param($processId) Resolve-SmokeProcessRecord -ProcessId $processId },
+        [scriptblock] $ReadLifetime = { param($record) Get-OwnedProcessLifetime -Record $record },
+        [scriptblock] $ReleaseRecord = { param($record) Close-OwnedProcessRecord -Record $record },
+        [scriptblock] $UtcNow = { [DateTime]::UtcNow }
+    )
+
+    $rootKey = Get-OwnedProcessIdentityKey -Record $LauncherRecord
+    $OwnedRecords[$rootKey] = $LauncherRecord
+    $family = [ordered]@{ $rootKey = $LauncherRecord }
+    $visited = [System.Collections.Generic.HashSet[string]]::new()
+    $identityByProcessId = @{ ([int] $LauncherRecord.ProcessId) = $rootKey }
+    $pending = [System.Collections.Generic.Queue[object]]::new()
+    $pending.Enqueue($LauncherRecord)
+    while ($pending.Count -gt 0) {
+        if ((& $UtcNow) -ge $DeadlineUtc) {
+            throw [TimeoutException]::new('Process family deadline reached.')
+        }
+        $parent = $pending.Dequeue()
+        $parentKey = Get-OwnedProcessIdentityKey -Record $parent
+        if (-not $visited.Add($parentKey)) {
+            continue
+        }
+        $parentLifetime = & $ReadLifetime $parent
+        if ([long] $parentLifetime.CreationUtcTicks -ne [long] $parent.CreationUtcTicks) {
+            throw [InvalidOperationException]::new('Parent identity changed.')
+        }
+        Write-SmokeProgress -Stage 'process-family-query' -Phase begin -Details @{ parent_process_id = $parent.ProcessId }
+        $children = @(& $QueryChildren ([int] $parent.ProcessId) $DeadlineUtc)
+        Write-SmokeProgress -Stage 'process-family-query' -Phase end -Details @{
+            parent_process_id = $parent.ProcessId; process_ids = @($children | ForEach-Object { [int] $_.ProcessId })
+        }
+        if ((& $UtcNow) -ge $DeadlineUtc) {
+            throw [TimeoutException]::new('Process family deadline reached.')
+        }
+        foreach ($child in $children) {
+            if ((& $UtcNow) -ge $DeadlineUtc) {
+                throw [TimeoutException]::new('Process family deadline reached.')
+            }
+            $candidate = $null
+            $retained = $false
+            try {
+                if ($null -eq $child -or $null -eq $child.PSObject.Properties['ProcessId'] -or
+                    $null -eq $child.PSObject.Properties['ParentProcessId'] -or $null -eq $child.PSObject.Properties['CreationDate'] -or
+                    [int] $child.ProcessId -le 0 -or [int] $child.ParentProcessId -ne [int] $parent.ProcessId -or
+                    $null -eq $child.CreationDate -or $child.CreationDate -isnot [datetime] -or
+                    $child.CreationDate.Kind -eq [DateTimeKind]::Unspecified) {
+                    continue
+                }
+                $cimCreationTicks = [long] $child.CreationDate.ToUniversalTime().Ticks
+                try {
+                    $candidate = & $ResolveProcess ([int] $child.ProcessId)
+                    if ($null -ne $candidate) {
+                        $candidateLifetime = & $ReadLifetime $candidate
+                    }
+                } catch {
+                    # A vanished or inaccessible candidate never grants ownership.
+                    continue
+                }
+                if ($null -eq $candidate -or [int] $candidate.ProcessId -ne [int] $child.ProcessId) {
+                    continue
+                }
+                $creationTicks = [long] $candidate.CreationUtcTicks
+                # CIM_DATETIME resolves microseconds; native FILETIME resolves 100ns.
+                if ($candidateLifetime.HasExited -or [long] $candidateLifetime.CreationUtcTicks -ne $creationTicks -or
+                    ($cimCreationTicks - ($cimCreationTicks % 10)) -ne ($creationTicks - ($creationTicks % 10))) {
+                    continue
+                }
+                # Re-read the original parent handle after resolving the child. A PID
+                # reused after that parent exited cannot authorize its new children.
+                $parentLifetime = & $ReadLifetime $parent
+                if ([long] $parentLifetime.CreationUtcTicks -ne [long] $parent.CreationUtcTicks -or
+                    $creationTicks -lt [long] $parentLifetime.CreationUtcTicks -or
+                    ($parentLifetime.HasExited -and ($parentLifetime.ExitUtcTicks -le 0 -or $creationTicks -gt [long] $parentLifetime.ExitUtcTicks))) {
+                    continue
+                }
+                $candidateKey = Get-OwnedProcessIdentityKey -Record $candidate
+                if ($identityByProcessId.ContainsKey([int] $candidate.ProcessId) -and
+                    $identityByProcessId[[int] $candidate.ProcessId] -ne $candidateKey) {
+                    throw [InvalidOperationException]::new('Ambiguous process family identity.')
+                }
+                $identityByProcessId[[int] $candidate.ProcessId] = $candidateKey
+                if ($OwnedRecords.Contains($candidateKey) -and
+                    [Object]::ReferenceEquals($OwnedRecords[$candidateKey], $candidate)) {
+                    $retained = $true
+                }
+                if ($family.Contains($candidateKey)) {
+                    continue
+                }
+                if ($OwnedRecords.Contains($candidateKey)) {
+                    $existing = $OwnedRecords[$candidateKey]
+                    if (-not [Object]::ReferenceEquals($existing, $candidate)) {
+                        [void] (& $ReleaseRecord $candidate)
+                    }
+                    $candidate = $existing
+                } else {
+                    $OwnedRecords[$candidateKey] = $candidate
+                }
+                $retained = $true
+                $family[$candidateKey] = $candidate
+                $pending.Enqueue($candidate)
+            } finally {
+                if ($null -ne $candidate -and -not $retained) {
+                    [void] (& $ReleaseRecord $candidate)
+                }
+            }
+        }
+    }
+    return @($family.Values)
+}
+
+function Test-ListenerOwnedProcess {
+    param(
+        [Parameter(Mandatory)] [int] $OwnerProcessId,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $OwnedRecords,
+        [scriptblock] $ResolveProcess = { param($processId) Resolve-SmokeProcessRecord -ProcessId $processId },
+        [scriptblock] $ReadLifetime = { param($record) Get-OwnedProcessLifetime -Record $record },
+        [scriptblock] $ReleaseRecord = { param($record) Close-OwnedProcessRecord -Record $record },
+        [scriptblock] $GetListenerProcessIds = { Get-ListeningProcessIdsForPort -Port 17871 }
+    )
+
+    $current = $null
+    try {
+        $current = & $ResolveProcess $OwnerProcessId
+        if ($null -eq $current -or [int] $current.ProcessId -ne $OwnerProcessId) {
+            return $false
+        }
+        $lifetime = & $ReadLifetime $current
+        if ($lifetime.HasExited -or [long] $lifetime.CreationUtcTicks -ne [long] $current.CreationUtcTicks) {
+            return $false
+        }
+        $matching = @($OwnedRecords | Where-Object {
+            [int] $_.ProcessId -eq $OwnerProcessId -and [long] $_.CreationUtcTicks -eq [long] $current.CreationUtcTicks
+        })
+        if ($matching.Count -ne 1) {
+            return $false
+        }
+        $listenerIds = @(& $GetListenerProcessIds)
+        # The port lookup can race process exit/PID reuse. Recheck the retained
+        # identities after observing the current owner as well as before HTTP.
+        $lifetime = & $ReadLifetime $current
+        $ownedLifetime = & $ReadLifetime $matching[0]
+        return (-not $ownedLifetime.HasExited -and
+            -not $lifetime.HasExited -and [long] $lifetime.CreationUtcTicks -eq [long] $current.CreationUtcTicks -and
+            [long] $ownedLifetime.CreationUtcTicks -eq [long] $matching[0].CreationUtcTicks -and
+            $listenerIds.Count -eq 1 -and [int] $listenerIds[0] -eq $OwnerProcessId)
+    } catch {
+        return $false
+    } finally {
+        if ($null -ne $current) {
+            [void] (& $ReleaseRecord $current)
+        }
+    }
 }
 
 function Wait-ForProvisioningPortRelease {
@@ -366,46 +660,90 @@ function Wait-ForProvisioningPortRelease {
 }
 
 function Stop-LauncherProcess {
-    param([System.Diagnostics.Process] $LauncherProcess)
+    param(
+        $LauncherProcess,
+        $LauncherRecord = $script:launcherProcessRecord,
+        [System.Collections.IDictionary] $OwnedRecords = $script:ownedProcessRecords,
+        [scriptblock] $RefreshFamily = { param($parentRecord, $deadline, $owned) Get-LauncherFamilyRecords -LauncherRecord $parentRecord -DeadlineUtc $deadline -OwnedRecords $owned },
+        [scriptblock] $ReadLifetime = { param($record) Get-OwnedProcessLifetime -Record $record },
+        [scriptblock] $StopRecord = { param($record) Stop-OwnedProcessRecord -Record $record },
+        [scriptblock] $WaitRecord = { param($record, $milliseconds) Wait-OwnedProcessRecord -Record $record -RemainingMilliseconds $milliseconds },
+        [scriptblock] $ReleaseRecord = { param($record) Close-OwnedProcessRecord -Record $record },
+        [scriptblock] $PortRelease = { Wait-ForProvisioningPortRelease },
+        [scriptblock] $UtcNow = { [DateTime]::UtcNow }
+    )
 
-    if ($null -eq $LauncherProcess) {
+    if ($null -eq $LauncherProcess -and $OwnedRecords.Count -eq 0) {
         return
     }
     try {
-        $descendantProcessIds = @(Get-DescendantProcessIds -ParentProcessId $LauncherProcess.Id)
-        [array]::Reverse($descendantProcessIds)
-        $processIds = @($descendantProcessIds) + @($script:ownedListenerProcessIds) + @($LauncherProcess.Id) | Select-Object -Unique
-        $processesRequestedToStop = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
+        $processExitStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $processExitDeadline = (& $UtcNow).AddSeconds(5)
+        $stopFailure = $null
+        try {
+            if ($null -eq $LauncherRecord) {
+                throw [InvalidOperationException]::new('Owned launcher identity unavailable.')
+            }
+            # A child need not bind the provisioning port to require cleanup.
+            # Refresh only from the original pinned launcher, inside the existing
+            # shutdown budget; partial discoveries remain owned if refresh fails.
+            [void] (& $RefreshFamily $LauncherRecord $processExitDeadline $OwnedRecords)
+            if ($processExitStopwatch.ElapsedMilliseconds -ge 5000 -or (& $UtcNow) -ge $processExitDeadline) {
+                throw [TimeoutException]::new('Process cleanup deadline reached.')
+            }
+        } catch {
+            $stopFailure = $_.Exception.GetType().Name
+        }
+        # Records are inserted root-first as ownership is proved. Reversing them
+        # stops children before their parent without reopening any process by PID.
+        $records = @($OwnedRecords.Values)
+        if ($records.Count -eq 0) {
+            throw [InvalidOperationException]::new('Owned launcher identity unavailable.')
+        }
+        [array]::Reverse($records)
+        $processesRequestedToStop = [System.Collections.Generic.List[object]]::new()
         $stoppedProcessIds = [System.Collections.Generic.List[int]]::new()
-        foreach ($processId in $processIds) {
-            $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
-            if ($null -ne $process -and -not $process.HasExited) {
-                Write-SmokeProgress -Stage 'process-stop' -Phase begin -Details @{ process_id = $processId }
-                Stop-Process -InputObject $process -Force -ErrorAction Stop
-                Write-SmokeProgress -Stage 'process-stop' -Phase end -Details @{ process_id = $processId }
-                $processesRequestedToStop.Add($process)
+        foreach ($record in $records) {
+            try {
+                $lifetime = & $ReadLifetime $record
+                if ([long] $lifetime.CreationUtcTicks -ne [long] $record.CreationUtcTicks) {
+                    throw [InvalidOperationException]::new('Cleanup identity changed.')
+                }
+                if (-not $lifetime.HasExited) {
+                    Write-SmokeProgress -Stage 'process-stop' -Phase begin -Details @{ process_id = $record.ProcessId }
+                    [void] (& $StopRecord $record)
+                    Write-SmokeProgress -Stage 'process-stop' -Phase end -Details @{ process_id = $record.ProcessId }
+                    $processesRequestedToStop.Add($record)
+                }
+            } catch {
+                # Continue releasing the other owned instances, never a replacement.
+                $stopFailure = $_.Exception.GetType().Name
             }
         }
-        $processExitStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-        foreach ($process in $processesRequestedToStop) {
-            $remainingMilliseconds = [Math]::Max(0, 5000 - [int]$processExitStopwatch.ElapsedMilliseconds)
-            Write-SmokeProgress -Stage 'process-exit-wait' -Phase begin -Details @{ process_id = $process.Id }
-            if (-not $process.WaitForExit($remainingMilliseconds)) {
-                Write-SmokeProgress -Stage 'process-exit-wait' -Phase end -Details @{ process_id = $process.Id; exited = $false }
+        foreach ($record in $processesRequestedToStop) {
+            $remainingMilliseconds = [int] [Math]::Floor([Math]::Max(0, [Math]::Min(
+                5000 - $processExitStopwatch.ElapsedMilliseconds, ($processExitDeadline - (& $UtcNow)).TotalMilliseconds)))
+            Write-SmokeProgress -Stage 'process-exit-wait' -Phase begin -Details @{ process_id = $record.ProcessId }
+            if (-not (& $WaitRecord $record $remainingMilliseconds)) {
+                Write-SmokeProgress -Stage 'process-exit-wait' -Phase end -Details @{ process_id = $record.ProcessId; exited = $false }
                 Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{
-                    finding = 'launcher_process_not_exited'; process_id = $process.Id
+                    finding = 'launcher_process_not_exited'; process_id = $record.ProcessId
                     stopped_process_ids = @($stoppedProcessIds); timeout_seconds = 5
                 }
                 return
             }
-            Write-SmokeProgress -Stage 'process-exit-wait' -Phase end -Details @{ process_id = $process.Id; exited = $true }
-            $stoppedProcessIds.Add($process.Id)
+            Write-SmokeProgress -Stage 'process-exit-wait' -Phase end -Details @{ process_id = $record.ProcessId; exited = $true }
+            $stoppedProcessIds.Add([int] $record.ProcessId)
         }
-        $portRelease = Wait-ForProvisioningPortRelease
-        if (-not $portRelease.Released) {
+        if ($null -ne $stopFailure) {
+            Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{ finding = 'launcher_stop_failed'; exception = $stopFailure }
+            return
+        }
+        $portReleaseResult = & $PortRelease
+        if (-not $portReleaseResult.Released) {
             Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{
                 finding = 'provisioning_listener_port_not_released'; stopped_process_ids = @($stoppedProcessIds)
-                listener_process_ids = @($portRelease.ListenerProcessIds); port_released = $false
+                listener_process_ids = @($portReleaseResult.ListenerProcessIds); port_released = $false
             }
             return
         }
@@ -414,6 +752,15 @@ function Stop-LauncherProcess {
         }
     } catch {
         Add-Result -Step 'close-bridge' -Outcome fail -Evidence @{ finding = 'launcher_stop_failed'; exception = $_.Exception.GetType().Name }
+    } finally {
+        foreach ($record in @($OwnedRecords.Values)) {
+            try {
+                [void] (& $ReleaseRecord $record)
+            } catch {
+                # Handle release must continue for the remaining owned instances.
+            }
+        }
+        $OwnedRecords.Clear()
     }
 }
 
@@ -529,6 +876,9 @@ function Invoke-VerifyProvisioningListener {
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     $lastFailure = 'listener_not_ready'
+    # One seam covers both observations, so ownership-bypass mutation tests still
+    # exercise the complete negative control, including the post-health check.
+    $listenerOwnershipProbe = { param($processId, $records) Test-ListenerOwnedProcess -OwnerProcessId $processId -OwnedRecords $records }
     do {
         try {
             $listenerProcessIds = @(Get-ListeningProcessIdsForPort -Port 17871)
@@ -538,8 +888,9 @@ function Invoke-VerifyProvisioningListener {
                 continue
             }
             $ownerProcessId = [int] $listenerProcessIds[0]
-            $ownedProcessIds = @(Get-LauncherFamilyProcessIds -LauncherProcess $LauncherProcess)
-            $listenerOwnedByLauncher = $ownerProcessId -in $ownedProcessIds
+            $ownedRecords = @(Get-LauncherFamilyRecords -LauncherRecord $script:launcherProcessRecord -DeadlineUtc $deadline)
+            $ownedProcessIds = @($ownedRecords | ForEach-Object { [int] $_.ProcessId })
+            $listenerOwnedByLauncher = & $listenerOwnershipProbe $ownerProcessId $ownedRecords
             if (-not $listenerOwnedByLauncher) {
                 Add-Result -Step 'provisioning-listener' -Outcome fail -Evidence @{
                     finding = 'listener_owned_by_unrelated_process'; endpoint = 'http://127.0.0.1:17871/health'
@@ -548,13 +899,21 @@ function Invoke-VerifyProvisioningListener {
                 }
                 return $false
             }
+            if ([DateTime]::UtcNow -ge $deadline) {
+                throw [TimeoutException]::new('Provisioning listener deadline reached.')
+            }
             Write-SmokeProgress -Stage 'listener-health-request' -Phase begin -Details @{ process_id = $ownerProcessId }
             $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:17871/health' -TimeoutSec 2
             Write-SmokeProgress -Stage 'listener-health-request' -Phase end -Details @{ status_code = $response.StatusCode }
             $health = $response.Content | ConvertFrom-Json
             if ($response.StatusCode -eq 200 -and $health.status -eq 'ok') {
-                if (-not $script:ownedListenerProcessIds.Contains($ownerProcessId)) {
-                    $script:ownedListenerProcessIds.Add($ownerProcessId)
+                if ([DateTime]::UtcNow -ge $deadline) {
+                    throw [TimeoutException]::new('Provisioning listener deadline reached.')
+                }
+                if (-not (& $listenerOwnershipProbe $ownerProcessId $ownedRecords)) {
+                    $lastFailure = 'listener_owner_not_unique'
+                    Start-Sleep -Milliseconds 250
+                    continue
                 }
                 Add-Result -Step 'provisioning-listener' -Outcome pass -Evidence @{
                     endpoint = 'http://127.0.0.1:17871/health'; status_code = $response.StatusCode; status = $health.status

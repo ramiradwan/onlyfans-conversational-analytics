@@ -44,14 +44,16 @@ SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy
 
 
 @pytest.fixture(autouse=True)
-def _provisioning_resources() -> Iterator[None]:
+def _provisioning_resources(request: pytest.FixtureRequest) -> Iterator[None]:
     """Serialize every smoke run against other suite runs on this machine.
 
     Each run drives the fixed provisioning port through `run.ps1`, so runs that
     overlap read one another's listeners as a port-preflight abort.
     """
 
-    if os.name != "nt":
+    # This helper-only test injects every process operation. It must not probe or
+    # reserve the live provisioning port merely to test synthetic identities.
+    if request.node.originalname == "test_process_identity_graph_and_cleanup" or os.name != "nt":
         yield
         return
     with exclusive_resource.exclusive_provisioning_resources():
@@ -880,11 +882,11 @@ def test_unrelated_health_listener_cannot_satisfy_the_launcher_check(
     assert listener["evidence"]["finding"] == "listener_owned_by_unrelated_process"
 
     mutated_script = tmp_path / "run-without-listener-binding.ps1"
-    derivation = "$listenerOwnedByLauncher = $ownerProcessId -in $ownedProcessIds"
+    derivation = "$listenerOwnershipProbe = { param($processId, $records) Test-ListenerOwnedProcess -OwnerProcessId $processId -OwnedRecords $records }"
     assert derivation in original
     mutated_script.write_text(
         _without_port_preflight(original).replace(
-            derivation, "$listenerOwnedByLauncher = $true", 1
+            derivation, "$listenerOwnershipProbe = { param($processId, $records) $true }", 1
         ),
         encoding="utf-8",
     )
@@ -926,10 +928,10 @@ def test_installed_listener_is_attributed_to_the_launcher_family(
 
     mutated_script = tmp_path / "run-with-unrelated-attribution.ps1"
     original = SMOKE_SCRIPT.read_text(encoding="utf-8")
-    derivation = "$listenerOwnedByLauncher = $ownerProcessId -in $ownedProcessIds"
+    derivation = "$listenerOwnershipProbe = { param($processId, $records) Test-ListenerOwnedProcess -OwnerProcessId $processId -OwnedRecords $records }"
     assert derivation in original
     mutated_script.write_text(
-        original.replace(derivation, "$listenerOwnedByLauncher = $ownerProcessId -eq 0", 1),
+        original.replace(derivation, "$listenerOwnershipProbe = { param($processId, $records) $processId -eq 0 }", 1),
         encoding="utf-8",
     )
     mutated_result, mutated_transcript = _run_smoke(
@@ -942,6 +944,269 @@ def test_installed_listener_is_attributed_to_the_launcher_family(
     assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "fail"
     with pytest.raises(AssertionError):
         assert _step(mutated_transcript, "provisioning-listener")["outcome"] == "pass"
+
+
+_PROCESS_IDENTITY_PROBE = r"""
+param([string] $SourcePath, [string] $Scenario)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$parseErrors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile($SourcePath, [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count -ne 0) { throw 'production helper parse failed' }
+# Load actual helpers without executing the installer entrypoint or native setup.
+foreach ($definition in $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
+    Invoke-Expression $definition.Extent.Text
+}
+if ($Scenario -in @('native-live-retained-handle','native-exited-retained-handle')) {
+    # Own one idle shell, with no installer, application, network or port use.
+    Initialize-SmokeProcessInterop
+    $command=$(if ($Scenario -eq 'native-exited-retained-handle') { 'exit 0' } else { 'Start-Sleep -Seconds 30' })
+    $process=Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile','-NonInteractive','-Command',$command) -WindowStyle Hidden -PassThru
+    $record=$null
+    try {
+        if ($Scenario -eq 'native-exited-retained-handle' -and -not $process.WaitForExit(5000)) { throw 'owned shell did not exit' }
+        $record=New-OwnedProcessRecord -Process $process
+        $before=Get-OwnedProcessLifetime -Record $record
+        if ($before.HasExited -ne ($Scenario -eq 'native-exited-retained-handle')) { throw 'native lifetime state differs' }
+        Stop-OwnedProcessRecord -Record $record
+        if (-not (Wait-OwnedProcessRecord -Record $record -RemainingMilliseconds 5000)) { throw 'retained native handle wait failed' }
+        $after=Get-OwnedProcessLifetime -Record $record
+        if (-not $after.HasExited -or $after.CreationUtcTicks -ne $before.CreationUtcTicks -or $after.ExitUtcTicks -lt $after.CreationUtcTicks) { throw 'retained instance identity changed' }
+    } finally {
+        if ($null -ne $record) {
+            Stop-OwnedProcessRecord -Record $record
+            [void](Wait-OwnedProcessRecord -Record $record -RemainingMilliseconds 5000)
+            Close-OwnedProcessRecord -Record $record
+        } else {
+            # Start-Process retains this owned shell's original handle as well.
+            if (-not $process.HasExited) { $process.Kill(); [void]$process.WaitForExit(5000) }
+            $process.Dispose()
+        }
+    }
+    [pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+    exit 0
+}
+$script:results = [Collections.Generic.List[object]]::new()
+function Write-SmokeProgress { param($Stage, $Phase, $Details) }
+function Add-Result { param($Step, $Outcome, $Evidence) $script:results.Add([pscustomobject]@{ step=$Step; outcome=$Outcome; evidence=$Evidence }) }
+function Get-Process { throw 'bare PID lookup forbidden in synthetic cleanup' }
+function Stop-Process { throw 'bare PID stop forbidden in synthetic cleanup' }
+$epoch = [DateTime]::new(2026, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+$script:records = @{}
+$script:graph = @{}
+$script:queries = [Collections.Generic.List[int]]::new()
+$script:released = [Collections.Generic.List[object]]::new()
+$script:stopped = [Collections.Generic.List[object]]::new()
+$script:waited = [Collections.Generic.List[object]]::new()
+function New-FakeRecord([int] $Number, [int] $Birth, [int] $Exit = 0) {
+    $record = [pscustomobject]@{
+        ProcessId=$Number; CreationUtcTicks=$epoch.AddSeconds($Birth).Ticks
+        Process=[pscustomobject]@{ Id=$Number; instance=$Birth }
+        Handle=[pscustomobject]@{ instance=$Birth }
+        ExitUtcTicks=$(if ($Exit) { $epoch.AddSeconds($Exit).Ticks } else { 0L })
+    }
+    $script:records[$Number] = $record
+    return $record
+}
+function New-FakeChild([int] $Number, [int] $Birth) {
+    return [pscustomobject]@{ ProcessId=$Number; CreationDate=$epoch.AddSeconds($Birth) }
+}
+$root = New-FakeRecord 101 1
+$owned = @{}
+$query = {
+    param($parentId, $deadline)
+    $script:queries.Add([int]$parentId)
+    if ($Scenario -eq 'query-failure') { throw 'synthetic query failure' }
+    if ($script:graph.ContainsKey([int]$parentId)) { return $script:graph[[int]$parentId] }
+    return @()
+}
+$script:bindings = @{}
+$resolve = {
+    param($number)
+    if ($Scenario -eq 'resolve-failure') { throw [ComponentModel.Win32Exception]::new(5) }
+    if (-not $script:bindings.ContainsKey([int]$number)) { $script:bindings[[int]$number]=0 }
+    $script:bindings[[int]$number]++
+    if ($Scenario -eq 'contradictory-pid' -and $number -eq 102 -and $script:bindings[[int]$number] -eq 2) { [void](New-FakeRecord 102 3) }
+    if ($Scenario -eq 'parent-exits-during-binding' -and $number -eq 102) { $root.ExitUtcTicks=$epoch.AddSeconds(2).Ticks }
+    return $script:records[[int]$number]
+}
+$lifetime = { param($record) return [pscustomobject]@{ CreationUtcTicks=$record.CreationUtcTicks; ExitUtcTicks=$record.ExitUtcTicks; HasExited=($record.ExitUtcTicks -ne 0) } }
+$release = { param($record) $script:released.Add($record) }
+$now = { return $epoch.AddSeconds(100) }
+$deadline = $epoch.AddSeconds(120)
+$expectedIds = @(101)
+$expectedQueries = 1
+switch ($Scenario) {
+    'normal' {
+        [void](New-FakeRecord 102 2); [void](New-FakeRecord 103 3)
+        $script:graph[101]=@(New-FakeChild 102 2); $script:graph[102]=@(New-FakeChild 103 3)
+        $expectedIds=@(101,102,103); $expectedQueries=3
+    }
+    'cycle' {
+        for ($i=1; $i -le 12; $i++) { [void](New-FakeRecord (100+$i) $i) }
+        for ($i=1; $i -lt 12; $i++) { $script:graph[100+$i]=@(New-FakeChild (101+$i) ($i+1)) }
+        $script:graph[112]=@(New-FakeChild 101 1)
+        $root=$script:records[101]; $expectedIds=@(101..112); $expectedQueries=12
+    }
+    'duplicate-self' {
+        [void](New-FakeRecord 102 2)
+        $script:graph[101]=@((New-FakeChild 101 1),(New-FakeChild 102 2),(New-FakeChild 102 2))
+        $script:graph[102]=@(New-FakeChild 102 2)
+        $expectedIds=@(101,102); $expectedQueries=2
+    }
+    'child-before-parent' {
+        [void](New-FakeRecord 102 0); $script:graph[101]=@(New-FakeChild 102 0)
+    }
+    'child-after-parent-exit' {
+        $root=New-FakeRecord 101 1 2
+        [void](New-FakeRecord 102 3); $script:graph[101]=@(New-FakeChild 102 3)
+    }
+    'short-lived-parent' {
+        $root=New-FakeRecord 101 1 3
+        [void](New-FakeRecord 102 2); $script:graph[101]=@(New-FakeChild 102 2)
+        $expectedIds=@(101,102); $expectedQueries=2
+    }
+    'enumeration-binding-race' {
+        [void](New-FakeRecord 102 3); $script:graph[101]=@(New-FakeChild 102 2)
+    }
+    'cim-microseconds-local-time' {
+        $child=New-FakeRecord 102 2; $child.CreationUtcTicks+=7
+        $snapshot=New-FakeChild 102 2; $snapshot.CreationDate=$snapshot.CreationDate.ToLocalTime()
+        $script:graph[101]=@($snapshot); $expectedIds=@(101,102); $expectedQueries=2
+    }
+    'parent-exits-during-binding' {
+        [void](New-FakeRecord 102 3); $script:graph[101]=@(New-FakeChild 102 3)
+    }
+    'missing-birth' {
+        [void](New-FakeRecord 102 2); $script:graph[101]=@([pscustomobject]@{ ProcessId=102; CreationDate=$null })
+    }
+    'resolve-failure' {
+        [void](New-FakeRecord 102 2); $script:graph[101]=@(New-FakeChild 102 2)
+    }
+    'contradictory-pid' {
+        [void](New-FakeRecord 102 2)
+        $script:graph[101]=@((New-FakeChild 102 2),(New-FakeChild 102 3))
+    }
+    'expired-before-query' { $deadline=$epoch.AddSeconds(99); $expectedQueries=0 }
+    'expired-after-query' { $now={ return $epoch.AddSeconds(100+$script:queries.Count*30) } }
+    'query-failure' { }
+    'listener-same-instance' { }
+    'listener-replacement' { }
+    'listener-replacement-between-checks' { }
+    'listener-owner-not-unique' { }
+    'cleanup-retained-instance' { }
+    'cleanup-wait-failure' { }
+    'cleanup-stop-failure' { }
+    'cleanup-many-wait-failure' { }
+    'cleanup-many-stop-failure' { }
+    'cleanup-shared-wait-budget' { }
+    'cleanup-refresh-finds-child' { }
+    'cleanup-refresh-query-failure' { }
+    'cleanup-refresh-deadline' { }
+    default { throw 'unknown closed probe scenario' }
+}
+foreach ($parentId in $script:graph.Keys) {
+    foreach ($child in $script:graph[$parentId]) { $child | Add-Member -NotePropertyName ParentProcessId -NotePropertyValue $parentId }
+}
+$refused=$false
+try {
+    $family=@(Get-LauncherFamilyRecords -LauncherRecord $root -DeadlineUtc $deadline -OwnedRecords $owned -QueryChildren $query -ResolveProcess $resolve -ReadLifetime $lifetime -ReleaseRecord $release -UtcNow $now)
+} catch { $refused=$true; $family=@() }
+if ($Scenario -in @('expired-before-query','expired-after-query','query-failure','contradictory-pid')) {
+    if (-not $refused) { throw 'invalid graph was accepted' }
+    if ($Scenario -ne 'contradictory-pid' -and $script:queries.Count -ne $expectedQueries) { throw 'deadline query bound failed' }
+} else {
+    if ($refused) { throw 'valid/refused-child graph unexpectedly threw' }
+    $actualIds=@($family | ForEach-Object { $_.ProcessId } | Sort-Object)
+    if (($actualIds -join ',') -ne ($expectedIds -join ',')) { throw 'exact family differs' }
+    if ($script:queries.Count -ne $expectedQueries) { throw 'identity queried more than once' }
+}
+if ($Scenario -like 'listener-*') {
+    $owners={ return @(101) }
+    $expectedRelease=1
+    if ($Scenario -eq 'listener-replacement-between-checks') {
+        if (-not (Test-ListenerOwnedProcess -OwnerProcessId 101 -OwnedRecords @($root) -ResolveProcess $resolve -ReadLifetime $lifetime -ReleaseRecord $release -GetListenerProcessIds $owners)) { throw 'initial ownership check failed' }
+        [void](New-FakeRecord 101 9); $expectedRelease=2
+    }
+    if ($Scenario -eq 'listener-owner-not-unique') { $owners={ return @(101,102) } }
+    if ($Scenario -eq 'listener-replacement') { [void](New-FakeRecord 101 9) }
+    $accepted=Test-ListenerOwnedProcess -OwnerProcessId 101 -OwnedRecords @($root) -ResolveProcess $resolve -ReadLifetime $lifetime -ReleaseRecord $release -GetListenerProcessIds $owners
+    if ($accepted -ne ($Scenario -eq 'listener-same-instance')) { throw 'listener instance attribution failed' }
+    if ($script:released.Count -ne $expectedRelease) { throw 'listener binding handle not released' }
+}
+if ($Scenario -like 'cleanup-*') {
+    # A replacement PID exists, but cleanup receives only the retained record.
+    [void](New-FakeRecord 101 9)
+    $cleanupOwned=[ordered]@{}
+    $cleanupOwned[(Get-OwnedProcessIdentityKey -Record $root)]=$root
+    $expectedCleanupRecords=1
+    if ($Scenario -in @('cleanup-many-wait-failure','cleanup-many-stop-failure','cleanup-shared-wait-budget')) {
+        $child=New-FakeRecord 102 2
+        $cleanupOwned[(Get-OwnedProcessIdentityKey -Record $child)]=$child; $expectedCleanupRecords=2
+    }
+    $expectedRecords=@($cleanupOwned.Values)
+    $refresh={ param($launcherRecord,$deadline,$records) }
+    if ($Scenario -eq 'cleanup-refresh-finds-child') {
+        $child=New-FakeRecord 102 2
+        $snapshot=New-FakeChild 102 2; $snapshot | Add-Member -NotePropertyName ParentProcessId -NotePropertyValue 101
+        $script:graph[101]=@($snapshot)
+        $expectedRecords=@($root,$child); $expectedCleanupRecords=2
+        $refresh={ param($launcherRecord,$deadline,$records) [void](Get-LauncherFamilyRecords -LauncherRecord $launcherRecord -DeadlineUtc $deadline -OwnedRecords $records -QueryChildren $query -ResolveProcess $resolve -ReadLifetime $lifetime -ReleaseRecord $release -UtcNow $now) }
+    }
+    if ($Scenario -eq 'cleanup-refresh-query-failure') { $refresh={ param($launcherRecord,$deadline,$records) throw 'synthetic incomplete discovery' } }
+    if ($Scenario -eq 'cleanup-refresh-deadline') { $refresh={ param($launcherRecord,$deadline,$records) throw [TimeoutException]::new('synthetic discovery deadline') } }
+    $script:waitBudgets=[Collections.Generic.List[int]]::new()
+    $stop={ param($record) if ($record -notin $cleanupOwned.Values) { throw 'replacement instance stopped' }; $script:stopped.Add($record); if ($Scenario -in @('cleanup-stop-failure','cleanup-many-stop-failure')) { throw 'synthetic stop failure' } }
+    $wait={
+        param($record,$milliseconds)
+        if ($record -notin $cleanupOwned.Values -or $milliseconds -gt 5000 -or $milliseconds -lt 0) { throw 'invalid wait authority or budget' }
+        $script:waited.Add($record); $script:waitBudgets.Add($milliseconds)
+        if ($Scenario -eq 'cleanup-shared-wait-budget') { Start-Sleep -Milliseconds 150 }
+        return ($Scenario -notin @('cleanup-wait-failure','cleanup-many-wait-failure'))
+    }
+    $port={ return [pscustomobject]@{ Released=$true; ListenerProcessIds=@() } }
+    Stop-LauncherProcess -LauncherProcess $root.Process -LauncherRecord $root -OwnedRecords $cleanupOwned -RefreshFamily $refresh -ReadLifetime $lifetime -StopRecord $stop -WaitRecord $wait -ReleaseRecord $release -PortRelease $port
+    if ($script:stopped.Count -lt 1 -or @($script:stopped | Where-Object { $_ -notin $expectedRecords }).Count -ne 0) { throw 'retained stop authority failed' }
+    if ($script:released.Count -ne $expectedCleanupRecords -or @($script:released | Where-Object { $_ -notin $expectedRecords }).Count -ne 0) { throw 'cleanup handle not released on every path' }
+    if ($script:results.Count -ne 1 -or $script:results[0].step -ne 'close-bridge') { throw 'cleanup result missing' }
+    $expectedOutcome=$(if ($Scenario -in @('cleanup-retained-instance','cleanup-shared-wait-budget','cleanup-refresh-finds-child')) { 'pass' } else { 'fail' })
+    if ($script:results[0].outcome -ne $expectedOutcome) { throw 'cleanup refusal lost' }
+    if ($Scenario -eq 'cleanup-shared-wait-budget' -and ($script:waitBudgets.Count -ne 2 -or $script:waitBudgets[1] -ge ($script:waitBudgets[0]-100))) { throw 'cleanup renewed its shared wait budget' }
+    if ($Scenario -eq 'cleanup-refresh-finds-child' -and $script:stopped.Count -ne 2) { throw 'non-listening owned child was not stopped' }
+}
+[pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+"""
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "normal", "cycle", "duplicate-self", "child-before-parent",
+        "child-after-parent-exit", "short-lived-parent", "enumeration-binding-race",
+        "cim-microseconds-local-time", "parent-exits-during-binding",
+        "missing-birth", "resolve-failure", "contradictory-pid",
+        "expired-before-query", "expired-after-query", "query-failure",
+        "listener-same-instance", "listener-replacement", "listener-replacement-between-checks",
+        "listener-owner-not-unique",
+        "cleanup-retained-instance", "cleanup-wait-failure", "cleanup-stop-failure",
+        "cleanup-many-wait-failure", "cleanup-many-stop-failure", "cleanup-shared-wait-budget",
+        "native-live-retained-handle", "native-exited-retained-handle",
+        "cleanup-refresh-finds-child", "cleanup-refresh-query-failure", "cleanup-refresh-deadline",
+    ],
+)
+def test_process_identity_graph_and_cleanup(tmp_path: Path, scenario: str) -> None:
+    """Exercise actual PowerShell helpers using process instances owned by no OS."""
+
+    probe = tmp_path / "process-identity-probe.ps1"
+    probe.write_text(_PROCESS_IDENTITY_PROBE, encoding="utf-8")
+    result = subprocess.run(
+        ["pwsh.exe", "-NoProfile", "-NonInteractive", "-File", str(probe),
+         "-SourcePath", str(SMOKE_SCRIPT), "-Scenario", scenario],
+        capture_output=True, text=True, timeout=15, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == {"scenario": scenario, "passed": True}
 
 
 def test_install_failure_has_a_distinct_exit_code(tmp_path: Path) -> None:
