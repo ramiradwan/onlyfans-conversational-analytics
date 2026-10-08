@@ -216,6 +216,8 @@ app.include_router(capability_license.router)
 # -------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
+    from app.core.lifecycle_receipts import start
+    start()
     activate_runtime()
     await broadcast.connect()
     await transport_manager.start()
@@ -243,6 +245,8 @@ async def shutdown_event():
             "event_type=shutdown count=1"
         )
     await broadcast.disconnect()
+    from app.core.lifecycle_receipts import finish
+    finish(drained)
 
 # -------------------------------------------------
 # Health Check

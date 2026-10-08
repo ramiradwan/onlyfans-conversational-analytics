@@ -11,6 +11,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 from app.api.endpoints.companion_session import ProtectedSocket
 from app.core.config import settings
 from app.persistence.auth import (

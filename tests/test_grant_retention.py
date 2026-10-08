@@ -22,6 +22,8 @@ from app.persistence.auth import (
 from app.security.grant_types import AGENT_PAIRING_GRANT_TYPES
 from app.security.grant_verifier import MAX_GRANT_CHARACTERS
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 _INSTALLATION_ID = "brain-installation-1"
 _ACCOUNT_ID = "creator-1"
 _ISSUER = "issuer.example"

@@ -17,6 +17,10 @@ from app.security.installation_key import (
     INSTALLATION_PROOF_ALGORITHM,
 )
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "tools" / "e2e-capture" / "helpers" / "pairing_fixture.py"

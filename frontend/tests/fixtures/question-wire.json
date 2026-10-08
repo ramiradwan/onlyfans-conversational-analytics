@@ -1,0 +1,124 @@
+{
+  "synthetic": true,
+  "request": {
+    "question": "no_later_creator_reply.v1",
+    "timezone": "UTC",
+    "start": "2026-09-17T21:47:36+00:00",
+    "end": "2026-09-18T21:47:36+00:00",
+    "cutoff": "2026-09-19T21:47:36+00:00"
+  },
+  "result": {
+    "schema_version": "analytics-question-result.v1",
+    "availability": "available",
+    "counting_unit": "conversations",
+    "question": {
+      "plan": {
+        "question": "no_later_creator_reply.v1",
+        "start": "2026-09-17T21:47:36Z",
+        "end": "2026-09-18T21:47:36Z",
+        "timezone": "UTC",
+        "filters": {
+          "conversation_ref": null,
+          "language": null
+        },
+        "cutoff": "2026-09-19T21:47:36Z",
+        "sort": "evidence_time_desc",
+        "page_size": 50,
+        "cursor": null
+      },
+      "account_ref": "a1:57ec15090ce0fafb3a01ffb861ae2d0cf44a16fa652b3d78d2019dab88293e35",
+      "cutoff": "2026-09-19T21:47:36Z",
+      "retention_cutoff_exclusive": "2026-06-21T21:47:36Z",
+      "selection_clipped_by_retention": false,
+      "definition_digest": "sha256:7464958e65a89f11971fbe2dcb7ef6a230145c8188bd1aaf1a2c39bd0c2c9bec",
+      "snapshot": {
+        "account_ref": "a1:57ec15090ce0fafb3a01ffb861ae2d0cf44a16fa652b3d78d2019dab88293e35",
+        "source_revision": 7,
+        "projection_generation": 1,
+        "generation_id": "291b7f2f-6850-4390-89ed-f91f1ebb7614",
+        "canonical_content_digest": "sha256:b1e778d18a14ef6532c40a7bb49d45ea36676b7d3e030c24ef9fcc3562e18829",
+        "projection_digest": "sha256:c5d57d183c36a5e136c1e3676384202cb52d1f9a586dc8e68b20751c20367ab9",
+        "derived_at": "2026-09-18T21:47:37.302143Z",
+        "source_message_count": 2,
+        "retention_due_at": "2026-12-17T20:47:36Z"
+      }
+    },
+    "page": {
+      "rows": [
+        {
+          "account_ref": "a1:57ec15090ce0fafb3a01ffb861ae2d0cf44a16fa652b3d78d2019dab88293e35",
+          "conversation_ref": "c1:3c44b79e26c6fc85a0fdad7cb185b7974841efc9744e623a0ad6184c0060e483",
+          "latest_evidence_at": "2026-09-18T20:47:36Z",
+          "reason": "no_later_creator_reply",
+          "coverage": "unknown",
+          "evidence": [
+            {
+              "account_ref": "a1:57ec15090ce0fafb3a01ffb861ae2d0cf44a16fa652b3d78d2019dab88293e35",
+              "conversation_ref": "c1:3c44b79e26c6fc85a0fdad7cb185b7974841efc9744e623a0ad6184c0060e483",
+              "message_ref": "m1:a3f65af75a8d14bcd20d4f049720bfe805794a205452855dcab0066d420a0ba1",
+              "source_revision": 7,
+              "source_version_digest": "sha256:2c0dda47db805ca84f0d9387b64e0fa2a146d37ce832daca18bc74bdbc54a503",
+              "sent_at": "2026-09-18T20:47:36Z",
+              "span": null
+            }
+          ],
+          "evidence_truncated": false
+        },
+        {
+          "account_ref": "a1:57ec15090ce0fafb3a01ffb861ae2d0cf44a16fa652b3d78d2019dab88293e35",
+          "conversation_ref": "c1:eac25365b5e628c8a92c193690fe611ec3a084488f1b7cf5ae40f7f316b539f0",
+          "latest_evidence_at": "2026-09-18T20:47:36Z",
+          "reason": "no_later_creator_reply",
+          "coverage": "unknown",
+          "evidence": [
+            {
+              "account_ref": "a1:57ec15090ce0fafb3a01ffb861ae2d0cf44a16fa652b3d78d2019dab88293e35",
+              "conversation_ref": "c1:eac25365b5e628c8a92c193690fe611ec3a084488f1b7cf5ae40f7f316b539f0",
+              "message_ref": "m1:0b5054514e4654fd79ad7d1837b5f1a7a76454e1a2d3ae99f3a923a37bf784ec",
+              "source_revision": 7,
+              "source_version_digest": "sha256:5a72851a100ffe447fce07be8a27589ffb5738edf6a6f3a1955f3c558642bcd6",
+              "sent_at": "2026-09-18T20:47:36Z",
+              "span": null
+            }
+          ],
+          "evidence_truncated": false
+        }
+      ],
+      "coverage": {
+        "history": "unknown",
+        "ordering": "inferred",
+        "evaluated_start": null,
+        "evaluated_end": null,
+        "eligible_classification_count": null,
+        "analyzed_classification_count": null,
+        "supported_languages": []
+      },
+      "evaluated_conversation_count": 2,
+      "undetermined_conversation_count": 0,
+      "total_matching_conversations": 2,
+      "has_more": false,
+      "truncated": false
+    },
+    "checked_at": "2026-09-19T21:47:36Z",
+    "next_cursor": null
+  },
+  "source": {
+    "reference": {
+      "account_ref": "a1:57ec15090ce0fafb3a01ffb861ae2d0cf44a16fa652b3d78d2019dab88293e35",
+      "conversation_ref": "c1:3c44b79e26c6fc85a0fdad7cb185b7974841efc9744e623a0ad6184c0060e483",
+      "message_ref": "m1:a3f65af75a8d14bcd20d4f049720bfe805794a205452855dcab0066d420a0ba1",
+      "source_revision": 7,
+      "source_version_digest": "sha256:2c0dda47db805ca84f0d9387b64e0fa2a146d37ce832daca18bc74bdbc54a503",
+      "sent_at": "2026-09-18T20:47:36Z",
+      "span": null
+    },
+    "location": {
+      "conversation_id": "synthetic-chat-a",
+      "message_id": "synthetic-m1"
+    },
+    "text": "A\ud83d\udc4b price \u20ac20",
+    "direction": "inbound",
+    "checked_at": "2026-09-19T21:47:36Z",
+    "browser_span": null
+  }
+}

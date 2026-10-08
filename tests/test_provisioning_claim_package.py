@@ -17,6 +17,8 @@ from app.provisioning.claim_package import (
     local_device_metadata,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 _CLAIM_ID = "0198a1b2-c3d4-7300-8000-000000000001"

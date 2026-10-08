@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 
 from PyInstaller.building.api import COLLECT, EXE, PYZ  # type: ignore[import-not-found]
 from PyInstaller.building.build_main import Analysis  # type: ignore[import-not-found]
-from PyInstaller.utils.hooks import collect_dynamic_libs  # type: ignore[import-not-found]
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, copy_metadata  # type: ignore[import-not-found]
 
 
 _PROJECT_ROOT = Path(os.environ.get("BRAIN_PROJECT_ROOT", Path.cwd())).resolve()
@@ -29,22 +29,13 @@ _POLICY = json.loads(_POLICY_PATH.read_text(encoding="utf-8"))
 _ENTRY = _SOURCE_ROOT / "app" / "packaged_entry.py"
 _INTERNAL_PREFIX = "_internal/"
 
-# Release-mode detection follows the Agent artifact that packaging/build-windows.ps1
-# has already built. A signed/legal Store candidate may never freeze a Brain with
-# missing customer hosted routing, while development builds may keep it blank.
-_AGENT_METADATA_PATH = _PROJECT_ROOT / "extension" / "dist" / "build-meta.json"
-if _AGENT_METADATA_PATH.is_file():
-    _agent_metadata = json.loads(_AGENT_METADATA_PATH.read_text(encoding="utf-8"))
-    _release_mode = (
-        _agent_metadata.get("signing_rule") is not None
-        and _agent_metadata.get("legal_bindings") is not None
-        and _agent_metadata.get("privacy_policy_configured") is True
-    )
-else:
-    _release_mode = False
+# The packaging wrapper supplies the build mode explicitly.
+_build_mode = os.environ.get("BRAIN_BUILD_MODE")
+if _build_mode not in {"release", "development"}:
+    raise ValueError("Build through packaging/build-windows.ps1 with an explicit build mode")
 load_customer_release_config(
     _PROJECT_ROOT / "app" / "core" / "customer-release.json",
-    require_hosted=_release_mode,
+    require_hosted=_build_mode == "release",
 )
 
 
@@ -76,6 +67,8 @@ def _add_tree(
 
 
 _DATAS: list[tuple[str, str]] = []
+_DATAS.extend(collect_data_files("tzdata"))
+_DATAS.extend(copy_metadata("tzdata"))
 for _required_file in _POLICY["required_files"]:
     if _required_file.startswith(_INTERNAL_PREFIX):
         _add_file(_DATAS, _required_file)

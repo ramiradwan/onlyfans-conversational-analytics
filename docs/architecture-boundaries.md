@@ -78,6 +78,7 @@ Repository paths outside the classified production modules are governed by expli
 
 - **External vendored contracts (`contracts/**`)**: Upstream schema and contract snapshots tracked for compatibility verification, isolated from internal architecture modules.
 - **Development and test namespaces (`tests/**`, `tools/**`, `docs/**`, `.husky/**`, `.git/**`, `.github/**`, `extension/test-fixtures/**`)**: Test suites, maintenance tools, verification scripts, and documentation harnesses not included in production runtime deliverables.
+- **Backend CI selection manifest (`ci/backend-test-shards.json`)**: Test shard ownership, Windows contract selection, and stateful test profiles. This exact file is development configuration; other paths under `ci/` still require explicit classification.
 - **Root metadata files (`README.md`, `LICENSE`, `pyproject.toml`, etc.)**: Repository root configuration and project metadata.
 
 Any untracked or unclassified path that is not in a production module and not covered by an explicit non-production exclusion fails closed during architectural validation.

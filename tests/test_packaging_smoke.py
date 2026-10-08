@@ -17,6 +17,7 @@ import time
 from collections.abc import Iterator
 from ctypes import wintypes
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -27,9 +28,9 @@ import inno_setup_compiler
 import visible_windows
 
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial, pytest.mark.skipif(
     os.name != "nt", reason="drives a real Windows installer via pwsh.exe"
-)
+)]
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"
@@ -187,6 +188,12 @@ def _run_smoke(
     if artifact_path is None:
         artifact.write_bytes(b"fixture-artifact")
     transcript_path = tmp_path / "transcript.json"
+    # Write directly into the uploaded report directory, not pytest's temporary
+    # tree, so an interrupted run still leaves its last completed harness stage.
+    # Resolve before launching: some callers deliberately use a different cwd.
+    progress_directory = Path(os.environ.get("CI_REPORT_DIR") or tmp_path).resolve()
+    progress_directory.mkdir(parents=True, exist_ok=True)
+    progress_path = progress_directory / f"packaging-smoke-{uuid4().hex}.jsonl"
 
     command = [
         shell,
@@ -201,6 +208,8 @@ def _run_smoke(
         hashlib.sha256(artifact.read_bytes()).hexdigest(),
         "-TranscriptPath",
         str(transcript_path),
+        "-ProgressPath",
+        str(progress_path),
     ]
     if inspection_root is not None:
         command.extend(
@@ -225,9 +234,14 @@ def _run_smoke(
     if not transcript_path.is_file():
         raise AssertionError(
             f"smoke script produced no transcript (exit {result.returncode}): "
-            f"{result.stdout}{result.stderr}"
+            f"{result.stdout}{result.stderr}\nProgress: {progress_path}"
         )
     return result, json.loads(transcript_path.read_text(encoding="utf-8-sig"))
+
+
+def _smoke_progress(result: subprocess.CompletedProcess[str]) -> list[dict]:
+    path = Path(result.args[result.args.index("-ProgressPath") + 1])
+    return [json.loads(line) for line in path.read_text(encoding="utf-8-sig").splitlines()]
 
 
 def _web_commands_without_basic_parsing(root: Path) -> list[str]:
@@ -520,6 +534,14 @@ def test_real_interpreter_is_still_detected(tmp_path: Path) -> None:
     assert transcript["artifact"] == {"status": "aborted", "reason": "python_detected"}
     assert transcript["steps"][0]["outcome"] == "abort"
     assert transcript["steps"][0]["evidence"]["path"].endswith("python.exe")
+    progress = _smoke_progress(result)
+    assert [(event["stage"], event["phase"]) for event in progress] == [
+        ("harness", "begin"),
+        ("clean-environment", "result"),
+        ("harness", "end"),
+    ]
+    assert progress[-1]["details"]["status"] == "aborted"
+    assert all(event["timestamp_utc"] and event["harness_process_id"] > 0 for event in progress)
 
 
 def test_windows_powershell_51_runs_the_smoke_harness(tmp_path: Path) -> None:
@@ -537,6 +559,7 @@ def test_windows_powershell_51_runs_the_smoke_harness(tmp_path: Path) -> None:
 
     assert result.returncode == 21, result.stdout + result.stderr
     assert transcript["artifact"] == {"status": "aborted", "reason": "python_detected"}
+    assert _smoke_progress(result)[-1]["details"]["status"] == "aborted"
 
 
 def test_tools_web_requests_use_windows_powershell_compatibility() -> None:
@@ -552,15 +575,16 @@ def test_tools_web_request_guard_detects_a_removed_compatibility_switch(
 
     script = tmp_path / "tools" / "packaging-smoke" / "run.ps1"
     script.parent.mkdir(parents=True)
-    script.write_text(
-        SMOKE_SCRIPT.read_text(encoding="utf-8").replace(
-            "-UseBasicParsing ", "", 1
-        ),
-        encoding="utf-8",
+    original = SMOKE_SCRIPT.read_text(encoding="utf-8")
+    web_request_line = next(
+        line_number
+        for line_number, line in enumerate(original.splitlines(), start=1)
+        if "Invoke-WebRequest -UseBasicParsing" in line
     )
+    script.write_text(original.replace("-UseBasicParsing ", "", 1), encoding="utf-8")
 
     assert _web_commands_without_basic_parsing(tmp_path) == [
-        "tools/packaging-smoke/run.ps1:492"
+        f"tools/packaging-smoke/run.ps1:{web_request_line}"
     ]
 
 
@@ -890,6 +914,15 @@ def test_installed_listener_is_attributed_to_the_launcher_family(
 
     assert result.returncode == 40, result.stdout + result.stderr
     _assert_listener_was_owned_and_stopped(transcript)
+    progress = _smoke_progress(result)
+    for stage in (
+        "installer-wait", "launcher-start", "process-family-query",
+        "process-stop", "process-exit-wait", "uninstaller-wait",
+        "installation-removal-wait", "temporary-root-removal",
+    ):
+        assert any(event["stage"] == stage and event["phase"] == "begin" for event in progress), stage
+        assert any(event["stage"] == stage and event["phase"] == "end" for event in progress), stage
+    assert progress[-1]["details"]["status"] == "blocked"
 
     mutated_script = tmp_path / "run-with-unrelated-attribution.ps1"
     original = SMOKE_SCRIPT.read_text(encoding="utf-8")

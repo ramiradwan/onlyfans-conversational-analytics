@@ -46,6 +46,8 @@ from app.security.grant_types import ACTIVATION_GRANT_TYPES
 from app.security.hosted_grants import TransportResponse
 from app.security.installation_key import InstallationProof
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 VECTORS = Path(__file__).resolve().parents[1] / "contracts" / "capability-license-v1"
 NOW = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
 EXCHANGE_ID = "0198a1b2-c3d4-7300-8000-000000000002"

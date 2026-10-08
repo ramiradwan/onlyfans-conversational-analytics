@@ -6,6 +6,10 @@ from pathlib import Path
 
 from app.persistence.private_files import sync_directory
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 NOW = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
 

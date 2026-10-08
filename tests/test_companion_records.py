@@ -17,6 +17,8 @@ from app.transport.companion_records import (
     fragments,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def _part(data=b'{"ok":true}', **changes):
     value = {

@@ -12,6 +12,8 @@ from app.services.agent_configuration import (
     build_config_document,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 ACCOUNT_ID = "creator-account-sqlite"
 PLATFORM_ID = "platform-creator-sqlite"

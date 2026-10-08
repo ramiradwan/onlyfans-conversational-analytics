@@ -31,6 +31,8 @@ from app.security.hosted_grants import (
 )
 from app.security.installation_key import InstallationProof
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 ROOT = Path(__file__).resolve().parents[1]
 VECTORS = ROOT / "contracts" / "bootstrap-recovery-v2"
 NOW = datetime(2026, 9, 13, 8, 10, tzinfo=timezone.utc)

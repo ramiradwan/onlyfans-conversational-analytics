@@ -15,6 +15,8 @@ from app.services.agent_configuration import (
     build_config_document,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ACCOUNT_ID = "creator-account-a"
 PLATFORM_ID = "platform-creator-a"

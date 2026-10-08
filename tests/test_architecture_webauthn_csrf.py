@@ -5,6 +5,10 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
 ENDPOINTS_ROOT = PRODUCT_ROOT / "app" / "api" / "endpoints"

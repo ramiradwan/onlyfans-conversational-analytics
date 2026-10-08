@@ -89,6 +89,22 @@ REQUIRED_PRODUCT_CI_JOB_NAMES = {
     "windows-browser-e2e",
     "windows-tests",
 }
+SHARDED_PRODUCT_CI_JOB_IDS = {
+    "web-build-and-test", "backend-fast", "analytics-integration",
+    "fixed-sqlcipher-wheel", "windows-platform-contract",
+    "analytics-windows-contract", "analytics-scale-qualification", "windows-browser-e2e",
+    "windows-full-regression", "required-ci-gate", "build-and-test",
+    "windows-tests",
+}
+REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES = (
+    SHARDED_PRODUCT_CI_JOB_IDS - {"analytics-integration", "required-ci-gate"}
+) | {f"analytics-integration-{shard}" for shard in range(1, 5)} | {"Required CI"}
+# Keep the v1 sets unchanged: a historical source must still qualify against
+# the jobs it declared, rather than against today's workflow topology.
+SHARDED_V2_PRODUCT_CI_JOB_IDS = SHARDED_PRODUCT_CI_JOB_IDS | {"windows-full-shards"}
+REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES | {
+    "windows-full-regression-1", "windows-full-regression-2",
+}
 
 PRODUCER_ROOT = Path(__file__).resolve().parent.parent
 LEGAL_BINDINGS_GATE = PRODUCER_ROOT / "tools" / "legal-release-bindings" / "verify.mjs"
@@ -731,6 +747,188 @@ class QualifiedSource:
     archive_download_url: str
 
 
+def _ci_literal_mapping(source: str, indent: int) -> dict[str, str]:
+    """Read one controlled mapping, refusing duplicate/quoted/merged keys.
+
+    This is deliberately narrower than YAML. Nested values stay as source text
+    until a policy explicitly checks their literal shape.
+    """
+    fields: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in source.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        leading = len(line) - len(line.lstrip(" "))
+        if leading == indent:
+            match = re.fullmatch(r"[ ]*([a-zA-Z0-9_-]+):[ \t]*(.*)", line)
+            if match is None or match[1] in fields:
+                raise ContractError("Product CI policy contains an unsupported or duplicate declaration")
+            current = match[1]
+            fields[current] = [match[2]]
+        elif leading > indent and current is not None:
+            fields[current].append(line)
+        else:
+            raise ContractError("Product CI policy contains an unsupported mapping shape")
+    return {key: "\n".join(lines).strip("\n") for key, lines in fields.items()}
+
+
+def _ci_literal_list(source: str) -> list[str]:
+    value = source.strip()
+    if value.startswith("[") and value.endswith("]"):
+        values = [item.strip() for item in value[1:-1].split(",")]
+    else:
+        values = []
+        for line in value.splitlines():
+            match = re.fullmatch(r"[ ]*- ([a-zA-Z0-9_-]+)[ ]*", line)
+            if match is None:
+                raise ContractError("Product CI policy requires a literal list")
+            values.append(match[1])
+    if not values or any(not re.fullmatch(r"[a-zA-Z0-9_-]+", value) for value in values):
+        raise ContractError("Product CI policy requires a nonempty literal list")
+    if len(values) != len(set(values)):
+        raise ContractError("Product CI policy contains duplicate list entries")
+    return values
+
+
+def _validate_sharded_v2_source(job_source: str) -> None:
+    jobs = _ci_literal_mapping(job_source, 2)
+    for job_id, name, runner, timeout, count in (
+        ("analytics-integration", "analytics-integration", "ubuntu-latest", "20", 4),
+        ("windows-full-shards", "windows-full-regression", "windows-latest", "60", 2),
+    ):
+        fields = _ci_literal_mapping(jobs[job_id], 4)
+        if (fields.get("name") != name + "-${{ matrix.shard }}"
+                or fields.get("runs-on") != runner
+                or fields.get("timeout-minutes") != timeout
+                or "if" in fields
+                or fields.get("continue-on-error", "false") != "false"):
+            raise ContractError(f"{job_id}: Product CI matrix execution declaration differs from sharded-v2")
+        strategy = _ci_literal_mapping(fields.get("strategy", ""), 6)
+        matrix = _ci_literal_mapping(strategy.get("matrix", ""), 8)
+        if (set(strategy) != {"fail-fast", "max-parallel", "matrix"}
+                or strategy.get("fail-fast") != "false"
+                or strategy.get("max-parallel") != str(count)
+                or set(matrix) != {"shard"}
+                or _ci_literal_list(matrix["shard"]) != [str(shard) for shard in range(1, count + 1)]):
+            raise ContractError(f"{job_id}: Product CI matrix must declare every bounded sharded-v2 execution")
+    aggregate = _ci_literal_mapping(jobs["windows-full-regression"], 4)
+    gate = _ci_literal_mapping(jobs["required-ci-gate"], 4)
+    gate_needs = SHARDED_V2_PRODUCT_CI_JOB_IDS - {
+        "required-ci-gate", "build-and-test", "windows-tests",
+    }
+    if (aggregate.get("name", "windows-full-regression") != "windows-full-regression"
+            or aggregate.get("if") != "${{ always() }}"
+            or aggregate.get("needs") != "windows-full-shards"
+            or aggregate.get("continue-on-error", "false") != "false"
+            or gate.get("name") != "Required CI"
+            or gate.get("if") != "${{ always() }}"
+            or gate.get("continue-on-error", "false") != "false"
+            or set(_ci_literal_list(gate.get("needs", ""))) != gate_needs):
+        raise ContractError("sharded-v2 Product CI must retain the blocking Windows aggregate and complete gate dependencies")
+
+
+def product_ci_job_policy(workflow_source: bytes) -> set[str]:
+    """Read the policy from the qualified source, never from observed results.
+
+    The producer deliberately has no YAML runtime dependency. These literal
+    declarations are a small, fail-closed interface of ci.yml: job keys use two
+    spaces and the version is a literal top-level environment value. Alternate
+    YAML forms must update this reader rather than silently choose a policy.
+    """
+    try:
+        source = workflow_source.decode("utf-8").replace("\r\n", "\n")
+    except UnicodeDecodeError as exc:
+        raise ContractError("Product CI source workflow is not UTF-8") from exc
+    blocks = re.split(r"(?m)^jobs:[ \t]*(?:#[^\n]*)?\n", source)
+    if len(blocks) != 2:
+        raise ContractError("Product CI source has no unique jobs declaration")
+    job_block = re.split(r"(?m)^\S", blocks[1], maxsplit=1)[0]
+    job_ids = re.findall(r"(?m)^  ([a-zA-Z0-9_-]+):[ \t]*(?:#[^\n]*)?$", job_block)
+    if len(job_ids) != len(set(job_ids)):
+        raise ContractError("Product CI source has duplicate job declarations")
+    versions = re.findall(
+        r"(?m)^  CI_POLICY_VERSION:[ \t]*([^\n#]+?)[ \t]*(?:#[^\n]*)?$", source
+    )
+    if "CI_POLICY_VERSION" not in source:
+        if set(job_ids) != REQUIRED_PRODUCT_CI_JOB_NAMES:
+            raise ContractError("unversioned Product CI source is not the legacy job policy")
+        return set(REQUIRED_PRODUCT_CI_JOB_NAMES)
+    policies = {
+        "sharded-v1": (SHARDED_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_PRODUCT_CI_JOB_NAMES),
+        "sharded-v2": (SHARDED_V2_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES),
+    }
+    if len(versions) != 1 or versions[0] not in policies or source.count("CI_POLICY_VERSION") != 1:
+        raise ContractError("Product CI source declares an unknown or ambiguous job policy")
+    version = versions[0]
+    env_block = re.search(r"(?m)^env:[ \t]*\n((?:[ \t]+[^\n]*\n|\n)*)", source)
+    if env_block is None or f"  CI_POLICY_VERSION: {version}\n" not in env_block[1]:
+        raise ContractError("Product CI policy must be a literal top-level environment value")
+    required_ids, required_names = policies[version]
+    if set(job_ids) != required_ids:
+        raise ContractError("sharded Product CI source does not declare the exact required job set")
+    if version == "sharded-v2":
+        _validate_sharded_v2_source(job_block)
+    return set(required_names)
+
+
+def latest_ci_jobs(
+    client: GitHubApi, *, run_id: int, run_attempt: int, source_commit: str
+) -> dict[str, dict[str, Any]]:
+    """Resolve each job's latest execution, including retained rerun dependencies.
+
+    A failed-jobs rerun does not re-execute dependencies that already succeeded.
+    Query every attempt, then choose the newest execution for each exact job name;
+    a newer failure always supersedes an earlier success.
+    """
+    jobs: list[Any] = []
+    page = 1
+    total: int | None = None
+    while total is None or len(jobs) < total:
+        document = client.get(
+            f"{_repo_path(PRODUCT_REPOSITORY)}/actions/runs/{run_id}/jobs"
+            f"?filter=all&per_page=100&page={page}"
+        )
+        if not isinstance(document, dict) or not isinstance(document.get("jobs"), list):
+            raise ContractError("Product CI jobs response is not an object with jobs")
+        count = document.get("total_count")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ContractError("Product CI jobs response has an invalid count")
+        if total is not None and total != count:
+            raise ContractError("Product CI jobs changed during pagination")
+        total = count
+        chunk = document["jobs"]
+        if not chunk or len(chunk) > 100 or len(jobs) + len(chunk) > total:
+            raise ContractError("Product CI jobs pagination is incomplete or inconsistent")
+        jobs.extend(chunk)
+        page += 1
+        if page > 101:
+            raise ContractError("Product CI job history exceeds the qualification limit")
+    newest: dict[str, dict[str, Any]] = {}
+    identities: set[tuple[str, int]] = set()
+    execution_ids: set[int] = set()
+    for job in jobs:
+        if not isinstance(job, dict):
+            raise ContractError("Product CI jobs response contains a non-object")
+        name, attempt, execution_id = job.get("name"), job.get("run_attempt"), job.get("id")
+        if (
+            not isinstance(name, str) or not name
+            or isinstance(attempt, bool) or not isinstance(attempt, int)
+            or not 1 <= attempt <= run_attempt
+            or isinstance(execution_id, bool) or not isinstance(execution_id, int)
+            or execution_id <= 0
+            or job.get("run_id") != run_id
+            or job.get("head_sha") != source_commit
+        ):
+            raise ContractError("Product CI job identity, attempt, or source commit mismatch")
+        if (name, attempt) in identities or execution_id in execution_ids:
+            raise ContractError("Product CI has duplicate job execution identities")
+        identities.add((name, attempt))
+        execution_ids.add(execution_id)
+        if name not in newest or newest[name]["run_attempt"] < attempt:
+            newest[name] = job
+    return newest
+
+
 def qualify_product_ci_source(client: GitHubApi, *, source_commit: str) -> int:
     """Require the exact source commit to have a successful main-push CI run."""
 
@@ -808,24 +1006,16 @@ def qualify_product_ci_source(client: GitHubApi, *, source_commit: str) -> int:
                 f"Product CI run {repository_field} is not the Product repository"
             )
 
-    jobs_document = client.get(
-        f"{_repo_path(PRODUCT_REPOSITORY)}/actions/runs/{run_id}/attempts/"
-        f"{run_attempt}/jobs?per_page=100"
+    _, workflow_source = fetch_git_blob(
+        client, PRODUCT_REPOSITORY, PRODUCT_CI_WORKFLOW, source_commit
     )
-    jobs = jobs_document.get("jobs", []) if isinstance(jobs_document, dict) else []
-    if not isinstance(jobs_document, dict) or not isinstance(jobs, list):
-        raise ContractError("Product CI jobs response is not an object")
-    if jobs_document.get("total_count") != len(jobs):
-        raise ContractError("Product CI run has more than 100 jobs")
-    observed_names = [job.get("name") for job in jobs if isinstance(job, dict)]
-    if (
-        len(jobs) != len(REQUIRED_PRODUCT_CI_JOB_NAMES)
-        or set(observed_names) != REQUIRED_PRODUCT_CI_JOB_NAMES
-    ):
+    required_names = product_ci_job_policy(workflow_source)
+    jobs = latest_ci_jobs(
+        client, run_id=run_id, run_attempt=run_attempt, source_commit=source_commit
+    )
+    if set(jobs) != required_names:
         raise ContractError("Product CI run does not have the exact required job set")
-    for job in jobs:
-        if not isinstance(job, dict):
-            raise ContractError("Product CI jobs response contains a non-object")
+    for job in jobs.values():
         if (
             job.get("status") != "completed"
             or job.get("conclusion") != "success"

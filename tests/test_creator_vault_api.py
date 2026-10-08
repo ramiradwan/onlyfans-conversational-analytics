@@ -11,6 +11,8 @@ from app.main import app
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.transport.manager import DEV_ACCOUNT_ID, DEV_PRINCIPAL_ID
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 NOW = datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)
 

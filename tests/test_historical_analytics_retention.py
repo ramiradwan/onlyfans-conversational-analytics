@@ -15,6 +15,10 @@ from app.analytics.retention_store import (
 )
 from app.persistence.factory import create_canonical_repositories
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT = "account-a"
 NOW = datetime(2026, 8, 31, 0, 0, tzinfo=timezone.utc)

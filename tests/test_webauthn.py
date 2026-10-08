@@ -24,6 +24,8 @@ from app.security.webauthn import (
     configured_webauthn_service,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 RP_ID = "bridge.localhost"
 ORIGIN = "http://bridge.localhost:17871"

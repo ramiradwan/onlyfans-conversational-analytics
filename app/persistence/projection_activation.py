@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from app.persistence import sqlite_api as sqlite3
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from threading import RLock
-from typing import Callable, Literal, Protocol, runtime_checkable
+from threading import RLock, get_ident
+from typing import Callable, Iterator, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
 from app.analytics.canonical_source import HistoryAnalyticsSource
@@ -107,14 +109,17 @@ class ProjectionActivationRepository(Protocol):
         publication_epoch: str,
         writer_owner: BuildOwner,
         publication_capability_digest: str,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent: ...
+
+    def source_revision(self, creator_account_id: str) -> int | None: ...
 
     def get(self, generation_id: str) -> ProjectionActivationIntent | None: ...
 
     def pending(self) -> list[ProjectionActivationIntent]: ...
 
     def complete(
-        self, expected: ProjectionActivationIntent
+        self, expected: ProjectionActivationIntent, *, source_identity_proof: object | None = None
     ) -> ProjectionActivationIntent: ...
 
     def cancel(self, intent_id: str) -> ProjectionActivationIntent: ...
@@ -214,7 +219,9 @@ class InMemoryProjectionActivationRepository:
         publication_epoch: str,
         writer_owner: BuildOwner,
         publication_capability_digest: str,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent:
+        del source_identity_proof
         with self._lock:
             expected = _identity_tuple(
                 creator_account_id=creator_account_id,
@@ -286,6 +293,11 @@ class InMemoryProjectionActivationRepository:
             self._by_generation[generation_id] = intent.intent_id
             return intent
 
+    def source_revision(self, creator_account_id: str) -> int | None:
+        """A mismatch may reject a reference; equality never authorizes a read."""
+        identity = self._identity(creator_account_id)
+        return None if identity is None else identity.revision
+
     def get(self, generation_id: str) -> ProjectionActivationIntent | None:
         with self._lock:
             intent_id = self._by_generation.get(generation_id)
@@ -299,8 +311,10 @@ class InMemoryProjectionActivationRepository:
             )
 
     def complete(
-        self, expected_intent: ProjectionActivationIntent
+        self, expected_intent: ProjectionActivationIntent, *,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent:
+        del source_identity_proof
         with self._lock:
             current = self._required(expected_intent.intent_id)
             _require_completion_identity(current, expected_intent)
@@ -386,11 +400,26 @@ class _SQLitePublicationFence:
     lock: RLock = field(default_factory=RLock)
 
 
+@dataclass(slots=True)
+class _ActivationReadScope:
+    repository: object
+    connection: sqlite3.Connection
+    owner: int
+    active: bool = True
+
+
+_ACTIVATION_READ_SCOPE: ContextVar[_ActivationReadScope | None] = ContextVar(
+    'activation_read_scope', default=None
+)
+
+
 class SQLiteProjectionActivationRepository:
     """Witness ledger committed wholly inside authoritative canonical SQLite."""
 
     def __init__(self, database: CanonicalSQLite) -> None:
         self.database = database
+        from app.analytics.source_tokens import SourceIdentityCache
+        self._verified_sources = SourceIdentityCache()
         self._publication_fences: dict[str, _SQLitePublicationFence] = {}
         self._publication_fences_lock = RLock()
 
@@ -593,6 +622,7 @@ class SQLiteProjectionActivationRepository:
         publication_epoch: str,
         writer_owner: BuildOwner,
         publication_capability_digest: str,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent:
         expected = _identity_tuple(
             creator_account_id=creator_account_id,
@@ -627,7 +657,10 @@ class SQLiteProjectionActivationRepository:
                 connection, publication_epoch, publication_capability_digest
             ):
                 raise ProjectionActivationConflict("publication epoch revoked")
-            if _sqlite_identity(connection, creator_account_id) != canonical_identity:
+            if not _sqlite_identity_matches(
+                connection, creator_account_id, canonical_identity,
+                cache=self._verified_sources, proof=source_identity_proof,
+            ):
                 raise ProjectionActivationConflict("canonical identity changed")
             pending = connection.execute(
                 """
@@ -721,13 +754,63 @@ class SQLiteProjectionActivationRepository:
                 reserved_at=now,
             )
 
-    def get(self, generation_id: str) -> ProjectionActivationIntent | None:
+    @contextmanager
+    def read_scope(self, *, connection=None) -> Iterator[None]:
+        """Share a connection, not a transaction or previously read witness."""
+        current = _ACTIVATION_READ_SCOPE.get()
+        owner = get_ident()
+        if (current is not None and current.active
+                and current.repository is self and current.owner == owner
+                and (connection is None or current.connection is connection)):
+            yield
+            return
+        with self.database.read() if connection is None else nullcontext(connection) as connection:
+            bound_database = getattr(connection, 'database', None)
+            if (getattr(connection, '_tracked_path', None) != self.database.path
+                    or bound_database is not None and bound_database is not self.database):
+                raise ValueError('activation_read_scope_database_binding_invalid')
+            if connection.in_transaction or connection.isolation_level is not None:
+                raise ValueError('activation_read_scope_requires_autocommit')
+            scope = _ActivationReadScope(self, connection, owner)
+            token = _ACTIVATION_READ_SCOPE.set(scope)
+            try:
+                yield
+            finally:
+                scope.active = False
+                _ACTIVATION_READ_SCOPE.reset(token)
+
+    def source_revision(self, creator_account_id: str) -> int | None:
+        """Read the live account head for early rejection, not content validation."""
         with self.database.read() as connection:
             row = connection.execute(
-                "SELECT * FROM analytics_projection_activation_intents WHERE generation_id = ?",
-                (generation_id,),
+                "SELECT canonical_revision FROM account_heads WHERE creator_account_id=?",
+                (creator_account_id,),
             ).fetchone()
-            return None if row is None else _intent(row)
+        return None if row is None else int(row[0])
+
+    def get(self, generation_id: str) -> ProjectionActivationIntent | None:
+        scope = _ACTIVATION_READ_SCOPE.get()
+        if (scope is not None and scope.active and scope.repository is self
+                and scope.owner == get_ident()):
+            if scope.connection.in_transaction:
+                raise ValueError('activation_read_scope_requires_autocommit')
+            return self._get_on_connection(scope.connection, generation_id)
+        with self.database.read() as connection:
+            return self._get_on_connection(connection, generation_id)
+
+    @staticmethod
+    def _get_on_connection(
+        connection: sqlite3.Connection, generation_id: str
+    ) -> ProjectionActivationIntent | None:
+        cursor = connection.execute(
+            "SELECT * FROM analytics_projection_activation_intents WHERE generation_id = ?",
+            (generation_id,),
+        )
+        try:
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+        return None if row is None else _intent(row)
 
     def pending(self) -> list[ProjectionActivationIntent]:
         with self.database.read() as connection:
@@ -743,7 +826,8 @@ class SQLiteProjectionActivationRepository:
             ]
 
     def complete(
-        self, expected_intent: ProjectionActivationIntent
+        self, expected_intent: ProjectionActivationIntent, *,
+        source_identity_proof: object | None = None,
     ) -> ProjectionActivationIntent:
         failure: str | None = None
         result: ProjectionActivationIntent | None = None
@@ -764,8 +848,9 @@ class SQLiteProjectionActivationRepository:
                 current.canonical_revision, current.canonical_content_digest
             )
             now = _now()
-            identity_changed = (
-                _sqlite_identity(connection, current.creator_account_id) != expected
+            identity_changed = not _sqlite_identity_matches(
+                connection, current.creator_account_id, expected,
+                cache=self._verified_sources, proof=source_identity_proof,
             )
             epoch_revoked = not _sqlite_publication_epoch_open(
                 connection,
@@ -893,8 +978,32 @@ class SQLiteProjectionActivationRepository:
             return replace(current, state="cancelled", cancelled_at=now)
 
 
+def _sqlite_identity_matches(
+    connection: sqlite3.Connection,
+    creator_account_id: str,
+    expected: CanonicalIdentity,
+    *,
+    cache,
+    proof: object | None,
+) -> bool:
+    if proof is not None:
+        from app.analytics.source_tokens import verify_source_identity_proof
+
+        token = cache.token(connection, creator_account_id)
+        matched = verify_source_identity_proof(
+            creator_account_id, expected, proof, token
+        )
+        if matched is not None:
+            if matched:
+                cache.put(creator_account_id, token, expected)
+            return bool(matched)
+    return _sqlite_identity(
+        connection, creator_account_id, cache=cache
+    ) == expected
+
+
 def _sqlite_identity(
-    connection: sqlite3.Connection, creator_account_id: str
+    connection: sqlite3.Connection, creator_account_id: str, *, cache=None
 ) -> CanonicalIdentity | None:
     row = connection.execute(
         "SELECT canonical_revision FROM account_heads WHERE creator_account_id = ?",
@@ -902,12 +1011,18 @@ def _sqlite_identity(
     ).fetchone()
     if row is None:
         return None
+    token = cache.token(connection, creator_account_id) if cache is not None else None
+    cached = cache.get(creator_account_id, token) if cache is not None else None
+    if cached is not None:
+        return cached
     source = HistoryAnalyticsSource(
         HistoryRepository.__new__(HistoryRepository),
         connection=connection,
     )
-    account = source.account_read_model(creator_account_id)
-    return canonical_identity(account)
+    identity = source.read_identity(creator_account_id)
+    if cache is not None and identity is not None:
+        cache.put(creator_account_id, token, identity)
+    return identity
 
 
 def _sqlite_publication_epoch_open(

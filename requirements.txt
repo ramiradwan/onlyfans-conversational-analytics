@@ -14,3 +14,6 @@ cryptography==50.0.0
 # Windows packages use the pinned source-built wheel in packaging/sqlcipher.
 sqlcipher3==0.6.2+ofca.1 ; platform_system == "Windows"
 sqlcipher3==0.6.2 ; platform_system != "Windows"
+
+# IANA timezone data for consistent question validation on Windows.
+tzdata==2026.4

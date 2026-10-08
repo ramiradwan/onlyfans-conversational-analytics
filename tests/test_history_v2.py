@@ -10,6 +10,8 @@ from app.persistence.factory import create_canonical_repositories
 from app.persistence.history import InvariantViolation, StreamKey
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT_ID = "dev-creator-account"
 INSTALLATION_ID = UUID("20000000-0000-4000-8000-000000000001")

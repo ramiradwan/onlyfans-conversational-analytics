@@ -17,6 +17,8 @@ from app.security.grant_verifier import (
     verify_grant,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 CONTRACTS = Path(__file__).resolve().parents[1] / "contracts" / "grant-profile-v1"
 
@@ -47,6 +49,9 @@ def _context(data: dict[str, Any]) -> GrantVerificationContext:
     )
 
 
+# Native path separators give these cases different node IDs on Windows.
+# Keep both platform identities in required CI rather than rewriting old IDs.
+@pytest.mark.windows_compat
 @pytest.mark.contract_integrity
 @pytest.mark.parametrize("case", _cases(), ids=lambda case: str(case.relative_to(CONTRACTS)))
 def test_grant_profile_vectors_match_expected_outcomes(case: Path) -> None:

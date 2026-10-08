@@ -17,6 +17,8 @@ from app.services.command_execution import (
 )
 from app.transport.manager import DEV_ACCOUNT_ID
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 NOW = datetime(2026, 7, 18, 10, 5, tzinfo=timezone.utc)
 ACTION = {

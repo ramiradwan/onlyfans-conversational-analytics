@@ -40,6 +40,8 @@ from app.security.hosted_grants import (
 )
 from app.security.installation_key import InstallationProof
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 NOW = datetime(2026, 7, 19, tzinfo=timezone.utc)
 ORGANIZATION_ID = "0198a1b2-c3d4-7000-8000-000000000001"

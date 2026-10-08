@@ -29,6 +29,8 @@ from tests.state_models.transition_oracle import (
     assert_transition_oracle,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT_ID = "falsifier-test-account"
 INSTALLATION_ID = UUID("40000000-0000-4000-8000-000000000001")

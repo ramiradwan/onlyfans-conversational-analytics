@@ -4,6 +4,8 @@ import pytest
 
 from app.transport.companion_origin import CompanionOriginBoundary
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(

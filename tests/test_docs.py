@@ -6,6 +6,10 @@ from pathlib import Path
 
 from tools import check_docs
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,3 +34,13 @@ def test_markdown_discovery_skips_only_root_pytest_basetemp_directories(
     assert "\n.pytest_temp*/" not in gitignore
     assert nested_document in discovered
     assert root_basetemp_document not in discovered
+
+
+def test_markdown_discovery_excludes_generated_ci_reports_only(tmp_path, monkeypatch):
+    generated = tmp_path / "artifacts/ci-tests/failed-lane/summary.md"
+    document = tmp_path / "docs/artifacts/ci-tests/summary.md"
+    for path in (generated, document):
+        path.parent.mkdir(parents=True)
+        path.write_text("# Summary\n", encoding="utf-8")
+    monkeypatch.setattr(check_docs, "ROOT", tmp_path)
+    assert check_docs.markdown_files() == [document]

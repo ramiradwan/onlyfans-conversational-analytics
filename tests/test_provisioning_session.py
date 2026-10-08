@@ -12,6 +12,10 @@ from app.provisioning.session import (
     ProvisioningSessionManager,
 )
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 def test_cross_site_post_is_refused_at_the_origin_check() -> None:
     manager = ProvisioningSessionManager("t" * 32)

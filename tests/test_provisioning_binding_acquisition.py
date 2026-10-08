@@ -33,6 +33,8 @@ from app.provisioning.session import (
 from app.security.hosted_grants import CreatorAssociationRequest
 from app.security.installation_key import PLATFORM_CRYPTO_PROVIDER
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 ORGANIZATION_ID = "organization-1"
 INSTALLATION_ID = "installation-1"

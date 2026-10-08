@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 from app.persistence.factory import create_canonical_repositories
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
