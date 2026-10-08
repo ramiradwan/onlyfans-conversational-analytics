@@ -26,7 +26,7 @@ Rebuild accepts an empty JSON object and no query parameters. It revalidates cur
 
 `no_later_creator_reply.v1` is executable. It inspects follow-up through the cutoff, including replies outside the selected interval. Ambiguous latest messages are undetermined, not matches. A match does not mean a reply is required.
 
-The production canonical gateway supplies unknown event kind and inferred ordering. A conversation whose latest event kind is unknown remains undetermined. Known event types in synthetic integration tests are not evidence that these fields exist in production data.
+The production canonical gateway translates supported per-record client parity metadata and retains inferred ordering. Missing or unsupported kind metadata remains unknown. A later or tied unknown keeps a conversation undetermined. See the [adoption and separate question-version proposal](history-kind-adoption.md) for the bounded evidence standard and activation decision.
 
 Coverage comes from the active acquisition generation at the question's fixed cutoff. Without an active generation it is unknown. Complete coverage requires a completed, closed generation with frozen inventory, a conversation history marker and a reconciled head through the generation's cutoff. A later question cutoff, incomplete evidence or retention clipping yields partial coverage. A last completed generation and an account freshness indicator cannot substitute for this evidence.
 

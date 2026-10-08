@@ -91,7 +91,7 @@ class QuestionResources:
                 and callable(getattr(self.pipeline.projections, 'question_connection_database', None))
                 and callable(getattr(self.pipeline.projections.activation, 'read_scope', None))) else None)
         service = AnalyticsQuestionService(reader,
-            [RegisteredQuestion("no_later_creator_reply.v1", "canonical.v2", no_later_creator_reply)],
+            [RegisteredQuestion("no_later_creator_reply.v1", "canonical.client-parity.v1", no_later_creator_reply)],
             cursor_secret=self.secret, clock=self.clock)
         return service.execute(policy, plan, cancellation_check=lambda: self._cancelled(account, cancellation_check))
 

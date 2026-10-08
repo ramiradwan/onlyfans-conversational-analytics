@@ -5,6 +5,7 @@ from app.analytics.opaque_refs import conversation_ref, message_ref
 from app.analytics.query_contracts import utc_instant
 from app.analytics.query_facts import QuestionConversation, QuestionMessage
 from app.analytics.source_coverage import question_coverage
+from app.analytics.query_facts import imported_history_kind
 
 # SQLite's date index is a coarse filter; Python verifies exact source instants.
 DATE_TOLERANCE_DAYS = 0.00002
@@ -20,7 +21,7 @@ def reply_conversations(scope, question, budget):
 
     def records(chat, start, end):
         return db.execute('''SELECT m.message_id,m.sent_at,m.direction,
-            m.sender_platform_user_id,c.platform_user_id,julianday(m.sent_at) AS indexed_time
+            m.sender_platform_user_id,c.platform_user_id,m.event_kind_json,julianday(m.sent_at) AS indexed_time
             FROM account_messages m JOIN account_chats c
               ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
             WHERE m.creator_account_id=? AND m.chat_id=? AND m.is_deleted=0 AND c.is_deleted=0
@@ -36,7 +37,8 @@ def reply_conversations(scope, question, budget):
         scope.locations[ref] = EvidenceLocation(conversation_id=chat, message_id=str(row['message_id']))
         role = 'creator' if row['direction'] == 'outbound' else (
             'participant' if row['sender_platform_user_id'] == row['platform_user_id'] else 'unknown')
-        return QuestionMessage(ref, utc_instant(row['sent_at']), role, 'unknown')
+        return QuestionMessage(ref, utc_instant(row['sent_at']), role,
+                               imported_history_kind(row['event_kind_json'], chat))
 
     for candidate in chats:
         budget.consume()
@@ -48,6 +50,8 @@ def reply_conversations(scope, question, budget):
         for row in records(chat, max(question.plan.start, question.retention_cutoff_exclusive),
                            min(question.plan.end, question.cutoff)):
             budget.consume()
+            if imported_history_kind(row['event_kind_json'], chat) == 'system':
+                continue
             at = utc_instant(row['sent_at'])
             if question.plan.start <= at < question.plan.end and question.retention_cutoff_exclusive < at <= question.cutoff:
                 selected = row
@@ -57,6 +61,8 @@ def reply_conversations(scope, question, budget):
         latest, newest, indexed_end = [], None, None
         for row in records(chat, question.retention_cutoff_exclusive, question.cutoff):
             budget.consume()
+            if imported_history_kind(row['event_kind_json'], chat) == 'system':
+                continue
             if indexed_end is not None and row['indexed_time'] < indexed_end - DATE_TOLERANCE_DAYS:
                 break
             at = utc_instant(row['sent_at'])

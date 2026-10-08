@@ -67,10 +67,12 @@ def _staged_message(record: dict[str, Any]) -> tuple[Any, ...]:
     if record["tombstone"]:
         return (
             record["message_id"], record["chat_id"], 1,
-            None, None, None, None, None, None,
+            None, None, None, None, None, None, None,
         )
     message = dict(record["message"])
     message.pop("record_kind", None)
+    if message.get("event_kind") is None:
+        message.pop("event_kind", None)
     return (
         message["message_id"],
         message["chat_id"],
@@ -81,6 +83,7 @@ def _staged_message(record: dict[str, Any]) -> tuple[Any, ...]:
         message["direction"],
         message.get("upstream_updated_at"),
         _hash(message),
+        _json(message["event_kind"]) if message.get("event_kind") is not None else None,
     )
 
 
@@ -419,8 +422,8 @@ class HistoryRepository:
                                creator_account_id,agent_installation_id,agent_stream_id,snapshot_id,
                                message_id,chat_id,chunk_index,record_json,is_tombstone,
                                sender_platform_user_id,text,sent_at,direction,
-                               upstream_updated_at,content_hash
-                           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                               upstream_updated_at,content_hash,event_kind_json
+                           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         [
                             (
                                 *key.sql(),
@@ -556,33 +559,45 @@ class HistoryRepository:
             raise InvariantViolation("message references an unknown or deleted chat")
         clean = dict(message)
         clean.pop("record_kind", None)
+        if clean.get("event_kind") is None:
+            clean.pop("event_kind", None)
         content_hash = _hash(clean)
         row = connection.execute(
-            """SELECT content_hash,upstream_updated_at,is_deleted FROM account_messages
+            """SELECT content_hash,upstream_updated_at,is_deleted,chat_id,sender_platform_user_id,
+                      text,sent_at,direction,event_kind_json FROM account_messages
                WHERE creator_account_id=? AND message_id=?""",
             (account_id, message["message_id"]),
         ).fetchone()
         if row is not None:
             if row[2] or row[0] == content_hash:
                 return False
-            raise InvariantViolation("immutable message identifier has conflicting content")
+            core = (message['chat_id'], message['sender_platform_user_id'], message['text'],
+                    message['sent_at'], message['direction'])
+            if tuple(row[3:8]) != core or row[1] != message.get('upstream_updated_at'):
+                raise InvariantViolation("immutable message identifier has conflicting content")
+            if clean.get('event_kind') is None:
+                return False
+            if row[8] == _json(clean['event_kind']):
+                return False
         connection.execute(
             """INSERT INTO account_messages(
                    creator_account_id,message_id,chat_id,sender_platform_user_id,text,sent_at,direction,
                    upstream_updated_at,content_hash,winning_stream_epoch,winning_source_seq,
-                   winning_event_id,is_deleted,updated_at
-               ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?)
+                   winning_event_id,is_deleted,updated_at,event_kind_json
+               ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)
                ON CONFLICT(creator_account_id,message_id) DO UPDATE SET
                    chat_id=excluded.chat_id,sender_platform_user_id=excluded.sender_platform_user_id,
                    text=excluded.text,sent_at=excluded.sent_at,direction=excluded.direction,
                    upstream_updated_at=excluded.upstream_updated_at,content_hash=excluded.content_hash,
                    winning_stream_epoch=excluded.winning_stream_epoch,
                    winning_source_seq=excluded.winning_source_seq,
-                   winning_event_id=excluded.winning_event_id,is_deleted=0,updated_at=excluded.updated_at""",
+                   winning_event_id=excluded.winning_event_id,is_deleted=0,updated_at=excluded.updated_at,
+                   event_kind_json=excluded.event_kind_json""",
             (account_id, message["message_id"], message["chat_id"],
              message["sender_platform_user_id"], message["text"], message["sent_at"],
              message["direction"], message.get("upstream_updated_at"), content_hash,
-             epoch, source_seq, event_id, now),
+             epoch, source_seq, event_id, now,
+             _json(clean["event_kind"]) if clean.get("event_kind") is not None else None),
         )
         self.catchup.attribute_insert(connection, account_id, check_id, message["sent_at"])
         return True
@@ -902,7 +917,9 @@ class HistoryRepository:
                   AND t.entity_kind='message' AND t.entity_id=s.message_id
                 WHERE s.creator_account_id=? AND s.agent_installation_id=?
                   AND s.agent_stream_id=? AND s.snapshot_id=? AND s.is_tombstone=0
-                  AND t.entity_id IS NULL AND m.is_deleted=0 AND m.content_hash<>s.content_hash
+                  AND t.entity_id IS NULL AND m.is_deleted=0 AND (m.chat_id<>s.chat_id OR m.sender_platform_user_id<>s.sender_platform_user_id
+                       OR m.text<>s.text OR m.sent_at<>s.sent_at OR m.direction<>s.direction
+                       OR m.upstream_updated_at IS NOT s.upstream_updated_at)
                 LIMIT 1""",
             scope,
         ).fetchone()
@@ -913,10 +930,10 @@ class HistoryRepository:
             """INSERT INTO account_messages(
                    creator_account_id,message_id,chat_id,sender_platform_user_id,text,sent_at,
                    direction,upstream_updated_at,content_hash,winning_stream_epoch,
-                   winning_source_seq,winning_event_id,is_deleted,updated_at
+                   winning_source_seq,winning_event_id,is_deleted,updated_at,event_kind_json
                )
                SELECT ?,s.message_id,s.chat_id,s.sender_platform_user_id,s.text,s.sent_at,
-                      s.direction,s.upstream_updated_at,s.content_hash,?,?,NULL,0,?
+                      s.direction,s.upstream_updated_at,s.content_hash,?,?,NULL,0,?,s.event_kind_json
                  FROM snapshot_message_records s
                  LEFT JOIN account_messages m
                    ON m.creator_account_id=s.creator_account_id AND m.message_id=s.message_id
@@ -928,6 +945,19 @@ class HistoryRepository:
                   AND m.message_id IS NULL AND t.entity_id IS NULL""",
             (account_id, epoch, source_seq, now, *scope),
         ).rowcount
+        message_kind_updates = 0
+        for staged in connection.execute(
+            '''SELECT s.message_id,s.event_kind_json,s.content_hash FROM snapshot_message_records s
+               JOIN account_messages m ON m.creator_account_id=s.creator_account_id AND m.message_id=s.message_id
+               WHERE s.creator_account_id=? AND s.agent_installation_id=? AND s.agent_stream_id=?
+                 AND s.snapshot_id=? AND s.is_tombstone=0 AND m.is_deleted=0
+                 AND s.event_kind_json IS NOT NULL AND m.event_kind_json IS NOT s.event_kind_json''', scope).fetchall():
+            connection.execute(
+                '''UPDATE account_messages SET event_kind_json=?,content_hash=?,winning_stream_epoch=?,
+                   winning_source_seq=?,winning_event_id=NULL,updated_at=?
+                   WHERE creator_account_id=? AND message_id=?''',
+                (staged[1], staged[2], epoch, source_seq, now, account_id, staged[0]))
+            message_kind_updates += 1
         message_tombstones = connection.execute(
             """INSERT OR IGNORE INTO entity_tombstones(
                    creator_account_id,entity_kind,entity_id,chat_id,stream_epoch,
@@ -954,6 +984,7 @@ class HistoryRepository:
                 chat_tombstones,
                 coverage_invalidated,
                 message_inserts,
+                message_kind_updates,
                 message_tombstones,
             )
         )

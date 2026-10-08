@@ -153,8 +153,13 @@ export function mergeMessage(existing, incoming) {
       value: nextTombstone,
     };
   }
-  if (normalizedMaterialEqual(existing, incoming)) {
-    return { action: 'noop', value: clone(existing) };
+  const { event_kind: existingKind, ...existingRecord } = existing;
+  const { event_kind: incomingKind, ...incomingRecord } = incoming;
+  if (normalizedMaterialEqual(existingRecord, incomingRecord)) {
+    if (incomingKind == null || normalizedMaterialEqual(existingKind, incomingKind)) {
+      return { action: 'noop', value: clone(existing) };
+    }
+    return { action: 'replace', value: clone(incoming) };
   }
   throw new InvariantViolation(
     'material_conflict',

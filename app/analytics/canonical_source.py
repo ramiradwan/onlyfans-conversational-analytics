@@ -343,6 +343,7 @@ class HistoryAnalyticsSource:
 
     def account_read_model(self, creator_account_id: str) -> AccountReadModel:
         from app.analytics.source_coverage import AcquisitionCoverage
+        from app.analytics.source_snapshot import message_kind_column
 
         with self._read() as connection:
             head = connection.execute(
@@ -372,9 +373,10 @@ class HistoryAnalyticsSource:
                     "messages": [],
                 }
 
+            kind_column = message_kind_column(connection)
             messages = connection.execute(
-                """SELECT chat_id,message_id,text,sent_at,direction,
-                          winning_stream_epoch,winning_source_seq
+                f"""SELECT chat_id,message_id,text,sent_at,direction,
+                          winning_stream_epoch,winning_source_seq,{kind_column}
                      FROM account_messages
                     WHERE creator_account_id=? AND is_deleted=0
                     ORDER BY chat_id,sent_at,winning_stream_epoch,
@@ -396,6 +398,7 @@ class HistoryAnalyticsSource:
                     "sent_at": self._iso(str(row[3])),
                     "direction": str(row[4]),
                     "sentiment": None,
+                    **({"event_kind": json.loads(row[7])} if row[7] is not None else {}),
                 }
                 conversation["messages"].append(message)
                 conversation["last_message_at"] = message["sent_at"]

@@ -1,3 +1,4 @@
+import { rawMessage } from '../protocol/validation.mjs';
 import { normalizedTimestamp } from '../capture/normalization.mjs';
 import { normalizeIdentifier } from 'local-authenticated-read-connector/browser-signing';
 import { mapPlatformObservation } from './capture-ingestion.mjs';
@@ -17,13 +18,13 @@ const MESSAGE_KEYS = Object.freeze([
   'direction',
 ]);
 
-function requireExactRecord(record, keys, label) {
+function requireExactRecord(record, keys, label, optional = []) {
   if (
     typeof record !== 'object'
     || record === null
     || Array.isArray(record)
-    || Object.keys(record).length !== keys.length
-    || Object.keys(record).some((key) => !keys.includes(key))
+    || keys.some((key) => !Object.hasOwn(record, key))
+    || Object.keys(record).some((key) => !keys.includes(key) && !optional.includes(key))
   ) throw new Error(`Signer returned a non-canonical ${label} item`);
 }
 
@@ -52,7 +53,10 @@ function normalizedObservation({ eventType, record, observedAt, creatorPlatformI
 }
 
 export function normalizeSignerConversation(record, context) {
-  requireExactRecord(record, CONVERSATION_KEYS, 'conversation');
+  requireExactRecord(record, CONVERSATION_KEYS, 'conversation', ['head_message_id', 'head_sent_at']);
+  if ((Object.hasOwn(record, 'head_message_id') && !canonicalIdentifier(record.head_message_id))
+    || (Object.hasOwn(record, 'head_sent_at') && (typeof record.head_sent_at !== 'string'
+      || normalizedTimestamp(record.head_sent_at) === null))) invalidCanonical();
   if (!canonicalIdentifier(record.id) || !canonicalIdentifier(record.platform_user_id)
     || (record.display_name !== null && typeof record.display_name !== 'string')
     || (record.updated_at !== null && (typeof record.updated_at !== 'string'
@@ -67,7 +71,7 @@ export function normalizeSignerConversation(record, context) {
 }
 
 export function normalizeSignerMessage(record, context) {
-  requireExactRecord(record, MESSAGE_KEYS, 'message');
+  requireExactRecord(record, MESSAGE_KEYS, 'message', ['event_kind']);
   if (!canonicalIdentifier(record.id) || !canonicalIdentifier(record.sender_platform_user_id)
     || (record.chat_id !== null && !canonicalIdentifier(record.chat_id))
     || typeof record.text !== 'string' || typeof record.sent_at !== 'string'
@@ -81,11 +85,20 @@ export function normalizeSignerMessage(record, context) {
   if (record.direction !== null && record.direction !== inferredDirection) {
     throw new Error('Signer message direction conflicts with the verified creator identity');
   }
-  return normalizedObservation({
+  const change = normalizedObservation({
     eventType: 'message.observed',
     record,
     observedAt: context.observedAt,
     creatorPlatformId: context.creatorPlatformId,
     conversationId: context.conversationId,
   });
+  if (record.event_kind != null) {
+    if (record.event_kind.context?.account_id !== context.creatorPlatformId
+      || record.event_kind.context?.conversation_id !== context.conversationId) {
+      throw new Error('Signer history kind context differs from the authorized read');
+    }
+    change.message.event_kind = structuredClone(record.event_kind);
+    rawMessage(change.message, 'history.message');
+  }
+  return change;
 }

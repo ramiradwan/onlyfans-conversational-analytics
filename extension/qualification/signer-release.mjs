@@ -8,15 +8,15 @@ import { gunzipSync } from 'fflate';
 // different archive bytes, even when the package keeps the same version string.
 export const SIGNER_RELEASE = Object.freeze({
   package: 'local-authenticated-read-connector',
-  version: '0.2.0',
+  version: '0.5.0-rc.1',
   repository: 'ramiradwan/local-of-signer',
-  tag: 'v0.2.0',
-  release_id: 386910504,
-  asset_id: 556904013,
-  archive: 'local-authenticated-read-connector-0.2.0.tgz',
-  sha256: 'd32da93c6c1e863b49ca96ed0bc86f2c9c615174b88ccee04310f817dd88a281',
-  source_revision: '672ba94db26aa582451c817ec72a04304a2a238c',
-  source_tree: '8f42fe8ac4044478a9c62b0de35a47cbbdd43e7b',
+  tag: 'v0.5.0-rc.1',
+  release_id: 402765184,
+  asset_id: 608867698,
+  archive: 'local-authenticated-read-connector-0.5.0-rc.1.tgz',
+  sha256: '9a4a1143aae37b47b99ed3ac81e4a949d32e17d7785686d0136de9cc859e46a9',
+  source_revision: 'd8cc1812b7282097c689ceceed766792c9c1e629',
+  source_tree: '37963ea0e3afa03f4613fd9150c64efb5ba920b4',
 });
 
 export function auditSignerArchive(bytes) {
