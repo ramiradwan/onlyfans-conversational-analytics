@@ -143,10 +143,9 @@ describe('commercial activation controls', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Activate' })));
 
     expect(readiness).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+    expect(screen.queryByRole('button', { name: 'Show details' })).toBeNull();
     expect(await screen.findByText(/Nothing has changed. Try again in a moment/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull());
+    expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
     expect((screen.getByLabelText('Activation code') as HTMLInputElement).value).toBe(CONTINUATION);
   });

@@ -1,0 +1,1251 @@
+# Shadow rollout: full Windows regression remains required on every PR.
+# Retire PR duplication only in a later change backed by three clean paired runs.
+name: CI
+'on':
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+  schedule:
+    - cron: 17 3 * * *
+  workflow_dispatch:
+    inputs:
+      browser_qualification:
+        description: Require first-attempt browser passes for rollout comparison
+        type: boolean
+        default: false
+      browser_serial_control:
+        description: Run the complete serial browser control (requires browser_qualification)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CI_POLICY_VERSION: sharded-v3
+  BROWSER_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_qualification }}
+  BROWSER_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
+jobs:
+  web-build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+            tools/analytics_cosmos_node/package-lock.json
+      - name: Cache build caches
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            frontend/.vite
+            frontend/.swc
+            frontend/.eslintcache
+            frontend/tsconfig.tsbuildinfo
+          key: build-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            build-${{ runner.os }}-
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Check Bridge architecture boundary contracts
+        working-directory: frontend
+        run: npm run check:architecture
+      - name: Typecheck frontend design sync
+        run: npm run typecheck:design-sync --prefix frontend
+      - name: Check unused frontend files and dependencies
+        working-directory: frontend
+        run: npm run check:unused
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: Check Agent architecture boundary contracts
+        working-directory: extension
+        run: npm run check:architecture
+      - name: Build frontend
+        run: npm run build --prefix frontend
+      - name: Check committed theme artifacts against the generator
+        run: git diff --exit-code -- frontend/src/theme/generated
+      - name: Test frontend
+        run: npm test --prefix frontend
+      - name: Test extension
+        run: npm test --prefix extension
+      - name: Test provisioning page module
+        run: node --test app/provisioning/provisioning.test.mjs
+      - name: Install analytics conformance dependencies
+        run: npm ci --prefix tools/analytics_cosmos_node
+      - name: Test analytics conformance adapter
+        run: npm test --prefix tools/analytics_cosmos_node
+      - name: Test the release bindings gate
+        run: node --test tools/legal-release-bindings/verify.test.mjs
+      - name: Test the packaged signing rule gate
+        run: node --test tools/packaged-signing-rule/verify.test.mjs
+      - name: Build and audit deterministic extension artifact
+        run: |
+          npm run build --prefix extension
+          npm run audit --prefix extension
+      - name: Qualify bounded 10k-message snapshot repair
+        run: npm run qualify:snapshot:ci --prefix extension
+      - name: Upload frontend build
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: frontend-dist-${{ env.PRODUCT_SHA }}
+          path: app/static/dist/
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
+      - name: Upload audited extension artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: extension-dist-${{ env.PRODUCT_SHA }}
+          path: extension/dist/
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
+  backend-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install -r requirements-dev.txt
+      - name: Check documentation
+        run: python tools/check_docs.py
+      - name: Validate architecture boundary manifest
+        run: python tools/validate_architecture_boundaries.py
+      - name: Check protected architecture impact declaration
+        if: github.event_name == 'pull_request'
+        run: |
+          python tools/check_boundary_declaration.py --event-path "$GITHUB_EVENT_PATH" --base-ref "${{ github.event.pull_request.base.sha }}" --head-ref "${{ github.event.pull_request.head.sha }}"
+      - name: Check Python architecture boundary contracts
+        run: lint-imports
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: Build frontend
+        run: npm run build --prefix frontend
+      - name: Build extension
+        run: npm run build --prefix extension
+      - name: Collect independent legacy Linux selection
+        env:
+          CI_TEST_LANE: legacy-linux-reference
+          CI_REPORT_DIR: artifacts/ci-tests/legacy-linux-reference
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/legacy-linux-reference/junit.xml
+        run: python -m pytest --collect-only --override-ini=addopts= -m "not slow and not windows_production and
+          not stateful_tier_a and not stateful_tier_b and not stateful_agent_tier_a"
+      - name: Test fast backend
+        env:
+          CI_TEST_LANE: backend-fast
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast/junit.xml
+        run: python tools/test_backend.py --lane backend-fast
+      - name: Run Brain Tier A general state machine
+        env:
+          HYPOTHESIS_PROFILE: tier_a_general
+          CI_TEST_LANE: backend-fast-brain-general
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-brain-general
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-brain-general/junit.xml
+            --ci-profile=tier_a_general
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral -vv --hypothesis-show-statistics
+      - name: Run Brain Tier A deletion state machine
+        env:
+          HYPOTHESIS_PROFILE: tier_a_deletion
+          CI_TEST_LANE: backend-fast-brain-deletion
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-brain-deletion
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-brain-deletion/junit.xml
+            --ci-profile=tier_a_deletion
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion -vv --hypothesis-show-statistics
+      - name: Run Agent Tier A general state machine
+        env:
+          HYPOTHESIS_PROFILE: agent_tier_a_general
+          CI_TEST_LANE: backend-fast-agent-general
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-agent-general
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-agent-general/junit.xml
+            --ci-profile=agent_tier_a_general
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral -vv
+      - name: Run Agent Tier A deletion state machine
+        env:
+          HYPOTHESIS_PROFILE: agent_tier_a_deletion
+          CI_TEST_LANE: backend-fast-agent-deletion
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-agent-deletion
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-agent-deletion/junit.xml
+            --ci-profile=agent_tier_a_deletion
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_agent_delivery.py::TestAgentDeliveryDeletion -vv
+      - name: Run deterministic analytics rebuilds
+        env:
+          HYPOTHESIS_PROFILE: analytics_determinism_fast
+          CI_TEST_LANE: backend-fast-analytics-determinism
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-analytics-determinism
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-analytics-determinism/junit.xml
+            --ci-profile=analytics_determinism_fast
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_analytics_determinism.py::TestAnalyticsDeterminism -vv --hypothesis-show-statistics
+      - name: Run incremental analytics convergence
+        env:
+          HYPOTHESIS_PROFILE: analytics_convergence_fast
+          CI_TEST_LANE: backend-fast-analytics-convergence
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-analytics-convergence
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-analytics-convergence/junit.xml
+            --ci-profile=analytics_convergence_fast
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_analytics_equivalence.py::TestAnalyticsConvergence -vv --hypothesis-show-statistics
+      - name: Run derived deletion closure
+        env:
+          HYPOTHESIS_PROFILE: analytics_deletion_fast
+          CI_TEST_LANE: backend-fast-analytics-deletion
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-analytics-deletion
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-analytics-deletion/junit.xml
+            --ci-profile=analytics_deletion_fast
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_analytics_equivalence.py::TestAnalyticsDeletionConvergence -vv --hypothesis-show-statistics
+      - name: Run analytics oracle falsifiers
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_analytics_equivalence.py::test_analytics_convergence_falsifiers_reject_metric_provenance_identity_graph_and_deletion_faults tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_forged_topic_or_entity_graph_in_both_artifacts tests/stateful/test_analytics_equivalence.py::test_shared_oracle_rejects_same_stale_deleted_message_metric_in_both_artifacts tests/stateful/test_analytics_equivalence.py::test_active_publication_oracle_rejects_stale_deleted_material_with_current_witness tests/stateful/test_analytics_equivalence.py::test_deliberate_falsifier_failure_configures_hypothesis_shrink_phase -vv --hypothesis-show-statistics
+        env:
+          CI_TEST_LANE: backend-fast-analytics-falsifiers
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-analytics-falsifiers
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-analytics-falsifiers/junit.xml
+            --ci-profile=analytics_oracle_falsifiers
+      - name: Verify selected contract snapshot integrity
+        run: python -m pytest -m contract_integrity tests/test_contract_snapshot.py
+        env:
+          CI_TEST_LANE: backend-fast-contract-integrity
+          CI_REPORT_DIR: artifacts/ci-tests/backend-fast-contract-integrity
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/backend-fast-contract-integrity/junit.xml
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-tests-backend-fast-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ci-tests/
+          retention-days: 14
+          if-no-files-found: error
+  analytics-integration:
+    name: analytics-integration-${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+          - 4
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install -r requirements-dev.txt
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: Build frontend
+        run: npm run build --prefix frontend
+      - name: Build extension
+        run: npm run build --prefix extension
+      - name: Test required analytics integration shard
+        env:
+          CI_TEST_LANE: analytics-integration-${{ matrix.shard }}
+          CI_REPORT_DIR: artifacts/ci-tests/analytics-integration-${{ matrix.shard }}
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-integration-${{
+            matrix.shard }}/junit.xml
+        run: python tools/test_backend.py --lane analytics-integration --shard ${{ matrix.shard }}
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-tests-analytics-integration-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{
+            github.run_attempt }}
+          path: artifacts/ci-tests/
+          retention-days: 14
+          if-no-files-found: error
+  fixed-sqlcipher-wheel:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Prepare native dependency cache
+        id: native-cache
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ImageVersion)) {
+            throw "The hosted runner image version is required for the native dependency cache"
+          }
+          "image-version=$env:ImageVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP "ofca-vcpkg-cache") | Out-Null
+      - name: Cache native dependencies
+        id: vcpkg-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ runner.temp }}\ofca-vcpkg-cache
+          key: ofca-vcpkg-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.image-version }}-${{
+            hashFiles('packaging/sqlcipher/fixed-runtime-sources.json', 'packaging/sqlcipher/build-fixed-wheel.py',
+            'packaging/sqlcipher/build-fixed-wheel.ps1') }}
+      - name: Build fixed SQLCipher wheel
+        shell: pwsh
+        env:
+          VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}\ofca-vcpkg-cache,readwrite
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
+          .\packaging\sqlcipher\build-fixed-wheel.ps1 `
+            -BuildPython (Get-Command python.exe).Source `
+            -Wheelhouse $wheelhouse
+      - name: Record fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $wheelhouse = Join-Path $env:RUNNER_TEMP "ofca-fixed-sqlcipher-wheelhouse"
+          $payload = [ordered]@{
+            schema_version = 1
+            source_commit = $env:PRODUCT_SHA
+            workflow_run_id = [long]$env:GITHUB_RUN_ID
+            workflow_run_attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          }
+          $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM (Join-Path $wheelhouse "ci-source.json")
+      - name: Retain fixed SQLCipher wheel and provenance
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
+          retention-days: 30
+          if-no-files-found: error
+          overwrite: true
+  windows-platform-contract:
+    needs: fixed-sqlcipher-wheel
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Keep temporary test files on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-tests"
+          New-Item -ItemType Directory -Force $testTemp | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
+          if ([int]$source.workflow_run_attempt -lt 1 -or [int]$source.workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT) { throw "Fixed SQLCipher producer attempt is invalid" }
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+      - name: Qualify the fixed SQLCipher runtime
+        run: |
+          python tools/qualify_sqlcipher_runtime.py --output "$env:RUNNER_TEMP\fixed-sqlcipher-runtime-evidence.json"
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: Build frontend
+        run: npm run build --prefix frontend
+      - name: Build extension
+        run: npm run build --prefix extension
+      - name: Collect independent legacy Windows selection
+        env:
+          CI_TEST_LANE: legacy-windows-reference
+          CI_REPORT_DIR: artifacts/ci-tests/legacy-windows-reference
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/legacy-windows-reference/junit.xml
+        run: python -m pytest --collect-only --override-ini=addopts= -m "not slow and not stateful_tier_a and not
+          stateful_tier_b and not stateful_agent_tier_a"
+      - name: Test Windows platform contract
+        env:
+          CI_TEST_LANE: windows-platform-contract
+          CI_REPORT_DIR: artifacts/ci-tests/windows-platform-contract
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-platform-contract/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: python tools/test_backend.py --lane windows-platform-contract
+      - name: Test Windows production boot
+        run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
+        env:
+          CI_TEST_LANE: windows-production-boot
+          CI_REPORT_DIR: artifacts/ci-tests/windows-production-boot
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-production-boot/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+      - name: Test Windows persistent SQLCipher general profile
+        env:
+          HYPOTHESIS_PROFILE: tier_b_general
+          CI_TEST_LANE: windows-persistence-general
+          CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-general
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-general/junit.xml
+            --ci-profile=tier_b_general -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral --junitxml=artifacts/ci-tests/windows-persistence-general/junit.xml -vv
+      - name: Test Windows persistent SQLCipher deletion profile
+        env:
+          HYPOTHESIS_PROFILE: tier_b_deletion
+          CI_TEST_LANE: windows-persistence-deletion
+          CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-deletion
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-deletion/junit.xml
+            --ci-profile=tier_b_deletion -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion --junitxml=artifacts/ci-tests/windows-persistence-deletion/junit.xml -vv
+      - name: Test Windows persistent SQLCipher smoke profile
+        env:
+          HYPOTHESIS_PROFILE: windows_persistence_smoke
+          CI_TEST_LANE: windows-persistence-smoke
+          CI_REPORT_DIR: artifacts/ci-tests/windows-persistence-smoke
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml
+            --ci-profile=windows_persistence_smoke -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: |
+          python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml -vv
+      - name: Preserve persistence evidence filenames
+        if: always()
+        shell: pwsh
+        run: |-
+          foreach ($profile in @("general", "deletion", "smoke")) {
+            $source = "artifacts/ci-tests/windows-persistence-$profile/junit.xml"
+            if (Test-Path -LiteralPath $source -PathType Leaf) {
+              Copy-Item -LiteralPath $source -Destination "$env:RUNNER_TEMP\tier-b-$profile-junit.xml"
+            } else {
+              Write-Warning "Persistence evidence missing for $profile; no JUnit result will be fabricated."
+            }
+          }
+      - name: Record Windows persistence CI source
+        if: always()
+        shell: pwsh
+        run: |
+          $payload = [ordered]@{
+            schema_version = 1
+            source_commit = $env:PRODUCT_SHA
+            workflow_run_id = [long]$env:GITHUB_RUN_ID
+            workflow_run_attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          }
+          $payload | ConvertTo-Json | Set-Content -Encoding utf8NoBOM "$env:RUNNER_TEMP\windows-persistence-ci-source.json"
+      - name: Retain Windows persistence evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: windows-persistence-evidence-${{ env.PRODUCT_SHA }}
+          path: |
+            ${{ runner.temp }}\fixed-sqlcipher-runtime-evidence.json
+            ${{ runner.temp }}\tier-b-general-junit.xml
+            ${{ runner.temp }}\tier-b-deletion-junit.xml
+            ${{ runner.temp }}\tier-b-smoke-junit.xml
+            ${{ runner.temp }}\windows-persistence-ci-source.json
+          retention-days: 30
+          if-no-files-found: error
+          overwrite: true
+        if: always()
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-tests-windows-platform-contract-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
+            }}
+          path: artifacts/ci-tests/
+          retention-days: 14
+          if-no-files-found: error
+  analytics-windows-contract:
+    needs: fixed-sqlcipher-wheel
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Keep temporary test files on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-tests"
+          New-Item -ItemType Directory -Force $testTemp | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
+          if ([int]$source.workflow_run_attempt -lt 1 -or [int]$source.workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT) { throw "Fixed SQLCipher producer attempt is invalid" }
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+      - name: Qualify the fixed SQLCipher runtime
+        run: |
+          python tools/qualify_sqlcipher_runtime.py --output "$env:RUNNER_TEMP\fixed-sqlcipher-runtime-evidence.json"
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: Build frontend
+        run: npm run build --prefix frontend
+      - name: Build extension
+        run: npm run build --prefix extension
+      - name: Test Windows analytics contract
+        env:
+          CI_TEST_LANE: analytics-windows-contract
+          CI_REPORT_DIR: artifacts/ci-tests/analytics-windows-contract
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-windows-contract/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: python tools/test_backend.py --lane analytics-windows-contract
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-tests-analytics-windows-contract-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
+            }}
+          path: artifacts/ci-tests/
+          retention-days: 14
+          if-no-files-found: error
+  windows-full-shards:
+    name: windows-full-regression-${{ matrix.shard }}
+    needs: fixed-sqlcipher-wheel
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard:
+          - 1
+          - 2
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Keep temporary test files on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-tests"
+          New-Item -ItemType Directory -Force $testTemp | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
+          if ([int]$source.workflow_run_attempt -lt 1 -or [int]$source.workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT) { throw "Fixed SQLCipher producer attempt is invalid" }
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+      - name: Qualify the fixed SQLCipher runtime
+        run: |
+          python tools/qualify_sqlcipher_runtime.py --output "$env:RUNNER_TEMP\fixed-sqlcipher-runtime-evidence.json"
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: Build frontend
+        run: npm run build --prefix frontend
+      - name: Build extension
+        run: npm run build --prefix extension
+      - name: Test complete Windows backend regression shard
+        env:
+          CI_TEST_LANE: windows-full-regression-${{ matrix.shard }}
+          CI_REPORT_DIR: artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-full-regression-${{ matrix.shard }}/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-tests-windows-full-regression-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
+            }}
+          path: artifacts/ci-tests/
+          retention-days: 14
+          if-no-files-found: error
+  windows-full-regression:
+    if: ${{ always() }}
+    needs: windows-full-shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every full Windows shard
+        run: test '${{ needs.windows-full-shards.result }}' = 'success'
+  analytics-scale-qualification:
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: fixed-sqlcipher-wheel
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CI_PYTEST_LIVE_PROGRESS: '1'
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Keep temporary test files on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-tests"
+          New-Item -ItemType Directory -Force $testTemp | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
+          if ([int]$source.workflow_run_attempt -lt 1 -or [int]$source.workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT) { throw "Fixed SQLCipher producer attempt is invalid" }
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+      - name: Qualify the fixed SQLCipher runtime
+        run: |
+          python tools/qualify_sqlcipher_runtime.py --output "$env:RUNNER_TEMP\fixed-sqlcipher-runtime-evidence.json"
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: Build frontend
+        run: npm run build --prefix frontend
+      - name: Build extension
+        run: npm run build --prefix extension
+      - name: Qualify analytics scale on Windows
+        env:
+          CI_TEST_LANE: analytics-scale-qualification
+          CI_REPORT_DIR: artifacts/ci-tests/analytics-scale-qualification
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/analytics-scale-qualification/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: python tools/test_backend.py scale -- --ignore=tests/test_packaged_runtime.py --ignore=tests/test_installation_key.py
+      - name: Retain backend timing and selection
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: ci-tests-analytics-scale-qualification-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
+            }}
+          path: artifacts/ci-tests/
+          retention-days: 14
+          if-no-files-found: error
+  browser-reporting-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate browser qualification request
+        run: |
+          if [[ "$BROWSER_SERIAL_CONTROL" == 'true' && "$BROWSER_QUALIFICATION" != 'true' ]]; then
+            echo '::error::browser_serial_control requires browser_qualification'
+            exit 1
+          fi
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            extension/package-lock.json
+            tools/e2e-capture/package-lock.json
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install pinned reporting dependencies
+        run: |
+          npm ci --prefix tools/e2e-capture
+          npm ci --prefix extension
+          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0
+      - name: Test restricted browser reporting
+        run: npm run test:ci-tools --prefix tools/e2e-capture
+      - name: Probe the actual pinned Playwright reporter
+        run: npm run test:ci-sentinels --prefix tools/e2e-capture
+      - name: Test existing browser diagnostic redaction
+        run: node --test extension/tests/stable-connection-diagnostic.test.mjs extension/tests/worker-recovery-diagnostic.test.mjs
+      - name: Test Python session diagnostics explicitly
+        run: python -m pytest --override-ini=addopts= tools/e2e-capture/tests/test_session_diagnostics.py
+  browser-e2e-execution:
+    name: browser-e2e-${{ matrix.lane }}
+    needs:
+      - fixed-sqlcipher-wheel
+      - browser-reporting-safety
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        lane:
+          - core
+          - catchup
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      BROWSER_CI_LANE: ${{ matrix.lane }}
+      BROWSER_CI_REPORT_DIR: ${{ github.workspace }}\artifacts\browser-evidence\${{ matrix.lane }}
+      ENVIRONMENT: test
+      OFCA_TEST_DATABASE_MASTER_KEY_HEX: 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0
+      OFCA_PRODUCT_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT: ${{ github.workspace }}\artifacts\browser-evidence\${{ matrix.lane }}\legal\execution
+      OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\browser-evidence\${{ matrix.lane }}\legal\runtime-ui-proof.json
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Keep browser test caches on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-e2e"
+          $npmCache = Join-Path $env:RUNNER_TEMP "npm-cache"
+          $playwrightCache = Join-Path $env:RUNNER_TEMP "ms-playwright"
+          New-Item -ItemType Directory -Force $testTemp, $npmCache, $playwrightCache | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp", `
+            "NPM_CONFIG_CACHE=$npmCache", "PLAYWRIGHT_BROWSERS_PATH=$playwrightCache" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
+          if ([int]$source.workflow_run_attempt -lt 1 -or [int]$source.workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT) { throw "Fixed SQLCipher producer attempt is invalid" }
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+            tools/e2e-capture/package-lock.json
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ runner.temp }}\ms-playwright
+          key: ofca-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/e2e-capture/package-lock.json')
+            }}
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: 'Run Product #5 evidence scenarios'
+        if: matrix.lane == 'core'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results" | Out-Null
+          $output = & node --test `
+            extension/tests/activation-evidence.test.mjs `
+            extension/tests/legal-activation-controller.test.mjs `
+            extension/tests/legal-activation-revocation.test.mjs `
+            extension/tests/legal-activation-crash-recovery.test.mjs 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results\activation-evidence.tap"
+          if ($exitCode -ne 0) { exit $exitCode }
+      - name: Build and audit deterministic extension artifact
+        run: |
+          npm run build --prefix extension
+          npm run audit --prefix extension
+      - name: Build production Bridge
+        run: npm run build --prefix frontend
+      - name: Install pinned E2E dependencies
+        run: npm ci --prefix tools/e2e-capture
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: tools/e2e-capture
+        run: npx playwright install chromium
+      - name: Run browser E2E and preserve output
+        id: browser-execution
+        shell: pwsh
+        working-directory: tools/e2e-capture
+        run: |
+          New-Item -ItemType Directory -Force $env:BROWSER_CI_REPORT_DIR | Out-Null
+          & node ci/run.mjs --lane $env:BROWSER_CI_LANE --output-dir $env:BROWSER_CI_REPORT_DIR 2>&1 |
+            Tee-Object -FilePath "$env:BROWSER_CI_REPORT_DIR\browser-e2e.txt"
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) { exit $exitCode }
+      - name: Seal browser producer evidence
+        id: browser-seal
+        if: always()
+        shell: pwsh
+        run: python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" --publish-dir "$env:BROWSER_CI_REPORT_DIR-published" --diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"
+      - name: Retain immutable browser producer evidence
+        if: ${{ success() && steps.browser-seal.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-inputs-${{ matrix.lane }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BROWSER_CI_REPORT_DIR }}-published/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Retain restricted browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-diagnostics-${{ matrix.lane }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/
+          retention-days: 14
+          if-no-files-found: warn
+  browser-e2e-serial-control:
+    name: browser-e2e-serial-control
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
+    needs:
+      - fixed-sqlcipher-wheel
+      - browser-reporting-safety
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      BROWSER_CI_LANE: legacy
+      BROWSER_CI_REPORT_DIR: ${{ github.workspace }}\artifacts\browser-evidence\legacy
+      ENVIRONMENT: test
+      OFCA_TEST_DATABASE_MASTER_KEY_HEX: 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0
+      OFCA_PRODUCT_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT: ${{ github.workspace }}\artifacts\browser-evidence\legacy\legal\execution
+      OFCA_LEGAL_RUNTIME_PROOF_PATH: ${{ github.workspace }}\artifacts\browser-evidence\legacy\legal\runtime-ui-proof.json
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Keep browser test caches on runner storage
+        shell: pwsh
+        run: |
+          $testTemp = Join-Path $env:RUNNER_TEMP "ofca-e2e"
+          $npmCache = Join-Path $env:RUNNER_TEMP "npm-cache"
+          $playwrightCache = Join-Path $env:RUNNER_TEMP "ms-playwright"
+          New-Item -ItemType Directory -Force $testTemp, $npmCache, $playwrightCache | Out-Null
+          "TMPDIR=$testTemp", "TEMP=$testTemp", "TMP=$testTemp", `
+            "NPM_CONFIG_CACHE=$npmCache", "PLAYWRIGHT_BROWSERS_PATH=$playwrightCache" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            packaging/sqlcipher/fixed-runtime-sources.json
+      - name: Retrieve fixed SQLCipher wheel
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: fixed-sqlcipher-wheel-${{ env.PRODUCT_SHA }}
+          path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse
+      - name: Verify fixed SQLCipher CI source
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw "$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse\ci-source.json" | ConvertFrom-Json
+          if ($source.source_commit -ne $env:PRODUCT_SHA) { throw "Fixed SQLCipher source SHA mismatch" }
+          if ([long]$source.workflow_run_id -ne [long]$env:GITHUB_RUN_ID) { throw "Fixed SQLCipher run ID mismatch" }
+          if ([int]$source.workflow_run_attempt -lt 1 -or [int]$source.workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT) { throw "Fixed SQLCipher producer attempt is invalid" }
+      - name: Declare fixed SQLCipher wheelhouse
+        shell: pwsh
+        run: |
+          "SQLCIPHER_WHEELHOUSE=$env:RUNNER_TEMP\ofca-fixed-sqlcipher-wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+            tools/e2e-capture/package-lock.json
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ${{ runner.temp }}\ms-playwright
+          key: ofca-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/e2e-capture/package-lock.json')
+            }}
+      - name: Install pinned native Noise toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Install backend dependencies
+        env:
+          RUSTUP_TOOLCHAIN: 1.98.1
+        run: python -m pip install --find-links "$env:SQLCIPHER_WHEELHOUSE" -r requirements-dev.txt
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+      - name: Install extension dependencies
+        run: npm ci --prefix extension
+      - name: 'Run Product #5 evidence scenarios'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results" | Out-Null
+          $output = & node --test `
+            extension/tests/activation-evidence.test.mjs `
+            extension/tests/legal-activation-controller.test.mjs `
+            extension/tests/legal-activation-revocation.test.mjs `
+            extension/tests/legal-activation-crash-recovery.test.mjs 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object -FilePath "$env:OFCA_LEGAL_EVIDENCE_EXECUTION_ROOT\test-results\activation-evidence.tap"
+          if ($exitCode -ne 0) { exit $exitCode }
+      - name: Build and audit deterministic extension artifact
+        run: |
+          npm run build --prefix extension
+          npm run audit --prefix extension
+      - name: Build production Bridge
+        run: npm run build --prefix frontend
+      - name: Install pinned E2E dependencies
+        run: npm ci --prefix tools/e2e-capture
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: tools/e2e-capture
+        run: npx playwright install chromium
+      - name: Run browser E2E and preserve output
+        id: browser-execution
+        shell: pwsh
+        working-directory: tools/e2e-capture
+        run: |
+          New-Item -ItemType Directory -Force $env:BROWSER_CI_REPORT_DIR | Out-Null
+          & node ci/run.mjs --lane $env:BROWSER_CI_LANE --output-dir $env:BROWSER_CI_REPORT_DIR 2>&1 |
+            Tee-Object -FilePath "$env:BROWSER_CI_REPORT_DIR\browser-e2e.txt"
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) { exit $exitCode }
+      - name: Seal browser producer evidence
+        id: browser-seal
+        if: always()
+        shell: pwsh
+        run: python tools/ci_browser_gate.py seal --artifact-dir "$env:BROWSER_CI_REPORT_DIR" --publish-dir "$env:BROWSER_CI_REPORT_DIR-published" --diagnostics-dir "$env:BROWSER_CI_REPORT_DIR-diagnostics"
+      - name: Retain immutable browser producer evidence
+        if: ${{ success() && steps.browser-seal.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-inputs-legacy-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BROWSER_CI_REPORT_DIR }}-published/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Retain restricted browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-diagnostics-legacy-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BROWSER_CI_REPORT_DIR }}-diagnostics/
+          retention-days: 14
+          if-no-files-found: warn
+  windows-browser-e2e:
+    if: ${{ always() }}
+    needs:
+      - browser-reporting-safety
+      - browser-e2e-execution
+      - browser-e2e-serial-control
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    env:
+      OFCA_PRODUCT_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+      - name: Retrieve immutable browser producer evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: browser-e2e-inputs-*
+          path: artifacts/browser-evidence
+          merge-multiple: false
+      - name: Validate browser execution and assemble Legal inputs
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/ci_browser_gate.py --reports-dir artifacts/browser-evidence --execution-root artifacts/legal/execution --runtime-proof artifacts/legal/runtime-ui-proof.json --verified-output artifacts/browser-evidence/assembly-receipt.json
+      - name: 'Generate Product #5 Legal evidence bundle'
+        run: node tools/legal-evidence/generate-activation-bundle.mjs --execution-root artifacts/legal/execution --runtime-proof artifacts/legal/runtime-ui-proof.json
+      - name: Retain verified browser assembly provenance
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: browser-e2e-verified-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/browser-evidence/assembly-receipt.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: 'Upload Product #5 Legal evidence bundle'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: legal-activation-v2-${{ env.PRODUCT_SHA }}
+          path: artifacts/legal/activation-v2/${{ env.PRODUCT_SHA }}/
+          if-no-files-found: error
+          overwrite: true
+  required-ci-gate:
+    name: Required CI
+    if: ${{ always() }}
+    needs:
+      - web-build-and-test
+      - backend-fast
+      - analytics-integration
+      - fixed-sqlcipher-wheel
+      - windows-platform-contract
+      - analytics-windows-contract
+      - windows-full-shards
+      - windows-full-regression
+      - analytics-scale-qualification
+      - windows-browser-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Retrieve backend execution evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: ci-tests-*
+          path: artifacts/ci-downloaded
+          merge-multiple: false
+      - name: Require complete successful CI evidence
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/ci_gate.py --needs-json "$CI_NEEDS_JSON" --reports-dir artifacts/ci-downloaded
+  build-and-test:
+    if: ${{ always() }}
+    needs: required-ci-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Preserve the existing required check
+        run: test '${{ needs.required-ci-gate.result }}' = 'success'
+  windows-tests:
+    if: ${{ always() }}
+    needs: required-ci-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Preserve the existing required check
+        run: test '${{ needs.required-ci-gate.result }}' = 'success'

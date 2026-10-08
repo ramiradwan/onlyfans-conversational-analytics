@@ -2,6 +2,7 @@
 
 pytest==9.1.1
 pytest-asyncio==1.4.0
+jsonschema==4.26.0
 
 # Release-workflow policy tests parse .github/workflows into a structure.
 PyYAML==6.0.3

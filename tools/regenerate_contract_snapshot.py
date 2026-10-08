@@ -14,13 +14,20 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "de2e514e4ef59f5789d2806002c5eb439709d261"
-APPROVED_SOURCE_TREE = "ffc0702716cef54e02fbd888cd259087e6623a20"
-APPROVED_SOURCE_MANIFEST_SHA256 = "6a4a2e2c1050b7e729695dbc1877bb8f60abfea460c37d74e5c275d3e9c86963"
+APPROVED_SOURCE_COMMIT = "af7c958c218c35f74ce1370e0fca5b8ff37d6dfa"
+APPROVED_SOURCE_TREE = "d5ee1acd3ff8ba9623d1cb4d820daaec7dbbb406"
+APPROVED_SOURCE_MANIFEST_SHA256 = "a46e26b69302c573b821248415c25e80b196433e9745b6a89079f94cd0c5d93e"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
 PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
+
+# Only these additive inventories may replace reviewed previous bytes during
+# this pin migration. All released schemas, profiles and fixtures remain immutable.
+APPROVED_PREVIOUS_INVENTORIES = {
+    "catalog/contracts.yaml": "af8a689be9bd7e329970227ea403bb6c9218d3f4aacb1a0b237cd995e8cb6dd5",
+    "contract-manifest.json": "c9a2d20615c745508c86d79c5f6e784527a614099244511246384d3a57bd699f",
+}
 
 EXPORT_SET = [
     "grant-profile-v1",
@@ -40,10 +47,14 @@ EXPORT_SET = [
     "installation-key-proof-v1",
     "bootstrap-recovery-v2",
     "capability-license-hosted-api-v1",
+    "onboarding-continuity-v1",
+    "initial-installation-handoff-v1",
     SOURCE_MANIFEST_EXPORT,
 ]
 
 EXPORT_SOURCES = {
+    "initial-installation-handoff-v1": "test-vectors/initial-installation-handoff-v1",
+    "onboarding-continuity-v1": "test-vectors/onboarding-continuity-v1",
     "grant-profile-v1": "test-vectors/grant-profile-v1",
     "capability-permit-v1": "test-vectors/capability-permit-v1",
     "permit-consumption": "test-vectors/adr-0012-v1/permit-consumption",
@@ -59,6 +70,8 @@ EXPORT_SOURCES = {
 }
 
 APPROVED_EXPORT_DIGESTS = {
+    "initial-installation-handoff-v1": "2b8522ba09c6b57629af52a312f9b424d74d9276add8b36cdbc850250df3c48b",
+    "onboarding-continuity-v1": "98569965245348223b3fefa97ceb21744628090f5a37436f73bac5a7b91256ba",
     "grant-profile-v1": "5059ee95f0c847f7a33a787c80066e84359a2d4e0d2e8774637bfc387bece09b",
     "capability-permit-v1": "6a344d2ea66ff5af8279f6b057335829f61cd4cf8b1432c2f3bc122d4e32dae7",
     "permit-consumption": "e5e8646a5dc0a7d51f9223ccd8ee70c66c8ba2b1ba8ff04ac40be314dc945697",
@@ -97,8 +110,8 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 783
-EXPECTED_PUBLISHED_FILE_COUNT = 64
+EXPECTED_FILE_COUNT = 829
+EXPECTED_PUBLISHED_FILE_COUNT = 99
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -118,11 +131,17 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:companion-pairing:v1",
     "urn:bridge-clean:creator-association:v1",
     "urn:bridge-clean:grant-profile:v1",
+    "urn:bridge-clean:hosted-onboarding:v1",
+    "urn:bridge-clean:initial-installation-handoff-proof:v1",
+    "urn:bridge-clean:initial-installation-handoff:v1",
     "urn:bridge-clean:installation-claim-package:v1",
     "urn:bridge-clean:installation-claim-package:v2",
     "urn:bridge-clean:installation-claim:v1",
     "urn:bridge-clean:installation-claim:v2",
+    "urn:bridge-clean:onboarding-continuation:v1",
     "urn:bridge-clean:onboarding-progress:v1",
+    "urn:bridge-clean:onboarding-proof:v1",
+    "urn:bridge-clean:onboarding-transfer:v1",
     "urn:bridge-clean:provisioning-proof:v1",
     "urn:bridge-clean:release-descriptor:v1",
 )
@@ -139,6 +158,8 @@ TRUST_SETS = {
     "companion-pairing-v1": "companion-pairing-v1/trust-set.json",
 }
 CONFORMANCE_MANIFESTS = {
+    "initial-installation-handoff-v1": "initial-installation-handoff-v1/manifest.json",
+    "onboarding-continuity-v1": "onboarding-continuity-v1/manifest.json",
     "capability-license-v1": "capability-license-v1/manifest.json",
     "installation-claim-package-v1": "installation-claim-package-v1/manifest.json",
     "bootstrap-recovery-v2": "bootstrap-recovery-v2/manifest.json",
@@ -234,7 +255,10 @@ def _load_source_manifest(source_root: Path) -> dict[str, Any]:
 def _copy_exact_file(source: Path, target: Path, source_label: str) -> None:
     if target.is_file():
         if target.read_bytes() != source.read_bytes():
-            raise SystemExit(f"existing vendored upstream file is immutable: {source_label}")
+            previous = APPROVED_PREVIOUS_INVENTORIES.get(source_label)
+            if previous is None or sha256(target) != previous:
+                raise SystemExit(f"existing vendored upstream file is immutable: {source_label}")
+            shutil.copyfile(source, target)
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, target)

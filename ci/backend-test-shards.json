@@ -245,6 +245,7 @@
     "tests/test_graph_store_contract.py": 3,
     "tests/test_historical_analytics_retention.py": 4,
     "tests/test_history_api.py": 1,
+    "tests/test_history_kind_adoption.py": 1,
     "tests/test_history_v2.py": 2,
     "tests/test_hosted_origin_resolution.py": 2,
     "tests/test_incremental_conversation_integrity.py": 1,

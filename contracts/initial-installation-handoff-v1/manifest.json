@@ -1,0 +1,35 @@
+{
+  "case_count": 125,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "0bcaafe98069d2308320c44ca143f597d3f9b6863f311c6d8780b8b9b2ca782b",
+      "size": 80140
+    },
+    {
+      "path": "digest-cases.json",
+      "sha256": "c425138e26b1b826931141863905eeb10af36788dd85d0b34dddc0681ce3c2ac",
+      "size": 8280
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "fd41cffb07a76476a49598682b8a5dc0d0dde5cdd88c666bb182663a65343929",
+      "size": 8750
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "11cd8d1ae0e93156d8f9bed193a8d72e0f50f5f7c7db661b9e3bd0b7a5e17613",
+      "size": 38581
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "837db4ed80632507b0ec97d269455681b6d15709c207f37a42bd4281b81be1bb",
+      "size": 33466
+    }
+  ],
+  "generator": "tools/generate_initial_handoff_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0025-initial-installation-key-handoff.md",
+  "profile": "urn:bridge-clean:initial-installation-handoff-vectors:v1",
+  "test_only": true
+}

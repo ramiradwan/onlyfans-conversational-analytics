@@ -390,3 +390,120 @@ contracts:
     openapi_operations:
       - redeemCapabilityLicenseContinuation
     governing_adr: docs/adr/0021-add-opaque-capability-license-redemption.md
+  - id: onboarding-continuation-v1
+    owner: onboarding
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Closed onboarding-continuation exchange without transferring local runtime or commercial authority.
+    profile: urn:bridge-clean:onboarding-continuation:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/onboarding/v1/continuation.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0022-publish-onboarding-continuity-contracts.md
+  - id: hosted-onboarding-v1
+    owner: onboarding
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Closed hosted-onboarding exchange without transferring local runtime or commercial authority.
+    profile: urn:bridge-clean:hosted-onboarding:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/onboarding/v1/hosted-snapshot.schema.json
+      - schemas/onboarding/v1/hosted-event.schema.json
+      - schemas/onboarding/v1/hosted-stream-request.schema.json
+    openapi_operations:
+      - streamHostedOnboarding
+    governing_adr: docs/adr/0022-publish-onboarding-continuity-contracts.md
+  - id: onboarding-transfer-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Closed onboarding-transfer exchange without transferring local runtime or commercial authority.
+    profile: urn:bridge-clean:onboarding-transfer:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/onboarding/v1/transfer-issue-request.schema.json
+      - schemas/onboarding/v1/transfer-issue-response.schema.json
+      - schemas/onboarding/v1/transfer-redeem-request.schema.json
+      - schemas/onboarding/v1/transfer-recover-request.schema.json
+      - schemas/onboarding/v1/transfer-result.schema.json
+      - schemas/onboarding/v1/transfer-error.schema.json
+    openapi_operations:
+      - issueOnboardingTransfer
+      - redeemOnboardingTransfer
+      - recoverOnboardingTransfer
+    governing_adr: docs/adr/0022-publish-onboarding-continuity-contracts.md
+  - id: onboarding-proof-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Closed onboarding-proof exchange without transferring local runtime or commercial authority.
+    profile: urn:bridge-clean:onboarding-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/onboarding/v1/proof-challenge-request.schema.json
+      - schemas/onboarding/v1/proof-challenge-response.schema.json
+      - schemas/onboarding/v1/stream-proof-challenge-request.schema.json
+    openapi_operations:
+      - issueOnboardingProofChallenge
+      - issueOnboardingStreamProofChallenge
+    governing_adr: docs/adr/0022-publish-onboarding-continuity-contracts.md
+  - id: initial-installation-handoff-v1
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Initial unregistered installation key admission with exact hosted authorization and separate proof recovery.
+    profile: urn:bridge-clean:initial-installation-handoff:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 8192
+    max_response_bytes: 65536
+    schema_paths:
+      - schemas/initial-handoff/v1/definitions.schema.json
+      - schemas/initial-handoff/v1/prepare-request.schema.json
+      - schemas/initial-handoff/v1/prepare-response.schema.json
+      - schemas/initial-handoff/v1/authorize-request.schema.json
+      - schemas/initial-handoff/v1/authorize-response.schema.json
+      - schemas/initial-handoff/v1/wait-request.schema.json
+      - schemas/initial-handoff/v1/wait-event.schema.json
+      - schemas/initial-handoff/v1/complete-request.schema.json
+      - schemas/initial-handoff/v1/complete-response.schema.json
+      - schemas/initial-handoff/v1/receipt-request.schema.json
+      - schemas/initial-handoff/v1/receipt-response.schema.json
+      - schemas/initial-handoff/v1/error.schema.json
+    openapi_operations:
+      - prepareInitialInstallationHandoff
+      - authorizeInitialInstallationHandoff
+      - waitInitialInstallationHandoff
+      - completeInitialInstallationHandoff
+      - readInitialInstallationHandoffReceipt
+    governing_adr: docs/adr/0025-initial-installation-key-handoff.md
+  - id: initial-installation-handoff-proof-v1
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Initial unregistered installation key admission with exact hosted authorization and separate proof recovery.
+    profile: urn:bridge-clean:initial-installation-handoff-proof:v1
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 8192
+    max_response_bytes: 65536
+    schema_paths:
+      - schemas/initial-handoff/v1/proof-challenge-request.schema.json
+      - schemas/initial-handoff/v1/proof-challenge-response.schema.json
+    openapi_operations:
+      - issueInitialInstallationHandoffProofChallenge
+    governing_adr: docs/adr/0025-initial-installation-key-handoff.md

@@ -325,7 +325,7 @@ describe('CreatorDashboardView', () => {
     expect(screen.queryByRole('link', { name: 'Open inbox' })).toBeNull();
   });
 
-  it('replaces the numbers with the setup prompt until history sync starts', async () => {
+  it('requires activation without making optional history a setup step', async () => {
     const store = readyStore(
       snapshot({
         analyticsView: analytics([0, 0, 0, 0], 'synced_subset'),
@@ -343,18 +343,29 @@ describe('CreatorDashboardView', () => {
     await renderDashboard(store, readinessApi(false));
 
     const prompt = within(screen.getByRole('region', { name: 'Finish setup' }));
-    expect(prompt.getByText('1 of 3 complete')).toBeTruthy();
+    expect(prompt.getByText('1 of 2 complete')).toBeTruthy();
     expect(prompt.getByText('Connect the browser extension').textContent).toContain('(done)');
-    expect(prompt.getByText('Turn on message history').textContent).not.toContain('(done)');
+    expect(prompt.queryByText('Turn on message history')).toBeNull();
     expect(prompt.getByText('Turn on Full analytics').textContent).not.toContain('(done)');
     const current = prompt.getAllByRole('listitem').filter((item) => item.getAttribute('aria-current') === 'step');
-    expect(current.map((item) => item.textContent)).toEqual(['2Turn on message historyAllow browser access so message history can be read.']);
+    expect(current.map((item) => item.textContent)).toEqual(['2Turn on Full analyticsUse an activation code to turn on Full analytics on this computer.']);
     expect(prompt.getByRole('link', { name: 'Continue setup' }).getAttribute('href')).toBe(
-      '/settings#browser-extension',
+      '/settings#full-analytics',
     );
     expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Recent conversations' })).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('does not require setup when Full is ready and older-history import was skipped', async () => {
+    const store = readyStore(snapshot({
+      analyticsView: analytics([0, 0, 0, 0], 'synced_subset'),
+      coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase: 'not_started',
+        discovered_conversations: null, complete_conversations: 0, complete_as_of: null },
+    }));
+    await renderDashboard(store, readinessApi(true));
+    expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
   });
 
   it('applies the next analytics envelope and projection revision atomically', async () => {

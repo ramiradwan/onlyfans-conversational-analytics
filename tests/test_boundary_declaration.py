@@ -424,9 +424,9 @@ def test_malformed_existing_base_manifest_is_not_treated_as_an_initial_manifest(
         check_boundary_declaration._git_manifest_at("HEAD")
 
 
-def test_required_web_job_runs_the_pull_request_gate_with_local_inputs() -> None:
+def test_required_backend_job_runs_the_pull_request_gate_with_local_inputs() -> None:
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
-    job = workflow["jobs"]["web-build-and-test"]
+    job = workflow["jobs"]["backend-fast"]
     checkout = next(
         step
         for step in job["steps"]

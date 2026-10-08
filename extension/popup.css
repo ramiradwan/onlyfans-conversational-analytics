@@ -279,8 +279,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   --dipsy-static-popup-status-block: 64px;
   --dipsy-static-popup-width: 390px;
   --dipsy-static-provisioning-rail-block: 52px;
-  --dipsy-static-provisioning-stage-block: 360px;
-  --dipsy-static-provisioning-stage-block-narrow: 440px;
+  --dipsy-static-provisioning-stage-block: 30rem;
+  --dipsy-static-provisioning-stage-block-narrow: 36rem;
   --dipsy-static-setup-max-width: 42rem;
   --dipsy-static-status-line-block: 20px;
   --dipsy-static-status-line-block-narrow: 40px;

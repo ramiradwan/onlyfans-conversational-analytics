@@ -1,0 +1,77 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/transfer-recover-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "proof": {
+      "additionalProperties": false,
+      "properties": {
+        "challenge": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "signature": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url64"
+        }
+      },
+      "required": [
+        "challenge",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "additionalProperties": false,
+          "properties": {
+            "destination_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "kind": {
+              "enum": [
+                "desktop",
+                "browser-extension"
+              ]
+            },
+            "public_key": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/publicP256Jwk"
+            }
+          },
+          "required": [
+            "kind",
+            "destination_id",
+            "public_key"
+          ],
+          "type": "object"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "profile": {
+          "const": "urn:bridge-clean:onboarding-transfer:v1"
+        },
+        "purpose": {
+          "const": "recover-onboarding"
+        },
+        "redemption_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      },
+      "required": [
+        "profile",
+        "operation_id",
+        "purpose",
+        "redemption_operation_id",
+        "destination"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "request",
+    "proof"
+  ],
+  "title": "transfer recover request v1",
+  "type": "object"
+}

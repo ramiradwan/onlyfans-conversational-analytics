@@ -1,65 +1,51 @@
+# Qualify three same-source serial/split comparisons
+# before adding the stable visual-capture check to branch rules.
 name: Visual capture
-
-on:
+'on':
   push:
     branches: [main]
-    paths:
-      - 'frontend/**'
-      - 'extension/popup.html'
-      - 'extension/popup.css'
-      - 'extension/popup.js'
-      - 'extension/setup.*'
-      - 'extension/options.*'
-      - 'extension/ui/**'
-      - 'extension/qualification/surface*.mjs'
-      - 'extension/runtime/customer-journey.mjs'
-      - 'extension/qualification/*visual*.mjs'
-      - 'app/provisioning/provisioning.html'
-      - 'app/provisioning/provisioning.js'
-      - 'tools/visual-capture/**'
-      - '.github/workflows/visual-capture.yml'
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
-    paths:
-      - 'frontend/**'
-      - 'extension/popup.html'
-      - 'extension/popup.css'
-      - 'extension/popup.js'
-      - 'extension/setup.*'
-      - 'extension/options.*'
-      - 'extension/ui/**'
-      - 'extension/qualification/surface*.mjs'
-      - 'extension/runtime/customer-journey.mjs'
-      - 'extension/qualification/*visual*.mjs'
-      - 'app/provisioning/provisioning.html'
-      - 'app/provisioning/provisioning.js'
-      - 'tools/visual-capture/**'
-      - '.github/workflows/visual-capture.yml'
-
+  workflow_dispatch:
+    inputs:
+      visual_qualification:
+        description: Require a clean visual rollout comparison
+        type: boolean
+        default: false
+      visual_serial_control:
+        description: Run the complete serial control (requires visual_qualification)
+        type: boolean
+        default: false
 permissions:
   contents: read
-
 concurrency:
-  group: visual-capture-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 env:
   PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-
+  VISUAL_CAPTURE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+  VISUAL_CI_POLICY_VERSION: visual-v1
+  VISUAL_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.visual_qualification }}
+  VISUAL_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.visual_serial_control }}
 jobs:
-  visual-capture:
+  visual-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
+      - name: Validate visual qualification request
+        run: |
+          if [[ "$VISUAL_SERIAL_CONTROL" == 'true' && "$VISUAL_QUALIFICATION" != 'true' ]]; then
+            echo '::error::visual_serial_control requires visual_qualification'
+            exit 1
+          fi
       - name: Checkout exact Product revision
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.PRODUCT_SHA }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -67,10 +53,11 @@ jobs:
             frontend/package-lock.json
             extension/package-lock.json
             tools/visual-capture/package-lock.json
+            tools/e2e-capture/package-lock.json
 
       - name: Keep Playwright Chromium in the Actions cache
         id: playwright-cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: visual-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/visual-capture/package-lock.json') }}
@@ -104,19 +91,242 @@ jobs:
       - name: Test visual capture contracts
         run: node --test tools/visual-capture/*.test.mjs
 
-      - name: Capture visual states
-        env:
-          VISUAL_CAPTURE_REVISION: ${{ env.PRODUCT_SHA }}
-        run: node tools/visual-capture/capture.mjs artifacts/visual-capture
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install pinned reporting safety dependencies
+        run: |
+          npm ci --prefix tools/e2e-capture
+          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0
+      - name: Test restricted browser reporting
+        run: npm run test:ci-tools --prefix tools/e2e-capture
+      - name: Probe the actual pinned Playwright reporter
+        run: npm run test:ci-sentinels --prefix tools/e2e-capture
+      - name: Test existing browser diagnostic redaction
+        run: node --test extension/tests/stable-connection-diagnostic.test.mjs extension/tests/worker-recovery-diagnostic.test.mjs
+      - name: Test Python session diagnostics explicitly
+        run: python -m pytest --override-ini=addopts= tools/e2e-capture/tests/test_session_diagnostics.py
+      - name: Test visual inventory and output safety
+        run: node --test tools/visual-capture/ci/*.test.mjs
+      - name: Probe actual Playwright visual output destinations
+        run: node tools/visual-capture/ci/sentinels.mjs
+  visual-capture-execution:
+    name: visual-capture-${{ matrix.group }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        group: [dynamic, remaining]
+    env:
+      VISUAL_CI_GROUP: ${{ matrix.group }}
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+            tools/visual-capture/package-lock.json
+
+      - name: Keep Playwright Chromium in the Actions cache
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: visual-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/visual-capture/package-lock.json') }}
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Install extension renderer dependencies
+        run: npm ci --prefix extension
+
+      - name: Build extension renderer artifact
+        run: npm run build --prefix extension
+
+      - name: Install visual capture dependencies
+        run: npm ci --prefix tools/visual-capture
+
+      - name: Install Chromium system dependencies
+        working-directory: tools/visual-capture
+        run: npx playwright install-deps chromium
+
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: tools/visual-capture
+        run: npx playwright install chromium
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Capture the required visual stage group
+        id: visual-execution
+        run: node tools/visual-capture/capture.mjs artifacts/visual-raw/${{ matrix.group }} --stage-group ${{ matrix.group }}
+      - name: Seal approved visual producer evidence
+        id: visual-seal
+        if: always()
+        run: python tools/ci_visual_gate.py seal --artifact-dir artifacts/visual-raw/${{ matrix.group }} --publish-dir artifacts/visual-published/${{ matrix.group }} --diagnostics-dir artifacts/visual-diagnostics/${{ matrix.group }}
+      - name: Retain immutable complete visual inputs
+        if: ${{ success() && steps.visual-seal.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: visual-inputs-${{ matrix.group }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/visual-published/${{ matrix.group }}/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Retain restricted visual diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: visual-diagnostics-${{ matrix.group }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/visual-diagnostics/${{ matrix.group }}/
+          retention-days: 14
+          if-no-files-found: warn
+  visual-capture-serial-control:
+    name: visual-capture-serial-control
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.visual_serial_control }}
+    needs: visual-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VISUAL_CI_GROUP: all
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            extension/package-lock.json
+            tools/visual-capture/package-lock.json
+
+      - name: Keep Playwright Chromium in the Actions cache
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: visual-playwright-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/visual-capture/package-lock.json') }}
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Install extension renderer dependencies
+        run: npm ci --prefix extension
+
+      - name: Build extension renderer artifact
+        run: npm run build --prefix extension
+
+      - name: Install visual capture dependencies
+        run: npm ci --prefix tools/visual-capture
+
+      - name: Install Chromium system dependencies
+        working-directory: tools/visual-capture
+        run: npx playwright install-deps chromium
+
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: tools/visual-capture
+        run: npx playwright install chromium
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Capture the required visual stage group
+        id: visual-execution
+        run: node tools/visual-capture/capture.mjs artifacts/visual-raw/all --stage-group all
+      - name: Seal approved visual producer evidence
+        id: visual-seal
+        if: always()
+        run: python tools/ci_visual_gate.py seal --artifact-dir artifacts/visual-raw/all --publish-dir artifacts/visual-published/all --diagnostics-dir artifacts/visual-diagnostics/all
+      - name: Retain immutable complete visual inputs
+        if: ${{ success() && steps.visual-seal.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: visual-inputs-all-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/visual-published/all/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Retain restricted visual diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: visual-diagnostics-all-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/visual-diagnostics/all/
+          retention-days: 14
+          if-no-files-found: warn
+  visual-capture:
+    if: ${{ always() }}
+    needs:
+      - visual-contracts
+      - visual-capture-execution
+      - visual-capture-serial-control
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Install color qualification dependencies
+        run: npm ci --prefix frontend
+      - name: Retrieve immutable complete visual inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: visual-inputs-*
+          path: artifacts/visual-evidence
+          merge-multiple: false
+      - name: Validate and assemble complete visual coverage
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/ci_visual_gate.py --reports-dir artifacts/visual-evidence --output-dir artifacts/visual-capture --verified-output artifacts/visual-ci-verified.json
       - name: Record color qualification
         run: npm run generate:theme --prefix frontend -- --color-report ../artifacts/visual-capture/color-qualification.json
-
+      - name: Bind the final color report and approved captures
+        run: python tools/ci_visual_gate.py finalize --output-dir artifacts/visual-capture --verified-output artifacts/visual-ci-verified.json
+      - name: Retain verified visual assembly provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: visual-verified-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/visual-ci-verified.json
+          retention-days: 14
+          if-no-files-found: error
       - name: Upload visual states
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: visual-states-${{ env.PRODUCT_SHA }}
           path: artifacts/visual-capture/
           retention-days: 30
           if-no-files-found: error
+          overwrite: true

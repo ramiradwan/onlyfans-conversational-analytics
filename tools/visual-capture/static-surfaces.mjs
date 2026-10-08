@@ -10,6 +10,8 @@ import { inspectTaskCopy } from './task-copy.mjs';
 import { assertStaticAccessibility } from './static-accessibility.mjs';
 import { installSurfaceFixture } from '../../extension/qualification/surface-runtime-fixture.mjs';
 import { staticFixtures } from './static-fixtures.mjs';
+import { staticCases } from './static-fixture-matrix.mjs';
+import { staticConfiguration } from './ci/inventory.mjs';
 import { installProvisioningFixture } from './provisioning-driver.mjs';
 import { installWatcher, readWatcher } from './shift-watcher.mjs';
 import { REQUIRED_REGIONS } from './dynamic-transitions.mjs';
@@ -113,21 +115,22 @@ async function inspect(page, fixture, width, session) {
     return { ...metrics, fonts, task: task ?? await inspectTaskCopy(page, fixture) };
   } finally { await session.detach(); }
 }
-export async function captureStaticSurfaces(browser, outDir) {
+export async function captureStaticSurfaces(browser, outDir, recorder = null) {
   const directory = join(outDir, 'static-surfaces');
   await mkdir(directory, { recursive: true });
   const popupCss = await readFile(join(root, 'extension/popup.css'), 'utf8');
   const setupCss = await readFile(join(root, 'extension/setup.css'), 'utf8');
   const fixtures = await staticFixtures();
-  fixtures.push(...fixtures.filter((item) => item.name === 'preview' || item.name === 'connect')
-    .map((item) => ({ ...item, sourceName: item.name, name: item.name + '-cold-assets', deliveryDelay: 1500 })));
   const entries = [], failures = [], checks = [];
-  const cases = ['light', 'dark'].flatMap((mode) => fixtures.flatMap((fixture) => fixture.widths.map((width) => ({ mode, fixture, width }))));
+  const cases = staticCases(fixtures);
   await runCaptureJobs(cases, async ({ mode, fixture, width }) => {
         const viewport = fixture.pairing ? { width: 400, height: 488 }
           : { width, height: fixture.surface === 'popup' ? 600 : width > 600 ? 900 : 844 };
         const name = `${fixture.surface}-${fixture.name}-${mode}-${viewport.width}`;
         if (process.env.STATIC_SURFACE_ONLY && !name.includes(process.env.STATIC_SURFACE_ONLY)) return;
+        const finish = recorder?.begin(`static-${name}`, staticConfiguration({ mode, fixture, width }));
+        const observations = [], files = ['static-surfaces/acceptance.json'];
+        let caseFailed = false;
         console.log('start ' + name);
         const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', locale: 'en-US', deviceScaleFactor: 1 });
         const page = await context.newPage();
@@ -183,20 +186,27 @@ export async function captureStaticSurfaces(browser, outDir) {
           await writeFile(join(directory, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: fixture.surface, transition: `boot:${fixture.name}`, viewport, mode, ...watcher }) + '\n');
           assert.deepEqual(watcher.failures, []);
           assert.deepEqual(unexpected, []);
+          observations.push(`check:${name}`);
+          files.push(`static-surfaces/${name}-geometry.json`);
           await page.evaluate(() => window.scrollTo(0, 0));
           for (const [kind, fullPage] of [['fold', false], ['full', true]]) {
             const file = `${name}-${kind}.png`;
             await page.screenshot({ path: join(directory, file), animations: 'disabled', fullPage });
+            observations.push(kind); files.push('static-surfaces/' + file);
             entries.push({ file: 'static-surfaces/' + file, surface: fixture.surface, state: fixture.name, mode, viewport, capture: kind });
           }
           console.log('captured ' + name);
           checks.push({ name, geometry: `${name}-geometry.json`, measurements, paint: { first: paint.first, firstNumeric: paint.firstNumeric, canvasDelta: delta, shifts } });
         } catch (error) {
+          caseFailed = true;
           failures.push(`${name}: ${error.message}`); console.error(failures.at(-1));
           await page.screenshot({ path: join(directory, `${name}-failure.png`) });
           await writeFile(join(directory, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: fixture.surface, transition: `boot:${fixture.name}`, viewport, mode, error: error.message, ...await readWatcher(page) }) + '\n');
         }
-        finally { await context.close(); }
+        finally {
+          finish?.({ outcome: caseFailed ? 'failed' : 'passed', observations, files });
+          await context.close();
+        }
   });
   entries.sort((a, b) => a.file.localeCompare(b.file));
   const report = { limits: { layout: LAYOUT_SHIFT, canvas: CANVAS_DELTA, keyElements: KEY_ELEMENTS }, revision: process.env.VISUAL_CAPTURE_REVISION ?? null, entries, checks, failures };

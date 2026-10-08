@@ -1087,6 +1087,10 @@ export const componentTokens = {
     "borderRadius": 8
   },
   "Passkey": {
+    "feedback": {
+      "narrow": 80,
+      "wide": 80
+    },
     "iconSize": 26,
     "tileRadius": 18,
     "tileSize": 56
@@ -1125,6 +1129,14 @@ export const componentTokens = {
   },
   "reserved": {
     "actionRow": 48,
+    "essentialNotice": {
+      "narrow": 144,
+      "wide": 88
+    },
+    "essentialStatusLine": {
+      "narrow": 60,
+      "wide": 40
+    },
     "graceMs": 3000,
     "issueBand": {
       "narrow": 104,
@@ -1144,8 +1156,8 @@ export const componentTokens = {
     },
     "provisioningRail": 52,
     "provisioningStage": {
-      "narrow": 440,
-      "wide": 360
+      "narrow": 576,
+      "wide": 480
     },
     "settingsSection": {
       "narrow": 320,
@@ -1238,8 +1250,8 @@ export const componentTokens = {
     "popupStatusBlock": 64,
     "popupWidth": "390px",
     "provisioningRailBlock": 52,
-    "provisioningStageBlock": 360,
-    "provisioningStageBlockNarrow": 440,
+    "provisioningStageBlock": "30rem",
+    "provisioningStageBlockNarrow": "36rem",
     "setupMaxWidth": "42rem",
     "statusLineBlock": 20,
     "statusLineBlockNarrow": 40

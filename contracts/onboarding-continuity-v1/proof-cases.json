@@ -1,0 +1,446 @@
+[
+  {
+    "case_id": "valid",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": true
+  },
+  {
+    "case_id": "wrong-method",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f000000034745540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-path",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f5354000000202f76312f6f6e626f617264696e672f7472616e73666572733a7265636f7665720000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-purpose",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b00000000107472616e736665722d7265636f76657200000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-audience",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000002975726e3a6272696467652d636c65616e3a6c6f63616c2d627261696e3a696e7374616c6c6174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-key-binding",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d0000002000000000000000000000000000000000000000000000000000000000000000000000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "provisioning-domain",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "commercial-domain",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d41435449564154494f4e2d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "pairing-domain",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4f4643412d4c4f43414c2d50414952494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "high-s",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCOZsGKS_l2dMNwqOFa22-Y50jMpqQdiYbwb8ndtnkTnCA",
+    "valid": false
+  },
+  {
+    "case_id": "padded-base64",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ==",
+    "valid": false
+  },
+  {
+    "case_id": "body-changed",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "ABCDEF012345"
+    },
+    "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "signature-tampered",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-redeem",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000001f2f76312f6f6e626f617264696e672f7472616e73666572733a72656465656d0000002068930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b000000000f7472616e736665722d72656465656d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding",
+      "setup_code": "0123456789AB"
+    },
+    "signature": "2iuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ",
+    "valid": false
+  },
+  {
+    "case_id": "transfer-recover-valid",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "transfer-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f5354000000202f76312f6f6e626f617264696e672f7472616e73666572733a7265636f766572000000202af86fff5dcf27cfe26a2a9086167856a541597e8c8902aad3d8ae798f2d9b78000000107472616e736665722d7265636f76657200000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "destination": {
+        "destination_id": "installation-fixture",
+        "kind": "desktop",
+        "public_key": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+          "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "recover-onboarding",
+      "redemption_operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "signature": "FX7Az61LCYGHod9b_gMmsUj5Y-LtsLKsSfTWeXiIqTptZwlR5hxpkemYzW7oMgGp3em9CcoXzAFlDRwe7MbpAQ",
+    "valid": true
+  },
+  {
+    "case_id": "hosted-stream-valid",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "hosted-stream",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f5354000000162f76312f6f6e626f617264696e672f73747265616d7300000020f6e27d83e6dc642c434f0116b41fb024430cc2adca5b036255486cfc37dd02ff0000000d686f737465642d73747265616d00000020ce251dfd5e5de17a425d40158434102acbd14fca44b8858b7fbe6069471830090000003475726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6f6e626f617264696e67",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+      "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+    },
+    "request": {
+      "cursor": {
+        "epoch": "0199b234-5678-7000-8000-000000000001",
+        "revision": 0
+      },
+      "installation_id": "installation-fixture",
+      "onboarding_transaction_id": "journey-fixture",
+      "organization_id": "org-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1"
+    },
+    "signature": "V_oV3GFg0Id5EW8fvs5ftzpoQlhdQ9jEvINlAntPdSAz_QLW8Y1KW0bXte-27btQlm1qRF-K3kEZzXCRcw1BzA",
+    "valid": true
+  }
+]

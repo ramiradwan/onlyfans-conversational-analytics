@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff/v1/error.schema.json",
+  "title": "Initial installation handoff error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:initial-installation-handoff:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "proof_invalid",
+        "expired",
+        "reauthentication_required",
+        "authorization_changed",
+        "wrong_destination",
+        "operation_conflict",
+        "already_enrolled",
+        "unsupported_profile",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  }
+}

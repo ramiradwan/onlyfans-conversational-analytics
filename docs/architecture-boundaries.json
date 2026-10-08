@@ -15,6 +15,8 @@
       ".github/**",
       "ci/backend-test-shards.json",
       "ci/windows-full-test-shards.json",
+      "ci/product-ci-policy.json",
+      "ci/visual-ci-policy.json",
       "extension/test-fixtures/**",
       "frontend/.dependency-cruiser.cjs",
       "frontend/test-fixtures/**"
@@ -172,9 +174,10 @@
         "app/protocol/**",
         "extension/protocol/**",
         "frontend/src/protocol/**",
-        "shared/fixtures/protocol/**"
+        "shared/fixtures/protocol/**",
+        "shared/onboarding/**"
       ],
-      "role": "Cross-runtime protocol v2 schema definitions, golden fixtures, and bidirectional frame validation.",
+      "role": "Cross-runtime protocol and local onboarding schema definitions, golden fixtures, validation, and non-authorizing reference projections.",
       "authority": "authoritative",
       "zone": "red",
       "protected_invariants": [
@@ -182,11 +185,13 @@
       ],
       "permitted_inputs": [
         "raw wire messages from Agent and Bridge",
-        "internal event payloads"
+        "internal event payloads",
+        "authenticated owner snapshots and scoped onboarding results"
       ],
       "permitted_outputs": [
         "validated typed protocol frames",
-        "protocol error frames"
+        "protocol error frames",
+        "non-authorizing local onboarding projections"
       ]
     },
     {

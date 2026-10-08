@@ -22,6 +22,43 @@ npm test --prefix tools/e2e-capture
 
 Set `OFCA_E2E_PYTHON` when the harness should use a Python interpreter other than the repository virtual environment or `python` on `PATH`.
 
+The acceptance harness requires Windows and an isolated test environment. Its existing ownership checks refuse unrelated listeners and processes. Some journeys own port 17871; do not run two lanes concurrently on one development machine or point the harness at a running personal Brain. CI provides a separate Windows runner for each lane.
+
+## Reproduce a CI lane
+
+After the same dependency installation and production builds above:
+
+```powershell
+node tools/e2e-capture/ci/run.mjs --lane core --list --output-dir artifacts/browser-list
+node tools/e2e-capture/ci/run.mjs --lane core --output-dir artifacts/browser-core
+node tools/e2e-capture/ci/run.mjs --lane catchup --output-dir artifacts/browser-catchup
+```
+
+Run these commands serially on a local machine. The list command collects the full inventory without starting a journey. The checked-in registry assigns complete files to `core` or `catchup`; unknown, missing or duplicate identities fail selection. `--lane legacy` runs the complete original selection as the rollout control. CI uses the same runner, one Playwright worker, the same production builds and existing retry/deadline settings. The catch-up negative-observation window remains unchanged.
+
+Hosted comparison uses the existing Product CI workflow with both dispatch inputs `browser_qualification` and `browser_serial_control` set to true. The serial control gets its own Windows runner at the same source/run as core and catch-up; the aggregate validates all three before publishing the Legal bundle. Normal runs skip only the optional serial control. Qualification rejects retry passes without changing the configured retry behavior. Three distinct clean dispatches provide the planned comparison samples; a targeted local run or repeated attempt of one dispatch does not replace them.
+
+To reproduce one test after preparing the builds, use ordinary Playwright targeting:
+
+```powershell
+npm test --prefix tools/e2e-capture -- tests/capture.spec.mjs
+```
+
+This narrow run is useful feedback but does not produce complete lane qualification. To add a journey, update the registry with its file and stable identity and check the unfiltered collection. New tests cannot silently inherit an optional selection. Keep whole files together so their worker and process ownership assumptions remain intact.
+
+## Check reporting without running browser journeys
+
+Install the pinned E2E and extension Node dependencies first. The safety probes use the actual pinned Playwright package with synthetic tests; they do not launch Chromium or Brain.
+
+```powershell
+npm run test:ci-tools --prefix tools/e2e-capture
+npm run test:ci-sentinels --prefix tools/e2e-capture
+node --test extension/tests/stable-connection-diagnostic.test.mjs extension/tests/worker-recovery-diagnostic.test.mjs
+python -m pytest --override-ini=addopts= tools/e2e-capture/tests/test_session_diagnostics.py
+```
+
+The Python command needs the `pytest` and `pytest-asyncio` versions in `requirements-dev.txt`. CI invokes it explicitly because this directory is outside the backend test tree. The reporting-safety job must succeed before either hosted browser lane starts.
+
 ## What the gate covers
 
 The test checks the complete local capture path rather than isolated modules. It verifies that:
@@ -39,6 +76,8 @@ The exact sequence numbers, row counts, recovery timing, and failure assertions 
 ## Privacy and teardown
 
 The fixture uses synthetic identities and message text. Screenshots, traces, and video are disabled in the Playwright configuration.
+
+CI's additional inventory and execution sidecars contain restricted identities, outcomes, retry numbers and timing/provenance fields. They do not include arbitrary test titles, assertion messages, stacks, URLs, attachments or captured page content. The original console reporting remains available in the job log. Failed-job artifacts contain only metadata independently validated by the sanitizer, or a fixed diagnostic code when validation fails. Successful complete input artifacts additionally preserve the existing console and Legal evidence bytes, bound by their hashes; the stable aggregate validates those inputs before generating the final Legal bundle.
 
 Each run creates temporary browser and database state. Teardown closes the resources created by that run and removes its temporary directory.
 

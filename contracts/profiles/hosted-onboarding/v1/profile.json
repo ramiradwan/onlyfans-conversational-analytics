@@ -1,0 +1,56 @@
+{
+  "governing_adr": "docs/adr/0022-publish-onboarding-continuity-contracts.md",
+  "journal": {
+    "access_rechecked_before_frame": true,
+    "commit": "atomic-with-authority-transaction",
+    "commit_time_not_ordering_authority": true,
+    "duplicate_or_older": "ignore",
+    "epoch_change_or_gap": "authenticated-snapshot",
+    "frame_semantics": "complete-projection",
+    "heartbeat_contains_projection": false,
+    "heartbeat_seconds": 15,
+    "max_frame_bytes": 16384,
+    "max_stream_seconds": 1800,
+    "replay": "durable-journal",
+    "revision_order": "strict-increase",
+    "revision_scope": "transaction-and-epoch",
+    "source": "hosted-onboarding",
+    "status_polling": false,
+    "subscribe": "snapshot-cursor-then-replay",
+    "unknown_epoch": "snapshot-first",
+    "wake": "postgres-notify"
+  },
+  "messages": {
+    "event": "schemas/onboarding/v1/hosted-event.schema.json",
+    "snapshot": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "stream.request": "schemas/onboarding/v1/hosted-stream-request.schema.json"
+  },
+  "profile": "urn:bridge-clean:hosted-onboarding:v1",
+  "projection": {
+    "authority": "hosted-facts-only",
+    "copy_on_wire": false,
+    "local_milestones": [
+      "installed",
+      "enrolled",
+      "account-bound",
+      "first-capture-ready"
+    ],
+    "local_readiness_authority": false,
+    "local_runtime_fields": false,
+    "milestone_names_unique": true,
+    "milestone_order": "catalog-order",
+    "stream_initiator": "local-product"
+  },
+  "transport": {
+    "cache_control": "no-store",
+    "content_type": "text/event-stream",
+    "event_name": "onboarding",
+    "id": "epoch:revision",
+    "initial_frame": "snapshot",
+    "maximum_line_bytes": 16384,
+    "one_json_object_per_data_line": true,
+    "reconnect_cursor": "request.cursor",
+    "referrer_policy": "no-referrer",
+    "retry_field": false
+  }
+}

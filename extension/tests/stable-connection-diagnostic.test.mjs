@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { stripVTControlCharacters } from 'node:util';
 import { expect } from '@playwright/test';
 import playwrightUtil from '../node_modules/playwright/lib/util.js';
 import playwrightExpect from '../node_modules/playwright/lib/matchers/expect.js';
@@ -154,6 +155,39 @@ test('stable connection report contains only derived facts', () => {
   assert.deepEqual(report.extension.connectionEvents.map((entry) => entry.event), ['channel-close', 'connect-start', 'facade-close']);
   assert.equal(JSON.stringify(report).includes('private_'), false);
   assert.equal(Object.hasOwn(report.extension, 'workerInstanceId'), false);
+});
+
+test('stable token redaction covers colored overlapping values while retaining unrelated formatting', () => {
+  const actual = 'synthetic_connection';
+  const expected = `${actual}_expected`;
+  const colored = value => `${value.slice(0, 10)}\u001b[7m${value.slice(10)}\u001b[27m`;
+  const safe = '\u001b[32munchanged diagnostic\u001b[39m';
+  const failure = new RangeError(`Expected: ${colored(expected)}\nReceived: ${colored(actual)}`);
+  const originalFrame = '    at originalAssertion (synthetic.spec.mjs:12:3)';
+  failure.stack = `RangeError: ${failure.message}\n${originalFrame}`;
+  const cause = new TypeError(colored(actual));
+  const nested = new Error(colored(expected));
+  failure.cause = cause; failure.errors = [nested];
+  failure.matcherResult = { actual, expected, message: failure.message,
+    ariaSnapshot: colored(expected), unrelated: safe };
+
+  const redacted = redactStableConnectionAssertionError(failure, actual, expected);
+  assert.equal(redacted, failure);
+  assert.equal(redacted.constructor, RangeError);
+  assert.equal(redacted.cause, cause);
+  assert.equal(redacted.errors[0], nested);
+  const fields = [redacted.message, redacted.stack, cause.message, cause.stack,
+    nested.message, nested.stack, redacted.matcherResult.message, redacted.matcherResult.ariaSnapshot];
+  for (const field of fields) {
+    assert.equal(stripVTControlCharacters(field).includes(actual), false);
+    assert.equal(stripVTControlCharacters(field).includes(expected), false);
+    assert.ok(field.includes('[redacted]'));
+  }
+  assert.equal(redacted.matcherResult.actual, undefined);
+  assert.equal(redacted.matcherResult.expected, undefined);
+  assert.equal(redacted.matcherResult.unrelated, safe);
+  assert.ok(redacted.stack.endsWith(originalFrame));
+  assert.equal(redacted.message, 'Expected: [redacted]\nReceived: [redacted]', 'longest token is redacted first');
 });
 
 test('stable step keeps the token equality assertion and attaches diagnostics', async () => {

@@ -66,14 +66,16 @@ const CONNECTING: ExtensionPortState = Object.freeze({ status: 'connecting', sta
 
 export function createExtensionPort({
   runtime,
+  resolveRuntime = () => runtime,
   extensionId,
 }: {
-  runtime: RuntimeLike | undefined;
+  runtime?: RuntimeLike;
+  resolveRuntime?: () => RuntimeLike | undefined;
   extensionId: string;
 }): ExtensionPort {
   const listeners = new Set<() => void>();
-  const usable = typeof runtime?.connect === 'function' && EXTENSION_ID.test(extensionId);
-  let state: ExtensionPortState = usable ? CONNECTING : ABSENT;
+  const usable = () => EXTENSION_ID.test(extensionId) && typeof resolveRuntime()?.connect === 'function';
+  let state: ExtensionPortState = usable() ? CONNECTING : ABSENT;
   let port: PortLike | null = null;
 
   const publish = (next: ExtensionPortState) => {
@@ -85,11 +87,16 @@ export function createExtensionPort({
   // went idle; reconnecting wakes it. A port that never answers is absent, and
   // is retried only on a page event, never on a timer.
   const connect = (retry: boolean) => {
-    if (!usable || port !== null) return;
+    if (port !== null) return;
+    const currentRuntime = resolveRuntime();
+    if (!EXTENSION_ID.test(extensionId) || typeof currentRuntime?.connect !== 'function') {
+      publish(ABSENT);
+      return;
+    }
     let delivered = false;
     let current: PortLike;
     try {
-      current = runtime!.connect(extensionId, { name: EXTENSION_PORT_NAME });
+      current = currentRuntime.connect(extensionId, { name: EXTENSION_PORT_NAME });
     } catch {
       publish(ABSENT);
       return;
@@ -103,10 +110,10 @@ export function createExtensionPort({
       publish({ status: 'connected', stage: parsed.data.stage, attempt: parsed.data.attempt });
     });
     current.onDisconnect.addListener(() => {
-      void runtime!.lastError;
+      void currentRuntime.lastError;
       if (port !== current) return;
       port = null;
-      if (listeners.size === 0) { publish(usable ? CONNECTING : ABSENT); return; }
+      if (listeners.size === 0) { publish(usable() ? CONNECTING : ABSENT); return; }
       if (delivered || retry) connect(false);
       else publish(ABSENT);
     });
@@ -132,7 +139,7 @@ export function createExtensionPort({
         if (listeners.size === 0 && port !== null) {
           const closing = port;
           port = null;
-          state = usable ? CONNECTING : ABSENT;
+          state = usable() ? CONNECTING : ABSENT;
           try { closing.disconnect(); } catch { /* already closed */ }
         }
       };
@@ -141,7 +148,7 @@ export function createExtensionPort({
     pair: () => send({ type: 'pair', version: 1 }),
     cancel: () => send({ type: 'cancel', version: 1 }),
     retry() {
-      if (state.status !== 'absent' || !usable || listeners.size === 0) return;
+      if (state.status !== 'absent' || listeners.size === 0) return;
       publish(CONNECTING);
       connect(true);
     },
@@ -155,7 +162,7 @@ let defaultPort: ExtensionPort | null = null;
 /** The page's single port, created on first use. */
 export function defaultExtensionPort(): ExtensionPort {
   defaultPort ??= createExtensionPort({
-    runtime: (globalThis as ChromeGlobal).chrome?.runtime,
+    resolveRuntime: () => (globalThis as ChromeGlobal).chrome?.runtime,
     extensionId: getConfig().EXTENSION_ID,
   });
   return defaultPort;

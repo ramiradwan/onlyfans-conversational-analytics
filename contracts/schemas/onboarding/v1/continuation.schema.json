@@ -1,0 +1,31 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/continuation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "profile": {
+      "const": "urn:bridge-clean:onboarding-continuation:v1"
+    },
+    "reference": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "return_target": {
+      "enum": [
+        "extension-setup",
+        "desktop-setup",
+        "hosted-setup"
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "reference",
+    "return_target",
+    "expires_at"
+  ],
+  "title": "continuation v1",
+  "type": "object"
+}

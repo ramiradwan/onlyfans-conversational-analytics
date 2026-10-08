@@ -143,14 +143,29 @@ export const rawChat = discriminatedBy('record_kind', {
   placeholder: placeholderChat,
 });
 
-export const rawMessage = object({
+const rawMessageFields = object({
   message_id: nonEmptyString,
   chat_id: nonEmptyString,
   sender_platform_user_id: nonEmptyString,
   text: string,
   sent_at: isoDateTime,
   direction: literal('inbound', 'outbound'),
-});
+}, { event_kind: nullable((value, path) => {
+  record(value, path);
+  record(value.context, `${path}.context`);
+  nonEmptyString(value.context.account_id, `${path}.context.account_id`);
+  nonEmptyString(value.context.conversation_id, `${path}.context.conversation_id`);
+  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 16384) {
+    throw new ProtocolValidationError(path, 'history kind exceeds its bound');
+  }
+}) });
+
+export function rawMessage(value, path) {
+  rawMessageFields(value, path);
+  if (value.event_kind != null && value.event_kind.context.conversation_id !== value.chat_id) {
+    throw new ProtocolValidationError(path, 'history kind conversation differs');
+  }
+}
 
 const checkCounts = object({list: integer(0), messages: integer(0), probes: integer(0)});
 const checkHead = object({chat_id: nonEmptyString}, {head_message_id: nullable(nonEmptyString), head_sent_at: nullable(isoDateTime)});

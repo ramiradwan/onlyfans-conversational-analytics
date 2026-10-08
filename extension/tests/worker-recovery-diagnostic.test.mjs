@@ -17,16 +17,23 @@ for (const [status, body, code] of [
   test(`catchup message diagnostics retain status ${status} and code ${code}`, async () => {
     const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
     let calls = 0;
-    const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, fetch: async url => {
+    const controller = new AbortController();
+    const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, {
+      setTimeout, clearTimeout,
+      AbortSignal: { timeout(milliseconds) { assert.equal(milliseconds, 10_000); return controller.signal; } },
+      fetch: async url => {
       calls++;
       assert.equal(url, '/api/v1/conversations/103/messages?limit=100');
       return { status, ok: status === 200, async json() {
+        if (code === 'cursor_stale' && calls === 2) controller.abort();
         if (body === null) throw new SyntaxError('arbitrary response text');
         return body;
       } };
     } });
     await assert.rejects(read('103'), error => {
-      assert.equal(error.message, `Catch-up messages unavailable: chat=103 status=${status} code=${code}`);
+      const attempts = code === 'cursor_stale' ? 2 : 1;
+      const outcome = code === 'cursor_stale' ? 'deadline' : 'response_rejected';
+      assert.equal(error.message, `Catch-up messages unavailable: chat=103 status=${status} code=${code} attempts=${attempts} outcome=${outcome}`);
       return true;
     });
     assert.equal(calls, code === 'cursor_stale' ? 2 : 1);
@@ -41,10 +48,10 @@ test('catchup message diagnostics preserve readable message identifiers', async 
   assert.equal(JSON.stringify(await read('103')), '["missing103"]');
 });
 
-test('catchup message read retries a stale first page once without a cursor', async () => {
+test('catchup message read recovers a stale first page without a cursor', async () => {
   const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
   const requests = [];
-  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, fetch: async (url, options) => {
+  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, setTimeout, clearTimeout, fetch: async (url, options) => {
     requests.push({ url, signal: options?.signal });
     return requests.length === 1
       ? { status: 409, ok: false, json: async () => ({ detail: 'cursor_stale' }) }
@@ -56,16 +63,16 @@ test('catchup message read retries a stale first page once without a cursor', as
   assert.equal(requests[0].signal, requests[1].signal);
 });
 
-test('catchup message read reports the final response when its one retry fails', async () => {
+test('catchup message read stops when a stale response becomes an unrelated refusal', async () => {
   const { readCatchupMessageIds } = await import('../../tools/e2e-capture/lib/catchup-diagnostics.mjs');
   let calls = 0;
-  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, fetch: async () => {
+  const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, { AbortSignal, setTimeout, clearTimeout, fetch: async () => {
     calls++;
     return calls === 1
       ? { status: 409, ok: false, json: async () => ({ detail: 'cursor_stale' }) }
       : { status: 503, ok: false, json: async () => ({ detail: 'projection_unavailable' }) };
   } });
-  await assert.rejects(read('102'), { message: 'Catch-up messages unavailable: chat=102 status=503 code=projection_unavailable' });
+  await assert.rejects(read('102'), { message: 'Catch-up messages unavailable: chat=102 status=503 code=projection_unavailable attempts=2 outcome=response_rejected' });
   assert.equal(calls, 2);
 });
 
@@ -74,6 +81,7 @@ test('catchup message read shares a ten-second deadline across the stale retry',
   const controller = new AbortController();
   let calls = 0, deadlines = 0;
   const read = runInNewContext(`(${readCatchupMessageIds.toString()})`, {
+    setTimeout, clearTimeout,
     AbortSignal: { timeout(milliseconds) {
       assert.equal(milliseconds, 10_000);
       deadlines++;
@@ -88,7 +96,7 @@ test('catchup message read shares a ten-second deadline across the stale retry',
       });
     },
   });
-  await assert.rejects(read('102'), { message: 'Catch-up messages unavailable: chat=102 status=409 code=cursor_stale' });
+  await assert.rejects(read('102'), { message: 'Catch-up messages unavailable: chat=102 status=unavailable code=unavailable attempts=2 outcome=deadline' });
   assert.equal(calls, 2);
   assert.equal(deadlines, 1);
 });

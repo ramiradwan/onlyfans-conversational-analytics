@@ -1,0 +1,1250 @@
+[
+  {
+    "case_id": "continuation-valid",
+    "schema": "schemas/onboarding/v1/continuation.schema.json",
+    "valid": true,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "profile": "urn:bridge-clean:onboarding-continuation:v1",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "return_target": "desktop-setup"
+    }
+  },
+  {
+    "case_id": "continuation-closed",
+    "schema": "schemas/onboarding/v1/continuation.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "metadata": {
+        "unreviewed": true
+      },
+      "profile": "urn:bridge-clean:onboarding-continuation:v1",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "return_target": "desktop-setup"
+    }
+  },
+  {
+    "case_id": "continuation-missing-required",
+    "schema": "schemas/onboarding/v1/continuation.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "return_target": "desktop-setup"
+    }
+  },
+  {
+    "case_id": "hosted-snapshot-valid",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": true,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "hosted-snapshot-closed",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "metadata": {
+        "unreviewed": true
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "hosted-snapshot-missing-required",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "hosted-event-valid",
+    "schema": "schemas/onboarding/v1/hosted-event.schema.json",
+    "valid": true,
+    "value": {
+      "kind": "snapshot",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "snapshot": {
+        "committed_at": "2026-10-08T12:00:00.000Z",
+        "epoch": "0199b234-5678-7000-8000-000000000001",
+        "facts": {
+          "association": "pending",
+          "authorization": "current",
+          "claim": "consumed",
+          "commercial": "none",
+          "identity": "verified",
+          "milestones": [
+            {
+              "milestone": "installed",
+              "occurred_at": "2026-10-08T12:00:00.000Z"
+            }
+          ],
+          "transfer": "redeemed"
+        },
+        "onboarding_transaction_id": "journey-fixture",
+        "profile": "urn:bridge-clean:hosted-onboarding:v1",
+        "revision": 1,
+        "source": "hosted-onboarding"
+      }
+    }
+  },
+  {
+    "case_id": "hosted-event-closed",
+    "schema": "schemas/onboarding/v1/hosted-event.schema.json",
+    "valid": false,
+    "value": {
+      "kind": "snapshot",
+      "metadata": {
+        "unreviewed": true
+      },
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "snapshot": {
+        "committed_at": "2026-10-08T12:00:00.000Z",
+        "epoch": "0199b234-5678-7000-8000-000000000001",
+        "facts": {
+          "association": "pending",
+          "authorization": "current",
+          "claim": "consumed",
+          "commercial": "none",
+          "identity": "verified",
+          "milestones": [
+            {
+              "milestone": "installed",
+              "occurred_at": "2026-10-08T12:00:00.000Z"
+            }
+          ],
+          "transfer": "redeemed"
+        },
+        "onboarding_transaction_id": "journey-fixture",
+        "profile": "urn:bridge-clean:hosted-onboarding:v1",
+        "revision": 1,
+        "source": "hosted-onboarding"
+      }
+    }
+  },
+  {
+    "case_id": "hosted-event-missing-required",
+    "schema": "schemas/onboarding/v1/hosted-event.schema.json",
+    "valid": false,
+    "value": {
+      "kind": "snapshot",
+      "snapshot": {
+        "committed_at": "2026-10-08T12:00:00.000Z",
+        "epoch": "0199b234-5678-7000-8000-000000000001",
+        "facts": {
+          "association": "pending",
+          "authorization": "current",
+          "claim": "consumed",
+          "commercial": "none",
+          "identity": "verified",
+          "milestones": [
+            {
+              "milestone": "installed",
+              "occurred_at": "2026-10-08T12:00:00.000Z"
+            }
+          ],
+          "transfer": "redeemed"
+        },
+        "onboarding_transaction_id": "journey-fixture",
+        "profile": "urn:bridge-clean:hosted-onboarding:v1",
+        "revision": 1,
+        "source": "hosted-onboarding"
+      }
+    }
+  },
+  {
+    "case_id": "hosted-stream-request-valid",
+    "schema": "schemas/onboarding/v1/hosted-stream-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "cursor": {
+          "epoch": "0199b234-5678-7000-8000-000000000001",
+          "revision": 0
+        },
+        "installation_id": "installation-fixture",
+        "onboarding_transaction_id": "journey-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:hosted-onboarding:v1"
+      }
+    }
+  },
+  {
+    "case_id": "hosted-stream-request-closed",
+    "schema": "schemas/onboarding/v1/hosted-stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {
+        "unreviewed": true
+      },
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "cursor": {
+          "epoch": "0199b234-5678-7000-8000-000000000001",
+          "revision": 0
+        },
+        "installation_id": "installation-fixture",
+        "onboarding_transaction_id": "journey-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:hosted-onboarding:v1"
+      }
+    }
+  },
+  {
+    "case_id": "hosted-stream-request-missing-required",
+    "schema": "schemas/onboarding/v1/hosted-stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      }
+    }
+  },
+  {
+    "case_id": "transfer-issue-request-valid",
+    "schema": "schemas/onboarding/v1/transfer-issue-request.schema.json",
+    "valid": true,
+    "value": {
+      "destination_kind": "desktop",
+      "onboarding_transaction_id": "journey-fixture",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding"
+    }
+  },
+  {
+    "case_id": "transfer-issue-request-closed",
+    "schema": "schemas/onboarding/v1/transfer-issue-request.schema.json",
+    "valid": false,
+    "value": {
+      "destination_kind": "desktop",
+      "metadata": {
+        "unreviewed": true
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "purpose": "resume-onboarding"
+    }
+  },
+  {
+    "case_id": "transfer-issue-request-missing-required",
+    "schema": "schemas/onboarding/v1/transfer-issue-request.schema.json",
+    "valid": false,
+    "value": {
+      "destination_kind": "desktop",
+      "onboarding_transaction_id": "journey-fixture",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "purpose": "resume-onboarding"
+    }
+  },
+  {
+    "case_id": "transfer-issue-response-valid",
+    "schema": "schemas/onboarding/v1/transfer-issue-response.schema.json",
+    "valid": true,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "setup_code": "0123456789AB",
+      "status": "issued",
+      "transfer_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "transfer-issue-response-closed",
+    "schema": "schemas/onboarding/v1/transfer-issue-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "metadata": {
+        "unreviewed": true
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "setup_code": "0123456789AB",
+      "status": "issued",
+      "transfer_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "transfer-issue-response-missing-required",
+    "schema": "schemas/onboarding/v1/transfer-issue-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "setup_code": "0123456789AB",
+      "status": "issued",
+      "transfer_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "transfer-redeem-request-valid",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "desktop",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "resume-onboarding",
+        "setup_code": "0123456789AB"
+      }
+    }
+  },
+  {
+    "case_id": "transfer-redeem-request-closed",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {
+        "unreviewed": true
+      },
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "desktop",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "resume-onboarding",
+        "setup_code": "0123456789AB"
+      }
+    }
+  },
+  {
+    "case_id": "transfer-redeem-request-missing-required",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      }
+    }
+  },
+  {
+    "case_id": "transfer-recover-request-valid",
+    "schema": "schemas/onboarding/v1/transfer-recover-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "desktop",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "recover-onboarding",
+        "redemption_operation_id": "0199b234-5678-7000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "case_id": "transfer-recover-request-closed",
+    "schema": "schemas/onboarding/v1/transfer-recover-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {
+        "unreviewed": true
+      },
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "desktop",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "recover-onboarding",
+        "redemption_operation_id": "0199b234-5678-7000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "case_id": "transfer-recover-request-missing-required",
+    "schema": "schemas/onboarding/v1/transfer-recover-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      }
+    }
+  },
+  {
+    "case_id": "transfer-result-valid",
+    "schema": "schemas/onboarding/v1/transfer-result.schema.json",
+    "valid": true,
+    "value": {
+      "continuation": {
+        "expires_at": "2026-10-08T12:10:00.000Z",
+        "profile": "urn:bridge-clean:onboarding-continuation:v1",
+        "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "return_target": "desktop-setup"
+      },
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "redemption_operation_id": "0199b234-5678-7000-8000-000000000001",
+      "result": "redeemed",
+      "transfer_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "transfer-result-closed",
+    "schema": "schemas/onboarding/v1/transfer-result.schema.json",
+    "valid": false,
+    "value": {
+      "continuation": {
+        "expires_at": "2026-10-08T12:10:00.000Z",
+        "profile": "urn:bridge-clean:onboarding-continuation:v1",
+        "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "return_target": "desktop-setup"
+      },
+      "metadata": {
+        "unreviewed": true
+      },
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "redemption_operation_id": "0199b234-5678-7000-8000-000000000001",
+      "result": "redeemed",
+      "transfer_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "transfer-result-missing-required",
+    "schema": "schemas/onboarding/v1/transfer-result.schema.json",
+    "valid": false,
+    "value": {
+      "continuation": {
+        "expires_at": "2026-10-08T12:10:00.000Z",
+        "profile": "urn:bridge-clean:onboarding-continuation:v1",
+        "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "return_target": "desktop-setup"
+      },
+      "redemption_operation_id": "0199b234-5678-7000-8000-000000000001",
+      "result": "redeemed",
+      "transfer_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "transfer-error-valid",
+    "schema": "schemas/onboarding/v1/transfer-error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "reason": "wrong_destination"
+    }
+  },
+  {
+    "case_id": "transfer-error-closed",
+    "schema": "schemas/onboarding/v1/transfer-error.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {
+        "unreviewed": true
+      },
+      "profile": "urn:bridge-clean:onboarding-transfer:v1",
+      "reason": "wrong_destination"
+    }
+  },
+  {
+    "case_id": "transfer-error-missing-required",
+    "schema": "schemas/onboarding/v1/transfer-error.schema.json",
+    "valid": false,
+    "value": {
+      "reason": "wrong_destination"
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-valid",
+    "schema": "schemas/onboarding/v1/proof-challenge-request.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:onboarding-proof:v1",
+      "target": {
+        "operation": "transfer-redeem",
+        "request": {
+          "destination": {
+            "destination_id": "installation-fixture",
+            "kind": "desktop",
+            "public_key": {
+              "crv": "P-256",
+              "kty": "EC",
+              "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+              "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+            }
+          },
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:onboarding-transfer:v1",
+          "purpose": "resume-onboarding",
+          "setup_code": "0123456789AB"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-closed",
+    "schema": "schemas/onboarding/v1/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {
+        "unreviewed": true
+      },
+      "profile": "urn:bridge-clean:onboarding-proof:v1",
+      "target": {
+        "operation": "transfer-redeem",
+        "request": {
+          "destination": {
+            "destination_id": "installation-fixture",
+            "kind": "desktop",
+            "public_key": {
+              "crv": "P-256",
+              "kty": "EC",
+              "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+              "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+            }
+          },
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:onboarding-transfer:v1",
+          "purpose": "resume-onboarding",
+          "setup_code": "0123456789AB"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-missing-required",
+    "schema": "schemas/onboarding/v1/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "target": {
+        "operation": "transfer-redeem",
+        "request": {
+          "destination": {
+            "destination_id": "installation-fixture",
+            "kind": "desktop",
+            "public_key": {
+              "crv": "P-256",
+              "kty": "EC",
+              "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+              "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+            }
+          },
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:onboarding-transfer:v1",
+          "purpose": "resume-onboarding",
+          "setup_code": "0123456789AB"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-valid",
+    "schema": "schemas/onboarding/v1/proof-challenge-response.schema.json",
+    "valid": true,
+    "value": {
+      "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "profile": "urn:bridge-clean:onboarding-proof:v1",
+      "request_digest": "68930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b00"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-closed",
+    "schema": "schemas/onboarding/v1/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "metadata": {
+        "unreviewed": true
+      },
+      "profile": "urn:bridge-clean:onboarding-proof:v1",
+      "request_digest": "68930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b00"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-required",
+    "schema": "schemas/onboarding/v1/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "request_digest": "68930d2c7025c57dca5bf080586c84a223224cef257a533f4a5f81ebe8ce8b00"
+    }
+  },
+  {
+    "case_id": "stream-proof-challenge-request-valid",
+    "schema": "schemas/onboarding/v1/stream-proof-challenge-request.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:onboarding-proof:v1",
+      "target": {
+        "operation": "hosted-stream",
+        "request": {
+          "cursor": {
+            "epoch": "0199b234-5678-7000-8000-000000000001",
+            "revision": 0
+          },
+          "installation_id": "installation-fixture",
+          "onboarding_transaction_id": "journey-fixture",
+          "organization_id": "org-fixture",
+          "profile": "urn:bridge-clean:hosted-onboarding:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-proof-challenge-request-closed",
+    "schema": "schemas/onboarding/v1/stream-proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {
+        "unreviewed": true
+      },
+      "profile": "urn:bridge-clean:onboarding-proof:v1",
+      "target": {
+        "operation": "hosted-stream",
+        "request": {
+          "cursor": {
+            "epoch": "0199b234-5678-7000-8000-000000000001",
+            "revision": 0
+          },
+          "installation_id": "installation-fixture",
+          "onboarding_transaction_id": "journey-fixture",
+          "organization_id": "org-fixture",
+          "profile": "urn:bridge-clean:hosted-onboarding:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-proof-challenge-request-missing-required",
+    "schema": "schemas/onboarding/v1/stream-proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "target": {
+        "operation": "hosted-stream",
+        "request": {
+          "cursor": {
+            "epoch": "0199b234-5678-7000-8000-000000000001",
+            "revision": 0
+          },
+          "installation_id": "installation-fixture",
+          "onboarding_transaction_id": "journey-fixture",
+          "organization_id": "org-fixture",
+          "profile": "urn:bridge-clean:hosted-onboarding:v1"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "projection-rejects-runtime_ticket",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "runtime_ticket": "fixture",
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-capture_event",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "capture_event": "fixture",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-fan",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "fan": "fixture",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-platform_cookie",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "platform_cookie": "fixture",
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-local_log",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "local_log": "fixture",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-command_result",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "command_result": "fixture",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-account_id",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "account_id": "fixture",
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-counts",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "counts": "fixture",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-pause",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "pause": "fixture",
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "projection-rejects-ready",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "ready": "fixture",
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 1,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "continuation-rejects-claim_secret",
+    "schema": "schemas/onboarding/v1/continuation.schema.json",
+    "valid": false,
+    "value": {
+      "claim_secret": "fixture",
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "profile": "urn:bridge-clean:onboarding-continuation:v1",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "return_target": "desktop-setup"
+    }
+  },
+  {
+    "case_id": "continuation-rejects-grant",
+    "schema": "schemas/onboarding/v1/continuation.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "grant": "fixture",
+      "profile": "urn:bridge-clean:onboarding-continuation:v1",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "return_target": "desktop-setup"
+    }
+  },
+  {
+    "case_id": "continuation-rejects-local_session",
+    "schema": "schemas/onboarding/v1/continuation.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "local_session": "fixture",
+      "profile": "urn:bridge-clean:onboarding-continuation:v1",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "return_target": "desktop-setup"
+    }
+  },
+  {
+    "case_id": "continuation-rejects-return_url",
+    "schema": "schemas/onboarding/v1/continuation.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:10:00.000Z",
+      "profile": "urn:bridge-clean:onboarding-continuation:v1",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "return_target": "desktop-setup",
+      "return_url": "fixture"
+    }
+  },
+  {
+    "case_id": "code-grammar-AAAAAAAAAAA",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "desktop",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "resume-onboarding",
+        "setup_code": "AAAAAAAAAAA"
+      }
+    }
+  },
+  {
+    "case_id": "code-grammar-AAAAAAAAAAAAA",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "desktop",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "resume-onboarding",
+        "setup_code": "AAAAAAAAAAAAA"
+      }
+    }
+  },
+  {
+    "case_id": "code-grammar-IIIIIIIIIIII",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "desktop",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "resume-onboarding",
+        "setup_code": "IIIIIIIIIIII"
+      }
+    }
+  },
+  {
+    "case_id": "code-grammar-aaaaaaaaaaaa",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "desktop",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "resume-onboarding",
+        "setup_code": "aaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "case_id": "revision-outside-safe-integer",
+    "schema": "schemas/onboarding/v1/hosted-snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-08T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000001",
+      "facts": {
+        "association": "pending",
+        "authorization": "current",
+        "claim": "consumed",
+        "commercial": "none",
+        "identity": "verified",
+        "milestones": [
+          {
+            "milestone": "installed",
+            "occurred_at": "2026-10-08T12:00:00.000Z"
+          }
+        ],
+        "transfer": "redeemed"
+      },
+      "onboarding_transaction_id": "journey-fixture",
+      "profile": "urn:bridge-clean:hosted-onboarding:v1",
+      "revision": 9007199254740992,
+      "source": "hosted-onboarding"
+    }
+  },
+  {
+    "case_id": "extension-without-desktop",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "signature": "2yuk1rjHbvApgmwhntZXhigIat3M5cQp8FxgQZx8KCNmT51sAaJi0CPVx6lJJBnF6rPRBJ-1PMjXx1NVXh4-SQ"
+      },
+      "request": {
+        "destination": {
+          "destination_id": "installation-fixture",
+          "kind": "browser-extension",
+          "public_key": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "_eyK6ODwB2cREwb_wzAtJIVQM9_nzhOdMCwHPVKiso8",
+            "y": "Epoe43BrVeDiMwLT12UMdSDKE31YcI9TcZOJqVOhEIM"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:onboarding-transfer:v1",
+        "purpose": "resume-onboarding",
+        "setup_code": "0123456789AB"
+      }
+    }
+  },
+  {
+    "case_id": "pairing-type-substitution",
+    "schema": "schemas/onboarding/v1/transfer-redeem-request.schema.json",
+    "valid": false,
+    "value": {
+      "code": "123456",
+      "profile": "urn:bridge-clean:companion-pairing:v1"
+    }
+  }
+]

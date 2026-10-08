@@ -1,0 +1,604 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:ofca:local-onboarding:v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "kind",
+        "journey_id",
+        "source",
+        "epoch",
+        "revision",
+        "account_generation",
+        "consent_generation",
+        "facts",
+        "pending_operation",
+        "reason"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-onboarding-state.v1"
+        },
+        "kind": {
+          "enum": [
+            "snapshot",
+            "event"
+          ]
+        },
+        "journey_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "source": {
+          "const": "brain"
+        },
+        "epoch": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "account_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "consent_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "installation",
+            "enrollment",
+            "pairing",
+            "activation",
+            "analysis"
+          ],
+          "properties": {
+            "installation": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "enrollment": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "pairing": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "activation": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "analysis": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            }
+          }
+        },
+        "pending_operation": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "operation_id",
+                "status"
+              ],
+              "properties": {
+                "operation_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "app_unreachable",
+            "enrollment_required",
+            "pairing_required",
+            "activation_required",
+            "authorization_expired",
+            "authorization_revoked",
+            "operation_unconfirmed"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "kind",
+        "journey_id",
+        "source",
+        "epoch",
+        "revision",
+        "account_generation",
+        "consent_generation",
+        "facts",
+        "pending_operation",
+        "reason"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-onboarding-state.v1"
+        },
+        "kind": {
+          "enum": [
+            "snapshot",
+            "event"
+          ]
+        },
+        "journey_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "source": {
+          "const": "extension"
+        },
+        "epoch": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "account_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "consent_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "consent",
+            "site_access",
+            "account",
+            "attachment",
+            "capture"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "off",
+                "preview",
+                "full"
+              ]
+            },
+            "consent": {
+              "enum": [
+                "missing",
+                "valid",
+                "review_required"
+              ]
+            },
+            "site_access": {
+              "enum": [
+                "missing",
+                "granted"
+              ]
+            },
+            "account": {
+              "enum": [
+                "unknown",
+                "matching",
+                "mismatch"
+              ]
+            },
+            "attachment": {
+              "enum": [
+                "checking",
+                "ready",
+                "blocked"
+              ]
+            },
+            "capture": {
+              "enum": [
+                "off",
+                "active",
+                "paused"
+              ]
+            }
+          }
+        },
+        "pending_operation": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "operation_id",
+                "status"
+              ],
+              "properties": {
+                "operation_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "consent_required",
+            "permission_required",
+            "signin_required",
+            "wrong_account",
+            "attachment_unavailable",
+            "helper_closed",
+            "paused",
+            "operation_unconfirmed"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "journey_id",
+        "operation_id",
+        "owner",
+        "action",
+        "account_generation",
+        "consent_generation"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-onboarding-command.v1"
+        },
+        "journey_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "owner": {
+          "const": "brain"
+        },
+        "action": {
+          "enum": [
+            "pair",
+            "cancel_pairing"
+          ]
+        },
+        "account_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "consent_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "journey_id",
+        "operation_id",
+        "owner",
+        "action",
+        "account_generation",
+        "consent_generation"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-onboarding-command.v1"
+        },
+        "journey_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "owner": {
+          "const": "extension"
+        },
+        "action": {
+          "enum": [
+            "pause",
+            "resume",
+            "reopen_helper"
+          ]
+        },
+        "account_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "consent_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "journey_id",
+        "operation_id",
+        "source",
+        "epoch",
+        "revision",
+        "account_generation",
+        "consent_generation",
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-onboarding-result.v1"
+        },
+        "journey_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "source": {
+          "enum": [
+            "brain",
+            "extension"
+          ]
+        },
+        "epoch": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "account_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "consent_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "rejected",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "stale_scope",
+            "not_authorized",
+            "not_ready",
+            "unconfirmed"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "hint",
+        "version"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-installation-discovery.v1"
+        },
+        "hint": {
+          "const": "extension_present"
+        },
+        "version": {
+          "const": 1
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "version",
+        "journey_id",
+        "route",
+        "draft_scope",
+        "draft"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-onboarding-workspace.v1"
+        },
+        "version": {
+          "const": 1
+        },
+        "journey_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "route": {
+          "enum": [
+            "extension",
+            "hosted",
+            "provisioning",
+            "bridge"
+          ]
+        },
+        "draft_scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope_id",
+            "disclosure_bundle_id"
+          ],
+          "properties": {
+            "scope_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "disclosure_bundle_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "draft": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "terms_checked",
+            "risk_checked",
+            "full_checked"
+          ],
+          "properties": {
+            "terms_checked": {
+              "type": "boolean"
+            },
+            "risk_checked": {
+              "type": "boolean"
+            },
+            "full_checked": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "journey_id",
+        "continuation_id",
+        "target",
+        "purpose"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-onboarding-continuation.v1"
+        },
+        "journey_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "continuation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "target": {
+          "enum": [
+            "provisioning",
+            "bridge"
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "controlled_restart",
+            "first_enrollment"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "status",
+        "csrf_token"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-first-enrollment-result.v1"
+        },
+        "status": {
+          "const": "registered"
+        },
+        "csrf_token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      }
+    }
+  ]
+}

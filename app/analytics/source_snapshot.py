@@ -30,11 +30,18 @@ def conversation_digest(value: dict) -> str:
     return "sha256:" + hashlib.sha256(encoded(value).encode()).hexdigest()
 
 
+def message_kind_column(connection):
+    columns = connection.execute('PRAGMA table_info(account_messages)')
+    return 'event_kind_json' if any(row[1] == 'event_kind_json' for row in columns) else 'NULL AS event_kind_json'
+
+
 def _encoded_message(message, source_ordinal: int) -> str:
     """Emit the established sorted canonical JSON without a per-message mapping."""
 
     return (
         '{"direction":' + encode_basestring(str(message["direction"]))
+        + (',"event_kind":' + encoded(json.loads(message["event_kind_json"]))
+           if message["event_kind_json"] is not None else '')
         + ',"message_id":' + encode_basestring(str(message["message_id"]))
         + ',"sent_at":' + encode_basestring(instant(str(message["sent_at"])))
         + ',"sentiment":null,"source_ordinal":' + str(source_ordinal)
@@ -68,6 +75,7 @@ def scan_identity(db, account_id: str, revision: int, *, check=lambda: None,
     account_hash = hashlib.sha256(b"ofca:canonical-account:v1\0")
     digests, message_count = {}, 0
     coverage = AcquisitionCoverage(db, account_id, consume=consume)
+    kind_column = message_kind_column(db)
 
     def emit(text: str, conversation_hash=None) -> None:
         check()
@@ -97,7 +105,7 @@ def scan_identity(db, account_id: str, revision: int, *, check=lambda: None,
         emit(',"messages":[', part)
         text_column = 'text' if max_text is None else 'substr(text,1,?) AS text'
         parameters = (account_id, chat_id) if max_text is None else (max_text + 1, account_id, chat_id)
-        messages = db.execute(f"""SELECT message_id,{text_column},sent_at,direction
+        messages = db.execute(f"""SELECT message_id,{text_column},sent_at,direction,{kind_column}
             FROM account_messages WHERE creator_account_id=? AND chat_id=? AND is_deleted=0
             ORDER BY sent_at,winning_stream_epoch,winning_source_seq,message_id""", parameters)
         for index, message in enumerate(messages):
@@ -123,14 +131,16 @@ def read_conversation(db, account_id: str, conversation_id: str, *, check=lambda
     if row is None:
         return None
     messages = []
-    for index, item in enumerate(db.execute("""SELECT message_id,text,sent_at,direction
+    kind_column = message_kind_column(db)
+    for index, item in enumerate(db.execute(f"""SELECT message_id,text,sent_at,direction,{kind_column}
         FROM account_messages WHERE creator_account_id=? AND chat_id=? AND is_deleted=0
         ORDER BY sent_at,winning_stream_epoch,winning_source_seq,message_id""",
         (account_id, conversation_id))):
         check()
         messages.append({"message_id": str(item[0]), "source_ordinal": index,
             "text": str(item[1]), "sent_at": instant(str(item[2])),
-            "direction": str(item[3]), "sentiment": None})
+            "direction": str(item[3]), "sentiment": None,
+            **({"event_kind": json.loads(item[4])} if item[4] is not None else {})})
     coverage = AcquisitionCoverage(db, account_id)
     check()
     return {"acquisition_coverage": coverage.conversation(conversation_id),

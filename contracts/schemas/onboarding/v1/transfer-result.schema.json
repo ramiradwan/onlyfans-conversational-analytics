@@ -1,0 +1,35 @@
+{
+  "$id": "https://contracts.bridge-clean.invalid/schemas/onboarding/v1/transfer-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "continuation": {
+      "$ref": "continuation.schema.json"
+    },
+    "profile": {
+      "const": "urn:bridge-clean:onboarding-transfer:v1"
+    },
+    "redemption_operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "result": {
+      "enum": [
+        "redeemed",
+        "already-redeemed",
+        "recovered"
+      ]
+    },
+    "transfer_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    }
+  },
+  "required": [
+    "profile",
+    "transfer_id",
+    "redemption_operation_id",
+    "result",
+    "continuation"
+  ],
+  "title": "transfer result v1",
+  "type": "object"
+}

@@ -2,9 +2,17 @@ import { buildWorkerRecoveryDiagnostic, readSessionFailures } from './stable-con
 
 export async function readCatchupMessageIds(chat) {
   const signal = AbortSignal.timeout(10_000);
-  let status = 'unavailable', code = 'unavailable';
+  let status = 'unavailable', code = 'unavailable', attempts = 0, outcome = 'response_rejected';
+  const backoff = () => new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, 100);
+    signal.addEventListener('abort', abort, { once: true });
+  });
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    while (!signal.aborted) {
+      attempts++;
+      status = 'unavailable'; code = 'unavailable';
       const response = await fetch('/api/v1/conversations/' + chat + '/messages?limit=100', { signal });
       status = response.status;
       const body = await response.json().catch(() => null);
@@ -12,9 +20,13 @@ export async function readCatchupMessageIds(chat) {
       code = typeof detail === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(detail) ? detail : 'unavailable';
       if (response.ok && Array.isArray(body?.items)) return body.items.map(item => item.message_id);
       if (status !== 409 || code !== 'cursor_stale') break;
+      // A first-page read can race another committed projection revision.
+      // Retry only that explicit refusal within the original shared deadline.
+      await backoff();
     }
-  } catch {}
-  throw new Error(`Catch-up messages unavailable: chat=${chat} status=${status} code=${code}`);
+  } catch { outcome = signal.aborted ? 'deadline' : 'request_failed'; }
+  if (signal.aborted) outcome = 'deadline';
+  throw new Error(`Catch-up messages unavailable: chat=${chat} status=${status} code=${code} attempts=${attempts} outcome=${outcome}`);
 }
 
 // Serialized into the copied worker with no module dependencies.

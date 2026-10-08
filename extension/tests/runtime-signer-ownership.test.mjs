@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
 
 import { createLazyAccountSigner } from '../transport/agent-runtime-core.mjs';
+import { createAgentRuntime } from '../transport/agent-runtime.mjs';
+import { createReadOnlyAgentRuntime } from '../transport/read-only-agent-runtime.mjs';
 import { InMemoryIngestionStorage } from './in-memory-ingestion-storage.mjs';
 import { createSignerReleaseFixture, EXPECTED_ID } from './signer-release-fixture.mjs';
 
@@ -48,6 +50,7 @@ test('runtime supplies the exact bounded decimal platform identity and never gat
     });
     await h.signer.read(request());
     assert.equal(observed.expectedIdentity, expected);
+    assert.equal(observed.captureMode, 'observe-only');
     assert.notEqual(observed.expectedIdentity, 'application-account');
     assert.ok(observed.signal instanceof AbortSignal);
     assert.equal(Object.hasOwn(observed, 'captureTimeoutMs'), false);
@@ -84,7 +87,7 @@ test('concurrent first reads share one initialized provider and one account pers
 });
 
 test('installed cached provider survives cancellation of its completed initialization read', async () => {
-  const fixture = createSignerReleaseFixture();
+  const fixture = createSignerReleaseFixture({ observeExisting: true });
   const lifetime = new AbortController();
   let constructions = 0;
   let initializationSignal;
@@ -106,33 +109,90 @@ test('installed cached provider survives cancellation of its completed initializ
   assert.equal(initializationSignal.aborted, true);
   assert.equal((await signer.read(request())).success, true);
   assert.equal(constructions, 1);
-  assert.equal(fixture.calls.reloads, 1);
+  assert.equal(fixture.calls.reloads, 0);
   assert.equal(fixture.calls.reads.length, 4);
 });
 
-test('installed signer cannot repeat a cold-bootstrap reload after session cancellation and reconstruction', async () => {
+test('installed signer cancellation and reconstruction never reload the existing document', async () => {
   const fixture = createSignerReleaseFixture();
   const storage = new InMemoryIngestionStorage();
   const lifetime = new AbortController();
   const cancelled = new AbortController();
-  const originalReload = fixture.chromeApi.tabs.reload;
-  fixture.chromeApi.tabs.reload = async function (...args) {
-    await originalReload.apply(this, args);
-    cancelled.abort('Agent session ended during reload');
-  };
   const restart = () => createLazyAccountSigner({
     creatorAccountId: 'application-account', storage, chromeApi: fixture.chromeApi,
     expectedIdentity: () => EXPECTED_ID, signal: lifetime.signal,
     factory: (options) => fixture.createProvider(options),
   });
-  await assert.rejects(restart().read(request(cancelled.signal)));
-  assert.equal(fixture.calls.reloads, 1);
+  const first = outcome(restart().read(request(cancelled.signal)));
+  await fixture.captureReady.promise;
+  cancelled.abort('Agent session ended during observation');
+  assert.equal((await first).error, 'Agent session ended during observation');
+  assert.equal(fixture.calls.reloads, 0);
+  const initialDocument = fixture.currentDocument();
+  fixture.captureReady = deferred();
+  const recovered = restart().read(request());
+  await fixture.captureReady.promise;
+  await fixture.observeIdentity();
+  assert.equal((await recovered).success, true);
   for (let wake = 0; wake < 10; wake += 1) {
     const result = await outcome(restart().read(request()));
-    assert.notEqual(result.value?.success, true);
-    assert.equal(fixture.calls.reloads, 1);
+    assert.equal(result.value?.success, true);
+    assert.equal(fixture.calls.reloads, 0);
+    assert.equal(fixture.currentDocument(), initialDocument);
   }
 });
+
+test('a silent document fails without a legacy-mode retry or reload', async () => {
+  const fixture = createSignerReleaseFixture();
+  const modes = [];
+  const signer = createLazyAccountSigner({
+    creatorAccountId: 'application-account', storage: new InMemoryIngestionStorage(),
+    chromeApi: fixture.chromeApi, expectedIdentity: () => EXPECTED_ID,
+    signal: new AbortController().signal,
+    factory(options) {
+      modes.push(options.captureMode);
+      return fixture.createProvider({ ...options, captureTimeoutMs: 20 });
+    },
+  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await assert.rejects(signer.read(request()));
+    assert.equal(fixture.calls.reloads, 0);
+    assert.equal(fixture.calls.reads.length, 0);
+    assert.equal(fixture.currentDocument(), 'synthetic-document-0');
+  }
+  assert(modes.length > 0);
+  assert(modes.every((mode) => mode === 'observe-only'));
+});
+
+for (const [mode, createRuntime] of [['full', createAgentRuntime], ['read-only', createReadOnlyAgentRuntime]]) {
+  test(`${mode} runtime explicitly observes the existing document without reloading`, async () => {
+    const fixture = createSignerReleaseFixture({ observeExisting: true });
+    const modes = [];
+    let signer;
+    const runtime = createRuntime({
+      extensionVersion: '2.0.3', creatorAccountId: 'application-account', authTicket: 'fixture-ticket',
+      chromeApi: fixture.chromeApi,
+      chromeAdapter: { onWake: () => () => {}, loadAgentInstallationId: async () => 'fixture-installation' },
+      ingestionStorageFactory: () => new InMemoryIngestionStorage(),
+      outboxFactory: () => ({ initialize: async () => ({ agent_stream_id: 'fixture-stream',
+        acknowledged_source_seq: 0, applied_config_revision: null, account_epoch: 1 }) }),
+      configHttpFactory: () => ({}), configActivatorFactory: () => ({}),
+      configClientFactory: () => ({ initialize: async () => {}, activeDocument: {
+        history_acquisition: { authorized_platform_creator_id: EXPECTED_ID },
+      } }),
+      signerFactory(options) { modes.push(options.captureMode); return fixture.createProvider(options); },
+      historyCoordinatorFactory(options) { signer = options.signer; return { wake: async () => {}, stop() {} }; },
+      transportFactory: () => ({ start() {}, stop() {} }),
+    });
+    try {
+      await runtime.start();
+      assert.equal((await signer.read(request())).success, true);
+      assert.deepEqual(modes, ['observe-only']);
+      assert.equal(fixture.calls.reloads, 0);
+      assert.equal(fixture.currentDocument(), 'synthetic-document-0');
+    } finally { await runtime.suspend(); }
+  });
+}
 
 test('a deadline during construction cannot cache a late provider or start a competing constructor', async () => {
   const start = deferred();

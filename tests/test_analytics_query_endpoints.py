@@ -67,14 +67,15 @@ def ready(stored, tmp_path, monkeypatch):
     app.include_router(insights.router)
     app.dependency_overrides[get_authenticated_account_session] = policy
     app.dependency_overrides[require_activated_runtime] = lambda: None
-    client = TestClient(app)
-    client.headers["x-csrf-token"] = csrf_token(policy())
-    yield SimpleNamespace(source=source, stored=stored, pipeline=pipeline, resources=resources,
-                          scheduler=scheduler, client=client, app=app, stores=stores)
-    resources.close()
-    scheduler.abort()
-    stores.projections.close_retention_scheduler()
-    client.close()
+    with TestClient(app) as client:
+        client.headers["x-csrf-token"] = csrf_token(policy())
+        try:
+            yield SimpleNamespace(source=source, stored=stored, pipeline=pipeline, resources=resources,
+                                  scheduler=scheduler, client=client, app=app, stores=stores)
+        finally:
+            resources.close()
+            scheduler.abort()
+            stores.projections.close_retention_scheduler()
 
 
 def plan(**updates):

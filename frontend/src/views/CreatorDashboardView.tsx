@@ -350,9 +350,8 @@ export default function CreatorDashboardView({
   ];
   const format = (metric: AnalyticsMetric | null | undefined) =>
     formatAdditiveMetric(metric, readiness, (value) => Number(value) > 9_999_999 ? '10M+' : NUMBER_FORMAT.format(value)).replace(/\+\+$/, '+');
-  const conversationSetupIncomplete = hasSnapshot && fullAnalyticsReady !== undefined && setupIncomplete(state.coverage);
-  const fullSetupIncomplete = hasSnapshot && !conversationSetupIncomplete && fullAnalyticsReady === false;
-  const showSetup = conversationSetupIncomplete || fullSetupIncomplete;
+  const showSetup = hasSnapshot && fullAnalyticsReady !== undefined
+    && (extensionConnection(state.agent) !== 'connected' || fullAnalyticsReady === false);
 
   const evidence = summarizeMetricEvidence(metrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
@@ -375,7 +374,7 @@ export default function CreatorDashboardView({
         </ReservedRegion>
         <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
           {showSetup && <Box data-region-content>
-            <SetupPrompt extensionConnected={extensionConnection(state.agent) === 'connected'} fullAnalyticsReady={fullAnalyticsReady === true} historyEnabled={!conversationSetupIncomplete} title="Finish setup" />
+            <SetupPrompt extensionConnected={extensionConnection(state.agent) === 'connected'} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" />
           </Box>}
         </ReservedRegion>
       </Stack>

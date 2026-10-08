@@ -9,7 +9,8 @@ import { installSurfaceFixture } from '../../extension/qualification/surface-run
 import { driveWorkspaceDetails } from './workspace-transitions.mjs';
 import { runCaptureJobs } from './capture-jobs.mjs';
 
-export const DYNAMIC_VIEWS = ['home', 'analytics', 'inbox', 'settings', 'passkey', 'graph', 'popup', 'setup', 'options', 'provisioning', 'production-boot'];
+import { DYNAMIC_VIEWS, dynamicCases, dynamicSequence } from './dynamic-matrix.mjs';
+export { DYNAMIC_VIEWS } from './dynamic-matrix.mjs';
 export const REQUIRED_REGIONS = {
   home: ['freshness-status', 'issue-band', 'dashboard-notice', 'dashboard-setup-status', 'dashboard-overview', 'dashboard-basis', 'dashboard-recent', 'dashboard-setup'],
   analytics: ['freshness-status', 'issue-band', 'analytics-content'],
@@ -43,6 +44,7 @@ export function validateInventory(reports, expected = DYNAMIC_VIEWS) {
     for (const state of REQUIRED_STATES[report.view]) assert(report.states?.includes(state), `Missing captured state: ${report.view}:${state}`);
     const count = TRANSITION_COUNTS[report.view];
     assert.equal(report.transitions, typeof count === 'number' ? count : count[report.width], `Transition count mismatch: ${report.view}`);
+    assert.deepEqual(report.states, dynamicSequence(report.view, report.width), `Transition sequence mismatch: ${report.view}`);
   }
   for (const view of expected) assert(reports.some((report) => report.view === view && report.transitions > 0), `Missing transition driver: ${view}`);
 }
@@ -242,22 +244,15 @@ async function driveProduction(page, step) {
   for (const action of ['Sign in with passkey', 'Set up a passkey']) await step(`request-error:${action}`, () => page.getByRole('button', { name: action, exact: true }).click());
 }
 
-export async function captureDynamicTransitions(browser, base, outDir, only = DYNAMIC_VIEWS, focused = false) {
+export async function captureDynamicTransitions(browser, base, outDir, only = DYNAMIC_VIEWS, focused = false, recorder = null) {
   const directory = join(outDir, 'transitions');
   await mkdir(directory, { recursive: true });
   const reports = [];
-  const cases = [];
-  for (const view of only) {
-    assert(DYNAMIC_VIEWS.includes(view), `Unknown transition view: ${view}`);
-    const widths = view === 'popup' ? [320, 390] : view === 'inbox' ? [390, 820, 1440] : ['passkey', 'production-boot'].includes(view) ? [390, 1366, 1440] : ['setup', 'provisioning'].includes(view) ? [390, 480, 1440] : [390, 1440];
-    for (const width of widths) for (const mode of ['light', 'dark']) for (const fontScale of [1, 1.25]) for (const motion of ['reduce', 'no-preference']) {
-      if (focused && (width !== widths[0] || mode !== 'light' || fontScale !== 1 || motion !== 'reduce')) continue;
-      cases.push({ view, width, mode, fontScale, motion });
-    }
-  }
+  const cases = dynamicCases(only, focused);
   await runCaptureJobs(cases, async ({ view, width, mode, fontScale, motion }) => {
       const viewport = { width, height: view === 'popup' || width === 1366 ? 600 : width === 480 ? 760 : width === 390 ? 844 : 900 };
       const name = [view, width, mode, fontScale, motion].join('-');
+      const finish = recorder?.begin(`dynamic-${name}`, { view, width, mode, fontScale, motion });
       const page = await browser.newPage({ viewport, colorScheme: mode, reducedMotion: motion });
       const transitions = [], errors = [];
       let scrolling = [];
@@ -282,6 +277,7 @@ export async function captureDynamicTransitions(browser, base, outDir, only = DY
       if (failures.length) await page.screenshot({ path: join(directory, name + '-failure.png') });
       await writeFile(join(directory, name + '.json'), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view, viewport, mode, fontScale, motion, seed, transitions, scrolling, ...watcher, failures }) + '\n');
       reports.push({ view, width, file: `transitions/${name}.json`, transitions: transitions.length, states: transitions.map(({ id }) => id), failures });
+      finish?.({ outcome: failures.length ? 'failed' : 'passed', observations: transitions.map(({ id }) => id), files: [`transitions/${name}.json`] });
       await page.close();
       console.log(`transitions ${name}: ${transitions.length}, failures=${failures.length}`);
   });

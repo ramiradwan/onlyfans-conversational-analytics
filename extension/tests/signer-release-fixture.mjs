@@ -34,10 +34,10 @@ export function deferred() {
   return { promise, resolve };
 }
 
-function event() {
+function event(onAdd = () => {}) {
   const listeners = new Set();
   return {
-    addListener(listener) { listeners.add(listener); },
+    addListener(listener) { listeners.add(listener); onAdd(); },
     removeListener(listener) { listeners.delete(listener); },
     emit(details) { for (const listener of [...listeners]) listener(details); },
     get size() { return listeners.size; },
@@ -45,15 +45,19 @@ function event() {
 }
 
 /** Installed signer behind the consumer's real frozen-tab proxy; only Chrome/network/storage are doubles. */
-export function createSignerReleaseFixture({ initialState = null, expectedIdentity = EXPECTED_ID } = {}) {
+export function createSignerReleaseFixture({ initialState = null, expectedIdentity = EXPECTED_ID, observeExisting = false } = {}) {
   let saved = structuredClone(initialState);
   let serial = 0;
   let documentId = 'synthetic-document-0';
   const calls = { loads: 0, saves: 0, reloads: 0, reads: [], aborts: [], captures: [] };
   const webRequest = Object.fromEntries(['onBeforeSendHeaders', 'onHeadersReceived', 'onCompleted', 'onErrorOccurred']
-    .map((name) => [name, event()]));
+    .map((name) => [name, event(() => {
+      if (name !== 'onErrorOccurred') return;
+      f.captureReady.resolve();
+      if (observeExisting) queueMicrotask(() => { void f.observeIdentity(); });
+    })]));
   const f = {
-    calls, webRequest,
+    calls, webRequest, captureReady: deferred(),
     accountId: EXPECTED_ID,
     tab: { id: 17, active: false, frozen: false },
     safeRefresh: { safe: true, reason: null },
@@ -70,6 +74,22 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
       return f.response({ list: [], hasMore: false });
     },
     controlReply: () => f.response({ error: 'synthetic-signature-rejection' }, 400),
+    async observeIdentity() {
+      const details = { requestId: `native-${++serial}`, tabId: f.tab.id, frameId: 0, documentId,
+        documentLifecycle: 'active', method: 'GET', url: `${ORIGIN}/api2/v2/users/me` };
+      const headers = {
+        accept: 'application/json', 'app-token': 'synthetic-app-token', 'x-bc': 'synthetic-browser-context',
+        'x-of-rev': RULE.source_revision, time: String(TIMESTAMP), cookie: PRIVATE_MARKER,
+        sign: await signSyntheticRequest(RULE, String(TIMESTAMP), '/api2/v2/users/me', '0'),
+      };
+      calls.captures.push(structuredClone(headers));
+      const pairs = (value) => Object.entries(value).map(([name, value]) => ({ name, value }));
+      webRequest.onBeforeSendHeaders.emit({ ...details, requestHeaders: pairs(headers) });
+      webRequest.onHeadersReceived.emit({ ...details, statusCode: 200, responseHeaders: pairs({
+        'x-of-rev': RULE.source_revision, 'content-type': 'application/json',
+      }) });
+      webRequest.onCompleted.emit({ ...details, statusCode: 200 });
+    },
   };
   f.persistence = {
     async load() { calls.loads += 1; return structuredClone(saved); },
@@ -86,20 +106,7 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
       assert.equal(this, tabs); assert.equal(tabId, f.tab.id);
       calls.reloads += 1;
       f.navigate();
-      const details = { requestId: `native-${calls.reloads}`, tabId, frameId: 0, documentId,
-        documentLifecycle: 'active', method: 'GET', url: `${ORIGIN}/api2/v2/users/me` };
-      const headers = {
-        accept: 'application/json', 'app-token': 'synthetic-app-token', 'x-bc': 'synthetic-browser-context',
-        'x-of-rev': RULE.source_revision, time: String(TIMESTAMP), cookie: PRIVATE_MARKER,
-        sign: await signSyntheticRequest(RULE, String(TIMESTAMP), '/api2/v2/users/me', '0'),
-      };
-      calls.captures.push(structuredClone(headers));
-      const pairs = (value) => Object.entries(value).map(([name, value]) => ({ name, value }));
-      webRequest.onBeforeSendHeaders.emit({ ...details, requestHeaders: pairs(headers) });
-      webRequest.onHeadersReceived.emit({ ...details, statusCode: 200, responseHeaders: pairs({
-        'x-of-rev': RULE.source_revision, 'content-type': 'application/json',
-      }) });
-      webRequest.onCompleted.emit({ ...details, statusCode: 200 });
+      await f.observeIdentity();
     },
   };
   const scripting = {

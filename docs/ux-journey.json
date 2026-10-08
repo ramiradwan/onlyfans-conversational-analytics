@@ -185,7 +185,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "off"
         }
       ]
@@ -222,7 +222,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "preview"
         }
       ]
@@ -259,7 +259,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "paused"
         },
         {
@@ -296,7 +296,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "desktop_app_needed"
         }
       ]
@@ -323,7 +323,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "setup_incomplete"
         }
       ]
@@ -350,7 +350,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "pairing_required"
         }
       ]
@@ -414,7 +414,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "pairing_compare"
         }
       ]
@@ -456,7 +456,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "pairing_not_ready"
         }
       ]
@@ -488,7 +488,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "pairing_failed"
         }
       ]
@@ -541,7 +541,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "desktop_app_unavailable"
         }
       ]
@@ -579,7 +579,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "activation_checking"
         }
       ]
@@ -611,7 +611,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "activation_required"
         }
       ]
@@ -638,7 +638,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "activation_unavailable"
         }
       ]
@@ -665,7 +665,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "activation_active"
         }
       ]
@@ -711,7 +711,7 @@
         },
         {
           "kind": "visual",
-          "file": "extension/qualification/surface-fixtures.mjs",
+          "file": "extension/qualification/surface-states.mjs",
           "name": "full_ready"
         }
       ]
@@ -836,12 +836,17 @@
         },
         {
           "kind": "unit",
+          "file": "frontend/tests/WebAuthnAccessView.test.tsx",
+          "name": "keeps recovery visible without a details step even when text exceeds the old reserved height"
+        },
+        {
+          "kind": "unit",
           "file": "frontend/tests/AppBootstrap.test.tsx",
           "name": "shows passkey access instead of Bridge routes without a session identity"
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "passkey"
         }
       ]
@@ -863,17 +868,31 @@
           "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "continue-setup"
+        },
+        {
+          "to": "desktop.numbers_ready",
+          "by": "system"
         }
       ],
       "evidence": [
         {
           "kind": "unit",
           "file": "frontend/tests/CreatorDashboardView.test.tsx",
-          "name": "replaces the numbers with the setup prompt until history sync starts"
+          "name": "requires activation without making optional history a setup step"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CreatorDashboardView.test.tsx",
+          "name": "does not require setup when Full is ready and older-history import was skipped"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/setupGuidance.test.tsx",
+          "name": "skips the completed connection and keeps history out of required setup"
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "fresh"
         }
       ]
@@ -887,12 +906,12 @@
       },
       "transitions": [
         {
-          "to": "desktop.message_history",
+          "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "confirm-connection"
         },
         {
-          "to": "desktop.message_history",
+          "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "connect-extension"
         },
@@ -924,7 +943,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "pairing-comparison"
         }
       ]
@@ -1029,7 +1048,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "history-consent"
         }
       ]
@@ -1055,7 +1074,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "syncing"
         }
       ]
@@ -1077,6 +1096,11 @@
           "to": "desktop.stored_messages",
           "by": "user",
           "action": "open-settings"
+        },
+        {
+          "to": "desktop.message_history",
+          "by": "user",
+          "action": "open-settings"
         }
       ],
       "evidence": [
@@ -1087,7 +1111,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "populated"
         }
       ]
@@ -1113,8 +1137,13 @@
           "name": "exposes the customer action when canonical readiness requires activation"
         },
         {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "keeps a failed redemption recoverable and re-reads canonical readiness"
+        },
+        {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "activation-dialog"
         }
       ]
@@ -1135,7 +1164,7 @@
         },
         {
           "kind": "visual",
-          "file": "tools/visual-capture/capture.mjs",
+          "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "delete-confirmation"
         }
       ]
