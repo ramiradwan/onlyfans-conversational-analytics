@@ -588,7 +588,7 @@
       }
 
       body {
-        min-width: 15rem;
+        min-width: min(15rem, 100%);
         min-height: 100vh;
         margin: 0;
         background: var(--dipsy-color-background);
@@ -1051,14 +1051,22 @@
       #open-extension-setup, #confirm-identity { grid-area:1 / 1; }
       #refresh-identity { grid-area:1 / 2; }
       @media(max-width:599px) { #identity-step .actions { grid-template-columns:1fr; grid-template-rows:40px 40px; } #refresh-identity { grid-area:2 / 1; } }
-      /* Recovery instructions remain visible at narrow widths and enlarged text. */
-      .provisioning-stage { height:auto; min-height:var(--dipsy-static-provisioning-stage-block); }
-      .provisioning-stage .step { position:relative; inset:auto; min-height:inherit; grid-template-rows:auto auto auto minmax(6rem,1fr) auto auto; gap:.75rem; }
-      .provisioning-stage [data-step-feedback] { height:auto; min-height:1.25rem; }
+      /* Reserve the same rows in every step so automatic progress leaves controls
+         in place. These are minimums: enlarged text and recovery copy can grow. */
+      .provisioning-stage { height:auto; min-height:30rem; }
+      .provisioning-stage .step { position:relative; inset:auto; min-height:inherit; grid-template-rows:1.25rem minmax(2rem,auto) minmax(3rem,auto) minmax(7rem,1fr) minmax(2.5rem,auto) minmax(3rem,auto); gap:.25rem; }
+      .provisioning-stage [data-step-feedback] { height:auto; min-height:2.5rem; }
       .provisioning-stage .page-status, .provisioning-stage .validation-message { position:static; width:auto; height:auto; clip-path:none; overflow:visible; overflow-wrap:anywhere; }
       .provisioning-stage #claim-step[data-feedback="true"] .validation-message { display:none; }
       .provisioning-stage .step h2, .provisioning-stage .step-description { height:auto; }
-      @media(max-width:599px) { .provisioning-stage { min-height:var(--dipsy-static-provisioning-stage-block-narrow); } }
+      .provisioning-stage .actions > * { height:auto; min-height:2.5rem; flex-basis:auto; }
+      #identity-step .actions { grid-template-rows:minmax(2.5rem,auto); }
+      @media(max-width:599px) {
+        .provisioning-stage { min-height:36rem; }
+        .provisioning-stage .step { grid-template-rows:1.25rem minmax(4rem,auto) minmax(4.5rem,auto) minmax(7rem,1fr) minmax(5rem,auto) minmax(6rem,auto); }
+        .provisioning-stage [data-step-feedback] { min-height:5rem; }
+        #identity-step .actions { grid-template-rows:repeat(2,minmax(2.5rem,auto)); }
+      }
     </style>
   </head>
   <body>

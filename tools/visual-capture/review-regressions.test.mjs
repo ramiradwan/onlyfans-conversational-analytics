@@ -175,3 +175,51 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
     }
   } finally { await page.close(); }
 });
+
+for (const width of [320, 390, 1440]) for (const fontScale of [1, 2]) test(`provisioning recovery remains readable at ${width} with scale ${fontScale}`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await installProvisioningFixture(page, { stage: 'creator_approval_pending', name: 'approval-offline' });
+    await openProvisioningFixture(page);
+    await page.evaluate((scale) => { document.documentElement.style.fontSize = `${16 * scale}px`; }, fontScale);
+    for (const reason of ['hosted_unavailable', 'binding_acquisition_unavailable', 'candidate_resolution_conflict']) {
+      await page.evaluate((refusal) => {
+        window.__provisioningFixture.refusal = refusal;
+        return window.__provisioningController.acquireAssociation();
+      }, reason);
+      await settle(page);
+      assert.equal(await page.locator('#feedback-details').isVisible(), false, 'Recovery must not require another action to read');
+      assert(await page.locator('#provisioning-status').isVisible(), 'Recovery must be visibly rendered');
+      const geometry = await page.locator('#provisioning-status').evaluate((status) => {
+        const bounds = status.getBoundingClientRect();
+        const feedback = status.closest('[data-step-feedback]').getBoundingClientRect();
+        const actions = status.closest('.step').querySelector('.actions').getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(status);
+        let opaque = true;
+        for (let element = status; element; element = element.parentElement) {
+          const css = getComputedStyle(element);
+          opaque &&= css.visibility === 'visible' && Number(css.opacity) === 1;
+        }
+        return {
+          text: status.textContent,
+          opaque,
+          clipPath: getComputedStyle(status).clipPath,
+          fits: [...range.getClientRects()].every((box) => box.left >= bounds.left - 1 && box.right <= bounds.right + 1 && box.top >= bounds.top - 1 && box.bottom <= bounds.bottom + 1),
+          separate: bounds.bottom <= feedback.bottom + 1 && feedback.bottom <= actions.top,
+          pageFits: document.documentElement.scrollWidth <= innerWidth + 1,
+        };
+      });
+      assert(geometry.text.trim().length > 0);
+      assert(geometry.opaque, 'Recovery and its ancestors must not be hidden or transparent');
+      assert.equal(geometry.clipPath, 'none');
+      assert(geometry.fits, 'All recovery text must fit its visible container');
+      assert(geometry.separate, 'Recovery must not overlap the actions');
+      assert(geometry.pageFits, 'Enlarged text must not introduce horizontal scrolling');
+      const retry = page.locator('#acquire-association');
+      await retry.scrollIntoViewIfNeeded();
+      const bounds = await retry.boundingBox();
+      assert(bounds && bounds.y >= 0 && bounds.y + bounds.height <= 901, 'The retry action must remain reachable by scrolling');
+    }
+  } finally { await page.close(); }
+});
