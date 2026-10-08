@@ -316,7 +316,7 @@ def test_external_vendored_contracts_are_excluded() -> None:
 
 @pytest.mark.parametrize("selection_path", [
     "ci/backend-test-shards.json", "ci/windows-full-test-shards.json",
-    "ci/product-ci-policy.json",
+    "ci/product-ci-policy.json", "ci/visual-ci-policy.json",
 ])
 def test_ci_selection_manifest_is_non_production_without_exempting_other_ci_paths(selection_path: str) -> None:
     manifest = load_manifest(DEFAULT_MANIFEST_PATH)

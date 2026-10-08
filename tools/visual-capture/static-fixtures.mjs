@@ -1,3 +1,4 @@
+import { PROVISIONING_STATES } from './static-fixture-matrix.mjs';
 // Visual fixtures exercise production markup and the existing setup controller, never live data.
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -18,16 +19,7 @@ export async function staticFixtures() {
   const template = withoutScripts(await read('app/provisioning/provisioning.html'));
   const controllerSource = await read('app/provisioning/provisioning.js');
   const elementIds = [...controllerSource.matchAll(/(\w+): byId\('([^']+)'\)/g)];
-  const setupStates = [
-    ['connect', 'registration_required'], ['confirm', 'creator_confirmation_required'],
-    ['approve', 'creator_approval_pending'], ['finish', 'finalization_ready'],
-    ['invalid-code', 'registration_required'], ['link-unavailable', 'registration_required'],
-    ['approval-unavailable', 'creator_approval_pending'], ['completed', null],
-    ['recovery', 'recovery_required'],
-    ['approval-pending', 'creator_approval_pending'], ['approval-offline', 'creator_approval_pending'],
-    ['approval-unavailable-help', 'creator_approval_pending'],
-  ];
-  for (const [name, stage] of setupStates) {
+  for (const [name, stage] of PROVISIONING_STATES) {
     const linkAvailable = !name.includes('unavailable');
     const html = template.replaceAll('{{PROVISIONING_CSRF}}', 'visual-fixture')
       .replaceAll('{{PROVISIONING_EXTENSION_ID}}', 'a'.repeat(32))
