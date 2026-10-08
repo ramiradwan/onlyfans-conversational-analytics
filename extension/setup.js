@@ -142,7 +142,7 @@ function render(model) {
   show('restore-access', status.phase === 'permission_required');
   renderJourney(currentJourney, model);
   const preview = mode === 'preview' || (mode === 'paused' && status.consent.resume_mode === 'preview');
-  show('preview-metrics', preview);
+  show('preview-metrics', preview && view === 'journey');
   show('pause', ['preview', 'full'].includes(mode) && model.pairing.desktop_control !== true);
   show('background-tab-note', status.observer?.helper === 'open');
   show('reopen-background-tab', status.observer?.helper === 'closed');

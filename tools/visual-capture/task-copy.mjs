@@ -19,7 +19,10 @@ export async function inspectTaskCopy(page, fixture) {
     if (['software_activation', 'mode_choice', 'mode_choice_full', 'full_review'].includes(fixture.name)) {
       assert(!await page.locator('#journey-card').isVisible(), 'another task competes with required review');
     }
-    assert.equal(await page.locator('#preview-metrics, #delete-local-data').count(), 0);
+    assert.equal(await page.locator('#delete-local-data').count(), 0, 'Destructive controls must remain in Options');
+    assert.equal(await page.locator('#preview-metrics').isVisible(),
+      ['preview_complete', 'reload_required'].includes(fixture.name),
+      'Preview counts belong in the persistent ready workspace, outside required review');
     if (fixture.name === 'preview_complete') assert(!await page.locator('[data-step="connect"]').isVisible());
     if (fixture.name === 'pairing_compare') assert((await page.locator('#pairing-label').innerText()).includes('confirm in the desktop app'));
     return result;

@@ -3,11 +3,37 @@ export function installSurfaceFixture(input) {
   const state = structuredClone(input), calls = [], ports = new Set();
   const event = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn),
     removeListener: (fn) => listeners.delete(fn), emit: (...values) => { for (const fn of listeners) fn(...values); } }; };
+  const storageChanged = event(), sessionValues = {};
+  const session = {
+    async get(keys) {
+      if (keys == null) return structuredClone(sessionValues);
+      const defaults = typeof keys === 'object' && !Array.isArray(keys) ? keys : {};
+      const names = typeof keys === 'string' ? [keys] : Array.isArray(keys) ? keys : Object.keys(keys);
+      return Object.fromEntries(names.filter((key) => key in sessionValues || key in defaults)
+        .map((key) => [key, structuredClone(key in sessionValues ? sessionValues[key] : defaults[key])]));
+    },
+    async set(values) {
+      const changes = {};
+      for (const [key, value] of Object.entries(values)) {
+        changes[key] = { oldValue: sessionValues[key], newValue: structuredClone(value) };
+        sessionValues[key] = structuredClone(value);
+      }
+      storageChanged.emit(changes, 'session');
+    },
+    async remove(keys) {
+      const changes = {};
+      for (const key of typeof keys === 'string' ? [keys] : keys) if (key in sessionValues) {
+        changes[key] = { oldValue: sessionValues[key] }; delete sessionValues[key];
+      }
+      storageChanged.emit(changes, 'session');
+    },
+  };
   const pairState = () => ({ state: state.pairing ?? (state.paired ? 'paired' : 'unpaired'),
     comparison_code: state.pairing === 'compare' && state.surface === 'setup' ? '483217' : null,
     owns_attempt: state.surface === 'setup' && ['pairing', 'compare'].includes(state.pairing),
     desktop_control: state.desktopControl === true });
   const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? null, consent_epoch: 'fixture-epoch' },
+    brain_reachable: state.reachable === true,
     phase: state.phase ?? (state.mode === 'full' ? (state.paired ? 'full' : 'identity') : state.mode),
     reload_required: state.reload === true, onlyfans_permission: state.phase !== 'permission_required', history_permission: false,
     preview: state.preview ?? { message_observations: 128, chat_observations: 24, inbound_observations: 80, outbound_observations: 48 },
@@ -66,7 +92,7 @@ export function installSurfaceFixture(input) {
       } },
     permissions: { request: async (request) => { calls.push({ type: 'permission', request, userGesture: navigator.userActivation.isActive }); return state.permissionGranted !== false; } },
     tabs: { create: async (value) => { calls.push({ type: 'tab', ...value }); return { id: 2 }; } },
-    storage: { onChanged: event() },
+    storage: { session, onChanged: storageChanged },
   };
   const originalFetch = window.fetch;
   window.fetch = (url, options) => String(url).endsWith('/extension-config.json')
