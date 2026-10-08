@@ -671,16 +671,22 @@ def _conversations_from_snapshot(
         analytics_conversation_ref = conversation_ref(
             creator_account_id, conversation_id
         )
-        metrics = metrics_by_id[analytics_conversation_ref]
+        # Canonical history can outlive the analytics retention window. Only
+        # conversations represented in this projection belong in its snapshot.
+        metrics = metrics_by_id.get(analytics_conversation_ref)
+        if metrics is None:
+            continue
         legacy_messages: list[Message] = []
         for raw in conversation.get("messages", []):
-            enrichment = enrichments_by_message[
+            enrichment = enrichments_by_message.get(
                 message_ref(
                     creator_account_id,
                     conversation_id,
                     raw["message_id"],
                 )
-            ]
+            )
+            if enrichment is None:
+                continue
             legacy_messages.append(
                 Message(
                     id=raw["message_id"],
@@ -699,13 +705,15 @@ def _conversations_from_snapshot(
         topic_labels: dict[str, str] = {}
         engagement_states: set[str] = set()
         for raw in conversation.get("messages", []):
-            enrichment = enrichments_by_message[
+            enrichment = enrichments_by_message.get(
                 message_ref(
                     creator_account_id,
                     conversation_id,
                     raw["message_id"],
                 )
-            ]
+            )
+            if enrichment is None:
+                continue
             topic_labels.update(
                 {
                     topic.taxonomy_id: topic.label
