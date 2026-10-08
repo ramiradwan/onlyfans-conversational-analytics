@@ -1,5 +1,4 @@
 """Cold integrity validation must select unit members, not rescan account buckets."""
-from unittest.mock import Mock
 
 from tests.continuous_analytics_fixture import ACCOUNT, cleanup, make_fixture
 
@@ -11,13 +10,17 @@ pytestmark = [pytest.mark.ci_tier("integration")]
 def test_cold_integrity_reads_only_requested_membership_metadata(tmp_path, monkeypatch):
     from app.analytics import shared_graph
     from app.analytics.conversation_integrity import MAX_GROUP_RECORDS
-    select = Mock(wraps=shared_graph.selected_content_ids)
+    original, requested = shared_graph.selected_content_ids, []
+    def select(*args, **kwargs):
+        # The bounded cold verifier reuses and clears its selection buffer.
+        requested.append(tuple(args[4]))
+        return original(*args, **kwargs)
     monkeypatch.setattr(shared_graph, 'selected_content_ids', select)
     f = make_fixture(tmp_path, conversations=3, messages=4)
     try:
         f.pipeline.project_account(ACCOUNT)
-        assert select.called, 'integrity validation scanned whole account buckets'
-        assert all(0 < len(call.args[4]) <= MAX_GROUP_RECORDS for call in select.call_args_list)
+        assert requested, 'integrity validation scanned whole account buckets'
+        assert all(0 < len(selected) <= MAX_GROUP_RECORDS for selected in requested)
     finally:
         cleanup(f)
 

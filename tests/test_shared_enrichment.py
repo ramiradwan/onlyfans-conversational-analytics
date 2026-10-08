@@ -315,10 +315,11 @@ def test_staging_and_activation_restore_the_connection_cache(fixture, monkeypatc
     from app.analytics import database, sqlite_projection_store
     original, restored = database.generation_verification_cache, []
     @contextmanager
-    def observed(db):
+    def observed(db, *, cache_kib=database.GENERATION_VERIFICATION_CACHE_KIB):
+        assert cache_kib == database.GENERATION_VERIFICATION_CACHE_KIB
         previous = db.execute('PRAGMA cache_size').fetchone()[0]
         try:
-            with original(db):
+            with original(db, cache_kib=cache_kib):
                 assert db.execute('PRAGMA cache_size').fetchone()[0] == -database.GENERATION_VERIFICATION_CACHE_KIB
                 yield
         finally:
