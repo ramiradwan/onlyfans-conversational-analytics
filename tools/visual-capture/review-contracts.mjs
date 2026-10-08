@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { reviewCases } from './ci/inventory.mjs';
 
 export function contrastAgainst(foreground, backdrop) {
   const rgb = foreground.slice(0, 3).map((c, i) => (c * foreground[3] + backdrop[i] * (1 - foreground[3])) / 255);
@@ -44,12 +45,22 @@ async function centerPixel(page, locator) {
   }, png.toString('base64'));
 }
 /** Separate interaction probes; they never alter a standard capture's state. */
-export async function captureReviewChecks(browser, base, outDir) {
+export async function captureReviewChecks(browser, base, outDir, recorder = null) {
   const directory = join(outDir, 'review'); await mkdir(directory, { recursive: true });
   const checks = [], failures = [];
+  let capturedFiles = [];
+  const screenshot = async (page, filename) => {
+    await page.screenshot({ path: join(directory, filename), animations: 'disabled' });
+    capturedFiles.push('review/' + filename);
+  };
   const record = async (name, action) => {
-    try { checks.push({ name, result: 'passed', measurements: await action() }); }
+    const definition = reviewCases().find(value => value.name === name);
+    const finish = recorder?.begin(`review-${definition?.mode}-${definition?.key}`, { mode: definition?.mode, name });
+    capturedFiles = ['review/acceptance.json'];
+    let passed = false;
+    try { checks.push({ name, result: 'passed', measurements: await action() }); passed = true; }
     catch (error) { failures.push(`${name}: ${error.message}`); }
+    finally { finish?.({ outcome: passed ? 'passed' : 'failed', observations: passed ? [name] : [], files: capturedFiles }); }
   };
   const popupHtml = (await readFile(new URL('../../extension/popup.html', import.meta.url), 'utf8'))
     .replace('<link rel="stylesheet" href="popup.css">', `<style>${await readFile(new URL('../../extension/popup.css', import.meta.url), 'utf8')}</style>`)
@@ -87,13 +98,13 @@ export async function captureReviewChecks(browser, base, outDir) {
         const hovered = await appearance(inbox), tooltip = await appearance(page.locator('.MuiTooltip-tooltip'));
         assertStateHierarchy(rest, hovered, selected, paper.fill); near(tooltip.fontSize, 12, 'tooltip size');
         assert(contrastAgainst(tooltip.ink, [...tooltip.fill.slice(0, 3).map((c, i) => c * tooltip.fill[3] + paper.fill[i] * (1 - tooltip.fill[3])), 1]) >= 4.5, 'tooltip text contrast');
-        await page.screenshot({ path: join(directory, `rail-hover-${mode}.png`), animations: 'disabled' });
+        await screenshot(page, `rail-hover-${mode}.png`);
         await page.mouse.move(400, 400); await page.keyboard.press('Tab'); await inbox.focus();
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const focus = await appearance(inbox); assert.deepEqual(focus.fill, hovered.fill); assert.notEqual(focus.background, 'rgba(0, 0, 0, 0.12)');
         assert(focus.focusVisible, 'keyboard focus is missing');
         assert.equal(focus.outlineWidth, '2px'); assert.equal(focus.outlineStyle, 'solid'); assert.equal(focus.outlineOffset, '-2px');
-        await page.screenshot({ path: join(directory, `rail-focus-${mode}.png`), animations: 'disabled' });
+        await screenshot(page, `rail-focus-${mode}.png`);
         return { paper, canvas, header, heading, railInset, boxes, rest, hovered, selected, focus, tooltip };
       });
       await record(`${mode}: popup and app brand pixels`, async () => {
@@ -119,14 +130,14 @@ export async function captureReviewChecks(browser, base, outDir) {
         const drawer = page.getByLabel('Mobile navigation', { exact: true });
         await drawer.waitFor({ state: 'visible' }); const drawerStyle = await appearance(drawer);
         assert.equal(drawerStyle.radius, '0px 20px 20px 0px');
-        await page.screenshot({ path: join(directory, `mobile-drawer-${mode}.png`), animations: 'disabled' });
+        await screenshot(page, `mobile-drawer-${mode}.png`);
         await page.waitForFunction(() => document.querySelector('#mobile-navigation').contains(document.activeElement));
         await page.keyboard.press('Escape'); await drawer.waitFor({ state: 'hidden' });
         assert(await menu.evaluate((node) => document.activeElement === node), 'Escape lost menu focus');
         const focus = await appearance(menu); assert.notEqual(focus.background, 'rgba(0, 0, 0, 0.12)');
         assert(focus.focusVisible, 'restored menu focus is not visible'); assert.equal(focus.outlineWidth, '2px');
         assert.equal(await menu.locator('.MuiTouchRipple-childPulsate').count(), 0, 'default keyboard ripple obscures the authored focus fill');
-        await page.screenshot({ path: join(directory, `mobile-focus-${mode}.png`), animations: 'disabled' });
+        await screenshot(page, `mobile-focus-${mode}.png`);
         return { box, drawer: drawerStyle, focus };
       });
       for (const width of [1440, 820, 390]) {
@@ -206,7 +217,7 @@ export async function captureReviewChecks(browser, base, outDir) {
           await page.waitForFunction(node => node.matches(':focus-visible') && getComputedStyle(node).outlineWidth === '2px',
             await setup.elementHandle(), { timeout: 3000 });
           near(parseFloat((await appearance(setup)).outlineWidth), 2, 'setup keyboard focus ring');
-          await page.screenshot({ path: join(directory, `passkey-layout-${mode}-${viewport.width}.png`), animations: 'disabled' });
+          await screenshot(page, `passkey-layout-${mode}-${viewport.width}.png`);
           const keyBoxes = () => Promise.all([cardLocator, page.locator('[data-visual="passkey-lock"]'), page.getByRole('heading', { level: 1 }),
             cardLocator.getByRole('button', { name: 'Sign in with passkey', exact: true }), setup, visibleBrand].map(appearance));
           const resting = await keyBoxes();
@@ -223,7 +234,7 @@ export async function captureReviewChecks(browser, base, outDir) {
           assert(feedbackBox.y >= card.y + card.height && feedbackBox.y + feedbackBox.height <= viewport.height, 'passkey feedback sits below the card, in view');
           assert(contrastAgainst(summaryStyle.ink, summaryStyle.canvas) >= 4.5, 'passkey error text contrast');
           assert.equal(await summary.innerText(), 'Sign-in was cancelled or timed out. Try again.');
-          await page.screenshot({ path: join(directory, `passkey-error-${mode}-${viewport.width}.png`), animations: 'disabled' });
+          await screenshot(page, `passkey-error-${mode}-${viewport.width}.png`);
           passkeyLayouts.push({ viewport, header, brand, homeBrand, card, tile, heading, feedbackBox, summaryStyle });
         }
         return { avatar, timestamp, status, passkeyLayouts };

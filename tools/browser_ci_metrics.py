@@ -3,6 +3,7 @@
 This measures scheduling and runner use; it does not qualify test coverage.
 Save the run response as run.json and its complete filter=all jobs response as
 jobs.json. Partial reruns use each producer's newest actual execution.
+Corroborated retained aliases do not consume additional runner minutes.
 """
 from __future__ import annotations
 
@@ -12,6 +13,11 @@ import json
 from pathlib import Path
 import re
 import statistics
+
+try:
+    from tools.engineering_attestation import ContractError, PRODUCT_REPOSITORY, latest_ci_jobs
+except ModuleNotFoundError:
+    from engineering_attestation import ContractError, PRODUCT_REPOSITORY, latest_ci_jobs
 
 
 DEPENDENCIES = {
@@ -67,42 +73,106 @@ def positive(value):
     return type(value) is int and value > 0
 
 
-def summarize(run, document):
+class _SavedJobHistory:
+    """Expose saved metadata through the same paginated API as the gates."""
+
+    def __init__(self, jobs, run_id):
+        self.jobs = jobs
+        self.run_id = run_id
+
+    def get(self, path):
+        match = re.fullmatch(
+            rf"/repos/{re.escape(PRODUCT_REPOSITORY)}/actions/runs/{self.run_id}/jobs"
+            r"\?filter=all&per_page=100&page=([1-9][0-9]*)", path)
+        if match is None:
+            raise TimingError("invalid_job_history_request")
+        start = (int(match[1]) - 1) * 100
+        return dict(total_count=len(self.jobs), jobs=self.jobs[start:start + 100])
+
+
+def actual_job_history(jobs, *, run_id, source):
+    """Resolve every historical producer through the existing provenance gate.
+
+    Each attempt prefix exposes the actual executions then current. Their
+    original IDs form the complete execution history; retained administrative
+    copies never add an execution or replace a later real failure.
+    """
+    executions = {}
+    latest = {}
+    try:
+        for producer in sorted({job["run_attempt"] for job in jobs}):
+            history = [job for job in jobs if job["run_attempt"] <= producer]
+            latest = latest_ci_jobs(_SavedJobHistory(history, run_id), run_id=run_id,
+                                    run_attempt=producer, source_commit=source)
+            executions.update((job["id"], job) for job in latest.values())
+    except ContractError:
+        raise TimingError("invalid_actual_execution_history") from None
+    return latest, list(executions.values())
+
+
+def administrative_skip(job):
+    # Copied nonexecuted placeholders can have a newer start than their original
+    # end. They have no owned runner or steps and incur no runner usage.
+    return (job.get("status") == "completed" and job.get("conclusion") == "skipped"
+            and job.get("steps") == [] and (job.get("runner_id") is None
+                or type(job.get("runner_id")) is int and job["runner_id"] == 0)
+            and job.get("runner_name") in (None, ""))
+
+
+def summarize(run, document, *, dependencies=None, execution_names=None,
+              assembly_names=None, optional_dependencies=None,
+              schema="browser-ci-timing/v1", measurement_scope="selected browser/web jobs; coverage qualification is separate"):
+    dependencies = DEPENDENCIES if dependencies is None else dependencies
+    execution_names = ({name: WEB_EXECUTION if name == "web-build-and-test" else BROWSER_EXECUTION
+                        for name in dependencies} if execution_names is None else execution_names)
+    assembly_names = ASSEMBLY if assembly_names is None else assembly_names
+    optional_dependencies = ({"browser-e2e-serial-control"} if optional_dependencies is None else optional_dependencies)
+    if not isinstance(run, dict) or not isinstance(document, dict):
+        raise TimingError("invalid_run_metadata")
     source, run_id, attempt = run.get("head_sha"), run.get("id"), run.get("run_attempt")
     if (not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source)
             or not positive(run_id) or not positive(attempt)):
         raise TimingError("invalid_run_identity")
     created = timestamp(run.get("created_at"))
     jobs = document.get("jobs")
-    if not isinstance(jobs, list) or not jobs or document.get("total_count") != len(jobs):
+    if (not isinstance(jobs, list) or not jobs or not positive(document.get("total_count"))
+            or document["total_count"] != len(jobs)):
         raise TimingError("incomplete_job_history")
-    latest = {}; identities = set(); execution_ids = set()
     for job in jobs:
+        if not isinstance(job, dict):
+            raise TimingError("invalid_job_identity")
         name, producer, execution_id = job.get("name"), job.get("run_attempt"), job.get("id")
         if (not isinstance(name, str) or not name or not positive(producer) or producer > attempt
                 or not positive(execution_id) or job.get("run_id") != run_id
-                or job.get("head_sha") != source or job.get("conclusion") not in CONCLUSIONS
-                or (name, producer) in identities or execution_id in execution_ids):
+                or job.get("head_sha") != source
+                or not isinstance(job.get("status"), str)
+                or job.get("status") not in {"queued", "in_progress", "completed"}
+                or not (job.get("conclusion") is None or isinstance(job.get("conclusion"), str))
+                or job.get("conclusion") not in CONCLUSIONS
+                or job["status"] == "completed" and job.get("conclusion") is None):
             raise TimingError("invalid_job_identity")
-        identities.add((name, producer)); execution_ids.add(execution_id)
-        if name not in latest or latest[name]["run_attempt"] < producer:
-            latest[name] = job
+    latest, jobs = actual_job_history(jobs, run_id=run_id, source=source)
     rows = []
     all_runner_seconds = 0
     selected_runner_seconds = 0
     for job in jobs:
-        if job.get("status") != "completed" or not job.get("started_at") or not job.get("completed_at"):
+        if administrative_skip(job):
             continue
-        duration = timestamp(job["completed_at"])-timestamp(job["started_at"])
-        if duration < 0:
+        if job["status"] != "completed":
+            continue
+        start, end = timestamp(job.get("started_at")), timestamp(job.get("completed_at"))
+        duration = end - start
+        if duration < 0 or start < created:
             raise TimingError("invalid_job_interval")
         all_runner_seconds += duration
-        if job["name"] in DEPENDENCIES:
+        if job["name"] in dependencies:
             selected_runner_seconds += duration
-    for name, prerequisites in DEPENDENCIES.items():
+    for name, prerequisites in dependencies.items():
         if name not in latest:
             continue
         job = latest[name]
+        if administrative_skip(job):
+            continue
         if job.get("status") != "completed" or not job.get("started_at") or not job.get("completed_at"):
             continue
         started, completed = timestamp(job["started_at"]), timestamp(job["completed_at"])
@@ -110,7 +180,7 @@ def summarize(run, document):
             raise TimingError("invalid_job_interval")
         ready = created
         for dependency in prerequisites:
-            if dependency == "browser-e2e-serial-control" and (
+            if dependency in optional_dependencies and (
                     dependency not in latest or latest[dependency].get("conclusion") == "skipped"):
                 # The opt-in control is not a scheduling prerequisite on ordinary runs.
                 continue
@@ -129,14 +199,16 @@ def summarize(run, document):
             raise TimingError("missing_step_timing")
         intervals = []
         for step in steps:
+            if not isinstance(step, dict):
+                raise TimingError("invalid_step_timing")
             if step.get("status") != "completed" or step.get("conclusion") == "skipped":
                 continue
             begin, end = timestamp(step.get("started_at")), timestamp(step.get("completed_at"))
             if begin < started or end < begin or end > completed:
                 raise TimingError("invalid_step_interval")
             intervals.append((begin, end))
-            key = ("assembly_seconds" if step.get("name") in ASSEMBLY else
-                   "execution_seconds" if step.get("name") in (WEB_EXECUTION if name == "web-build-and-test" else BROWSER_EXECUTION)
+            key = ("assembly_seconds" if step.get("name") in assembly_names else
+                   "execution_seconds" if step.get("name") in execution_names.get(name, ())
                    else "bootstrap_seconds")
             phases[key] += end - begin
         intervals.sort()
@@ -148,19 +220,19 @@ def summarize(run, document):
                          runner_seconds=round(completed-started, 3),
                          unallocated_runner_seconds=round(completed-started-sum(phases.values()), 3),
                          **{key: round(value, 3) for key, value in phases.items()}))
-    return dict(schema="browser-ci-timing/v1", source_commit=source, workflow_run_id=run_id,
+    return dict(schema=schema, source_commit=source, workflow_run_id=run_id,
                 current_attempt=attempt, jobs=rows,
                 latest_selected_runner_minutes=round(sum(row["runner_seconds"] for row in rows)/60, 3),
                 all_attempts_selected_runner_minutes=round(selected_runner_seconds/60, 3),
                 all_attempts_workflow_runner_minutes=round(all_runner_seconds/60, 3),
-                measurement_scope="selected browser/web jobs; coverage qualification is separate",
+                measurement_scope=measurement_scope,
                 rerun_queue_note="queue includes rerun request delay when attempt exceeds one")
 
 
-def observations(summaries):
+def observations(summaries, dependencies=None):
     """Report median and slowest observations without extrapolating p95."""
     result = []
-    for name in DEPENDENCIES:
+    for name in DEPENDENCIES if dependencies is None else dependencies:
         rows = [row for summary in summaries for row in summary["jobs"] if row["job"] == name]
         if rows:
             result.append(dict(job=name, observations=len(rows),

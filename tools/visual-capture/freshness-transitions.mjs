@@ -5,21 +5,8 @@ import { join } from 'node:path';
 import { installWatcher, readWatcher } from './shift-watcher.mjs';
 import { runCaptureJobs } from './capture-jobs.mjs';
 
-const date = '2026-06-30T10:00:00.000Z';
-const states = [
-  ['never_checked', null], ['current', null],
-  ...['canary', 'catch_up', 'first_check'].map((reason) => ['checking', reason]),
-  ...['awaiting_check', 'daily_cap', 'check_incomplete', 'not_observing'].map((reason) => ['behind', reason]),
-  ...['user_paused', 'consent_needed', 'extension_offline', 'no_onlyfans_tab', 'onlyfans_sleeping', 'account_changed', 'applying_settings', 'capture_off', 'extension_outdated', 'unrecognized-reason'].map((reason) => ['paused', reason]),
-];
-const frames = states.map(([status, reason]) => ({ freshness: { status, reason, uncertain_since: status === 'behind' ? '2025-12-31T21:59:00.000Z' : null, last_closed_at: status === 'never_checked' ? null : date, observing_since: date }, bridge: 'connected', snapshotUsable: true }));
-frames.push({ ...frames[2], freshness: { ...frames[2].freshness, last_closed_at: null } });
-for (const bridge of ['connecting', 'handshaking', 'disconnected', 'reconnecting', 'error']) frames.push({ ...frames[1], bridge });
-frames.push({ ...frames[1], snapshotUsable: false });
-
-const vertices = frames.map((frame, index) => ({ ...frame, id: 'freshness-' + index }));
-const matrixVertices = vertices.slice(0, states.length);
-export const FRESHNESS_TRANSITIONS = matrixVertices.flatMap((from) => matrixVertices.filter((to) => to.id !== from.id).map((to) => ({ from, to })));
+import { FRESHNESS_TRANSITIONS, FRESHNESS_VERTICES, freshnessCases } from './freshness-matrix.mjs';
+export { FRESHNESS_TRANSITIONS } from './freshness-matrix.mjs';
 
 export async function captureDirectedTransition({ from, to }, push, read) {
   await push(from);
@@ -28,17 +15,17 @@ export async function captureDirectedTransition({ from, to }, push, read) {
   return { from: from.id, to: to.id, before, after: await read() };
 }
 
-export async function captureFreshnessTransitions(browser, base, outDir) {
+export async function captureFreshnessTransitions(browser, base, outDir, recorder = null) {
   const reports = [];
   const seed = randomUUID();
-  const cases = [];
-  for (const width of [390, 1440]) for (const mode of ['light', 'dark']) for (const fontScale of [1, 1.25]) for (const motion of ['reduce', 'no-preference']) {
-    cases.push({ width, mode, fontScale, motion });
-  }
+  const cases = freshnessCases();
   await runCaptureJobs(cases, async ({ width, mode, fontScale, motion }) => {
+    const name = ['freshness', width, mode, fontScale, motion].join('-');
+    const finish = recorder?.begin(name, { width, mode, fontScale, motion });
     const viewport = { width, height: width === 390 ? 844 : 900 };
     const page = await browser.newPage({ viewport, colorScheme: mode, reducedMotion: motion, timezoneId: 'Europe/Helsinki' });
-    const name = ['freshness', width, mode, fontScale, motion].join('-');
+    let caseFailed = false;
+    const files = [];
     const transitions = [], overlays = [];
     try {
       await installWatcher(page, { requiredRegions: ['toolbar', ...(width === 390 ? ['status-row'] : []), 'freshness-status', 'following-content'] });
@@ -61,7 +48,7 @@ export async function captureFreshnessTransitions(browser, base, outDir) {
         assert.equal(label === 'Up to date', canBeCurrent);
         transitions.push(record);
       }
-      for (const frame of vertices) {
+      for (const frame of FRESHNESS_VERTICES) {
         const before = await page.evaluate(() => ({ at: performance.now(), boxes: window.__regionWatcher.frames.at(-1)?.regions }));
         await push(frame);
         await page.getByRole('button', { name: /^Status:/ }).click();
@@ -74,14 +61,19 @@ export async function captureFreshnessTransitions(browser, base, outDir) {
       }
       const report = { revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: 'freshness', viewport, mode, fontScale, motion, seed, expected: FRESHNESS_TRANSITIONS.length, transitions, overlays, ...await readWatcher(page) };
       await writeFile(join(outDir, name + '.json'), JSON.stringify(report) + '\n');
-      reports.push({ file: name + '.json', transitions: transitions.length, failures: report.failures });
+      files.push(name + '.json');
+      reports.push({ file: name + '.json', transitions: transitions.length, overlays: overlays.length, failures: report.failures });
       assert.equal(transitions.length, FRESHNESS_TRANSITIONS.length);
       assert.deepEqual(report.failures, []);
     } catch (error) {
+      caseFailed = true;
       await page.screenshot({ path: join(outDir, name + '-failure.png') });
       await writeFile(join(outDir, name + '-failure.json'), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: 'freshness', viewport, mode, fontScale, motion, seed, transitions, overlays, ...await readWatcher(page) }) + '\n');
       if (!reports.some((report) => report.file === name + '.json')) reports.push({ file: name + '-failure.json', transitions: transitions.length, failures: [error.message] });
-    } finally { await page.close(); }
+    } finally {
+      finish?.({ outcome: caseFailed ? 'failed' : 'passed', observations: [...transitions.map(({ from, to }) => `edge:${from}:${to}`), ...overlays.map(({ state }) => `overlay:${state}`)], files });
+      await page.close();
+    }
   });
   assert.equal(reports.length, cases.length, 'Missing freshness configuration');
   reports.sort((first, second) => first.file.localeCompare(second.file));
