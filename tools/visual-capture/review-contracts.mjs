@@ -218,7 +218,8 @@ export async function captureReviewChecks(browser, base, outDir) {
           resting.forEach((box, index) => { near(failed[index].x, box.x, `passkey error shift x ${index}`); near(failed[index].y, box.y, `passkey error shift y ${index}`); });
           const feedbackBox = await appearance(feedback), summaryStyle = await appearance(summary);
           near(feedbackBox.width, card.width, 'passkey feedback width');
-          near(feedbackBox.height, viewport.width < 600 ? 40 : 20, 'passkey feedback height');
+          const feedbackSize = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8')).tier3.Passkey.feedback;
+          near(feedbackBox.height, viewport.width < 600 ? feedbackSize.narrow : feedbackSize.wide, 'passkey feedback height');
           assert(feedbackBox.y >= card.y + card.height && feedbackBox.y + feedbackBox.height <= viewport.height, 'passkey feedback sits below the card, in view');
           assert(contrastAgainst(summaryStyle.ink, summaryStyle.canvas) >= 4.5, 'passkey error text contrast');
           assert.equal(await summary.innerText(), 'Sign-in was cancelled or timed out. Try again.');

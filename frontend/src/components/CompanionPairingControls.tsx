@@ -294,8 +294,8 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
         status={sectionStatus}
         title="Browser extension"
       />
-      <ReservedRegion id="pairing-body" size={{ xs: 624, sm: 424 }}>
-      <Box sx={{ position: 'absolute', inset: 0, visibility: active || waitingForExtension ? 'hidden' : 'visible' }}><AdmittedPairings
+      <ReservedRegion grow id="pairing-body" size={{ xs: 672, sm: 432 }} sx={{ display: 'grid' }}>
+      <Box sx={{ gridArea: '1 / 1', visibility: active || waitingForExtension ? 'hidden' : 'visible' }}><AdmittedPairings
         api={api}
         browserApi={browserApi}
         port={port}
@@ -304,7 +304,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
         onCount={setConnectedCount}
         refresh={`${status?.version ?? -1}:${notice?.revision ?? -1}:${notice?.changed_at ?? ''}`}
       /></Box>
-      <Stack spacing={1.5} sx={{ position: 'absolute', inset: 0, pointerEvents: active || waitingForExtension ? 'auto' : 'none' }}>
+      <Stack spacing={1.5} sx={{ gridArea: '1 / 1', pointerEvents: active || waitingForExtension ? 'auto' : 'none' }}>
       {waitingForExtension && (
         <Stack data-journey-state="desktop.extension_handoff" spacing={0.5}>
           <Typography role="status">
@@ -497,7 +497,7 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
   };
   return (
     <Stack spacing={0.75}>
-          <ReservedRegion id="browser-facts" size={{ xs: 512, sm: 300 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
+          <ReservedRegion grow id="browser-facts" size={{ xs: 560, sm: 340 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
             api={browserApi}
             browser={browser}
             canManage={isCreator}

@@ -8,11 +8,12 @@ import { componentTokens } from '../../theme';
 const sizes = componentTokens.reserved;
 const labelEnter = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
 type Size = { xs: number; sm?: number };
-export function ReservedRegion({ id, size, children, regionRole = 'fixed', sx }: {
-  id: string; size: Size; children: ReactNode; regionRole?: 'fixed' | 'scroll'; sx?: SxProps<Theme>;
+export function ReservedRegion({ id, size, children, regionRole = 'fixed', grow = false, sx }: {
+  id: string; size: Size; children: ReactNode; regionRole?: 'fixed' | 'scroll'; grow?: boolean; sx?: SxProps<Theme>;
 }) {
+  const dimensions = Object.fromEntries(Object.entries(size).map(([key, value]) => [key, `${value / 16}rem`]));
   return <Box data-reserved-region={id} data-region-role={regionRole} sx={[
-    { blockSize: Object.fromEntries(Object.entries(size).map(([key, value]) => [key, `${value / 16}rem`])), minInlineSize: 0, minBlockSize: 0, position: 'relative',
+    { blockSize: grow ? 'auto' : dimensions, minInlineSize: 0, minBlockSize: grow ? dimensions : 0, position: 'relative',
       '& [data-surface-emphasis]': { transform: 'none !important' },
       ...(regionRole === 'scroll' ? { overflowY: 'auto', scrollbarGutter: 'stable', overscrollBehavior: 'contain' } : {}) },
     ...(Array.isArray(sx) ? sx : [sx]),
@@ -58,11 +59,11 @@ export function ReservedNotice({ id, notice, essential = false }: { id: string; 
   const { probe, overflow } = useContentFit(notice);
   const details = Boolean(notice?.details) || overflow;
   const alertStyle = { height: '100%', p: '12px', '& .MuiAlert-message': { p: 0, minWidth: 0 }, '& p': { lineHeight: '1.25rem', overflowWrap: 'anywhere' } };
-  const copy = <><Typography variant="subtitle2" component="p">{notice?.title}</Typography><Typography variant="body2">{notice?.body}</Typography></>;
-  if (essential) return <Box data-reserved-region={id} sx={{ minHeight: '1.25rem', minWidth: 0 }}>
-    {notice && <Alert data-region-content severity={notice.severity} sx={{ ...alertStyle, height: 'auto' }}>
-      {copy}{notice.details && <Typography variant="body2">{notice.details}</Typography>}
-    </Alert>}
+  const copy = <><Typography variant="subtitle2" component="p" sx={essential ? { minHeight: { xs: '2.5rem', sm: '1.25rem' } } : undefined}>{notice?.title}</Typography><Typography variant="body2">{notice?.body}</Typography></>;
+  if (essential) return <Box data-reserved-region={id} sx={{ minHeight: { xs: `${sizes.essentialNotice.narrow / 16}rem`, sm: `${sizes.essentialNotice.wide / 16}rem` }, minWidth: 0 }}>
+    <Alert data-region-content severity={notice?.severity ?? 'info'} sx={{ ...alertStyle, height: 'auto', visibility: notice ? 'visible' : 'hidden' }}>
+      {copy}{notice?.details && <Typography variant="body2">{notice.details}</Typography>}
+    </Alert>
   </Box>;
   return <ReservedRegion id={id} size={{ xs: sizes.notice.narrow, sm: sizes.notice.wide }}>
     <Box ref={probe} aria-hidden sx={probeStyle}><Alert role="presentation" severity={notice?.severity ?? 'info'} sx={alertStyle}><Typography variant="subtitle2" component="p" data-fit-text={notice?.title} /><Typography variant="body2" data-fit-text={notice?.body} /></Alert></Box>
@@ -75,12 +76,13 @@ export function ReservedNotice({ id, notice, essential = false }: { id: string; 
   </ReservedRegion>;
 }
 
-export function StatusLine({ id, text, tone = 'secondary', essential = false }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean }) {
+export function StatusLine({ id, text, tone = 'secondary', essential = false, size }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size }) {
   const [expandedText, setExpandedText] = useState<string | null>(null);
   const open = text !== null && expandedText === text;
   if (expandedText !== null && expandedText !== text) setExpandedText(null);
   const { probe, overflow: details } = useContentFit(text);
-  if (essential) return <Box data-reserved-region={id} sx={{ minHeight: '1.25rem', minWidth: 0 }}>
+  const minimum = size ?? { xs: sizes.essentialStatusLine.narrow, sm: sizes.essentialStatusLine.wide };
+  if (essential) return <Box data-reserved-region={id} sx={{ minHeight: Object.fromEntries(Object.entries(minimum).map(([key, value]) => [key, `${value / 16}rem`])), minWidth: 0 }}>
     <Typography data-region-content variant="body2" role={tone === 'error' ? 'alert' : 'status'}
       sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', visibility: text ? 'visible' : 'hidden', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>
       {text || '\u00a0'}
@@ -113,7 +115,7 @@ export function LoadingFrame({ label }: { label: string }) {
 }
 
 export function ReservedSection({ id, size, loading, label, children, grow = false }: { id: string; size: Size; loading?: boolean; label: string; children: ReactNode; grow?: boolean }) {
-  return <ReservedRegion id={id} size={size} sx={grow ? { blockSize: 'auto', minBlockSize: Object.fromEntries(Object.entries(size).map(([key, value]) => [key, `${value / 16}rem`])) } : undefined}><RevealGroup fallback={<LoadingFrame label={label} />}>
+  return <ReservedRegion id={id} size={size} grow={grow}><RevealGroup fallback={<LoadingFrame label={label} />}>
     {loading ? <LoadingFrame label={label} /> : <Box data-region-content>{children}</Box>}
   </RevealGroup></ReservedRegion>;
 }

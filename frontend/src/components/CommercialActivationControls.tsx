@@ -146,7 +146,11 @@ export function CommercialActivationControls({
   return (
     <Panel sx={{ gap: 1 }}>
       <SectionHeader
-        sx={{ height: { xs: '5.5rem', sm: '3rem' }, position: 'relative', '& > :first-child': { width: '100%' }, '& h2': { pr: '9rem' }, '& > [aria-live]': { position: 'absolute', top: 0, right: 0, width: '8rem', height: '1.5rem', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
+        sx={{ minHeight: { xs: '5.5rem', sm: '3rem' }, position: 'relative', flexDirection: { xs: 'column', sm: 'row' }, rowGap: { xs: 1, sm: 0 },
+          '& > :first-child': { width: '100%' }, '& h2': { pr: { xs: 0, sm: '9rem' } },
+          '& > [aria-live]': { display: 'flex', position: { xs: 'static', sm: 'absolute' }, top: 0, right: 0, m: 0, width: '100%', maxWidth: '8rem', minHeight: '1.5rem',
+            '& .MuiChip-root': { width: '100%', height: 'auto', minHeight: '1.5rem' },
+            '& .MuiChip-label': { width: '100%', textAlign: 'left', whiteSpace: 'normal' } } }}
         status={status}
         summary="Adds tone, reply, and topic insights to your conversations."
         title="Full analytics"

@@ -67,7 +67,7 @@ export function WebAuthnAccessView({
         component="main"
         data-journey-state="desktop.passkey_sign_in"
         sx={{
-          display: 'grid', flex: 1, gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: '1fr auto 1fr', justifyItems: 'center',
+          display: 'grid', flex: 1, gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr) auto minmax(0, 1fr)', justifyItems: 'center',
           px: { xs: 2, sm: 4 }, pt: { xs: 2, sm: 0 },
           pb: { xs: 2, sm: `${componentTokens.shell.headerHeight}px` },
         }}
@@ -138,8 +138,9 @@ export function WebAuthnAccessView({
             </Box>
           </Stack>
         </Paper>
-        <Box sx={{ alignSelf: 'start', gridRow: 3, minHeight: { xs: 40, sm: 20 }, maxWidth: 520, width: '100%', mt: 2 }}>
-          <StatusLine essential id="passkey-feedback" text={error} tone="error" />
+        {/* Keep the card centered; recovery can extend below this row into page scrolling. */}
+        <Box sx={{ alignSelf: 'start', gridRow: 3, height: 0, minHeight: 0, maxWidth: 520, width: '100%', mt: 2 }}>
+          <StatusLine essential id="passkey-feedback" size={{ xs: componentTokens.Passkey.feedback.narrow, sm: componentTokens.Passkey.feedback.wide }} text={error} tone="error" />
         </Box>
       </Box>
     </Box>
