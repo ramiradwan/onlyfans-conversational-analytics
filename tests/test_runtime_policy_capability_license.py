@@ -16,6 +16,8 @@ from app.security.runtime_policy import (
     require_analysis_run,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 IDENTITY = AuthContext("principal-1", "creator-1", "creator")
 IDENTITY_AUTHORITY = IdentityAccountAuthority(
     organization_id="org.acme",

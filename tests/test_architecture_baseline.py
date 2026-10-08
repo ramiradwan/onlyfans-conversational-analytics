@@ -16,6 +16,10 @@ from tools.validate_architecture_boundaries import (
     validate_manifest_schema,
 )
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = DEFAULT_MANIFEST_PATH

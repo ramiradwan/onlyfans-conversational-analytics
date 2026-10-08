@@ -2,6 +2,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 from test_companion_session_routes import (
     route, admitted, local, contract, grant_references, ORIGIN, _client,
     _establish, _prove, _send, _receive, _rpc, _refused_rpc,

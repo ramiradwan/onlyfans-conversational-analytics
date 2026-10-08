@@ -21,6 +21,8 @@ from tests.test_provisioning_completion import (
     grant, seed_verified_installation,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 class Clock:
     def __init__(self):

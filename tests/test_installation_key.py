@@ -35,6 +35,8 @@ from app.security.installation_key import (
     verify_installation_proof,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 _REQUIRE_TPM_HARDWARE_TESTS = "REQUIRE_TPM_HARDWARE_TESTS"
 _BCRYPT_ECCPRIVATE_BLOB = "ECCPRIVATEBLOB"
@@ -295,6 +297,7 @@ def test_hardware_requirement_controls_unavailable_provider_result(
         _skip_or_fail_unavailable_hardware_provider(error)
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_windows_tpm_provider_creates_non_exportable_signing_key() -> None:
     with _windows_tpm_key() as (provider, provider_key_name, info):
@@ -305,6 +308,7 @@ def test_windows_tpm_provider_creates_non_exportable_signing_key() -> None:
         assert len(provider.sign_digest(provider_key_name, digest)) == 64
 
 
+@pytest.mark.ci_tier('scale')
 @pytest.mark.slow
 def test_windows_tpm_provider_refuses_private_key_export() -> None:
     with _windows_tpm_key() as (provider, provider_key_name, _):

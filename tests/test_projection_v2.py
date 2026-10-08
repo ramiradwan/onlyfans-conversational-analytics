@@ -21,6 +21,8 @@ from app.persistence.projection_pipeline import DeterministicProjectionPipeline
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.transport.manager import InMemoryTransportManager
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT = "projection-account"
 INSTALLATION = UUID("20000000-0000-4000-8000-000000000002")

@@ -7,6 +7,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 from app.persistence.factory import create_canonical_repositories
 from app.persistence.history import InvariantViolation
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
@@ -529,6 +531,7 @@ def test_no_completed_generation_remains_never_checked(rig):
     assert state(r)["status"] == "never_checked"
 
 
+@pytest.mark.windows_compat
 def test_migration_seeds_latest_completed_generation(tmp_path):
     from pathlib import Path
     from app.persistence.database import CanonicalSQLite

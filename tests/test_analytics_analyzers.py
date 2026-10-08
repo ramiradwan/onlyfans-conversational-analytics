@@ -19,6 +19,10 @@ from app.models.analytics import (
     SentimentLabel,
 )
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 NOW = datetime(2026, 7, 10, 9, tzinfo=timezone.utc)
 

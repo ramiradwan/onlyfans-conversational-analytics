@@ -76,3 +76,20 @@ def pipeline_identity_digest(projection: AnalyticsProjection) -> str:
             "analyzers": analyzers,
         },
     )
+
+
+def source_identity(source, account_id: str) -> CanonicalIdentity | None:
+    """Prefer the gateway's streaming identity without changing its digest format."""
+
+    read = getattr(source, "read_identity", None)
+    if callable(read):
+        return read(account_id)
+    if not source.account_exists(account_id):
+        return None
+    return canonical_identity(source.account_read_model(account_id))
+
+
+def snapshot_identity(snapshot) -> CanonicalIdentity:
+    from app.analytics.source_snapshot import SourceCatalog
+
+    return snapshot.identity if isinstance(snapshot, SourceCatalog) else canonical_identity(snapshot)

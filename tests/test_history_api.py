@@ -31,6 +31,8 @@ from app.transport.manager import (
     AgentLease,
 )
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 INSTALLATION_ID = UUID("20000000-0000-4000-8000-000000000001")
 STREAM_ID = UUID("30000000-0000-4000-8000-000000000001")

@@ -21,7 +21,7 @@ from app.security.capability_permit_verifier import (
 from contracts.loader import ContractsIntegrityError
 
 
-pytestmark = pytest.mark.contract_integrity
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.contract_integrity]
 
 VECTORS = Path(__file__).resolve().parents[1] / "contracts" / "capability-permit-v1"
 _P256_ORDER = int(

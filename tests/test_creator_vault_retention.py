@@ -13,6 +13,8 @@ from app.persistence.migrations import MigrationRunner
 from app.persistence.retention import CreatorVaultRetention, RetentionPolicyError
 from app.persistence.retention_restore import restore_canonical_with_deletion_barriers
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 ACCOUNT = "creator-account"
 NOW = datetime(2026, 8, 31, 0, 0, tzinfo=timezone.utc)
 

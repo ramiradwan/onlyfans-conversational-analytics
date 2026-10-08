@@ -29,6 +29,10 @@ from app.security.capability_license_verifier import (
 from app.security.grant_types import ACCOUNT_AUTHORITY_GRANT_TYPES
 from app.security.runtime_policy import AuthContext
 
+import pytest
+
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 VECTORS = Path(__file__).resolve().parents[1] / "contracts" / "capability-license-v1"
 NOW = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
 ACCOUNT = "creator-1"

@@ -10,18 +10,23 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Callable, TypeVar
 from uuid import uuid4
 
+from app.core.lifecycle_receipts import startup_span
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import LocalSQLite
 from app.persistence.managed_recovery import prune_managed_recovery_files
 from app.persistence.private_files import (
     PrivateFileSecurityError,
     apply_private_file_security,
+    private_file_identity,
     sync_directory,
     sync_file,
 )
+
+
+_ValidatedReadResult = TypeVar("_ValidatedReadResult")
 
 
 MIGRATION_NAME = re.compile(r"^(?P<version>[0-9]{4})_(?P<name>[a-z0-9_]+)\.sql$")
@@ -30,6 +35,9 @@ TRANSACTION_CONTROL = re.compile(
     r"(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b",
     re.IGNORECASE,
 )
+CANONICAL_MIGRATIONS_DIR = Path(__file__).with_name("sql")
+_CATCHUP_V9_CHECKSUM = "16dd7b5eabaff870a1313140123cd3081ccd50790ea1d3c3f6bf5dfadfbf7239"
+_ANALYTICS_V9_CHECKSUM = "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772"
 
 
 class MigrationError(RuntimeError):
@@ -149,12 +157,7 @@ class InstallationMigrationLock:
         handle.close()
 
 
-def load_migration_catalog(
-    migrations_dir: str | Path | None = None,
-) -> list[Migration]:
-    """Load and checksum the contiguous repository migration catalog."""
-
-    directory = Path(migrations_dir or Path(__file__).with_name("sql"))
+def _read_migrations(directory: Path) -> list[Migration]:
     migrations: list[Migration] = []
     if not directory.is_dir():
         raise MigrationError(f"migration directory is missing: {directory}")
@@ -180,6 +183,10 @@ def load_migration_catalog(
                 checksum=hashlib.sha256(raw).hexdigest(),
             )
         )
+    return migrations
+
+
+def _validate_catalog_sequence(migrations: list[Migration]) -> list[Migration]:
     if not migrations:
         raise MigrationError("the canonical migration catalog is empty")
     versions = [item.version for item in migrations]
@@ -189,6 +196,53 @@ def load_migration_catalog(
             f"migration versions must be contiguous from 0001: {versions!r}"
         )
     return migrations
+
+
+def load_migration_catalog(
+    migrations_dir: str | Path | None = None,
+) -> list[Migration]:
+    """Load and checksum one contiguous catalog without inspecting a database."""
+
+    return _validate_catalog_sequence(
+        _read_migrations(Path(migrations_dir or CANONICAL_MIGRATIONS_DIR))
+    )
+
+
+def resolve_migration_catalog(
+    connection: sqlite3.Connection,
+    migrations_dir: str | Path | None = None,
+) -> list[Migration]:
+    """Select an exact canonical history; callers still validate its full ledger.
+
+    Both audited v9 histories are immutable. Their missing feature is applied at
+    v10, and v11 onward is shared. Selection never rewrites ledger rows, executes
+    SQL migrations, or changes custom/authentication/projection catalogs.
+    """
+
+    directory = Path(migrations_dir or CANONICAL_MIGRATIONS_DIR)
+    catalog = load_migration_catalog(directory)
+    if directory.resolve() != CANONICAL_MIGRATIONS_DIR.resolve():
+        return catalog
+    legacy = _read_migrations(directory / "legacy_analytics_v9")
+    default_pair = [(m.version, m.name, m.checksum) for m in catalog[8:10]]
+    legacy_pair = [(m.version, m.name, m.checksum) for m in legacy]
+    if default_pair != [
+        (9, "message_catchup", _CATCHUP_V9_CHECKSUM),
+        (10, "analytics_source_tokens", _ANALYTICS_V9_CHECKSUM),
+    ] or legacy_pair != [
+        (9, "analytics_source_tokens", _ANALYTICS_V9_CHECKSUM),
+        (10, "message_catchup", _CATCHUP_V9_CHECKSUM),
+    ]:
+        raise MigrationChecksumError("canonical v9 compatibility resources differ")
+    legacy_catalog = _validate_catalog_sequence(catalog[:8] + legacy + catalog[10:])
+    row = connection.execute(
+        "SELECT name, checksum FROM schema_migrations WHERE version=9"
+    ).fetchone()
+    if row is None or tuple(row) == ("message_catchup", _CATCHUP_V9_CHECKSUM):
+        return catalog
+    if tuple(row) == ("analytics_source_tokens", _ANALYTICS_V9_CHECKSUM):
+        return legacy_catalog
+    raise MigrationChecksumError("canonical migration 0009 checksum/name mismatch")
 
 
 class MigrationRunner:
@@ -213,28 +267,109 @@ class MigrationRunner:
         self.last_backup_path: Path | None = None
 
     def run(self) -> list[int]:
-        catalog = self._load_catalog()
         with process_migration_mutex(self.lock_path), InstallationMigrationLock(
             self.lock_path, timeout_seconds=self.lock_timeout_seconds
         ):
             with self.database.read() as connection:
-                self._ensure_ledger(connection)
-                applied = self._validate_applied(connection, catalog)
-                pending = [item for item in catalog if item.version not in applied]
-                if not pending:
-                    self._validate_database(connection)
-                    return []
-                self.last_backup_path = self._backup(connection, applied, catalog[-1].version)
-                completed: list[int] = []
-                for migration in pending:
-                    self._apply(connection, migration)
-                    completed.append(migration.version)
-                self._validate_applied(connection, catalog)
+                completed = self._process_migrations(connection)
                 self._validate_database(connection)
                 return completed
 
-    def _load_catalog(self) -> list[Migration]:
-        return load_migration_catalog(self.migrations_dir)
+    def run_with_validated_read(
+        self,
+        reader: Callable[[sqlite3.Connection], _ValidatedReadResult],
+    ) -> tuple[list[int], _ValidatedReadResult]:
+        """Read materialized startup rows in the exact post-migration validation snapshot.
+
+        The callback runs while BEGIN IMMEDIATE excludes concurrent writers. It
+        may only read, cannot finish or replace that transaction, and must
+        materialize its result. The snapshot and owned connection close before
+        results return, so recovery writes run afterward without reusable proof.
+        """
+
+        with process_migration_mutex(self.lock_path), InstallationMigrationLock(
+            self.lock_path, timeout_seconds=self.lock_timeout_seconds
+        ), self.database.exclusive_lifecycle(self.database.path):
+            before_open = private_file_identity(self.database.path, missing_ok=True)
+            with self.database.read() as connection:
+                identity = getattr(connection, "_secured_file_identity", None)
+                if identity is None or (
+                    before_open is not None and identity != before_open
+                ):
+                    raise MigrationError("startup validation file changed during opening")
+                self._require_startup_file(identity)
+                completed = self._process_migrations(connection)
+                self._require_startup_file(identity)
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    connection.execute("PRAGMA query_only = ON")
+                    self._require_startup_snapshot(connection, identity)
+                    self._validate_database(connection)
+                    self._require_startup_snapshot(connection, identity)
+                    rejected = False
+
+                    def authorize(action, *_details):
+                        nonlocal rejected
+                        if action in (
+                            sqlite3.SQLITE_SELECT,
+                            sqlite3.SQLITE_READ,
+                            sqlite3.SQLITE_FUNCTION,
+                        ):
+                            return sqlite3.SQLITE_OK
+                        rejected = True
+                        return sqlite3.SQLITE_DENY
+
+                    connection.set_authorizer(authorize)
+                    try:
+                        result = reader(connection)
+                    finally:
+                        connection.set_authorizer(None)
+                    if rejected:
+                        raise MigrationError("startup validation reader changed its scope")
+                    self._require_startup_snapshot(connection, identity)
+                    return completed, result
+                finally:
+                    if connection.in_transaction:
+                        connection.rollback()
+
+    def _require_startup_file(self, identity: tuple[int, int]) -> None:
+        if self.database._restrict_permissions() != identity:
+            raise MigrationError("startup validation file was replaced")
+
+    def _require_startup_snapshot(
+        self, connection: sqlite3.Connection, identity: tuple[int, int]
+    ) -> None:
+        if not connection.in_transaction or (
+            int(connection.execute("PRAGMA query_only").fetchone()[0]) != 1
+        ):
+            raise MigrationError("startup validation snapshot is invalid")
+        self._require_startup_file(identity)
+
+    def _process_migrations(self, connection: sqlite3.Connection) -> list[int]:
+        with startup_span("startup.migration_ledger_validation"):
+            self._ensure_ledger(connection)
+            catalog = self._load_catalog(connection)
+            applied = self._validate_applied(connection, catalog)
+            pending = [item for item in catalog if item.version not in applied]
+        if pending:
+            with startup_span("startup.migration_backup"):
+                self.last_backup_path = self._backup(
+                    connection, applied, catalog[-1].version
+                )
+        completed: list[int] = []
+        with startup_span("startup.migrations", pending_count=len(pending)):
+            for migration in pending:
+                self._apply(connection, migration)
+                completed.append(migration.version)
+        if completed:
+            with startup_span("startup.migration_ledger_validation"):
+                self._validate_applied(connection, catalog)
+        return completed
+
+    def _load_catalog(self, connection: sqlite3.Connection | None = None) -> list[Migration]:
+        if connection is None:
+            return load_migration_catalog(self.migrations_dir)
+        return resolve_migration_catalog(connection, self.migrations_dir)
 
     @staticmethod
     def _ensure_ledger(connection: sqlite3.Connection) -> None:
@@ -256,13 +391,14 @@ class MigrationRunner:
         rows = connection.execute(
             "SELECT version, name, checksum FROM schema_migrations ORDER BY version"
         ).fetchall()
-        by_version = {item.version: item for item in catalog}
-        applied = {int(row["version"]): row for row in rows}
-        versions = list(applied)
-        if versions and versions != list(range(1, max(versions) + 1)):
+        versions = [row["version"] for row in rows]
+        if (any(type(version) is not int for version in versions)
+                or versions != list(range(1, len(rows) + 1))):
             raise SchemaCompatibilityError(
                 f"migration ledger is not contiguous: {versions!r}"
             )
+        by_version = {item.version: item for item in catalog}
+        applied = {row["version"]: row for row in rows}
         for version, row in applied.items():
             migration = by_version.get(version)
             if migration is None:
@@ -350,10 +486,12 @@ class MigrationRunner:
 
     @staticmethod
     def _validate_database(connection: sqlite3.Connection) -> None:
-        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-        if integrity != "ok":
-            raise MigrationError(f"post-migration integrity check failed: {integrity}")
-        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        with startup_span("startup.migration_integrity"):
+            integrity = connection.execute("PRAGMA integrity_check").fetchall()
+        if len(integrity) != 1 or integrity[0][0] != "ok":
+            raise MigrationError(f"post-migration integrity check failed: {integrity!r}")
+        with startup_span("startup.migration_foreign_keys"):
+            violations = connection.execute("PRAGMA foreign_key_check").fetchall()
         if violations:
             raise MigrationError(
                 f"post-migration foreign-key check failed: {violations!r}"

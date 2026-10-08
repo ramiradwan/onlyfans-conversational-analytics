@@ -25,6 +25,8 @@ from app.protocol.payloads import (
 from app.services import insights_service
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 FIXTURES = Path(__file__).parent / "fixtures" / "analytics"
 

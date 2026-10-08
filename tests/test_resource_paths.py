@@ -7,6 +7,8 @@ import pytest
 
 from app.core import resource_paths
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 

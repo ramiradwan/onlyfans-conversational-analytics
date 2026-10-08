@@ -40,6 +40,8 @@ from app.security.webauthn import (
     WebAuthnService,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 INSTANT = datetime(2026, 8, 13, 9, 0, tzinfo=timezone.utc)
 ORIGIN = "http://bridge.localhost:17871"

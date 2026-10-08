@@ -22,6 +22,8 @@ from typing import Any
 import pytest
 import yaml
 
+pytestmark = [pytest.mark.ci_tier("fast")]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
@@ -141,6 +143,8 @@ def _collects_the_whole_suite(command: str) -> bool:
     """
 
     tokens = shlex.split(command)
+    if tokens[:2] == ["python", "tools/test_backend.py"]:
+        return True
     if tokens[:3] != ["python", "-m", "pytest"]:
         return False
     remaining = tokens[3:]
@@ -176,10 +180,14 @@ def _assert_a_windows_runner_executes_the_backend_tests(
     names = sorted(
         name
         for name, job in _jobs(workflow).items()
-        if _runs_on_windows(job) and _backend_suite_indexes(job)
+        if _runs_on_windows(job)
+        and any(
+            "tools/test_backend.py --lane windows-platform-contract" in str(step.get("run", ""))
+            for step in _steps(job)
+        )
     )
     assert len(names) == 1, (
-        f"exactly one ci.yml job must run `{BACKEND_TEST_COMMAND}` on a Windows "
+        "exactly one ci.yml job must run the Windows platform contract on a Windows "
         f"runner, so tests guarded with skipif(os.name != \"nt\") execute "
         f"somewhere; found {names}"
     )
@@ -428,6 +436,53 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
         _assert_windows_tier_b_qualification(broken)
 
 
+def test_windows_hang_diagnostics_do_not_terminate_tests_or_raise_job_limits() -> None:
+    jobs = _jobs(_workflow_document())
+    expected_limits = {"windows-platform-contract": 20, "analytics-windows-contract": 20,
+                       "windows-full-shards": 60, "analytics-scale-qualification": 45}
+    execution_lanes = set()
+    for name, minutes in expected_limits.items():
+        job = jobs[name]
+        assert job["timeout-minutes"] == minutes
+        assert job["env"]["CI_PYTEST_LIVE_PROGRESS"] == "1"
+        for step in _steps(job):
+            environment = step.get("env", {})
+            if "CI_TEST_LANE" not in environment:
+                continue
+            options = shlex.split(environment["PYTEST_ADDOPTS"])
+            if "--collect-only" in str(step.get("run", "")):
+                assert not any("faulthandler_" in option for option in options)
+                continue
+            execution_lanes.add(environment["CI_TEST_LANE"])
+            assert "faulthandler_timeout=120" in options
+            assert "faulthandler_exit_on_timeout=false" in options
+            assert step.get("continue-on-error", False) is False
+        upload = next(step for step in _steps(job) if step.get("name") == "Retain backend timing and selection")
+        assert upload["if"] == "always()"
+        assert upload["with"]["path"] == "artifacts/ci-tests/"
+    assert execution_lanes == {
+        "windows-platform-contract", "windows-production-boot", "windows-persistence-general",
+        "windows-persistence-deletion", "windows-persistence-smoke", "analytics-windows-contract",
+        "windows-full-regression-${{ matrix.shard }}", "analytics-scale-qualification",
+    }
+
+
+def test_partial_persistence_evidence_retains_available_profiles_and_source_receipt() -> None:
+    steps = _steps(_jobs(_workflow_document())["windows-platform-contract"])
+    copy = next(step for step in steps if step.get("name") == "Preserve persistence evidence filenames")
+    assert copy["if"] == "always()"
+    command = copy["run"]
+    assert 'foreach ($profile in @("general", "deletion", "smoke"))' in command
+    assert command.index("Test-Path -LiteralPath $source -PathType Leaf") < command.index("Copy-Item")
+    assert 'tier-b-$profile-junit.xml' in command
+    assert "Write-Warning" in command
+    receipt = next(step for step in steps if step.get("name") == "Record Windows persistence CI source")
+    assert receipt["if"] == "always()"
+    upload = next(step for step in steps if step.get("name") == "Retain Windows persistence evidence")
+    assert upload["if"] == "always()"
+    assert upload["with"]["if-no-files-found"] == "error"
+
+
 def test_the_frontend_is_built_before_the_backend_tests_run() -> None:
     """Moving pytest ahead of the frontend build turns the named check red.
 
@@ -624,7 +679,11 @@ def test_non_windows_jobs_deselect_the_production_boot_tests() -> None:
         if _runs_on_windows(job):
             continue
         for index in _backend_suite_indexes(job):
-            expression = _marker_expression(_steps(job)[index]["run"].strip())
+            command = _steps(job)[index]["run"].strip()
+            if "tools/test_backend.py" in command:
+                assert "--lane backend-fast" in command or "--lane analytics-integration" in command
+                continue
+            expression = _marker_expression(command)
             assert expression is not None and (
                 f"not {WINDOWS_PRODUCTION_MARKER}" in expression
             ), (

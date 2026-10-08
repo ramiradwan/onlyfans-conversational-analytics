@@ -20,6 +20,8 @@ from app.persistence.sqlcipher_runtime import (
     qualification_report,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ROOT / "packaging" / "sqlcipher" / "fixed-runtime-sources.json"

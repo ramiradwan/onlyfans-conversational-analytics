@@ -12,6 +12,8 @@ from app.protocol import (
     AgentConfigGetRequest,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "shared" / "fixtures" / "protocol" / "v2"
 

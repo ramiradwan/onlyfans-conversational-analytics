@@ -40,6 +40,8 @@ from app.packaged_entry import (
     PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat, pytest.mark.serial]
+
 
 @dataclass
 class FakeResponse:

@@ -1,4 +1,5 @@
-import { Box, Stack, Typography, styled } from '@mui/material';
+import { Box, Stack, Tab, Tabs, Typography, styled } from '@mui/material';
+import { useState, type ReactNode } from 'react';
 
 import { AnalyticsFilterRow } from './AnalyticsFilterRow';
 import { AnalyticsStateFrame } from './AnalyticsStateFrame';
@@ -53,6 +54,7 @@ export interface AnalyticsPresentationProps {
   onDateRangeChange(range: AnalyticsDateRange): void;
   onRetry?: () => void;
   windowSources?: AnalyticsWindowSources;
+  questions?: ReactNode;
 }
 export function AnalyticsPresentation({
   state,
@@ -60,7 +62,9 @@ export function AnalyticsPresentation({
   onDateRangeChange,
   onRetry,
   windowSources,
+  questions,
 }: AnalyticsPresentationProps) {
+  const [tab, setTab] = useState<'summary' | 'questions'>('summary');
   const model = state.data;
   const resolvedWindowSources = windowSources ?? model?.windowSources;
   const panelSources = resolvedWindowSources && {
@@ -87,6 +91,11 @@ export function AnalyticsPresentation({
             Message tone, your replies, and what conversations are about.
           </Typography>
         </Box>
+        {questions && <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Analytics views">
+          <Tab value="summary" label="Summary" />
+          <Tab value="questions" label="Conversation questions" />
+        </Tabs>}
+        {questions && tab === 'questions' ? questions : <>
         <AnalyticsFilterRow
           value={dateRange}
           onApply={onDateRangeChange}
@@ -127,6 +136,7 @@ export function AnalyticsPresentation({
           )}
         </AnalyticsStateFrame>
         </Box></ReservedRegion>
+        </>}
       </Stack>
     </Root>
   );

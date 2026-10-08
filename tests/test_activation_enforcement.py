@@ -29,6 +29,8 @@ from app.security.activation_gate import (
 )
 from app.transport.manager import AuthenticationError, InMemoryTransportManager
 
+pytestmark = [pytest.mark.ci_tier('integration')]
+
 
 ACCOUNT = "creator-account-1"
 PRINCIPAL = "principal-1"

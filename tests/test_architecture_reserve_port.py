@@ -20,6 +20,8 @@ import pytest
 
 from app.security.permit_reserve_port import reserve_admission
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
 BRAIN_ROOT = PRODUCT_ROOT / "app"

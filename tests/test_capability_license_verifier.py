@@ -25,6 +25,8 @@ from app.security.capability_license_verifier import (
 )
 from contracts.loader import ContractsIntegrityError
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 VECTORS = ROOT / "contracts" / "capability-license-v1"

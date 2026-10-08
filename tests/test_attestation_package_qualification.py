@@ -31,6 +31,8 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from tools import engineering_attestation as producer
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EXTENSION_ROOT = ROOT / "extension"
@@ -868,13 +870,15 @@ class _ProducerApi:
         ]
         self.product_ci_jobs = [
             {
+                "id": 4300 + index,
                 "name": name,
+                "run_attempt": 1,
                 "status": "completed",
                 "conclusion": "success",
                 "run_id": 43,
                 "head_sha": SOURCE_COMMIT,
             }
-            for name in sorted(producer.REQUIRED_PRODUCT_CI_JOB_NAMES)
+            for index, name in enumerate(sorted(producer.REQUIRED_PRODUCT_CI_JOB_NAMES))
         ]
         # This producer run's own jobs, as the Actions API reports them.
         self.producer_jobs = [
@@ -924,11 +928,27 @@ class _ProducerApi:
                     }
                 ],
             }
-        if path.endswith("/actions/runs/43/attempts/1/jobs?per_page=100"):
+        if path.endswith("/actions/runs/43/jobs?filter=all&per_page=100&page=1"):
             return {
                 "total_count": len(self.product_ci_jobs),
                 "jobs": self.product_ci_jobs,
             }
+        if path.endswith(f"/git/commits/{SOURCE_COMMIT}"):
+            return {"tree": {"sha": "1" * 40}}
+        for tree_sha, name, kind, mode, sha in (
+            ("1", ".github", "tree", "040000", "2"),
+            ("2", "workflows", "tree", "040000", "3"),
+            ("3", "ci.yml", "blob", "100644", "4"),
+        ):
+            if path.endswith(f"/git/trees/{tree_sha * 40}"):
+                return {"tree": [{"path": name, "type": kind, "mode": mode, "sha": sha * 40}]}
+        if path.endswith(f"/git/blobs/{'4' * 40}"):
+            source = ("name: CI\njobs:\n" + "".join(
+                f"  {name}:\n    runs-on: ubuntu-latest\n"
+                for name in sorted(producer.REQUIRED_PRODUCT_CI_JOB_NAMES)
+            )).encode()
+            return {"encoding": "base64", "size": len(source),
+                    "content": base64.b64encode(source).decode()}
         if path.endswith("/actions/runs/42/attempts/2/jobs?per_page=100"):
             return {"total_count": len(self.jobs), "jobs": self.jobs}
         if path.endswith("/actions/runs/99/attempts/1/jobs?per_page=100"):

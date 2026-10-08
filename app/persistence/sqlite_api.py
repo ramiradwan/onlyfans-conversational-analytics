@@ -19,6 +19,11 @@ OperationalError = _dbapi.OperationalError
 ProgrammingError = _dbapi.ProgrammingError
 Row = _dbapi.Row
 Warning = _dbapi.Warning
+SQLITE_DENY = _dbapi.SQLITE_DENY
+SQLITE_FUNCTION = _dbapi.SQLITE_FUNCTION
+SQLITE_OK = _dbapi.SQLITE_OK
+SQLITE_READ = _dbapi.SQLITE_READ
+SQLITE_SELECT = _dbapi.SQLITE_SELECT
 connect = _dbapi.connect
 sqlite_version = _dbapi.sqlite_version
 

@@ -13,6 +13,8 @@ from app.persistence.database import (
 )
 from app.security.local_data_key import database_key
 
+pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
 
 def _write_secret(path: Path) -> CanonicalSQLite:
     database = CanonicalSQLite(path)

@@ -42,6 +42,8 @@ import pytest
 
 from app.provisioning.app import _DISCLOSURE_ASSET
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = ROOT / "shared" / "legal" / "risk-disclosure.lock.json"

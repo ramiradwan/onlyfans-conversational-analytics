@@ -1,0 +1,311 @@
+{
+  "schema": "analytics-acceptance.v1",
+  "protocol": "analytics-closure.v2",
+  "baseline_revision": "511efd1bb6917ce9b6b5d1723b0eb949ba43466a",
+  "scope_decision": {
+    "hardware_target": "Virtualized Windows profiles with static memory and four virtual processors. Results do not qualify physical-laptop performance or advertised minimum requirements.",
+    "latency_profile": "reference-windows-16g",
+    "constrained_profile": "Correctness, resources, stability, interface and ingestion are required. Latency is reported without a reference-profile promise.",
+    "bulk_and_cold": "Completion within execution guards.",
+    "excluded": [
+      "graph representation changes",
+      "new model or runtime selection",
+      "remote analytics implementation",
+      "enabling unqualified questions"
+    ]
+  },
+  "profiles": {
+    "reference-windows-16g": {
+      "os": "Windows",
+      "memory_gib": 16,
+      "cores": 4,
+      "gpu_required": false,
+      "disk": "SSD",
+      "numeric_latency_gates": true
+    },
+    "constrained-windows-8g": {
+      "os": "Windows",
+      "memory_gib": 8,
+      "cores": 4,
+      "gpu_required": false,
+      "disk": "SSD",
+      "numeric_latency_gates": false
+    }
+  },
+  "hardware_evidence": {
+    "schema": "analytics-hardware-evidence.v1",
+    "topology": "hyper-v-single-boot-disk",
+    "storage": "Complete single boot-disk inventory, every attached backing file and parent mapped to physical SSD storage.",
+    "observations": "Fresh VM-bound host and guest observations before work and after joined cleanup.",
+    "handoff_seconds": 180
+  },
+  "fixture": {
+    "id": "a07-half-dominant.v1",
+    "sizes": [
+      10000,
+      100000
+    ],
+    "conversations": 101,
+    "dominant_fraction": 0.5,
+    "remaining_conversations": 100,
+    "direction": "alternating",
+    "evaluation_clock": "2026-09-27T08:03:21.364314+00:00",
+    "span_hours": 48,
+    "seed": 20260918,
+    "content": "deterministic synthetic only",
+    "literal_cases": [
+      "tests/fixtures/analytics/questions/no-later-reply.json",
+      "tests/fixtures/analytics/questions/pricing-discussions.json"
+    ],
+    "generator": "tools/analytics_qualification_fixture.py"
+  },
+  "limits": {
+    "whole_worker_seconds": 7200,
+    "shutdown_seconds": 10,
+    "maximum_process_tree_bytes": 4294967296,
+    "minimum_free_disk_bytes": 8589934592,
+    "minimum_available_memory_bytes": 2147483648,
+    "watchdog_scope": "Entire worker, including preparation, independent verification and synchronous product cleanup. Expiry is not an operation latency.",
+    "request_max_records": 10000,
+    "visibility_seconds": 10.0,
+    "engineering_visibility_objective_seconds": 8.0,
+    "warm_p95_seconds": 1.0
+  },
+  "phases": [
+    "cold",
+    "unchanged_rebuild",
+    "one_committed_message",
+    "100_edits",
+    "100_creator_deletions",
+    "10000_historical_interleaved_with_100_live"
+  ],
+  "visibility": {
+    "messages": 100000,
+    "fresh_processes": 3,
+    "minimum_probes": 12,
+    "process_cases": [
+      [
+        "ordinary/small",
+        "rebuilt/dominant",
+        "idle/small",
+        "restarted/dominant"
+      ],
+      [
+        "ordinary/dominant",
+        "rebuilt/small",
+        "idle/dominant",
+        "restarted/small"
+      ],
+      [
+        "ordinary/small",
+        "rebuilt/dominant",
+        "idle/small",
+        "restarted/dominant"
+      ]
+    ],
+    "start": "durable_canonical_commit",
+    "end": [
+      "first_valid_visible_result",
+      "required_cleanup_complete",
+      "backlog_drained"
+    ],
+    "idle_seconds": 61,
+    "fail_on_any_probe_over_limit": true,
+    "fail_fast_after_verified_probe": true
+  },
+  "questions": {
+    "enabled": [
+      "no_later_creator_reply.v1"
+    ],
+    "disabled": [
+      "pricing_discussions.v1"
+    ],
+    "cases": [
+      "populated",
+      "empty",
+      "tied_time",
+      "generation_bound_pagination"
+    ],
+    "states": [
+      "fresh",
+      "idle",
+      "mutated"
+    ],
+    "warmups": 5,
+    "samples": 100,
+    "page_size": 50,
+    "percentile": "nearest_rank",
+    "max_errors": 0,
+    "idle_seconds": 61,
+    "cold_readiness_separate": true,
+    "same_process_per_sample_set": true,
+    "messages": 100000,
+    "fixture_definition": {
+      "layout": "half dominant, remainder round-robin across 100",
+      "direction": "alternate within each conversation; dominant ends with creator, other 100 end with participant",
+      "expected_populated_conversations": 100,
+      "empty_filter": "chat-0",
+      "tied_time": "chat-1 last creator and participant messages share the latest timestamp; chat-1 is undetermined",
+      "expected_tied_conversations": 99,
+      "pagination": "50 plus 50; old cursor must fail after a committed edit and new publication"
+    },
+    "preparation": {
+      "protocol": "verified-question-inputs.v1",
+      "baseline_scope": "exact source, runtime, manifest, message count and input variant; hardware profile is independently measured per job",
+      "variants": [
+        "ordinary",
+        "tied_time"
+      ],
+      "ordinary_cases": [
+        "populated",
+        "empty",
+        "generation_bound_pagination"
+      ],
+      "per_job": "hash-verified independent database copy and a fresh application process",
+      "unmodified_verification": "rescan canonical content and revalidate persisted output against independently built baseline expectations",
+      "mutated_verification": "independent canonical rebuild and persisted-content verification",
+      "working_copy": "owned by the current unsealed attempt; remove only after successful queries, verification and joined cleanup, before final result/export; retain failed data with the attempt"
+    }
+  },
+  "ci_jobs": [
+    "Required CI",
+    "windows-browser-e2e",
+    "windows-tests",
+    "fixed-sqlcipher-wheel",
+    "visual-capture",
+    "build-and-test",
+    "architecture-impact"
+  ],
+  "source": {
+    "signer_email": "269472843+ADO-agent@users.noreply.github.com",
+    "clean_tree_required": true,
+    "review_required": true
+  },
+  "gates": [
+    "source_ci",
+    "semantic_safety",
+    "single_message_visibility",
+    "approved_questions",
+    "mutation_backlog",
+    "hardware_package",
+    "evidence_validity"
+  ],
+  "package_measurements": [
+    "installer_bytes",
+    "unpacked_bytes",
+    "temporary_disk_peak_bytes",
+    "process_tree_peak_bytes",
+    "startup_seconds"
+  ],
+  "package_behaviors": [
+    "ui",
+    "authorized_ingestion",
+    "cancellation",
+    "recovery",
+    "offline",
+    "production_unknown_questions"
+  ],
+  "evidence": {
+    "immutable_phase_results": true,
+    "retain_failed_attempts": true,
+    "resume_requires_new_process_identity": true,
+    "source_and_artifact_recheck": true,
+    "unavailable_prerequisites": "BLOCKED",
+    "incomplete_started_work": "FAIL",
+    "source_only_is_not_package_evidence": true,
+    "final_receipt_after_final_commit": true,
+    "protocol_mismatch": "FAIL"
+  },
+  "status": "frozen",
+  "measurement": {
+    "version": "analytics-observable-scheduler.v9",
+    "visibility_poll_seconds": 0.1,
+    "query_clock": "System UTC establishes query validity and expiry. Fixture selection uses the fixed evaluation clock.",
+    "visibility": "Durable canonical commit through the latest current visible result, synchronous cleanup and drained backlog.",
+    "execution": "All preparation, independent verification and cleanup remain within the owned worker budgets.",
+    "receipts": "Ordered content-free lifecycle receipts bind monotonic clocks to the actual packaged process. Missing or lost receipts fail verification.",
+    "cold_package": "Seed through admitted Agent capture, close the process, launch the same package in a fresh process and request a full rebuild. Timing starts at process launch and requires the post-request publication and drained scheduler. A persisted predecessor remains present. This does not establish an empty-store or cold-disk measurement.",
+    "observations": "The first distinct query refusals and each first visible current result are durable before independent verification.",
+    "cancellation": "A full rebuild starts in the packaged executor and reports cancellation during ordinary shutdown. A completed build cannot satisfy cancellation. Recovery uses a fresh process and the same persisted installation."
+  },
+  "history": {
+    "batches": 100,
+    "messages_per_batch": 100,
+    "live_per_batch": 1,
+    "producer_pause_seconds": 0.01
+  },
+  "runtime_start_revision": "78029b536b83e929e4771772fa296f52f17af84d",
+  "scheduler": {
+    "matrix": {
+      "workers": 1,
+      "queue_capacity": 64,
+      "reconciliation_seconds": 0
+    },
+    "visibility": {
+      "workers": 1,
+      "queue_capacity": 64,
+      "reconciliation_seconds": 30
+    },
+    "questions": {
+      "workers": 2,
+      "queue_capacity": 64,
+      "reconciliation_seconds": 30
+    }
+  },
+  "visibility_execution": {
+    "states": [
+      "cold",
+      "ordinary",
+      "rebuilt",
+      "idle",
+      "restarted"
+    ],
+    "maximum_state_seconds": 1800,
+    "maximum_worker_seconds": 9000
+  },
+  "evidence_tracks": {
+    "semantic_questions": {
+      "job_prefix": "questions/",
+      "execution": "synthetic_question",
+      "ingestion_path": "direct_synthetic_database_fixture",
+      "fixture_mode": "known_synthetic_kinds",
+      "profile_required": true,
+      "exact_source_required": true,
+      "claims": [
+        "query_correctness",
+        "query_latency"
+      ],
+      "production_source_evidence": false
+    },
+    "packaged": {
+      "job_prefixes": [
+        "package/",
+        "mutation/",
+        "visibility/"
+      ],
+      "execution": "packaged",
+      "ingestion_path": "authorized_agent",
+      "fixture_mode": "production_unknown_kinds",
+      "artifact_names": [
+        "installer",
+        "runtime"
+      ],
+      "production_questions": "Current results preserve unknown event kind and inferred ordering. Coverage follows admitted acquisition evidence through the question cutoff. Unknown latest events are undetermined."
+    }
+  },
+  "packaged_mutations": {
+    "revision_binding": "admitted_commits",
+    "origins": {
+      "one_committed_message": "authorized_agent",
+      "100_edits": "authorized_agent",
+      "100_creator_deletions": "creator_vault",
+      "10000_historical_interleaved_with_100_live": "authorized_agent"
+    },
+    "operations": {
+      "one_committed_message": 1,
+      "100_edits": 100,
+      "100_creator_deletions": 100,
+      "10000_historical_interleaved_with_100_live": 10100
+    }
+  }
+}

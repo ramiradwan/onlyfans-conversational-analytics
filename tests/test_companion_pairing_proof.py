@@ -30,6 +30,8 @@ from app.security.installation_key import (
 )
 from contracts.loader import verify_snapshot_integrity
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 ROOT = Path(__file__).resolve().parents[1] / "contracts"
 ORDER = int("FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16)
 

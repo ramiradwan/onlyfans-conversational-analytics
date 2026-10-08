@@ -13,6 +13,8 @@ from app.security.extension_storage import (
 from app.security.local_data_key import LocalDataKeyError
 from app.transport.manager import DEV_ACCOUNT_ID
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 
 EXTENSION_ID = "abcdefghijklmnopabcdefghijklmnop"
 OTHER_EXTENSION_ID = "bcdefghijklmnopabcdefghijklmnopa"

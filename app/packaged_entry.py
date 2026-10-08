@@ -123,7 +123,10 @@ def run_brain() -> int:
             application, host="127.0.0.1", port=17871, workers=1, access_log=False,
             ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
         )
-        uvicorn.Server(configuration).run()
+        from app.core.process_lifetime import parent_lifetime
+        server = uvicorn.Server(configuration)
+        with parent_lifetime(lambda: setattr(server, "should_exit", True)):
+            server.run()
         return 0
     server: uvicorn.Server | None = None
 
@@ -138,7 +141,9 @@ def run_brain() -> int:
     )
     server = uvicorn.Server(configuration)
     try:
-        server.run()
+        from app.core.process_lifetime import parent_lifetime
+        with parent_lifetime(request_exit):
+            server.run()
     finally:
         from app.provisioning.launcher_handoff import remove_launcher_handoff
 

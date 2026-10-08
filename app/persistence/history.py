@@ -473,6 +473,8 @@ class HistoryRepository:
         ).fetchone()
         if row is None:
             raise RuntimeError("account head is missing")
+        from app.core.lifecycle_receipts import end_canonical
+        end_canonical(connection, int(row[0]))
         return int(row[0])
 
     @staticmethod
@@ -1099,6 +1101,8 @@ class HistoryRepository:
         self._require_stream_identity(key, payload)
         now = _iso(utc_now())
         with self.database.transaction() as connection:
+            from app.core.lifecycle_receipts import begin_canonical
+            begin_canonical(connection, key.creator_account_id, "authorized_agent", str(payload.snapshot_id))
             upload = connection.execute(
                 """SELECT through_seq,chunk_count,next_chunk_index,expected_chats,expected_messages,
                           expected_coverage_evidence,received_chats,received_messages,
@@ -1434,6 +1438,8 @@ class HistoryRepository:
         document = payload.model_dump(mode="json", exclude_unset=True)
         fingerprint = _hash({"source_seq": payload.source_seq, "change": document["change"]})
         with self.database.transaction() as connection:
+            from app.core.lifecycle_receipts import begin_canonical
+            begin_canonical(connection, key.creator_account_id, "authorized_agent", str(payload.event_id))
             epoch = self._ensure_stream(connection, key, now)
             checkpoint = self._current_checkpoint(connection, key)
             if checkpoint is None:
