@@ -2,7 +2,7 @@
 
 - Status: proposed
 
-[ADR 0043](0043-bounded-analytics-questions.md) describes the record separation, source fidelity, uncertainty, and versioned metric definitions for bounded analytics questions. Both decisions remain proposed.
+[ADR 0043](0043-bounded-analytics-questions.md) accepts the record separation, source fidelity, explicit uncertainty, and versioned metric definitions for bounded analytics questions. The remaining proposals in this ADR stay proposed.
 
 ## Context and problem statement
 

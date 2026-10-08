@@ -24,4 +24,4 @@ Whole-generation serialization, validation, writes, and canonical digest scans r
 
 No runtime package, model download, or public schema is required. [ADR 0029](0029-source-verification-tokens.md) governs cached source verification and its canonical metadata. [Continuous analytics](../analytics/continuous-processing.md) defines limits, lifecycle behavior, and measurements.
 
-The authority, encryption, publication, retention, and authorization requirements in ADRs 0009, 0019, 0020, and 0027 remain in force. [Proposed ADR 0043](0043-bounded-analytics-questions.md) describes bounded, source-linked questions over these projections.
+The authority, encryption, publication, retention, and authorization requirements in ADRs 0009, 0019, 0020, and 0027 remain in force. [ADR 0043](0043-bounded-analytics-questions.md) describes bounded, source-linked questions over these projections.
