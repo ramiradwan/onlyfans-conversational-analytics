@@ -8,6 +8,7 @@ from app.analytics.opaque_refs import conversation_ref, message_ref
 from app.analytics.query_contracts import utc_instant
 from app.analytics.query_facts import QuestionConversation, QuestionMessage
 from app.analytics.source_coverage import AcquisitionCoverage, question_coverage
+from app.analytics.query_facts import imported_history_kind
 
 
 class CanonicalQuestionScope:
@@ -54,7 +55,7 @@ class CanonicalQuestionScope:
             if question.plan.filters.conversation_ref not in {None, cref}:
                 continue
             records = db.execute("""SELECT m.message_id,m.sent_at,m.direction,
-                    m.sender_platform_user_id,c.platform_user_id
+                    m.sender_platform_user_id,c.platform_user_id,m.event_kind_json
                 FROM account_messages AS m JOIN account_chats AS c
                   ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
                 WHERE m.creator_account_id=? AND m.chat_id=?
@@ -77,7 +78,8 @@ class CanonicalQuestionScope:
                                                        message_id=str(record["message_id"]))
                 role = "creator" if record["direction"] == "outbound" else (
                     "participant" if record["sender_platform_user_id"] == record["platform_user_id"] else "unknown")
-                messages.append(QuestionMessage(ref, at, role, "unknown"))
+                messages.append(QuestionMessage(ref, at, role,
+                    imported_history_kind(record['event_kind_json'], chat)))
             coverage = question_coverage(self.coverage.conversation(chat), question)
             yield QuestionConversation(cref, tuple(messages), coverage)
         self.check(budget)

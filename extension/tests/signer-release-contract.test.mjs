@@ -16,13 +16,13 @@ async function established() {
   return { fixture, provider };
 }
 
-test('release contracts exercise the installed 0.2.0 public browser-signing export', async () => {
+test('release contracts exercise the installed 0.5.0-rc.2 public browser-signing export', async () => {
   const installed = await realpath(fileURLToPath(new URL('../node_modules/local-authenticated-read-connector/', import.meta.url)));
   const resolved = await realpath(fileURLToPath(import.meta.resolve('local-authenticated-read-connector/browser-signing')));
   const entry = relative(installed, resolved);
   assert.equal(isAbsolute(entry) || entry.startsWith('..'), false);
   const metadata = JSON.parse(await readFile(new URL('../node_modules/local-authenticated-read-connector/package.json', import.meta.url)));
-  assert.equal(metadata.version, '0.2.0');
+  assert.equal(metadata.version, '0.5.0-rc.2');
 });
 
 test('fresh absent-user-id capture validates the independently authorized account before activation', async () => {

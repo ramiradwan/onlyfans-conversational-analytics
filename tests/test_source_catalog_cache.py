@@ -1,5 +1,6 @@
 """Source-catalog reuse must follow live canonical changes and expiry."""
 
+import json
 from unittest.mock import Mock
 import pytest
 
@@ -9,14 +10,17 @@ from app.analytics.identity import canonical_identity, CanonicalIdentity
 from app.analytics.source_tokens import SourceIdentityCache, SourceToken
 from app.analytics.source_snapshot import _encoded_message, encoded, instant
 from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup
+from tests.test_history_kind_adoption import synthetic_kind
 
 pytestmark = [pytest.mark.ci_tier('integration')]
 
 
 @pytest.mark.parametrize("message", [
-    {"message_id": "plain", "text": "hello", "sent_at": "2026-09-18T12:00:00+00:00", "direction": "inbound"},
-    {"message_id": 'quote\\"slash\\\\', "text": "line\\ncontrol\\t\\u0001", "sent_at": "2026-09-18T12:00:00Z", "direction": "outbound"},
-    {"message_id": "emoji-😀", "text": "café 日本語 😀 \\u2028 \\u2029", "sent_at": "2026-09-18T15:30:00+03:30", "direction": "inbound"},
+    {"message_id": "plain", "text": "hello", "sent_at": "2026-09-18T12:00:00+00:00", "direction": "inbound", "event_kind_json": None},
+    {"message_id": 'quote\\"slash\\\\', "text": "line\\ncontrol\\t\\u0001", "sent_at": "2026-09-18T12:00:00Z", "direction": "outbound", "event_kind_json": None},
+    {"message_id": "emoji-😀", "text": "café 日本語 😀 \\u2028 \\u2029", "sent_at": "2026-09-18T15:30:00+03:30", "direction": "inbound", "event_kind_json": None},
+    {"message_id": "supported-kind", "text": "hello", "sent_at": "2026-09-18T12:00:00+00:00",
+     "direction": "inbound", "event_kind_json": json.dumps(synthetic_kind())},
 ])
 def test_fast_message_encoding_matches_existing_canonical_json(message):
     expected = encoded({
@@ -26,6 +30,8 @@ def test_fast_message_encoding_matches_existing_canonical_json(message):
         "sent_at": instant(str(message["sent_at"])),
         "direction": str(message["direction"]),
         "sentiment": None,
+        **({"event_kind": json.loads(message["event_kind_json"])}
+           if message["event_kind_json"] is not None else {}),
     })
 
     assert _encoded_message(message, 17) == expected

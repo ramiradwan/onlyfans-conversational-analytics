@@ -54,6 +54,21 @@ class RawMessage(StrictModel):
     text: str
     sent_at: Timestamp
     direction: Literal["inbound", "outbound"]
+    event_kind: dict[str, object] | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def kind_is_bound_and_bounded(self) -> "RawMessage":
+        if self.event_kind is not None:
+            import json
+
+            context = self.event_kind.get("context")
+            if (not isinstance(context, dict)
+                    or context.get("conversation_id") != self.chat_id
+                    or not isinstance(context.get("account_id"), str)
+                    or not context["account_id"]
+                    or len(json.dumps(self.event_kind, allow_nan=False).encode("utf-8")) > 16384):
+                raise ValueError("history kind binding or size is invalid")
+        return self
 
 
 class SnapshotChatValue(StrictModel):

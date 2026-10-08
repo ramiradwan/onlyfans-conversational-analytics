@@ -9,7 +9,7 @@ def _human(message):
 
 
 def _system(message):
-    return message.kind == "system" or message.role == "system"
+    return message.kind == "system"
 
 
 def _last(messages):
@@ -60,7 +60,7 @@ def _page(session: QuestionFactsSession, question, after, budget, *, pricing):
             unknown = len(usable) != len(selected)
         else:
             latest = _last(messages)
-            unknown = any(not _human(m) for m in latest) or len({m.role for m in latest}) != 1
+            unknown = len(latest) != 1 or any(not _human(m) for m in latest)
             if not unknown and latest[0].role == "participant":
                 matching = [min(latest, key=lambda m: m.message_ref)]
         if not matching:

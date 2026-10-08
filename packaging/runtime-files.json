@@ -48,7 +48,8 @@
         "0010_analytics_source_tokens.sql": "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772",
         "legacy_analytics_v9/0009_analytics_source_tokens.sql": "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772",
         "legacy_analytics_v9/0010_message_catchup.sql": "16dd7b5eabaff870a1313140123cd3081ccd50790ea1d3c3f6bf5dfadfbf7239",
-        "0011_analytics_coverage_tokens.sql": "f266f5221562feacd88a55dbdde65b30f4e9c1b9362012bbfc8f9dccee98c804"
+        "0011_analytics_coverage_tokens.sql": "f266f5221562feacd88a55dbdde65b30f4e9c1b9362012bbfc8f9dccee98c804",
+        "0012_history_record_kind.sql": "2f1bfd9ccabdc313b1848e2d8a0f5d18e7776ba92f190ac448961808ba312001"
       }
     },
     {

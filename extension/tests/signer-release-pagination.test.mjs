@@ -64,8 +64,12 @@ for (const [name, Coordinator, Outbox, storageFactory] of variants) {
       const messages = (await tx.getAll('messages')).sort((left, right) => left.message_id.localeCompare(right.message_id));
       assert.deepEqual(messages.map((message) => message.message_id), TRAVERSAL_MESSAGE_IDS);
       for (const message of messages) {
-        const { last_source_seq, last_origin, ...material } = message;
+        const { last_source_seq, last_origin, event_kind, ...material } = message;
         assert.deepEqual(material, expectedTraversalMessage(message.message_id));
+        assert.equal(event_kind.schema, 'connector-history-kind/v1');
+        assert.equal(event_kind.kind, 'unknown');
+        assert.equal(event_kind.context.account_id, TRAVERSAL_CREATOR);
+        assert.equal(event_kind.context.conversation_id, message.chat_id);
       }
       const evidence = (await tx.getAll('coverage_evidence')).map((row) => row.evidence);
       assert.deepEqual(evidence.filter((row) => row.type === 'conversation.history_started')
