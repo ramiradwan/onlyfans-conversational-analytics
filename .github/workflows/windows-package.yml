@@ -103,13 +103,13 @@ jobs:
           "PACKAGED_SIGNING_RULE=$rule" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.product_revision }}
           persist-credentials: false
 
       - name: Setup Node.js for the release gate
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -179,7 +179,7 @@ jobs:
           "SQLCIPHER_WHEELHOUSE=$wheelhouse" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: 'npm'
@@ -251,7 +251,7 @@ jobs:
           Get-Content $report
 
       - name: Retain production companion native evidence
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-package-companion-${{ inputs.product_revision }}
           path: |
@@ -265,7 +265,7 @@ jobs:
       # The release candidate's native dependency evidence travels separately
       # from the installer because signing later rewrites only the installer.
       - name: Retain fixed SQLCipher wheel and provenance
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-package-sqlcipher-${{ inputs.product_revision }}
           path: ${{ runner.temp }}\ofca-fixed-sqlcipher-wheelhouse\
@@ -276,7 +276,7 @@ jobs:
       # bundle, and the sha256sums.txt computed over both. Signing rewrites the
       # installer, so the signing job recomputes that digest file.
       - name: Upload the unsigned package
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-package-unsigned-${{ github.ref_name }}
           path: ${{ runner.temp }}\windows-package\installer\
@@ -316,7 +316,7 @@ jobs:
 
     steps:
       - name: Check out the release scripts
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.product_revision }}
           sparse-checkout: |
@@ -332,7 +332,7 @@ jobs:
           path: ${{ github.workspace }}\release
 
       - name: Acquire a federated Azure token
-        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: 630068e3-b320-40bb-acd0-3d8f1d70d545
           tenant-id: f6894ba7-98c1-4b4b-bbe4-1b3f9584a861
@@ -365,7 +365,7 @@ jobs:
 
       - name: Publish the signed package
         if: steps.verify-signatures.outcome == 'success'
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-package-${{ github.ref_name }}
           path: ${{ github.workspace }}\release\
