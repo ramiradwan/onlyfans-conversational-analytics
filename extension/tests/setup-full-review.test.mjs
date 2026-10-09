@@ -96,6 +96,29 @@ test('persistent handoff preserves Preview without activating Full or returning 
   assert.deepEqual(run.calls.map((call) => call.action), ['read', 'desktop_handoff', 'context']);
 });
 
+test('desktop handoff returns before authentication so the desktop can start pairing', async () => {
+  const full = structuredClone(model); full.status.consent.mode = 'full';
+  full.desktopRuntimeReachable = false;
+  const run = await initialize(storage(), record, null, { model: full,
+    journey: { id: 'desktop_app_needed', title: 'Connect' },
+    handoff: { expires_at: Date.now() + 60_000 } });
+  assert.equal(run.calls.filter((call) => call.action === 'return_desktop_handoff').length, 1);
+});
+
+for (const prerequisite of ['permission', 'account', 'agreement', 'paused']) {
+  test(`desktop handoff waits for ${prerequisite}`, async () => {
+    const full = structuredClone(model); full.status.consent.mode = 'full';
+    if (prerequisite === 'permission') full.status.phase = 'permission_required';
+    if (prerequisite === 'account') full.pairing.state = 'setup_incomplete';
+    if (prerequisite === 'agreement') full.legal.requires_reauthorization = true;
+    if (prerequisite === 'paused') full.status.consent.mode = 'paused';
+    const run = await initialize(storage(), record, null, { model: full,
+      journey: { id: 'desktop_app_needed', title: 'Connect' },
+      handoff: { expires_at: Date.now() + 60_000 } });
+    assert.equal(run.calls.filter((call) => call.action === 'return_desktop_handoff').length, 0);
+  });
+}
+
 for (const mismatch of ['legacy', 'journey', 'creator', 'disclosure']) {
   test(`setup initialization rejects ${mismatch} Full-review persistence and intent`, async () => {
     const saved = storage();

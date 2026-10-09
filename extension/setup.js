@@ -15,6 +15,7 @@ import { SETUP_TRANSFER_MESSAGE } from './runtime/setup-transfer.mjs';
 import { createDesktopLaunch, desktopLaunchJourney } from './ui/desktop-launch.mjs';
 import { createWorkspaceNavigation } from './ui/workspace-navigation.mjs';
 import { LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
+import { desktopStage } from './runtime/desktop-port.mjs';
 
 let failed = false;
 let dismissed = false;
@@ -185,8 +186,9 @@ function render(model) {
 // the creator account are in place. Pairing continues in the desktop app.
 const HANDOFF_PENDING = new Set(['analytics_off', 'preview_available', 'paused', 'setup_incomplete', 'desktop_app_needed']);
 function renderHandoff(model, view, journey) {
+  const stage = desktopStage({ consent: model.status, legal: model.legal, pairing: model.pairing });
   if (persistentHandoff && view === 'journey' && model.status.consent.mode === 'full'
-    && ['pairing_required', 'full_ready'].includes(journey.id)) {
+    && ['ready_to_pair', 'paired'].includes(stage)) {
     text('journey-title', 'Continue setup');
     text('journey-body', 'Returning to setup…');
     show('journey-primary', false); show('journey-secondary', false); show('companion-pairing', false);
