@@ -29,6 +29,20 @@ legal acceptance, browser permission, account identity, pairing, or commercial r
 Returning after a reload, discard, or restart reconciles authoritative facts before
 choosing the next unmet step. The reference's sessionStorage is not production authority.
 
+A bounded local presentation marker links the workspace journey, creator-scope UUID
+and disclosure digest to a domain-separated digest of the independently observed
+account (or unknown). It is not part of the shared wire record and grants no rights.
+Workspace entry, draft and native-launch requests wait for restored consent and current identity reconciliation.
+A matching marker preserves the draft across worker restarts. Missing, invalid or
+mismatched markers rotate the scope and clear only the creator-bound Full choice;
+general acknowledgements remain until their disclosures change. Scope and marker
+are submitted in one storage call, but no transactional browser-storage guarantee
+is assumed: either partial half disagrees with the other and fails closed next time.
+Identity writes publish a committed change after persistence as well as invalidating
+capture immediately beforehand. This prevents delayed notifications from changing
+an otherwise valid launch scope only when an unrelated tab opens. Workspace expiry
+and local-data deletion also remove the marker.
+
 Finish extension consent and browser permissions before opening a live pairing
 attempt. Leaving Bridge still cancels its port-owned attempt under ADR 0045. A pending
 UI intention can survive navigation, but an old attempt or comparison code cannot.

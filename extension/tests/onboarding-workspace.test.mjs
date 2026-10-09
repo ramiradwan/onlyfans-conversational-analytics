@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createOnboardingWorkspace, WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY } from '../runtime/onboarding-workspace.mjs';
+import { createOnboardingWorkspace, WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY, WORKSPACE_IDENTITY_KEY } from '../runtime/onboarding-workspace.mjs';
 
 const journey = 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fed';
 const scope = { scope_id: 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fea', disclosure_bundle_id: 'a'.repeat(64) };
@@ -11,7 +11,8 @@ const routes = { extension: 'chrome-extension://synthetic/setup.html', hosted: '
 function fixture(initialTabs = []) {
   const values = {}, session = {}, calls = [], tabs = initialTabs.map((tab) => ({ ...tab }));
   const storage = (data) => ({ async get(key) { return structuredClone({ [key]: data[key] }); },
-    async set(record) { Object.assign(data, structuredClone(record)); } });
+    async set(record) { Object.assign(data, structuredClone(record)); },
+    async remove(keys) { for (const key of keys) delete data[key]; } });
   const chromeApi = { runtime: { id: 'synthetic', getURL: (path) => `chrome-extension://synthetic/${path}` },
     storage: { local: storage(values), session: storage(session) },
     tabs: { async query() { return structuredClone(tabs); },
@@ -108,6 +109,58 @@ test('idle expiry retires unfinished drafts without recreating tabs', async () =
   assert.equal(await f.workspace.read(), null);
   assert.equal(f.tabs.length, 1);
   await assert.rejects(f.workspace.saveDraft(f.sender(), { scope_id: scope.scope_id, draft: checked }), /workspace_not_registered/);
+});
+
+const identityA = { account_digest: 'a'.repeat(64) }, identityB = { account_digest: 'b'.repeat(64) };
+async function boundFixture() {
+  const f = fixture(); await f.open();
+  const record = await f.workspace.reconcileIdentity(identityA);
+  await f.workspace.saveDraft(f.sender(), { scope_id: record.draft_scope.scope_id, draft: checked });
+  return f;
+}
+test('known creator marker preserves the draft after worker loss, while a newly persisted creator clears Full', async () => {
+  const f = await boundFixture(); const previous = await f.workspace.read();
+  const restored = createOnboardingWorkspace({ chromeApi: f.chromeApi, routes });
+  assert.deepEqual(await restored.reconcileIdentity(identityA), previous);
+  const changed = await restored.reconcileIdentity(identityB);
+  assert.notEqual(changed.draft_scope.scope_id, previous.draft_scope.scope_id);
+  assert.deepEqual(changed.draft, { ...checked, full_checked: false });
+  assert.equal(f.values[WORKSPACE_IDENTITY_KEY].account_digest, identityB.account_digest);
+  assert.equal(f.values[WORKSPACE_IDENTITY_KEY].scope_id, changed.draft_scope.scope_id);
+});
+
+for (const broken of ['missing', 'invalid', 'record-only', 'marker-only', 'other-journey', 'unknown-account']) {
+  test(`creator presentation binding fails closed for ${broken} without erasing general choices`, async () => {
+    const f = await boundFixture(); const original = await f.workspace.read();
+    if (broken === 'missing') delete f.values[WORKSPACE_IDENTITY_KEY];
+    if (broken === 'invalid') f.values[WORKSPACE_IDENTITY_KEY].extra = true;
+    if (broken === 'record-only') f.values[WORKSPACE_RECORD_KEY].draft_scope.scope_id = crypto.randomUUID();
+    if (broken === 'marker-only') f.values[WORKSPACE_IDENTITY_KEY].scope_id = crypto.randomUUID();
+    if (broken === 'other-journey') f.values[WORKSPACE_IDENTITY_KEY].journey_id = crypto.randomUUID();
+    const recovered = await f.workspace.reconcileIdentity(broken === 'unknown-account' ? { account_digest: null } : identityA);
+    assert.notEqual(recovered.draft_scope.scope_id, original.draft_scope.scope_id);
+    assert.deepEqual(recovered.draft, { ...checked, full_checked: false });
+    assert.deepEqual(Object.keys(recovered).sort(), ['draft', 'draft_scope', 'journey_id', 'route', 'version']);
+  });
+}
+
+test('creator reconciliation serializes with draft saves and disclosure refresh', async () => {
+  const f = await boundFixture(); const previous = await f.workspace.read();
+  const changed = f.workspace.reconcileIdentity(identityB);
+  await assert.rejects(f.workspace.saveDraft(f.sender(), { scope_id: previous.draft_scope.scope_id, draft: checked }), /workspace_draft_stale/);
+  await changed;
+  await f.workspace.refreshScope({ scope_id: crypto.randomUUID(), disclosure_bundle_id: 'd'.repeat(64) });
+  const refreshed = await f.workspace.reconcileIdentity(identityB);
+  assert.deepEqual(refreshed.draft, { terms_checked: false, risk_checked: false, full_checked: false });
+  assert.equal(f.values[WORKSPACE_IDENTITY_KEY].disclosure_bundle_id, 'd'.repeat(64));
+  assert.equal(f.values[WORKSPACE_IDENTITY_KEY].scope_id, refreshed.draft_scope.scope_id);
+});
+
+test('workspace expiry removes its presentation identity digest as well as its drafts', async () => {
+  const f = await boundFixture();
+  f.values[WORKSPACE_ACTIVITY_KEY] = Date.now() - 31 * 86400000;
+  assert.equal(await f.workspace.read(), null);
+  for (const key of [WORKSPACE_IDENTITY_KEY, WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY]) assert.equal(f.values[key], undefined);
 });
 
 test('same-URL reload retires the older document even while the tab URL remains visible', async () => {

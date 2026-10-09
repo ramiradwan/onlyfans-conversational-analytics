@@ -208,6 +208,20 @@ export function createProvisioningIdentityBridge({
     return normalizeContexts(stored[PROVISIONING_IDENTITY_STORAGE_KEY])
       .filter((context) => context.consent_epoch === currentConsent()?.consent_epoch);
   };
+  const publishContexts = async (contexts, previous) => {
+    const document = storedDocument(contexts);
+    await storageSet(sessionStorage, {
+      [PROVISIONING_IDENTITY_STORAGE_KEY]: document,
+    }, chromeApi);
+    // The early notification fences work immediately. Readers also need an
+    // event after persistence so they cannot keep the previous account until
+    // an unrelated tab event happens to wake them.
+    const signature = (values) => JSON.stringify(values.map((context) => JSON.stringify([
+      context.sender_key, context.tab_id, context.document_id, context.page_epoch,
+      context.observed_platform_id, context.consent_epoch, context.identity_conflict === true,
+    ])).sort());
+    if (signature(document.contexts) !== signature(previous)) notifyAccount();
+  };
 
   const internalListener = (message, sender, sendResponse) => {
     if (![PROVISIONING_IDENTITY_MESSAGE_TYPE, PROVISIONING_IDENTITY_RESET_TYPE].includes(message?.type)) return false;
@@ -241,9 +255,7 @@ export function createProvisioningIdentityBridge({
           page_epoch: update.pageEpoch, observed_platform_id: update.accountId,
           consent_epoch: currentConsent().consent_epoch,
         });
-        await storageSet(sessionStorage, {
-          [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument(retained),
-        }, chromeApi);
+        await publishContexts(retained, contexts);
         return { ok: true };
       });
     })().then(sendResponse, () => sendResponse({ ok: false }));
@@ -275,9 +287,7 @@ export function createProvisioningIdentityBridge({
     documentGenerations.clear();
     observedDocuments.clear();
     notifyAccount();
-    return serializeContext(() => storageSet(sessionStorage, {
-      [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument([]),
-    }, chromeApi));
+    return serializeContext(async () => publishContexts([], await loadContexts()));
   };
   const removeTab = (tabId) => {
     invalidateDocument(tabId);
@@ -290,10 +300,9 @@ export function createProvisioningIdentityBridge({
       // default epoch can erase valid contexts from the previous worker.
       await ensureReady();
       return serializeContext(async () => {
-        const retained = (await loadContexts()).filter((context) => context.tab_id !== tabId);
-        await storageSet(sessionStorage, {
-          [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument(retained),
-        }, chromeApi);
+        const contexts = await loadContexts();
+        const retained = contexts.filter((context) => context.tab_id !== tabId);
+        await publishContexts(retained, contexts);
       });
     })().catch(() => undefined);
   };

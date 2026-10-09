@@ -4,6 +4,7 @@ import { NATIVE_LAUNCH_KEY, NATIVE_LAUNCH_TTL_MS, NATIVE_RETURN_PATH, nativeRetu
 export const WORKSPACE_RECORD_KEY = 'onboarding_workspace_v1';
 export const WORKSPACE_TAB_KEY = 'onboarding_workspace_tab_v1';
 export const WORKSPACE_ACTIVITY_KEY = 'onboarding_workspace_activity_v1';
+export const WORKSPACE_IDENTITY_KEY = 'onboarding_workspace_identity_v1';
 const MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const ROUTES = ['extension', 'hosted', 'provisioning', 'bridge'];
@@ -60,7 +61,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
   const readRecord = async () => {
     const touched = (await chromeApi.storage.local.get(WORKSPACE_ACTIVITY_KEY))[WORKSPACE_ACTIVITY_KEY];
     if (Number.isFinite(touched) && (now() - touched > MAX_IDLE_MS || touched > now())) {
-      await chromeApi.storage.local.remove?.([WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY]);
+      await chromeApi.storage.local.remove?.([WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY, WORKSPACE_IDENTITY_KEY]);
       return null;
     }
     const record = (await chromeApi.storage.local.get(WORKSPACE_RECORD_KEY))[WORKSPACE_RECORD_KEY];
@@ -300,6 +301,27 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       else if (record.draft_scope.scope_id !== scope.scope_id) record.draft.full_checked = false;
       record.draft_scope = { ...scope };
       await saveRecord(record);
+      return record;
+    }),
+    // Presentation only. Linking the marker to a fresh scope makes either
+    // partial write fail closed; the marker never establishes account authority.
+    reconcileIdentity: (request) => serialize(async () => {
+      if (!exact(request, ['account_digest']) || (request.account_digest !== null
+        && !/^[0-9a-f]{64}$/u.test(request.account_digest))) fail('workspace_identity_invalid');
+      const record = await readRecord();
+      if (!record) return null;
+      const previous = (await chromeApi.storage.local.get(WORKSPACE_IDENTITY_KEY))[WORKSPACE_IDENTITY_KEY];
+      if (exact(previous, ['version', 'journey_id', 'scope_id', 'disclosure_bundle_id', 'account_digest'])
+        && previous.version === 1 && previous.journey_id === record.journey_id
+        && previous.scope_id === record.draft_scope.scope_id
+        && previous.disclosure_bundle_id === record.draft_scope.disclosure_bundle_id
+        && previous.account_digest === request.account_digest) return record;
+      record.draft.full_checked = false;
+      record.draft_scope.scope_id = crypto.randomUUID();
+      const identity = { version: 1, journey_id: record.journey_id, ...record.draft_scope,
+        account_digest: request.account_digest };
+      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record,
+        [WORKSPACE_ACTIVITY_KEY]: now(), [WORKSPACE_IDENTITY_KEY]: identity });
       return record;
     }),
     // A worker-only install continuation. Adopts a uniquely identified existing
