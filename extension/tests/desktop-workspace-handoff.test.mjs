@@ -3,6 +3,22 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { createOnboardingWorkspace, DESKTOP_HANDOFF_KEY } from '../runtime/onboarding-workspace.mjs';
 
+for (const entry of ['background.js', 'background-read-only.js']) test(`${entry} forwards the desktop document navigation callback`, async () => {
+  const source = await readFile(new URL(`../${entry}`, import.meta.url), 'utf8');
+  const callback = source.match(/openStep: ([\s\S]*?),\s*onPaired:/)?.[1];
+  assert.ok(callback, 'the packaged entry must wire the desktop port');
+  const opened = [];
+  const open = Function('openSurface', 'openCreatorAccount', `return (${callback});`)(
+    (request) => opened.push(request), () => {});
+  const anchorTab = { id: 7, windowId: 1, documentId: 'current', url: 'http://bridge.localhost:17871/' };
+  const navigate = () => {};
+  for (const step of ['setup', 'access']) {
+    await open(step, { anchorTab, navigate });
+    assert.equal(opened.at(-1).anchorTab, anchorTab);
+    assert.equal(opened.at(-1).navigate, navigate);
+  }
+});
+
 const journey = '11111111-1111-4111-8111-111111111111';
 const scope = { scope_id: '22222222-2222-4222-8222-222222222222', disclosure_bundle_id: 'a'.repeat(64) };
 const routes = { extension: 'chrome-extension://synthetic/setup.html', bridge: 'http://bridge.localhost:17871/',

@@ -296,8 +296,8 @@ export const desktopPort = registerDesktopPort({
   }),
   // Each step opens the one extension page that owns it. Site access and the
   // history permission need a click there because Chrome requires the gesture.
-  openStep: (step, { anchorTab }) => step === 'creator' ? openCreatorAccount() : openSurface(['setup', 'access'].includes(step)
-    ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab }
+  openStep: (step, { anchorTab, navigate }) => step === 'creator' ? openCreatorAccount() : openSurface(['setup', 'access'].includes(step)
+    ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab, navigate }
     : { surface: 'options', section: step === 'history' ? 'history' : 'connection', presentation: 'window', anchorTab }),
   onPaired: () => consentController.reconcile(),
   changeSources: [
