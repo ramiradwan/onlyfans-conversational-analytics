@@ -30,7 +30,7 @@ test('the local browser page can navigate only to the setup resource, which cann
   assert.deepEqual(manifest.web_accessible_resources, [{ resources: ['setup.html'], matches: ['http://bridge.localhost/*'] }]);
   assert.match(manifest.content_security_policy.extension_pages, /frame-ancestors 'none';/);
 });
-async function fixture() {
+async function fixture(accountDigest = 'b'.repeat(64)) {
   const local = {}, session = {}, sent = [], updates = [], changed = event();
   const tab = { id: 7, windowId: 1, documentId: 'bridge-document', url: `${routes.bridge}#journey=${journey}` };
   let clock = 1_000;
@@ -43,7 +43,7 @@ async function fixture() {
     windows: { async update() {} } };
   const workspace = createOnboardingWorkspace({ chromeApi, routes, now: () => clock, navigationTimeoutMs: 30 });
   await workspace.open({ journey_id: journey, route: 'bridge', explicit: true, draft_scope: scope });
-  await workspace.reconcileIdentity({ account_digest: 'b'.repeat(64) });
+  await workspace.reconcileIdentity({ account_digest: accountDigest });
   const current = await workspace.read();
   const sender = () => ({ tab: { id: tab.id, windowId: tab.windowId }, frameId: 0, url: tab.url,
     documentId: tab.documentId, ...(tab.url.startsWith('chrome-extension:') ? { id: 'synthetic' } : {}) });
@@ -58,6 +58,35 @@ async function fixture() {
   };
   return { workspace, tab, session, local, sent, updates, sender, begin, bindReturn, current,
     expire: () => { clock += 1_800_001; } };
+}
+
+test('the first creator observation preserves the live navigation handoff and clears Full draft intent', async () => {
+  const f = await fixture(null);
+  await f.workspace.saveDraft(f.sender(), { scope_id: f.current.draft_scope.scope_id,
+    draft: { terms_checked: true, risk_checked: true, full_checked: true } });
+  await f.begin();
+  await f.bindReturn();
+  await f.workspace.reconcileIdentity({ account_digest: 'b'.repeat(64) });
+  const record = await f.workspace.read();
+  assert.equal(record.journey_id, journey);
+  assert.notEqual(record.draft_scope.scope_id, f.current.draft_scope.scope_id);
+  assert.equal(record.draft.full_checked, false);
+  assert.deepEqual(await f.workspace.desktopHandoffContext(f.sender()), { expires_at: 1_801_000 });
+  assert.deepEqual(await f.workspace.returnDesktopHandoff(f.sender()), { status: 'returned' });
+  assert.equal(f.tab.url, `${routes.bridge}#journey=${journey}`);
+});
+
+for (const invalid of ['account-switch', 'expired', 'replacement-document']) {
+  test(`creator observation cannot recover ${invalid} navigation`, async () => {
+    const f = await fixture(invalid === 'account-switch' ? 'b'.repeat(64) : null);
+    await f.begin();
+    if (invalid === 'expired') f.expire();
+    if (invalid === 'replacement-document') f.tab.documentId = 'replacement';
+    await f.workspace.reconcileIdentity({ account_digest: 'c'.repeat(64) });
+    assert.equal(await f.workspace.desktopHandoffContext(f.sender()), null);
+    await assert.rejects(f.workspace.returnDesktopHandoff(f.sender()), /workspace_handoff_unavailable/);
+    assert.equal(f.sent.length, 1);
+  });
 }
 
 test('desktop handoff and return preserve the single tab, journey and draft', async () => {

@@ -620,12 +620,27 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
         && previous.scope_id === record.draft_scope.scope_id
         && previous.disclosure_bundle_id === record.draft_scope.disclosure_bundle_id
         && previous.account_digest === request.account_digest) return record;
+      // The first observed creator can finish a handoff begun before sign-in.
+      // This preserves navigation only; the new scope still clears Full intent.
+      let handoff = null;
+      if (previous?.account_digest === null && request.account_digest !== null) {
+        const candidate = await desktopHandoff(record);
+        if (candidate?.phase === 'open') {
+          const owner = await liveTab(record.journey_id);
+          if (owner && sameDocument(owner, candidate.destination)) handoff = candidate;
+        }
+      }
       record.draft.full_checked = false;
       record.draft_scope.scope_id = crypto.randomUUID();
       const identity = { version: 1, journey_id: record.journey_id, ...record.draft_scope,
         account_digest: request.account_digest };
       await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record,
         [WORKSPACE_ACTIVITY_KEY]: now(), [WORKSPACE_IDENTITY_KEY]: identity });
+      if (handoff) {
+        handoff.draft_scope = { ...record.draft_scope };
+        handoff.account_digest = request.account_digest;
+        await chromeApi.storage.session.set({ [DESKTOP_HANDOFF_KEY]: handoff });
+      }
       return record;
     }),
     // A worker-only install continuation. Adopts a uniquely identified existing
