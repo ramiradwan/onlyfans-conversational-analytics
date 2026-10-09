@@ -160,6 +160,8 @@ class Launcher:
         credential_loader: Callable[[Path], str] | None = None,
         provisioning_token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
         journey_id: str | None = None,
+        native_return: bool = False,
+        native_discovery: bool = False,
         confirm_workspace_reopen: Callable[[], bool] | None = None,
         show_workspace_status: Callable[[], None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
@@ -176,6 +178,10 @@ class Launcher:
             from app.persistence.onboarding import require_journey
             require_journey(journey_id)
         self.journey_id = journey_id
+        if native_return and journey_id is None:
+            raise ValueError("Native return requires a journey")
+        self.native_return = native_return
+        self.native_discovery = native_discovery
         self.confirm_workspace_reopen = confirm_workspace_reopen or _confirm_workspace_reopen
         self.show_workspace_status = show_workspace_status or _show_workspace_status
         self.monotonic = monotonic
@@ -345,6 +351,8 @@ class Launcher:
                         "Authorization": f"Provisioning {token}",
                         **({"X-Onboarding-Journey": self.journey_id} if self.journey_id else {}),
                         **({"X-Onboarding-Reopen": "explicit"} if explicit_reopen else {}),
+                        **({"X-Onboarding-Native-Entry": "discover"} if self.native_discovery else {}),
+                        **({"X-Onboarding-Native-Entry": "targeted"} if self.native_return else {}),
                     },
                 )
                 if _client_has_cookies(client, response) or response.status_code != 200:
@@ -373,7 +381,9 @@ class Launcher:
                 "provisioning_handoff_payload_invalid",
                 FAILURE_MESSAGES["provisioning_handoff_payload_invalid"],
             )
-        return f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?{urlencode({'code': code})}"
+        fields = {"code": code}
+        path = "/provisioning/native-entry" if self.native_discovery or self.native_return else PROVISIONING_REDEEM_PATH
+        return f"{BRIDGE_ORIGIN}{path}?{urlencode(fields)}"
 
     def _request_browser_target(self, credential: str) -> str | None:
         try:
@@ -393,6 +403,8 @@ class Launcher:
                 if response.status_code == 409:
                     detail = _response_detail(response)
                     if detail == "launcher_bootstrap_already_consumed":
+                        if self.native_return or self.native_discovery:
+                            return BRIDGE_ORIGIN + "/provisioning/native-return"
                         return BRIDGE_ORIGIN
                 if response.status_code != 200:
                     raise LaunchFailure(
@@ -411,7 +423,12 @@ class Launcher:
         code = payload.get("handoff_code") if isinstance(payload, dict) else None
         if not isinstance(code, str) or _HANDOFF_CODE.fullmatch(code) is None:
             raise LaunchFailure("handoff_failed", FAILURE_MESSAGES["handoff_failed"])
-        return f"{BRIDGE_ORIGIN}{HANDOFF_PATH}?{urlencode({'code': code})}"
+        fields = {"code": code}
+        if self.native_return:
+            fields["native_journey"] = self.journey_id
+        elif self.native_discovery:
+            fields["native_discovery"] = "1"
+        return f"{BRIDGE_ORIGIN}{HANDOFF_PATH}?{urlencode(fields)}"
 
     def _workspace_response(self, value: object, field: str) -> bool:
         if not isinstance(value, dict) or field not in value:
@@ -815,7 +832,8 @@ def main(*, workspace_link: str | None = None) -> int:
     configuration = default_launcher_configuration()
     journey_id = None if workspace_link is None else parse_workspace_app_link(workspace_link)
     try:
-        Launcher(configuration, journey_id=journey_id).launch()
+        Launcher(configuration, journey_id=journey_id, native_return=workspace_link is not None,
+                 native_discovery=workspace_link is None).launch()
     except LaunchFailure as error:
         reason_code = _safe_failure_code(error)
         _record_launch_failure(configuration.data_directory, reason_code)

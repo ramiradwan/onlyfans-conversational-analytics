@@ -1,5 +1,6 @@
 // Navigation and unfinished checkbox choices only. This module cannot grant
 // consent, authenticate a creator, pair a computer, or start capture.
+import { NATIVE_LAUNCH_KEY, NATIVE_LAUNCH_TTL_MS, NATIVE_RETURN_PATH, nativeReturnJourney, workspaceAppLink } from './onboarding-native-launch.mjs';
 export const WORKSPACE_RECORD_KEY = 'onboarding_workspace_v1';
 export const WORKSPACE_TAB_KEY = 'onboarding_workspace_tab_v1';
 export const WORKSPACE_ACTIVITY_KEY = 'onboarding_workspace_activity_v1';
@@ -16,7 +17,7 @@ const exact = (value, keys) => isObject(value) && Object.keys(value).length === 
 function fail(code) { throw new Error(code); }
 
 /** Build-time routes, never a URL supplied by an incoming command. */
-export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, routes, now = Date.now }) {
+export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, routes, now = Date.now, navigationTimeoutMs = 10_000 }) {
   if (!exact(routes, ROUTES)) fail('workspace_routes_invalid');
   const registered = new Map();
   for (const route of ROUTES) {
@@ -32,6 +33,9 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     registered.set(url.href, route);
   }
   let queue = Promise.resolve();
+  const navigationPorts = new Map();
+  const localOrigin = new URL(routes.bridge).origin;
+  const nativeEntryUrl = `${localOrigin}${NATIVE_RETURN_PATH}`;
   const serialize = (work) => {
     const operation = queue.then(work);
     queue = operation.catch(() => undefined);
@@ -76,7 +80,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     const context = (await extensionContexts()).find((value) => value.tabId === id && value.frameId === 0);
     // Always compare the current document, including reload to the same URL.
     if (context) return { ...tab, url: context.documentUrl, documentId: context.documentId };
-    if (tab.url && parse(tab.url) && chromeApi.scripting?.executeScript) {
+    if (tab.url && (parse(tab.url) || tab.url === nativeEntryUrl || nativeReturnJourney(tab.url, localOrigin)) && chromeApi.scripting?.executeScript) {
       const documents = await chromeApi.scripting.executeScript({ target: { tabId: id, frameIds: [0] },
         world: 'ISOLATED', func: () => null });
       const document = documents.find((value) => value.frameId === 0);
@@ -132,15 +136,161 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     await storeTab(tab, record.journey_id);
     return { record, tab, parsed };
   }
+  async function nativeCaller(sender, { bare = false, journeyId = null } = {}) {
+    const validUrl = bare ? sender?.url === nativeEntryUrl
+      : journeyId !== null ? sender?.url === nativeEntryUrl || nativeReturnJourney(sender?.url, localOrigin) === journeyId
+        : sender?.url === nativeEntryUrl || nativeReturnJourney(sender?.url, localOrigin) !== null;
+    if (!validUrl || sender?.id !== undefined || sender?.frameId !== 0
+      || !Number.isInteger(sender?.tab?.id) || typeof sender.documentId !== 'string') fail('return_unavailable');
+    const source = await getTab(sender.tab.id);
+    if (source.url !== sender.url || source.documentId !== sender.documentId) fail('return_unavailable');
+    return source;
+  }
+  async function nativeOwner() {
+    const record = await readRecord();
+    const owner = record ? await liveTab(record.journey_id) : null;
+    if (!owner) {
+      // An expired record is not evidence that its page has disappeared.
+      if ((await registeredTabs()).length > 0) fail('workspace_exists');
+      fail('no_workspace');
+    }
+    return { record, owner };
+  }
+  const currentLaunch = (intent, record, owner) => intent?.version === 1
+    && Number.isSafeInteger(intent.created_at) && Number.isSafeInteger(intent.expires_at)
+    && intent.expires_at === intent.created_at + NATIVE_LAUNCH_TTL_MS
+    && intent.created_at <= now() && intent.expires_at > now()
+    && intent.journey_id === record.journey_id && intent.tab_id === owner.id
+    && intent.draft_scope?.scope_id === record.draft_scope.scope_id
+    && intent.draft_scope?.disclosure_bundle_id === record.draft_scope.disclosure_bundle_id;
+  function watchNavigation(owner, target) {
+    let settle, done = false;
+    const promise = new Promise((resolve) => { settle = resolve; });
+    const finish = (value) => {
+      if (done) return; done = true;
+      clearTimeout(timer); chromeApi.tabs.onUpdated.removeListener(changed); settle(value);
+    };
+    const changed = (id, change) => {
+      if (id !== owner.id || change.status !== 'complete') return;
+      void getTab(id).then((current) => {
+        if (current.url === target && current.documentId && current.documentId !== owner.documentId) finish(current);
+        else if (current.url !== owner.url) finish(null);
+      }, () => finish(null));
+    };
+    const timer = setTimeout(() => finish(null), navigationTimeoutMs);
+    chromeApi.tabs.onUpdated.addListener(changed);
+    return { promise, cancel: () => finish(null) };
+  }
   return Object.freeze({
     reference,
     read: () => serialize(readRecord),
+    bindNavigationPort: async (port) => {
+      let closed = false, key = null;
+      port.onDisconnect.addListener(() => {
+        closed = true; if (key && navigationPorts.get(key) === port) navigationPorts.delete(key);
+      });
+      try {
+        const { tab, parsed } = await admitted(port.sender);
+        if (closed || parsed.route !== 'extension' || !tab.documentId) throw Error('workspace_sender_invalid');
+        key = `${tab.id}:${tab.documentId}`;
+        navigationPorts.set(key, port);
+        port.postMessage({ type: 'ready' });
+      } catch { port.disconnect(); }
+    },
     admit: (sender) => serialize(async () => { const { record, parsed } = await admitted(sender); return { record, route: parsed.route }; }),
     focus: (sender) => serialize(async () => {
       const { tab, parsed } = await admitted(sender);
       if (parsed.route === 'hosted') fail('workspace_local_only');
       await chromeApi.tabs.update(tab.id, { active: true });
       await chromeApi.windows.update(tab.windowId, { focused: true });
+    }),
+    prepareNativeLaunch: (sender) => serialize(async () => {
+      const { record, tab, parsed } = await admitted(sender);
+      if (parsed.route !== 'extension' || typeof tab.documentId !== 'string') fail('workspace_launch_unavailable');
+      const previous = (await chromeApi.storage.session.get(NATIVE_LAUNCH_KEY))[NATIVE_LAUNCH_KEY];
+      // Repeated explicit clicks can reuse a still-valid intent, but never
+      // replace an uncertain return or authorize a different document.
+      if (previous?.phase === 'returning' && previous.expires_at > now()) fail('workspace_return_unconfirmed');
+      const createdAt = now();
+      await chromeApi.storage.session.set({ [NATIVE_LAUNCH_KEY]: {
+        version: 1, journey_id: record.journey_id, draft_scope: { ...record.draft_scope },
+        tab_id: tab.id, document_id: tab.documentId, url: tab.url,
+        created_at: createdAt, expires_at: createdAt + NATIVE_LAUNCH_TTL_MS, phase: 'pending',
+      } });
+      return { journey_id: record.journey_id, app_link: workspaceAppLink(record.journey_id) };
+    }),
+    discoverNativeLaunch: (sender) => serialize(async () => {
+      const source = await nativeCaller(sender, { bare: true });
+      const { record, owner } = await nativeOwner();
+      const intent = (await chromeApi.storage.session.get(NATIVE_LAUNCH_KEY))[NATIVE_LAUNCH_KEY];
+      if (!currentLaunch(intent, record, owner) || intent.phase !== 'pending' || source.id === owner.id
+        || owner.url !== intent.url || owner.documentId !== intent.document_id) fail('workspace_exists');
+      return { status: 'pending_launch', journey_id: record.journey_id };
+    }),
+    focusFromNative: (sender) => serialize(async () => {
+      await nativeCaller(sender);
+      const { owner } = await nativeOwner();
+      await chromeApi.tabs.update(owner.id, { active: true });
+      await chromeApi.windows.update(owner.windowId, { focused: true });
+      return { status: 'focused' };
+    }),
+    returnFromNative: (sender, request) => serialize(async () => {
+      if (!exact(request, ['journey_id', 'route']) || !UUID.test(request.journey_id)
+        || !['provisioning', 'bridge'].includes(request.route)) fail('return_unavailable');
+      const source = await nativeCaller(sender, { journeyId: request.journey_id });
+      const { record, owner } = await nativeOwner();
+      const intent = (await chromeApi.storage.session.get(NATIVE_LAUNCH_KEY))[NATIVE_LAUNCH_KEY];
+      if (!currentLaunch(intent, record, owner) || record.journey_id !== request.journey_id
+        || source.id === owner.id) fail('workspace_exists');
+      const target = reference(request.route, record.journey_id);
+      const sameReturn = intent.return_tab_id === source.id && intent.return_document_id === source.documentId
+        && intent.return_route === request.route;
+      if (intent.phase !== 'pending') {
+        if (!sameReturn || !['returning', 'returned'].includes(intent.phase)) fail('workspace_exists');
+        // A lost response is a read-only reconciliation. Do not repeat the
+        // navigation, even if its outcome remains unknown.
+        if (intent.phase === 'returning' && owner.url !== target) fail('return_unavailable');
+        if (intent.phase === 'returned' && parse(owner.url)?.journeyId !== record.journey_id) fail('return_unavailable');
+        record.route = parse(owner.url).route;
+        await saveRecord(record); await storeTab(owner, record.journey_id);
+        intent.phase = 'returned';
+        await chromeApi.storage.session.set({ [NATIVE_LAUNCH_KEY]: intent });
+        return { status: 'returned' };
+      }
+      if (owner.url !== intent.url || owner.documentId !== intent.document_id) fail('workspace_exists');
+      intent.phase = 'returning'; intent.return_tab_id = source.id;
+      intent.return_document_id = source.documentId; intent.return_route = request.route;
+      await chromeApi.storage.session.set({ [NATIVE_LAUNCH_KEY]: intent });
+      const returningTab = await getTab(source.id);
+      if (returningTab.documentId !== source.documentId || returningTab.url !== source.url) fail('return_unavailable');
+      const returningWindow = await chromeApi.windows.get(source.windowId);
+      const foreground = returningTab.active === true && returningWindow.focused === true;
+      let latest;
+      try { latest = await nativeOwner(); } catch { fail('workspace_exists'); }
+      if (!currentLaunch(intent, latest.record, latest.owner) || latest.owner.url !== intent.url
+        || latest.owner.documentId !== intent.document_id) fail('workspace_exists');
+      const port = navigationPorts.get(`${owner.id}:${intent.document_id}`);
+      if (!port || !chromeApi.tabs.onUpdated) fail('return_unavailable');
+      const navigation = watchNavigation(latest.owner, target);
+      try {
+        port.postMessage({ type: 'navigate', request_id: crypto.randomUUID(), journey_id: record.journey_id,
+          draft_scope: { ...record.draft_scope }, expected_url: intent.url, route: request.route });
+      } catch { navigation.cancel(); fail('return_unavailable'); }
+      const current = await navigation.promise;
+      if (!current) fail('return_unavailable');
+      // A slow launch must not steal focus after the user switches elsewhere.
+      // Returning from the still-foreground native page may select its owner.
+      const activeReturn = await getTab(source.id);
+      const activeWindow = await chromeApi.windows.get(source.windowId);
+      if (foreground && activeReturn.documentId === source.documentId && activeReturn.active === true && activeWindow.focused === true) {
+        await chromeApi.tabs.update(owner.id, { active: true });
+        if (owner.windowId !== source.windowId) await chromeApi.windows.update(owner.windowId, { focused: true });
+      }
+      record.route = request.route;
+      await saveRecord(record); await storeTab(current, record.journey_id);
+      intent.phase = 'returned';
+      await chromeApi.storage.session.set({ [NATIVE_LAUNCH_KEY]: intent });
+      return { status: 'returned' };
     }),
     refreshScope: (scope) => serialize(async () => {
       if (!validScope(scope)) fail('workspace_scope_invalid');

@@ -296,6 +296,159 @@ def test_launcher_journey_is_bound_to_consumed_handoff_not_latest_draft(tmp_path
         sessions.redeem_handoff_code(code)
 
 
+def test_targeted_native_bootstrap_strips_code_before_session_selection_and_binds_its_journey(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.provisioning.app import create_provisioning_app
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    journeys = OnboardingJourneyStore(store)
+    intended = str(uuid4())
+    sessions = ProvisioningSessionManager("t" * 43, journeys=journeys)
+    application = create_provisioning_app(claim_submission=lambda **_: None,
+        creator_association_initiation=lambda **_: None, creator_binding_acquisition=lambda: None,
+        completion_ready=lambda: False, finalize_action=lambda **_: None,
+        session_manager=sessions, extension_id="a" * 32)
+    with TestClient(application, base_url="http://bridge.localhost:17871") as browser:
+        from app.provisioning.session import NATIVE_ENTRY_COOKIE_NAME
+        code = sessions.issue_native_entry("Provisioning " + "t" * 43, journey_id=intended)
+        response = browser.get("/provisioning/native-entry", params={"code": code}, follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/provisioning/native-return#journey=" + intended
+        assert code not in response.headers["location"]
+        cookie = response.headers["set-cookie"]
+        assert "HttpOnly" in cookie and "Secure" in cookie and "SameSite=strict" in cookie
+        assert PROVISIONING_SESSION_COOKIE_NAME not in response.cookies
+        assert browser.get("/provisioning/native-entry", params={"code": code}).status_code == 401
+        assert count(store, "onboarding_journeys") == count(store, "provisioning_browser_sessions") == 0
+        headers = {"Cookie": f"{NATIVE_ENTRY_COOKIE_NAME}={response.cookies[NATIVE_ENTRY_COOKIE_NAME]}"}
+        context = browser.get("/api/v1/provisioning/native-entry", headers=headers).json()
+        headers.update({"Origin": "http://bridge.localhost:17871", "X-Provisioning-CSRF": context["csrf_token"]})
+        refused = browser.post("/api/v1/provisioning/native-entry", json={"journey_id": str(uuid4())}, headers=headers)
+        assert refused.status_code == 409
+        assert "set-cookie" not in refused.headers
+        assert count(store, "onboarding_journeys") == count(store, "provisioning_browser_sessions") == 0
+        selected = browser.post("/api/v1/provisioning/native-entry", json={"journey_id": intended}, headers=headers)
+        assert selected.status_code == 200 and selected.json() == {"state": "selected", "journey_id": intended}
+        assert count(store, "onboarding_journeys") == count(store, "provisioning_browser_sessions") == 1
+
+
+def _native_entry_browser(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.provisioning.app import create_provisioning_app
+    from app.provisioning.session import NATIVE_ENTRY_COOKIE_NAME
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    clock = [10.0]
+    sessions = ProvisioningSessionManager("t" * 43, journeys=OnboardingJourneyStore(store),
+        monotonic=lambda: clock[0])
+    application = create_provisioning_app(claim_submission=lambda **_: None,
+        creator_association_initiation=lambda **_: None, creator_binding_acquisition=lambda: None,
+        completion_ready=lambda: False, finalize_action=lambda **_: None,
+        session_manager=sessions, extension_id="a" * 32)
+    browser = TestClient(application, base_url="http://bridge.localhost:17871")
+    response = browser.post("/api/v1/provisioning/handoff", headers={
+        "Authorization": "Provisioning " + "t" * 43, "X-Onboarding-Native-Entry": "discover"})
+    assert response.status_code == 200
+    code = response.json()["handoff_code"]
+    assert count(store, "onboarding_journeys") == count(store, "provisioning_browser_sessions") == 0
+    redeemed = browser.get("/provisioning/native-entry", params={"code": code}, follow_redirects=False)
+    assert redeemed.status_code == 303 and redeemed.headers["location"] == "/provisioning/native-return"
+    assert PROVISIONING_SESSION_COOKIE_NAME not in redeemed.cookies
+    cookie = f"{NATIVE_ENTRY_COOKIE_NAME}={redeemed.cookies[NATIVE_ENTRY_COOKIE_NAME]}"
+    assert count(store, "onboarding_journeys") == count(store, "provisioning_browser_sessions") == 0
+    context = browser.get("/api/v1/provisioning/native-entry", headers={"Cookie": cookie}).json()
+    return store, sessions, browser, clock, code, cookie, context
+
+
+def test_manual_native_entry_selects_once_after_discovery_without_creating_an_extra_draft(tmp_path):
+    store, sessions, browser, _, code, cookie, context = _native_entry_browser(tmp_path)
+    intended = str(uuid4())
+    headers = {"Cookie": cookie, "Origin": "http://bridge.localhost:17871", "X-Provisioning-CSRF": context["csrf_token"]}
+    response = browser.post("/api/v1/provisioning/native-entry", json={"journey_id": intended}, headers=headers)
+    assert response.status_code == 200 and response.json() == {"state": "selected", "journey_id": intended}
+    assert count(store, "onboarding_journeys") == count(store, "provisioning_browser_sessions") == 1
+    assert browser.post("/api/v1/provisioning/native-entry", json={"journey_id": intended}, headers=headers).status_code == 409
+    assert browser.get("/provisioning/native-entry", params={"code": code}).status_code == 401
+    assert count(store, "provisioning_browser_sessions") == 1
+    # Losing Set-Cookie leaves an unknown result, not another session issue.
+    assert browser.get("/api/v1/provisioning/native-entry", headers={"Cookie": cookie}).json() == {"state": "unconfirmed"}
+    session_cookie = response.cookies[PROVISIONING_SESSION_COOKIE_NAME]
+    confirmed = browser.get("/api/v1/provisioning/native-entry", headers={"Cookie": cookie + f"; {PROVISIONING_SESSION_COOKIE_NAME}={session_cookie}"})
+    assert confirmed.json() == {"state": "selected", "journey_id": intended}
+
+
+def test_native_discovery_cannot_replace_an_existing_session_or_protected_journey(tmp_path):
+    store, sessions, browser, _, _, cookie, context = _native_entry_browser(tmp_path)
+    existing_journey = OnboardingJourneyStore(store).open()["journey_id"]
+    OnboardingJourneyStore(store).update(existing_journey, state="waiting")
+    existing = sessions.redeem_handoff_code(sessions.issue_handoff_code("Provisioning " + "t" * 43, journey_id=existing_journey))
+    original = OnboardingJourneyStore(store).session(existing.identifier)
+    headers = {"Cookie": cookie + f"; {PROVISIONING_SESSION_COOKIE_NAME}={existing.identifier}",
+        "Origin": "http://bridge.localhost:17871", "X-Provisioning-CSRF": context["csrf_token"]}
+    refused = browser.post("/api/v1/provisioning/native-entry", json={"journey_id": str(uuid4())}, headers=headers)
+    assert refused.status_code == 409 and "set-cookie" not in refused.headers
+    assert count(store, "onboarding_journeys") == count(store, "provisioning_browser_sessions") == 1
+    kept = browser.post("/api/v1/provisioning/native-entry", json={"journey_id": existing_journey}, headers=headers)
+    assert kept.status_code == 200 and kept.cookies[PROVISIONING_SESSION_COOKIE_NAME] == existing.identifier
+    assert OnboardingJourneyStore(store).session(existing.identifier) == original
+    assert OnboardingJourneyStore(store).get(existing_journey)["state"] == "waiting"
+
+
+@pytest.mark.parametrize("expire_at_lock", [1, 2])
+def test_native_entry_rechecks_expiry_after_durable_write_lock_and_rolls_back_session(tmp_path, monkeypatch, expire_at_lock):
+    from contextlib import contextmanager
+    store, _, browser, clock, _, cookie, context = _native_entry_browser(tmp_path)
+    intended = OnboardingJourneyStore(store).open()["journey_id"]
+    original = store.database.transaction
+    writes = [0]
+    @contextmanager
+    def expires_at_write_lock(*args, **kwargs):
+        with original(*args, **kwargs) as connection:
+            writes[0] += 1
+            if writes[0] == expire_at_lock:
+                clock[0] += 300
+            yield connection
+    monkeypatch.setattr(store.database, "transaction", expires_at_write_lock)
+    response = browser.post("/api/v1/provisioning/native-entry", json={"journey_id": intended}, headers={
+        "Cookie": cookie, "Origin": "http://bridge.localhost:17871", "X-Provisioning-CSRF": context["csrf_token"]})
+    assert response.status_code == 401
+    assert count(store, "provisioning_browser_sessions") == 0
+
+
+def test_native_entry_expiry_at_final_insert_check_rolls_back_durable_and_memory_session(tmp_path, monkeypatch):
+    store, sessions, browser, clock, _, cookie, context = _native_entry_browser(tmp_path)
+    intended = OnboardingJourneyStore(store).open()["journey_id"]
+    original = sessions._journeys.record_session
+    def expired_after_insert(**arguments):
+        authorize = arguments.pop("authorize")
+        checks = [0]
+        def guard():
+            checks[0] += 1
+            if checks[0] == 2:
+                clock[0] += 300
+            authorize()
+        return original(**arguments, authorize=guard)
+    monkeypatch.setattr(sessions._journeys, "record_session", expired_after_insert)
+    response = browser.post("/api/v1/provisioning/native-entry", json={"journey_id": intended}, headers={
+        "Cookie": cookie, "Origin": "http://bridge.localhost:17871", "X-Provisioning-CSRF": context["csrf_token"]})
+    assert response.status_code == 401
+    assert count(store, "provisioning_browser_sessions") == 0
+    assert sessions._sessions == {}
+
+
+@pytest.mark.parametrize("failure", ["expiry", "origin", "csrf", "host", "invalid-journey", "extra-field"])
+def test_native_entry_refusals_create_no_session_or_journey(tmp_path, failure):
+    store, _, browser, clock, _, cookie, context = _native_entry_browser(tmp_path)
+    headers = {"Cookie": cookie, "Origin": "http://bridge.localhost:17871", "X-Provisioning-CSRF": context["csrf_token"]}
+    body = {"journey_id": str(uuid4())}
+    if failure == "expiry": clock[0] += 300
+    if failure == "origin": headers["Origin"] = "https://example.test"
+    if failure == "csrf": headers["X-Provisioning-CSRF"] = "wrong"
+    if failure == "host": headers["Host"] = "evil.example"
+    if failure == "invalid-journey": body["journey_id"] = "invalid"
+    if failure == "extra-field": body["creator"] = "untrusted"
+    assert browser.post("/api/v1/provisioning/native-entry", json=body, headers=headers).status_code in {400, 401, 403, 421, 422}
+    assert count(store, "onboarding_journeys") == count(store, "provisioning_browser_sessions") == 0
+
+
 def test_durable_session_reconciliation_does_not_accept_launcher_identity(tmp_path):
     store, service, port, authority, context, response = enrollment(tmp_path)
     assert not store.bridge_session_is_current(_policy(store))

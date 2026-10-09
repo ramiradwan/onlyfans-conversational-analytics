@@ -12,6 +12,9 @@ import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/
 import { createHandoffFinisher, returnToDesktop } from './ui/handoff.mjs';
 import { bindSetupTransfer, renderReceivingContext } from './ui/setup-transfer.mjs';
 import { SETUP_TRANSFER_MESSAGE } from './runtime/setup-transfer.mjs';
+import { createDesktopLaunch, desktopLaunchJourney } from './ui/desktop-launch.mjs';
+import { createWorkspaceNavigation } from './ui/workspace-navigation.mjs';
+import { LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
 
 let failed = false;
 let dismissed = false;
@@ -26,6 +29,17 @@ const page = createPageActions(client, render);
 const steps = ['agree', 'mode', 'connect', 'activate'];
 let currentJourney = null;
 let workspaceRecord = null;
+createWorkspaceNavigation({ workspace: () => workspaceRecord });
+const desktopLaunch = createDesktopLaunch({ workspace: () => workspaceRecord,
+  prepare: () => send({ type: WORKSPACE_MESSAGE_TYPE, action: 'prepare_launch' }),
+  dispatch: (url) => window.location.assign(url),
+  navigate: () => {
+    if (!workspaceRecord || location.href !== `${chrome.runtime.getURL('setup.html')}#journey=${workspaceRecord.journey_id}`) throw Error('workspace_changed');
+    location.replace(`${LOCAL_SERVICE_ORIGIN}/#journey=${workspaceRecord.journey_id}`);
+  },
+  changed: () => render(client.model),
+});
+window.addEventListener('pagehide', () => desktopLaunch.stop());
 let checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
 let receivingRead = 0, receivingExpiry = null;
 const consumeFullReviewIntent = createFullReviewIntentConsumer({ apply() {
@@ -99,6 +113,7 @@ function renderProgress(model, view, journey) {
       : view === 'access' ? 'Browser site access' : full ? (connected ? 'Full activation' : 'Connect the desktop app') : journey.title);
 }
 function render(model) {
+  desktopLaunch.observe(model);
   const { status, legal } = model;
   for (const id of ['pre-mode', 'mode-choice', 'access-card', 'journey-card', 'legal-unavailable', 'setup-progress', 'back-current']) show(id, false);
   renderLoading(status, failed);
@@ -118,7 +133,7 @@ function render(model) {
   const choose = (modeChoiceAvailable(model) && !dismissed) || (mode === 'preview' && fullReviewRequested) || reviewStep === 'mode';
   const access = status.phase === 'permission_required';
   const view = agreement || reviewStep === 'agree' ? 'agree' : choose ? 'mode' : access ? 'access' : 'journey';
-  currentJourney = customerJourney(model);
+  currentJourney = desktopLaunchJourney(customerJourney(model), desktopLaunch.state);
   document.querySelector('main').dataset.step = view;
   renderProgress(model, view, currentJourney);
   show('back-current', reviewStep !== null);
@@ -206,6 +221,7 @@ function runJourneyAction(action) {
   if (action === 'pair') return client.post('pair');
   if (action === 'cancel_pairing') return client.post('cancel');
   if (action === 'return_to_desktop') return returnToDesktop(client.model.config.dashboard_url);
+  if (action === 'open_desktop') return desktopLaunch.launch(client.model);
   if (action === 'open_dashboard') return send({ type: WORKSPACE_MESSAGE_TYPE, action: 'navigate', route: 'bridge' });
   if (action === 'open_desktop_settings') return chrome.tabs.create({ url: client.model.config.history_settings_url });
   if (action === 'open_creator_account') return openCreatorAccount();

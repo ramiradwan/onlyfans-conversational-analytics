@@ -367,6 +367,7 @@ for name in (
     'creator-platform-data-risk-disclosure.html',
     'provisioning.js',
     'resume.js',
+    'native-return.js',
 ):
     shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
 core = stage / '_internal' / 'app' / 'core'

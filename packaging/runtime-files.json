@@ -7,6 +7,7 @@
     "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
     "_internal/app/provisioning/provisioning.js",
     "_internal/app/provisioning/resume.js",
+    "_internal/app/provisioning/native-return.js",
     "_internal/contracts/manifest.json",
     "_internal/shared/onboarding/sse.mjs",
     "_internal/shared/onboarding/json.mjs",

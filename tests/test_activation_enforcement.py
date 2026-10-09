@@ -68,9 +68,12 @@ UNGATED_SURFACES: dict[str, str] = {
         "otherwise the page offers local authentication without minting authority"
     ),
     "GET /provisioning/resume.js": "static local setup-return script; no account state",
-    "GET /provisioning/provisioning.js": "static setup script requires the persisted provisioning session",
+    "GET /provisioning/native-return": "credential-free native navigation return; destination retains normal authentication",
+    "GET /provisioning/native-return.js": "static native return script; no account state",
+    "GET /provisioning/native-json.mjs": "static bounded JSON parser; no account state",
+    "GET /provisioning/provisioning.js": "static setup script requires a persisted provisioning or authenticated runtime session",
     "GET /provisioning/onboarding/{name}.mjs": (
-        "closed static module allowlist requires the persisted provisioning session"
+        "closed static module allowlist requires a persisted provisioning or authenticated runtime session"
     ),
     "GET /": "SPA shell; the client that reports an unactivated runtime to the operator",
     "GET /{frontend_path:path}": "SPA shell refresh of the same document as GET /",

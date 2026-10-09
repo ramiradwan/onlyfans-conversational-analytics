@@ -20,6 +20,7 @@ from app.provisioning.session import (
     PROVISIONING_ORIGIN,
     PROVISIONING_SESSION_COOKIE_NAME,
     ProvisioningSessionManager,
+    NATIVE_ENTRY_COOKIE_NAME,
 )
 
 
@@ -165,7 +166,12 @@ def _validated_progress(value: object) -> dict[str, str | None]:
         "stage": stage,
         "association_request_id": association_request_id,
         "creator_account_id": creator_account_id,
-    }
+}
+
+
+class NativeWorkspaceBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    journey_id: str | None
 
 
 def create_provisioning_app(
@@ -216,8 +222,18 @@ def create_provisioning_app(
     @application.post(PROVISIONING_HANDOFF_PATH, include_in_schema=False)
     async def issue_handoff(authorization: str | None = Header(default=None),
                             x_onboarding_journey: str | None = Header(default=None),
+                            x_onboarding_native_entry: str | None = Header(default=None),
                             x_onboarding_reopen: str | None = Header(default=None)) -> JSONResponse:
         sessions.require_launcher(authorization)
+        if x_onboarding_native_entry is not None:
+            if (x_onboarding_native_entry not in {"discover", "targeted"}
+                    or (x_onboarding_native_entry == "discover" and x_onboarding_journey is not None)
+                    or (x_onboarding_native_entry == "targeted" and x_onboarding_journey is None)):
+                raise HTTPException(400, "Native entry is invalid")
+            focused = events.request_focus(x_onboarding_journey)
+            if focused is not None:
+                return JSONResponse({"workspace_active": True, "journey_id": focused}, headers={"Cache-Control": "no-store"})
+            return JSONResponse({"handoff_code": sessions.issue_native_entry(authorization, journey_id=x_onboarding_journey)}, headers={"Cache-Control": "no-store"})
         try:
             workspace = sessions.launcher_workspace(x_onboarding_journey)
         except ValueError:
@@ -247,6 +263,42 @@ def create_provisioning_app(
             samesite="strict",
             path="/",
         )
+        return response
+
+    @application.get("/provisioning/native-return", include_in_schema=False)
+    async def native_return(request: Request) -> HTMLResponse:
+        from app.provisioning.native_return import native_return_shell
+        return native_return_shell(request, provisioned_extension_id())
+
+    @application.get("/provisioning/native-return.js", include_in_schema=False)
+    @application.get("/provisioning/native-json.mjs", include_in_schema=False)
+    async def native_script(request: Request) -> Response:
+        from app.provisioning.native_return import native_return_script
+        return native_return_script(request)
+
+    @application.get("/provisioning/native-entry", include_in_schema=False)
+    async def redeem_native_entry(request: Request, code: str) -> RedirectResponse:
+        sessions._require_exact_host(request)
+        if set(request.query_params) != {"code"} or len(request.query_params.getlist("code")) != 1:
+            raise HTTPException(400, "Native entry is invalid")
+        entry = sessions.redeem_native_entry(code)
+        response = RedirectResponse("/provisioning/native-return" + ("#journey=" + entry.journey_id if entry.journey_id else ""), status_code=303,
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+        response.set_cookie(NATIVE_ENTRY_COOKIE_NAME, entry.identifier,
+            httponly=True, secure=True, samesite="strict", path="/")
+        return response
+
+    @application.get("/api/v1/provisioning/native-entry", include_in_schema=False)
+    async def native_entry_context(request: Request) -> JSONResponse:
+        return JSONResponse(sessions.native_entry_context(request), headers={"Cache-Control": "no-store"})
+
+    @application.post("/api/v1/provisioning/native-entry", include_in_schema=False)
+    async def select_native_workspace(request: Request, body: NativeWorkspaceBody) -> JSONResponse:
+        session = sessions.select_native_workspace(request, body.journey_id)
+        response = JSONResponse({"state": "selected", "journey_id": session.journey_id},
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+        response.set_cookie(PROVISIONING_SESSION_COOKIE_NAME, session.identifier,
+            httponly=True, secure=True, samesite="strict", path="/")
         return response
 
     @application.get("/provisioning", include_in_schema=False)

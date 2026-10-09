@@ -282,7 +282,7 @@
         {
           "to": "extension.pairing_required",
           "by": "user",
-          "action": "retry_full"
+          "action": "open_desktop"
         }
       ],
       "evidence": [
@@ -531,7 +531,7 @@
         {
           "to": "extension.full_unavailable",
           "by": "user",
-          "action": "retry_full"
+          "action": "open_desktop"
         }
       ],
       "evidence": [

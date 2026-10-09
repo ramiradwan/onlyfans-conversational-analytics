@@ -3,6 +3,7 @@ import { LOCAL_SERVICE_ORIGIN } from '../transport/local-service-endpoints.mjs';
 import { legalReleaseBindings } from './legal-release-bindings.mjs';
 import { onboardingHostedOrigin } from './onboarding-release-config.mjs';
 import { FULL_REVIEW_INTENT_KEY, fullReviewIntent } from './onboarding-full-intent.mjs';
+import { NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE } from './onboarding-native-launch.mjs';
 
 export const WORKSPACE_MESSAGE_TYPE = 'ofca.workspace.v1';
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
@@ -55,6 +56,18 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     return result;
   }
   const listener = (message, sender, reply) => {
+    if ([NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE].includes(message?.type)) {
+      if (!exact(message, message.type === NATIVE_RETURN_TYPE ? ['type', 'journey_id', 'route'] : ['type'])) {
+        reply({ ok: false, code: 'return_unavailable' }); return false;
+      }
+      const operation = message.type === NATIVE_DISCOVER_TYPE ? workspace.discoverNativeLaunch(sender)
+        : message.type === NATIVE_FOCUS_TYPE ? workspace.focusFromNative(sender)
+          : workspace.returnFromNative(sender, { journey_id: message.journey_id, route: message.route });
+      void operation
+        .then((result) => reply({ ok: true, result }), (error) => reply({ ok: false,
+          code: ['no_workspace', 'workspace_exists'].includes(error?.message) ? error.message : 'return_unavailable' }));
+      return true;
+    }
     if (message?.type !== WORKSPACE_MESSAGE_TYPE) return false;
     const run = async () => {
       const admitted = await workspace.admit(sender);
@@ -64,6 +77,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
       }
       if (exact(message, ['type', 'action', 'route']) && message.action === 'navigate') return workspace.navigate(sender, { route: message.route });
       if (admitted.route !== 'extension') throw Error('workspace_draft_owner');
+      if (exact(message, ['type', 'action']) && message.action === 'prepare_launch') return workspace.prepareNativeLaunch(sender);
       if (exact(message, ['type', 'action', 'scope_id', 'draft']) && message.action === 'draft') {
         return workspace.saveDraft(sender, { scope_id: message.scope_id, draft: message.draft });
       }
@@ -73,6 +87,9 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     return true;
   };
   chromeApi.runtime.onMessage.addListener(listener);
+  chromeApi.runtime.onConnect?.addListener((port) => {
+    if (port.name === 'ofca.workspace.navigation.v1') void workspace.bindNavigationPort(port);
+  });
   chromeApi.runtime.onMessageExternal?.addListener(listener);
   chromeApi.action?.onClicked?.addListener(() => { void open().catch(() => undefined); });
   chromeApi.runtime.onInstalled?.addListener(({ reason }) => {

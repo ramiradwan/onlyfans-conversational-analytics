@@ -222,6 +222,11 @@ async def redeem_local_session_handoff(
     expected_host = urlsplit(settings.bridge_origin).netloc.lower()
     if request.headers.get("host", "").lower() != expected_host:
         raise HTTPException(status_code=400, detail="Unexpected local Bridge origin")
+    from app.provisioning.native_return import NATIVE_RETURN_PATH, native_journey
+    return_journey = native_journey(request)
+    discovery = request.query_params.getlist("native_discovery")
+    if discovery and (discovery != ["1"] or return_journey is not None):
+        raise HTTPException(400, "Native entry is invalid")
     code = request.query_params.get("code", "")
     if len(code) < 32 or not transport_manager.redeem_launcher_handoff(code):
         return JSONResponse(
@@ -232,7 +237,10 @@ async def redeem_local_session_handoff(
                 "Referrer-Policy": "no-referrer",
             },
         )
-    response = RedirectResponse(url="/", status_code=303)
+    target = "/" if return_journey is None else NATIVE_RETURN_PATH + "#journey=" + return_journey
+    if discovery:
+        target = NATIVE_RETURN_PATH
+    response = RedirectResponse(url=target, status_code=303)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response

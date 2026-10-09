@@ -113,9 +113,30 @@ def browser_resume_script(request: Request):
     return resume_script(request)
 
 
+@resume_router.get("/provisioning/native-return", include_in_schema=False)
+def native_return(request: Request):
+    from app.provisioning.native_return import native_return_shell
+    return native_return_shell(request, settings.extension_id)
+
+
+@resume_router.get("/provisioning/native-return.js", include_in_schema=False)
+@resume_router.get("/provisioning/native-json.mjs", include_in_schema=False)
+def native_script(request: Request):
+    from app.provisioning.native_return import native_return_script
+    return native_return_script(request)
+
+
 def _require_browser_asset_session(request):
-    ProvisioningSessionManager(None, journeys=OnboardingJourneyStore(
-        _store(settings.auth_database_path))).require_session(request)
+    try:
+        ProvisioningSessionManager(None, journeys=OnboardingJourneyStore(
+            _store(settings.auth_database_path))).require_session(request)
+    except HTTPException as error:
+        if error.status_code != 401:
+            raise
+        # Static validation modules are also used by the native return of an
+        # existing passkey-authenticated browser; they grant no setup authority.
+        from app.api.security import get_authenticated_runtime_policy
+        get_authenticated_runtime_policy(get_runtime_policy(request))
 
 
 @resume_router.get("/provisioning/provisioning.js", include_in_schema=False)

@@ -133,6 +133,82 @@ visiting hosted setup. If no live local subscription proves the workspace
 is reachable, the native recovery action asks whether to open setup; it does not
 claim that a browser tab is open or that the app connection succeeded.
 
+### Phase 3 app-link return clarification
+
+An explicit extension button may dispatch only
+`ofca://onboarding?journey=<UUID>`. Before dispatch, the admitted extension
+document arms one non-authorizing, ten-minute return intent in session storage.
+It binds the journey, creator/disclosure draft scope, owning tab and current
+document. The shorter twelve-second UI timer only offers manual-launch help;
+it does not expire valid return intent or claim the app is absent.
+
+The native launcher retains its existing local bootstrap exchange. After that
+exchange, a temporary local return document at the exact
+`/provisioning/native-return#journey=<UUID>` asks to navigate the original
+workspace to the registered provisioning or Bridge route. The local document
+first reads the exact owner endpoint. An authenticated matching snapshot can
+select its route; an explicit authentication-required response can select the
+normal local sign-in route. The latter is a navigation hint, never authenticated
+readiness or a substitute local session. Network failure, focus, HTTP reachability
+and an open browser port cannot confirm launch. The destination authenticates
+normally before using owner facts or authority.
+
+The closed `ofca.workspace.launch-return.v1` request contains only the journey
+UUID and the `provisioning` or `bridge` route. The extension admits this special
+non-owner caller only at the exact local return path and current browser document,
+with the still-current owning document and scoped explicit-launch intent. It
+receives no bootstrap code, cookie, CSRF value or owner snapshot and does not
+upgrade any readiness fact. A bounded receipt records return-in-progress before
+navigation and reconciles an ambiguous result from actual workspace ownership;
+it does not repeat navigation to discover the outcome.
+The worker admits a dedicated extension runtime port bound to the existing setup
+tab and document. A closed command carries only a nonce, current journey,
+draft scope, exact expected source URL and registered route. That document synchronously checks its current
+URL, lifecycle and scope before navigating itself. A queued command cannot navigate
+a replacement user document. The worker subscribes to tab completion before dispatch
+and confirms the exact destination and new document within ten seconds, without
+polling, redispatch or new browser permissions. The authenticated desktop continuation
+also navigates the current setup document synchronously.
+
+Only absence of any live registered workspace permits ordinary native entry.
+Absent, expired or mismatched intent alongside an existing workspace must not
+create a competing wizard. A successful return allows the temporary document to
+close itself; the extension never closes an arbitrary tab. Completion activates
+the owner only while the returning native tab and its window are still foreground;
+otherwise it only updates the owner's registered destination. A slow startup must
+not steal focus from a later user task. All product-requested
+OnlyFans reloads and navigation remain prohibited. This clarification requires
+independent architecture review with the app-link implementation before commit.
+
+Manual launch from the Start menu has no journey argument. Before binding a new
+journey or issuing its session, the bare local native-return document may request
+`ofca.workspace.launch-discover.v1` with no other fields. It receives only the
+journey UUID of the sole live, current, explicitly armed pending intent. This
+read neither consumes nor extends intent. The native side keeps its expiring,
+single-use bootstrap proof entirely same-origin; discovery cannot create or
+extend authority and cannot retarget an existing protected local journey.
+For both unconfigured explicit URI and manual launch, the fixed `/provisioning/native-entry` consumes
+the native code into a separate HttpOnly entry cookie, then immediately redirects
+to the credential-free native-return document. Explicit URI entry retains its
+server-bound journey in the fragment; manual entry remains bare, including after
+discovery. Chrome may retain the original document URL in external-message sender
+metadata after a history-only fragment change, so the bare callback may return
+only its already discovered journey under the same current intent and owner guards.
+The initial navigation never replaces an existing provisioning cookie; same-origin
+selection observes that cookie even when the initial cross-site navigation omitted it.
+The local entry/selection endpoints retain
+the original bootstrap deadline (at most 300 seconds), use same-origin CSRF and
+single-use selection, and establish the normal session only after selecting the
+journey. A lost selection response uses read-only reconciliation. An existing
+valid provisioning session is retained; a different selected journey is refused.
+Configured runtime launch continues through normal local passkey authentication;
+discovery and return do not mint a local user session.
+An expired/mismatched intent beside a live workspace refuses ordinary entry.
+An explicit recovery button may send `ofca.workspace.launch-focus.v1`, without
+other fields, from the exact local return document. It only focuses the current
+registered owner and returns a closed `focused` receipt; it never opens or
+navigates a tab and never claims authenticated readiness.
+
 Receiving setup codes use a dedicated, expiring workflow key. They do not grant
 creator identity, local authentication, consent, installation registration, pairing,
 or commercial rights. The hosted receiver separately authenticates the user and

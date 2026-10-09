@@ -128,6 +128,38 @@ def test_unknown_hosted_tab_requires_explicit_recovery_before_new_handoff(tmp_pa
     assert requests[-1][1]["X-Onboarding-Journey"] == journey
 
 
+@pytest.mark.parametrize("provisioning", [False, True])
+def test_explicit_native_app_link_preserves_only_its_journey_on_fixed_bootstrap(tmp_path, provisioning):
+    from urllib.parse import parse_qs, urlsplit
+    from uuid import uuid4
+    journey = str(uuid4())
+    launcher, _, _, _, requests = launcher_with_response(
+        tmp_path, FakeResponse(200, {"handoff_code": "r" * 43}, {}))
+    launcher.journey_id = journey
+    launcher.native_return = True
+    target = (launcher._request_provisioning_browser_target("t" * 43) if provisioning
+              else launcher._request_browser_target("t" * 43))
+    parsed = urlsplit(target)
+    assert parsed.netloc == BRIDGE_CONTROL_HOST
+    assert parsed.path == ("/provisioning/native-entry" if provisioning else HANDOFF_PATH)
+    assert parse_qs(parsed.query) == ({"code": ["r" * 43]} if provisioning else {"code": ["r" * 43], "native_journey": [journey]})
+    if provisioning:
+        assert requests[-1][1]["X-Onboarding-Native-Entry"] == "targeted"
+    assert requests[-1][1]["X-Onboarding-Journey"] == journey
+    assert "t" * 43 not in target
+
+
+def test_consumed_runtime_launch_retains_native_return_without_reusing_bootstrap(tmp_path):
+    from uuid import uuid4
+    launcher, _, _, browser_urls, _ = launcher_with_response(tmp_path,
+        FakeResponse(409, {"detail": "launcher_bootstrap_already_consumed"}, {}))
+    launcher.journey_id = str(uuid4())
+    launcher.native_return = True
+    target = launcher.launch()
+    assert target == BRIDGE_ORIGIN + "/provisioning/native-return#journey=" + launcher.journey_id
+    assert browser_urls == [target]
+
+
 class FakeOwnership:
     def __init__(
         self,

@@ -89,6 +89,7 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
         "creator-platform-data-risk-disclosure.html",
         "provisioning.js",
         "resume.js",
+        "native-return.js",
     ):
         shutil.copy2(ROOT / "app" / "provisioning" / name, provisioning / name)
     shared = stage / "_internal" / "shared" / "onboarding"
@@ -170,6 +171,7 @@ def test_required_files_cover_the_provisioning_page_assets(tmp_path: Path) -> No
         "_internal/app/provisioning/provisioning.html",
         "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
         "_internal/app/provisioning/provisioning.js",
+        "_internal/app/provisioning/native-return.js",
     }
 
     assert assets <= required

@@ -230,6 +230,12 @@ def test_provisioning_app_exposes_no_runtime_route() -> None:
         ("/provisioning/creator-platform-data-risk-disclosure.html", ("GET",)),
         ("/provisioning/provisioning.js", ("GET",)),
         ("/provisioning/resume.js", ("GET",)),
+        ("/provisioning/native-return", ("GET",)),
+        ("/provisioning/native-return.js", ("GET",)),
+        ("/provisioning/native-json.mjs", ("GET",)),
+        ("/provisioning/native-entry", ("GET",)),
+        ("/api/v1/provisioning/native-entry", ("GET",)),
+        ("/api/v1/provisioning/native-entry", ("POST",)),
         ("/api/v1/provisioning/status", ("GET",)),
         ("/api/v1/provisioning/state", ("GET",)),
         ("/api/v1/provisioning/events", ("GET",)),
@@ -258,6 +264,24 @@ def test_shell_serves_module_relative_provisioning_document_and_script() -> None
     assert script.status_code == 200
     assert script.headers["content-type"].startswith("application/javascript")
     assert "createProvisioningController" in script.text
+
+
+def test_native_return_is_a_credential_free_exact_host_static_document():
+    client = TestClient(provisioning_app(), base_url=PROVISIONING_ORIGIN)
+    response = client.get("/provisioning/native-return")
+    assert response.status_code == 200
+    assert "native-return.js" in response.text
+    assert f'data-extension-id="{EXTENSION_ID}"' in response.text
+    assert "set-cookie" not in response.headers
+    assert "csrf" not in response.text.lower()
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    for path in ["/provisioning/native-return", "/provisioning/native-return.js"]:
+        assert client.get(path, headers={"Host": "evil.example"}).status_code == 421
+        assert client.get(path + "?code=untrusted").status_code == 400
+    script = client.get("/provisioning/native-return.js")
+    assert script.status_code == 200
+    assert script.headers["content-type"].startswith("application/javascript")
 
 
 def test_shell_links_to_session_bound_frozen_disclosure() -> None:

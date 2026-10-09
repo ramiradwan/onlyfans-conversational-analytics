@@ -95,13 +95,17 @@ class OnboardingJourneyStore:
     def new_operation(self) -> str:
         return _new_uuid7(self.authentication._now())
 
-    def record_session(self, *, identifier: str, csrf: str, journey_id: str, expires_at: float) -> None:
+    def record_session(self, *, identifier: str, csrf: str, journey_id: str, expires_at: float, authorize=None) -> None:
         with self.authentication.database.transaction() as connection:
+            if authorize is not None:
+                authorize()
             connection.execute("DELETE FROM provisioning_browser_sessions WHERE expires_at <= ?", (self.authentication._now().timestamp(),))
             if connection.execute("SELECT count(*) FROM provisioning_browser_sessions").fetchone()[0] >= 128:
                 raise ValueError("Onboarding browser session limit reached")
             connection.execute("INSERT INTO provisioning_browser_sessions VALUES (?,?,?,?)",
                                (_digest(identifier), _digest(csrf), require_journey(journey_id), expires_at))
+            if authorize is not None:
+                authorize()
 
     def session(self, identifier: str) -> dict | None:
         with self.authentication.database.read() as connection:
