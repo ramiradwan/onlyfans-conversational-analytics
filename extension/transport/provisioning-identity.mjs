@@ -188,6 +188,7 @@ export function createProvisioningIdentityBridge({
   const accountListeners = new Set();
   const notifyAccount = () => { for (const listener of accountListeners) listener(); };
   const observedDocuments = new Map();
+  let persistedContextTabs = null;
   const documentGenerations = new Map();
   const invalidateDocument = (tabId) => {
     documentGenerations.set(tabId, (documentGenerations.get(tabId) ?? 0) + 1);
@@ -205,14 +206,16 @@ export function createProvisioningIdentityBridge({
 
   const loadContexts = async () => {
     const stored = await storageGet(sessionStorage, PROVISIONING_IDENTITY_STORAGE_KEY, chromeApi);
-    return normalizeContexts(stored[PROVISIONING_IDENTITY_STORAGE_KEY])
-      .filter((context) => context.consent_epoch === currentConsent()?.consent_epoch);
+    const contexts = normalizeContexts(stored[PROVISIONING_IDENTITY_STORAGE_KEY]);
+    persistedContextTabs = new Set(contexts.map((context) => context.tab_id));
+    return contexts.filter((context) => context.consent_epoch === currentConsent()?.consent_epoch);
   };
   const publishContexts = async (contexts, previous) => {
     const document = storedDocument(contexts);
     await storageSet(sessionStorage, {
       [PROVISIONING_IDENTITY_STORAGE_KEY]: document,
     }, chromeApi);
+    persistedContextTabs = new Set(document.contexts.map((context) => context.tab_id));
     // The early notification fences work immediately. Readers also need an
     // event after persistence so they cannot keep the previous account until
     // an unrelated tab event happens to wake them.
@@ -286,13 +289,18 @@ export function createProvisioningIdentityBridge({
     generation += 1;
     documentGenerations.clear();
     observedDocuments.clear();
+    persistedContextTabs = null;
     notifyAccount();
     return serializeContext(async () => publishContexts([], await loadContexts()));
   };
   const removeTab = (tabId) => {
+    const affectsIdentity = persistedContextTabs === null || persistedContextTabs.has(tabId)
+      || observedDocuments.has(tabId);
     invalidateDocument(tabId);
     observedDocuments.delete(tabId);
-    notifyAccount();
+    // Unknown restored membership remains conservative. Once loaded, lifecycle
+    // changes to unrelated setup tabs cannot invalidate the creator context.
+    if (affectsIdentity) notifyAccount();
     void (async () => {
       // A tab lifecycle event can be the event that wakes a cold MV3 worker.
       // Wait until persisted consent has been restored before filtering durable

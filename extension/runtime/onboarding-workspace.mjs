@@ -1,6 +1,7 @@
 // Navigation and unfinished checkbox choices only. This module cannot grant
 // consent, authenticate a creator, pair a computer, or start capture.
-import { NATIVE_LAUNCH_KEY, NATIVE_LAUNCH_TTL_MS, NATIVE_RETURN_PATH, nativeReturnJourney, workspaceAppLink } from './onboarding-native-launch.mjs';
+import { NATIVE_LAUNCH_KEY, NATIVE_LAUNCH_TTL_MS, NATIVE_RECOVERY_KEY, NATIVE_RECOVERY_TTL_MS,
+  NATIVE_RETURN_PATH, nativeReturnJourney, workspaceAppLink } from './onboarding-native-launch.mjs';
 export const WORKSPACE_RECORD_KEY = 'onboarding_workspace_v1';
 export const WORKSPACE_TAB_KEY = 'onboarding_workspace_tab_v1';
 export const WORKSPACE_ACTIVITY_KEY = 'onboarding_workspace_activity_v1';
@@ -34,6 +35,9 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     registered.set(url.href, route);
   }
   let queue = Promise.resolve();
+  let activityRevision = 0;
+  chromeApi.tabs.onActivated?.addListener(() => { activityRevision++; });
+  chromeApi.windows.onFocusChanged?.addListener(() => { activityRevision++; });
   const navigationPorts = new Map();
   const localOrigin = new URL(routes.bridge).origin;
   const nativeEntryUrl = `${localOrigin}${NATIVE_RETURN_PATH}`;
@@ -175,12 +179,72 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       if (id !== owner.id || change.status !== 'complete') return;
       void getTab(id).then((current) => {
         if (current.url === target && current.documentId && current.documentId !== owner.documentId) finish(current);
-        else if (current.url !== owner.url) finish(null);
+        else if (current.url !== owner.url && current.url !== target) finish(null);
       }, () => finish(null));
     };
     const timer = setTimeout(() => finish(null), navigationTimeoutMs);
     chromeApi.tabs.onUpdated.addListener(changed);
     return { promise, cancel: () => finish(null) };
+  }
+  const sameDocument = (tab, expected) => tab?.id === expected?.tab_id
+    && tab.documentId === expected.document_id && tab.url === expected.url;
+  const documentReference = (tab) => ({ tab_id: tab.id, document_id: tab.documentId, url: tab.url });
+  const sameScope = (a, b) => a?.scope_id === b?.scope_id && a?.disclosure_bundle_id === b?.disclosure_bundle_id;
+  async function identityFor(record) {
+    const identity = (await chromeApi.storage.local.get(WORKSPACE_IDENTITY_KEY))[WORKSPACE_IDENTITY_KEY];
+    if (!exact(identity, ['version', 'journey_id', 'scope_id', 'disclosure_bundle_id', 'account_digest'])
+      || identity.version !== 1 || identity.journey_id !== record.journey_id || !sameScope(identity, record.draft_scope)
+      || (identity.account_digest !== null && !/^[0-9a-f]{64}$/u.test(identity.account_digest))) fail('return_unavailable');
+    return identity;
+  }
+  async function recoveryOwner(record) {
+    const candidates = await registeredTabs();
+    if (candidates.length > 1 || candidates.some((tab) => parse(tab.url).journeyId !== record.journey_id)) fail('workspace_exists');
+    const owner = candidates[0] ? await getTab(candidates[0].id) : null;
+    if (owner && (!owner.documentId || !['extension', 'provisioning'].includes(parse(owner.url)?.route))) fail('workspace_exists');
+    if (!owner && !['extension', 'provisioning'].includes(record.route)) fail('workspace_exists');
+    return owner;
+  }
+  async function focusWhileCurrent(source, owner, currentScope = () => true) {
+    const activity = activityRevision;
+    const current = await getTab(source.id);
+    const window = await chromeApi.windows.get(source.windowId);
+    if (!sameDocument(current, documentReference(source)) || current.active !== true || window.focused !== true) return;
+    const currentOwner = await getTab(owner.id);
+    if (!sameDocument(currentOwner, documentReference(owner)) || !currentScope()) fail('return_unavailable');
+    if (activity !== activityRevision) return;
+    await chromeApi.tabs.update(owner.id, { active: true });
+    if (owner.windowId !== source.windowId && activity === activityRevision && currentScope()) {
+      await chromeApi.windows.update(owner.windowId, { focused: true });
+    }
+  }
+  async function recoveryIntent() {
+    const intent = (await chromeApi.storage.session.get(NATIVE_RECOVERY_KEY))[NATIVE_RECOVERY_KEY];
+    const document = (value) => exact(value, ['tab_id', 'document_id', 'url']) && Number.isInteger(value.tab_id)
+      && typeof value.document_id === 'string' && typeof value.url === 'string';
+    if (!exact(intent, ['version', 'recovery_id', 'entry_id', 'previous_journey_id', 'draft_scope', 'account_digest',
+      'source', 'owner', 'created_at', 'expires_at', 'phase', 'journey_id', 'target_document_id']) || intent.version !== 1
+      || !UUID.test(intent.recovery_id) || !UUID.test(intent.entry_id) || !UUID.test(intent.previous_journey_id)
+      || !validScope(intent.draft_scope) || (intent.account_digest !== null && !/^[0-9a-f]{64}$/u.test(intent.account_digest))
+      || !document(intent.source) || (intent.owner !== null && !document(intent.owner))
+      || !Number.isSafeInteger(intent.created_at) || intent.created_at > now()
+      || intent.expires_at !== intent.created_at + NATIVE_RECOVERY_TTL_MS || intent.expires_at <= now()
+      || !['prepared', 'returning', 'returned'].includes(intent.phase)
+      || (intent.journey_id !== null && !UUID.test(intent.journey_id))
+      || (intent.target_document_id !== null && typeof intent.target_document_id !== 'string')) return null;
+    return intent;
+  }
+  async function finishRecovery(intent, current, record, identity) {
+    // This changes presentation ownership only. The destination authenticates
+    // the selected journey using its own local session.
+    record.journey_id = intent.journey_id; record.route = 'provisioning';
+    identity.journey_id = intent.journey_id;
+    await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record, [WORKSPACE_IDENTITY_KEY]: identity,
+      [WORKSPACE_ACTIVITY_KEY]: now() });
+    await storeTab(current, record.journey_id);
+    intent.phase = 'returned'; intent.target_document_id = current.documentId;
+    await chromeApi.storage.session.set({ [NATIVE_RECOVERY_KEY]: intent });
+    return { status: intent.owner === null ? 'continued' : 'returned' };
   }
   return Object.freeze({
     reference,
@@ -235,6 +299,109 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       await chromeApi.windows.update(owner.windowId, { focused: true });
       return { status: 'focused' };
     }),
+    prepareNativeRecovery: (sender, request, currentScope = () => true) => serialize(async () => {
+      if (!exact(request, ['entry_id']) || !UUID.test(request.entry_id) || !currentScope()) fail('return_unavailable');
+      const source = await nativeCaller(sender);
+      const record = await readRecord();
+      if (!record) {
+        if ((await registeredTabs()).length) fail('workspace_exists');
+        fail('no_workspace');
+      }
+      const targeted = nativeReturnJourney(source.url, localOrigin);
+      if (targeted !== null && targeted !== record.journey_id) fail('workspace_exists');
+      const identity = await identityFor(record);
+      const owner = await recoveryOwner(record);
+      if (owner?.id === source.id) fail('return_unavailable');
+      const launch = (await chromeApi.storage.session.get(NATIVE_LAUNCH_KEY))[NATIVE_LAUNCH_KEY];
+      if (!currentScope()) fail('return_unavailable');
+      if (owner && currentLaunch(launch, record, owner) && launch.phase === 'pending'
+        && sameDocument(owner, { tab_id: launch.tab_id, document_id: launch.document_id, url: launch.url })) {
+        return { status: 'launch_pending', journey_id: record.journey_id };
+      }
+      if (owner && parse(owner.url)?.route === 'extension' && launch?.phase === 'pending'
+        && launch.version === 1 && launch.journey_id === record.journey_id && sameScope(launch.draft_scope, record.draft_scope)
+        && Number.isSafeInteger(launch.created_at) && launch.created_at <= now()
+        && launch.expires_at === launch.created_at + NATIVE_LAUNCH_TTL_MS && launch.expires_at <= now()
+        && sameDocument(owner, { tab_id: launch.tab_id, document_id: launch.document_id, url: launch.url })) {
+        await focusWhileCurrent(source, owner, currentScope);
+        if (!currentScope()) fail('return_unavailable');
+        return { status: 'launch_expired' };
+      }
+      const previous = await recoveryIntent();
+      if (!currentScope()) fail('return_unavailable');
+      if (previous?.phase === 'returning') fail('return_unavailable');
+      if (previous?.phase === 'prepared' && previous.entry_id === request.entry_id && sameDocument(source, previous.source)
+        && previous.previous_journey_id === record.journey_id && sameScope(previous.draft_scope, record.draft_scope)
+        && previous.account_digest === identity.account_digest
+        && (previous.owner === null ? owner === null : sameDocument(owner, previous.owner))) {
+        return { status: 'recovery_ready', recovery_id: previous.recovery_id, previous_journey_id: record.journey_id };
+      }
+      const createdAt = now();
+      const intent = { version: 1, recovery_id: crypto.randomUUID(), entry_id: request.entry_id,
+        previous_journey_id: record.journey_id, draft_scope: { ...record.draft_scope }, account_digest: identity.account_digest,
+        source: documentReference(source), owner: owner ? documentReference(owner) : null,
+        created_at: createdAt, expires_at: createdAt + NATIVE_RECOVERY_TTL_MS, phase: 'prepared',
+        journey_id: null, target_document_id: null };
+      await chromeApi.storage.session.set({ [NATIVE_RECOVERY_KEY]: intent });
+      return { status: 'recovery_ready', recovery_id: intent.recovery_id, previous_journey_id: record.journey_id };
+    }),
+    returnFromNativeRecovery: (sender, request, currentScope = () => true) => serialize(async () => {
+      if (!exact(request, ['entry_id', 'recovery_id', 'previous_journey_id', 'journey_id', 'route'])
+        || !['entry_id', 'recovery_id', 'previous_journey_id', 'journey_id'].every((key) => UUID.test(request[key]))
+        || request.route !== 'provisioning' || !currentScope()) fail('return_unavailable');
+      const source = await nativeCaller(sender);
+      const intent = await recoveryIntent();
+      if (!intent || !sameDocument(source, intent.source) || request.entry_id !== intent.entry_id
+        || request.recovery_id !== intent.recovery_id || request.previous_journey_id !== intent.previous_journey_id
+        || (intent.journey_id !== null && intent.journey_id !== request.journey_id)) fail('return_unavailable');
+      const record = await readRecord();
+      if (!record || ![intent.previous_journey_id, intent.journey_id].includes(record.journey_id)
+        || !sameScope(record.draft_scope, intent.draft_scope)) fail('return_unavailable');
+      const identity = await identityFor(record);
+      if (identity.account_digest !== intent.account_digest) fail('return_unavailable');
+      const target = reference('provisioning', request.journey_id);
+      if (intent.phase !== 'prepared') {
+        const current = await getTab(intent.owner?.tab_id ?? source.id);
+        if (current.url !== target || !current.documentId || current.documentId === (intent.owner ?? intent.source).document_id
+          || (intent.target_document_id !== null && current.documentId !== intent.target_document_id)) fail('return_unavailable');
+        const candidates = await registeredTabs();
+        if (candidates.length !== 1 || candidates[0].id !== current.id || !currentScope()) fail('workspace_exists');
+        return finishRecovery(intent, current, record, identity);
+      }
+      const owner = await recoveryOwner(record);
+      if (intent.owner === null ? owner !== null : !sameDocument(owner, intent.owner)) fail('workspace_exists');
+      const destination = owner ?? source;
+      intent.phase = 'returning'; intent.journey_id = request.journey_id;
+      await chromeApi.storage.session.set({ [NATIVE_RECOVERY_KEY]: intent });
+      await nativeCaller(sender);
+      if (owner && !sameDocument(await getTab(owner.id), intent.owner)) fail('return_unavailable');
+      if (!currentScope()) fail('return_unavailable');
+      const navigation = watchNavigation(destination, target);
+      try {
+        if (owner && parse(owner.url)?.route === 'extension') {
+          const port = navigationPorts.get(`${owner.id}:${owner.documentId}`);
+          if (!port) throw Error('return_unavailable');
+          port.postMessage({ type: 'recover', request_id: crypto.randomUUID(), previous_journey_id: intent.previous_journey_id,
+            journey_id: request.journey_id, draft_scope: { ...intent.draft_scope }, expected_url: owner.url, route: 'provisioning' });
+        } else {
+          // Exact document targeting and the synchronous URL guard prevent a
+          // reused tab or a different document from receiving navigation.
+          await chromeApi.scripting.executeScript({ target: { tabId: destination.id, documentIds: [destination.documentId] },
+            world: 'ISOLATED', args: [destination.url, target], func: (expected, url) => {
+              if (location.href !== expected || !/^http:\/\/bridge\.localhost:17871\/provisioning#journey=[0-9a-f-]{36}$/u.test(url)) return;
+              history.replaceState(null, '', url); location.reload();
+            } });
+        }
+      } catch { /* A lost acknowledgement is observed, never dispatched again. */ }
+      const current = await navigation.promise;
+      if (!current || !currentScope()) fail('return_unavailable');
+      if (owner) {
+        await nativeCaller(sender);
+        await focusWhileCurrent(source, current, currentScope);
+      }
+      if (!currentScope()) fail('return_unavailable');
+      return finishRecovery(intent, current, record, identity);
+    }),
     returnFromNative: (sender, request) => serialize(async () => {
       if (!exact(request, ['journey_id', 'route']) || !UUID.test(request.journey_id)
         || !['provisioning', 'bridge'].includes(request.route)) fail('return_unavailable');
@@ -281,12 +448,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       if (!current) fail('return_unavailable');
       // A slow launch must not steal focus after the user switches elsewhere.
       // Returning from the still-foreground native page may select its owner.
-      const activeReturn = await getTab(source.id);
-      const activeWindow = await chromeApi.windows.get(source.windowId);
-      if (foreground && activeReturn.documentId === source.documentId && activeReturn.active === true && activeWindow.focused === true) {
-        await chromeApi.tabs.update(owner.id, { active: true });
-        if (owner.windowId !== source.windowId) await chromeApi.windows.update(owner.windowId, { focused: true });
-      }
+      if (foreground) await focusWhileCurrent(source, current);
       record.route = request.route;
       await saveRecord(record); await storeTab(current, record.journey_id);
       intent.phase = 'returned';

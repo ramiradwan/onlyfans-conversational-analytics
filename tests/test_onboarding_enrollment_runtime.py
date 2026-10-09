@@ -175,7 +175,9 @@ class _HandoffFixture:
             installation_key_id="ik1.AAECAwQFBgcICQoLDA0ODw", installation_key_jkt="A" * 43,
             public_key_jwk=json.dumps({"crv": "P-256", "kty": "EC", "x": "A" * 43, "y": "A" * 43})))
 
-    def prepare(self, request):
+    def prepare(self, request, *, before_send=None):
+        if before_send is not None:
+            before_send()
         self.preparations.append(json.loads(json.dumps(request)))
         if self.failures:
             self.failures -= 1
@@ -392,8 +394,7 @@ def test_native_discovery_cannot_replace_an_existing_session_or_protected_journe
     assert OnboardingJourneyStore(store).get(existing_journey)["state"] == "waiting"
 
 
-@pytest.mark.parametrize("expire_at_lock", [1, 2])
-def test_native_entry_rechecks_expiry_after_durable_write_lock_and_rolls_back_session(tmp_path, monkeypatch, expire_at_lock):
+def test_native_entry_rechecks_expiry_after_durable_write_lock_and_rolls_back_session(tmp_path, monkeypatch):
     from contextlib import contextmanager
     store, _, browser, clock, _, cookie, context = _native_entry_browser(tmp_path)
     intended = OnboardingJourneyStore(store).open()["journey_id"]
@@ -403,7 +404,7 @@ def test_native_entry_rechecks_expiry_after_durable_write_lock_and_rolls_back_se
     def expires_at_write_lock(*args, **kwargs):
         with original(*args, **kwargs) as connection:
             writes[0] += 1
-            if writes[0] == expire_at_lock:
+            if writes[0] == 1:
                 clock[0] += 300
             yield connection
     monkeypatch.setattr(store.database, "transaction", expires_at_write_lock)

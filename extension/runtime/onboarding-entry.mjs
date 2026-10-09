@@ -3,7 +3,8 @@ import { LOCAL_SERVICE_ORIGIN } from '../transport/local-service-endpoints.mjs';
 import { legalReleaseBindings } from './legal-release-bindings.mjs';
 import { onboardingHostedOrigin } from './onboarding-release-config.mjs';
 import { FULL_REVIEW_INTENT_KEY, fullReviewIntent } from './onboarding-full-intent.mjs';
-import { NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE } from './onboarding-native-launch.mjs';
+import { NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE,
+  NATIVE_RECOVERY_PREPARE_TYPE, NATIVE_RECOVERY_RETURN_TYPE } from './onboarding-native-launch.mjs';
 
 export const WORKSPACE_MESSAGE_TYPE = 'ofca.workspace.v1';
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
@@ -45,7 +46,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
         if (revision !== identityRevision) continue;
         await scope();
         await workspace.reconcileIdentity({ account_digest });
-        if (revision === identityRevision) return;
+        if (revision === identityRevision) return revision;
       }
     });
     identityQueue = operation.catch(() => undefined);
@@ -75,13 +76,23 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     return result;
   }
   const listener = (message, sender, reply) => {
-    if ([NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE].includes(message?.type)) {
-      if (!exact(message, message.type === NATIVE_RETURN_TYPE ? ['type', 'journey_id', 'route'] : ['type'])) {
+    if ([NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE, NATIVE_RECOVERY_PREPARE_TYPE, NATIVE_RECOVERY_RETURN_TYPE].includes(message?.type)) {
+      const keys = message.type === NATIVE_RETURN_TYPE ? ['type', 'journey_id', 'route']
+        : message.type === NATIVE_RECOVERY_PREPARE_TYPE ? ['type', 'entry_id']
+          : message.type === NATIVE_RECOVERY_RETURN_TYPE ? ['type', 'entry_id', 'recovery_id', 'previous_journey_id', 'journey_id', 'route'] : ['type'];
+      if (!exact(message, keys)) {
         reply({ ok: false, code: 'return_unavailable' }); return false;
       }
-      const operation = reconcileAccount().then(() => message.type === NATIVE_DISCOVER_TYPE ? workspace.discoverNativeLaunch(sender)
-        : message.type === NATIVE_FOCUS_TYPE ? workspace.focusFromNative(sender)
-          : workspace.returnFromNative(sender, { journey_id: message.journey_id, route: message.route }));
+      const operation = reconcileAccount().then((revision) => {
+        const currentScope = () => revision === identityRevision;
+        if (message.type === NATIVE_DISCOVER_TYPE) return workspace.discoverNativeLaunch(sender);
+        if (message.type === NATIVE_FOCUS_TYPE) return workspace.focusFromNative(sender);
+        if (message.type === NATIVE_RECOVERY_PREPARE_TYPE) return workspace.prepareNativeRecovery(sender, { entry_id: message.entry_id }, currentScope);
+        if (message.type === NATIVE_RECOVERY_RETURN_TYPE) return workspace.returnFromNativeRecovery(sender, {
+          entry_id: message.entry_id, recovery_id: message.recovery_id, previous_journey_id: message.previous_journey_id,
+          journey_id: message.journey_id, route: message.route }, currentScope);
+        return workspace.returnFromNative(sender, { journey_id: message.journey_id, route: message.route });
+      });
       void operation
         .then((result) => reply({ ok: true, result }), (error) => reply({ ok: false,
           code: ['no_workspace', 'workspace_exists'].includes(error?.message) ? error.message : 'return_unavailable' }));

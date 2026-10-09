@@ -24,20 +24,23 @@ export function createWorkspaceNavigation({ workspace, runtime = globalThis.chro
     });
     connected.onMessage.addListener((request) => {
       if (active && connected === port && exact(request, ['type']) && request.type === 'ready') { attempts = 0; return; }
-      if (!active || navigating || connected !== port || !exact(request,
-        ['type', 'request_id', 'journey_id', 'draft_scope', 'expected_url', 'route'])
-        || request.type !== 'navigate' || !UUID.test(request.request_id) || seen.has(request.request_id)
+      const recovery = request?.type === 'recover';
+      if (!active || navigating || connected !== port || !exact(request, recovery
+        ? ['type', 'request_id', 'journey_id', 'previous_journey_id', 'draft_scope', 'expected_url', 'route']
+        : ['type', 'request_id', 'journey_id', 'draft_scope', 'expected_url', 'route'])
+        || (!recovery && request.type !== 'navigate') || !UUID.test(request.request_id) || seen.has(request.request_id)
+        || !UUID.test(request.journey_id) || (recovery && (!UUID.test(request.previous_journey_id) || request.route !== 'provisioning'))
         || !['provisioning', 'bridge'].includes(request.route)
         || !exact(request.draft_scope, ['scope_id', 'disclosure_bundle_id'])) return;
       const current = workspace();
-      if (!current || current.journey_id !== request.journey_id
+      if (!current || current.journey_id !== (recovery ? request.previous_journey_id : request.journey_id)
         || current.draft_scope.scope_id !== request.draft_scope.scope_id
         || current.draft_scope.disclosure_bundle_id !== request.draft_scope.disclosure_bundle_id
         || location.href !== request.expected_url
         || location.href !== `${runtime.getURL('setup.html')}#journey=${current.journey_id}`) return;
       if (seen.size >= 64) return;
       seen.add(request.request_id); navigating = true;
-      location.replace(`${LOCAL_SERVICE_ORIGIN}${request.route === 'bridge' ? '/' : '/provisioning'}#journey=${current.journey_id}`);
+      location.replace(`${LOCAL_SERVICE_ORIGIN}${request.route === 'bridge' ? '/' : '/provisioning'}#journey=${request.journey_id}`);
     });
   };
   window.addEventListener('pagehide', stop);

@@ -29,12 +29,12 @@ class OnboardingEvents:
         with self._lock:
             self._commit_serial += 1
             listeners = tuple(self._listeners)
-        for loop, signal, _ in listeners:
+        for loop, signal, *_ in listeners:
             if not loop.is_closed():
                 loop.call_soon_threadsafe(signal.set)
 
-    def subscribe(self, journey_id=None):
-        listener = (asyncio.get_running_loop(), asyncio.Event(), journey_id)
+    def subscribe(self, journey_id=None, *, authorize=None, expires_in=None):
+        listener = (asyncio.get_running_loop(), asyncio.Event(), journey_id, authorize, expires_in)
         with self._lock:
             self._listeners.add(listener)
         return listener
@@ -42,14 +42,33 @@ class OnboardingEvents:
     def request_focus(self, journey_id: str | None = None) -> str | None:
         """Signal only a live authenticated workspace; never infer a hosted tab."""
         with self._lock:
-            candidates = {item[2] for item in self._listeners if item[2] is not None}
+            registered = tuple(self._listeners)
+        eligible = []
+        for listener in registered:
+            loop, signal, scope, authorize, expires_in = listener
+            try:
+                if loop.is_closed() or scope is None:
+                    continue
+                if authorize is not None:
+                    authorize()
+                remaining = None if expires_in is None else expires_in()
+                if remaining is not None and remaining <= 0:
+                    raise ValueError("Workspace expired")
+            except Exception:
+                if not loop.is_closed():
+                    loop.call_soon_threadsafe(signal.set)
+                continue
+            eligible.append(listener)
+        with self._lock:
+            eligible = [item for item in eligible if item in self._listeners]
+            candidates = {item[2] for item in eligible}
             if journey_id is None and len(candidates) == 1:
                 journey_id = next(iter(candidates))
             if journey_id is None or journey_id not in candidates:
                 return None
             self._focus[journey_id] = self._focus.get(journey_id, 0) + 1
-            listeners = tuple(item for item in self._listeners if item[2] == journey_id)
-        for loop, signal, _ in listeners:
+            listeners = tuple(item for item in eligible if item[2] == journey_id)
+        for loop, signal, *_ in listeners:
             if not loop.is_closed():
                 loop.call_soon_threadsafe(signal.set)
         return journey_id
@@ -73,7 +92,7 @@ class OnboardingEvents:
 
     async def stream(self, read_snapshot, authorize, *, journey_id=None, expires_in=None):
         # Subscribe first; a commit during snapshot reads keeps the signal set.
-        listener = self.subscribe(journey_id)
+        listener = self.subscribe(journey_id, authorize=authorize, expires_in=expires_in)
         signal = listener[1]
         last = None
         focused = self._focus.get(journey_id, 0)

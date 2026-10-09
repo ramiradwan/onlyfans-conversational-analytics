@@ -139,13 +139,13 @@ class InitialHandoffClient:
         self.key = key
         self.clock = clock
 
-    def envelope(self, operation: str, request: dict) -> dict:
+    def envelope(self, operation: str, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
         if operation not in {"prepare", "wait", "complete", "receipt"}:
             raise ValueError("Invalid handoff operation")
         key = self.key.ensure_ready()
         purpose = "initial-handoff-" + operation
         challenge = self._request(CHALLENGE_PATH, {"profile": PROOF_PROFILE,
-            "target": {"operation": purpose, "request": request}}, expected=200)
+            "target": {"operation": purpose, "request": request}}, expected=200, before_send=before_send)
         digest = hashlib.sha256(canonical(request)).digest()
         if (set(challenge) != {"profile", "challenge", "request_digest", "expires_at"}
                 or challenge["profile"] != PROOF_PROFILE or challenge["request_digest"] != digest.hex()):
@@ -166,8 +166,9 @@ class InitialHandoffClient:
         return {"request": request, "proof": {"challenge": challenge["challenge"], "key_id": key.installation_key_id,
                 "signature": base64.urlsafe_b64encode(proof.signature).rstrip(b"=").decode()}}
 
-    def prepare(self, request: dict) -> dict:
-        result = self._request(PATH_PREFIX + "prepare", self.envelope("prepare", request), expected=201)
+    def prepare(self, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
+        envelope = self.envelope("prepare", request, before_send=before_send)
+        result = self._request(PATH_PREFIX + "prepare", envelope, expected=201, before_send=before_send)
         if (set(result) != {"profile", "reference", "operation_id", "expires_at"}
                 or result["profile"] != PROFILE or result["operation_id"] != request["operation_id"]):
             raise HostedGrantUnavailable("Invalid initial preparation")
@@ -193,7 +194,10 @@ class InitialHandoffClient:
         validate_receipt(result["receipt"])
         return result["receipt"]
 
-    def _request(self, path: str, body: dict, *, expected: int) -> dict:
+    def _request(self, path: str, body: dict, *, expected: int,
+                 before_send: Callable[[], None] | None = None) -> dict:
+        if before_send is not None:
+            before_send()
         try:
             response = self.transport.request("POST", path, json_body=body)
         except Exception:

@@ -159,8 +159,8 @@ for (const operation of ['acquire', 'initial-handoff', 'finalize']) {
     assert.notEqual(f.ui.finalizeStep.dataset.state, 'completed');
     assert.ok(f.calls.filter((call) => call.path.endsWith('/status')).length >= 2, 'restore reads current owner state');
     assert.equal(f.ui.status.textContent, operation === 'initial-handoff'
-      ? 'Setup could not be confirmed. Reopen the desktop app to continue.'
-      : 'This step could not be confirmed. Reopen the desktop app to continue.');
+      ? 'Setup could not be confirmed.'
+      : 'This step could not be confirmed.');
 
     // A separate fresh read can prove completion, regardless of the retired reply.
     f.state.progress = { state: 'configured_restart' };

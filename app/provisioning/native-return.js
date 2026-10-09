@@ -6,6 +6,7 @@ const exact = (value, keys) => value !== null && typeof value === 'object' && !A
 export function createNativeReturn({ fetch, location, status, retry, extensionId,
   focus = { hidden: true },
   storage = globalThis.sessionStorage, now = Date.now,
+  loadLocalWorkspace = () => import('./native-workspace.mjs'),
   loadEntryParser = () => import('/provisioning/native-json.mjs'),
   runtime = globalThis.chrome?.runtime, close = () => globalThis.close(), timeoutMs = 10_000,
   loadValidation = () => Promise.all([import('./provisioning.js'), import('/provisioning/onboarding/json.mjs')]) }) {
@@ -18,8 +19,11 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
     if (pending || finished) return false;
     pending = true;
     const current = ++generation;
+    let failureMessage = 'Setup could not be opened.';
+    let closedRefusal = false;
     retry.hidden = true;
     focus.hidden = true;
+    status.textContent = 'Continuing setup…';
     const controller = new AbortController();
     activeController = controller;
     const deadline = setTimeout(() => controller.abort(), timeoutMs);
@@ -31,6 +35,8 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
       let journey = location.hash.startsWith('#journey=') ? location.hash.slice(9) : '';
       if ((location.hash && !UUID.test(journey)) || location.search || location.pathname !== '/provisioning/native-return'
         || location.origin !== 'http://bridge.localhost:17871') throw new Error('Invalid return');
+      let recovery = null;
+      let localRecovery = false;
       {
         const entryRead = () => bounded(fetch('/api/v1/provisioning/native-entry', {
           credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: controller.signal,
@@ -47,19 +53,59 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
         if (entry.status !== 401 || !journey) {
         const configured = entry.status === 404;
         let context = configured ? null : await entryJson(entry);
-        if (context && exact(context, ['state', 'journey_id']) && context.state === 'selected' && UUID.test(context.journey_id)) {
+        const savedText = storage?.getItem('native_workspace_selection_v1');
+        const saved = savedText ? JSON.parse(savedText) : null;
+        const selectedRecovery = (value) => exact(value, ['state', 'journey_id', 'previous_journey_id'])
+          && value.state === 'selected' && UUID.test(value.journey_id) && UUID.test(value.previous_journey_id);
+        const savedRecovery = () => (exact(saved, ['entry_id', 'journey_id', 'expires_at', 'recovery_id']) && UUID.test(saved.recovery_id)
+          || exact(saved, ['entry_id', 'journey_id', 'expires_at', 'local_recovery']) && saved.local_recovery === true)
+          && UUID.test(saved.entry_id) && UUID.test(saved.journey_id)
+          && Number.isSafeInteger(saved.expires_at) && saved.expires_at > now() && saved.expires_at <= now() + 300_000;
+        if (selectedRecovery(context)) {
+          if (!savedRecovery() || context.previous_journey_id !== saved.journey_id
+            || (journey && journey !== context.previous_journey_id)) throw new Error('Entry unconfirmed');
+          localRecovery = saved.local_recovery === true;
+          recovery = { entry_id: saved.entry_id, previous_journey_id: saved.journey_id,
+            ...(!localRecovery ? { recovery_id: saved.recovery_id } : {}) };
+          journey = context.journey_id;
+        } else if (context && exact(context, ['state', 'journey_id']) && context.state === 'selected' && UUID.test(context.journey_id)) {
+          if ((journey && journey !== context.journey_id) || saved?.recovery_id || saved?.local_recovery) throw new Error('Entry unconfirmed');
           journey = context.journey_id;
         } else {
-          if (!configured && (!exact(context, ['state', 'csrf_token', 'entry_id']) || context.state !== 'select_workspace'
+          const boundTarget = context?.target_journey_id;
+          if (!configured && (!(exact(context, ['state', 'csrf_token', 'entry_id'])
+            || exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id']) && UUID.test(boundTarget) && boundTarget === journey)
+            || context.state !== 'select_workspace'
             || !UUID.test(context.entry_id) || !/^[A-Za-z0-9_-]{43}$/u.test(context.csrf_token) || selectionUnknown)) throw new Error('Entry unconfirmed');
           if (!configured) {
-            const saved = storage?.getItem('native_workspace_selection_v1');
-            if (saved) {
-              const previous = JSON.parse(saved);
-              if (previous.entry_id === context.entry_id) throw new Error('Entry unconfirmed');
-            }
+            if (saved?.entry_id === context.entry_id) throw new Error('Entry unconfirmed');
           }
-          if (!journey && runtime?.sendMessage && /^[a-p]{32}$/u.test(extensionId)) {
+          if (!configured && runtime?.sendMessage && /^[a-p]{32}$/u.test(extensionId)) {
+            const prepared = await bounded(runtime.sendMessage(extensionId,
+              { type: 'ofca.workspace.recovery-prepare.v1', entry_id: context.entry_id }));
+            if (controller.signal.aborted || current !== generation) return false;
+            if (exact(prepared, ['ok', 'result']) && prepared.ok === true) {
+              const result = prepared.result;
+              if (exact(result, ['status', 'journey_id']) && result.status === 'launch_pending' && UUID.test(result.journey_id)) {
+                if (journey && journey !== result.journey_id) throw new Error('Entry unconfirmed');
+                journey = result.journey_id;
+              } else if (exact(result, ['status', 'recovery_id', 'previous_journey_id']) && result.status === 'recovery_ready'
+                && UUID.test(result.recovery_id) && UUID.test(result.previous_journey_id)) {
+                if (journey && journey !== result.previous_journey_id) throw new Error('Entry unconfirmed');
+                recovery = { entry_id: context.entry_id, recovery_id: result.recovery_id, previous_journey_id: result.previous_journey_id };
+                journey = result.previous_journey_id;
+              } else if (exact(result, ['status']) && result.status === 'launch_expired') {
+                finished = true; status.textContent = 'Continue in your setup tab. You can close this tab.';
+                try { close(); } catch { /* The verified extension owner provides the next action. */ }
+                return true;
+              } else throw new Error('Entry unconfirmed');
+            } else {
+              if (!(exact(prepared, ['ok', 'code']) && prepared.ok === false && prepared.code === 'no_workspace')) throw new Error('Entry unconfirmed');
+              if (boundTarget) localRecovery = true;
+            }
+          } else if (!configured && boundTarget) {
+            localRecovery = true;
+          } else if (!journey && runtime?.sendMessage && /^[a-p]{32}$/u.test(extensionId)) {
             const discovered = await bounded(runtime.sendMessage(extensionId, { type: 'ofca.workspace.launch-discover.v1' }));
             if (exact(discovered, ['ok', 'result']) && discovered.ok === true
               && exact(discovered.result, ['status', 'journey_id']) && discovered.result.status === 'pending_launch'
@@ -71,6 +117,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
             }
           }
           if (controller.signal.aborted || current !== generation) return false;
+          if (localRecovery) recovery = { entry_id: context.entry_id, previous_journey_id: boundTarget };
           if (configured) {
             if (!journey) { finished = true; location.replace('/'); return true; }
           } else {
@@ -79,18 +126,28 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
             selectionUnknown = true;
             if (!storage) throw new Error('Entry unconfirmed');
             storage.setItem('native_workspace_selection_v1', JSON.stringify({ entry_id: context.entry_id,
-              journey_id: journey || null, expires_at: now() + 300_000 }));
+              journey_id: journey || null, expires_at: now() + 300_000,
+              ...(localRecovery ? { local_recovery: true } : recovery ? { recovery_id: recovery.recovery_id } : {}) }));
+            const selectedEntryId = context.entry_id;
             try {
-              context = await entryJson(await bounded(fetch('/api/v1/provisioning/native-entry', {
+              const selectedReply = await bounded(fetch('/api/v1/provisioning/native-entry', {
                 method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', 'X-Provisioning-CSRF': context.csrf_token },
-                body: JSON.stringify({ journey_id: journey || null }),
-              })));
+                body: JSON.stringify({ journey_id: journey || null, ...(recovery ? { recover: true } : {}) }),
+              }));
+              if (recovery && selectedReply.status === 409) failureMessage = 'Setup could not be recovered.';
+              context = await entryJson(selectedReply);
             } catch {
               context = await entryJson(await entryRead());
             }
-            if (!exact(context, ['state', 'journey_id']) || context.state !== 'selected'
-              || !UUID.test(context.journey_id) || (journey && context.journey_id !== journey)) throw new Error('Entry unconfirmed');
+            if (failureMessage === 'Setup could not be recovered.' && context?.state === 'select_workspace'
+              && context.entry_id === selectedEntryId && (exact(context, ['state', 'csrf_token', 'entry_id'])
+                || exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id']))) {
+              closedRefusal = true; finished = true;
+            }
+            if (recovery ? (!selectedRecovery(context) || context.previous_journey_id !== recovery.previous_journey_id)
+              : (!exact(context, ['state', 'journey_id']) || context.state !== 'selected'
+                || !UUID.test(context.journey_id) || (journey && context.journey_id !== journey))) throw new Error('Entry unconfirmed');
             journey = context.journey_id;
           }
         }
@@ -105,6 +162,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
         headers: { Accept: 'application/json', 'X-Onboarding-Journey': journey } }));
       let route = 'provisioning';
       let response = await read('/api/v1/provisioning/state');
+      if (recovery && response.status === 404) throw new Error('Return unconfirmed');
       if (response.status === 404) { route = 'bridge'; response = await read('/api/v1/onboarding/state'); }
       // Explicit authentication-required permits only the same navigation request.
       // Network errors, unknown state and HTML never establish a route or readiness.
@@ -121,20 +179,36 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
       }
       if (controller.signal.aborted || current !== generation) return false;
       const fallback = () => { finished = true; location.replace(`${route === 'bridge' ? '/' : '/provisioning'}#journey=${journey}`); };
-      if (!runtime?.sendMessage || !/^[a-p]{32}$/u.test(extensionId)) { fallback(); return true; }
+      if (localRecovery) {
+        const { returnToLocalWorkspace } = await bounded(loadLocalWorkspace());
+        const result = await bounded(returnToLocalWorkspace({ fetch, location, storage,
+          context: { ...recovery, journey_id: journey }, current: () => !controller.signal.aborted && current === generation }));
+        if (controller.signal.aborted || current !== generation) return false;
+        if (exact(result, ['status']) && result.status === 'continued') { fallback(); return true; }
+        if (!exact(result, ['status']) || result.status !== 'returned') throw new Error('Return unconfirmed');
+        finished = true; status.textContent = 'Continue in your setup tab. You can close this tab.';
+        try { close(); } catch { /* The local document acknowledged its arrival. */ }
+        return true;
+      }
+      if (!runtime?.sendMessage || !/^[a-p]{32}$/u.test(extensionId)) {
+        if (recovery) throw new Error('Return unconfirmed');
+        fallback(); return true;
+      }
       const result = await bounded(runtime.sendMessage(extensionId,
-        { type: 'ofca.workspace.launch-return.v1', journey_id: journey, route }));
+        recovery ? { type: 'ofca.workspace.recovery-return.v1', ...recovery, journey_id: journey, route }
+          : { type: 'ofca.workspace.launch-return.v1', journey_id: journey, route }));
       if (current !== generation) return false;
       if (exact(result, ['ok', 'result']) && result.ok === true
-        && exact(result.result, ['status']) && result.result.status === 'returned') {
+        && exact(result.result, ['status']) && (result.result.status === 'returned' || (recovery && result.result.status === 'continued'))) {
         finished = true;
+        if (result.result.status === 'continued') return true;
         status.textContent = 'Continue in your setup tab. You can close this tab.';
         try { close(); } catch { /* The confirmed owner remains the place to continue. */ }
         return true;
       }
       if (exact(result, ['ok', 'code']) && result.ok === false) {
-        if (result.code === 'no_workspace') { fallback(); return true; }
-        if (result.code === 'workspace_exists') {
+        if (!recovery && result.code === 'no_workspace') { fallback(); return true; }
+        if (!recovery && result.code === 'workspace_exists') {
           status.textContent = 'Continue in your existing setup tab.';
           focus.hidden = false;
           return false;
@@ -143,8 +217,8 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
       throw new Error('Return unconfirmed');
     } catch {
       if (current !== generation) return false;
-      status.textContent = 'Check your setup tab.';
-      retry.hidden = false;
+      status.textContent = failureMessage;
+      retry.hidden = closedRefusal;
       return false;
     } finally {
       clearTimeout(deadline);

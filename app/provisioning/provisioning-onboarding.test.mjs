@@ -22,7 +22,7 @@ function document(extensionId = 'a'.repeat(32)) {
   const nodes = new Map(['#initial-browser-prerequisite', '#initial-extension-install', '#initial-open-extension',
     '#initial-open-onlyfans', '#claim-heading', '#transfer-recovery-action'].map((name) => [name, element()]));
   const callbacks = new Map();
-  const page = { location: { hash: `#journey=${journey}`, replace(value) { this.replaced = value; } },
+  const page = { location: { hash: `#journey=${journey}`, replace(value) { this.replaced = value; }, assign(value) { this.assigned = value; } },
     addEventListener(name, listener) { callbacks.set(name, listener); } };
   return { defaultView: page, hidden: false, body: element(), createElement: element, addEventListener() {},
     callbacks, querySelector(selector) { return selector === 'main' ? { dataset: { provisioningCsrf: 'test-csrf', provisioningExtensionId: extensionId } }
@@ -75,7 +75,7 @@ const signedIn = (creator = 'creator-1') => ({ type: 'provisioning.identity.resu
   authenticated_profile: creator === null ? null : { creator_account_id: creator } });
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
 
-function freshFixture({ identity = async () => signedIn(), prepare = async () => payload,
+function freshFixture({ identity = async () => signedIn(), prepare = async () => payload, continueTransfer, loadLocalWorkspace,
   recover = async () => payload, extensionId, prepareStatus = 200 } = {}) {
   const doc = document(extensionId);
   const ui = Object.fromEntries(['status', 'identityStatus', 'claimForm', 'claimPackage', 'claimPackageValidation', 'claimPackageCount',
@@ -83,7 +83,7 @@ function freshFixture({ identity = async () => signedIn(), prepare = async () =>
     'claimStep', 'identityStep', 'bindingStep', 'finalizeStep', 'claimStepState', 'identityStepState', 'bindingStepState', 'finalizeStepState']
     .map((name) => [name, element()]));
   const calls = [], ports = []; let push;
-  const controller = createProvisioningController({ document: doc, elements: ui, sendExtensionMessage: identity,
+  const controller = createProvisioningController({ document: doc, elements: ui, sendExtensionMessage: identity, continueTransfer, loadLocalWorkspace,
     connectExtension: (_id, onStage) => { const port = { onStage, open: (step) => calls.push({ open: step }), close() {} }; ports.push(port); return port; },
     connectOnboarding: async ({ onState }) => { push = onState; return { close() {} }; },
     fetch: async (path, options) => {
@@ -108,6 +108,28 @@ test('fresh desktop waits for an admitted creator instead of navigating from reg
   assert.equal(f.doc.querySelector('#initial-browser-prerequisite').hidden, false);
   assert.equal(f.doc.querySelector('#open-secure-setup').hidden, true);
   assert.equal(f.doc.querySelector('#initial-extension-install').hidden, false);
+});
+
+test('local owner acknowledgement starts only after receiving context establishes ordinary setup', async () => {
+  const receiving = deferred(); const eligibility = [];
+  const f = freshFixture({ identity: async () => signedIn(null), continueTransfer: () => receiving.promise,
+    loadLocalWorkspace: async () => ({ createLocalWorkspaceOwner: ({ current }) => {
+      eligibility.push(current()); return { stop() {} };
+    } }) });
+  const started = f.controller.start(); await settle();
+  assert.deepEqual(eligibility, []);
+  receiving.resolve('none'); await started;
+  assert.deepEqual(eligibility, [true]);
+});
+
+for (const outcome of ['unavailable', 'retired']) test(`receiving ${outcome} context cannot mount a local recovery owner`, async () => {
+  const receiving = deferred(); let mounted = 0;
+  const f = freshFixture({ continueTransfer: () => receiving.promise,
+    loadLocalWorkspace: async () => ({ createLocalWorkspaceOwner: () => { mounted++; return { stop() {} }; } }) });
+  const started = f.controller.start(); await settle();
+  if (outcome === 'retired') f.doc.callbacks.get('pagehide')();
+  receiving.resolve(outcome === 'retired' ? 'none' : outcome); await started;
+  assert.equal(mounted, 0);
 });
 
 test('missing extension leaves usable ZIP guidance without a hosted or invented install navigation', async () => {
@@ -211,21 +233,29 @@ test('only an explicit retry after exact preparation refusal and a fresh owner r
 for (const reason of ['journey_expired', 'handoff_unconfirmed', 'authorization_revoked']) test(`${reason} refusal never permits preparation retry`, async () => {
   const f = freshFixture({ prepareStatus: 409, prepare: async () => ({ state: 'unconfirmed', reason }) });
   await f.controller.start(); f.push(); await settle();
-  assert.equal(f.doc.querySelector('#transfer-recovery-action').hidden, true);
-  assert.match(f.ui.status.textContent, /Reopen the desktop app/);
+  const action = f.doc.querySelector('#transfer-recovery-action');
+  assert.equal(action.hidden, false);
+  assert.equal(action.textContent, reason === 'journey_expired' ? 'Open desktop app' : 'Check setup');
+  assert.equal(f.ui.status.textContent, reason === 'journey_expired' ? 'Setup has expired.' : 'Setup could not be confirmed.');
+  await action.onclick(); await settle();
+  if (reason === 'journey_expired') assert.equal(f.doc.defaultView.location.assigned, `ofca://onboarding?journey=${journey}`);
   f.stage('ready_to_pair'); f.push(2); await settle(); await f.controller.beginHostedSetup();
   assert.equal(f.posts().length, 1); assert.equal(f.forms().length, 0);
 });
 
-test('an unavailable recovery locator gives visible reopen guidance and cannot become a POST retry', async () => {
+test('an unavailable recovery locator keeps a read-only check without reopening or replaying preparation', async () => {
   const f = freshFixture({ prepare: async () => { throw Error('lost response'); },
     recover: async () => ({ state: 'unknown', journey_id: journey }) });
   await f.controller.start(); f.push(); await settle();
   const action = f.doc.querySelector('#transfer-recovery-action');
   assert.equal(action.hidden, false); assert.equal(action.textContent, 'Check setup');
   await action.onclick(); await settle();
-  assert.match(f.ui.status.textContent, /could not be confirmed.*Reopen the desktop app/);
-  assert.equal(action.hidden, true); assert.equal(f.doc.querySelector('#open-secure-setup').hidden, true);
+  assert.equal(f.ui.status.textContent, 'Setup could not be confirmed.');
+  assert.equal(action.hidden, false); assert.equal(action.textContent, 'Check setup');
+  assert.equal(f.doc.querySelector('#open-secure-setup').hidden, true);
+  const reads = f.calls.filter((call) => call.path?.endsWith('/initial-handoff') && call.options?.method !== 'POST').length;
+  await action.onclick(); await settle();
+  assert.equal(f.calls.filter((call) => call.path?.endsWith('/initial-handoff') && call.options?.method !== 'POST').length, reads + 1);
   await f.controller.beginHostedSetup(); await settle();
   assert.equal(f.posts().length, 1); assert.equal(f.forms().length, 0);
 });

@@ -34,7 +34,7 @@ const OPERATION_REFUSALS = Object.freeze({
   membership_refresh_unavailable: 'The final check did not finish. Check your internet connection and try again.',
 });
 
-const GENERIC_REFUSAL = 'This step could not be completed. Reopen the desktop app and try again.';
+const GENERIC_REFUSAL = 'This step could not be completed.';
 const REQUEST_FAILURE = 'The desktop app could not be reached. Make sure it is running and try again.';
 const MUTATION_FAILED = Symbol('mutation failed');
 const MUTATION_RETIRED = Symbol('mutation retired');
@@ -386,7 +386,7 @@ export function explainProvisioningFailure(response, payload) {
     if (typeof reason === 'string' && Object.hasOwn(OPERATION_REFUSALS, reason)) return OPERATION_REFUSALS[reason];
     return GENERIC_REFUSAL;
   }
-  if (response.status === 401 || response.status === 403) return 'This setup page has expired. Close it and reopen the desktop app to continue.';
+  if (response.status === 401 || response.status === 403) return 'Setup could not continue. Open the desktop app.';
   if (response.status === 421) return 'Open the desktop app setup page and continue there.';
   return REQUEST_FAILURE;
 }
@@ -460,7 +460,8 @@ export function createChromeExtensionPort(chromeRuntime = globalThis.chrome?.run
   };
 }
 
-export function createProvisioningController({ fetch, sendExtensionMessage, connectExtension, connectOnboarding, continueTransfer, document, elements }) {
+export function createProvisioningController({ fetch, sendExtensionMessage, connectExtension, connectOnboarding, continueTransfer, document, elements,
+  loadLocalWorkspace = () => import('./native-workspace.mjs') }) {
   const csrf = document.querySelector('main')?.dataset.provisioningCsrf ?? '';
   const extensionId = document.querySelector('main')?.dataset.provisioningExtensionId ?? '';
   let detectedAccountId = null;
@@ -487,6 +488,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   let handoffRefusal = null;
   let handoffReadUnavailable = false;
   let handoffRetryRunning = false;
+  let localWorkspace = null;
   let registrationKnown = false;
   let pushedRevision = -1;
   let pushedEpoch = null;
@@ -630,15 +632,24 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (handoffRefusal !== null) {
       if (hostedLink) hostedLink.hidden = true;
       setStatus(handoffRefusal === 'handoff_refused' ? 'Setup could not be started.'
-        : handoffRefusal === 'journey_expired' ? 'This setup has expired. Reopen the desktop app to start again.'
-          : 'Setup could not continue. Reopen the desktop app.');
+        : handoffRefusal === 'journey_expired' ? 'Setup has expired.' : 'Setup could not be confirmed.');
       if (action && handoffRefusal === 'handoff_refused' && !recoveryRequired) {
         action.hidden = false; action.textContent = 'Try setup again'; action.onclick = retryInitialHandoff;
         action.disabled = handoffRetryRunning || mutationInFlight;
+      } else if (action) {
+        action.hidden = false; action.disabled = false;
+        if (handoffRefusal === 'journey_expired' || recoveryRequired) {
+          action.textContent = 'Open desktop app';
+          action.onclick = () => { if (pageActive && journeyId) page.location.assign(`ofca://onboarding?journey=${journeyId}`); };
+        } else { action.textContent = 'Check setup'; action.onclick = onReturn; }
       }
     } else if (handoffReadUnavailable) {
       if (hostedLink) hostedLink.hidden = true;
-      setStatus('Setup could not be confirmed. Reopen the desktop app to continue.');
+      setStatus('Setup could not be confirmed.');
+      if (action) {
+        action.hidden = false; action.disabled = false;
+        action.textContent = 'Check setup'; action.onclick = onReturn;
+      }
     } else if (uncertainMutation?.path.endsWith('/initial-handoff') && action) {
       if (hostedLink) hostedLink.hidden = true;
       action.hidden = false; action.textContent = 'Check setup'; action.onclick = onReturn;
@@ -873,7 +884,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       finalizeFailed = progress.stage === 'finalization_ready';
       finalizeRefused = true;
       setStatus('This step did not finish. Try again.');
-    } else setStatus('This step could not be confirmed. Reopen the desktop app to continue.');
+    } else setStatus('This step could not be confirmed.');
     // A committed owner fact supersedes an unresolved transport response. The
     // retired request's finally block must not unlock a later page operation.
     if (uncertainMutation === null && activeMutation === operation) {
@@ -899,6 +910,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
         const payload = await readJson(response);
         if (!current() || transferActive || handoffSubmitted) return;
         if (!response.ok) {
+          if (initialRefusal(response.status, payload) === 'journey_expired') handoffRefusal = 'journey_expired';
           handoffReadUnavailable = true; renderHandoffRecovery(); return;
         }
         if (await submitFreshHandoff(payload, current)) {
@@ -1034,14 +1046,14 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
         void resumeRuntime();
       } else if (!response.ok) setStatus(explainProvisioningFailure(response, payload), true);
       else if (progress?.state === 'provisioning_ready') applyProgress(progress);
-      else setStatus('Setup could not be checked. Reopen the desktop app.', true);
+      else setStatus('Setup could not be checked.', true);
       if (progress) reconcileMutation(progress);
       if (progress && uncertainMutation?.path.endsWith('/initial-handoff')) await recoverHandoff(current);
       if (!current()) return null;
       return progress;
     } catch {
       if (!current()) return null;
-      setStatus('Make sure the desktop app is running, then reload this page.', true);
+      setStatus('Setup could not be checked.', true);
       return null;
     }
   }
@@ -1139,7 +1151,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       const generation = ownerGeneration;
       const current = () => pageActive && generation === ownerGeneration;
       const progress = await checkStatus(current);
-      if (!progress || !current() || recoveryRequired || configurationComplete || mutationInFlight || resumeNeedsAction) return;
+      if (!progress || !current() || recoveryRequired || configurationComplete || mutationInFlight || resumeNeedsAction
+        || uncertainMutation?.path.endsWith('/initial-handoff')) return;
       if (approvalAcquired) await finalizeProvisioning();
       else if (associationRequestId !== null) await acquireAndFinish();
       else await refreshIdentity();
@@ -1198,7 +1211,19 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     elements.finalizeProvisioning.addEventListener('click', finalizeProvisioning);
     document.addEventListener('visibilitychange', onReturn);
     (document.defaultView ?? globalThis).addEventListener?.('focus', onReturn);
-    page.addEventListener?.('pagehide', () => {
+    page.addEventListener?.('pagehide', retirePage);
+    async function connectLocalWorkspace() {
+      if (!journeyId) return;
+      const current = currentPage();
+      try {
+        const { createLocalWorkspaceOwner } = await loadLocalWorkspace();
+        if (!current()) return;
+        localWorkspace?.stop();
+        localWorkspace = createLocalWorkspaceOwner({ fetch, location: page.location, storage: page.sessionStorage,
+          current: () => pageActive && !transferActive && !configurationComplete, retire: retirePage });
+      } catch { /* Local tab coordination cannot change provisioning authority. */ }
+    }
+    function retirePage() {
       pageActive = false; lifecycleGeneration += 1; ownerGeneration += 1; extensionGeneration += 1;
       identityGeneration += 1;
       if (activeMutation) uncertainMutation = activeMutation;
@@ -1209,15 +1234,19 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       handoffRetryRunning = false;
       onboarding?.close(); onboarding = null;
       extensionPort?.close(); extensionPort = null;
-    });
+      localWorkspace?.stop(); localWorkspace = null;
+    }
     page.addEventListener?.('pageshow', (event) => {
       if (!event.persisted) return;
       pageActive = true; initialProgressPending = true;
       if (transferActive) {
         const restored = currentPage();
-        void readReceivingTransfer(true).then((outcome) => { if (restored() && outcome === 'none') void startNormal(); });
+        void readReceivingTransfer(true).then(async (outcome) => {
+          if (restored() && outcome === 'none') { await connectLocalWorkspace(); if (restored()) void startNormal(); }
+        });
         return;
       }
+      void connectLocalWorkspace();
       pushedEpoch = null; pushedRevision = -1;
       connectExtensionState();
       if (journeyId && typeof connectOnboarding === 'function') {
@@ -1226,6 +1255,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       } else void onReturn();
     });
     if (await readReceivingTransfer() !== 'none' || !current()) return;
+    await connectLocalWorkspace();
+    if (!current()) return;
     await startNormal();
   }
 

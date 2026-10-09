@@ -1,4 +1,4 @@
-// Phase 2: a real Chromium MV3 package around the production coordinator.
+// A real Chromium MV3 package around the production workspace coordinator.
 // Brain/hosted pages are explicit fixtures. This does not qualify their real
 // authentication, installers, pairing, or the Windows application protocol.
 import assert from 'node:assert/strict';

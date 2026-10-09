@@ -8,6 +8,7 @@
     "_internal/app/provisioning/provisioning.js",
     "_internal/app/provisioning/resume.js",
     "_internal/app/provisioning/native-return.js",
+    "_internal/app/provisioning/native-workspace.mjs",
     "_internal/contracts/manifest.json",
     "_internal/shared/onboarding/sse.mjs",
     "_internal/shared/onboarding/json.mjs",
@@ -81,7 +82,8 @@
         "0018_companion_confirmation_method.sql": "436da449ede4ae0b7827349b76f5f0797578bd56bc535ba9898d783d7908ddbe",
         "0019_first_enrollment.sql": "46c1b5d89adc06e34dfdd20989c3d7748d899bdb2a68f1414134e7002b938da8",
         "0020_onboarding_journeys.sql": "97fb16b41f563587e0a17257088087504c093eb2205266bd58c96a3c75e0c605",
-        "0021_onboarding_transfer.sql": "d142017c43f17e689cd7936253f689691ec6fbd738626e45f31e8fa6565da7f4"
+        "0021_onboarding_transfer.sql": "d142017c43f17e689cd7936253f689691ec6fbd738626e45f31e8fa6565da7f4",
+        "0022_onboarding_workspace_recovery.sql": "b8a073bc95a75d1fd83e13dbdbcd5fa8613e26adf91d1405b381013f6dfebf0c"
       }
     },
     {

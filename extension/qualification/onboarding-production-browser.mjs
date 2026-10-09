@@ -7,7 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { SyntheticPlatform } from '../../tools/e2e-capture/fixtures/synthetic-platform.mjs';
 const variant = process.argv.includes('--normal-worker') ? 'normal-development' : 'read-only-release';
-const root = await mkdtemp(path.join(tmpdir(), 'ofca-phase3-observer-'));
+const root = await mkdtemp(path.join(tmpdir(), 'ofca-onboarding-observer-'));
+const outputIndex = process.argv.indexOf('--output');
+if (outputIndex !== -1 && !process.argv[outputIndex + 1]) throw new Error('--output requires a file path');
+const output = outputIndex === -1 ? path.join(root, 'report.json') : path.resolve(process.argv[outputIndex + 1]);
 const directory = path.join(root, 'extension');
 await cp(fileURLToPath(new URL('../dist', import.meta.url)), directory, { recursive: true });
 if (variant === 'normal-development') await build({ entryPoints: [fileURLToPath(new URL('../background.js', import.meta.url))],
@@ -157,7 +160,9 @@ try {
   report.diagnostic = await (context.serviceWorkers()[0]?.evaluate(() => globalThis.__OFCA_AGENT_DIAGNOSTIC_SNAPSHOT__?.()).catch((error) => String(error)));
   report.result = 'failed'; report.error = String(error.stack); throw error; }
 finally {
-  await writeFile(new URL(`../../../../scratchpad/onboarding-phase3/extension-built-browser-${variant}.json`, import.meta.url), JSON.stringify(report, null, 2));
-  await context.close();
+  try {
+    await writeFile(output, JSON.stringify(report, null, 2));
+    console.log(JSON.stringify({ result: report.result, checks: report.checks, artifact: directory, report: output }));
+  }
+  finally { await context.close(); }
 }
-console.log(JSON.stringify({ result: report.result, checks: report.checks, artifact: directory }));

@@ -41,7 +41,7 @@ def native_return_shell(request: Request, extension_id: str) -> HTMLResponse:
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>Continue setup</title><main data-native-return '
         f'data-extension-id="{html.escape(identity, quote=True)}">'
-        '<h1>Continue setup</h1><p id="native-return-status" role="status">Opening your setup tab…</p>'
+        '<h1>Continue setup</h1><p id="native-return-status" role="status">Continuing setup…</p>'
         '<button id="native-return-retry" type="button" hidden>Try again</button>'
         '<button id="native-return-focus" type="button" hidden>Go to setup</button></main>'
         '<script type="module" src="/provisioning/native-return.js"></script></html>',
@@ -52,8 +52,13 @@ def native_return_shell(request: Request, extension_id: str) -> HTMLResponse:
 
 def native_return_script(request: Request) -> Response:
     _host(request)
-    path = ("shared/onboarding/json.mjs" if request.url.path == "/provisioning/native-json.mjs"
-            else "app/provisioning/native-return.js")
+    path = {
+        "/provisioning/native-return.js": "app/provisioning/native-return.js",
+        "/provisioning/native-json.mjs": "shared/onboarding/json.mjs",
+        "/provisioning/native-workspace.mjs": "app/provisioning/native-workspace.mjs",
+    }.get(request.url.path)
+    if path is None:
+        raise HTTPException(404, "Not found")
     return Response(resource_path(path).read_bytes(),
                     media_type="application/javascript",
                     headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})

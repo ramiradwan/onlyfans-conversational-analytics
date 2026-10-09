@@ -1,8 +1,8 @@
 # ADR 0047: Keep onboarding in one persistent browser workspace
 
-- Status: Accepted for implementation; Phase 3 clarifications independently reviewed 2026-10-09. Packaged and live qualification gates still apply.
+- Status: Accepted.
 - Date: 2026-10-08
-- Decision authority: approved revised onboarding plan and completed reference review.
+- Decision authority: Product owner.
 - Amends: ADR 0045, Desktop port opening behavior, Pushed state's browser-port liveness inference, and Controls after pairing's popup ownership. Other pairing and authorization guarantees remain unchanged.
 
 ## Decision
@@ -27,7 +27,7 @@ Changed instruments clear acknowledgements; a changed creator clears the Full ch
 Stale documents cannot overwrite a newer scope. Checkbox drafts never establish
 legal acceptance, browser permission, account identity, pairing, or commercial rights.
 Returning after a reload, discard, or restart reconciles authoritative facts before
-choosing the next unmet step. The reference's sessionStorage is not production authority.
+choosing the next unmet step. Browser storage does not establish authority.
 
 A bounded local presentation marker links the workspace journey, creator-scope UUID
 and disclosure digest to a domain-separated digest of the independently observed
@@ -76,7 +76,7 @@ snapshot. An old source epoch cannot reactivate itself by sending a larger revis
 Every pending command has an operation ID and account/consent generations. Delivery is
 not confirmation. Unknown outcomes retain uncertainty until the owner reconciles them.
 
-Phase 3 integration clarification: pause/resume rotates the consent controller's
+Pause/resume rotates the consent controller's
 real capture scope. Preserve this fencing and add `local-onboarding-result.v2`
 rather than change v1 semantics. The result identifies both the original command
 scope and the committed scope/revision. A client requires the negotiated
@@ -105,7 +105,7 @@ path is exactly `/provisioning` without a trailing slash.
 Use push channels, not periodic onboarding-status requests. Bounded retry, liveness,
 expiry timers, and wake reconciliation remain permitted. Target active local updates
 at p95 <=250 ms and p99 <=1 s after commit, with healthy convergence <=1 s. These are
-phase 4/5 measurement gates, not guarantees established by phase 2 unit tests.
+production qualification targets; unit tests do not establish these timings.
 
 ## Authentication and continuation
 
@@ -123,7 +123,7 @@ does not replace hosted identity. Local session cookies stay HttpOnly; only the 
 CSRF value appears in the registration result body. Neither travels via a URL or hosted
 service.
 
-### Phase 3 clarification: native entry and receiving setup codes
+### Native entry and receiving setup codes
 
 The prohibition on credentials in navigation applies to the registered workspace
 and all browser-to-browser handoffs. The existing native launcher has one narrow,
@@ -134,8 +134,8 @@ immediately redirects to a credential-free local page. These responses use no-st
 and no-referrer; production local-server access logs are disabled. The native launcher
 checks the loopback process image and user, bounds the code, and constructs the fixed
 origin itself. This code never reaches hosted setup, the extension coordinator, a
-workspace record, or a return URL. This is a proposed Phase 3 clarification of the
-pre-existing native bootstrap, subject to independent architecture review before commit.
+workspace record, or a return URL. This bootstrap exception does not apply to
+browser-to-browser handoffs.
 
 A live authenticated local subscription suppresses another launcher-created tab.
 Its focus event asks an installed extension to focus the admitted workspace. Without
@@ -147,7 +147,7 @@ visiting hosted setup. If no live local subscription proves the workspace
 is reachable, the native recovery action asks whether to open setup; it does not
 claim that a browser tab is open or that the app connection succeeded.
 
-### Phase 3 app-link return clarification
+### App-link return
 
 An explicit extension button may dispatch only
 `ofca://onboarding?journey=<UUID>`. Before dispatch, the admitted extension
@@ -190,9 +190,8 @@ create a competing wizard. A successful return allows the temporary document to
 close itself; the extension never closes an arbitrary tab. Completion activates
 the owner only while the returning native tab and its window are still foreground;
 otherwise it only updates the owner's registered destination. A slow startup must
-not steal focus from a later user task. All product-requested
-OnlyFans reloads and navigation remain prohibited. This clarification requires
-independent architecture review with the app-link implementation before commit.
+not steal focus from a later user task. Recovery never reloads or navigates an
+OnlyFans tab.
 
 Manual launch from the Start menu has no journey argument. Before binding a new
 journey or issuing its session, the bare local native-return document may request
@@ -223,6 +222,83 @@ other fields, from the exact local return document. It only focuses the current
 registered owner and returns a closed `focused` receipt; it never opens or
 navigates a tab and never claims authenticated readiness.
 
+### Renewing the provisioning workspace
+
+A fresh, single-use native bootstrap from an explicit desktop launch may renew
+the exact local setup context. This preserves one workspace while requiring
+current native authority to renew expired browser authority. It is a separate
+recovery path; it does not extend the ordinary ten-minute app-link intent or
+relax its focus-only fallback.
+
+Normal native selection remains exactly `{journey_id}`. Recovery selection is
+exactly `{journey_id: prior, recover: true}`, protected by the fresh native-entry
+cookie, exact origin, same-origin CSRF, targeted prior reference and original
+bootstrap deadline. Its verified result is
+`{state: "selected", journey_id: resolved, previous_journey_id: prior}`. A consumed
+entry read returns that result only with the session issued or retained by the
+selection. A missing cookie leaves an unconfirmed result; it cannot issue another
+session. Extra fields, coercions and a different valid session are refused.
+
+Brain retains bounded durable prior-to-recovery linkage. Known expired unstarted
+context can become a fresh draft only through this native selection. Preparing
+and prepare-unknown retain the original operation and request for reconciliation
+or refuse; they cannot silently become unstarted work. Unknown and completing
+retain the exact installation, operation, scope and original recovery deadline.
+They never become fresh preparation or repeat completion. Missing legacy linkage
+is refused; recovery never selects an unrelated latest receipt.
+
+Recovery selection rechecks native authority, context and deadlines within its
+transaction, invalidates expired sessions and records one resolved mapping.
+Concurrent or repeated selection of one native entry cannot create another
+session or draft. A later fresh native entry retains a valid session only when
+the durable mapping proves it belongs to the requested prior context. Without
+that cookie, the new native authority may issue a session for the same mapped
+journey; it cannot create another successor or extend the recovery deadline.
+Session lifetime is capped by its journey; cached sessions and UUIDs cannot
+recreate expired work.
+
+Recovery does not require the extension. An unconsumed targeted native entry
+exposes its launcher-bound `target_journey_id` to the same-origin callback. When
+the extension is absent or confirms no workspace, the callback may request exact
+prior-context recovery only if its fragment matches that binding. Untargeted
+entry cannot choose a latest receipt, and a generic extension messaging failure
+does not prove absence. Normal extension-first selection remains unchanged.
+Without a targeted app link or an extension-held prior reference, manual launch
+cannot recover an uncertain receipt by selecting a different or latest context.
+
+Without the extension, same-origin browser messages may locate a responding
+setup document for that prior context. These messages carry only navigation
+correlation. A selected receiver independently verifies the cookie-bound
+prior-to-resolved result, rechecks its document and lifecycle, and retires old
+operations before refreshing itself. The new document authenticates the selected
+context before acknowledging the return. Multiple responders are refused.
+
+No response before dispatch permits continuation in the callback; it does not
+prove that dormant physical tabs are absent, and later offers are ignored. Once
+navigation is dispatched, a lost acknowledgement permits only receipt reads,
+never redispatch or callback adoption. This preserves one active authenticated
+context and supports acknowledged tab reuse without browser permissions, status
+polling, or an unsupported focus claim.
+
+The extension uses a separate bounded recovery navigation intent tied to the
+stored journey, current creator/disclosure draft scope and exact native callback
+document. A live local setup owner also binds its tab and document. If the owner
+has closed, the coordinator first excludes conflicting registered workspaces and
+retains the same draft. Ambiguous ownership, changed scope, unrelated hosted or
+runtime pages, and replacement callback documents are refused. The UUID and draft
+remain navigation scope, never authentication, consent or approval.
+
+With extension coordination, verified selection returns fresh local context to
+the existing setup document in that same tab, or the callback becomes the sole
+setup owner if the old tab is absent. Old operations are retired before the new document acts. Lost
+selection replies use reads; lost navigation replies reconcile actual ownership
+without repeating navigation. OnlyFans tabs are never navigated or reloaded.
+Delayed recovery does not steal focus after the user switches away.
+
+A subscription suppresses fresh launcher entry only while its current durable
+session and journey are valid. Their expiries join the existing one-shot deadline
+wakeup. Subscription presence and focus do not establish valid setup authority.
+
 Receiving setup codes use a dedicated, expiring workflow key. They do not grant
 creator identity, local authentication, consent, installation registration, pairing,
 or commercial rights. The hosted receiver separately authenticates the user and
@@ -246,12 +322,12 @@ its authorized initial OnlyFans navigation, after observation has been registere
 Recovery has one operation owner shared with observer attachment. Existing user tabs
 are never navigated. A deliberately closed helper is not recreated without a request.
 
-The phase 2 dependency adoption explicitly sets `captureMode: 'observe-only'` in
+The signer integration explicitly sets `captureMode: 'observe-only'` in
 the shared signer owner used by both Agent runtimes. The packaged wrapper enforces
 that setting after caller options, so compatibility defaults cannot restore reload.
 Silent-document failure and cancellation remain failures until valid observation;
-they never retry in the legacy mode. The unified observer/helper orchestration and
-removal of the old consent-controller reload routes remain phase 3 integration work.
+they never retry in the legacy mode. Shared observer/helper orchestration owns
+attachment and recovery; consent changes cannot initiate a platform-tab reload.
 
 Preview works permanently without Brain. Its persistent extension page owns pause and
 resume. Full mode uses Bridge while the authenticated desktop connection is reachable;
@@ -267,16 +343,15 @@ Clients lacking a capability show the existing supported route; they must not cl
 automated continuation, silently widen authority, or introduce a reload fallback.
 Contract publication and reviewed immutable consumer pins precede dependent services
 and clients. Rollback disables new automatic starts and preserves completed authority
-and recoverable progress. The designer's dynamic template runtime is never shipped.
+and recoverable progress. Prototype runtime code is not shipped in the product.
 
 ## Verification and limits
 
-Phase 2 ships executable contract fixtures, a projection reference reducer, an isolated
-packaged workspace feasibility slice, independently safe presentation corrections,
-and a qualified signer candidate. Its test fixtures are not evidence of a live hosted
-deployment, real installer, real passkey, or live platform compatibility.
+Contract fixtures, the projection reference reducer and packaged workspace fixtures
+verify their stated boundaries. They do not establish deployed hosted behavior,
+installer behavior, real passkeys or live platform compatibility.
 
-Dependent phase 3 integration remains gated by the phase 2 evidence ledger, architecture
-review, published contracts and pins, and signer qualification. The final release also
-requires real packaged Windows/browser journeys, ingress streaming, consented read-only
-platform qualification, copy/accessibility review, and measured synchronization latency.
+Release requires architecture review, published contracts and pins, signer
+qualification, real packaged Windows/browser journeys, ingress streaming,
+consented read-only platform qualification, copy/accessibility review and measured
+synchronization latency.

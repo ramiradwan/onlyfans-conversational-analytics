@@ -8,11 +8,11 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Awaitable, Callable, Protocol
+from typing import Annotated, Awaitable, Callable, Literal, Protocol
 
 from fastapi import FastAPI, Header, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
@@ -174,6 +174,19 @@ class NativeWorkspaceBody(BaseModel):
     journey_id: str | None
 
 
+class NativeWorkspaceRecoveryBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    journey_id: str
+    recover: Literal[True]
+
+    @field_validator("recover", mode="before")
+    @classmethod
+    def literal_recovery(cls, value):
+        if type(value) is not bool or value is not True:
+            raise ValueError("Recovery must be explicitly true")
+        return value
+
+
 def create_provisioning_app(
     *,
     claim_submission: ClaimSubmission,
@@ -272,6 +285,7 @@ def create_provisioning_app(
 
     @application.get("/provisioning/native-return.js", include_in_schema=False)
     @application.get("/provisioning/native-json.mjs", include_in_schema=False)
+    @application.get("/provisioning/native-workspace.mjs", include_in_schema=False)
     async def native_script(request: Request) -> Response:
         from app.provisioning.native_return import native_return_script
         return native_return_script(request)
@@ -293,9 +307,11 @@ def create_provisioning_app(
         return JSONResponse(sessions.native_entry_context(request), headers={"Cache-Control": "no-store"})
 
     @application.post("/api/v1/provisioning/native-entry", include_in_schema=False)
-    async def select_native_workspace(request: Request, body: NativeWorkspaceBody) -> JSONResponse:
-        session = sessions.select_native_workspace(request, body.journey_id)
-        response = JSONResponse({"state": "selected", "journey_id": session.journey_id},
+    async def select_native_workspace(request: Request, body: NativeWorkspaceBody | NativeWorkspaceRecoveryBody) -> JSONResponse:
+        recover = isinstance(body, NativeWorkspaceRecoveryBody)
+        session = sessions.select_native_workspace(request, body.journey_id, recover=recover)
+        response = JSONResponse({"state": "selected", "journey_id": session.journey_id,
+            **({"previous_journey_id": body.journey_id} if recover else {})},
             headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
         response.set_cookie(PROVISIONING_SESSION_COOKIE_NAME, session.identifier,
             httponly=True, secure=True, samesite="strict", path="/")
@@ -369,9 +385,13 @@ def create_provisioning_app(
             return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
         if initial_enrollment is not None:
             initial_enrollment.resume(session.journey_id)
+        def next_expiry():
+            remaining = sessions.session_remaining(request)
+            authority = None if onboarding_expiry is None else onboarding_expiry()
+            return remaining if authority is None else min(remaining, authority)
         return StreamingResponse(events.stream(
             lambda: onboarding_snapshot(session.journey_id), lambda: sessions.require_session(request),
-            journey_id=session.journey_id, expires_in=onboarding_expiry),
+            journey_id=session.journey_id, expires_in=next_expiry),
             media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no",
             "X-Onboarding-Capabilities": CAPABILITIES})
 

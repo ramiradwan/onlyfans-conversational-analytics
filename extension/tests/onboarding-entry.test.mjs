@@ -124,3 +124,55 @@ test('a persisted identity changed while the worker was absent cannot inherit th
   assert.notEqual(f.local[recordKey].draft_scope.scope_id, saved.local[recordKey].draft_scope.scope_id);
   assert.deepEqual(f.local[recordKey].draft, { ...checked, full_checked: false });
 });
+
+test('external recovery messages use the closed union and reconcile creator scope before dispatch', async () => {
+  const f = await savedFixture(); const entryId = crypto.randomUUID();
+  const callback = { id: 8, windowId: 1, documentId: 'native-callback', url: 'http://bridge.localhost:17871/provisioning/native-return' };
+  f.tabs.push(callback);
+  const sender = { tab: { id: callback.id }, frameId: 0, documentId: callback.documentId, url: callback.url };
+  const command = (message) => new Promise((resolve) => f.chromeApi.runtime.onMessageExternal.listeners[0](message, sender, resolve));
+  const prepare = { type: 'ofca.workspace.recovery-prepare.v1', entry_id: entryId };
+  assert.deepEqual(await command({ ...prepare, url: 'https://example.test/' }), { ok: false, code: 'return_unavailable' });
+  const prepared = await command(prepare);
+  assert.equal(prepared.ok, true); assert.equal(prepared.result.status, 'recovery_ready');
+  const previous = structuredClone(f.local[recordKey]);
+  f.state.account = 'creator-b';
+  assert.deepEqual(await command({ type: 'ofca.workspace.recovery-return.v1', entry_id: entryId,
+    recovery_id: prepared.result.recovery_id, previous_journey_id: previous.journey_id,
+    journey_id: crypto.randomUUID(), route: 'provisioning' }), { ok: false, code: 'return_unavailable' });
+  assert.equal(f.local[recordKey].draft.full_checked, false);
+  assert.notEqual(f.local[recordKey].draft_scope.scope_id, previous.draft_scope.scope_id);
+  assert.equal(f.local[recordKey].journey_id, previous.journey_id);
+  assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 1);
+});
+
+test('an account notification during document navigation invalidates recovery before receipt or focus', async () => {
+  const f = await savedFixture(); const entryId = crypto.randomUUID();
+  const prior = f.local[recordKey].journey_id;
+  f.tabs[0].url = `http://bridge.localhost:17871/provisioning#journey=${prior}`;
+  f.local[recordKey].route = 'provisioning';
+  const callback = { id: 8, windowId: 1, active: true, documentId: 'native-callback', url: 'http://bridge.localhost:17871/provisioning/native-return' };
+  f.tabs.push(callback);
+  const updated = event(); updated.removeListener = (fn) => { updated.listeners.splice(updated.listeners.indexOf(fn), 1); };
+  f.chromeApi.tabs.onUpdated = updated;
+  f.chromeApi.scripting = { executeScript: async ({ args, target }) => {
+    assert.deepEqual(target.documentIds, ['current-document']);
+    f.state.account = 'creator-b'; f.changed.emit();
+    f.tabs[0].url = args[1]; f.tabs[0].documentId = 'new-document';
+    queueMicrotask(() => updated.emit(f.tabs[0].id, { status: 'complete' }));
+    return [];
+  } };
+  const sender = { tab: { id: callback.id }, frameId: 0, documentId: callback.documentId, url: callback.url };
+  const command = (message) => new Promise((resolve) => f.chromeApi.runtime.onMessageExternal.listeners[0](message, sender, resolve));
+  const prepared = await command({ type: 'ofca.workspace.recovery-prepare.v1', entry_id: entryId });
+  assert.equal(prepared.ok, true);
+  const baseline = f.calls.length;
+  assert.deepEqual(await command({ type: 'ofca.workspace.recovery-return.v1', entry_id: entryId,
+    recovery_id: prepared.result.recovery_id, previous_journey_id: prior,
+    journey_id: crypto.randomUUID(), route: 'provisioning' }), { ok: false, code: 'return_unavailable' });
+  await f.command('read');
+  assert.equal(f.local[recordKey].journey_id, prior);
+  assert.equal(f.local[recordKey].draft.full_checked, false);
+  assert.equal(f.calls.length, baseline);
+  assert.equal(f.session.onboarding_native_recovery_v1.phase, 'returning');
+});

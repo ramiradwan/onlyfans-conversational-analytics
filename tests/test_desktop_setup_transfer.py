@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.persistence.auth import SQLiteAuthenticationStore
-from app.persistence.onboarding import OnboardingJourneyStore
+from app.persistence.onboarding import OnboardingJourneyStore, OnboardingJourneyUnavailable
 from app.provisioning.setup_transfer import DesktopSetupTransfer,ENTRY_COOKIE,install_routes
 from app.provisioning.session import ProvisioningSessionManager,PROVISIONING_SESSION_COOKIE_NAME
 from app.security.initial_handoff import canonical
@@ -112,9 +112,15 @@ def test_unknown_completion_preserves_only_bounded_receipt_provenance(receiver):
     receiver.journeys.update(journey,state="unknown",operation_id=receiver.journeys.new_operation(),scope_json='{"fixture":"scope"}',handoff_reference="A"*43,prepare_json='{"device":"unneeded"}')
     receiver.clock[0]+=timedelta(minutes=30)
     assert receiver.journeys.get(journey) is None
-    new=receiver.journeys.open()
+    with pytest.raises(OnboardingJourneyUnavailable):
+        receiver.journeys.open()
+    selected=receiver.journeys.renew_native_session(previous_journey_id=journey,
+        identifier="r"*43, csrf="c"*43, existing_identifier=None, ttl_seconds=1800,
+        authorize=lambda: None)
+    new=receiver.journeys.require_current(selected["journey_id"])
     assert new["state"]=="unknown" and new["installation_id"]==row["installation_id"]
     assert new["handoff_reference"] is None and new["prepare_json"] is None
+    assert new["recovery_deadline"]==(INSTANT+timedelta(minutes=60)).isoformat()
     receiver.clock[0]+=timedelta(minutes=30)
     assert receiver.journeys.get(new["journey_id"]) is None
     assert receiver.journeys.open()["state"]=="new"

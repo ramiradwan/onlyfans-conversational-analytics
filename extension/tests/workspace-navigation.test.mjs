@@ -38,3 +38,22 @@ for (const change of ['user-navigation', 'scope', 'journey', 'extra-field', 'rem
     assert.deepEqual(f.navigations, []); f.client.stop();
   });
 }
+
+test('recovery navigates the admitted prior document to the selected journey once', () => {
+  const f = fixture(); const next = crypto.randomUUID();
+  const request = { ...f.request, type: 'recover', previous_journey_id: journey, journey_id: next };
+  f.ports[0].onMessage.emit(request); f.ports[0].onMessage.emit(request);
+  assert.deepEqual(f.navigations, [`http://bridge.localhost:17871/provisioning#journey=${next}`]); f.client.stop();
+});
+for (const change of ['prior', 'scope', 'document-url', 'runtime-route', 'invalid-target', 'extra-field']) {
+  test(`recovery document refuses ${change}`, () => {
+    const f = fixture(); const request = { ...f.request, type: 'recover', previous_journey_id: journey, journey_id: crypto.randomUUID() };
+    if (change === 'prior') request.previous_journey_id = crypto.randomUUID();
+    if (change === 'scope') f.workspace.draft_scope.scope_id = crypto.randomUUID();
+    if (change === 'document-url') f.location.href += '&other=true';
+    if (change === 'runtime-route') request.route = 'bridge';
+    if (change === 'invalid-target') request.journey_id = 'invalid';
+    if (change === 'extra-field') request.url = 'https://example.test/';
+    f.ports[0].onMessage.emit(request); assert.deepEqual(f.navigations, []); f.client.stop();
+  });
+}

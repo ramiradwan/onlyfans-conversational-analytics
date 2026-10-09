@@ -77,3 +77,61 @@ Negotiation is explicit for `local-onboarding.v1`, `persistent-workspace.v1`,
 new capabilities; absent support is not success. Legacy protocol fixtures are unchanged.
 The only hosted bridge is its separately pinned allowlisted projection. Local files and
 fixtures must never be vendored into the commercial service as inbound contracts.
+
+## Native workspace recovery
+
+Native recovery uses separate closed adapter messages. They do not change the
+shared projection profiles or turn extension storage into local authority.
+
+The exact top-level `/provisioning/native-return` document first reads its
+cookie-bound native entry. A fresh entry supplies `entry_id` and a same-origin
+CSRF value. Targeted entry also supplies its launcher-bound `target_journey_id`;
+untargeted entry omits that field. Only the local selection request receives the
+CSRF value. With no extension workspace, a callback matching that target may
+recover the exact prior journey locally. An absent target, missing record or
+generic extension messaging failure cannot establish recovery eligibility.
+
+| Message | Fields besides `type` | Successful result |
+| --- | --- | --- |
+| `ofca.workspace.recovery-prepare.v1` | `entry_id` | `{status:"recovery_ready", recovery_id, previous_journey_id}` |
+| `ofca.workspace.recovery-return.v1` | `entry_id`, `recovery_id`, `previous_journey_id`, `journey_id`, `route:"provisioning"` | `{status:"returned"}` for another existing owner, or `{status:"continued"}` when the callback becomes the owner |
+
+Identifiers are UUIDs. Replies use `{ok:true,result}` or `{ok:false,code}`.
+Preparation may instead return `{status:"launch_pending",journey_id}` for a
+current ordinary launch, or `{status:"launch_expired"}` after verifying the
+unchanged extension workspace that provides a fresh explicit launch action.
+Neither result renews expired launch authority.
+
+The recovery intent lives in extension session storage for at most five minutes.
+It binds the prior journey, creator/disclosure draft scope, callback tab/document
+and existing owner tab/document or verified absence. A conflicting owner,
+changed scope or replacement document invalidates it. No new browser permission
+is required. The callback verifies the backend result before requesting return;
+entry and recovery identifiers alone authorize no session or provisioning action.
+
+`POST /api/v1/provisioning/native-entry` accepts either the ordinary closed body
+`{journey_id}` or the recovery body `{journey_id:prior,recover:true}`. Recovery
+requires a fresh native-entry cookie, exact origin, matching CSRF and targeted
+prior context within the original bootstrap deadline. A selected recovery returns
+`{state:"selected",journey_id:resolved,previous_journey_id:prior}`. A subsequent
+GET exposes that selection only to the issued or retained browser session.
+An uncertain POST is reconciled by GET; it is never replayed.
+
+With extension coordination, return refreshes only the exact setup document to
+obtain its selected local context, or adopts the callback when no setup owner
+remains. A lost return reply
+reconciles actual ownership without repeating navigation. The extension retains
+matching draft choices, and the destination authenticates its selected journey
+independently. Recovery never navigates an OnlyFans tab or brings a delayed
+callback to the foreground after the user has switched away.
+
+When the extension is absent, a same-origin browser channel can coordinate
+return to a responding prior setup document. Its identifiers are navigation
+correlation, not credentials. The receiver verifies the actual cookie-selected
+mapping and its unchanged prior document before retiring old operations and
+refreshing. The new document authenticates that mapping before acknowledging.
+Multiple offers refuse; no offer before dispatch allows the callback to continue
+and permanently ignore late offers. After dispatch, an absent acknowledgement
+allows only read-only receipt reconciliation. It cannot trigger another
+navigation or make the callback a second owner. This mechanism does not prove
+that dormant physical tabs are absent or guarantee browser focus.

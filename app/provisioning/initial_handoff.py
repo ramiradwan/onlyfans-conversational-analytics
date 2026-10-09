@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timezone
 
 from app.persistence.auth import ClaimSubmission, SQLiteAuthenticationStore, ProvisioningCandidate, ProvisioningCandidateState
-from app.persistence.onboarding import OnboardingJourneyStore
+from app.persistence.onboarding import OnboardingJourneyStore, OnboardingJourneyUnavailable
 from app.provisioning.claim_submission import PRODUCT_VERSION, installation_proof_authority, hosted_transport
 from app.provisioning.events import events
 from app.security.hosted_grants import HostedGrantClient, HostedGrantUnavailable
@@ -34,9 +34,10 @@ class InitialInstallationEnrollment:
 
     async def prepare(self, journey_id: str) -> dict:
         async with self._lock:
-            row = self.journeys.open(journey_id)
-            if datetime.fromisoformat(row["expires_at"]) <= self.store._now():
-                raise InitialHandoffRefused("journey_expired")
+            try:
+                row = self.journeys.require_current(journey_id)
+            except OnboardingJourneyUnavailable as error:
+                raise InitialHandoffRefused(error.code) from None
             if row["state"] in {"completing", "unknown", "completed"}:
                 self.resume(journey_id)
                 return {"state": row["state"], "journey_id": journey_id}
@@ -47,6 +48,7 @@ class InitialInstallationEnrollment:
                 raise InitialHandoffRefused("handoff_unconfirmed")
             operation = row["operation_id"] or self.journeys.new_operation()
             key = await asyncio.to_thread(self.client.key.ensure_ready)
+            self._current_journey(journey_id)
             public = json.loads(key.public_key_jwk)
             request = {"profile": PROFILE, "operation_id": operation, "destination": {
                 "installation_id": row["installation_id"],
@@ -57,12 +59,14 @@ class InitialInstallationEnrollment:
             }}
             if row["prepare_json"] is not None:
                 request = json.loads(row["prepare_json"])
-            self.journeys.update(journey_id, state="preparing", operation_id=operation,
+            self._current_update(journey_id, state="preparing", operation_id=operation,
                 prepare_json=json.dumps(request, separators=(",", ":")))
+            def prepare_current():
+                return self.client.prepare(request, before_send=lambda: self._current_journey(journey_id))
             try:
                 for attempt in range(3):
                     try:
-                        prepared = await asyncio.to_thread(self.client.prepare, request)
+                        prepared = await asyncio.to_thread(prepare_current)
                         break
                     except HostedGrantUnavailable:
                         if attempt == 2:
@@ -72,11 +76,26 @@ class InitialInstallationEnrollment:
                 self.journeys.update(journey_id, state="prepare-unknown", reason=None)
                 events.publish()
                 raise
-            row = self.journeys.update(journey_id, state="waiting", handoff_reference=prepared["reference"],
+            row = self._current_update(journey_id, state="waiting", handoff_reference=prepared["reference"],
                                        handoff_expires_at=prepared["expires_at"], reason=None)
             events.publish()
             self.resume(journey_id)
             return self._browser_entry(row)
+
+    def _current_journey(self, journey_id: str) -> dict:
+        try:
+            return self.journeys.require_current(journey_id)
+        except OnboardingJourneyUnavailable as error:
+            raise InitialHandoffRefused(error.code) from None
+
+    def _current_update(self, journey_id: str, **changes) -> dict:
+        try:
+            row = self.journeys.update(journey_id, require_current=True, **changes)
+        except OnboardingJourneyUnavailable as error:
+            raise InitialHandoffRefused(error.code) from None
+        if row is None:
+            raise InitialHandoffRefused("journey_unavailable")
+        return row
 
     def _browser_entry(self, row: dict) -> dict:
         return {"state": "waiting", "journey_id": row["journey_id"],
@@ -164,7 +183,7 @@ class InitialInstallationEnrollment:
                         key = self.client.key.ensure_ready()
                         if scope["installation_id"] != row["installation_id"] or scope["installation_key_jkt"] != key.installation_key_jkt:
                             raise HostedGrantUnavailable("Initial scope mismatch")
-                        row = self.journeys.update(journey_id, state="completing", scope_json=json.dumps(scope, separators=(",", ":")))
+                        row = self._current_update(journey_id, state="completing", scope_json=json.dumps(scope, separators=(",", ":")))
                         events.publish()
                         result = await asyncio.to_thread(self.client.complete, {**request, "scope": scope})
                         if result["status"] == "completed":
@@ -196,6 +215,8 @@ class InitialInstallationEnrollment:
                 raise
             except Exception:
                 current = self.journeys.get(journey_id)
+                if current is None:
+                    return
                 if current["state"] == "completing":
                     self.journeys.update(journey_id, state="unknown", reason=None)
                     events.publish()

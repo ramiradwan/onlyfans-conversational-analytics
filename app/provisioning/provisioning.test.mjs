@@ -395,7 +395,7 @@ test('session, host, and interrupted requests retain actionable guidance', async
       const { controller, elements } = harness({ fetch: async () => response(status, {}) });
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
-      assert.match(elements.status.textContent, /setup page has expired.*reopen the desktop app/i);
+      assert.equal(elements.status.textContent, 'Setup could not continue. Open the desktop app.');
     });
   }
 
@@ -442,7 +442,7 @@ test('initial status accepts only its exact closed success shape', async (contex
       await controller.start();
       assert.equal(
         elements.status.textContent,
-        'Setup could not be checked. Reopen the desktop app.',
+        'Setup could not be checked.',
       );
       assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
       assert.equal(elements.confirmIdentity.disabled, true);

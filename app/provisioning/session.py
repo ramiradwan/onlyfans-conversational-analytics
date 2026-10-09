@@ -6,6 +6,7 @@ import secrets
 import hashlib
 import time
 import re
+from threading import RLock
 from uuid import uuid4
 from dataclasses import dataclass
 from typing import Callable
@@ -38,6 +39,8 @@ class NativeEntry:
     journey_id: str | None = None
     session_identifier: str | None = None
     consumed: bool = False
+    selected_journey_id: str | None = None
+    previous_journey_id: str | None = None
 
 
 class ProvisioningSessionManager:
@@ -50,14 +53,15 @@ class ProvisioningSessionManager:
         ttl_seconds: float = 1800.0,
         monotonic: Callable[[], float] = time.monotonic,
         journeys=None,
-        wall_clock: Callable[[], float] = time.time,
+        wall_clock: Callable[[], float] | None = None,
     ) -> None:
         if launcher_handoff_token is not None and len(launcher_handoff_token) < 32:
             raise ValueError("provisioning handoff token is invalid")
         if ttl_seconds <= 0:
             raise ValueError("provisioning session lifetime must be positive")
         self._journeys = journeys
-        self._wall_clock = wall_clock
+        self._wall_clock = wall_clock or (
+            (lambda: journeys.authentication._now().timestamp()) if journeys is not None else time.time)
         self._launcher_handoff_token = launcher_handoff_token
         self._ttl_seconds = ttl_seconds
         self._monotonic = monotonic
@@ -65,6 +69,7 @@ class ProvisioningSessionManager:
         self._sessions: dict[str, ProvisioningBrowserSession] = {}
         self._native_codes: dict[str, tuple[float, str | None]] = {}
         self._native_entries: dict[str, NativeEntry] = {}
+        self._selection_lock = RLock()
 
     def issue_native_entry(self, authorization: str | None, *, journey_id: str | None = None) -> str:
         """Authorize browser entry without choosing or creating a journey."""
@@ -104,17 +109,23 @@ class ProvisioningSessionManager:
     def native_entry_context(self, request: Request) -> dict:
         entry = self.require_native_entry(request)
         if not entry.consumed:
-            return {"state": "select_workspace", "csrf_token": _session_csrf(entry.identifier), "entry_id": entry.entry_id}
+            return {"state": "select_workspace", "csrf_token": _session_csrf(entry.identifier), "entry_id": entry.entry_id,
+                **({"target_journey_id": entry.journey_id} if entry.journey_id is not None else {})}
         try:
             session = self.require_session(request)
         except HTTPException:
             return {"state": "unconfirmed"}
-        if session.identifier != entry.session_identifier:
+        if session.identifier != entry.session_identifier or session.journey_id != entry.selected_journey_id:
             return {"state": "unconfirmed"}
         self.require_native_entry(request)
-        return {"state": "selected", "journey_id": session.journey_id}
+        return {"state": "selected", "journey_id": entry.selected_journey_id,
+                **({"previous_journey_id": entry.previous_journey_id} if entry.previous_journey_id else {})}
 
-    def select_native_workspace(self, request: Request, journey_id: str | None) -> ProvisioningBrowserSession:
+    def select_native_workspace(self, request: Request, journey_id: str | None, *, recover: bool = False) -> ProvisioningBrowserSession:
+        with self._selection_lock:
+            return self._select_native_workspace(request, journey_id, recover=recover)
+
+    def _select_native_workspace(self, request: Request, journey_id: str | None, *, recover: bool) -> ProvisioningBrowserSession:
         entry = self.require_native_entry(request)
         presented = request.headers.getlist(PROVISIONING_CSRF_HEADER)
         if (request.headers.getlist("origin") != [PROVISIONING_ORIGIN]
@@ -131,6 +142,29 @@ class ProvisioningSessionManager:
                 require_journey(journey_id)
             except (ValueError, TypeError, AttributeError):
                 raise HTTPException(400, "Journey is invalid") from None
+        if recover:
+            if journey_id is None or self._journeys is None:
+                raise HTTPException(409, "Onboarding scope is unavailable")
+            from app.persistence.onboarding import OnboardingJourneyUnavailable
+            identifier = secrets.token_urlsafe(32)
+            def authorize():
+                if self.require_native_entry(request) is not entry or entry.consumed:
+                    raise HTTPException(409, "Native entry was used")
+            try:
+                selected = self._journeys.renew_native_session(previous_journey_id=journey_id,
+                    identifier=identifier, csrf=_session_csrf(identifier),
+                    existing_identifier=request.cookies.get(PROVISIONING_SESSION_COOKIE_NAME),
+                    ttl_seconds=self._ttl_seconds, authorize=authorize)
+            except OnboardingJourneyUnavailable:
+                raise HTTPException(409, "Onboarding scope is unavailable") from None
+            session = ProvisioningBrowserSession(selected["identifier"], _session_csrf(selected["identifier"]),
+                selected["expires_at"], selected["journey_id"])
+            self._sessions[session.identifier] = session
+            entry.session_identifier = session.identifier
+            entry.selected_journey_id = session.journey_id
+            entry.previous_journey_id = journey_id
+            entry.consumed = True
+            return session
         try:
             existing = self.require_session(request)
         except HTTPException as error:
@@ -147,6 +181,7 @@ class ProvisioningSessionManager:
         else:
             session = self._create_session(journey_id, authorize=lambda: self.require_native_entry(request))
         entry.session_identifier = session.identifier
+        entry.selected_journey_id = session.journey_id
         entry.consumed = True
         return session
 
@@ -188,21 +223,19 @@ class ProvisioningSessionManager:
 
     def _create_session(self, journey_id: str | None, *, authorize=None) -> ProvisioningBrowserSession:
         identifier = secrets.token_urlsafe(32)
-        try:
-            journey = None if self._journeys is None else self._journeys.open(journey_id)
-        except ValueError:
-            raise HTTPException(409, "Onboarding scope is unavailable") from None
-        if authorize is not None:
-            authorize()
-        session = ProvisioningBrowserSession(
-            identifier=identifier,
-            csrf_token=_session_csrf(identifier),
-            expires_at=(self._monotonic() if journey is None else self._wall_clock()) + self._ttl_seconds,
-            journey_id=None if journey is None else journey["journey_id"],
-        )
-        if journey is not None:
-            self._journeys.record_session(identifier=identifier, csrf=session.csrf_token,
-                journey_id=session.journey_id, expires_at=session.expires_at, authorize=authorize)
+        csrf = _session_csrf(identifier)
+        if self._journeys is not None:
+            from app.persistence.onboarding import OnboardingJourneyUnavailable
+            try:
+                selected = self._journeys.create_session(identifier=identifier, csrf=csrf,
+                    journey_id=journey_id, expires_at=self._wall_clock()+self._ttl_seconds, authorize=authorize)
+            except (OnboardingJourneyUnavailable, ValueError):
+                raise HTTPException(409, "Onboarding scope is unavailable") from None
+            session = ProvisioningBrowserSession(identifier, csrf, selected["expires_at"], selected["journey_id"])
+        else:
+            if authorize is not None:
+                authorize()
+            session = ProvisioningBrowserSession(identifier, csrf, self._monotonic()+self._ttl_seconds)
         self._sessions[session.identifier] = session
         return session
 
@@ -213,16 +246,22 @@ class ProvisioningSessionManager:
         if not isinstance(identifier,str) or re.fullmatch(r"[A-Za-z0-9_-]{43}",identifier) is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "provisioning session is invalid")
         session = self._sessions.get(identifier or "")
-        if session is None and identifier and self._journeys is not None:
-            stored = self._journeys.session(identifier)
-            if stored is not None:
-                session = ProvisioningBrowserSession(identifier, _session_csrf(identifier), stored["expires_at"], stored["journey_id"])
+        if self._journeys is not None:
+            # Memory is only a cache, never authority after durable expiry/deletion.
+            stored = self._journeys.current_session(identifier)
+            session = None if stored is None else ProvisioningBrowserSession(
+                identifier, _session_csrf(identifier), stored["expires_at"], stored["journey_id"])
         now = self._wall_clock() if self._journeys is not None else self._monotonic()
         if session is None or session.expires_at <= now:
             if identifier is not None:
                 self._sessions.pop(identifier, None)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "provisioning session is invalid")
         return session
+
+    def session_remaining(self, request: Request) -> float:
+        session = self.require_session(request)
+        now = self._wall_clock() if self._journeys is not None else self._monotonic()
+        return max(0.0, session.expires_at - now)
 
     def require_mutation(self, request: Request) -> ProvisioningBrowserSession:
         """Require exact origin, session, and session-bound CSRF for a mutation."""
