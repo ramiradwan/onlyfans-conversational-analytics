@@ -68,7 +68,7 @@ const workspaceExternalMatches = () => [...EXPECTED_EXTERNAL_MATCHES, ...(worksp
   `${workspaceHostedOrigin}/public/onboarding/installation-continuation`,
 ] : [])];
 const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['http://bridge.localhost:17871/*']);
-const EXPECTED_EXTENSION_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;";
+const EXPECTED_EXTENSION_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871; frame-ancestors 'none';";
 const FORBIDDEN_PERMISSIONS = Object.freeze([
   'cookies',
   'debugger',
@@ -527,6 +527,9 @@ function auditManifest(manifest) {
   assert.deepEqual(manifest.host_permissions, workspaceHostPermissions());
   assert.deepEqual(manifest.optional_host_permissions, EXPECTED_OPTIONAL_HOST_PERMISSIONS);
   assert.deepEqual(manifest.externally_connectable?.matches, workspaceExternalMatches());
+  assert.deepEqual(manifest.web_accessible_resources, [
+    { resources: ['setup.html'], matches: ['http://bridge.localhost/*'] },
+  ]);
   assert.equal(manifest.background?.service_worker, 'background.js');
   assert.equal(manifest.background?.type, 'module');
   assert.equal(manifest.content_scripts, undefined);

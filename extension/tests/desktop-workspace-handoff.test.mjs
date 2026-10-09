@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { createOnboardingWorkspace, DESKTOP_HANDOFF_KEY } from '../runtime/onboarding-workspace.mjs';
 
 const journey = '11111111-1111-4111-8111-111111111111';
@@ -8,6 +9,11 @@ const routes = { extension: 'chrome-extension://synthetic/setup.html', bridge: '
   provisioning: 'http://bridge.localhost:17871/provisioning', hosted: null };
 const event = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn),
   removeListener: (fn) => listeners.delete(fn), emit: (...args) => { for (const fn of listeners) fn(...args); } }; };
+test('the local browser page can navigate only to the setup resource, which cannot be embedded', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
+  assert.deepEqual(manifest.web_accessible_resources, [{ resources: ['setup.html'], matches: ['http://bridge.localhost/*'] }]);
+  assert.match(manifest.content_security_policy.extension_pages, /frame-ancestors 'none';/);
+});
 async function fixture() {
   const local = {}, session = {}, sent = [], updates = [], changed = event();
   const tab = { id: 7, windowId: 1, documentId: 'bridge-document', url: `${routes.bridge}#journey=${journey}` };
