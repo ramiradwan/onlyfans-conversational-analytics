@@ -451,9 +451,10 @@ test('saved continuation prepares its own exact intent even when the original na
 
 test('saved continuation reuses the exact hosted document; ordinary recovery does not gain that route', async () => {
   const hosted = 'https://onboarding.example.test/public/onboarding/setup';
+  const continuation = 'https://onboarding.example.test/public/onboarding/installation-continuation';
   const f = fixture({ hosted }); await f.open();
   await f.workspace.reconcileIdentity({ account_digest: 'c'.repeat(64) });
-  f.tabs[1].url = `${hosted}/installation-continuation#journey=${journey}`;
+  f.tabs[1].url = `${continuation}#journey=${journey}`;
   f.local[WORKSPACE_RECORD_KEY].route = 'hosted';
   await assert.rejects(f.workspace.prepareNativeRecovery(f.sender(3), { entry_id: entryId }), /workspace_exists/);
   const prepared = await f.workspace.prepareNativeRecovery(f.sender(3), { entry_id: entryId }, () => true, { savedContinuation: true });
@@ -462,6 +463,6 @@ test('saved continuation reuses the exact hosted document; ordinary recovery doe
   assert.deepEqual(result, { status: 'returned' });
   const script = f.calls.find((call) => call.script);
   assert.deepEqual(script.target, { tabId: 2, documentIds: ['owner-document'] });
-  assert.deepEqual(script.args, [`${hosted}/installation-continuation#journey=${journey}`, `${routes.provisioning}#journey=${renewedJourney}`]);
+  assert.deepEqual(script.args, [`${continuation}#journey=${journey}`, `${routes.provisioning}#journey=${renewedJourney}`]);
   assert.equal(f.tabs[0].url, 'https://onlyfans.com/my/chats');
 });

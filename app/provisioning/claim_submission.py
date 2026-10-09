@@ -21,7 +21,7 @@ import platform
 from datetime import datetime, timezone
 from typing import Callable, Literal, Mapping
 
-from app.persistence.auth import AuthenticationStore, ClaimSubmission
+from app.persistence.auth import AuthenticationStore, ClaimSubmission, InstallationKeyReference
 from app.provisioning.claim_package import (
     ClaimPackageError,
     DecodedClaimPackage,
@@ -42,6 +42,7 @@ from app.security.hosted_grants import (
 from app.security.installation_key import (
     InstallationKeyAuthority,
     InstallationKeyError,
+    InstallationProof,
     WindowsCNGInstallationKeyProvider,
 )
 
@@ -70,8 +71,29 @@ def hosted_transport(hosted_origin: str) -> HostedTransport:
 def installation_proof_authority(
     store: AuthenticationStore,
 ) -> InstallationProofAuthority:
-    """Bind possession proofs to the TPM-backed installation key."""
-    return InstallationKeyAuthority(store, WindowsCNGInstallationKeyProvider())
+    """Bind the proof port without opening the platform provider during boot."""
+    return _DeferredInstallationProofAuthority(store)
+
+
+class _DeferredInstallationProofAuthority:
+    """Resolve the unchanged hardware authority only for an actual key action."""
+
+    def __init__(self, store: AuthenticationStore) -> None:
+        self._store = store
+
+    def _authority(self) -> InstallationKeyAuthority:
+        # No key result is cached: each operation retains the authority's
+        # current-reference checks, native proof checks and provider refusals.
+        return InstallationKeyAuthority(self._store, WindowsCNGInstallationKeyProvider())
+
+    def ensure_ready(self) -> InstallationKeyReference:
+        return self._authority().ensure_ready()
+
+    def reopen_existing(self) -> InstallationKeyReference:
+        return self._authority().reopen_existing()
+
+    def sign_challenge(self, challenge: bytes) -> InstallationProof:
+        return self._authority().sign_challenge(challenge)
 
 
 def durable_claim_submission(
