@@ -253,6 +253,7 @@
     "tests/test_incremental_enrichment_units.py": 3,
     "tests/test_incremental_graph_units.py": 4,
     "tests/test_initial_handoff_read.py": 1,
+    "tests/test_insights_snapshot_retention.py": 1,
     "tests/test_integrity_cost_contract.py": 3,
     "tests/test_integrity_fallback_modes.py": 3,
     "tests/test_integrity_ready_handoff.py": 1,
