@@ -187,6 +187,7 @@ test('hooked identity responses bind the observed account to the current documen
             callback({ ok: true, mode: 'full', consent_epoch: CONSENT.consent_epoch });
             return;
           }
+          if (message.type === 'ofca.observer.state') { callback({ ok: true }); return; }
           const listener = h.internalListeners[0];
           assert.equal(listener(message, CONTENT_SENDER, callback), true);
         },
@@ -199,14 +200,16 @@ test('hooked identity responses bind the observed account to the current documen
     bundledSource('../content.js').then((source) => vm.runInContext(source, contentContext)),
   ]);
 
+  dispatchPageMessage({ type: 'ofca.capture.control', version: 1, action: 'resume' });
   await pageWindow.fetch('/api2/v2/users/me');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(posts[0].message.type, PROVISIONING_IDENTITY_MESSAGE_TYPE);
-  assert.equal(posts[0].message.page_epoch, PAGE_EPOCH_B);
-  assert.deepEqual(posts[0].message.authenticated_profile, {
+  const observedPosts = posts.filter(({ message }) => message.type === PROVISIONING_IDENTITY_MESSAGE_TYPE);
+  assert.equal(observedPosts.length > 0, true);
+  assert.equal(observedPosts[0].message.page_epoch, PAGE_EPOCH_B);
+  assert.deepEqual(observedPosts[0].message.authenticated_profile, {
     creator_account_id: 'creator-from-platform',
   });
-  dispatchPageMessage(posts[0].message);
+  dispatchPageMessage(observedPosts[0].message);
   await new Promise((resolve) => setImmediate(resolve));
 
   const signedIn = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
@@ -223,8 +226,9 @@ test('hooked identity responses bind the observed account to the current documen
   identityBody = { user: null };
   await pageWindow.fetch('/api2/v2/init');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(posts[1].message.page_epoch, PAGE_EPOCH_C);
-  dispatchPageMessage(posts[1].message);
+  const signedOutPost = posts.filter(({ message }) => message.type === 'ofca.provisioning.identity.reset').at(-1);
+  assert.equal(signedOutPost.message.page_epoch, PAGE_EPOCH_C);
+  dispatchPageMessage(signedOutPost.message);
   await new Promise((resolve) => setImmediate(resolve));
 
   const signedOut = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
@@ -361,13 +365,69 @@ test('account or document changes invalidate companion sessions before storage s
   let invalidations = 0;
   h.bridge.onAccountChange(() => { invalidations++; });
   await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
-  assert.equal(invalidations, 1);
+  assert.equal(invalidations, 2, 'early invalidation and committed publication');
   await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
-  assert.equal(invalidations, 1);
+  assert.equal(invalidations, 2, 'an identical observation does not republish');
   const changing = dispatch(h.internalListeners[0], update('creator-b', PAGE_EPOCH_B), CONTENT_SENDER);
-  assert.equal(invalidations, 2);
+  assert.equal(invalidations, 3, 'invalidation precedes storage completion');
   await changing;
+  assert.equal(invalidations, 4);
   assert.equal(await h.bridge.currentAccountId(), 'creator-b');
+});
+
+test('subscribers observe a committed identity without requiring another tab event', async () => {
+  const h = bridgeHarness();
+  const observed = []; const reads = [];
+  h.bridge.onAccountChange(() => { reads.push(h.bridge.currentAccountId().then((value) => observed.push(value))); });
+  const originalSet = h.chromeApi.storage.session.set;
+  let publish;
+  h.chromeApi.storage.session.set = (value, callback) => { publish = () => originalSet(value, callback); };
+  const pending = dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  while (!publish) await new Promise((resolve) => setImmediate(resolve));
+  await Promise.all(reads);
+  assert.deepEqual(observed, [null], 'early notification cannot claim an uncommitted account');
+  publish(); assert.deepEqual(await pending, { ok: true });
+  await Promise.all(reads);
+  assert.deepEqual(observed, [null, 'creator-a']);
+});
+
+test('an identical observation from either of two documents does not republish or invalidate', async () => {
+  const h = bridgeHarness();
+  const second = { ...CONTENT_SENDER, tab: { id: 18 }, documentId: 'document-b' };
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  await dispatch(h.internalListeners[0], update('creator-a', PAGE_EPOCH_B), second);
+  let notifications = 0; h.bridge.onAccountChange(() => { notifications++; });
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  await dispatch(h.internalListeners[0], update('creator-a', PAGE_EPOCH_B), second);
+  assert.equal(notifications, 0);
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+  assert.equal(h.session[PROVISIONING_IDENTITY_STORAGE_KEY].contexts.length, 2);
+});
+
+test('a failed write does not publish success and the same observation can publish after recovery', async () => {
+  const h = bridgeHarness(); const reads = []; const observed = [];
+  h.bridge.onAccountChange(() => { reads.push(h.bridge.currentAccountId().then((value) => observed.push(value))); });
+  const originalSet = h.chromeApi.storage.session.set;
+  h.chromeApi.storage.session.set = (_value, callback) => {
+    h.chromeApi.runtime.lastError = { message: 'fixture write failure' }; callback(); delete h.chromeApi.runtime.lastError;
+  };
+  assert.deepEqual(await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER), { ok: false });
+  await Promise.all(reads); assert.deepEqual(observed, [null]);
+  h.chromeApi.storage.session.set = originalSet;
+  assert.deepEqual(await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER), { ok: true });
+  await Promise.all(reads); assert.deepEqual(observed, [null, 'creator-a']);
+});
+
+for (const operation of ['clear', 'remove']) test(`committed ${operation} publishes an empty current identity`, async () => {
+  const h = bridgeHarness();
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  const observed = []; const reads = [];
+  h.bridge.onAccountChange(() => { reads.push(h.bridge.currentAccountId().then((value) => observed.push(value))); });
+  if (operation === 'clear') await h.bridge.clearContexts();
+  else h.tabUpdatedListeners[0](CONTENT_SENDER.tab.id, { status: 'loading' });
+  await new Promise((resolve) => setImmediate(resolve));
+  await Promise.all(reads);
+  assert.deepEqual(observed, ['creator-a', null]);
 });
 
 test('active Full identity capture can continue while external bootstrap queries are disabled', async () => {

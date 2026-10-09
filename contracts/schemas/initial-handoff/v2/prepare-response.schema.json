@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff/v2/prepare-response.schema.json",
+  "title": "Initial installation handoff prepare-response v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reference",
+    "operation_id",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:initial-installation-handoff:v2"
+    },
+    "reference": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

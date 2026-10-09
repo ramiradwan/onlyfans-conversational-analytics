@@ -117,3 +117,44 @@ test('cold-worker removal still deletes the removed tab context after consent re
   });
   assert.equal(await h.bridge.currentAccountId(), null);
 });
+
+test('known unrelated setup loading, URL changes and removal do not invalidate the creator', async () => {
+  const h = harness();
+  h.onRemoved.emit(99);
+  await flush(); await flush();
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+  let notifications = 0;
+  h.bridge.onAccountChange(() => { notifications++; });
+  h.onUpdated.emit(99, { status: 'loading' });
+  h.onUpdated.emit(99, { url: 'http://bridge.localhost:17871/provisioning#journey=changed' });
+  h.onRemoved.emit(99);
+  assert.equal(notifications, 0);
+  await flush(); await flush();
+  assert.equal(notifications, 0);
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+});
+
+test('known platform navigation invalidates immediately before its context is removed', async () => {
+  const h = harness();
+  h.onRemoved.emit(99);
+  await flush(); await flush();
+  let notifications = 0;
+  h.bridge.onAccountChange(() => { notifications++; });
+  h.onUpdated.emit(17, { url: 'https://example.test/' });
+  assert.equal(notifications, 1);
+  assert.equal(h.session[PROVISIONING_IDENTITY_STORAGE_KEY].contexts.length, 1);
+  await flush(); await flush();
+  assert.equal(await h.bridge.currentAccountId(), null);
+  assert.equal(notifications, 2);
+});
+
+test('unknown cold membership still invalidates immediately before restoration', async () => {
+  const h = harness();
+  let notifications = 0;
+  h.bridge.onAccountChange(() => { notifications++; });
+  h.onRemoved.emit(17);
+  assert.equal(notifications, 1);
+  assert.equal(h.readyCalls(), 1);
+  await flush(); await flush();
+  assert.equal(await h.bridge.currentAccountId(), null);
+});

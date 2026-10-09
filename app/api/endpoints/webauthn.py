@@ -168,6 +168,24 @@ def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
+@router.get("/session-state")
+def session_state(request: Request, response: Response,
+                  policy: RuntimePolicy = Depends(get_runtime_policy),
+                  store: SQLiteAuthenticationStore = Depends(authentication_store),
+                  authority_port: WebAuthnAuthorityPort = Depends(webauthn_authority_port)) -> dict[str, bool]:
+    # Same-origin fetch metadata and exact host; GET does not require an Origin
+    # header, which browsers commonly omit for these same-origin reads.
+    from urllib.parse import urlsplit
+    if request.headers.get("host") != urlsplit(settings.bridge_origin).netloc or request.headers.get("sec-fetch-site") not in {None, "same-origin", "none"}:
+        raise HTTPException(403, "Request origin is not authorized")
+    decision = authority_port.session_authority(policy)
+    enrolled = decision.result is WebAuthnAuthorityResult.AUTHORIZED
+    if not enrolled and decision.result not in {WebAuthnAuthorityResult.CREDENTIAL_MISSING, WebAuthnAuthorityResult.CREDENTIAL_REVOKED}:
+        raise HTTPException(409, "Enrollment state is unavailable", headers={"Cache-Control": "no-store"})
+    _no_store(response)
+    return {"authenticated": bool(enrolled and store.bridge_session_is_current(policy)), "enrolled": enrolled}
+
+
 @router.post("/registration/begin")
 def begin_registration(
     request: Request,
@@ -187,7 +205,10 @@ def begin_registration(
     if not isinstance(authority, RegistrationAuthority):
         raise RuntimeError("Registration authority port returned the wrong authority type")
     _no_store(response)
-    return service.begin_registration(authority)
+    options, context = service.begin_first_registration(authority)
+    response.set_cookie("__Host-first_enrollment", context, secure=True, httponly=True,
+                        samesite="strict", path="/", max_age=settings.webauthn_challenge_ttl_seconds)
+    return options
 
 
 @router.post("/registration/finish")
@@ -210,7 +231,7 @@ async def finish_registration(
     if not isinstance(authority, RegistrationAuthority):
         raise RuntimeError("Registration authority port returned the wrong authority type")
     try:
-        service.complete_registration(
+        issued = service.complete_first_registration(
             authority,
             RegistrationCredential(
                 credential_id=body.credential_id,
@@ -219,11 +240,24 @@ async def finish_registration(
                 client_data_json=body.response.client_data_json,
                 attestation_object=body.response.attestation_object,
             ),
+            context=request.cookies.get("__Host-first_enrollment", ""),
+            policy=policy,
+            authority_port=authority_port,
         )
     except WebAuthnVerificationError as error:
         _verification_refusal(error, operation="registration_finish")
     _no_store(response)
-    return {"status": "registered"}
+    identity = issued.policy.identity
+    if identity is None:
+        raise RuntimeError("First enrollment did not produce an authenticated session")
+    response.set_cookie(
+        key=settings.bridge_session_cookie_name,
+        value=webauthn_session_token(identity, issued.session_value),
+        secure=True, httponly=True, samesite="strict", path="/",
+        max_age=settings.bridge_session_ttl_seconds,
+    )
+    response.delete_cookie("__Host-first_enrollment", path="/", secure=True, httponly=True, samesite="strict")
+    return {"profile": "local-first-enrollment-result.v1", "status": "registered", "csrf_token": issued.csrf_value}
 
 
 @router.post("/login/begin")

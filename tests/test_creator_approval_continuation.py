@@ -80,8 +80,8 @@ def test_creator_approval_continuation_uses_only_the_release_owned_hosted_entry(
     marker = page.split('id="continue-creator-approval"', 1)[1].split("</a>", 1)[0]
 
     assert f'href="{HOSTED_URL}"' in marker
-    assert 'target="_blank"' in marker
-    assert 'rel="noopener noreferrer"' in marker
+    assert 'target="_self"' in marker
+    assert 'rel="noreferrer"' in marker
     assert "hidden" not in marker
     assert "association_request_id" not in marker
     assert "creator_account_id" not in marker

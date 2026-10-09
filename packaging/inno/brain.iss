@@ -43,6 +43,11 @@ Source: "{#StagingRoot}\*"; DestDir: "{app}"; Excludes: "Agent,Agent\*"; Flags: 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExecutable}"
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: ""; ValueData: "URL:OnlyFans Conversational Analytics"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\ofca\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExecutable}"" --open-workspace ""%1"""
+
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
 

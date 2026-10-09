@@ -5,23 +5,16 @@ import { useState } from 'react';
 import { StatusLine } from '../components/ui/ReservedRegion';
 
 import { BRAND_INSET, BrandMark } from '../layouts/BrandMark';
-import { webauthnApi, type WebAuthnApi } from '../services/webauthnApi';
+import { EnrollmentOutcomeError, webauthnApi, type WebAuthnApi } from '../services/webauthnApi';
 import { componentTokens, effectTokens } from '../theme';
 import { surfaceArrival } from '../theme/presentationMotion';
 
-/** Browser ceremony outcomes where the person closed the prompt or let it time out. */
-const CANCELLED_CEREMONIES = new Set(['NotAllowedError', 'AbortError']);
-
-function failureMessage(cause: unknown, enroll: boolean): string {
-  const name = typeof cause === 'object' && cause !== null && 'name' in cause ? cause.name : null;
-  if (typeof name === 'string' && CANCELLED_CEREMONIES.has(name)) {
-    return enroll
-      ? 'Passkey setup was cancelled or timed out. Try again.'
-      : 'Sign-in was cancelled or timed out. Try again.';
-  }
+function failureMessage(enroll: boolean): string {
+  // NotAllowedError does not uniquely establish cancellation, expiry or why
+  // the browser refused a ceremony. State only the observed incomplete step.
   return enroll
-    ? "Couldn't set up a passkey. If you already have one for this app, use the same browser profile and sign in."
-    : "Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit.";
+    ? 'Passkey setup could not be confirmed.'
+    : 'Sign-in did not finish.';
 }
 
 interface WebAuthnAccessViewProps {
@@ -40,14 +33,13 @@ export function WebAuthnAccessView({
     if (busy) return;
     setBusy(true);
     setError(null);
-    let enrolling = enroll;
     try {
       if (enroll) await api.enroll();
-      enrolling = false;
-      await api.login();
+      else await api.login();
       onAuthenticated();
     } catch (cause) {
-      setError(failureMessage(cause, enrolling));
+      setError(cause instanceof EnrollmentOutcomeError && cause.enrolled
+        ? 'Passkey created. Sign in to continue.' : failureMessage(enroll));
     } finally {
       setBusy(false);
     }

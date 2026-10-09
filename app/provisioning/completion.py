@@ -94,9 +94,9 @@ def durable_finalize_action(
     """Build the action that finalizes provisioning and authorizes its account.
 
     Returns `None` when both writes land, and a nonsecret refusal reason
-    otherwise. Nothing is written before a refusal that names the grant set, the
-    approval, or the installation identity: those are decided from durable state
-    that finalization only reads.
+    otherwise. Initial grant, approval and installation checks precede writes.
+    An authority change during configuration creation can leave configuration
+    behind; the transactional recheck still refuses account authorization.
     """
 
     def complete_provisioning(
@@ -104,6 +104,7 @@ def durable_finalize_action(
         association_request_id: str,
         detected_creator_account_id: str,
         reported_platform_creator_id: str | None,
+        trusted_journey_id: str | None = None,
     ) -> str | None:
         request = FinalizationRequest(
             association_request_id=association_request_id,
@@ -126,12 +127,14 @@ def durable_finalize_action(
                     request=request,
                     extension_id=extension_id,
                     data_directory=data_directory,
+                    **({"trusted_journey_id": trusted_journey_id} if trusted_journey_id is not None else {}),
                 )
                 authorize_finalized_account(
                     store=store,
                     request=request,
                     finalized=finalized,
                     authorized_at=now(),
+                    **({"trusted_journey_id": trusted_journey_id} if trusted_journey_id is not None else {}),
                 )
         except FinalizationRefused as refusal:
             return refusal.reason

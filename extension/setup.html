@@ -30,6 +30,18 @@
         </div>
       <button id="open-options" class="secondary header-action">Extension settings</button>
     </header>
+    <button id="setup-transfer-open" class="text-button hidden" type="button">I have a setup code</button>
+    <section id="setup-transfer-entry" class="journey-card hidden" aria-labelledby="setup-transfer-title">
+      <h2 id="setup-transfer-title">Continue setup</h2>
+      <p>Enter the code from your other browser or computer.</p>
+      <form id="setup-transfer-form" novalidate>
+        <label for="setup-transfer-code">Setup code</label>
+        <input id="setup-transfer-code" name="setup-code" type="text" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="setup-transfer-status">
+        <p id="setup-transfer-status" role="status" aria-live="polite"></p>
+        <button id="setup-transfer-submit" class="primary" type="submit">Continue</button>
+        <button id="setup-transfer-back" class="text-button" type="button">Back</button>
+      </form>
+    </section>
     <div data-reserved-region="setup-rail" class="reserved-rail"><nav id="setup-progress" data-region-content aria-label="Setup progress" class="hidden">
       <ol>
         <li data-step="agree"><button id="step-agree">Agree</button></li>
@@ -39,6 +51,14 @@
       </ol>
     </nav></div>
     <div data-reserved-region="extension-stage" data-region-role="scroll" class="extension-stage"><div data-region-content>
+    <section id="setup-transfer-creator" class="journey-card hidden" aria-label="Creator for this setup">
+      <p>Setup is for <strong id="setup-transfer-intended"></strong></p>
+      <p>Signed in now: <span id="setup-transfer-current"></span></p>
+      <div id="setup-transfer-mismatch" class="hidden">
+        <p>Switch to the creator this setup is for.</p>
+        <button id="setup-transfer-switch" class="secondary" type="button">Open OnlyFans</button>
+      </div>
+    </section>
     <button id="back-current" class="back-button hidden">Back to current step</button>
     <p id="review-notice" class="fine-print hidden">Data-handling information changed. Review it before restarting analytics.</p>
     <p id="loading" role="status">Checking setup…</p>
@@ -65,7 +85,7 @@
             described in it.
           </span>
         </label>
-        <button id="activate-software" class="primary" type="button" disabled>
+        <button id="activate-software" class="primary" type="button">
           Activate Software
         </button>
         <p class="fine-print">
@@ -108,8 +128,19 @@
       <h2 id="access-title" tabindex="-1"></h2>
       <p id="access-body"></p>
       <button id="restore-access" class="primary hidden">Allow site access</button>
-      <button id="reload-tabs" class="primary hidden">Reload OnlyFans tabs</button>
+
     </section>
+    <section id="preview-metrics" class="journey-card hidden" aria-label="Preview activity">
+      <h2>Last seven days</h2>
+      <dl class="connection-grid">
+        <div><dt>Messages</dt><dd id="messages-count">0</dd></div>
+        <div><dt>Received</dt><dd id="inbound-count">0</dd></div>
+        <div><dt>Sent</dt><dd id="outbound-count">0</dd></div>
+      </dl>
+    </section>
+    <p id="background-tab-note" class="fine-print hidden">The background tab receives OnlyFans activity. Closing it stops updates from that tab.</p>
+    <button id="reopen-background-tab" class="secondary hidden">Reopen background tab</button>
+    <button id="pause" class="secondary hidden">Pause analytics</button>
     <section id="journey-card" class="journey-card hidden" aria-labelledby="journey-title">
       <p id="journey-badge" class="state-badge"></p>
       <h2 id="journey-title" tabindex="-1">Checking setup…</h2>

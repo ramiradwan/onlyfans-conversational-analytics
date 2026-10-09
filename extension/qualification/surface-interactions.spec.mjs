@@ -16,14 +16,23 @@ test('loading setup never records approvals or requests browser access', async (
   await renderSurfaceState(page, SURFACE_STATES.software_activation);
   await expect(page.locator('#terms-accepted')).not.toBeChecked();
   await expect(page.locator('#risk-acknowledged')).not.toBeChecked();
-  await expect(page.locator('#activate-software')).toBeDisabled();
+  await expect(page.locator('#activate-software')).toBeEnabled();
+  expect((await calls(page)).every((call) => call.type.endsWith('.status'))).toBe(true);
+  await page.locator('#activate-software').click();
+  await expect(page.locator('#feedback')).toBeVisible();
+  await expect(page.locator('#terms-accepted')).toBeFocused();
   expect((await calls(page)).every((call) => call.type.endsWith('.status'))).toBe(true);
   await page.locator('#terms-accepted').check();
   await expect(page.locator('#risk-acknowledged')).toBeEnabled();
+  await page.locator('#activate-software').click();
+  await expect(page.locator('#risk-acknowledged')).toBeFocused();
+  expect((await calls(page)).every((call) => call.type.endsWith('.status'))).toBe(true);
   await page.locator('#risk-acknowledged').check();
   await expect(page.locator('#activate-software')).toBeEnabled();
   await page.locator('#activate-software').click();
   await expect(page.locator('#mode-choice')).toBeVisible();
+  expect((await calls(page)).filter((call) => !call.type.endsWith('.status')).map((call) => call.type))
+    .toEqual(['ofca.legal-activation.accept-terms', 'ofca.legal-activation.acknowledge-risk', 'ofca.legal-activation.activate-software']);
   expect((await calls(page)).some((call) => call.type === 'permission')).toBe(false);
 });
 
@@ -44,6 +53,27 @@ test('Preview finishes setup without pairing or desktop requests', async ({ page
   await expect(page.locator('[data-step="connect"]')).toBeHidden();
   await expect(page.locator('#companion-pairing')).toBeHidden();
   expect((await calls(page)).some((call) => ['pair', 'tab'].includes(call.type))).toBe(false);
+});
+
+test('Preview counts return after required review or site access without changing consent', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.preview_complete);
+  const counts = page.locator('#preview-metrics');
+  await expect(counts).toBeVisible();
+  await expect(page.locator('#messages-count')).toHaveText('128');
+  await page.locator('#journey-primary').click();
+  await expect(page.locator('#full-disclosure')).toBeVisible();
+  await expect(counts).toBeHidden();
+  await page.locator('#full-secondary').click();
+  await expect(counts).toBeVisible();
+  await expect(page.locator('#messages-count')).toHaveText('128');
+  await page.evaluate(() => window.__surfaceFixture.change({ phase: 'permission_required' }));
+  await expect(page.locator('#access-card')).toBeVisible();
+  await expect(counts).toBeHidden();
+  await page.evaluate(() => window.__surfaceFixture.change({ phase: 'preview' }));
+  await expect(counts).toBeVisible();
+  await expect(page.locator('#messages-count')).toHaveText('128');
+  expect(await page.evaluate(() => window.__surfaceFixture.state.mode)).toBe('preview');
+  expect((await calls(page)).every((call) => call.type.endsWith('.status'))).toBe(true);
 });
 
 test('deletion is scoped and cancellation makes no deletion request', async ({ page }) => {

@@ -51,6 +51,16 @@ def test_release_document_accepts_one_customer_entry_and_one_api_origin() -> Non
     assert config.hosted_configured is True
 
 
+def test_initial_handoff_browser_entry_uses_browser_origin_not_proof_api_origin():
+    from app.core.customer_release import resolve_hosted_onboarding_start
+    config = validate_customer_release_document(document(
+        "https://setup.example.com/public/onboarding/setup", "https://api.example.com"))
+    assert resolve_hosted_onboarding_start(config) == "https://setup.example.com/public/onboarding/setup/start"
+    with pytest.raises(CustomerReleaseConfigurationError):
+        resolve_hosted_onboarding_start(validate_customer_release_document(document(
+            "https://setup.example.com/start", "https://api.example.com")))
+
+
 @pytest.mark.parametrize(
     "candidate",
     [

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-continuation/v1/binding-response.schema.json",
+  "title": "Installation setup continuation binding-response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "continuation_id",
+    "grant"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:installation-setup-continuation:v1"
+    },
+    "continuation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "grant": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+    }
+  }
+}

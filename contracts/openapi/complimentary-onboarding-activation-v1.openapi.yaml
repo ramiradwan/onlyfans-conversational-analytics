@@ -1,0 +1,347 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Complimentary onboarding activation",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://control-plane.example.invalid"
+    }
+  ],
+  "paths": {
+    "/v1/onboarding/complimentary-activations:prepare": {
+      "post": {
+        "operationId": "prepareComplimentaryOnboardingActivation",
+        "x-profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+        "x-request-max-bytes": 2048,
+        "x-response-max-bytes": 4096,
+        "description": "Current independently authenticated customer session, exact context, Origin and CSRF. No local runtime credential. No exchange or redemption authorization is created.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/complimentary-activation/v1/prepare-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact operation result with no customer credential or signed grant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/prepare-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/onboarding/complimentary-activations:confirm": {
+      "post": {
+        "operationId": "confirmComplimentaryOnboardingActivation",
+        "x-profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+        "x-request-max-bytes": 2048,
+        "x-response-max-bytes": 4096,
+        "description": "Current independently authenticated customer session, exact context, Origin and CSRF. No local runtime credential. Explicitly commit the exact complimentary exchange and initial redemption authorization atomically.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/complimentary-activation/v1/confirm-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact operation result with no customer credential or signed grant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/confirm-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/onboarding/complimentary-activations:read": {
+      "post": {
+        "operationId": "readComplimentaryOnboardingActivation",
+        "x-profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+        "x-request-max-bytes": 2048,
+        "x-response-max-bytes": 4096,
+        "description": "Current independently authenticated customer session, exact context, Origin and CSRF. No local runtime credential. No exchange or redemption authorization is created.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/complimentary-activation/v1/read-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact operation result with no customer credential or signed grant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/read-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Closed refusal; unavailable never repeats a mutation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/complimentary-activation/v1/error.schema.json"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

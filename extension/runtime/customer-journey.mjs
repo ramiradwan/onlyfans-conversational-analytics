@@ -112,9 +112,9 @@ export function deriveCustomerJourney({
         id: CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE,
         tone: 'warning',
         title: 'Desktop app is unavailable',
-        body: 'Open the desktop app. Your connection is saved.',
-        primaryAction: 'retry_full',
-        primaryLabel: 'Retry connection',
+        body: 'Open the desktop app to continue.',
+        primaryAction: 'open_desktop',
+        primaryLabel: 'Open desktop app',
         secondaryAction: null,
         secondaryLabel: null,
       });
@@ -123,13 +123,11 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.DESKTOP_APP_NEEDED,
       tone: 'warning',
       title: 'Set up the desktop app for Full analytics',
-      body: desktopDownloadAvailable
-        ? 'Install or open the desktop app to store and analyze messages on this computer.'
-        : 'Open the desktop app to store and analyze messages on this computer.',
-      primaryAction: desktopDownloadAvailable ? 'install_desktop' : 'retry_full',
-      primaryLabel: desktopDownloadAvailable ? 'Install desktop app' : 'Check again',
-      secondaryAction: desktopDownloadAvailable ? 'retry_full' : null,
-      secondaryLabel: desktopDownloadAvailable ? 'Check again' : null,
+      body: 'Open the desktop app to continue. Install it if you haven’t already.',
+      primaryAction: 'open_desktop',
+      primaryLabel: 'Open desktop app',
+      secondaryAction: desktopDownloadAvailable ? 'install_desktop' : null,
+      secondaryLabel: desktopDownloadAvailable ? 'Install desktop app' : null,
     });
   }
 

@@ -1,3 +1,7 @@
+// eslint-disable-next-line import/extensions -- Runtime .mjs has a matching .d.mts declaration.
+import { parseOnboardingJson } from '../../../shared/onboarding/json.mjs';
+import { validateOnboardingMessage } from '../protocol/onboarding';
+
 interface RegistrationOptions {
   challenge: string;
   rp: PublicKeyCredentialRpEntity;
@@ -19,6 +23,13 @@ interface LoginOptions {
 export interface WebAuthnApi {
   enroll(): Promise<void>;
   login(): Promise<void>;
+}
+
+export class EnrollmentOutcomeError extends Error {
+  constructor(readonly enrolled: boolean) {
+    super('Passkey setup could not be confirmed.');
+    this.name = 'EnrollmentOutcomeError';
+  }
 }
 
 interface WebAuthnApiOptions {
@@ -92,6 +103,7 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     if (!response.ok) throw new Error(`WebAuthn request failed (${response.status})`);
+    if (path === '/registration/finish') return parseOnboardingJson(await response.text()) as ResponseBody;
     return response.json() as Promise<ResponseBody>;
   };
 
@@ -125,7 +137,31 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
         },
       }) as PublicKeyCredential | null;
       if (credential === null) throw new Error('No passkey was created.');
-      await post('/registration/finish', registrationCredential(credential));
+      try {
+        const result = await post<unknown>('/registration/finish', registrationCredential(credential));
+        if (!validateOnboardingMessage(result)
+          || (result as { profile: string }).profile !== 'local-first-enrollment-result.v1') {
+          throw new Error('Passkey session was not confirmed.');
+        }
+      } catch {
+        // A lost body can follow a committed credential/session. Read once;
+        // never repeat finish, mint another session, or silently invoke get().
+        let enrolled = false;
+        try {
+          const response = await request('/api/v1/webauthn/session-state', {
+            credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+            headers: { Accept: 'application/json' },
+          });
+          const status: unknown = response.ok ? parseOnboardingJson(await response.text()) : null;
+          if (typeof status === 'object' && status !== null
+            && Object.keys(status).length === 2 && 'authenticated' in status && 'enrolled' in status
+            && typeof status.authenticated === 'boolean' && typeof status.enrolled === 'boolean') {
+            if (status.authenticated && status.enrolled) return;
+            enrolled = status.enrolled;
+          }
+        } catch { /* Preserve uncertainty; this read grants no authority. */ }
+        throw new EnrollmentOutcomeError(enrolled);
+      }
     },
     login,
   };

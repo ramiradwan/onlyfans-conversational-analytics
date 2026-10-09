@@ -51,6 +51,7 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     InstallationProof,
     ProviderKeyInfo,
+    verify_installation_proof,
 )
 from contracts.loader import ContractsIntegrityError
 
@@ -321,6 +322,54 @@ class EmulatedPlatformProvider:
         )
         r, s = decode_dss_signature(der)
         return r.to_bytes(32, "big") + s.to_bytes(32, "big")
+
+
+def test_deferred_proof_authority_preserves_live_key_checks(store, monkeypatch) -> None:
+    provider = EmulatedPlatformProvider()
+    calls: list[str] = []
+
+    def resolve_provider():
+        calls.append("open")
+        return provider
+
+    monkeypatch.setattr(submission_module, "WindowsCNGInstallationKeyProvider", resolve_provider)
+    authority = submission_module.installation_proof_authority(store)
+    assert calls == []
+    assert store.installation_key_reservation() is None
+    reference = authority.ensure_ready()
+    assert calls == ["open"]
+    assert authority.reopen_existing() == reference
+    challenge = b"deferred installation proof regression"
+    proof = authority.sign_challenge(challenge)
+    assert verify_installation_proof(reference.public_key_jwk, challenge, proof)
+    assert calls == ["open"] * 3
+
+    # Losing the actual key must never be hidden by cached readiness or a new key.
+    provider._keys.clear()
+    with pytest.raises(InstallationKeyUnavailable):
+        authority.reopen_existing()
+    with pytest.raises(InstallationKeyUnavailable):
+        authority.ensure_ready()
+    with pytest.raises(InstallationKeyUnavailable):
+        authority.sign_challenge(challenge)
+    assert calls == ["open"] * 6
+    assert provider._keys == {}
+    assert store.installation_key_reference() == reference
+
+
+@pytest.mark.parametrize("action", ["ensure_ready", "reopen_existing", "sign_challenge"])
+def test_deferred_proof_action_still_refuses_unsupported_platform(store, monkeypatch, action) -> None:
+    from types import SimpleNamespace
+    from app.security import installation_key
+
+    # Keep the actual provider and authority; only select its unsupported-platform branch.
+    monkeypatch.setattr(installation_key, "os", SimpleNamespace(name="posix"))
+    authority = submission_module.installation_proof_authority(store)
+    arguments = (b"test proof",) if action == "sign_challenge" else ()
+    with pytest.raises(InstallationKeyUnavailable, match="available only on Windows"):
+        getattr(authority, action)(*arguments)
+    assert store.installation_key_reference() is None
+    assert store.installation_key_reservation() is None
 
 
 @pytest.fixture

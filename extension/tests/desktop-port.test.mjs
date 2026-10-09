@@ -49,7 +49,7 @@ test('the stage follows the extension-owned prerequisites in order', () => {
   assert.equal(stage({ consent: consent('preview'), legal: legal() }), 'needs_full');
   assert.equal(stage({ consent: consent('paused'), legal: legal() }), 'paused');
   assert.equal(stage({ consent: consent('full', { phase: 'permission_required' }), legal: legal() }), 'needs_site_access');
-  assert.equal(stage({ consent: consent('full', { reload_required: true }), legal: legal() }), 'needs_site_access');
+  assert.equal(stage({ consent: consent('full', { reload_required: true }), legal: legal() }), 'ready_to_pair');
   assert.equal(stage({ consent: consent('full'), legal: legal(), pairing: { state: 'setup_incomplete' } }), 'needs_account');
   assert.equal(stage({ consent: consent('full'), legal: legal(), pairing: { state: 'unpaired' } }), 'ready_to_pair');
   assert.equal(stage({ consent: consent('full'), legal: legal(), pairing: { state: 'pairing_failed' } }), 'ready_to_pair');
@@ -198,9 +198,12 @@ test('opening a page is rate-limited and anchored to the desktop tab', async () 
   port.onMessage.listeners[0]({ type: 'open', version: 1, step: 'connection' });
   port.onMessage.listeners[0]({ type: 'open', version: 1, step: 'https://example.test' });
   await tick();
-  assert.deepEqual(h.calls.open, [
-    { step: 'setup', anchorTab: { id: 12, windowId: 4 } },
-    { step: 'connection', anchorTab: { id: 12, windowId: 4 } },
+  assert.deepEqual(h.calls.open.map(({ step, anchorTab }) => ({ step, anchorTab })), [
+    { step: 'setup', anchorTab: { id: 12, windowId: 4, documentId: undefined, url: `${ORIGIN}/settings` } },
+    { step: 'connection', anchorTab: { id: 12, windowId: 4, documentId: undefined, url: `${ORIGIN}/settings` } },
   ]);
+  assert.equal(typeof h.calls.open[0].navigate, 'function');
+  port.onDisconnect.listeners[0]();
+  assert.throws(() => h.calls.open[0].navigate({ type: 'navigate_setup' }), /desktop_document_closed/);
   assert.equal(h.calls.pair, 0);
 });

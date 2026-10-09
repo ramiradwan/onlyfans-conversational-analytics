@@ -127,6 +127,7 @@ PRODUCER_ROOT = Path(__file__).resolve().parent.parent
 LEGAL_BINDINGS_GATE = PRODUCER_ROOT / "tools" / "legal-release-bindings" / "verify.mjs"
 EXTENSION_ROOT = PRODUCER_ROOT / "extension"
 EXTENSION_BUILD_SCRIPT = EXTENSION_ROOT / "build.mjs"
+CUSTOMER_RELEASE_CONFIG = PRODUCER_ROOT / "app" / "core" / "customer-release.json"
 
 LEGAL_BINDINGS_SCHEMA = "ofca-legal-instrument-bindings/v1"
 LEGAL_BINDINGS_KEYS = ("legal_bindings_digest", "schema", "source_revision")
@@ -1536,6 +1537,38 @@ class QualifiedChromeZip:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
+def _qualified_workspace_policy(manifest: dict[str, Any]) -> bool:
+    local_match = "http://bridge.localhost:17871/*"
+    if "host_permissions" not in manifest:
+        return manifest.get("externally_connectable") == {"matches": [local_match]}
+    try:
+        release = load_json_strict(CUSTOMER_RELEASE_CONFIG.read_bytes(), label="customer release")
+        if not isinstance(release, dict) or set(release) != {
+            "schema", "hosted_onboarding_url", "hosted_api_origin"
+        } or release["schema"] != "ofca-customer-release/v1":
+            return False
+        page = urllib.parse.urlsplit(release["hosted_onboarding_url"])
+        api = urllib.parse.urlsplit(release["hosted_api_origin"])
+        for value in (page, api):
+            if (value.scheme != "https" or not value.hostname
+                    or value.username is not None or value.password is not None
+                    or value.query or value.fragment or value.hostname.endswith(".invalid")
+                    or "*" in value.netloc):
+                return False
+        if page.path != "/public/onboarding/setup" or api.path not in {"", "/"}:
+            return False
+        origin = urllib.parse.urlunsplit(("https", page.netloc, "", "", ""))
+    except (OSError, TypeError, ValueError):
+        return False
+    return (
+        manifest.get("host_permissions") == ["http://bridge.localhost/*", origin + "/*"]
+        and manifest.get("externally_connectable") == {
+            "matches": [local_match, origin + "/public/onboarding/setup",
+                        origin + "/public/onboarding/installation-continuation"]
+        }
+    )
+
+
 def qualify_downloaded_artifact(
     actions_archive: bytes,
     *,
@@ -1598,10 +1631,12 @@ def qualify_downloaded_artifact(
         raise ContractError("Chrome ZIP is not the qualified Manifest V3 Chrome target")
     if (
         manifest.get("optional_host_permissions") != ["https://onlyfans.com/*"]
-        or "host_permissions" in manifest
-        or manifest.get("externally_connectable") != {"matches": ["http://bridge.localhost:17871/*"]}
+        or not _qualified_workspace_policy(manifest)
+        or manifest.get("web_accessible_resources") != [
+            {"resources": ["setup.html"], "matches": ["http://bridge.localhost/*"]}
+        ]
         or manifest.get("content_security_policy") != {
-            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"
+            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871; frame-ancestors 'none';"
         }
     ):
         raise ContractError("Chrome ZIP does not carry the qualified companion transport policy")
@@ -2084,6 +2119,7 @@ def run_package_audit(
             f"--artifact={artifact}",
             f"--packaged-signing-rule={signing_rule}",
             f"--legal-release-bindings={legal_bindings}",
+            f"--customer-release-config={CUSTOMER_RELEASE_CONFIG}",
         ],
         cwd=str(EXTENSION_ROOT),
         capture_output=True,

@@ -152,7 +152,7 @@ async function driveWorkspace(page, view, base, step, mode) {
 }
 
 async function driveProvisioning(page, step) {
-  await installProvisioningFixture(page);
+  await installProvisioningFixture(page, { acquireRefusal: 'binding_acquisition_unavailable' });
   await openProvisioningFixture(page);
   const run = (method) => page.evaluate((method) => window.__provisioningController[method](), method);
   for (const flag of ['malformed', 'expired', 'unavailable', 'identityUnavailable']) {
@@ -179,14 +179,26 @@ async function driveProvisioning(page, step) {
     await run('refreshIdentity');
   });
   await step('account:confirm', () => page.locator('#confirm-identity').click());
-  await step('recovery:open', () => page.locator('#recovery-open').click());
-  await step('recovery:close', () => page.locator('#recovery-close').click());
+  await run('acquireAssociation');
+  await step('approval:retry:pending', async () => {
+    await page.evaluate(() => window.__provisioningFixture.hold.push('acquire'));
+    await page.locator('#acquire-association').click();
+    assert.equal(await page.locator('#binding-step').getAttribute('aria-busy'), 'true');
+  });
+  await step('approval:retry:refused', async () => {
+    await page.evaluate(() => {
+      window.__provisioningFixture.hold = window.__provisioningFixture.hold.filter((operation) => operation !== 'acquire');
+      window.__provisioningFixture.release('acquire');
+    });
+    await page.locator('#acquire-association').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#binding-step').getAttribute('data-state'), 'current');
+  });
   for (const reason of ['size', 'encoding', 'profile', 'schema', 'device', 'consumed', 'binding_acquisition_unavailable', 'hosted_origin_unavailable', 'hosted_unavailable', 'installation_key_unavailable', 'membership_reference_unavailable', 'candidate_resolution_conflict', 'grant_verification_refused', 'claim_already_consumed', 'claim_refused', 'incomplete_grant_set', 'membership_refresh_unavailable', unseen]) {
     await page.evaluate((reason) => { window.__provisioningFixture.refusal = reason; }, reason);
     await step(`approval:refusal:${reason === unseen ? 'unknown' : reason}`, () => run('acquireAssociation'));
   }
   await step('approval:pending', async () => {
-    await page.evaluate(() => { window.__provisioningFixture.refusal = null; window.__provisioningFixture.loseFinalize = true; window.__provisioningFixture.hold.push('acquire', 'finalize'); window.dispatchEvent(new Event('focus')); });
+    await page.evaluate(() => { window.__provisioningFixture.refusal = null; window.__provisioningFixture.acquireRefusal = null; window.__provisioningFixture.loseFinalize = true; window.__provisioningFixture.hold.push('acquire', 'finalize'); window.dispatchEvent(new Event('focus')); });
   });
   await step('finalization:pending', () => page.evaluate(() => window.__provisioningFixture.release('acquire')));
   await step('finalization:completed', () => page.evaluate(() => window.__provisioningFixture.release('finalize')));

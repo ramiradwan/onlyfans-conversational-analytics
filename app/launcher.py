@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol, Sequence
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, parse_qs
 
 import httpx
 from dotenv import dotenv_values
@@ -159,6 +159,11 @@ class Launcher:
         browser_open: Callable[[str], bool] | None = None,
         credential_loader: Callable[[Path], str] | None = None,
         provisioning_token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(32),
+        journey_id: str | None = None,
+        native_return: bool = False,
+        native_discovery: bool = False,
+        confirm_workspace_reopen: Callable[[], bool] | None = None,
+        show_workspace_status: Callable[[], None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -169,10 +174,20 @@ class Launcher:
         self.browser_open = browser_open or webbrowser.open
         self.credential_loader = credential_loader or _load_launcher_credential
         self.provisioning_token_factory = provisioning_token_factory
+        if journey_id is not None:
+            from app.persistence.onboarding import require_journey
+            require_journey(journey_id)
+        self.journey_id = journey_id
+        if native_return and journey_id is None:
+            raise ValueError("Native return requires a journey")
+        self.native_return = native_return
+        self.native_discovery = native_discovery
+        self.confirm_workspace_reopen = confirm_workspace_reopen or _confirm_workspace_reopen
+        self.show_workspace_status = show_workspace_status or _show_workspace_status
         self.monotonic = monotonic
         self.sleep = sleep
 
-    def launch(self) -> str:
+    def launch(self, *, open_browser: bool = True) -> str:
         """Open one authenticated handoff URL or the reusable fixed origin."""
         credential_path = runtime_configuration_file(self.configuration.data_directory)
         if not credential_path.exists():
@@ -187,7 +202,15 @@ class Launcher:
                 "configuration_unavailable",
                 FAILURE_MESSAGES["configuration_unavailable"],
             ) from error
+        if not open_browser:
+            # The existing provisioning document reconnects to this process and
+            # advances in its tab. A restart is not an explicit browser open.
+            return BRIDGE_ORIGIN
         target = self._request_browser_target(credential)
+        if target is None:
+            return BRIDGE_ORIGIN
+        if self.journey_id is not None:
+            target += "#journey=" + self.journey_id
         try:
             opened = self.browser_open(target)
         except Exception as error:
@@ -229,6 +252,8 @@ class Launcher:
         else:
             process = None
         target = self._request_provisioning_browser_target(token)
+        if target is None:
+            return BRIDGE_ORIGIN if process is None else self._supervise_provisioning(process)
         try:
             opened = self.browser_open(target)
         except Exception as error:
@@ -288,7 +313,7 @@ class Launcher:
             raise LaunchFailure(
                 "configuration_unavailable", FAILURE_MESSAGES["configuration_unavailable"]
             )
-        return self.launch()
+        return self.launch(open_browser=False)
 
     def _verified_listener(self) -> ListenerOwner | None:
         try:
@@ -316,7 +341,7 @@ class Launcher:
             raise LaunchFailure("port_conflict", FAILURE_MESSAGES["port_conflict"])
         return owner
 
-    def _request_provisioning_browser_target(self, token: str) -> str:
+    def _request_provisioning_browser_target(self, token: str, *, explicit_reopen: bool = False) -> str | None:
         try:
             with self.client_factory() as client:
                 response = client.post(
@@ -324,6 +349,10 @@ class Launcher:
                     headers={
                         "Host": BRIDGE_CONTROL_HOST,
                         "Authorization": f"Provisioning {token}",
+                        **({"X-Onboarding-Journey": self.journey_id} if self.journey_id else {}),
+                        **({"X-Onboarding-Reopen": "explicit"} if explicit_reopen else {}),
+                        **({"X-Onboarding-Native-Entry": "discover"} if self.native_discovery else {}),
+                        **({"X-Onboarding-Native-Entry": "targeted"} if self.native_return else {}),
                     },
                 )
                 if _client_has_cookies(client, response) or response.status_code != 200:
@@ -339,15 +368,24 @@ class Launcher:
                 "provisioning_handoff_request_failed",
                 FAILURE_MESSAGES["provisioning_handoff_request_failed"],
             ) from error
+        if self._workspace_response(payload, "workspace_active"):
+            self.show_workspace_status()
+            return None
+        if not explicit_reopen and self._workspace_response(payload, "workspace_uncertain"):
+            if not self.confirm_workspace_reopen():
+                return None
+            return self._request_provisioning_browser_target(token, explicit_reopen=True)
         code = payload.get("handoff_code") if isinstance(payload, dict) else None
         if not isinstance(code, str) or _HANDOFF_CODE.fullmatch(code) is None:
             raise LaunchFailure(
                 "provisioning_handoff_payload_invalid",
                 FAILURE_MESSAGES["provisioning_handoff_payload_invalid"],
             )
-        return f"{BRIDGE_ORIGIN}{PROVISIONING_REDEEM_PATH}?{urlencode({'code': code})}"
+        fields = {"code": code}
+        path = "/provisioning/native-entry" if self.native_discovery or self.native_return else PROVISIONING_REDEEM_PATH
+        return f"{BRIDGE_ORIGIN}{path}?{urlencode(fields)}"
 
-    def _request_browser_target(self, credential: str) -> str:
+    def _request_browser_target(self, credential: str) -> str | None:
         try:
             with self.client_factory() as client:
                 response = client.post(
@@ -355,6 +393,7 @@ class Launcher:
                     headers={
                         "Host": BRIDGE_CONTROL_HOST,
                         "Authorization": f"Bootstrap {credential}",
+                        **({"X-Onboarding-Journey": self.journey_id} if self.journey_id else {}),
                     },
                 )
                 if _client_has_cookies(client, response):
@@ -364,6 +403,8 @@ class Launcher:
                 if response.status_code == 409:
                     detail = _response_detail(response)
                     if detail == "launcher_bootstrap_already_consumed":
+                        if self.native_return or self.native_discovery:
+                            return BRIDGE_ORIGIN + "/provisioning/native-return"
                         return BRIDGE_ORIGIN
                 if response.status_code != 200:
                     raise LaunchFailure(
@@ -376,10 +417,33 @@ class Launcher:
             raise LaunchFailure(
                 "handoff_failed", FAILURE_MESSAGES["handoff_failed"]
             ) from error
+        if self._workspace_response(payload, "workspace_active"):
+            self.show_workspace_status()
+            return None
         code = payload.get("handoff_code") if isinstance(payload, dict) else None
         if not isinstance(code, str) or _HANDOFF_CODE.fullmatch(code) is None:
             raise LaunchFailure("handoff_failed", FAILURE_MESSAGES["handoff_failed"])
-        return f"{BRIDGE_ORIGIN}{HANDOFF_PATH}?{urlencode({'code': code})}"
+        fields = {"code": code}
+        if self.native_return:
+            fields["native_journey"] = self.journey_id
+        elif self.native_discovery:
+            fields["native_discovery"] = "1"
+        return f"{BRIDGE_ORIGIN}{HANDOFF_PATH}?{urlencode(fields)}"
+
+    def _workspace_response(self, value: object, field: str) -> bool:
+        if not isinstance(value, dict) or field not in value:
+            return False
+        from app.persistence.onboarding import require_journey
+        try:
+            if set(value) != {field, "journey_id"} or value[field] is not True:
+                raise ValueError("Invalid workspace response")
+            journey = require_journey(value["journey_id"])
+            if self.journey_id is not None and journey != self.journey_id:
+                raise ValueError("Workspace scope changed")
+        except (ValueError, TypeError, AttributeError):
+            raise LaunchFailure("handoff_failed", FAILURE_MESSAGES["handoff_failed"]) from None
+        self.journey_id = journey
+        return True
 
 
 def default_launcher_configuration() -> LauncherConfiguration:
@@ -707,6 +771,23 @@ def _show_error(message: str) -> None:
         print(message, file=sys.stderr)
 
 
+def _confirm_workspace_reopen() -> bool:
+    # Without an extension or a live local subscription, desktop cannot inspect
+    # a cross-origin hosted tab. An explicit recovery avoids an automatic copy.
+    if os.name == "nt":
+        return ctypes.windll.user32.MessageBoxW(None,
+            "Open setup in your browser?\n\nIf you already have a setup tab, continue there.",
+            "Brain", 0x24 | 0x100) == 6
+    return False
+
+
+def _show_workspace_status() -> None:
+    if os.name == "nt":
+        ctypes.windll.user32.MessageBoxW(None, "Setup is open in your browser.", "Brain", 0x40)
+    else:
+        print("Setup is open in your browser.")
+
+
 def launcher_log_file(data_directory: Path) -> Path:
     """Return the per-user bounded launcher diagnostics file."""
     return data_directory / LAUNCHER_LOG_FILENAME
@@ -734,10 +815,25 @@ def _record_launch_failure(data_directory: Path, reason_code: str) -> None:
         return
 
 
-def main() -> int:
+def parse_workspace_app_link(value: str) -> str:
+    """Accept only a nonauthorizing journey locator, never an executable URL."""
+    from app.persistence.onboarding import require_journey
+    parsed = urlsplit(value)
+    if (parsed.scheme != "ofca" or parsed.netloc != "onboarding" or parsed.path not in {"", "/"}
+            or parsed.fragment or parsed.username or parsed.password):
+        raise ValueError("Invalid workspace app link")
+    fields = parse_qs(parsed.query, strict_parsing=True)
+    if set(fields) != {"journey"} or len(fields["journey"]) != 1:
+        raise ValueError("Invalid workspace app link")
+    return require_journey(fields["journey"][0])
+
+
+def main(*, workspace_link: str | None = None) -> int:
     configuration = default_launcher_configuration()
+    journey_id = None if workspace_link is None else parse_workspace_app_link(workspace_link)
     try:
-        Launcher(configuration).launch()
+        Launcher(configuration, journey_id=journey_id, native_return=workspace_link is not None,
+                 native_discovery=workspace_link is None).launch()
     except LaunchFailure as error:
         reason_code = _safe_failure_code(error)
         _record_launch_failure(configuration.data_directory, reason_code)

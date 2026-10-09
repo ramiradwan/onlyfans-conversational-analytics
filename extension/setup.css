@@ -107,3 +107,7 @@ body[data-surface="options"] .settings-row p { min-height: 72px; }
 body[data-surface="options"] .settings-row button.hidden { display: inline-flex !important; visibility: hidden; }
 body[data-surface="options"] .settings-row.hidden { display: flex !important; visibility: hidden; }
 @media (max-width: 600px) { .extension-stage { height: 640px; } .options-frame { height: 600px; } }
+
+#setup-transfer-form { display: grid; gap: 12px; }
+#setup-transfer-code { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; font: inherit; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 8px; }
+#setup-transfer-status { min-height: 2.5em; margin: 0; }

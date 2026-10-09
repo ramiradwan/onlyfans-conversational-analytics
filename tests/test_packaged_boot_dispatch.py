@@ -11,6 +11,7 @@ import types
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app import packaged_entry
 from app.core.config import Settings
@@ -56,6 +57,9 @@ def test_fresh_process_unconfigured_provisioning_does_not_import_config(
         if key not in _SETTINGS_ENVIRONMENT_NAMES
     }
     environment["LOCAL_ANALYTICS_DATA_DIR"] = str(data_directory)
+    # First-run journeys now open isolated SQLCipher storage. Keep the explicit
+    # test-only key in its permitted mode without supplying runtime settings.
+    environment["ENVIRONMENT"] = "test"
 
     result = subprocess.run(
         [sys.executable, "-c", _FRESH_PROCESS_PROBE],
@@ -88,6 +92,83 @@ def test_missing_runtime_configuration_selects_provisioning_without_main_import(
     application = packaged_entry.select_brain_application(tmp_path)
 
     assert application.openapi_url is None
+
+
+@pytest.mark.parametrize("hosted_configured", [False, True])
+@pytest.mark.parametrize("saved_setup", ["absent", "available", "provider-refused"])
+def test_composed_native_admission_resolves_hardware_only_for_saved_setup(
+    tmp_path: Path, monkeypatch, hosted_configured: bool, saved_setup: str,
+) -> None:
+    """Real composition and native admission retain the existing key boundary."""
+    from app.core.customer_release import CustomerReleaseConfig
+    from app.persistence.onboarding import OnboardingJourneyStore
+    from app.provisioning import claim_submission
+    from app.provisioning.completion import durable_authentication_store
+    from app.provisioning.session import NATIVE_ENTRY_COOKIE_NAME, PROVISIONING_ORIGIN
+    from app.security.installation_key import InstallationKeyAuthority, InstallationKeyUnavailable
+    from test_continuation_selection import add_candidate, enroll
+    from test_provisioning_claim_submission import EmulatedPlatformProvider
+
+    token = "t" * 32
+    monkeypatch.setenv(packaged_entry.PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, token)
+    release = CustomerReleaseConfig(
+        "https://onboarding.example.test/public/onboarding/setup" if hosted_configured else "",
+        "https://api.example.test" if hosted_configured else "",
+    )
+    monkeypatch.setattr(packaged_entry, "load_customer_release_config", lambda: release)
+    store = durable_authentication_store(tmp_path)()
+    provider = EmulatedPlatformProvider()
+    original_key = None
+    if saved_setup != "absent":
+        original_key = InstallationKeyAuthority(store, provider).ensure_ready()
+        enroll(store)
+        add_candidate(store)
+    provider_calls: list[str] = []
+
+    def resolve_provider():
+        provider_calls.append("open")
+        if saved_setup == "provider-refused":
+            raise InstallationKeyUnavailable("Test provider is unavailable")
+        return provider
+
+    def forbid_new_key(*_):
+        pytest.fail("Saved setup must reopen the existing key")
+
+    monkeypatch.setattr(claim_submission, "WindowsCNGInstallationKeyProvider", resolve_provider)
+    monkeypatch.setattr(provider, "create_non_exportable_key", forbid_new_key)
+    application = packaged_entry.select_brain_application(tmp_path)
+    assert provider_calls == []
+    with TestClient(application, base_url=PROVISIONING_ORIGIN) as client:
+        assert client.get("/health").status_code == 200
+        entry = client.post("/api/v1/provisioning/handoff", headers={
+            "Authorization": "Provisioning " + token, "X-Onboarding-Native-Entry": "discover",
+        })
+        assert entry.status_code == 200
+        redeemed = client.get("/provisioning/native-entry", params={"code": entry.json()["handoff_code"]},
+            follow_redirects=False)
+        assert redeemed.status_code == 303
+        headers = {"Cookie": f"{NATIVE_ENTRY_COOKIE_NAME}={redeemed.cookies[NATIVE_ENTRY_COOKIE_NAME]}"}
+        context = client.get("/api/v1/provisioning/native-entry", headers=headers)
+        assert context.status_code == 200
+        assert provider_calls == []
+        assert context.json().get("continue_saved") is (None if saved_setup == "absent" else True)
+        body = {"journey_id": None, **({"continue_saved": True} if saved_setup != "absent" else {})}
+        selected = client.post("/api/v1/provisioning/native-entry", json=body, headers={
+            **headers, "Origin": PROVISIONING_ORIGIN, "X-Provisioning-CSRF": context.json()["csrf_token"],
+        })
+    assert provider_calls == ([] if saved_setup == "absent" else ["open"])
+    assert store.installation_key_reference() == original_key
+    if saved_setup == "provider-refused":
+        assert selected.status_code == 409
+        assert selected.json() == {"detail": "Saved setup is unavailable"}
+        assert "set-cookie" not in selected.headers
+        with store.database.read() as connection:
+            for table in ("onboarding_journeys", "provisioning_browser_sessions", "onboarding_native_selection_receipts"):
+                assert connection.execute("SELECT count(*) FROM " + table).fetchone()[0] == 0
+    else:
+        assert selected.status_code == 200
+        journey = OnboardingJourneyStore(store).require_current(selected.json()["journey_id"])
+        assert journey["kind"] == ("initial-enrollment" if saved_setup == "absent" else "registered-continuation")
 
 
 def test_runtime_configuration_presence_selects_runtime_application(tmp_path, monkeypatch) -> None:

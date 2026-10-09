@@ -59,9 +59,14 @@ export async function auditReleaseArchive({ artifact, legalBindings }) {
   assert.deepEqual(manifest.optional_host_permissions, [
     'https://onlyfans.com/*',
   ]);
-  assert.deepEqual(manifest.externally_connectable?.matches, [`${BRIDGE_ORIGIN}/*`]);
+  const hostedOrigin = json(entries, 'build-meta.json').workspace_hosted_origin;
+  assert.equal(new URL(hostedOrigin).protocol, 'https:');
+  assert.equal(new URL(hostedOrigin).origin, hostedOrigin);
+  assert.deepEqual(manifest.externally_connectable?.matches, [`${BRIDGE_ORIGIN}/*`,
+    `${hostedOrigin}/public/onboarding/setup`, `${hostedOrigin}/public/onboarding/installation-continuation`]);
   assert.equal(manifest.content_security_policy?.extension_pages, EXPECTED_CSP);
-  assert.equal(manifest.host_permissions, undefined);
+  assert.deepEqual(manifest.host_permissions, ['http://bridge.localhost/*', `${hostedOrigin}/*`]);
+  assert.equal(manifest.action.default_popup, undefined);
 
   const config = json(entries, 'extension-config.json');
   assert.equal(config.dashboard_url, `${BRIDGE_ORIGIN}/`);

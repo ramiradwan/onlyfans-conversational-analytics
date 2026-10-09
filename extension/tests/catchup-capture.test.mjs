@@ -12,6 +12,9 @@ test('capture reports reuse page status and preserve sleeping tabs', async () =>
   controller.scheduler = { setTimeout, clearTimeout };
   let tabs = [{ id: 1, frozen: false, discarded: false }];
   const actions = [];
+  controller.observer = { snapshot: () => ({ tabs: tabs.map((tab) => ({ ...tab,
+    status: { mode: 'full', active: true, forwarding: true, ws2_socket_open: true } })),
+    drops: { expired: 2, rejected: 1 }, drop_sources: {} }) };
   controller.chromeApi = { tabs: { query: async () => tabs, sendMessage: async (id, value) => {
     actions.push(value.action);
     return value.action === 'status' ? { mode: 'full', active: true, forwarding: true, ws2_socket_open: true }

@@ -94,8 +94,11 @@ def _chrome_zip(
         "minimum_chrome_version": "132",
         "optional_host_permissions": ["https://onlyfans.com/*"],
         "externally_connectable": {"matches": ["http://bridge.localhost:17871/*"]},
+        "web_accessible_resources": [
+            {"resources": ["setup.html"], "matches": ["http://bridge.localhost/*"]}
+        ],
         "content_security_policy": {
-            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"
+            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871; frame-ancestors 'none';"
         },
     }
     manifest.update(manifest_update or {})
@@ -505,6 +508,10 @@ def test_secret_key_files_are_created_once_with_owner_only_permissions(
         ({"host_permissions": []}, "chrome132"),
         ({"content_security_policy": {"extension_pages": "script-src 'self'; connect-src *;"}}, "chrome132"),
         ({"externally_connectable": {"matches": ["http://127.0.0.1:17871/*"]}}, "chrome132"),
+        ({"web_accessible_resources": []}, "chrome132"),
+        ({"web_accessible_resources": [{"resources": ["*"], "matches": ["http://bridge.localhost/*"]}]}, "chrome132"),
+        ({"web_accessible_resources": [{"resources": ["setup.html"], "matches": ["<all_urls>"]}]}, "chrome132"),
+        ({"content_security_policy": {"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"}}, "chrome132"),
     ],
 )
 def test_attestation_refuses_an_unqualified_companion_transport_policy(manifest_update, target):

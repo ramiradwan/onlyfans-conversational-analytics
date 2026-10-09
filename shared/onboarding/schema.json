@@ -458,6 +458,93 @@
       "additionalProperties": false,
       "required": [
         "profile",
+        "journey_id",
+        "operation_id",
+        "source",
+        "epoch",
+        "revision",
+        "account_generation",
+        "consent_generation",
+        "command_epoch",
+        "command_account_generation",
+        "command_consent_generation",
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "profile": {
+          "const": "local-onboarding-result.v2"
+        },
+        "journey_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "source": {
+          "enum": [
+            "brain",
+            "extension"
+          ]
+        },
+        "epoch": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "account_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "consent_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "command_epoch": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "command_account_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "command_consent_generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "rejected",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "stale_scope",
+            "not_authorized",
+            "not_ready",
+            "unconfirmed"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
         "hint",
         "version"
       ],

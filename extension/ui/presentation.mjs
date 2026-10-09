@@ -36,7 +36,7 @@ export function statusPresentation(model) {
   const status = model.status;
   const choice = (label, body) => ({ label, body });
   if (!status) return choice('Checking…', 'Checking the extension.');
-  if (status.reload_required) return choice('Reload needed', 'Reload when you are ready to apply the access you allowed.');
+  if (status.observer?.helper === 'closed') return choice('Background tab closed', 'Reopen the background tab to receive activity.');
   if (status.phase === 'permission_required' || status.phase === 'revoked') return choice('Needs access', 'Allow site access so the extension can read activity from your creator account.');
   if (status.consent.mode === 'paused') return choice('Paused', model.pairing?.desktop_control ? 'Pause and resume from the desktop app.' : 'New messages are not collected until you resume.');
   if (status.consent.mode === 'preview') return choice('Ready', 'Preview counts update as you use OnlyFans.');

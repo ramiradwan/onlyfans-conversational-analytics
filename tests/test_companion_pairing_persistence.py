@@ -298,7 +298,7 @@ def test_migrates_a_pre_0011_auth_database(
 
     migrated = SQLiteAuthenticationStore(path, clock=clock)
     with migrated.database.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 18
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 23
         tables = {
             str(row["name"])
             for row in connection.execute(
@@ -331,6 +331,8 @@ def test_legacy_agent_pairing_challenge_behavior_is_unchanged(
     store: SQLiteAuthenticationStore,
     instant: datetime,
 ) -> None:
+    pairing = CompanionPairingPersistence(store)
+    assert pairing.current_pairing_state("creator-1") == "missing"
     grants = _record_pairing_grants(store, instant, retained=False)
     legacy = AgentPairing(
         pairing_id="legacy-pairing-1",
@@ -347,10 +349,12 @@ def test_legacy_agent_pairing_challenge_behavior_is_unchanged(
         grant_reference_ids=grants,
     )
     store.register_agent_pairing(legacy)
+    assert pairing.current_pairing_state("creator-1") == "unknown"
     policy = store.build_runtime_policy(
         AuthContext(legacy.principal_id, legacy.creator_account_id, "agent")
     )
     assert store.activate_agent_pairing(policy, legacy.pairing_id) is True
+    assert pairing.current_pairing_state("creator-1") == "verified"
 
     challenge = store.issue_agent_challenge(
         AgentChallengeBinding(

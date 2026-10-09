@@ -6,7 +6,14 @@
     "_internal/app/provisioning/provisioning.html",
     "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
     "_internal/app/provisioning/provisioning.js",
+    "_internal/app/provisioning/resume.js",
+    "_internal/app/provisioning/native-return.js",
+    "_internal/app/provisioning/native-workspace.mjs",
     "_internal/contracts/manifest.json",
+    "_internal/shared/onboarding/sse.mjs",
+    "_internal/shared/onboarding/json.mjs",
+    "_internal/shared/onboarding/projection.mjs",
+    "_internal/shared/onboarding/client.mjs",
     "_internal/contracts/consumer-pin.json",
     "THIRD_PARTY_NOTICES.md",
     "NATIVE_SNOW_NOTICES.txt",
@@ -72,7 +79,12 @@
         "0015_capability_license_authority.sql": "404689c5e258bad350210740fe2dde0c7c7dad5027b516476fb106866265a11b",
         "0016_bootstrap_recovery_v2.sql": "7abb504e996ea02a5d6a3f2f9a1f441d9f59a0f060657098e4c2f8208b070069",
         "0017_capability_license_delivery_journal.sql": "b7f7c489ed7e16c5ae6994acf27dfd3dab9bb60d3c10eb25c74835d40c26017a",
-        "0018_companion_confirmation_method.sql": "436da449ede4ae0b7827349b76f5f0797578bd56bc535ba9898d783d7908ddbe"
+        "0018_companion_confirmation_method.sql": "436da449ede4ae0b7827349b76f5f0797578bd56bc535ba9898d783d7908ddbe",
+        "0019_first_enrollment.sql": "46c1b5d89adc06e34dfdd20989c3d7748d899bdb2a68f1414134e7002b938da8",
+        "0020_onboarding_journeys.sql": "97fb16b41f563587e0a17257088087504c093eb2205266bd58c96a3c75e0c605",
+        "0021_onboarding_transfer.sql": "d142017c43f17e689cd7936253f689691ec6fbd738626e45f31e8fa6565da7f4",
+        "0022_onboarding_workspace_recovery.sql": "b8a073bc95a75d1fd83e13dbdbcd5fa8613e26adf91d1405b381013f6dfebf0c",
+        "0023_registered_continuations.sql": "92515248380d6371e093524a2cf9b62b324f0f2d29d7be6382a8c374c69a11f8"
       }
     },
     {
@@ -114,10 +126,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "14693de25efdd6732f3da36baaa7b2d96e034c429b1438e3192f37533c89d0b0",
-    "consumer_pin_sha256": "da6d15b48fe02317bb8d4a8deafff288447c0627298576423fe3980a7ed26758",
+    "manifest_sha256": "be3f681dc02b3dc2834897717d5b2101a37a03da822ac3b3acd014bf1222ea15",
+    "consumer_pin_sha256": "e260a1455b312c11c1b8ed89befd85b61489c67d9f636864d761d35bf44e2e56",
     "root_file_sha256": {
-      "loader.py": "6a8cd27c029bf06836b91c4a1d794df5dda6978f775584a57d785b20cd825fbf",
+      "loader.py": "807d644af63d615bd5909b161c6df98434617e5dd51b01f1ed96212d73b4dc22",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [
@@ -155,7 +167,10 @@
       "reviewed_synthetic_files": {
         "_internal/contracts/initial-installation-handoff-v1/digest-cases.json": "c425138e26b1b826931141863905eeb10af36788dd85d0b34dddc0681ce3c2ac",
         "_internal/contracts/initial-installation-handoff-v1/proof-cases.json": "11cd8d1ae0e93156d8f9bed193a8d72e0f50f5f7c7db661b9e3bd0b7a5e17613",
-        "_internal/contracts/initial-installation-handoff-v1/schema-cases.json": "837db4ed80632507b0ec97d269455681b6d15709c207f37a42bd4281b81be1bb"
+        "_internal/contracts/initial-installation-handoff-v1/schema-cases.json": "837db4ed80632507b0ec97d269455681b6d15709c207f37a42bd4281b81be1bb",
+        "_internal/contracts/initial-installation-handoff-v2/digest-cases.json": "15a71798b5a2814095a6402e633955b96516a25b6f4d70374ca9cbb5042db0bb",
+        "_internal/contracts/initial-installation-handoff-v2/proof-cases.json": "2a06115ddb72c8b6a82ca8d8bde5eb1edde511828257ae652df06455d8c60a78",
+        "_internal/contracts/initial-installation-handoff-v2/schema-cases.json": "170479fd603709952870d30a93fd922edd81b35f8b67c588b82644e64211fef0"
       }
     },
     {

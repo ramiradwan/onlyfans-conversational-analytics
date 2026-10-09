@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff/v2/definitions.schema.json",
+  "title": "Initial installation handoff definitions v2",
+  "$defs": {
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installation_id",
+        "installation_key",
+        "device"
+      ],
+      "properties": {
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "alg",
+            "kid",
+            "jwk"
+          ],
+          "properties": {
+            "alg": {
+              "const": "ES256"
+            },
+            "kid": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "jwk": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/publicP256Jwk"
+            }
+          }
+        },
+        "device": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "platform",
+            "product_version",
+            "display_name"
+          ],
+          "properties": {
+            "platform": {
+              "enum": [
+                "windows",
+                "macos",
+                "linux"
+              ]
+            },
+            "product_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$"
+            },
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]{1,128}$"
+            }
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "onboarding_transaction_id",
+        "organization_id",
+        "intended_creator_id",
+        "association_request_id",
+        "installation_id",
+        "installation_key_jkt",
+        "action_digests"
+      ],
+      "properties": {
+        "onboarding_transaction_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "intended_creator_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "association_request_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "action_digests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "issue-installation-claim",
+            "approve-creator-association"
+          ],
+          "properties": {
+            "issue-installation-claim": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+            },
+            "approve-creator-association": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+            }
+          }
+        }
+      }
+    },
+    "authorizedScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "onboarding_transaction_id",
+        "organization_id",
+        "intended_creator_id",
+        "association_request_id",
+        "installation_id",
+        "installation_key_jkt",
+        "action_digests",
+        "authorization_revision"
+      ],
+      "properties": {
+        "onboarding_transaction_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "intended_creator_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "association_request_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "action_digests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "issue-installation-claim",
+            "approve-creator-association"
+          ],
+          "properties": {
+            "issue-installation-claim": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+            },
+            "approve-creator-association": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+            }
+          }
+        },
+        "authorization_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "operation_id",
+        "onboarding_transaction_id",
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "consumed_at"
+      ],
+      "properties": {
+        "claim_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "onboarding_transaction_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "consumed_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

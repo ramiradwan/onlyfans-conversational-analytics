@@ -8,7 +8,7 @@ import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Final
+from typing import Final, Literal
 
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.auth import (
@@ -863,6 +863,41 @@ class CompanionPairingPersistence:
         _require_bytes32(pairing_id, name="pairing_id")
         with self.database.read() as connection:
             return self._optional_pin_in_transaction(connection, pairing_id)
+
+    def current_pairing_state(
+        self, creator_account_id: str
+    ) -> Literal["missing", "unknown", "verified"]:
+        """Report an account's pairing through the owning authority checks."""
+        with self.database.transaction() as connection:
+            now = self.authentication._now()
+            rows = connection.execute(
+                "SELECT pairing_id, pairing_generation FROM agent_pairings "
+                "WHERE creator_account_id = ? AND revoked_at IS NULL",
+                (creator_account_id,),
+            ).fetchall()
+            if not rows:
+                return "missing"
+            for row in rows:
+                if row["pairing_generation"] is not None:
+                    continue
+                try:
+                    self.authentication._require_pairing_current(
+                        connection, row["pairing_id"], now
+                    )
+                except AuthenticationStateError:
+                    continue
+                return "verified"
+        for row in rows:
+            if row["pairing_generation"] is None:
+                continue
+            try:
+                self.session_authority(
+                    base64.urlsafe_b64decode(row["pairing_id"] + "=")
+                )
+            except (CompanionPairingPersistenceError, AuthenticationStateError, ValueError):
+                continue
+            return "verified"
+        return "unknown"
 
     def authorized_pins(self, session_id: str) -> tuple[CompanionPin, ...]:
         """Return at most sixteen current pins within the Bridge account scope."""

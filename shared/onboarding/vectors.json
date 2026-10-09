@@ -647,6 +647,251 @@
       }
     },
     {
+      "id": "result-v2-generation-changing-commit",
+      "valid": true,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": 1,
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-missing-command-epoch",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_account_generation": 1,
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-invalid-command-epoch",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "old",
+        "command_account_generation": 1,
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-missing-command_account_generation",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-command_account_generation-negative",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": -1,
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-command_account_generation-bool",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": true,
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-command_account_generation-unsafe",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": 9007199254740992,
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-missing-command_consent_generation",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": 1,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-command_consent_generation-negative",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": 1,
+        "command_consent_generation": -1,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-command_consent_generation-bool",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": 1,
+        "command_consent_generation": true,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-command_consent_generation-unsafe",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": 1,
+        "command_consent_generation": 9007199254740992,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v1-rejects-v2-scope",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v1",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": 1,
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none"
+      }
+    },
+    {
+      "id": "result-v2-no-telemetry",
+      "valid": false,
+      "value": {
+        "profile": "local-onboarding-result.v2",
+        "journey_id": "11111111-1111-4111-8111-111111111111",
+        "operation_id": "33333333-3333-4333-8333-333333333333",
+        "source": "extension",
+        "epoch": "22222222-2222-4222-8222-222222222222",
+        "revision": 2,
+        "command_epoch": "22222222-2222-4222-8222-222222222222",
+        "command_account_generation": 1,
+        "command_consent_generation": 2,
+        "account_generation": 1,
+        "consent_generation": 3,
+        "status": "confirmed",
+        "reason": "none",
+        "data": {}
+      }
+    },
+    {
       "id": "discovery",
       "valid": true,
       "value": {

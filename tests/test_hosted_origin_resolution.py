@@ -27,7 +27,7 @@ def _release_document(
             {
                 "schema": customer_release.CUSTOMER_RELEASE_SCHEMA,
                 "hosted_onboarding_url": (
-                    "https://setup.example.com/start" if origin else ""
+                    "https://setup.example.com/public/onboarding/setup" if origin else ""
                 ),
                 "hosted_api_origin": origin,
             }
@@ -92,7 +92,7 @@ with tempfile.TemporaryDirectory(dir=temp_parent) as temporary:
     release = root / "customer-release.json"
     release.write_text(json.dumps({
         "schema": customer_release.CUSTOMER_RELEASE_SCHEMA,
-        "hosted_onboarding_url": "https://setup.example.com/start",
+        "hosted_onboarding_url": "https://setup.example.com/public/onboarding/setup",
         "hosted_api_origin": "https://api.example.com",
     }), encoding="utf-8")
     os.environ[customer_release.DEVELOPMENT_CUSTOMER_RELEASE_ENV] = str(release)
@@ -197,6 +197,8 @@ with tempfile.TemporaryDirectory(dir=temp_parent) as temporary:
         import app.provisioning.claim_submission as claim_submission
         import app.provisioning.completion as completion
         import app.provisioning.creator_association as creator_association
+        import app.provisioning.initial_handoff as initial_handoff
+        import app.provisioning.installation_continuation as installation_continuation
         import app.security.capability_license_composition as delivery_composition
         import app.security.grant_refresh as grant_refresh
         from app.packaged_entry import select_brain_application
@@ -223,6 +225,18 @@ with tempfile.TemporaryDirectory(dir=temp_parent) as temporary:
         delivery_composition.durable_capability_license_delivery = capture(
             "delivery", object()
         )
+
+        def capture_initial(store, *, hosted_origin, hosted_start_url):
+            captured["initial"] = hosted_origin
+            captured["initial_browser"] = hosted_start_url
+            return object()
+
+        initial_handoff.InitialInstallationEnrollment = capture_initial
+        def capture_continuation(store, *, hosted_origin, hosted_start_url):
+            captured["continuation"] = hosted_origin
+            captured["continuation_browser"] = hosted_start_url
+            return object()
+        installation_continuation.RegisteredInstallationContinuation = capture_continuation
         select_brain_application(root / "runtime")
 
     print(json.dumps(captured))
@@ -249,9 +263,10 @@ def _compose_in_child(
         env=environment,
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         timeout=60,
     )
+    assert result.returncode == 0, result.stderr
     return json.loads(result.stdout.strip())
 
 
@@ -280,6 +295,10 @@ def test_provisioning_composes_all_hosted_actions_with_bundled_origin(
         "binding": ORIGIN,
         "refresh": ORIGIN,
         "delivery": ORIGIN,
+        "initial": ORIGIN,
+        "initial_browser": "https://setup.example.com/public/onboarding/setup/start",
+        "continuation": ORIGIN,
+        "continuation_browser": "https://setup.example.com/public/onboarding/installation-continue",
     }
 
 

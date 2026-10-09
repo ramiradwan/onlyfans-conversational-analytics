@@ -56,6 +56,25 @@ UNGATED_SURFACES: dict[str, str] = {
     ),
     "POST /api/v1/session/handoff": "bounded loopback provisioning; see session bootstrap",
     "GET /api/v1/session/handoff": "bounded loopback provisioning; see session bootstrap",
+    "GET /api/v1/onboarding/state": (
+        "setup facts are needed before activation; exact local host and current runtime "
+        "or persisted provisioning session are required by the onboarding scope adapter"
+    ),
+    "GET /api/v1/onboarding/events": (
+        "same authenticated setup scope as state; authority is rechecked during the stream"
+    ),
+    "GET /provisioning": (
+        "pre-activation setup return; a persisted provisioning session selects its journey, "
+        "otherwise the page offers local authentication without minting authority"
+    ),
+    "GET /provisioning/resume.js": "static local setup-return script; no account state",
+    "GET /provisioning/native-return": "credential-free native navigation return; destination retains normal authentication",
+    "GET /provisioning/native-return.js": "static native return script; no account state",
+    "GET /provisioning/native-json.mjs": "static bounded JSON parser; no account state",
+    "GET /provisioning/provisioning.js": "static setup script requires a persisted provisioning or authenticated runtime session",
+    "GET /provisioning/onboarding/{name}.mjs": (
+        "closed static module allowlist requires a persisted provisioning or authenticated runtime session"
+    ),
     "GET /": "SPA shell; the client that reports an unactivated runtime to the operator",
     "GET /{frontend_path:path}": "SPA shell refresh of the same document as GET /",
     "WEBSOCKET /ws/agent": (

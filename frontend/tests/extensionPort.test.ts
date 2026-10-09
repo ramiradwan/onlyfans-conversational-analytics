@@ -33,6 +33,38 @@ function fakeRuntime() {
 }
 
 describe('extension port', () => {
+  const journey = '11111111-1111-4111-8111-111111111111';
+  const bridgeUrl = `http://bridge.localhost:17871/#journey=${journey}`;
+  const handoffRequest = () => ({ type: 'navigate_setup', version: 1,
+    request_id: '22222222-2222-4222-8222-222222222222', journey_id: journey, expected_url: bridgeUrl });
+  it('navigates the requesting document once without opening a second tab', () => {
+    const { runtime, ports } = fakeRuntime(), location = { href: bridgeUrl, replace: vi.fn() };
+    const port = createExtensionPort({ runtime, extensionId: EXTENSION_ID, location });
+    port.subscribe(() => {});
+    ports[0].deliver({ type: 'state', version: 1, stage: 'needs_terms', attempt: null });
+    expect(port.open('setup')).toBe(true);
+    ports[0].deliver(handoffRequest()); ports[0].deliver(handoffRequest()); ports[0].drop();
+    expect(location.replace).toHaveBeenCalledExactlyOnceWith(`chrome-extension://${EXTENSION_ID}/setup.html#journey=${journey}`);
+    expect(ports).toHaveLength(1);
+  });
+  for (const change of ['unsolicited', 'extra-field', 'url', 'journey', 'invalid-id', 'different-page', 'old-port', 'other-step']) {
+    it(`refuses a handoff for ${change}`, () => {
+      const { runtime, ports } = fakeRuntime(), location = { href: bridgeUrl, replace: vi.fn() };
+      const port = createExtensionPort({ runtime, extensionId: EXTENSION_ID, location });
+      port.subscribe(() => {});
+      ports[0].deliver({ type: 'state', version: 1, stage: 'needs_terms', attempt: null });
+      if (change !== 'unsolicited') port.open(change === 'other-step' ? 'history' : 'setup');
+      const request: Record<string, unknown> = handoffRequest();
+      if (change === 'extra-field') request.url = 'https://example.com';
+      if (change === 'url') request.expected_url = 'https://example.com';
+      if (change === 'journey') request.journey_id = '33333333-3333-4333-8333-333333333333';
+      if (change === 'invalid-id') request.request_id = 'invalid';
+      if (change === 'different-page') location.href = 'https://onlyfans.com/my/chats';
+      if (change === 'old-port') ports[0].drop();
+      ports[0].deliver(request);
+      expect(location.replace).not.toHaveBeenCalled();
+    });
+  }
   it('discovers a runtime installed after the page subscribed without a polling timer', () => {
     const installed = fakeRuntime();
     let runtime: RuntimeLike | undefined;

@@ -87,9 +87,9 @@ test('first Full attempt explains that the desktop app is required', () => {
     desktopDownloadAvailable: true,
   });
   assert.equal(result.id, CUSTOMER_STATES.DESKTOP_APP_NEEDED);
-  assert.equal(result.primaryLabel, 'Install desktop app');
-  assert.equal(result.secondaryAction, 'retry_full');
-  assert.equal(result.body, 'Install or open the desktop app to store and analyze messages on this computer.');
+  assert.equal(result.primaryAction, 'open_desktop');
+  assert.equal(result.secondaryAction, 'install_desktop');
+  assert.match(result.body, /Open the desktop app/);
   assert.doesNotMatch(result.body, /Preview/);
 
   const noDownload = deriveCustomerJourney({
@@ -97,7 +97,7 @@ test('first Full attempt explains that the desktop app is required', () => {
     pairing: pairing('unpaired'),
     desktopRuntimeReachable: false,
   });
-  assert.equal(noDownload.primaryAction, 'retry_full');
+  assert.equal(noDownload.primaryAction, 'open_desktop');
   assert.doesNotMatch(noDownload.body, /Preview/);
 });
 
@@ -108,7 +108,7 @@ test('returning paired user gets a stopped-app recovery state', () => {
     desktopRuntimeReachable: false,
   });
   assert.equal(result.id, CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE);
-  assert.equal(result.primaryLabel, 'Retry connection');
+  assert.equal(result.primaryAction, 'open_desktop');
 });
 
 test('running desktop app with no usable creator context explains setup is incomplete', () => {

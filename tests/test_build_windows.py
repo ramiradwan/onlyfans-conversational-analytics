@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from packaging_fixture import configured_release_source
+
 import inno_setup_compiler
 import visible_windows
 from app.core.config import Settings
@@ -86,6 +88,12 @@ _STORE_AUDIT = """\
 """
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _isolated_release_source(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest):
+    with configured_release_source(request.module, tmp_path_factory.mktemp("release-source")):
+        yield
+
+
 @pytest.fixture(autouse=True)
 def _no_installer_window() -> Iterator[None]:
     """Fail a test whose installer or uninstaller puts a window on the desktop.
@@ -142,6 +150,7 @@ for relative in (
     'app/persistence/projection_sql',
     'app/analytics/sql',
     'contracts',
+    'shared/onboarding',
 ):
     source = root / relative
     shutil.copytree(source, stage / '_internal' / relative)
@@ -151,8 +160,14 @@ for name in (
     'provisioning.html',
     'creator-platform-data-risk-disclosure.html',
     'provisioning.js',
+    'resume.js',
+    'native-return.js',
+    'native-workspace.mjs',
 ):
     shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
+core = stage / '_internal' / 'app' / 'core'
+core.mkdir()
+shutil.copyfile(root / 'app' / 'core' / 'customer-release.json', core / 'customer-release.json')
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -872,6 +887,7 @@ def _audit_store_candidate(artifact: Path) -> subprocess.CompletedProcess[str]:
             str(EXTENSION_ROOT / "build.mjs"),
             "--audit-package",
             f"--artifact={artifact}",
+            f"--customer-release-config={ROOT / 'app/core/customer-release.json'}",
             f"--packaged-signing-rule={SIGNING_RULE_FIXTURE}",
             f"--legal-release-bindings={LEGAL_BINDINGS_FIXTURE}",
         ],

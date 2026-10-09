@@ -8,7 +8,7 @@ export function browserSurface({ consent, legal }) {
     : mode === 'paused' && consent.consent.resume_mode === 'full' ? 'paused' : 'off';
   const siteAccess = consent?.phase === 'permission_required' || consent?.onlyfans_permission === false
     ? 'needs_approval'
-    : consent?.reload_required === true ? 'reload_required' : 'granted';
+    : 'granted';
   return {
     schema: BROWSER_SURFACE_SCHEMA,
     capture,

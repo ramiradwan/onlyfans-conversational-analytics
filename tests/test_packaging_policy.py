@@ -33,7 +33,8 @@ SQL_CATALOGS = (
     "app/analytics/sql",
 )
 HANDOFF_SYNTHETIC_FILES = tuple(
-    f"_internal/contracts/initial-installation-handoff-v1/{name}-cases.json"
+    f"_internal/contracts/initial-installation-handoff-{version}/{name}-cases.json"
+    for version in ("v1", "v2")
     for name in ("digest", "proof", "schema")
 )
 
@@ -88,8 +89,15 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
         "provisioning.html",
         "creator-platform-data-risk-disclosure.html",
         "provisioning.js",
+        "resume.js",
+        "native-return.js",
+        "native-workspace.mjs",
     ):
         shutil.copy2(ROOT / "app" / "provisioning" / name, provisioning / name)
+    shared = stage / "_internal" / "shared" / "onboarding"
+    shared.mkdir(parents=True)
+    for name in ("client", "projection", "json", "sse"):
+        shutil.copy2(ROOT / "shared" / "onboarding" / (name + ".mjs"), shared / (name + ".mjs"))
     shutil.copytree(ROOT / "app" / "static", internal / "app" / "static")
     shutil.copytree(ROOT / "contracts", internal / "contracts")
     for catalog in SQL_CATALOGS:
@@ -165,6 +173,8 @@ def test_required_files_cover_the_provisioning_page_assets(tmp_path: Path) -> No
         "_internal/app/provisioning/provisioning.html",
         "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
         "_internal/app/provisioning/provisioning.js",
+        "_internal/app/provisioning/native-return.js",
+        "_internal/app/provisioning/native-workspace.mjs",
     }
 
     assert assets <= required
@@ -510,7 +520,7 @@ def test_per_user_material_declarations_cover_every_required_category() -> None:
     }, "the per-user-material policy must name every prohibited category"
 
 
-def test_reviewed_material_admissions_pin_only_the_three_public_digest_fixtures() -> None:
+def test_reviewed_material_admissions_pin_only_the_public_handoff_digest_fixtures() -> None:
     declarations = load_runtime_policy(POLICY_PATH)["forbidden_material"]
     admissions = {
         declaration["name"]: declaration["reviewed_synthetic_files"]

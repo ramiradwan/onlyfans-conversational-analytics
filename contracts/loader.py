@@ -16,9 +16,9 @@ class ContractsIntegrityError(RuntimeError):
 _MANIFEST = "manifest.json"
 _PIN = "consumer-pin.json"
 _APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-_APPROVED_SOURCE_COMMIT = "af7c958c218c35f74ce1370e0fca5b8ff37d6dfa"
-_APPROVED_SOURCE_TREE = "d5ee1acd3ff8ba9623d1cb4d820daaec7dbbb406"
-_APPROVED_SOURCE_MANIFEST_SHA256 = "a46e26b69302c573b821248415c25e80b196433e9745b6a89079f94cd0c5d93e"
+_APPROVED_SOURCE_COMMIT = "5c4fa232cca728fbdd206f2ca101409afec8275a"
+_APPROVED_SOURCE_TREE = "a3d600aeff28629e3b5c04be167e2f3bfd8e2aa8"
+_APPROVED_SOURCE_MANIFEST_SHA256 = "549074bab1cf6eb0e10502b9d9ebcc77ada15dca7e14af27d3e63d303ca6048e"
 _MANIFEST_KEYS = {
     "content_digest",
     "export_set",

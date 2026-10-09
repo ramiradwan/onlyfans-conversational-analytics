@@ -117,9 +117,13 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "77f9f748ddbeddba1eb1af6f964397e5588b163def5e8937be4ee3049d9d90e2"
-    assert pin["contract_manifest_sha256"] == "14693de25efdd6732f3da36baaa7b2d96e034c429b1438e3192f37533c89d0b0"
+    assert pin["aggregate_bundle_sha256"] == "2f669188fda040291c760d8ed0237aedb00ad5f0c5cab44cbd2b75a3cdfaa374"
+    assert pin["contract_manifest_sha256"] == "be3f681dc02b3dc2834897717d5b2101a37a03da822ac3b3acd014bf1222ea15"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
+        "initial-installation-handoff-v2": "3a60ed6d7653ec62820b98725a4a9449dff1a675708102b0a893a99af07dcd53",
+        "installation-setup-continuation-v2": "8825be19fce06abf6d93f6da0d82d50ff64d04ffb24c854d901f1de214d55a7b",
+        "complimentary-onboarding-activation-v1": "876d1fcebbb93291bfeefbd696260ef311d9026725e4cf6c130729018cf571f3",
+        "installation-setup-continuation-v1": "748c589bcdb5bad1d432f31adab1e4ce3b02f2990cad313669a0100cc2d23632",
         "initial-installation-handoff-v1": "733d48ac8587a4491bc72e65bc2bee005a960b8fdade29e2bb5fedfb1edad258",
         "onboarding-continuity-v1": "3b1cc9a0be0a5ccbd882b9d69c5b77cb859246d7b0f1f680003eea3bc807437b",
         "capability-license-v1": "c87d4ea9e70a856ab21888ddc048ebada5837713f97e30599af4c66536a2d5d1",
@@ -127,6 +131,78 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
         "bootstrap-recovery-v2": "f4205383eee5d5fcf7b6a394fdad3e3cab1a5ccb02ea63dece068a6f02e04596",
         "capability-license-hosted-api-v1": "b128955756b737ebfb58896d5fdd0b23430070817da9ab06bb970010aa125f0c",
     }
+
+
+@pytest.mark.contract_integrity
+def test_installation_continuation_export_is_closed_and_manifest_bound() -> None:
+    family = ROOT / "installation-setup-continuation-v1"
+    manifest = json.loads((family / "manifest.json").read_text("utf-8"))
+    assert manifest["profile"] == "urn:bridge-clean:installation-setup-continuation-vectors:v1"
+    assert manifest["test_only"] is True
+    entries = {entry["path"]: entry for entry in manifest["files"]}
+    assert set(entries) == {
+        "admission-cases.json", "cursor-cases.json", "lifecycle-cases.json",
+        "parsing-cases.json", "proof-cases.json", "recovery-cases.json",
+        "response-cases.json", "schema-cases.json",
+    }
+    assert {path.name for path in family.iterdir()} == {*entries, "manifest.json"}
+    case_count = 0
+    for relative, entry in entries.items():
+        data = (family / relative).read_bytes()
+        assert entry == {
+            "path": relative,
+            "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+        case_count += len(json.loads(data))
+    assert case_count == manifest["case_count"]
+
+    snapshot = verify_snapshot_integrity(ROOT)
+    paths = {entry["path"] for entry in snapshot["files"]}
+    for name in ("installation-setup-continuation", "installation-setup-continuation-proof"):
+        profile = json.loads((ROOT / f"profiles/{name}/v1/profile.json").read_text("utf-8"))
+        assert profile["profile"] in snapshot["profiles"]
+        assert set(profile["messages"].values()) <= paths
+    assert "openapi/installation-setup-continuation-v1.openapi.yaml" in paths
+
+
+@pytest.mark.contract_integrity
+@pytest.mark.parametrize("family, profile_paths", [
+    ("initial-installation-handoff-v2", (
+        "profiles/initial-installation-handoff-v2/profile.json",
+        "profiles/initial-installation-handoff-proof-v2/profile.json",
+    )),
+    ("installation-setup-continuation-v2", (
+        "profiles/installation-setup-continuation-v2/profile.json",
+        "profiles/installation-setup-continuation-proof-v2/profile.json",
+    )),
+    ("complimentary-onboarding-activation-v1", (
+        "profiles/complimentary-onboarding-activation/v1/profile.json",
+    )),
+])
+def test_current_session_exports_are_closed_and_manifest_bound(
+    family: str, profile_paths: tuple[str, ...],
+) -> None:
+    vector_root = ROOT / family
+    manifest = json.loads((vector_root / "manifest.json").read_bytes())
+    stem, version = family.rsplit("-v", 1)
+    assert manifest["profile"] == f"urn:bridge-clean:{stem}-vectors:v{version}"
+    assert manifest["test_only"] is True
+    entries = {entry["path"]: entry for entry in manifest["files"]}
+    assert {path.name for path in vector_root.iterdir()} == {*entries, "manifest.json"}
+    count = 0
+    for relative, entry in entries.items():
+        data = (vector_root / relative).read_bytes()
+        assert entry == {"path": relative, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        count += len(json.loads(data))
+    assert count == manifest["case_count"]
+    snapshot = verify_snapshot_integrity(ROOT)
+    paths = {entry["path"] for entry in snapshot["files"]}
+    for relative in profile_paths:
+        profile = json.loads((ROOT / relative).read_bytes())
+        assert profile["profile"] in snapshot["profiles"]
+        assert set(profile["messages"].values()) <= paths
+    assert f"openapi/{family}.openapi.yaml" in paths
 
 
 @pytest.mark.contract_integrity

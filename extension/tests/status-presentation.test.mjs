@@ -21,8 +21,8 @@ test('popup readiness uses one precedence and never says Ready while disconnecte
   assert.equal(presentation.statusPresentation(value).label, 'Paused');
   value.status.phase = 'permission_required';
   assert.equal(presentation.statusPresentation(value).label, 'Needs access');
-  value.status.reload_required = true;
-  assert.equal(presentation.statusPresentation(value).label, 'Reload needed');
+  value.status.observer = { helper: 'closed' };
+  assert.equal(presentation.statusPresentation(value).label, 'Background tab closed');
   value.status = null;
   assert.equal(presentation.statusPresentation(value).label, 'Checking…');
 });

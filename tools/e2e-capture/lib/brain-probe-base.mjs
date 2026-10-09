@@ -105,8 +105,8 @@ export async function establishBrowserWebAuthnSession(page, authDatabasePath) {
 }
 
 /**
- * Register a credential on a virtual platform authenticator and authenticate
- * with it. The caller owns how the store reached its authorized state.
+ * Register a credential on a virtual platform authenticator and use the session issued
+ * by that ceremony. The caller owns how the store reached its authorized state.
  */
 export async function completeBrowserWebAuthnCeremony(page) {
   const session = await page.context().newCDPSession(page);
@@ -166,33 +166,7 @@ export async function completeBrowserWebAuthnCeremony(page) {
         attestationObject: encode(registrationResponse.attestationObject),
       },
     });
-    if (registrationFinish.status !== 200) return { stage: 'registration_finish', status: registrationFinish.status };
-    const login = await post('/login/begin');
-    if (login.status !== 200) return { stage: 'login_begin', status: login.status };
-    const loginCredential = await navigator.credentials.get({
-      publicKey: {
-        ...login.body,
-        challenge: decode(login.body.challenge),
-        allowCredentials: login.body.allowCredentials.map((allowed) => ({
-          ...allowed,
-          id: decode(allowed.id),
-        })),
-      },
-    });
-    if (loginCredential === null) return { stage: 'login_credential', status: 0 };
-    const loginResponse = loginCredential.response;
-    const loginFinish = await post('/login/finish', {
-      id: loginCredential.id,
-      rawId: encode(loginCredential.rawId),
-      type: 'public-key',
-      response: {
-        clientDataJSON: encode(loginResponse.clientDataJSON),
-        authenticatorData: encode(loginResponse.authenticatorData),
-        signature: encode(loginResponse.signature),
-        userHandle: loginResponse.userHandle === null ? null : encode(loginResponse.userHandle),
-      },
-    });
-    return { stage: 'login_finish', status: loginFinish.status };
+    return { stage: 'registration_finish', status: registrationFinish.status };
   });
   if (result.status !== 200) {
     throw new Error(`WebAuthn authentication failed at ${result.stage} (${result.status}).`);

@@ -149,7 +149,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
       },
     });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /could not find/i);
+    assert.equal(elements.identityStatus.textContent, 'Your account could not be checked.');
     assert.equal(elements.confirmIdentity.disabled, true);
     assert.equal(parseIdentityResponse({
       type: 'provisioning.identity.result', version: 1, authenticated_profile: {},
@@ -230,7 +230,7 @@ test('approval pending and hosted outage have distinct recovery copy', async () 
   }) });
   pending.elements.claimPackage.value = VALID_PACKAGE;
   await pending.controller.submitClaim({ preventDefault() {} });
-  assert.match(pending.elements.status.textContent, /connection is not approved yet/i);
+  assert.match(pending.elements.status.textContent, /Approval could not be checked/);
 
   const offline = harness({ fetch: async () => response(503, {
     state: 'provisioning_ready', reason: 'hosted_unavailable',
@@ -395,7 +395,7 @@ test('session, host, and interrupted requests retain actionable guidance', async
       const { controller, elements } = harness({ fetch: async () => response(status, {}) });
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
-      assert.match(elements.status.textContent, /setup page has expired.*reopen the desktop app/i);
+      assert.equal(elements.status.textContent, 'Setup could not continue. Open the desktop app.');
     });
   }
 
@@ -442,7 +442,7 @@ test('initial status accepts only its exact closed success shape', async (contex
       await controller.start();
       assert.equal(
         elements.status.textContent,
-        'Setup could not be checked. Reopen the desktop app.',
+        'Setup could not be checked.',
       );
       assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
       assert.equal(elements.confirmIdentity.disabled, true);
@@ -641,6 +641,22 @@ test('the extension port reconnects after an idle worker drop and reports absenc
   assert.deepEqual(stages, ['needs_terms', null]);
   handle.open('setup');
   assert.equal(createChromeExtensionPort({})(EXTENSION_ID, () => {}), null);
+});
+
+test('initial setup navigation requires one explicit open and the exact current document', () => {
+  const { runtime, ports } = fakePortRuntime(), replaced = [];
+  const journey = '11111111-1111-4111-8111-111111111111';
+  const location = { href: `http://bridge.localhost:17871/provisioning#journey=${journey}`, replace: (url) => replaced.push(url) };
+  const handle = createChromeExtensionPort(runtime, location)(EXTENSION_ID, () => {});
+  const message = { type: 'navigate_setup', version: 1, request_id: '22222222-2222-4222-8222-222222222222',
+    journey_id: journey, expected_url: location.href };
+  ports[0].deliver(message); assert.deepEqual(replaced, []);
+  handle.open('setup');
+  ports[0].deliver({ ...message, expected_url: location.href + '?other' }); assert.deepEqual(replaced, []);
+  ports[0].deliver({ ...message, extra: true }); assert.deepEqual(replaced, []);
+  ports[0].deliver(message); ports[0].deliver(message);
+  assert.deepEqual(replaced, [`chrome-extension://${EXTENSION_ID}/setup.html#journey=${journey}`]);
+  ports[0].drop(); assert.equal(ports.length, 1, 'navigation must not reconnect the departing page');
 });
 
 test('extension stage pushes refresh identity guidance and offer the extension setup window', async () => {

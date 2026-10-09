@@ -997,6 +997,7 @@
       .provisioning-stage { position:relative; height:var(--dipsy-static-provisioning-stage-block); background:var(--dipsy-color-paper); border:1px solid var(--dipsy-color-divider); border-radius:20px; }
       .provisioning-stage .step { position:absolute; inset:0; margin:0; padding:28px; display:none; border:0; box-shadow:none; background:transparent; grid-template-rows:20px 32px 48px minmax(0,1fr) 1.25rem 48px; gap:4px; }
       .provisioning-stage .step[data-state="current"], .provisioning-stage[data-complete="true"] #finalize-step { display:grid; }
+      .provisioning-stage .step[hidden], .progress-rail[hidden], .intro[hidden] { display:none !important; }
       .provisioning-stage .step > * { margin:0; min-width:0; }
       .provisioning-stage .step-state { display:block; line-height:20px; font-family:var(--dipsy-font-family-numeric); font-variant-numeric:tabular-nums; }
       .provisioning-stage h2 { line-height:32px; font-size:22px; }
@@ -1007,6 +1008,8 @@
       .provisioning-stage .page-status { position:static; display:block; width:auto; height:auto; padding:0; margin:0; border:0; font-size:14px; line-height:20px; overflow:visible; clip-path:none; }
       .provisioning-stage .page-status:empty { visibility:hidden; }
       .provisioning-stage #claim-form { display:grid; align-content:start; gap:4px; }
+      /* Journey prerequisites replace the legacy code form and inactive actions. */
+      .provisioning-stage #claim-step [hidden] { display:none !important; }
       .provisioning-stage #claim-package { width:100%; min-height:48px; height:48px; border:1px solid var(--dipsy-color-divider); border-radius:12px; padding:0 12px; font:14px ui-monospace,monospace; color:inherit; background:var(--dipsy-color-paper); }
       .provisioning-stage #secure-setup-help { position:absolute; width:1px; height:1px; clip-path:inset(50%); }
       .provisioning-stage #claim-package-count { display:none; }
@@ -1087,6 +1090,7 @@
     </header>
     <main
       data-provisioning-csrf="{{PROVISIONING_CSRF}}"
+      data-provisioning-context-kind="{{PROVISIONING_CONTEXT_KIND}}"
       data-provisioning-extension-id="{{PROVISIONING_EXTENSION_ID}}"
     >
       <header class="page-header">
@@ -1094,6 +1098,7 @@
         <p class="intro">Read the <a class="disclosure-link" href="/provisioning/creator-platform-data-risk-disclosure.html" target="_blank" rel="noopener noreferrer">Creator platform &amp; data risk disclosure</a> before you continue. It opens in a new tab.</p>
         <span id="feedback-details" hidden>Details available <button type="button" id="feedback-details-open" class="secondary">Show details</button></span>
         <p id="provisioning-status" class="page-status" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral"></p>
+        <button id="transfer-recovery-action" type="button" hidden></button>
       </header>
 
       <ol class="progress-rail" data-reserved-region="provisioning-rail" aria-label="Desktop setup progress">
@@ -1103,6 +1108,19 @@
         <section id="claim-step" class="step" data-region-content data-step="registration" data-state="current" aria-current="step">
           <p id="claim-step-state" class="step-state">Step 1 of 4</p><h2 id="claim-heading">Connect this computer</h2>
           <p id="claim-step-description" class="step-description">Use a setup code to connect this computer.</p>
+          <div id="initial-browser-prerequisite" class="stage-body" hidden>
+            <div id="initial-extension-install">
+              <p>Open Conversation Analytics from your browser’s Extensions menu.</p>
+              <p>To add it, use the extension ZIP included with the Windows download:</p>
+              <ol>
+                <li>Extract the extension ZIP.</li>
+                <li>Open your browser’s Extensions page and turn on Developer mode.</li>
+                <li>Choose Load unpacked, then select the extracted folder.</li>
+              </ol>
+            </div>
+            <button id="initial-open-extension" type="button" hidden>Open extension setup</button>
+            <a id="initial-open-onlyfans" class="primary-link" href="https://onlyfans.com/" target="_blank" rel="noopener noreferrer" hidden>Open OnlyFans</a>
+          </div>
           <form id="claim-form" novalidate>
             <label for="claim-package">Setup code</label><p id="claim-package-help" class="help">Paste the whole code from the setup tab.</p>
             <input id="claim-package" name="package" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="claim-package-help claim-package-validation claim-package-count" aria-invalid="false">
@@ -1110,10 +1128,10 @@
           </form>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content><p id="claim-package-validation" class="validation-message help" data-valid="true"></p></div></div>
           <div class="actions" data-reserved-region="provisioning-actions">
-            <a id="open-secure-setup" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="secure-setup-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open secure setup</a>
+            <a id="open-secure-setup" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_self" rel="noreferrer" aria-describedby="secure-setup-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Continue setup</a>
             <button id="claim-submit" type="submit" form="claim-form" aria-describedby="claim-step-description" disabled>Continue setup</button>
           </div>
-          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Sign in in the new tab, then copy your setup code.</p>
+          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Setup opens in this tab.</p>
         </section>
         <section id="identity-step" class="step" data-region-content data-step="identity" data-state="locked">
           <p id="identity-step-state" class="step-state">Step 2 of 4</p><h2 id="identity-heading">Choose your creator account</h2>
@@ -1124,10 +1142,10 @@
         </section>
         <section id="binding-step" class="step" data-region-content data-step="approval" data-state="locked">
           <p id="binding-step-state" class="step-state">Step 3 of 4</p><h2 id="binding-heading">Connect your account</h2>
-          <p id="binding-step-description" class="step-description">Approve which account this computer can use in the setup tab, then return here.</p>
-          <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="creator-approval-unavailable" class="step-description approval-unavailable">Return to the setup tab where you got your code to allow this app to connect to your account.</p><p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Opens in a new tab.</p><button type="button" id="recovery-open" class="secondary">Can’t find the setup tab?</button></div>
+          <p id="binding-step-description" class="step-description">Approve which account this computer can use.</p>
+          <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="creator-approval-unavailable" class="step-description approval-unavailable">Account setup is unavailable.</p><p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Continue setup in this tab.</p><button type="button" id="recovery-open" class="secondary" hidden>Can’t find the setup tab?</button></div>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
-          <div class="actions" data-reserved-region="provisioning-actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_blank" rel="noopener noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Open account setup</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Try again</button></div>
+          <div class="actions" data-reserved-region="provisioning-actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_self" rel="noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Approve account</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Try again</button></div>
         </section>
         <section id="finalize-step" class="step" data-region-content data-step="finalization" data-state="locked">
           <p id="finalize-step-state" class="step-state">Step 4 of 4</p><h2 id="finalize-heading">Finish desktop setup</h2>

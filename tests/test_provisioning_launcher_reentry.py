@@ -22,7 +22,7 @@ def test_relaunch_reuses_same_process_authority_after_browser_session_expires(tm
     save_launcher_handoff(config.data_directory, token=token, pid=owner.pid)
     assert token.encode() not in (config.data_directory / FILENAME).read_bytes()
     clock = [0.0]
-    sessions = ProvisioningSessionManager(token, monotonic=lambda: clock[0])
+    sessions = ProvisioningSessionManager(token, ttl_seconds=300, monotonic=lambda: clock[0])
     opened: list[str] = []
 
     class Client(FakeClient):

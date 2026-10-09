@@ -678,7 +678,7 @@ class InMemoryTransportManager:
             except Exception:
                 pass
         if self._sweeper_task is None or self._sweeper_task.done():
-            self._sweeper_task = asyncio.create_task(self._sweep(), name="phase2-transport-expiry")
+            self._sweeper_task = asyncio.create_task(self._sweep(), name="agent-transport-expiry")
         pending_accounts = await asyncio.to_thread(self.projection.pending_accounts)
         for account_id in pending_accounts:
             self.schedule_projection(account_id)

@@ -1,13 +1,16 @@
 import { CssBaseline, GlobalStyles } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 
 import { getConfig } from '@/config/fastapiConfig';
+import { journeyFromHash, startOnboardingSession } from '@services/onboardingSession';
+import { useActivationReturn } from '@services/useActivationReturn';
 import { websocketService } from '@services/websocketService';
 import { analyticsStoreActions } from '@store/analyticsStore';
 import { useUserStore } from '@store/userStore';
 
+import { OnboardingContinuation } from './components/OnboardingContinuation';
 import { AppRouter } from './routing/AppRouter';
 import { colorSchemeProps, theme } from './theme';
 import { WebAuthnAccessView } from './views/WebAuthnAccessView';
@@ -34,6 +37,7 @@ const globalStyles = (
 
 export function App() {
   const config = getConfig();
+  const [journeyId, setJourneyId] = useState(() => journeyFromHash(window.location.hash));
   const userRole = config.BRIDGE_ROLE === 'creator'
     ? 'creator-ceo'
     : config.BRIDGE_ROLE === 'operator'
@@ -42,6 +46,20 @@ export function App() {
   const hasSessionIdentity = Boolean(
     config.CREATOR_ID && config.BRIDGE_AUTH_TICKET && userRole !== null,
   );
+  const activationReturn = useActivationReturn(hasSessionIdentity && userRole === 'creator-ceo' ? journeyId : null);
+
+  useEffect(() => {
+    const changed = () => setJourneyId(journeyFromHash(window.location.hash));
+    window.addEventListener('hashchange', changed);
+    window.addEventListener('pageshow', changed);
+    return () => { window.removeEventListener('hashchange', changed); window.removeEventListener('pageshow', changed); };
+  }, []);
+
+  useEffect(() => {
+    if (!journeyId) return;
+    const session = startOnboardingSession({ journeyId, extensionId: config.EXTENSION_ID });
+    return session.stop;
+  }, [journeyId, config.EXTENSION_ID]);
 
   useEffect(() => {
     const {
@@ -71,7 +89,7 @@ export function App() {
       {globalStyles}
       {hasSessionIdentity ? (
         <BrowserRouter>
-          <AppRouter />
+          <OnboardingContinuation key={journeyId ?? 'app'} activationReturn={activationReturn}><AppRouter /></OnboardingContinuation>
         </BrowserRouter>
       ) : <WebAuthnAccessView />}
     </ThemeProvider>

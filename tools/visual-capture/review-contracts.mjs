@@ -233,7 +233,7 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
           near(feedbackBox.height, viewport.width < 600 ? feedbackSize.narrow : feedbackSize.wide, 'passkey feedback height');
           assert(feedbackBox.y >= card.y + card.height && feedbackBox.y + feedbackBox.height <= viewport.height, 'passkey feedback sits below the card, in view');
           assert(contrastAgainst(summaryStyle.ink, summaryStyle.canvas) >= 4.5, 'passkey error text contrast');
-          assert.equal(await summary.innerText(), 'Sign-in was cancelled or timed out. Try again.');
+          assert.equal(await summary.innerText(), 'Sign-in did not finish.');
           await screenshot(page, `passkey-error-${mode}-${viewport.width}.png`);
           passkeyLayouts.push({ viewport, header, brand, homeBrand, card, tile, heading, feedbackBox, summaryStyle });
         }

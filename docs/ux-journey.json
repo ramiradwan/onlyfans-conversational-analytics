@@ -1,18 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "description": "Customer-observable journey states, the code that renders each state, and the tests that exercise it. State ids, anchors, and evidence names are engineering identifiers and test titles, not interface copy. Validated by tools/validate_ux_journey.py.",
+  "description": "Customer-observable journey states, the code that renders each state, and the tests that exercise it. State ids, anchors, and evidence names are engineering identifiers and test titles, not interface copy. Validated by tools/validate_ux_journey.py. The persistent extension setup page owns former popup states; compatibility filenames do not imply a toolbar popup. External hosted steps are documented and tested in their owning repository. Legacy manual provisioning transitions remain available for compatibility; the admitted desktop workspace prepares initial handoff automatically. Extension pair and open_desktop_settings actions describe the fallback without a linked desktop workspace; admitted same-browser setup automatically pairs from the App without a Settings action. Browser tests named companion client are supplemental lifecycle/ownership evidence, not evidence that the fallback buttons were clicked. Unit and visual evidence cover the fallback presentation; the real MV3 capture browser test and OnboardingContinuation test cover App-owned automatic pairing.",
   "surfaces": {
-    "extension.popup": {
-      "implementation": [
-        "extension/popup.html",
-        "extension/popup.js",
-        "extension/runtime/customer-journey.mjs",
-        "extension/ui/presentation.mjs",
-        "extension/ui/surface-client.mjs",
-        "extension/ui/dom.mjs",
-        "extension/runtime/ui-surfaces.mjs"
-      ]
-    },
     "desktop.setup": {
       "implementation": [
         "app/provisioning/provisioning.html",
@@ -24,6 +13,7 @@
         "frontend/src/views/WebAuthnAccessView.tsx",
         "frontend/src/components/SetupPrompt.tsx",
         "frontend/src/components/CompanionPairingControls.tsx",
+        "frontend/src/components/OnboardingContinuation.tsx",
         "frontend/src/views/SettingsView.tsx",
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
@@ -41,7 +31,9 @@
         "extension/ui/presentation.mjs",
         "extension/ui/surface-client.mjs",
         "extension/ui/dom.mjs",
-        "extension/runtime/ui-surfaces.mjs"
+        "extension/runtime/ui-surfaces.mjs",
+        "extension/runtime/onboarding-workspace.mjs",
+        "extension/ui/setup-transfer.mjs"
       ]
     },
     "extension.options": {
@@ -91,6 +83,11 @@
           "to": "extension.mode_choice",
           "by": "user",
           "action": "activate-software"
+        },
+        {
+          "to": "extension.setup_code_entry",
+          "by": "user",
+          "action": "setup-transfer-open"
         }
       ],
       "evidence": [
@@ -102,7 +99,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/legal-activation.spec.mjs",
-          "name": "Terms → risk → Activate Software → Preview"
+          "name": "Terms \u2192 risk \u2192 Activate Software \u2192 Preview"
         }
       ]
     },
@@ -165,7 +162,7 @@
     },
     {
       "id": "extension.analytics_off",
-      "surface": "extension.popup",
+      "surface": "extension.setup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "ANALYTICS_OFF: 'analytics_off'"
@@ -192,7 +189,7 @@
     },
     {
       "id": "extension.preview_available",
-      "surface": "extension.popup",
+      "surface": "extension.setup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "PREVIEW_AVAILABLE: 'preview_available'"
@@ -229,7 +226,7 @@
     },
     {
       "id": "extension.paused",
-      "surface": "extension.popup",
+      "surface": "extension.setup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "PAUSED: 'paused'"
@@ -255,7 +252,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/standalone-preview.spec.mjs",
-          "name": "pause unregisters capture and subsequent reads do not increase metrics"
+          "name": "pause stops forwarding in the same document and subsequent reads do not increase metrics"
         },
         {
           "kind": "visual",
@@ -285,7 +282,7 @@
         {
           "to": "extension.pairing_required",
           "by": "user",
-          "action": "retry_full"
+          "action": "open_desktop"
         }
       ],
       "evidence": [
@@ -336,6 +333,10 @@
         "text": "PAIRING_REQUIRED: 'pairing_required'"
       },
       "transitions": [
+        {
+          "to": "extension.pairing_in_progress",
+          "by": "system"
+        },
         {
           "to": "extension.pairing_in_progress",
           "by": "user",
@@ -405,12 +406,12 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "focus changes and closing an observing popup preserve pairing; closing setup cancels it"
+          "name": "companion client ownership survives focus and observer closure; owner closure cancels pairing"
         },
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "a confirmed connection stays in setup and readiness comes from the desktop result"
+          "name": "companion client confirmation preserves setup and readiness comes from the desktop result"
         },
         {
           "kind": "visual",
@@ -452,7 +453,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "pairing starts only on explicit setup action and recovers from the desktop not being ready"
+          "name": "companion client pairs only after an explicit command and recovers from the desktop not being ready"
         },
         {
           "kind": "visual",
@@ -530,7 +531,7 @@
         {
           "to": "extension.full_unavailable",
           "by": "user",
-          "action": "retry_full"
+          "action": "open_desktop"
         }
       ],
       "evidence": [
@@ -672,7 +673,7 @@
     },
     {
       "id": "extension.full_ready",
-      "surface": "extension.popup",
+      "surface": "extension.setup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "FULL_READY: 'full_ready'"
@@ -707,7 +708,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "a confirmed connection stays in setup and readiness comes from the desktop result"
+          "name": "companion client confirmation preserves setup and readiness comes from the desktop result"
         },
         {
           "kind": "visual",
@@ -907,6 +908,10 @@
       "transitions": [
         {
           "to": "desktop.full_analytics_activation",
+          "by": "system"
+        },
+        {
+          "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "confirm-connection"
         },
@@ -926,6 +931,16 @@
         }
       ],
       "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/OnboardingContinuation.test.tsx",
+          "name": "the returning workspace mounts remaining controls without a Settings action and waits for owner completion"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/capture.spec.mjs",
+          "name": "real MV3 capture proves exact ordering, durable replay, and alarm recovery"
+        },
         {
           "kind": "unit",
           "file": "frontend/tests/CompanionPairingControls.test.tsx",
@@ -1333,6 +1348,33 @@
           "kind": "unit",
           "file": "frontend/tests/ConversationQuestions.test.tsx",
           "name": "shows unavailable questions without old results"
+        }
+      ]
+    },
+    {
+      "id": "extension.setup_code_entry",
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"setup-transfer-entry\""
+      },
+      "transitions": [
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "setup-transfer-back"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "extension/tests/setup-transfer-ui.test.mjs",
+          "name": "code validation stays on the receiving screen and preserves input on an unknown response"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/setup-transfer-ui.test.mjs",
+          "name": "receiving entry uses the same tab and a body, never a code or key in a URL"
         }
       ]
     }

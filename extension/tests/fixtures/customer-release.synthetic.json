@@ -1,0 +1,5 @@
+{
+  "schema": "ofca-customer-release/v1",
+  "hosted_onboarding_url": "https://onboarding.example.test/public/onboarding/setup",
+  "hosted_api_origin": "https://onboarding.example.test"
+}

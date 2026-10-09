@@ -680,6 +680,27 @@ def test_handoff_unknown_expired_and_redeemed_codes_are_indistinguishable(
     ]
 
 
+def test_native_runtime_handoff_never_grants_a_session_and_strips_bootstrap_code(monkeypatch):
+    disable_installation_key_startup(monkeypatch)
+    bootstrap = "native-bootstrap-" + uuid4().hex
+    monkeypatch.setattr(settings, "websocket_auth_mode", "local_session")
+    monkeypatch.setattr(settings, "local_session_bootstrap_token", SecretStr(bootstrap))
+    journey = str(uuid4())
+    with TestClient(app, base_url="http://bridge.localhost:17871") as browser:
+        issued = browser.post("/api/v1/session/handoff", headers={"Authorization": "Bootstrap " + bootstrap})
+        code = issued.json()["handoff_code"]
+        invalid = browser.get("/api/v1/session/handoff", params={"code": code, "native_journey": "invalid"}, follow_redirects=False)
+        assert invalid.status_code == 400
+        response = browser.get("/api/v1/session/handoff", params={"code": code, "native_journey": journey}, follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/provisioning/native-return#journey=" + journey
+        assert "set-cookie" not in response.headers and not browser.cookies
+        assert code not in response.headers["location"]
+        assert browser.get("/provisioning/native-return").status_code == 200
+        assert browser.get("/api/v1/onboarding/state", headers={"X-Onboarding-Journey": journey}).status_code == 401
+        assert browser.get("/api/v1/session/handoff", params={"code": code, "native_journey": journey}).status_code == 401
+
+
 def test_handoff_routes_require_local_session_mode_and_exact_host(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

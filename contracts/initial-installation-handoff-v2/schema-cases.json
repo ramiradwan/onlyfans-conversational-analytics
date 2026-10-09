@@ -1,0 +1,924 @@
+[
+  {
+    "case_id": "prepare-request-valid",
+    "schema": "schemas/initial-handoff/v2/prepare-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "destination": {
+          "device": {
+            "display_name": "Computer",
+            "platform": "windows",
+            "product_version": "1.0.0"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key": {
+            "alg": "ES256",
+            "jwk": {
+              "crv": "P-256",
+              "kty": "EC",
+              "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+              "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+            },
+            "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2"
+      }
+    }
+  },
+  {
+    "case_id": "prepare-request-closed",
+    "schema": "schemas/initial-handoff/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "destination": {
+          "device": {
+            "display_name": "Computer",
+            "platform": "windows",
+            "product_version": "1.0.0"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key": {
+            "alg": "ES256",
+            "jwk": {
+              "crv": "P-256",
+              "kty": "EC",
+              "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+              "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+            },
+            "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "wait-request-valid",
+    "schema": "schemas/initial-handoff/v2/wait-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    }
+  },
+  {
+    "case_id": "wait-request-closed",
+    "schema": "schemas/initial-handoff/v2/wait-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "complete-request-valid",
+    "schema": "schemas/initial-handoff/v2/complete-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "scope": {
+          "action_digests": {
+            "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+            "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+          },
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "authorization_revision": 1,
+          "installation_id": "installation-fixture",
+          "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+          "intended_creator_id": "creator-fixture",
+          "onboarding_transaction_id": "transaction-fixture",
+          "organization_id": "org-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "complete-request-closed",
+    "schema": "schemas/initial-handoff/v2/complete-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "scope": {
+          "action_digests": {
+            "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+            "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+          },
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "authorization_revision": 1,
+          "installation_id": "installation-fixture",
+          "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+          "intended_creator_id": "creator-fixture",
+          "onboarding_transaction_id": "transaction-fixture",
+          "organization_id": "org-fixture"
+        }
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "receipt-request-valid",
+    "schema": "schemas/initial-handoff/v2/receipt-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2"
+      }
+    }
+  },
+  {
+    "case_id": "receipt-request-closed",
+    "schema": "schemas/initial-handoff/v2/receipt-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "prepare-response-valid",
+    "schema": "schemas/initial-handoff/v2/prepare-response.schema.json",
+    "valid": true,
+    "value": {
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    }
+  },
+  {
+    "case_id": "prepare-response-closed",
+    "schema": "schemas/initial-handoff/v2/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "authorize-request-valid",
+    "schema": "schemas/initial-handoff/v2/authorize-request.schema.json",
+    "valid": true,
+    "value": {
+      "claim_action_receipt_id": "0199b234-5678-7000-8000-000000000001",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    }
+  },
+  {
+    "case_id": "authorize-request-closed",
+    "schema": "schemas/initial-handoff/v2/authorize-request.schema.json",
+    "valid": false,
+    "value": {
+      "claim_action_receipt_id": "0199b234-5678-7000-8000-000000000001",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "authorize-response-valid",
+    "schema": "schemas/initial-handoff/v2/authorize-response.schema.json",
+    "valid": true,
+    "value": {
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      },
+      "status": "authorized"
+    }
+  },
+  {
+    "case_id": "authorize-response-closed",
+    "schema": "schemas/initial-handoff/v2/authorize-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      },
+      "status": "authorized",
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "wait-event-valid",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "revision": 1,
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      },
+      "status": "authorized"
+    }
+  },
+  {
+    "case_id": "wait-event-closed",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "revision": 1,
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      },
+      "status": "authorized",
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "complete-response-valid",
+    "schema": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "valid": true,
+    "value": {
+      "bootstrap": {
+        "bootstrap_config_version": "v1",
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "grants": {
+          "installation_grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "membership_snapshot": "e30.e30.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:installation-claim:v2",
+        "status": "consumed"
+      },
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "status": "completed"
+    }
+  },
+  {
+    "case_id": "complete-response-closed",
+    "schema": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "valid": false,
+    "value": {
+      "bootstrap": {
+        "bootstrap_config_version": "v1",
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "grants": {
+          "installation_grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "membership_snapshot": "e30.e30.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:installation-claim:v2",
+        "status": "consumed"
+      },
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "status": "completed",
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-valid",
+    "schema": "schemas/initial-handoff/v2/proof-challenge-request.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff-proof:v2",
+      "target": {
+        "operation": "initial-handoff-complete",
+        "request": {
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "scope": {
+            "action_digests": {
+              "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+              "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+            },
+            "association_request_id": "0199b234-5678-7000-8000-000000000001",
+            "authorization_revision": 1,
+            "installation_id": "installation-fixture",
+            "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+            "intended_creator_id": "creator-fixture",
+            "onboarding_transaction_id": "transaction-fixture",
+            "organization_id": "org-fixture"
+          }
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-closed",
+    "schema": "schemas/initial-handoff/v2/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff-proof:v2",
+      "target": {
+        "operation": "initial-handoff-complete",
+        "request": {
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+          "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "scope": {
+            "action_digests": {
+              "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+              "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+            },
+            "association_request_id": "0199b234-5678-7000-8000-000000000001",
+            "authorization_revision": 1,
+            "installation_id": "installation-fixture",
+            "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+            "intended_creator_id": "creator-fixture",
+            "onboarding_transaction_id": "transaction-fixture",
+            "organization_id": "org-fixture"
+          }
+        }
+      },
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-valid",
+    "schema": "schemas/initial-handoff/v2/proof-challenge-response.schema.json",
+    "valid": true,
+    "value": {
+      "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "profile": "urn:bridge-clean:initial-installation-handoff-proof:v2",
+      "request_digest": "54ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a6552"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-closed",
+    "schema": "schemas/initial-handoff/v2/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "profile": "urn:bridge-clean:initial-installation-handoff-proof:v2",
+      "request_digest": "54ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a6552",
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "error-valid",
+    "schema": "schemas/initial-handoff/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reason": "authorization_changed"
+    }
+  },
+  {
+    "case_id": "error-closed",
+    "schema": "schemas/initial-handoff/v2/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reason": "authorization_changed",
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "receipt-response-valid",
+    "schema": "schemas/initial-handoff/v2/receipt-response.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "receipt": {
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "organization_id": "org-fixture"
+      },
+      "status": "recovery-required"
+    }
+  },
+  {
+    "case_id": "receipt-response-closed",
+    "schema": "schemas/initial-handoff/v2/receipt-response.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "receipt": {
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "organization_id": "org-fixture"
+      },
+      "status": "recovery-required",
+      "unexpected": true
+    }
+  },
+  {
+    "case_id": "wait-waiting",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "expires_at": "2026-10-08T12:00:00.000Z",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "revision": 2,
+      "status": "waiting"
+    }
+  },
+  {
+    "case_id": "wait-expired",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "revision": 2,
+      "status": "expired"
+    }
+  },
+  {
+    "case_id": "wait-authentication-required",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "revision": 2,
+      "status": "authentication-required"
+    }
+  },
+  {
+    "case_id": "wait-confirmation-required",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "revision": 2,
+      "status": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "wait-revoked",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "revision": 2,
+      "status": "revoked"
+    }
+  },
+  {
+    "case_id": "wait-recovery-required",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "receipt": {
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "organization_id": "org-fixture"
+      },
+      "revision": 2,
+      "status": "recovery-required"
+    }
+  },
+  {
+    "case_id": "receipt-only-valid",
+    "schema": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "receipt": {
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "organization_id": "org-fixture"
+      },
+      "status": "recovery-required"
+    }
+  },
+  {
+    "case_id": "missing-second-digest",
+    "schema": "schemas/initial-handoff/v2/complete-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "scope": {
+          "action_digests": {
+            "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+          },
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "authorization_revision": 1,
+          "installation_id": "installation-fixture",
+          "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+          "intended_creator_id": "creator-fixture",
+          "onboarding_transaction_id": "transaction-fixture",
+          "organization_id": "org-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "commercial-grant",
+    "schema": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "valid": false,
+    "value": {
+      "bootstrap": {
+        "bootstrap_config_version": "v1",
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "grants": {
+          "capability_license": "not-permitted",
+          "installation_grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "membership_snapshot": "e30.e30.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:installation-claim:v2",
+        "status": "consumed"
+      },
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "status": "completed"
+    }
+  },
+  {
+    "case_id": "local-session",
+    "schema": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "valid": false,
+    "value": {
+      "bootstrap": {
+        "bootstrap_config_version": "v1",
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "grants": {
+          "installation_grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "membership_snapshot": "e30.e30.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:installation-claim:v2",
+        "status": "consumed"
+      },
+      "local_session": "not-permitted",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "status": "completed"
+    }
+  },
+  {
+    "case_id": "claim-secret",
+    "schema": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "valid": false,
+    "value": {
+      "bootstrap": {
+        "bootstrap_config_version": "v1",
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "grants": {
+          "installation_grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "membership_snapshot": "e30.e30.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:installation-claim:v2",
+        "status": "consumed"
+      },
+      "claim_secret": "not-permitted",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "status": "completed"
+    }
+  },
+  {
+    "case_id": "browser-destination",
+    "schema": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "valid": false,
+    "value": {
+      "bootstrap": {
+        "bootstrap_config_version": "v1",
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "grants": {
+          "installation_grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "membership_snapshot": "e30.e30.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:installation-claim:v2",
+        "status": "consumed"
+      },
+      "browser_only": true,
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "status": "completed"
+    }
+  },
+  {
+    "case_id": "navigation-url",
+    "schema": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "valid": false,
+    "value": {
+      "bootstrap": {
+        "bootstrap_config_version": "v1",
+        "claim_id": "0199b234-5678-7000-8000-000000000001",
+        "consumed_at": "2026-10-08T12:00:00.000Z",
+        "grants": {
+          "installation_grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "membership_snapshot": "e30.e30.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture",
+        "profile": "urn:bridge-clean:installation-claim:v2",
+        "status": "consumed"
+      },
+      "navigation_url": "not-permitted",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "status": "completed"
+    }
+  },
+  {
+    "case_id": "padded-coordinate-schema",
+    "schema": "schemas/initial-handoff/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw"
+      },
+      "request": {
+        "destination": {
+          "device": {
+            "display_name": "Computer",
+            "platform": "windows",
+            "product_version": "1.0.0"
+          },
+          "installation_id": "installation-fixture",
+          "installation_key": {
+            "alg": "ES256",
+            "jwk": {
+              "crv": "P-256",
+              "kty": "EC",
+              "x": "AIH1UrrztBHfjSZVrB4PAW9wsQGn3H_B41q9yN71u4bl",
+              "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+            },
+            "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+          }
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:initial-installation-handoff:v2"
+      }
+    }
+  },
+  {
+    "case_id": "old-confirmation-name-refused",
+    "schema": "schemas/initial-handoff/v2/authorize-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_id": "0199b234-5678-7000-8000-000000000001",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    }
+  },
+  {
+    "case_id": "old-profile-refused",
+    "schema": "schemas/initial-handoff/v2/authorize-request.schema.json",
+    "valid": false,
+    "value": {
+      "claim_action_receipt_id": "0199b234-5678-7000-8000-000000000001",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v1",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    }
+  },
+  {
+    "case_id": "old-step-up-reference-refused",
+    "schema": "schemas/initial-handoff/v2/authorize-request.schema.json",
+    "valid": false,
+    "value": {
+      "claim_action_receipt_id": "0199b234-5678-7000-8000-000000000001",
+      "customer_authorization_ref": "not-a-receipt",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    }
+  },
+  {
+    "case_id": "old-reauthentication-state-refused",
+    "schema": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "revision": 2,
+      "status": "reauthentication-required"
+    }
+  }
+]

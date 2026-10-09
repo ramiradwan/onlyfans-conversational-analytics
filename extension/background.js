@@ -1,7 +1,9 @@
 import { openCreatorAccount } from './ui/actions.mjs';
 import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
 import { registerDesktopPort } from './runtime/desktop-port.mjs';
-import { probeDesktopRuntime } from './runtime/customer-journey.mjs';
+import { registerOnboardingWorkspace } from './runtime/onboarding-entry.mjs';
+import { registerOnboardingPort } from './runtime/onboarding-port.mjs';
+import { registerSetupTransfer } from './runtime/setup-transfer.mjs';
 import { applyControl, createSurfaceReporter } from './runtime/browser-surface.mjs';
 import { createAgentRuntime } from './transport/agent-runtime.mjs';
 import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
@@ -239,7 +241,13 @@ companionClient.registerPopup({
 companionClient.onRevoked(() => consentController.reconcile());
 void consentController.initialize().catch(() => undefined);
 
-const openSurface = createSurfaceOpener(chrome);
+export const onboarding = registerOnboardingWorkspace({ chromeApi: chrome, consentController, identityBridge: provisioningIdentityBridge });
+export const setupTransfer = registerSetupTransfer({ chromeApi: chrome, workspace: onboarding.workspace, identityBridge: provisioningIdentityBridge });
+export const onboardingPort = registerOnboardingPort({ chromeApi: chrome, workspace: onboarding.workspace, consentController,
+  legalActivationController, identityBridge: provisioningIdentityBridge, companion: companionClient,
+  expectedCreator: () => agentRuntime.configuration?.activeDocument?.history_acquisition?.authorized_platform_creator_id ?? null });
+const openLegacySurface = createSurfaceOpener(chrome);
+const openSurface = (request) => request.surface === 'setup' ? onboarding.open(request) : openLegacySurface(request);
 registerSurfaceNavigation(chrome, openSurface);
 
 // The same change events feed open pages, the desktop port, and the browser
@@ -254,6 +262,7 @@ const surfaceReporter = createSurfaceReporter({
   }),
 });
 const signalSurfaces = () => { companionClient.notifySurfaces(); surfaceReporter.changed(); };
+consentController.subscribe(signalSurfaces);
 chrome.storage.onChanged.addListener((_changes, area) => { if (area === 'local') surfaceReporter.changed(); });
 void consentController.initialize().then(() => surfaceReporter.changed(), () => undefined);
 chrome.permissions?.onAdded?.addListener(signalSurfaces);
@@ -278,8 +287,8 @@ export const desktopPort = registerDesktopPort({
   }),
   // Each step opens the one extension page that owns it. Site access and the
   // history permission need a click there because Chrome requires the gesture.
-  openStep: (step, { anchorTab }) => step === 'creator' ? openCreatorAccount() : openSurface(['setup', 'access'].includes(step)
-    ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab }
+  openStep: (step, { anchorTab, navigate }) => step === 'creator' ? openCreatorAccount() : openSurface(['setup', 'access'].includes(step)
+    ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab, navigate }
     : { surface: 'options', section: step === 'history' ? 'history' : 'connection', presentation: 'window', anchorTab }),
   onPaired: () => consentController.reconcile(),
   changeSources: [
@@ -296,13 +305,3 @@ export const desktopPort = registerDesktopPort({
   ],
 });
 desktopPort.register();
-
-// Installed after the desktop app: open setup on the desktop-guided path. It
-// still asks for every choice; it only skips the Preview-first framing.
-chrome.runtime.onInstalled?.addListener(({ reason } = {}) => {
-  if (reason !== 'install') return;
-  void probeDesktopRuntime().then((present) => {
-    if (present) return openSurface({ surface: 'setup', section: 'desktop' });
-    return undefined;
-  }).catch(() => undefined);
-});

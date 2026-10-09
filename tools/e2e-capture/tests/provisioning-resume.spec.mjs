@@ -95,7 +95,11 @@ test('first-run setup preserves authoritative creator approval across return and
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#continue-creator-approval')).toBeVisible();
       await expect(page.locator('#continue-creator-approval')).toHaveAttribute('href', descriptor.hosted_onboarding_url);
-      await expect(page.locator('#acquire-association')).toBeHidden();
+      // Reload performs an authoritative check. The fixture refuses approval,
+      // so the only new action is a factual retry after that refusal.
+      await expect.poll(() => acquisitions).toBeGreaterThan(0);
+      await expect(page.locator('#acquire-association')).toBeVisible();
+      await expect(page.locator('#provisioning-status')).toHaveText('Approval could not be checked. Try again.');
       await expect(page.locator('#identity-step .step-state')).toHaveText('Step 2 of 4');
       await expect(page.locator('[data-rail-step="1"]')).toHaveAttribute('data-state', 'completed');
       await expect(page.locator('body')).not.toContainText(descriptor.creator_account_id);
@@ -104,21 +108,21 @@ test('first-run setup preserves authoritative creator approval across return and
     });
 
     await test.step('opening and returning from hosted approval does not itself approve the account', async () => {
-      const [hostedPage] = await Promise.all([
-        context.waitForEvent('page'),
-        page.locator('#continue-creator-approval').click(),
-      ]);
+      const previousAcquisitions = acquisitions;
+      const beforePages = context.pages().length;
+      await page.locator('#continue-creator-approval').click();
+      const hostedPage = page;
+      expect(context.pages()).toHaveLength(beforePages);
       await hostedPage.waitForLoadState('domcontentloaded');
       await expect(hostedPage).toHaveURL(descriptor.hosted_onboarding_url);
       await expect(hostedPage.getByRole('heading', { name: 'Secure creator approval' })).toBeVisible();
       await hostedPage.bringToFront();
 
-      await hostedPage.close();
       await returnToProvisioningPage(page);
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'locked');
       await expect(page.locator('#finalize-provisioning')).toBeDisabled();
-      await expect.poll(() => acquisitions).toBeGreaterThan(0);
+      await expect.poll(() => acquisitions).toBeGreaterThan(previousAcquisitions);
       await expect(page.locator('#acquire-association')).toBeVisible();
       expect(finalizations).toBe(0);
       await expect(page.locator('#binding-step-description')).toBeVisible();
@@ -143,14 +147,14 @@ test('first-run setup preserves authoritative creator approval across return and
 
     await test.step('authoritative approval acquisition advances durable state to finalization', async () => {
       approvalAvailable = true;
-      const [hostedPage] = await Promise.all([
-        context.waitForEvent('page'), page.locator('#continue-creator-approval').click(),
-      ]);
+      const beforePages = context.pages().length;
+      await page.locator('#continue-creator-approval').click();
+      const hostedPage = page;
+      expect(context.pages()).toHaveLength(beforePages);
       await hostedPage.waitForLoadState('domcontentloaded');
       await expect(hostedPage).toHaveURL(descriptor.hosted_onboarding_url);
       await hostedPage.bringToFront();
 
-      await hostedPage.close();
       await returnToProvisioningPage(page);
       await expect(page.locator('#finalize-step')).toHaveAttribute('data-state', 'current');
       await expect(page.locator('#binding-step')).toHaveAttribute('data-state', 'completed');

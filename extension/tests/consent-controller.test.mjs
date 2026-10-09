@@ -62,6 +62,7 @@ function harness({ unregisterFails = false, ...options } = {}) {
       onChanged: event(),
     },
     scripting: {
+      async executeScript({ target }) { return [{ frameId: 0, documentId: `document-${target.tabId}` }]; },
       async getRegisteredContentScripts() { return structuredClone(registeredScripts); },
       async registerContentScripts(scripts) { registeredScripts.push(...structuredClone(scripts)); },
       async unregisterContentScripts({ ids }) {
@@ -225,7 +226,7 @@ test('preview can be enabled, paused, resumed, and fully deleted without a local
 
   await h.controller.setMode('pause');
   assert.equal((await h.controller.status()).phase, 'paused');
-  assert.deepEqual(h.registeredScripts, []);
+  assert.equal(h.registeredScripts.length, 2, 'paused Preview retains its compatible observer');
 
   h.permissionState.onlyFans = true;
   await h.controller.setMode('resume');
@@ -269,8 +270,10 @@ test('Full status reports when every OnlyFans tab is sleeping', async () => {
   h.permissionState.onlyFans = true;
   await h.controller.setMode('full');
   h.onlyFansTabs[0].frozen = true;
+  h.controller.observer.tabs.get(7).frozen = true;
   assert.equal((await h.controller.status()).delivery.browser_tab_sleeping, true);
   h.onlyFansTabs.push({ id: 8, frozen: false });
+  h.controller.observer.tabs.set(8, { id: 8, frozen: false });
   assert.equal((await h.controller.status()).delivery.browser_tab_sleeping, false);
 });
 
@@ -286,8 +289,9 @@ test('pause and revoke fail closed when content-script teardown fails', async ()
   const paused = harness({ unregisterFails: true });
   paused.permissionState.onlyFans = true;
   await paused.controller.setMode('preview');
-  await assert.rejects(paused.controller.setMode('pause'), /scripting teardown failed/);
-  assert.equal((await paused.controller.status()).phase, 'unavailable');
+  await paused.controller.setMode('pause');
+  assert.equal((await paused.controller.status()).phase, 'paused');
+  assert.equal(paused.controller.captureScope.isOpen, false);
 
   const revoked = harness({ unregisterFails: true });
   revoked.permissionState.onlyFans = true;
@@ -352,7 +356,7 @@ test('saved pairing retries binding with capped backoff without leaving identity
   assert.equal(h.controller.phase, 'full');
   assert.equal(h.counters.starts, 1);
   assert.equal(scheduler.timers.size, 0);
-  assert.equal((await h.controller.status()).reload_required, true);
+  assert.equal((await h.controller.status()).reload_required, false);
 });
 
 test('missing or unreadable saved pairing does not schedule binding probes', async () => {
@@ -429,6 +433,7 @@ for (const change of ['removed', 'created', 'updated', 'replaced']) {
     h.controller.runtime.history = { async requestCaptureStateReport() {
       reports.push(await h.controller.captureState());
     } };
+    await h.controller.observer.configure('full');
     assert.equal((await h.controller.captureState()).observing, true);
     h.controller.register();
     if (change === 'removed') h.onlyFansTabs.length = 0;
@@ -436,7 +441,11 @@ for (const change of ['removed', 'created', 'updated', 'replaced']) {
     else if (change === 'created') h.onlyFansTabs.push({ id: 8, discarded: true });
     else h.chromeApi.tabs.sendMessage = async () => ({ mode: 'full', active: true, forwarding: true, ws2_socket_open: false });
     const source = h.chromeApi.tabs[`on${change[0].toUpperCase()}${change.slice(1)}`];
-    for (const listener of source.listeners) listener(7, { frozen: true });
+    for (const listener of source.listeners) {
+      if (change === 'created') listener({ id: 8, url: 'https://onlyfans.com/', discarded: true });
+      else if (change === 'replaced') listener(9, 7);
+      else listener(7, { frozen: true }, { id: 7, frozen: true, url: 'https://onlyfans.com/' });
+    }
     for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
     assert.equal(reports.length, 1);
     assert.equal(h.counters.starts, 0);

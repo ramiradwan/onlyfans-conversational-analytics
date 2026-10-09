@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { CaptureDeliveryQueue } from '../capture/delivery-queue.mjs';
-import { CONSENT_STORAGE_KEY } from '../runtime/consent-controller.mjs';
+import { CONSENT_STORAGE_KEY, ConsentController } from '../runtime/consent-controller.mjs';
 import { PartitionAwareConsentController } from '../runtime/partition-aware-consent-controller.mjs';
 import { createAccountBoundCaptureMessageBridge } from '../transport/account-bound-capture-bridge.mjs';
 
@@ -70,7 +70,7 @@ function silenceControl(h, action) {
     ? new Promise(() => {}) : send(id, message);
 }
 
-async function harness({ initialMode = 'full', document = true, bridgeFirst = false } = {}) {
+async function harness({ initialMode = 'full', document = true, bridgeFirst = false, Controller = PartitionAwareConsentController } = {}) {
   const local = { [CONSENT_STORAGE_KEY]: {
     schema: 'ofca-consent/v2', mode: initialMode, resume_mode: initialMode === 'paused' ? 'full' : null,
     policy_revision: '1', updated_at: null, authorization_event_id: crypto.randomUUID(),
@@ -123,6 +123,14 @@ async function harness({ initialMode = 'full', document = true, bridgeFirst = fa
     }, onChanged: event() },
     permissions: { onAdded: event(), onRemoved: event(), async contains() { return true; }, async remove() { return true; } },
     scripting: {
+      async executeScript({ world, files }) {
+        if (!hookContext || !bridgeContext) return [];
+        if (world === 'MAIN') {
+          hookContext.__OFCA_CAPTURE_MODE__ = files[0].match(/mode-(\w+)/u)[1]; vm.runInContext(bundles[0], hookContext);
+        } else vm.runInContext(bundles[1], bridgeContext);
+        await flush();
+        return [{ frameId: 0, documentId: 'document-a' }];
+      },
       async getRegisteredContentScripts() { return structuredClone(scripts); },
       async registerContentScripts(next) { scripts.push(...structuredClone(next)); },
       async unregisterContentScripts() { scripts.length = 0; },
@@ -151,7 +159,7 @@ async function harness({ initialMode = 'full', document = true, bridgeFirst = fa
   };
   async function restart() {
     chromeApi.runtime.onMessage.listeners.length = 0;
-    controller = new PartitionAwareConsentController(options);
+    controller = new Controller(options);
     await controller.initialize();
     await flush();
     return controller;
@@ -257,7 +265,7 @@ test('forged page resume cannot deliver captures through a paused bridge or flus
   assert.deepEqual(h.captureIds(), ['legitimate-resume'], 'the paused frame never flushes');
 });
 
-test('silent pause permanently rejects Full delivery and reports reload required', async () => {
+test('silent pause permanently rejects Full delivery and never requests reload', async () => {
   const h = await harness();
   silenceControl(h, 'pause');
   await h.controller.setMode('pause'); await flush();
@@ -266,7 +274,7 @@ test('silent pause permanently rejects Full delivery and reports reload required
     contextCalls: 0, ingested: 0,
   });
   assert.equal(h.controller.allowsFullCapture(), false);
-  assert.equal((await h.controller.status()).reload_required, true);
+  assert.equal((await h.controller.status()).reload_required, false);
   let attempts = 0;
   const queue = new CaptureDeliveryQueue({ send: async () => {
     attempts += 1;
@@ -278,7 +286,7 @@ test('silent pause permanently rejects Full delivery and reports reload required
   assert.equal(attempts, 1, 'the rejected delivery never retries after resume');
 });
 
-test('silent Full to Preview stop rejects Full delivery and reports reload required', async () => {
+test('silent Full to Preview stop rejects Full delivery and never requests reload', async () => {
   const h = await harness();
   silenceControl(h, 'stop');
   await h.controller.setMode('preview'); await flush();
@@ -287,10 +295,10 @@ test('silent Full to Preview stop rejects Full delivery and reports reload requi
     contextCalls: 0, ingested: 0,
   });
   assert.equal(h.controller.allowsFullCapture(), false);
-  assert.equal((await h.controller.status()).reload_required, true);
+  assert.equal((await h.controller.status()).reload_required, false);
 });
 
-test('worker restart derives reload requirement from stopped and live documents', async () => {
+test('worker restart reconciles stopped and live documents without reload', async () => {
   const h = await harness();
   assert.equal((await h.controller.status()).reload_required, false);
   await h.controller.setMode('pause'); await flush();
@@ -298,13 +306,13 @@ test('worker restart derives reload requirement from stopped and live documents'
   assert.equal((await h.controller.status()).reload_required, false);
   h.relay(control('stop')); await flush();
   await h.restart();
-  assert.equal((await h.controller.status()).reload_required, true);
+  assert.equal((await h.controller.status()).reload_required, false);
 });
 
-test('old hook without status response requires reload within the one second deadline', async () => {
+test('status uses cached document facts without a slow status probe', async () => {
   const h = await harness(); h.oldHook();
   const start = performance.now();
-  assert.equal((await h.controller.status()).reload_required, true);
+  assert.equal((await h.controller.status()).reload_required, false);
   assert.ok(performance.now() - start < 1500);
 });
 
@@ -322,7 +330,7 @@ for (const refusal of ['undefined', 'null', 'rejected']) test(`a legacy bridge w
   const count = h.delivered.length;
   socket.emit('legacy-pause'); await flush();
   assert.equal(h.delivered.length, count);
-  assert.equal((await h.controller.status()).reload_required, true);
+  assert.equal((await h.controller.status()).reload_required, false);
 });
 
 test('automatic Full pause and a new paused document keep forwarding closed', async () => {
@@ -352,13 +360,13 @@ test('policy revision validation soft pauses an installed Full hook across resta
   assert.deepEqual(h.captureIds(), ['resumed-policy']);
 });
 
-test('reload status checks every tab instead of accepting the first healthy hook', async () => {
+test('status never turns a silent document into a reload request', async () => {
   const h = await harness();
   const tabs = h.controller.chromeApi.tabs;
   const send = tabs.sendMessage;
   tabs.query = async () => [{ id: 1 }, { id: 2 }];
   tabs.sendMessage = (id, message) => id === 2 ? Promise.resolve(null) : send(id, message);
-  assert.equal((await h.controller.status()).reload_required, true);
+  assert.equal((await h.controller.status()).reload_required, false);
 });
 
 test('Full epoch replacement refreshes identity without stopping the socket', async () => {
@@ -384,7 +392,7 @@ test('resume reopens identity observation while the binding is being recovered',
   assert.equal(status.reload_required, false);
   assert.equal(h.controller.phase, 'identity');
   assert.equal(h.controller.allowsFullCapture(), false);
-  assert.equal(h.scripts[0].id, 'ofca-full-main');
+  assert.equal(h.scripts[0].id, 'ofca-identity-main');
   assert.ok(h.delivered.some((m) => m.type === 'ofca.provisioning.identity.update'));
   h.controller.adapter.loadBrainBinding = async () => {};
   await h.controller.reconcile(); await flush();
@@ -392,8 +400,8 @@ test('resume reopens identity observation while the binding is being recovered',
   assert.deepEqual(h.captureIds(), ['recovered']);
 });
 
-for (const transition of ['preview', 'full', 'revoked', 'off', 'account']) {
-  test(`hard transition ${transition} still stops the hook and requires reload`, async () => {
+for (const transition of ['revoked', 'off']) {
+  test(`hard transition ${transition} stops the hook and permits a fresh attachment`, async () => {
     const h = await harness({ initialMode: transition === 'full' ? 'preview' : 'full' });
     const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
     if (transition === 'off') await h.controller.deleteLocalData();
@@ -405,7 +413,7 @@ for (const transition of ['preview', 'full', 'revoked', 'off', 'account']) {
     assert.equal(h.hook, undefined);
     assert.deepEqual(h.captureIds(), []);
     if (['off', 'revoked'].includes(transition)) await h.controller.setMode('full');
-    assert.equal((await h.controller.status()).reload_required, true);
+    assert.equal((await h.controller.status()).reload_required, false);
   });
 }
 
@@ -418,5 +426,39 @@ test('a queued account switch stays hard when followed by a Full epoch replaceme
   await h.controller.setMode('full', { evidenceEventId: crypto.randomUUID() });
   await flush(); socket.emit('retired-account'); await flush();
   assert.deepEqual(h.captureIds(), []);
-  assert.equal((await h.controller.status()).reload_required, true);
+  assert.equal((await h.controller.status()).reload_required, false);
+});
+
+for (const [name, Controller] of [['normal', ConsentController], ['packaged', PartitionAwareConsentController]]) {
+  test(`${name} first partition keeps observed identity and socket; replacement still fences the old account`, async () => {
+    const h = await harness({ Controller });
+    const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
+    const hook = h.hook;
+    h.messages.length = 0;
+    h.controller.storageListener({ active_account_partition_v5: { newValue: 'partition-a' } }, 'session');
+    await flush();
+    h.controller.storageListener({ active_account_partition_v5: { oldValue: 'partition-a', newValue: 'partition-a' } }, 'session');
+    await flush();
+    socket.emit('first-bound-observation'); await flush();
+    assert.equal(h.hook, hook);
+    assert.equal(h.messages.some((message) => message.action === 'reset_identity'), false);
+    assert.deepEqual(h.captureIds(), ['first-bound-observation']);
+    h.controller.storageListener({ active_account_partition_v5: { oldValue: 'partition-a', newValue: 'partition-b' } }, 'session');
+    await h.controller.status(); await flush();
+    socket.emit('retired-account-observation'); await flush();
+    assert.equal(h.messages.some((message) => message.action === 'reset_identity'), true);
+    assert.deepEqual(h.captureIds(), ['first-bound-observation']);
+    assert.equal((await h.controller.status()).reload_required, false);
+  });
+}
+
+test('Full to Preview and back reuses the same socket while each mode keeps its delivery boundary', async () => {
+  const h = await harness(); const socket = new h.window.WebSocket('wss://ws2.onlyfans.com/ws');
+  const constructor = h.window.WebSocket; const hook = h.hook;
+  await h.controller.setMode('preview'); await flush(); socket.emit('preview-only'); await flush();
+  assert.equal(h.hook, hook); assert.equal(h.window.WebSocket, constructor); assert.equal(h.hook.mode, 'preview');
+  assert.deepEqual(h.captureIds(), []);
+  await h.controller.setMode('full'); await flush(); socket.emit('full-current'); await flush();
+  assert.equal(h.hook, hook); assert.equal(h.window.WebSocket, constructor); assert.equal(h.hook.mode, 'full');
+  assert.deepEqual(h.captureIds(), ['full-current']);
 });

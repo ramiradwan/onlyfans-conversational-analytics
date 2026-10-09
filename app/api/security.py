@@ -164,6 +164,10 @@ def csrf_token(policy: RuntimePolicy, *, issued_at: int | None = None) -> str:
 def verify_csrf_token(policy: RuntimePolicy, token: str | None) -> None:
     if policy.identity is None:
         raise HTTPException(status_code=403, detail="CSRF token does not match the session")
+    if token is not None and len(token) == 43 and "." not in token:
+        if SQLiteAuthenticationStore(settings.auth_database_path).bridge_session_csrf_is_current(policy, token):
+            return
+        raise HTTPException(status_code=403, detail="CSRF token does not match the session")
     try:
         verify_csrf_document(policy, token)
     except LocalSessionError as error:

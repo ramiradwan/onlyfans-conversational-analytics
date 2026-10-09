@@ -1,0 +1,2484 @@
+[
+  {
+    "case_id": "prepare-request-valid",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "runtime_ticket": "refused"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "customer_session": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "creator_messages": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "fan_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "local_log": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-free",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "free": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "skip_step_up": "refused"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "organization_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "installation_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "credit_cost": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "license_rights": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "customer_authorization_ref": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "prepare-request-missing-operation_id",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-request-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:capability-license-exchange:v1"
+    }
+  },
+  {
+    "case_id": "read-request-valid",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "runtime_ticket": "refused"
+    }
+  },
+  {
+    "case_id": "read-request-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "customer_session": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused"
+    }
+  },
+  {
+    "case_id": "read-request-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "creator_messages": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "fan_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "local_log": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-free",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "free": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "skip_step_up": "refused"
+    }
+  },
+  {
+    "case_id": "read-request-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "organization_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "installation_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "credit_cost": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "license_rights": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "customer_authorization_ref": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "read-request-missing-operation_id",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-request-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:capability-license-exchange:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-valid",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": true,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "metadata": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "runtime_ticket": "refused"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "customer_session": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "creator_messages": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "fan_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "local_log": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-free",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "free": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "skip_step_up": "refused"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "organization_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "installation_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "credit_cost": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "license_rights": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "customer_authorization_ref": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    }
+  },
+  {
+    "case_id": "confirm-request-missing-operation_id",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-missing-confirmation_reference",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "confirm-request-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:capability-license-exchange:v1"
+    }
+  },
+  {
+    "case_id": "prepared-valid",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": true,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "metadata": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "runtime_ticket": "refused",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "customer_session": "refused",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "creator_messages": "refused",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "fan_id": "refused",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "local_log": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-free",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "free": "refused",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "skip_step_up": "refused",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "organization_id": "refused",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "installation_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "credit_cost": "refused",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "license_rights": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "customer_authorization_ref": "refused",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-missing-operation_id",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-missing-confirmation_reference",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-missing-state",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepared-missing-expires_at",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-missing-funding",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-missing-pilot_credit_cost",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepared-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:capability-license-exchange:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "committed-valid",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "runtime_ticket": "refused",
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "customer_session": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "creator_messages": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "fan_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "local_log": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-free",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "free": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "skip_step_up": "refused",
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "organization_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "installation_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "credit_cost": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "license_rights": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "customer_authorization_ref": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-missing-operation_id",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-missing-state",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      }
+    }
+  },
+  {
+    "case_id": "committed-missing-redemption",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "committed-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:capability-license-exchange:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "prepare-response-valid",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": true,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "metadata": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "runtime_ticket": "refused",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "customer_session": "refused",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "creator_messages": "refused",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "fan_id": "refused",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "local_log": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-free",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "free": "refused",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "skip_step_up": "refused",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "organization_id": "refused",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "installation_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "credit_cost": "refused",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "license_rights": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "customer_authorization_ref": "refused",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-operation_id",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-confirmation_reference",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-state",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-expires_at",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-funding",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-pilot_credit_cost",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "prepare-response-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:capability-license-exchange:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "confirm-response-valid",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "runtime_ticket": "refused",
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "customer_session": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "creator_messages": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "fan_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "local_log": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-free",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "free": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "skip_step_up": "refused",
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "organization_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "installation_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "credit_cost": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "license_rights": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "customer_authorization_ref": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-missing-operation_id",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-missing-state",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      }
+    }
+  },
+  {
+    "case_id": "confirm-response-missing-redemption",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "confirm-response-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:capability-license-exchange:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "read-response-valid",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "runtime_ticket": "refused",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "customer_session": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "creator_messages": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "fan_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "local_log": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-free",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "free": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "skip_step_up": "refused",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "organization_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "installation_id": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "credit_cost": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "license_rights": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "customer_authorization_ref": "refused",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-missing-operation_id",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-response-missing-state",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "read-response-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:capability-license-exchange:v1",
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "error-valid",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-metadata",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-runtime_ticket",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required",
+      "runtime_ticket": "refused"
+    }
+  },
+  {
+    "case_id": "error-reject-customer_session",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "customer_session": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-provider_token",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "provider_token": "refused",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-platform_cookie",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "platform_cookie": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-creator_messages",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "creator_messages": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-fan_id",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "fan_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-local_log",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "local_log": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-free",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "free": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-skip_step_up",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required",
+      "skip_step_up": "refused"
+    }
+  },
+  {
+    "case_id": "error-reject-organization_id",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "organization_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-installation_id",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "installation_id": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-credit_cost",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "credit_cost": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-license_rights",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "license_rights": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-reject-customer_authorization_ref",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "customer_authorization_ref": "refused",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-missing-profile",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "error-missing-reason",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    }
+  },
+  {
+    "case_id": "error-wrong-profile",
+    "schema": "schemas/complimentary-activation/v1/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:capability-license-exchange:v1",
+      "reason": "authentication_required"
+    }
+  },
+  {
+    "case_id": "credit-cost-0",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 0,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "credit-cost-1",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": true,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 1,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "credit-cost-1000000",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": true,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 1000000,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "credit-cost-1000001",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 1000001,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "credit-cost-1.5",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 1.5,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "wrong-funding",
+    "schema": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "valid": false,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "purchased",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "read-prepared",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": true,
+    "value": {
+      "confirmation_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "expires_at": "2026-10-09T12:05:00.000Z",
+      "funding": "complimentary-pilot",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "pilot_credit_cost": 10,
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "state": "confirmation-required"
+    }
+  },
+  {
+    "case_id": "read-committed",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "prepare-existing-commit",
+    "schema": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "committed"
+    }
+  },
+  {
+    "case_id": "already-committed",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "already-committed"
+    }
+  },
+  {
+    "case_id": "read-cannot-carry-package-when-unavailable",
+    "schema": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1"
+      },
+      "state": "unavailable"
+    }
+  },
+  {
+    "case_id": "nested-prohibited-field",
+    "schema": "schemas/complimentary-activation/v1/committed.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+      "redemption": {
+        "continuation": "clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "expires_at": "2026-10-09T12:10:00.000Z",
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1",
+        "runtime_ticket": "refused"
+      },
+      "state": "committed"
+    }
+  }
+]

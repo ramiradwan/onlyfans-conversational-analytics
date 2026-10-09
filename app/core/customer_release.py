@@ -116,6 +116,26 @@ def resolve_hosted_api_origin(config: CustomerReleaseConfig | None = None) -> st
     return config.hosted_api_origin or os.environ.get(HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, "")
 
 
+def resolve_hosted_onboarding_start(config: CustomerReleaseConfig | None = None) -> str:
+    """Use the release-owned browser destination, independently of API routing."""
+    config = config or load_customer_release_config()
+    if not config.hosted_onboarding_url:
+        return ""
+    parsed = urlsplit(config.hosted_onboarding_url)
+    if parsed.path != "/public/onboarding/setup":
+        raise CustomerReleaseConfigurationError("hosted onboarding must use /public/onboarding/setup")
+    return config.hosted_onboarding_url + "/start"
+
+
+def resolve_hosted_continuation_start(config: CustomerReleaseConfig | None = None) -> str:
+    """Keep the registered browser adapter on the release-owned browser origin."""
+    start = resolve_hosted_onboarding_start(config)
+    if not start:
+        return ""
+    parsed = urlsplit(start)
+    return f"{parsed.scheme}://{parsed.netloc}/public/onboarding/installation-continue"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=CUSTOMER_RELEASE_PATH)

@@ -77,8 +77,8 @@ def test_configured_first_run_has_one_authoritative_secure_setup_entry() -> None
     entry = markup.elements["open-secure-setup"]
     assert entry.tag == "a"
     assert entry.attributes["href"] == ONBOARDING_URL
-    assert entry.attributes["target"] == "_blank"
-    assert entry.attributes["rel"] == "noopener noreferrer"
+    assert entry.attributes["target"] == "_self"
+    assert entry.attributes["rel"] == "noreferrer"
     assert entry.text
     assert not entry.hidden
     assert markup.has_visible_guidance("open-secure-setup")

@@ -34,15 +34,18 @@ for (const width of [390, 1440]) {
       await settle(page);
       assert.deepEqual(await page.locator('#open-secure-setup').boundingBox(), before, 'The setup link moves after a paste');
       await page.locator('#claim-submit').click();
+      await page.evaluate(() => window.__provisioningFixture.hold.push('acquire', 'finalize'));
       await page.locator('#confirm-identity').click();
-      await page.evaluate(() => { window.__provisioningFixture.hold.push('acquire', 'finalize'); window.dispatchEvent(new Event('focus')); });
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await page.waitForFunction(() => window.__provisioningFixture.calls.includes('acquire'));
       await settle(page);
       await page.evaluate(() => window.__provisioningFixture.release('acquire'));
-      await settle(page);
+      await page.waitForFunction(() => window.__provisioningFixture.calls.includes('finalize'));
       await page.evaluate(() => window.__provisioningFixture.release('finalize'));
       await settle(page);
       assert(await page.getByRole('heading', { name: 'Setup finished' }).isVisible(), 'Completion is blank');
       assert(await page.locator('#finalize-step-description').isVisible());
+      assert.equal(await page.evaluate(() => window.__provisioningFixture.calls.filter((operation) => operation === 'finalize').length), 1);
       assert.deepEqual((await readWatcher(page)).failures, []);
     } finally { await page.close(); }
   });
@@ -125,11 +128,14 @@ for (const width of [390, 1440]) {
       await installWatcher(page);
       await installProvisioningFixture(page, { stage: 'creator_approval_pending', name: 'approval-unavailable-help' });
       await openProvisioningFixture(page);
-      await page.locator('#recovery-open').click();
+      const before = await page.evaluate(() => window.__provisioningFixture.calls.filter((operation) => operation === 'acquire').length);
+      const retry = page.locator('#acquire-association');
+      assert(await retry.isVisible());
       await page.keyboard.press('Tab');
-      await page.locator('#recovery-close').focus();
-      await page.locator('#recovery-close').blur();
+      await retry.focus();
+      await retry.blur();
       await settle(page);
+      assert.equal(await page.evaluate(() => window.__provisioningFixture.calls.filter((operation) => operation === 'acquire').length), before, 'Control focus must not repeat approval');
       assert.equal(await page.locator('#binding-step').getAttribute('data-state'), 'current');
       assert(await page.locator('#provisioning-status').evaluate((node) => Boolean(node.closest('[aria-current="step"]'))));
       assert.deepEqual((await readWatcher(page)).failures, []);
@@ -298,7 +304,7 @@ for (const width of [320, 390, 600]) test(`essential activation content stays se
     await notice.waitFor();
     await page.evaluate(() => document.fonts.ready);
     await settle(page);
-    assert.equal(await notice.innerText(), "New messages aren't being analyzed\n\nYour activation is fine, but analysis can't run right now. Your existing numbers are still available.");
+    assert.equal(await notice.innerText(), "New messages aren't being analyzed");
     assert(await section.getByRole('button', { name: 'Check again', exact: true }).isVisible());
     const geometry = await section.evaluate((node) => {
       const bounds = node.getBoundingClientRect();

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-export async function installProvisioningFixture(page, { stage = 'registration_required', name = 'connect', deliveryDelay = 0 } = {}) {
+export async function installProvisioningFixture(page, { stage = 'registration_required', name = 'connect', deliveryDelay = 0, acquireRefusal = null } = {}) {
   const html = (await readFile(new URL('../../app/provisioning/provisioning.html', import.meta.url), 'utf8'))
     .replaceAll('{{PROVISIONING_CSRF}}', 'fixture')
     .replaceAll('{{PROVISIONING_EXTENSION_ID}}', 'a'.repeat(32))
@@ -17,9 +17,9 @@ export async function installProvisioningFixture(page, { stage = 'registration_r
     }
     return route.abort();
   });
-  await page.addInitScript(({ stage, name }) => {
+  await page.addInitScript(({ stage, name, acquireRefusal }) => {
     const pending = new Map();
-    const fixture = window.__provisioningFixture = { stage, calls: [], hold: [], refusal: null,
+    const fixture = window.__provisioningFixture = { stage, calls: [], hold: [], refusal: null, acquireRefusal,
       identity: 'fixture-account', unavailable: false, malformed: false, expired: false, identityUnavailable: false, portMissing: false, loseFinalize: false,
       release: (path) => { pending.get(path)?.(); pending.delete(path); },
       push: (stage) => fixture.onStage?.({ type: 'state', version: 1, stage, attempt: null }),
@@ -45,14 +45,27 @@ export async function installProvisioningFixture(page, { stage = 'registration_r
       if (operation === 'creator-association') { fixture.stage = 'creator_approval_pending'; payload = { association_request_id: 'fixture-association', status: 'pending', updated_at: '2026-06-30T12:00:00Z' }; }
       if (operation === 'acquire') payload = { association_request_id: 'fixture-association', status: 'approved' };
       if (operation === 'finalize') { fixture.stage = null; if (fixture.loseFinalize) throw new Error('Fixture response lost'); payload = { state: 'configured_restart' }; }
-      const refusal = fixture.refusal ?? (['approval-pending', 'approval-offline', 'approval-unavailable', 'approval-unavailable-help'].includes(name) && operation === 'acquire' ? 'binding_acquisition_unavailable' : null);
+      const refusal = fixture.refusal ?? (operation === 'acquire' ? fixture.acquireRefusal : null)
+        ?? (['approve', 'approval-pending', 'approval-offline', 'approval-unavailable', 'approval-unavailable-help'].includes(name) && operation === 'acquire' ? 'binding_acquisition_unavailable' : null);
       return { ok: !refusal && !fixture.expired, status: fixture.expired ? 403 : refusal ? 409 : 200, json: async () => refusal ? { reason: refusal } : payload };
     };
     if (name === 'finish') fixture.hold.push('finalize');
-  }, { stage, name });
+  }, { stage, name, acquireRefusal });
 }
 
-export async function openProvisioningFixture(page) {
-  await page.goto('http://provisioning-fixture.localhost/provisioning');
+export async function settleProvisioningFixture(page, { pendingOperation = null } = {}) {
+  if (pendingOperation) {
+    // Startup now automatically resumes approval/finalization. A deliberately
+    // held response must be captured while it is pending, before start resolves.
+    await page.waitForFunction((operation) => window.__provisioningFixture?.hold.includes(operation)
+      && window.__provisioningFixture.calls.includes(operation), pendingOperation);
+    await page.locator('.step[data-state="current"][aria-busy="true"]').waitFor({ state: 'visible' });
+    return;
+  }
   await page.evaluate(() => window.__provisioningStarted);
+}
+
+export async function openProvisioningFixture(page, options = {}) {
+  await page.goto('http://provisioning-fixture.localhost/provisioning');
+  await settleProvisioningFixture(page, options);
 }
