@@ -20,6 +20,62 @@ for (const entry of ['background.js', 'background-read-only.js']) test(`${entry}
 });
 
 const journey = '11111111-1111-4111-8111-111111111111';
+
+async function initialFixture(kind = 'extension-first') {
+  const currentJourney = '22222222-2222-4222-8222-222222222222';
+  const local = {}, session = {}, removed = [], changed = event();
+  const tabs = new Map([[7, { id: 7, windowId: 1, documentId: 'extension-before-install',
+    url: `${routes.extension}#journey=${journey}` }]]);
+  const storage = (data) => ({ async get(keys) { return Object.fromEntries((Array.isArray(keys) ? keys : [keys])
+    .map((key) => [key, structuredClone(data[key])])); }, async set(values) { Object.assign(data, structuredClone(values)); } });
+  const chromeApi = { runtime: { id: 'synthetic', getURL: (file) => `chrome-extension://synthetic/${file}` }, storage: { local: storage(local), session: storage(session) },
+    tabs: { onUpdated: changed, async query() { return [...tabs.values()].map((v) => ({ ...v })); },
+      async get(id) { if (!tabs.has(id)) throw Error('closed'); return { ...tabs.get(id) }; },
+      async remove(id) { removed.push(id); tabs.delete(id); },
+      async update(id, values) { Object.assign(tabs.get(id), values); }, async create() { throw Error('no_new_tab'); } },
+    windows: { async update() {} } };
+  const workspace = createOnboardingWorkspace({ chromeApi, routes, now: () => 1000, navigationTimeoutMs: 30 });
+  if (kind === 'extension-first') {
+    await workspace.open({ journey_id: journey, route: 'extension', explicit: true, draft_scope: scope });
+    await workspace.reconcileIdentity({ account_digest: 'b'.repeat(64) });
+  } else tabs.clear();
+  const source = { id: 8, windowId: 1, documentId: 'initial-desktop-document',
+    url: `${routes.provisioning}#journey=${currentJourney}` };
+  tabs.set(8, source);
+  const sender = () => ({ tab: { id: 8, windowId: 1 }, documentId: source.documentId, url: source.url, frameId: 0 });
+  const navigate = (route) => { source.url = `${routes[route]}#journey=${currentJourney}`;
+    source.documentId = `${route}-replacement`; changed.emit(8, { status: 'complete' }); };
+  return { workspace, local, session, tabs, source, sender, navigate, removed, currentJourney };
+}
+
+for (const kind of ['extension-first', 'desktop-first']) test(`${kind} initial setup keeps the local journey and returns to its original page`, async () => {
+  const f = await initialFixture(kind);
+  await f.workspace.adoptInitialDesktop(f.sender(), scope);
+  const record = await f.workspace.read();
+  assert.equal(record.journey_id, f.currentJourney);
+  assert.notEqual(record.draft_scope.scope_id, scope.scope_id);
+  assert.equal(f.tabs.size, 1);
+  assert.deepEqual(f.removed, kind === 'extension-first' ? [7] : []);
+  await f.workspace.handoffFromDesktop(f.sender(), () => f.navigate('extension'));
+  await f.workspace.bindNavigationPort({ sender: { ...f.sender(), id: 'synthetic' }, onDisconnect: event(),
+    postMessage(message) { if (message.type === 'navigate') { assert.equal(message.route, 'provisioning'); f.navigate(message.route); } },
+    disconnect() { throw Error('unexpected_disconnect'); } });
+  assert.deepEqual(await f.workspace.returnDesktopHandoff({ ...f.sender(), id: 'synthetic' }), { status: 'returned' });
+  assert.equal(f.source.url, `${routes.provisioning}#journey=${f.currentJourney}`);
+  assert.equal(f.tabs.size, 1);
+});
+
+for (const invalid of ['stale-document', 'other-workspace', 'unknown-navigation', 'changed-identity']) test(`initial adoption refuses ${invalid} before changing the workspace`, async () => {
+  const f = await initialFixture();
+  const before = JSON.stringify(await f.workspace.read()), sender = f.sender();
+  if (invalid === 'stale-document') sender.documentId = 'old';
+  if (invalid === 'other-workspace') f.tabs.set(9, { id: 9, windowId: 1,
+    url: `${routes.provisioning}#journey=33333333-3333-4333-8333-333333333333` });
+  if (invalid === 'unknown-navigation') f.session.onboarding_native_launch_v1 = { expires_at: 2000, phase: 'returning' };
+  await assert.rejects(f.workspace.adoptInitialDesktop(sender, scope, () => invalid !== 'changed-identity'));
+  assert.equal(JSON.stringify(await f.workspace.read()), before);
+  assert.deepEqual(f.removed, []);
+});
 const scope = { scope_id: '22222222-2222-4222-8222-222222222222', disclosure_bundle_id: 'a'.repeat(64) };
 const routes = { extension: 'chrome-extension://synthetic/setup.html', bridge: 'http://bridge.localhost:17871/',
   provisioning: 'http://bridge.localhost:17871/provisioning', hosted: null };

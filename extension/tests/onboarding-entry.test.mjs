@@ -41,6 +41,26 @@ async function savedFixture() {
   return f;
 }
 
+for (const installedFirst of [false, true]) test(`the production initial entry adopts the existing desktop page (extension first: ${installedFirst})`, async () => {
+  const f = installedFirst ? await savedFixture() : fixture();
+  const journey = '22222222-2222-4222-8222-222222222222';
+  const source = { id: 8, windowId: 1, documentId: 'initial-desktop',
+    url: `http://bridge.localhost:17871/provisioning#journey=${journey}` };
+  f.tabs.push(source);
+  f.chromeApi.tabs.remove = async (id) => { const i = f.tabs.findIndex((tab) => tab.id === id); f.tabs.splice(i, 1); };
+  const changed = event(); changed.removeListener = (fn) => { const i = changed.listeners.indexOf(fn); if (i >= 0) changed.listeners.splice(i, 1); };
+  f.chromeApi.tabs.onUpdated = changed;
+  const anchorTab = { ...source }, calls = [];
+  const result = await f.entry.open({ section: 'desktop', anchorTab, navigate(request) {
+    calls.push(request); source.url = `${f.chromeApi.runtime.getURL('setup.html')}#journey=${request.journey_id}`;
+    source.documentId = 'extension-replacement'; changed.emit(8, { status: 'complete' });
+  } });
+  assert.equal(result.journey_id, journey); assert.equal(result.tab_id, 8);
+  assert.equal(calls.length, 1); assert.equal(f.tabs.length, 1);
+  assert.equal(f.calls.filter(([name]) => name === 'create').length, installedFirst ? 1 : 0);
+  assert.equal(f.local[recordKey].journey_id, journey);
+});
+
 test('desktop setup dispatches the owned Bridge document to the extension without another tab or focus request', async () => {
   const f = await savedFixture();
   await f.entry.workspace.navigate(f.sender(), { route: 'bridge' });

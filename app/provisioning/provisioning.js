@@ -453,24 +453,38 @@ export function parseExtensionState(message) {
 
 // The extension pushes its setup stage over a browser port, so this page reacts
 // when the extension changes instead of asking the creator to check again.
-export function createChromeExtensionPort(chromeRuntime = globalThis.chrome?.runtime) {
+export function createChromeExtensionPort(chromeRuntime = globalThis.chrome?.runtime, location = globalThis.location) {
   return (extensionId, onStage) => {
     if (typeof chromeRuntime?.connect !== 'function') return null;
     let port = null;
     let closed = false;
+    let pendingSetup = false, navigating = false;
     const connect = (retry) => {
       let delivered = false;
       try { port = chromeRuntime.connect(extensionId, { name: DESKTOP_PORT_NAME }); } catch { onStage(null); return; }
+      const current = port;
       port.onMessage.addListener((message) => {
+        if (closed || port !== current) return;
+        if (isRecord(message) && hasOnlyKeys(message, ['type', 'version', 'request_id', 'journey_id', 'expected_url'])
+          && message.type === 'navigate_setup' && message.version === 1 && pendingSetup && !navigating
+          && /^[a-p]{32}$/u.test(extensionId) && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(message.request_id)
+          && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(message.journey_id)
+          && message.expected_url === `http://bridge.localhost:17871/provisioning#journey=${message.journey_id}`
+          && location?.href === message.expected_url) {
+          pendingSetup = false; navigating = true;
+          location.replace(`chrome-extension://${extensionId}/setup.html#journey=${message.journey_id}`); return;
+        }
         const stage = parseExtensionState(message);
         if (stage === null) return;
         delivered = true;
         onStage(stage);
       });
       port.onDisconnect.addListener(() => {
+        if (port !== current) return;
         void chromeRuntime.lastError;
         port = null;
-        if (closed) return;
+        pendingSetup = false;
+        if (closed || navigating) return;
         // A worker that went idle drops the port; reconnecting wakes it.
         if (delivered || retry) connect(false);
         else onStage(null);
@@ -478,7 +492,8 @@ export function createChromeExtensionPort(chromeRuntime = globalThis.chrome?.run
     };
     connect(true);
     return {
-      open(step) { try { port?.postMessage({ type: 'open', version: 1, step }); } catch {} },
+      open(step) { if (closed || navigating) return; pendingSetup = true;
+        try { port?.postMessage({ type: 'open', version: 1, step }); } catch { pendingSetup = false; } },
       close() { closed = true; try { port?.disconnect(); } catch {} },
     };
   };

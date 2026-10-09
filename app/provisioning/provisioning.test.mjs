@@ -643,6 +643,22 @@ test('the extension port reconnects after an idle worker drop and reports absenc
   assert.equal(createChromeExtensionPort({})(EXTENSION_ID, () => {}), null);
 });
 
+test('initial setup navigation requires one explicit open and the exact current document', () => {
+  const { runtime, ports } = fakePortRuntime(), replaced = [];
+  const journey = '11111111-1111-4111-8111-111111111111';
+  const location = { href: `http://bridge.localhost:17871/provisioning#journey=${journey}`, replace: (url) => replaced.push(url) };
+  const handle = createChromeExtensionPort(runtime, location)(EXTENSION_ID, () => {});
+  const message = { type: 'navigate_setup', version: 1, request_id: '22222222-2222-4222-8222-222222222222',
+    journey_id: journey, expected_url: location.href };
+  ports[0].deliver(message); assert.deepEqual(replaced, []);
+  handle.open('setup');
+  ports[0].deliver({ ...message, expected_url: location.href + '?other' }); assert.deepEqual(replaced, []);
+  ports[0].deliver({ ...message, extra: true }); assert.deepEqual(replaced, []);
+  ports[0].deliver(message); ports[0].deliver(message);
+  assert.deepEqual(replaced, [`chrome-extension://${EXTENSION_ID}/setup.html#journey=${journey}`]);
+  ports[0].drop(); assert.equal(ports.length, 1, 'navigation must not reconnect the departing page');
+});
+
 test('extension stage pushes refresh identity guidance and offer the extension setup window', async () => {
   const { runtime, ports } = fakePortRuntime();
   const main = { dataset: { provisioningCsrf: 'csrf-token', provisioningExtensionId: EXTENSION_ID } };

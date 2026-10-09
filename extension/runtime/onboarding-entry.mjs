@@ -55,21 +55,30 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
   }
   identityBridge.onAccountChange?.(() => { identityRevision++; void reconcileAccount().catch(() => undefined); });
   async function open({ section = '', anchorTab = null, navigate = null } = {}) {
-    await reconcileAccount();
+    const identityGeneration = await reconcileAccount();
     const draft_scope = await scope();
     // An exact existing setup tab wins, including a page open before installation.
     let record = await workspace.read();
-    if (!record) {
+    const desktopHandoff = section === 'desktop' && navigate
+      && ['bridge', 'provisioning'].some((route) => anchorTab?.url?.startsWith(`${productionWorkspaceRoutes(chromeApi)[route]}#journey=`));
+    if (!record && !desktopHandoff) {
       await workspace.resumeExisting({ draft_scope, route: 'extension' });
       record = await workspace.read();
     }
-    const desktopHandoff = section === 'desktop' && navigate
-      && anchorTab?.url?.startsWith(`${productionWorkspaceRoutes(chromeApi).bridge}#journey=`);
     const anchorSender = desktopHandoff ? { tab: { id: anchorTab.id, windowId: anchorTab.windowId },
       url: anchorTab.url, documentId: anchorTab.documentId, frameId: 0 } : null;
     // A registered desktop document must be current before any focus or navigation.
+    if (desktopHandoff && anchorTab.url.startsWith(`${productionWorkspaceRoutes(chromeApi).provisioning}#journey=`)) {
+      await workspace.adoptInitialDesktop(anchorSender, draft_scope, () => identityGeneration === identityRevision);
+      record = await workspace.read();
+    }
+    if (desktopHandoff && !record) {
+      await workspace.open({ journey_id: anchorTab.url.slice(anchorTab.url.indexOf('#journey=') + 9),
+        route: 'bridge', explicit: true, draft_scope });
+      record = await workspace.read();
+    }
     if (desktopHandoff) await workspace.admit(anchorSender);
-    const result = desktopHandoff ? { journey_id: record.journey_id, tab_id: anchorTab.id, route: 'bridge' }
+    const result = desktopHandoff ? { journey_id: record.journey_id, tab_id: anchorTab.id, route: record.route }
       : await workspace.open({ journey_id: record?.journey_id ?? crypto.randomUUID(), route: 'extension', explicit: true, draft_scope });
     await reconcileAccount();
     const currentScope = (await workspace.read()).draft_scope;

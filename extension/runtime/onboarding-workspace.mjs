@@ -264,7 +264,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       || !sameScope(intent.draft_scope, record.draft_scope) || !Number.isSafeInteger(intent.created_at)
       || intent.created_at > now() || intent.expires_at !== intent.created_at + DESKTOP_HANDOFF_TTL_MS
       || intent.expires_at <= now() || !['outgoing', 'open', 'returning', 'returned'].includes(intent.phase)
-      || !document(intent.source) || intent.source.url !== reference('bridge', record.journey_id)
+      || !document(intent.source) || !['bridge', 'provisioning'].some((route) => intent.source.url === reference(route, record.journey_id))
       || (intent.destination !== null && (!document(intent.destination)
         || intent.destination.tab_id !== intent.source.tab_id
         || intent.destination.url !== reference('extension', record.journey_id)))
@@ -291,14 +291,51 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       } catch { port.disconnect(); }
     },
     admit: (sender) => serialize(async () => { const { record, parsed } = await admitted(sender); return { record, route: parsed.route }; }),
+    adoptInitialDesktop: (sender, draft_scope, currentScope = () => true) => serialize(async () => {
+      const parsed = parse(sender?.url);
+      if (parsed?.route !== 'provisioning' || sender.id !== undefined || sender.frameId !== 0
+        || !Number.isInteger(sender.tab?.id) || typeof sender.documentId !== 'string' || !validScope(draft_scope)) fail('workspace_sender_invalid');
+      const source = await getTab(sender.tab.id);
+      if (source.url !== sender.url || source.documentId !== sender.documentId) fail('workspace_sender_stale');
+      const previous = await readRecord(), owner = previous ? await liveTab(previous.journey_id) : null;
+      const candidates = await registeredTabs();
+      if (candidates.some((tab) => tab.id !== source.id && tab.id !== owner?.id)
+        || owner && owner.id !== source.id && parse(owner.url)?.route !== 'extension') fail('workspace_journey_conflict');
+      if (!currentScope()) fail('workspace_sender_stale');
+      if (previous?.journey_id === parsed.journeyId) {
+        if (owner && owner.id !== source.id) fail('workspace_journey_conflict');
+        await storeTab(source, parsed.journeyId); return;
+      }
+      const pending = await chromeApi.storage.session.get([NATIVE_LAUNCH_KEY, NATIVE_RECOVERY_KEY, DESKTOP_HANDOFF_KEY]);
+      if (Object.values(pending).some((intent) => intent && intent.expires_at > now()
+        && !['returned', 'expired'].includes(intent.phase))) fail('workspace_handoff_unconfirmed');
+      const identity = previous ? await identityFor(previous) : null;
+      if (owner && (!owner.documentId || typeof chromeApi.tabs.remove !== 'function')) fail('workspace_document_unavailable');
+      const current = await getTab(source.id);
+      if (!sameDocument(current, documentReference(source))) fail('workspace_sender_stale');
+      if (owner && !sameDocument(await getTab(owner.id), documentReference(owner))) fail('workspace_sender_stale');
+      if (!currentScope()) fail('workspace_sender_stale');
+      // This selects presentation ownership. The local page retains its own
+      // authenticated installation context; drafts grant no authority.
+      const record = { version: 1, journey_id: parsed.journeyId, route: 'provisioning',
+        draft_scope: { ...draft_scope, scope_id: crypto.randomUUID() }, draft: blankDraft() };
+      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record,
+        [WORKSPACE_IDENTITY_KEY]: { version: 1, journey_id: record.journey_id, ...record.draft_scope,
+          account_digest: identity?.account_digest ?? null }, [WORKSPACE_ACTIVITY_KEY]: now() });
+      await storeTab(source, record.journey_id);
+      if (owner && owner.id !== source.id) {
+        if (!sameDocument(await getTab(owner.id), documentReference(owner)) || !currentScope()) fail('workspace_sender_stale');
+        await chromeApi.tabs.remove(owner.id);
+      }
+    }),
     handoffFromDesktop: (sender, dispatch) => serialize(async () => {
       const { record, tab, parsed } = await admitted(sender);
-      if (parsed.route !== 'bridge' || !tab.documentId || !chromeApi.tabs.onUpdated) fail('workspace_handoff_unavailable');
+      if (!['bridge', 'provisioning'].includes(parsed.route) || !tab.documentId || !chromeApi.tabs.onUpdated) fail('workspace_handoff_unavailable');
       const previous = await desktopHandoff(record);
       if (previous?.phase === 'returning' && tab.id === previous.source.tab_id
         && tab.documentId !== previous.source.document_id && tab.documentId !== previous.destination.document_id) {
         // The current Bridge document confirms arrival; never repeat the return.
-        previous.phase = 'returned'; record.route = 'bridge';
+        previous.phase = 'returned'; record.route = parsed.route;
         await saveRecord(record);
         await chromeApi.storage.session.set({ [DESKTOP_HANDOFF_KEY]: previous });
       }
@@ -343,13 +380,14 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       if (!intent || intent.phase !== 'open' || !port || !chromeApi.tabs.onUpdated) fail('workspace_handoff_unavailable');
       intent.phase = 'returning';
       await chromeApi.storage.session.set({ [DESKTOP_HANDOFF_KEY]: intent });
-      const navigation = watchNavigation(tab, reference('bridge', record.journey_id));
+      const returnRoute = parse(intent.source.url).route;
+      const navigation = watchNavigation(tab, reference(returnRoute, record.journey_id));
       try { port.postMessage({ type: 'navigate', request_id: crypto.randomUUID(), journey_id: record.journey_id,
-        draft_scope: { ...record.draft_scope }, expected_url: tab.url, route: 'bridge' }); }
+        draft_scope: { ...record.draft_scope }, expected_url: tab.url, route: returnRoute }); }
       catch { navigation.cancel(); fail('workspace_handoff_unavailable'); }
       const destination = await navigation.promise;
       if (!destination) fail('workspace_handoff_unconfirmed');
-      record.route = 'bridge'; intent.phase = 'returned';
+      record.route = returnRoute; intent.phase = 'returned';
       await saveRecord(record); await storeTab(destination, record.journey_id);
       await chromeApi.storage.session.set({ [DESKTOP_HANDOFF_KEY]: intent });
       return { status: 'returned' };
