@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from contextlib import nullcontext
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
@@ -23,6 +24,21 @@ class OnboardingJourneyUnavailable(ValueError):
         super().__init__(code)
 
 
+def _recovery_preparation(row) -> str | None:
+    if row["state"] in {"preparing", "prepare-unknown"}:
+        return row["prepare_json"]
+    if row["state"] in {"unknown", "completing"}:
+        try:
+            value = json.loads(row["prepare_json"])
+        except (TypeError, ValueError):
+            return None
+        if isinstance(value, dict) and isinstance(value.get("profile"), str):
+            # Preserve the operation's wire version without retaining its
+            # destination details. This marker conveys no authority.
+            return json.dumps({"profile": value["profile"]}, separators=(",", ":"))
+    return None
+
+
 class OnboardingJourneyStore:
     def __init__(self, authentication: SQLiteAuthenticationStore) -> None:
         self.authentication = authentication
@@ -40,7 +56,7 @@ class OnboardingJourneyStore:
         self._cleanup(connection, now)
         if journey_id is None:
             row = connection.execute(
-                "SELECT * FROM onboarding_journeys WHERE expires_at > ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT * FROM onboarding_journeys WHERE kind='initial-enrollment' AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
                 (now.isoformat(),)).fetchone()
             if row is not None:
                 return dict(row)
@@ -103,6 +119,10 @@ class OnboardingJourneyStore:
         connection.execute("DELETE FROM onboarding_uncertain_receipts WHERE expires_at<=?",(moment,))
         rows=connection.execute("SELECT * FROM onboarding_journeys WHERE expires_at<=?",(moment,)).fetchall()
         for row in rows:
+            if row["kind"] == "registered-continuation":
+                # Its independent native admission cannot inherit the initial
+                # enrollment recovery deadline or uncertain receipt family.
+                continue
             original_expiry=datetime.fromisoformat(row["expires_at"])
             deadline = row["recovery_deadline"] or (original_expiry+timedelta(minutes=30)).isoformat()
             if deadline > moment:
@@ -116,7 +136,7 @@ class OnboardingJourneyStore:
                     "INSERT INTO onboarding_workspace_recovery VALUES (?,?,?,?,?,?,?,?,NULL) "
                     "ON CONFLICT(previous_journey_id) DO NOTHING",
                     (row["journey_id"], row["installation_id"], row["operation_id"], retired_state,
-                     row["scope_json"], row["prepare_json"] if row["state"] in {"preparing", "prepare-unknown"} else None,
+                     row["scope_json"], _recovery_preparation(row),
                      row["expires_at"], deadline))
             if (deadline > moment and row["state"] in {"unknown", "completing"}
                     and row["scope_json"] is not None and row["operation_id"] is not None):
@@ -126,12 +146,17 @@ class OnboardingJourneyStore:
         connection.execute("DELETE FROM onboarding_journeys WHERE expires_at<=?",(moment,))
         connection.execute("DELETE FROM onboarding_transfer_relays WHERE expires_at<=?",(now.timestamp(),))
         connection.execute("DELETE FROM onboarding_transfer_intents WHERE expires_at<=?",(now.timestamp(),))
+        connection.execute("DELETE FROM onboarding_native_selection_receipts WHERE expires_at<=?", (now.timestamp(),))
 
     def update(self, journey_id: str, *, state: str, require_current: bool = False, **changes) -> dict:
         allowed = {"operation_id", "handoff_reference", "handoff_expires_at", "scope_json", "prepare_json", "reason"}
         if not set(changes) <= allowed:
             raise ValueError("Invalid journey update")
         with self.authentication.database.transaction() as connection:
+            row = connection.execute("SELECT kind FROM onboarding_journeys WHERE journey_id=?",
+                                     (require_journey(journey_id),)).fetchone()
+            if row is not None and row["kind"] != "initial-enrollment":
+                raise OnboardingJourneyUnavailable("journey_unavailable")
             def check_current():
                 if not require_current:
                     return
@@ -216,6 +241,8 @@ class OnboardingJourneyStore:
             self._cleanup(connection, now)
             original = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?",
                                           (prior,)).fetchone()
+            if original is not None and original["kind"] != "initial-enrollment":
+                raise OnboardingJourneyUnavailable("journey_unavailable")
             retired = connection.execute("SELECT * FROM onboarding_workspace_recovery WHERE previous_journey_id=?",
                                          (prior,)).fetchone()
             resolved = original
@@ -241,7 +268,7 @@ class OnboardingJourneyStore:
                 state = retired["state"]
                 if state in {"unknown", "completing"} and retired["operation_id"] and retired["scope_json"]:
                     state = "unknown"
-                    operation, scope, preparation = retired["operation_id"], retired["scope_json"], None
+                    operation, scope, preparation = retired["operation_id"], retired["scope_json"], retired["prepare_json"]
                     installation = retired["installation_id"]
                 elif (state in {"preparing", "prepare-unknown"} and retired["operation_id"]
                       and retired["prepare_json"] and retired["scope_json"] is None):

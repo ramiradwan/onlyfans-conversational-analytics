@@ -33,6 +33,9 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     }
     if (registered.has(url.href)) fail('workspace_routes_invalid');
     registered.set(url.href, route);
+    if (route === 'hosted' && url.protocol === 'https:' && url.pathname === '/public/onboarding/setup') {
+      registered.set(`${url.origin}/public/onboarding/installation-continuation`, 'hosted');
+    }
   }
   let queue = Promise.resolve();
   let activityRevision = 0;
@@ -57,7 +60,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       url.hash = '';
       const route = registered.get(url.href);
       const journeyId = fragment.startsWith('#journey=') ? fragment.slice(9) : '';
-      if (route && UUID.test(journeyId) && reference(route, journeyId) === value) return { route, journeyId };
+      if (route && UUID.test(journeyId) && `${url.href}#journey=${journeyId}` === value) return { route, journeyId };
     } catch { /* Unregistered or malformed navigation is never adopted. */ }
     return null;
   }
@@ -197,12 +200,13 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       || (identity.account_digest !== null && !/^[0-9a-f]{64}$/u.test(identity.account_digest))) fail('return_unavailable');
     return identity;
   }
-  async function recoveryOwner(record) {
+  async function recoveryOwner(record, { savedContinuation = false } = {}) {
     const candidates = await registeredTabs();
     if (candidates.length > 1 || candidates.some((tab) => parse(tab.url).journeyId !== record.journey_id)) fail('workspace_exists');
     const owner = candidates[0] ? await getTab(candidates[0].id) : null;
-    if (owner && (!owner.documentId || !['extension', 'provisioning'].includes(parse(owner.url)?.route))) fail('workspace_exists');
-    if (!owner && !['extension', 'provisioning'].includes(record.route)) fail('workspace_exists');
+    const eligible = savedContinuation ? ['extension', 'provisioning', 'hosted'] : ['extension', 'provisioning'];
+    if (owner && (!owner.documentId || !eligible.includes(parse(owner.url)?.route))) fail('workspace_exists');
+    if (!owner && !eligible.includes(record.route)) fail('workspace_exists');
     return owner;
   }
   async function focusWhileCurrent(source, owner, currentScope = () => true) {
@@ -222,8 +226,11 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     const intent = (await chromeApi.storage.session.get(NATIVE_RECOVERY_KEY))[NATIVE_RECOVERY_KEY];
     const document = (value) => exact(value, ['tab_id', 'document_id', 'url']) && Number.isInteger(value.tab_id)
       && typeof value.document_id === 'string' && typeof value.url === 'string';
-    if (!exact(intent, ['version', 'recovery_id', 'entry_id', 'previous_journey_id', 'draft_scope', 'account_digest',
-      'source', 'owner', 'created_at', 'expires_at', 'phase', 'journey_id', 'target_document_id']) || intent.version !== 1
+    const keys = ['version', 'recovery_id', 'entry_id', 'previous_journey_id', 'draft_scope', 'account_digest',
+      'source', 'owner', 'created_at', 'expires_at', 'phase', 'journey_id', 'target_document_id'];
+    const saved = intent?.version === 2 && intent.saved_continuation === true;
+    if (saved) keys.push('saved_continuation');
+    if (!exact(intent, keys) || (!saved && intent.version !== 1)
       || !UUID.test(intent.recovery_id) || !UUID.test(intent.entry_id) || !UUID.test(intent.previous_journey_id)
       || !validScope(intent.draft_scope) || (intent.account_digest !== null && !/^[0-9a-f]{64}$/u.test(intent.account_digest))
       || !document(intent.source) || (intent.owner !== null && !document(intent.owner))
@@ -299,7 +306,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       await chromeApi.windows.update(owner.windowId, { focused: true });
       return { status: 'focused' };
     }),
-    prepareNativeRecovery: (sender, request, currentScope = () => true) => serialize(async () => {
+    prepareNativeRecovery: (sender, request, currentScope = () => true, { savedContinuation = false } = {}) => serialize(async () => {
       if (!exact(request, ['entry_id']) || !UUID.test(request.entry_id) || !currentScope()) fail('return_unavailable');
       const source = await nativeCaller(sender);
       const record = await readRecord();
@@ -310,15 +317,15 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       const targeted = nativeReturnJourney(source.url, localOrigin);
       if (targeted !== null && targeted !== record.journey_id) fail('workspace_exists');
       const identity = await identityFor(record);
-      const owner = await recoveryOwner(record);
+      const owner = await recoveryOwner(record, { savedContinuation });
       if (owner?.id === source.id) fail('return_unavailable');
       const launch = (await chromeApi.storage.session.get(NATIVE_LAUNCH_KEY))[NATIVE_LAUNCH_KEY];
       if (!currentScope()) fail('return_unavailable');
-      if (owner && currentLaunch(launch, record, owner) && launch.phase === 'pending'
+      if (!savedContinuation && owner && currentLaunch(launch, record, owner) && launch.phase === 'pending'
         && sameDocument(owner, { tab_id: launch.tab_id, document_id: launch.document_id, url: launch.url })) {
         return { status: 'launch_pending', journey_id: record.journey_id };
       }
-      if (owner && parse(owner.url)?.route === 'extension' && launch?.phase === 'pending'
+      if (!savedContinuation && owner && parse(owner.url)?.route === 'extension' && launch?.phase === 'pending'
         && launch.version === 1 && launch.journey_id === record.journey_id && sameScope(launch.draft_scope, record.draft_scope)
         && Number.isSafeInteger(launch.created_at) && launch.created_at <= now()
         && launch.expires_at === launch.created_at + NATIVE_LAUNCH_TTL_MS && launch.expires_at <= now()
@@ -331,13 +338,15 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       if (!currentScope()) fail('return_unavailable');
       if (previous?.phase === 'returning') fail('return_unavailable');
       if (previous?.phase === 'prepared' && previous.entry_id === request.entry_id && sameDocument(source, previous.source)
+        && (previous.saved_continuation === true) === savedContinuation
         && previous.previous_journey_id === record.journey_id && sameScope(previous.draft_scope, record.draft_scope)
         && previous.account_digest === identity.account_digest
         && (previous.owner === null ? owner === null : sameDocument(owner, previous.owner))) {
         return { status: 'recovery_ready', recovery_id: previous.recovery_id, previous_journey_id: record.journey_id };
       }
       const createdAt = now();
-      const intent = { version: 1, recovery_id: crypto.randomUUID(), entry_id: request.entry_id,
+      const intent = { version: savedContinuation ? 2 : 1, ...(savedContinuation ? { saved_continuation: true } : {}),
+        recovery_id: crypto.randomUUID(), entry_id: request.entry_id,
         previous_journey_id: record.journey_id, draft_scope: { ...record.draft_scope }, account_digest: identity.account_digest,
         source: documentReference(source), owner: owner ? documentReference(owner) : null,
         created_at: createdAt, expires_at: createdAt + NATIVE_RECOVERY_TTL_MS, phase: 'prepared',
@@ -368,7 +377,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
         if (candidates.length !== 1 || candidates[0].id !== current.id || !currentScope()) fail('workspace_exists');
         return finishRecovery(intent, current, record, identity);
       }
-      const owner = await recoveryOwner(record);
+      const owner = await recoveryOwner(record, { savedContinuation: intent.saved_continuation === true });
       if (intent.owner === null ? owner !== null : !sameDocument(owner, intent.owner)) fail('workspace_exists');
       const destination = owner ?? source;
       intent.phase = 'returning'; intent.journey_id = request.journey_id;

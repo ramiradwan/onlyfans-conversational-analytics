@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff/v2/receipt-response.schema.json",
+  "title": "Initial installation handoff durable receipt v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "status",
+    "receipt"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:initial-installation-handoff:v2"
+    },
+    "status": {
+      "const": "recovery-required"
+    },
+    "receipt": {
+      "$ref": "definitions.schema.json#/$defs/receipt"
+    }
+  }
+}

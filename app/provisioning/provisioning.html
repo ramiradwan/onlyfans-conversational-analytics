@@ -997,6 +997,7 @@
       .provisioning-stage { position:relative; height:var(--dipsy-static-provisioning-stage-block); background:var(--dipsy-color-paper); border:1px solid var(--dipsy-color-divider); border-radius:20px; }
       .provisioning-stage .step { position:absolute; inset:0; margin:0; padding:28px; display:none; border:0; box-shadow:none; background:transparent; grid-template-rows:20px 32px 48px minmax(0,1fr) 1.25rem 48px; gap:4px; }
       .provisioning-stage .step[data-state="current"], .provisioning-stage[data-complete="true"] #finalize-step { display:grid; }
+      .provisioning-stage .step[hidden], .progress-rail[hidden], .intro[hidden] { display:none !important; }
       .provisioning-stage .step > * { margin:0; min-width:0; }
       .provisioning-stage .step-state { display:block; line-height:20px; font-family:var(--dipsy-font-family-numeric); font-variant-numeric:tabular-nums; }
       .provisioning-stage h2 { line-height:32px; font-size:22px; }
@@ -1089,6 +1090,7 @@
     </header>
     <main
       data-provisioning-csrf="{{PROVISIONING_CSRF}}"
+      data-provisioning-context-kind="{{PROVISIONING_CONTEXT_KIND}}"
       data-provisioning-extension-id="{{PROVISIONING_EXTENSION_ID}}"
     >
       <header class="page-header">
@@ -1126,10 +1128,10 @@
           </form>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content><p id="claim-package-validation" class="validation-message help" data-valid="true"></p></div></div>
           <div class="actions" data-reserved-region="provisioning-actions">
-            <a id="open-secure-setup" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_self" rel="noreferrer" aria-describedby="secure-setup-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Sign in</a>
+            <a id="open-secure-setup" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_self" rel="noreferrer" aria-describedby="secure-setup-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Continue setup</a>
             <button id="claim-submit" type="submit" form="claim-form" aria-describedby="claim-step-description" disabled>Continue setup</button>
           </div>
-          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Sign in to connect this computer.</p>
+          <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Setup opens in this tab.</p>
         </section>
         <section id="identity-step" class="step" data-region-content data-step="identity" data-state="locked">
           <p id="identity-step-state" class="step-state">Step 2 of 4</p><h2 id="identity-heading">Choose your creator account</h2>

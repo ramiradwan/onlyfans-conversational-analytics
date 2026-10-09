@@ -122,9 +122,18 @@ def resolve_hosted_onboarding_start(config: CustomerReleaseConfig | None = None)
     if not config.hosted_onboarding_url:
         return ""
     parsed = urlsplit(config.hosted_onboarding_url)
-    if parsed.path != "/public/onboarding":
-        raise CustomerReleaseConfigurationError("hosted onboarding must use /public/onboarding")
+    if parsed.path != "/public/onboarding/setup":
+        raise CustomerReleaseConfigurationError("hosted onboarding must use /public/onboarding/setup")
     return config.hosted_onboarding_url + "/start"
+
+
+def resolve_hosted_continuation_start(config: CustomerReleaseConfig | None = None) -> str:
+    """Keep the registered browser adapter on the release-owned browser origin."""
+    start = resolve_hosted_onboarding_start(config)
+    if not start:
+        return ""
+    parsed = urlsplit(start)
+    return f"{parsed.scheme}://{parsed.netloc}/public/onboarding/installation-continue"
 
 
 def main() -> int:

@@ -8,7 +8,7 @@ const nextScope = { ...scope, scope_id: 'b88c2d88-dbbf-4fdb-8743-9f92cbe46feb' }
 const checked = { terms_checked: true, risk_checked: true, full_checked: true };
 const routes = { extension: 'chrome-extension://synthetic/setup.html', hosted: 'https://onboarding.example.test/setup',
   provisioning: 'http://bridge.localhost:17871/provisioning/', bridge: 'http://bridge.localhost:17871/' };
-function fixture(initialTabs = []) {
+function fixture(initialTabs = [], routeOverrides = {}) {
   const values = {}, session = {}, calls = [], tabs = initialTabs.map((tab) => ({ ...tab }));
   const storage = (data) => ({ async get(key) { return structuredClone({ [key]: data[key] }); },
     async set(record) { Object.assign(data, structuredClone(record)); },
@@ -20,7 +20,7 @@ function fixture(initialTabs = []) {
       async create(options) { calls.push(['create', options]); const tab = { id: tabs.length + 10, windowId: 1, ...options }; tabs.push(tab); return { ...tab }; },
       async update(id, options) { calls.push(['update', id, options]); const tab = tabs.find((entry) => entry.id === id); Object.assign(tab, options); return { ...tab }; } },
     windows: { async update(id, options) { calls.push(['window', id, options]); } } };
-  const workspace = createOnboardingWorkspace({ chromeApi, routes });
+  const workspace = createOnboardingWorkspace({ chromeApi, routes: { ...routes, ...routeOverrides } });
   const open = () => workspace.open({ journey_id: journey, route: 'extension', explicit: true, draft_scope: scope });
   const sender = () => { const tab = tabs.find((entry) => entry.url.endsWith(journey));
     return { frameId: 0, tab: { ...tab }, url: tab.url,
@@ -109,6 +109,22 @@ test('idle expiry retires unfinished drafts without recreating tabs', async () =
   assert.equal(await f.workspace.read(), null);
   assert.equal(f.tabs.length, 1);
   await assert.rejects(f.workspace.saveDraft(f.sender(), { scope_id: scope.scope_id, draft: checked }), /workspace_not_registered/);
+});
+
+test('the hosted continuation alias adopts only the exact configured document and journey', async () => {
+  const hosted = 'https://onboarding.example.test/public/onboarding/setup';
+  const exact = `${new URL(hosted).origin}/public/onboarding/installation-continuation#journey=${journey}`;
+  const valid = fixture([{ id: 2, windowId: 1, url: exact }], { hosted });
+  assert.equal((await valid.open()).tab_id, 2);
+  assert.equal(valid.tabs.length, 1);
+  assert.equal(valid.tabs[0].url, exact);
+  for (const url of [exact.replace('installation-continuation', 'installation-continue'),
+    exact.replace('#', '?extra=1#'), `${exact}&token=x`, exact.replace('/installation', '/other/installation'),
+    exact.replace('example.test', 'untrusted.test')]) {
+    const f = fixture([{ id: 2, windowId: 1, url }], { hosted });
+    assert.notEqual((await f.open()).tab_id, 2);
+    assert.equal(f.tabs[0].url, url);
+  }
 });
 
 const identityA = { account_digest: 'a'.repeat(64) }, identityB = { account_digest: 'b'.repeat(64) };

@@ -33,7 +33,8 @@ SQL_CATALOGS = (
     "app/analytics/sql",
 )
 HANDOFF_SYNTHETIC_FILES = tuple(
-    f"_internal/contracts/initial-installation-handoff-v1/{name}-cases.json"
+    f"_internal/contracts/initial-installation-handoff-{version}/{name}-cases.json"
+    for version in ("v1", "v2")
     for name in ("digest", "proof", "schema")
 )
 
@@ -519,7 +520,7 @@ def test_per_user_material_declarations_cover_every_required_category() -> None:
     }, "the per-user-material policy must name every prohibited category"
 
 
-def test_reviewed_material_admissions_pin_only_the_three_public_digest_fixtures() -> None:
+def test_reviewed_material_admissions_pin_only_the_public_handoff_digest_fixtures() -> None:
     declarations = load_runtime_policy(POLICY_PATH)["forbidden_material"]
     admissions = {
         declaration["name"]: declaration["reviewed_synthetic_files"]

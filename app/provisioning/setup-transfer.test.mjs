@@ -4,7 +4,7 @@ import { continueReceivingTransfer } from './provisioning.js';
 import { parseOnboardingJson } from '../../shared/onboarding/json.mjs';
 
 const journeyId = '11111111-1111-4111-8111-111111111111';
-const hosted = 'https://setup.example.test/public/onboarding';
+const hosted = 'https://setup.example.test/public/onboarding/setup';
 const request = {
   profile: 'urn:bridge-clean:onboarding-transfer:v1', purpose: 'resume-onboarding',
   operation_id: '019a1fa1-0000-7000-8000-000000000001', setup_code: '0123456789AB',
@@ -158,7 +158,7 @@ test('mismatched journey, extended payloads, changed destination and unknown out
   const cases = [
     [{ ...codeContext, journey_id: '22222222-2222-4222-8222-222222222222' }],
     [{ ...codeContext, secret: 'unexpected' }],
-    [{ ...proofContext, hosted_return_url: 'https://other.example.test/public/onboarding' }],
+    [{ ...proofContext, hosted_return_url: 'https://other.example.test/public/onboarding/setup' }],
     [codeContext, { ...prepared, hosted_start_url: `${hosted}/receive?token=bad` }],
     [codeContext, { ...prepared, request: { ...request, destination: { ...request.destination, kind: 'browser-extension' } } }],
     [proofContext, { ...signed, challenge: 'z'.repeat(43) }],

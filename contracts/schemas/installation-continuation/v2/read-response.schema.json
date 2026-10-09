@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-continuation/v2/read-response.schema.json",
+  "title": "Installation setup continuation read-response v2",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "continuation_id",
+        "reference",
+        "expires_at",
+        "result",
+        "snapshot"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-setup-continuation:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "continuation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "result": {
+          "const": "found"
+        },
+        "snapshot": {
+          "$ref": "snapshot.schema.json"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "result"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-setup-continuation:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "result": {
+          "const": "expired"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "result"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-setup-continuation:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "result": {
+          "const": "unavailable"
+        }
+      }
+    }
+  ]
+}

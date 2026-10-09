@@ -5,6 +5,7 @@ export const NATIVE_DISCOVER_TYPE = 'ofca.workspace.launch-discover.v1';
 export const NATIVE_FOCUS_TYPE = 'ofca.workspace.launch-focus.v1';
 export const NATIVE_RECOVERY_KEY = 'onboarding_native_recovery_v1';
 export const NATIVE_RECOVERY_PREPARE_TYPE = 'ofca.workspace.recovery-prepare.v1';
+export const NATIVE_SAVED_CONTINUATION_PREPARE_TYPE = 'ofca.workspace.saved-continuation-prepare.v1';
 export const NATIVE_RECOVERY_RETURN_TYPE = 'ofca.workspace.recovery-return.v1';
 export const NATIVE_RECOVERY_TTL_MS = 5 * 60 * 1000;
 export const NATIVE_LAUNCH_TTL_MS = 10 * 60 * 1000;

@@ -35,8 +35,9 @@ it('a new journey cannot inherit completion from the previous active client', as
     } }),
     sendCommand() { throw Error('read only'); },
   });
-  render(<OnboardingContinuation><div>Analytics</div></OnboardingContinuation>);
+  render(<OnboardingContinuation activationReturn={{ state: 'unconfirmed', check: vi.fn() }}><div>Analytics</div></OnboardingContinuation>);
   expect(screen.getByText('Pairing control')).toBeTruthy();
+  expect(screen.getByText('Activation couldn’t be confirmed.')).toBeTruthy();
   expect(screen.queryByText('Analytics')).toBeNull();
 });
 

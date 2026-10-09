@@ -345,9 +345,11 @@ def test_recovery_migration_preserves_existing_auth_ledger_and_journey_rows(tmp_
     current = SQLiteAuthenticationStore(store.database.path, clock=lambda: INSTANT)
     with current.database.read() as connection:
         assert [tuple(row) for row in connection.execute("SELECT * FROM schema_migrations ORDER BY version")][:21] == ledger
-        assert [tuple(row) for row in connection.execute("SELECT * FROM onboarding_journeys ORDER BY journey_id")] == journeys
+        rows = connection.execute("SELECT * FROM onboarding_journeys ORDER BY journey_id").fetchall()
+        assert [tuple(row)[:-1] for row in rows] == journeys
+        assert {row["kind"] for row in rows} == {"initial-enrollment"}
         assert connection.execute("SELECT count(*) FROM onboarding_workspace_recovery").fetchone()[0] == 0
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 22
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 23
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     # Every previously legal state can be retired without breaking other cleanup.
     current._clock = lambda: INSTANT + timedelta(minutes=31)

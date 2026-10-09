@@ -6,6 +6,7 @@ import secrets
 import hashlib
 import time
 import re
+import json
 from threading import RLock
 from uuid import uuid4
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ class NativeEntry:
     consumed: bool = False
     selected_journey_id: str | None = None
     previous_journey_id: str | None = None
+    continuation_target: object | None = None
 
 
 class ProvisioningSessionManager:
@@ -54,12 +56,19 @@ class ProvisioningSessionManager:
         monotonic: Callable[[], float] = time.monotonic,
         journeys=None,
         wall_clock: Callable[[], float] | None = None,
+        continuation_key=None,
     ) -> None:
         if launcher_handoff_token is not None and len(launcher_handoff_token) < 32:
             raise ValueError("provisioning handoff token is invalid")
         if ttl_seconds <= 0:
             raise ValueError("provisioning session lifetime must be positive")
         self._journeys = journeys
+        self._continuation_key = continuation_key
+        if journeys is not None:
+            from app.persistence.installation_continuation import InstallationContinuationStore
+            self._continuations = InstallationContinuationStore(journeys.authentication)
+        else:
+            self._continuations = None
         self._wall_clock = wall_clock or (
             (lambda: journeys.authentication._now().timestamp()) if journeys is not None else time.time)
         self._launcher_handoff_token = launcher_handoff_token
@@ -102,6 +111,16 @@ class ProvisioningSessionManager:
         self._require_exact_host(request)
         identifier = request.cookies.get(NATIVE_ENTRY_COOKIE_NAME, "")
         entry = self._native_entries.get(identifier)
+        if entry is None and self._continuations is not None:
+            receipt = self._continuations.native_receipt(identifier)
+            if receipt is not None:
+                selected_cookie = request.cookies.get(PROVISIONING_SESSION_COOKIE_NAME, "")
+                selected_identifier = (selected_cookie if hashlib.sha256(selected_cookie.encode()).hexdigest()
+                    == receipt["session_digest"] else None)
+                entry = NativeEntry(identifier,
+                    self._monotonic() + max(0, receipt["expires_at"] - self._wall_clock()),
+                    receipt["entry_id"], session_identifier=selected_identifier, consumed=True,
+                    selected_journey_id=receipt["journey_id"], previous_journey_id=receipt["previous_journey_id"])
         if entry is None or entry.expires_at <= self._monotonic():
             raise HTTPException(401, "Native entry is invalid")
         return entry
@@ -109,8 +128,11 @@ class ProvisioningSessionManager:
     def native_entry_context(self, request: Request) -> dict:
         entry = self.require_native_entry(request)
         if not entry.consumed:
+            if entry.continuation_target is None:
+                entry.continuation_target = self._saved_continuation_target(entry)
             return {"state": "select_workspace", "csrf_token": _session_csrf(entry.identifier), "entry_id": entry.entry_id,
-                **({"target_journey_id": entry.journey_id} if entry.journey_id is not None else {})}
+                **({"target_journey_id": entry.journey_id} if entry.journey_id is not None else {}),
+                **({"continue_saved": True} if entry.continuation_target is not None else {})}
         try:
             session = self.require_session(request)
         except HTTPException:
@@ -121,11 +143,13 @@ class ProvisioningSessionManager:
         return {"state": "selected", "journey_id": entry.selected_journey_id,
                 **({"previous_journey_id": entry.previous_journey_id} if entry.previous_journey_id else {})}
 
-    def select_native_workspace(self, request: Request, journey_id: str | None, *, recover: bool = False) -> ProvisioningBrowserSession:
+    def select_native_workspace(self, request: Request, journey_id: str | None, *, recover: bool = False,
+                                continue_saved: bool = False) -> ProvisioningBrowserSession:
         with self._selection_lock:
-            return self._select_native_workspace(request, journey_id, recover=recover)
+            return self._select_native_workspace(request, journey_id, recover=recover, continue_saved=continue_saved)
 
-    def _select_native_workspace(self, request: Request, journey_id: str | None, *, recover: bool) -> ProvisioningBrowserSession:
+    def _select_native_workspace(self, request: Request, journey_id: str | None, *, recover: bool,
+                                 continue_saved: bool = False) -> ProvisioningBrowserSession:
         entry = self.require_native_entry(request)
         presented = request.headers.getlist(PROVISIONING_CSRF_HEADER)
         if (request.headers.getlist("origin") != [PROVISIONING_ORIGIN]
@@ -142,6 +166,40 @@ class ProvisioningSessionManager:
                 require_journey(journey_id)
             except (ValueError, TypeError, AttributeError):
                 raise HTTPException(400, "Journey is invalid") from None
+        if continue_saved:
+            if recover or entry.continuation_target is None or journey_id is None or entry.journey_id != journey_id:
+                raise HTTPException(409, "Saved setup is unavailable")
+            try:
+                existing = self.require_session(request)
+            except HTTPException as error:
+                if error.status_code != 401:
+                    raise
+                existing = None
+            if existing is not None:
+                from app.persistence.onboarding import OnboardingJourneyUnavailable
+                from app.persistence.continuation_selection import ContinuationSelectionUnavailable
+                try:
+                    target = self._continuations.require_current(existing.journey_id)["target"]
+                    if target != entry.continuation_target:
+                        raise OnboardingJourneyUnavailable("journey_unavailable")
+                    self._continuations.retain_native_session(journey_id=existing.journey_id,
+                        identifier=existing.identifier, entry_identifier=entry.identifier, entry_id=entry.entry_id,
+                        entry_expires_at=self._wall_clock() + max(0, entry.expires_at - self._monotonic()),
+                        previous_journey_id=journey_id,
+                        authorize=lambda: self.require_native_entry(request))
+                except (OnboardingJourneyUnavailable, ContinuationSelectionUnavailable):
+                    raise HTTPException(409, "Saved setup is unavailable") from None
+                session = existing
+            else:
+                session = self._admit_registered_session(request, entry, None,
+                    target=entry.continuation_target, previous_journey_id=journey_id)
+                if session is None:
+                    raise HTTPException(409, "Saved setup is unavailable")
+            entry.session_identifier = session.identifier
+            entry.selected_journey_id = session.journey_id
+            entry.previous_journey_id = journey_id
+            entry.consumed = True
+            return session
         if recover:
             if journey_id is None or self._journeys is None:
                 raise HTTPException(409, "Onboarding scope is unavailable")
@@ -178,12 +236,125 @@ class ProvisioningSessionManager:
                 raise HTTPException(409, "Onboarding scope changed")
             session = existing
             self.require_native_entry(request)
+            if self.context_kind(session) == "registered-continuation":
+                from app.persistence.continuation_selection import ContinuationSelectionUnavailable
+                from app.persistence.onboarding import OnboardingJourneyUnavailable
+                def authorize():
+                    if self.require_native_entry(request) is not entry or entry.consumed:
+                        raise HTTPException(409, "Native entry was used")
+                try:
+                    self._continuations.retain_native_session(
+                        journey_id=session.journey_id, identifier=session.identifier,
+                        entry_identifier=entry.identifier, entry_id=entry.entry_id,
+                        entry_expires_at=self._wall_clock() + max(0, entry.expires_at - self._monotonic()),
+                        authorize=authorize,
+                    )
+                except (ContinuationSelectionUnavailable, OnboardingJourneyUnavailable):
+                    raise HTTPException(409, "Saved setup is unavailable") from None
         else:
-            session = self._create_session(journey_id, authorize=lambda: self.require_native_entry(request))
+            session = self._admit_registered_session(request, entry, journey_id)
+            if session is None:
+                session = self._create_session(journey_id, authorize=lambda: self.require_native_entry(request))
         entry.session_identifier = session.identifier
         entry.selected_journey_id = session.journey_id
         entry.consumed = True
         return session
+
+    def _admit_registered_session(self, request: Request, entry: NativeEntry,
+                                  journey_id: str | None, *, target=None,
+                                  previous_journey_id: str | None = None) -> ProvisioningBrowserSession | None:
+        if self._continuations is None or self._continuation_key is None:
+            return None
+        from app.persistence.continuation_selection import ContinuationSelectionUnavailable
+        from app.persistence.onboarding import OnboardingJourneyUnavailable
+        from app.security.installation_key import InstallationKeyError
+        try:
+            if target is not None:
+                pass
+            elif journey_id is not None:
+                current = self._journeys.require_current(journey_id)
+                if current["kind"] != "registered-continuation":
+                    return None
+                target = self._continuations.select_for_admission(journey_id)
+            else:
+                try:
+                    target = self._continuations.select_for_admission()
+                except ContinuationSelectionUnavailable as error:
+                    # A first-run claim with no creator yet keeps its existing
+                    # creator-confirmation route, never an automatic substitute.
+                    if error.reason in {"registration_required", "target_unavailable"}:
+                        return None
+                    raise
+            reopened = self._continuation_key.reopen_existing()
+            identifier = secrets.token_urlsafe(32)
+            entry_deadline = self._wall_clock() + max(0, entry.expires_at - self._monotonic())
+            def authorize():
+                if self.require_native_entry(request) is not entry or entry.consumed:
+                    raise HTTPException(409, "Native entry was used")
+            selected = self._continuations.admit_native_session(
+                target=target, reopened_key=reopened, identifier=identifier, csrf=_session_csrf(identifier),
+                entry_identifier=entry.identifier, entry_id=entry.entry_id, entry_expires_at=entry_deadline,
+                existing_identifier=request.cookies.get(PROVISIONING_SESSION_COOKIE_NAME),
+                ttl_seconds=self._ttl_seconds, authorize=authorize,
+                previous_journey_id=previous_journey_id,
+            )
+        except (ContinuationSelectionUnavailable, OnboardingJourneyUnavailable, InstallationKeyError):
+            raise HTTPException(409, "Saved setup is unavailable") from None
+        session = ProvisioningBrowserSession(identifier, _session_csrf(identifier),
+            selected["expires_at"], selected["journey_id"])
+        self._sessions[identifier] = session
+        return session
+
+    def _saved_continuation_target(self, entry: NativeEntry):
+        """Offer a distinct intent only from fresh native authority and saved evidence."""
+        if entry.journey_id is None or self._continuations is None or self._continuation_key is None:
+            return None
+        from app.persistence.continuation_selection import ContinuationSelectionUnavailable
+        from app.persistence.onboarding import OnboardingJourneyUnavailable
+        try:
+            store = self._journeys.authentication
+            with store.database.transaction(immediate=False) as connection:
+                now = store._now().isoformat()
+                previous = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?", (entry.journey_id,)).fetchone()
+                if previous is not None and previous["kind"] == "initial-enrollment" and previous["expires_at"] > now:
+                    return None
+                retired = connection.execute("SELECT * FROM onboarding_workspace_recovery WHERE previous_journey_id=?",
+                                             (entry.journey_id,)).fetchone()
+                protected = previous if previous is not None else retired
+                if (protected is not None and protected["state"] in {"preparing", "prepare-unknown", "completing", "unknown"}
+                        and (previous is None or previous["kind"] == "initial-enrollment")):
+                    return None
+                if connection.execute("SELECT 1 FROM onboarding_uncertain_receipts WHERE expires_at>? LIMIT 1", (now,)).fetchone():
+                    return None
+                association = None
+                if previous is not None and previous["kind"] == "registered-continuation":
+                    detail = connection.execute("SELECT association_request_id FROM installation_continuation_contexts WHERE journey_id=?",
+                                                (entry.journey_id,)).fetchone()
+                    if detail is None:
+                        return None
+                    association = detail["association_request_id"]
+                elif protected is not None and protected["scope_json"] is not None:
+                    association = json.loads(protected["scope_json"])["association_request_id"]
+                if association is not None:
+                    return self._continuations.selection.select_in_transaction(connection, association_request_id=association)
+            # No old row establishes a mapping. This is an independent fresh
+            # selection from current saved state, under the new native entry.
+            return self._continuations.select_for_admission()
+        except (ContinuationSelectionUnavailable, OnboardingJourneyUnavailable, ValueError, KeyError, TypeError):
+            return None
+
+    def context_kind(self, session: ProvisioningBrowserSession) -> str:
+        if self._journeys is None or session.journey_id is None:
+            return "initial-enrollment"
+        from app.persistence.onboarding import OnboardingJourneyUnavailable
+        try:
+            return self._journeys.require_current(session.journey_id)["kind"]
+        except OnboardingJourneyUnavailable:
+            raise HTTPException(401, "Provisioning session is invalid") from None
+
+    def require_initial_context(self, session: ProvisioningBrowserSession) -> None:
+        if self.context_kind(session) != "initial-enrollment":
+            raise HTTPException(409, "Setup context is unavailable")
 
     def issue_handoff_code(self, authorization: str | None, *, journey_id: str | None = None) -> str:
         """Exchange the launcher secret for a single browser handoff code."""

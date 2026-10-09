@@ -99,7 +99,7 @@ test('only current admitted extension prepares and hosted workspace signs', asyn
   try {
     const prepared = await call({ type: SETUP_TRANSFER_MESSAGE, action: 'prepare', setup_code: '0123456789AB' });
     assert.equal(prepared.ok, true);
-    assert.equal(prepared.result.hosted_start_url, 'https://setup.example.com/public/onboarding/receive');
+    assert.equal(prepared.result.hosted_start_url, 'https://setup.example.com/public/onboarding/setup/receive');
     const message = { type: SETUP_TRANSFER_MESSAGE, action: 'sign', request: prepared.result.request,
       challenge: await challenge(prepared.result.request, Date.now()) };
     assert.equal((await call(message)).ok, false, 'extension page cannot pose as the authenticated hosted flow');

@@ -1,0 +1,102 @@
+{
+  "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+  "governing_adr": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+  "initial_key_admission": "initial-installation-handoff-proof:v2",
+  "claim_profile": "urn:bridge-clean:installation-claim:v2",
+  "recovery_profile": "urn:bridge-clean:bootstrap-recovery:v2",
+  "claim_secret_generated_or_retained": false,
+  "navigation_authority": false,
+  "prepared_ttl_seconds": 600,
+  "receipt_ttl_seconds_from_commit": 1800,
+  "request_max_bytes": 8192,
+  "response_max_bytes": 65536,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "atomic_commit": [
+    "current-authorization",
+    "current-customer-session",
+    "exact-operation-and-request-digest",
+    "single-use-claim-action-receipt",
+    "initial-claim-consumption",
+    "exact-key-registration",
+    "identity-bootstrap-grants",
+    "security-audit",
+    "handoff-event"
+  ],
+  "commercial_activation": false,
+  "local_access": false,
+  "lost_response": "fresh-key-proof-receipt-then-existing-bootstrap-recovery-v2",
+  "repeat_consume": "409-no-sensitive-response",
+  "replacement_or_existing_installation": "refuse",
+  "stream": {
+    "direction": "outbound-local-to-hosted",
+    "media_type": "text/event-stream",
+    "event": "initial-handoff",
+    "initial_frame": "current-complete-state",
+    "durability": "state-and-wakeup-record-atomic-with-mutation",
+    "polling_required": false,
+    "recheck_authorization_before_each_frame": true,
+    "session_expiry": "one-shot-earliest-deadline",
+    "session_revocation": "identity-journal-wakeup-current-read"
+  },
+  "after_locator_expiry": "fresh-registered-key-proof-durable-receipt-lookup",
+  "messages": {
+    "definitions": "schemas/initial-handoff/v2/definitions.schema.json",
+    "prepare-request": "schemas/initial-handoff/v2/prepare-request.schema.json",
+    "prepare-response": "schemas/initial-handoff/v2/prepare-response.schema.json",
+    "authorize-request": "schemas/initial-handoff/v2/authorize-request.schema.json",
+    "authorize-response": "schemas/initial-handoff/v2/authorize-response.schema.json",
+    "wait-request": "schemas/initial-handoff/v2/wait-request.schema.json",
+    "wait-event": "schemas/initial-handoff/v2/wait-event.schema.json",
+    "complete-request": "schemas/initial-handoff/v2/complete-request.schema.json",
+    "complete-response": "schemas/initial-handoff/v2/complete-response.schema.json",
+    "error": "schemas/initial-handoff/v2/error.schema.json",
+    "receipt-request": "schemas/initial-handoff/v2/receipt-request.schema.json",
+    "receipt-response": "schemas/initial-handoff/v2/receipt-response.schema.json"
+  },
+  "customer_session": {
+    "owner": "identity",
+    "max_lifetime_seconds": 1800,
+    "sliding_expiry": false,
+    "authority": "verified-live-unrevoked-session-and-current-permissions",
+    "provider_auth_time_required": false,
+    "provider_auth_time_max_age_seconds": null,
+    "forced_provider_login": false,
+    "source_session_transfer": false,
+    "context_binding": "immutable-workflow-actor-scope-deadline-and-separate-immutable-authorization-admission"
+  },
+  "action_receipt": {
+    "max_lifetime_seconds": 300,
+    "single_use": true,
+    "binding": [
+      "session-generation",
+      "authorization-admission-generation",
+      "actor",
+      "context",
+      "action",
+      "parameter-digest"
+    ],
+    "expiry": "resolve-and-confirm-action-not-provider-login",
+    "consume": "same-transaction-as-protected-mutation-and-audit",
+    "recheck": "after-blocking-locks-and-before-commit"
+  },
+  "creator_approval_action_receipt": "distinct-single-use-not-consumed-by-handoff",
+  "authorization_admission": {
+    "wire_coordinates": false,
+    "plain_retry": "same-exact-live-binding-idempotent-no-journal",
+    "replacement": [
+      "correlated-one-use-oidc-callback",
+      "explicit-current-session-origin-csrf-post"
+    ],
+    "fence": [
+      "one-use-operation",
+      "expected-prior-admission-generation",
+      "expected-workflow-revision"
+    ],
+    "recheck": "current-session-permission-key-scope-after-locks",
+    "commit": "append-admission-retire-old-pending-receipts-audit-result-journal-atomic",
+    "workflow_deadline": "original-unchanged",
+    "previous_whole_session_revoked": false,
+    "read_or_get_can_replace": false
+  }
+}

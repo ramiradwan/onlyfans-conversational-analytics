@@ -8,22 +8,48 @@ import math
 import re
 import time
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import AsyncIterator, Callable, Mapping
 
 import httpx
+from jsonschema import Draft202012Validator, ValidationError
+from referencing import Registry, Resource
+
+from app.core.resource_paths import resource_path
+from contracts.loader import verify_snapshot_integrity
 
 from app.security.hosted_grants import (
     HostedGrantUnavailable, HostedTransport, InstallationProofAuthority,
     HTTPXHostedTransport, _response_object,
 )
 
-PROFILE = "urn:bridge-clean:initial-installation-handoff:v1"
-PROOF_PROFILE = "urn:bridge-clean:initial-installation-handoff-proof:v1"
-CHALLENGE_PATH = "/v1/onboarding/installation-handoff-proof-challenges"
-PATH_PREFIX = "/v1/onboarding/installation-handoffs:"
-_DOMAIN = b"BRIDGE-CLEAN-INITIAL-INSTALLATION-HANDOFF-PROOF-V1\0"
+PROFILE = "urn:bridge-clean:initial-installation-handoff:v2"
+PROOF_PROFILE = "urn:bridge-clean:initial-installation-handoff-proof:v2"
+CHALLENGE_PATH = "/v2/onboarding/installation-handoff-proof-challenges"
+PATH_PREFIX = "/v2/onboarding/installation-handoffs:"
+_DOMAIN = b"BRIDGE-CLEAN-INITIAL-INSTALLATION-HANDOFF-PROOF-V2\0"
 _AUDIENCE = b"urn:bridge-clean:commercial-control-plane:initial-installation-handoff"
 _B64 = re.compile(r"[A-Za-z0-9_-]{43}\Z")
+
+
+@lru_cache(maxsize=1)
+def _validators():
+    root = resource_path("contracts")
+    verify_snapshot_integrity(root)
+    documents = [json.loads(path.read_text(encoding="utf-8"))
+                 for path in (root / "schemas").rglob("*.schema.json")]
+    registry = Registry().with_resources((value["$id"], Resource.from_contents(value)) for value in documents)
+    return {value["$id"].rsplit("/", 1)[-1].removesuffix(".schema.json"):
+            Draft202012Validator(value, registry=registry) for value in documents
+            if "/schemas/initial-handoff/v2/" in value["$id"]}
+
+
+def validate_contract(name: str, value: dict) -> dict:
+    try:
+        _validators()[name].validate(value)
+    except (ValidationError, TypeError):
+        raise HostedGrantUnavailable("Invalid initial handoff contract document") from None
+    return value
 
 
 class InitialHandoffRefused(ValueError):
@@ -94,13 +120,15 @@ def _object(raw: str) -> dict:
 
 
 def validate_wait_event(value: dict) -> dict:
+    validate_contract("wait-event", value)
     status = value.get("status")
     fields = {
         "waiting": {"profile", "status", "expires_at", "revision"},
         "authorized": {"profile", "status", "scope", "expires_at", "revision"},
         "recovery-required": {"profile", "status", "receipt", "revision"},
         "expired": {"profile", "status", "revision"},
-        "reauthentication-required": {"profile", "status", "revision"},
+        "authentication-required": {"profile", "status", "revision"},
+        "confirmation-required": {"profile", "status", "revision"},
         "revoked": {"profile", "status", "revision"},
     }
     revision = value.get("revision")
@@ -158,11 +186,13 @@ class InitialHandoffClient:
     def envelope(self, operation: str, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
         if operation not in {"prepare", "wait", "complete", "receipt"}:
             raise ValueError("Invalid handoff operation")
-        key = self.key.ensure_ready()
         purpose = "initial-handoff-" + operation
+        challenge_request = {"profile": PROOF_PROFILE,
+            "target": {"operation": purpose, "request": request}}
+        validate_contract("proof-challenge-request", challenge_request)
+        key = self.key.ensure_ready()
         started = self.monotonic()
-        challenge = self._request(CHALLENGE_PATH, {"profile": PROOF_PROFILE,
-            "target": {"operation": purpose, "request": request}}, expected=200, before_send=before_send)
+        challenge = self._request(CHALLENGE_PATH, challenge_request, expected=200, before_send=before_send)
         _require_proof_budget(started, self.monotonic())
         digest = hashlib.sha256(canonical(request)).digest()
         if (set(challenge) != {"profile", "challenge", "request_digest", "expires_at"}
@@ -209,6 +239,8 @@ class InitialHandoffClient:
 
     def _request(self, path: str, body: dict, *, expected: int,
                  before_send: Callable[[], None] | None = None) -> dict:
+        if len(canonical(body)) > 8192:
+            raise HostedGrantUnavailable("Initial handoff request exceeds its limit")
         if before_send is not None:
             before_send()
         try:
@@ -218,8 +250,16 @@ class InitialHandoffClient:
         if response.status_code != expected:
             if response.status_code >= 500 or response.status_code in {408, 429}:
                 raise HostedGrantUnavailable("Initial handoff result unavailable")
-            # Do not diagnose a cause from status alone.
+            # Only the closed v2 refusal can establish a missing session or
+            # action confirmation; an HTTP status alone establishes neither.
+            value = dict(_response_object(response))
+            validate_contract("error", value)
+            if (value["reason"], response.status_code) in {
+                    ("authentication_required", 401), ("confirmation_required", 409)}:
+                raise InitialHandoffRefused(value["reason"])
             raise InitialHandoffRefused("handoff_refused")
+        if len(response.body) > 65536:
+            raise HostedGrantUnavailable("Initial handoff response exceeds its limit")
         return dict(_response_object(response))
 
 

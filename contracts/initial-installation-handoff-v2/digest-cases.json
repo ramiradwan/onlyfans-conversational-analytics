@@ -1,0 +1,240 @@
+[
+  {
+    "case_id": "exact-two-action-digests",
+    "destination": {
+      "device": {
+        "display_name": "Computer",
+        "platform": "windows",
+        "product_version": "1.0.0"
+      },
+      "installation_id": "installation-fixture",
+      "installation_key": {
+        "alg": "ES256",
+        "jwk": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+          "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+        },
+        "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+      }
+    },
+    "scope": {
+      "action_digests": {
+        "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+        "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+      },
+      "association_request_id": "0199b234-5678-7000-8000-000000000001",
+      "installation_id": "installation-fixture",
+      "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+      "intended_creator_id": "creator-fixture",
+      "onboarding_transaction_id": "transaction-fixture",
+      "organization_id": "org-fixture"
+    },
+    "valid": true
+  },
+  {
+    "case_id": "scope-device",
+    "destination": {
+      "device": {
+        "display_name": "Other computer",
+        "platform": "windows",
+        "product_version": "1.0.0"
+      },
+      "installation_id": "installation-fixture",
+      "installation_key": {
+        "alg": "ES256",
+        "jwk": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+          "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+        },
+        "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+      }
+    },
+    "scope": {
+      "action_digests": {
+        "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+        "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+      },
+      "association_request_id": "0199b234-5678-7000-8000-000000000001",
+      "installation_id": "installation-fixture",
+      "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+      "intended_creator_id": "creator-fixture",
+      "onboarding_transaction_id": "transaction-fixture",
+      "organization_id": "org-fixture"
+    },
+    "valid": false
+  },
+  {
+    "case_id": "scope-creator",
+    "destination": {
+      "device": {
+        "display_name": "Computer",
+        "platform": "windows",
+        "product_version": "1.0.0"
+      },
+      "installation_id": "installation-fixture",
+      "installation_key": {
+        "alg": "ES256",
+        "jwk": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+          "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+        },
+        "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+      }
+    },
+    "scope": {
+      "action_digests": {
+        "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+        "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+      },
+      "association_request_id": "0199b234-5678-7000-8000-000000000001",
+      "installation_id": "installation-fixture",
+      "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+      "intended_creator_id": "other",
+      "onboarding_transaction_id": "transaction-fixture",
+      "organization_id": "org-fixture"
+    },
+    "valid": false
+  },
+  {
+    "case_id": "scope-association",
+    "destination": {
+      "device": {
+        "display_name": "Computer",
+        "platform": "windows",
+        "product_version": "1.0.0"
+      },
+      "installation_id": "installation-fixture",
+      "installation_key": {
+        "alg": "ES256",
+        "jwk": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+          "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+        },
+        "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+      }
+    },
+    "scope": {
+      "action_digests": {
+        "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+        "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+      },
+      "association_request_id": "0199b234-5678-7000-8000-000000000002",
+      "installation_id": "installation-fixture",
+      "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+      "intended_creator_id": "creator-fixture",
+      "onboarding_transaction_id": "transaction-fixture",
+      "organization_id": "org-fixture"
+    },
+    "valid": false
+  },
+  {
+    "case_id": "scope-missing-other",
+    "destination": {
+      "device": {
+        "display_name": "Computer",
+        "platform": "windows",
+        "product_version": "1.0.0"
+      },
+      "installation_id": "installation-fixture",
+      "installation_key": {
+        "alg": "ES256",
+        "jwk": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+          "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+        },
+        "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+      }
+    },
+    "scope": {
+      "action_digests": {
+        "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+      },
+      "association_request_id": "0199b234-5678-7000-8000-000000000001",
+      "installation_id": "installation-fixture",
+      "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+      "intended_creator_id": "creator-fixture",
+      "onboarding_transaction_id": "transaction-fixture",
+      "organization_id": "org-fixture"
+    },
+    "valid": false
+  },
+  {
+    "case_id": "scope-extra-action",
+    "destination": {
+      "device": {
+        "display_name": "Computer",
+        "platform": "windows",
+        "product_version": "1.0.0"
+      },
+      "installation_id": "installation-fixture",
+      "installation_key": {
+        "alg": "ES256",
+        "jwk": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+          "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+        },
+        "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+      }
+    },
+    "scope": {
+      "action_digests": {
+        "activate-commercial": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+        "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+      },
+      "association_request_id": "0199b234-5678-7000-8000-000000000001",
+      "installation_id": "installation-fixture",
+      "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+      "intended_creator_id": "creator-fixture",
+      "onboarding_transaction_id": "transaction-fixture",
+      "organization_id": "org-fixture"
+    },
+    "valid": false
+  },
+  {
+    "case_id": "scope-wrong-digest",
+    "destination": {
+      "device": {
+        "display_name": "Computer",
+        "platform": "windows",
+        "product_version": "1.0.0"
+      },
+      "installation_id": "installation-fixture",
+      "installation_key": {
+        "alg": "ES256",
+        "jwk": {
+          "crv": "P-256",
+          "kty": "EC",
+          "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+          "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+        },
+        "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+      }
+    },
+    "scope": {
+      "action_digests": {
+        "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+        "issue-installation-claim": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "association_request_id": "0199b234-5678-7000-8000-000000000001",
+      "installation_id": "installation-fixture",
+      "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+      "intended_creator_id": "creator-fixture",
+      "onboarding_transaction_id": "transaction-fixture",
+      "organization_id": "org-fixture"
+    },
+    "valid": false
+  }
+]

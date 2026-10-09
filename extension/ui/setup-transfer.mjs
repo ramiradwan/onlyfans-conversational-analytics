@@ -15,7 +15,7 @@ export function renderReceivingContext(document, context) {
 }
 
 export function submitReceivingEntry(document, payload, hostedOrigin = onboardingHostedOrigin) {
-  if (!hostedOrigin || payload?.hosted_start_url !== `${hostedOrigin}/public/onboarding/receive`
+  if (!hostedOrigin || payload?.hosted_start_url !== `${hostedOrigin}/public/onboarding/setup/receive`
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(payload.journey_id)
     || payload.request?.destination?.kind !== 'browser-extension') throw new Error('receiving_entry_unavailable');
   const form = document.createElement('form');

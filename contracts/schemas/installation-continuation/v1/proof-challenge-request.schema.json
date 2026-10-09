@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-continuation/v1/proof-challenge-request.schema.json",
+  "title": "Installation setup continuation proof-challenge-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "target"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:installation-setup-continuation-proof:v1"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "installation-continuation-prepare"
+            },
+            "request": {
+              "$ref": "prepare-request.schema.json#/properties/request"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "installation-continuation-read"
+            },
+            "request": {
+              "$ref": "read-request.schema.json#/properties/request"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "installation-continuation-stream"
+            },
+            "request": {
+              "$ref": "stream-request.schema.json#/properties/request"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "installation-continuation-binding"
+            },
+            "request": {
+              "$ref": "binding-request.schema.json#/properties/request"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

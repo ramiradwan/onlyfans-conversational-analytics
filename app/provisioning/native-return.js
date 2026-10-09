@@ -37,6 +37,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
         || location.origin !== 'http://bridge.localhost:17871') throw new Error('Invalid return');
       let recovery = null;
       let localRecovery = false;
+      let savedContinuation = false;
       {
         const entryRead = () => bounded(fetch('/api/v1/provisioning/native-entry', {
           credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: controller.signal,
@@ -58,23 +59,29 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
         const selectedRecovery = (value) => exact(value, ['state', 'journey_id', 'previous_journey_id'])
           && value.state === 'selected' && UUID.test(value.journey_id) && UUID.test(value.previous_journey_id);
         const savedRecovery = () => (exact(saved, ['entry_id', 'journey_id', 'expires_at', 'recovery_id']) && UUID.test(saved.recovery_id)
-          || exact(saved, ['entry_id', 'journey_id', 'expires_at', 'local_recovery']) && saved.local_recovery === true)
+          || exact(saved, ['entry_id', 'journey_id', 'expires_at', 'local_recovery']) && saved.local_recovery === true
+          || saved?.continue_saved === true && (exact(saved, ['entry_id', 'journey_id', 'expires_at', 'continue_saved'])
+            || exact(saved, ['entry_id', 'journey_id', 'expires_at', 'continue_saved', 'recovery_id']) && UUID.test(saved.recovery_id)))
           && UUID.test(saved.entry_id) && UUID.test(saved.journey_id)
           && Number.isSafeInteger(saved.expires_at) && saved.expires_at > now() && saved.expires_at <= now() + 300_000;
         if (selectedRecovery(context)) {
           if (!savedRecovery() || context.previous_journey_id !== saved.journey_id
             || (journey && journey !== context.previous_journey_id)) throw new Error('Entry unconfirmed');
           localRecovery = saved.local_recovery === true;
+          savedContinuation = saved.continue_saved === true;
           recovery = { entry_id: saved.entry_id, previous_journey_id: saved.journey_id,
-            ...(!localRecovery ? { recovery_id: saved.recovery_id } : {}) };
+            ...(saved.recovery_id ? { recovery_id: saved.recovery_id } : {}) };
           journey = context.journey_id;
         } else if (context && exact(context, ['state', 'journey_id']) && context.state === 'selected' && UUID.test(context.journey_id)) {
           if ((journey && journey !== context.journey_id) || saved?.recovery_id || saved?.local_recovery) throw new Error('Entry unconfirmed');
           journey = context.journey_id;
         } else {
           const boundTarget = context?.target_journey_id;
+          savedContinuation = context?.continue_saved === true;
           if (!configured && (!(exact(context, ['state', 'csrf_token', 'entry_id'])
-            || exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id']) && UUID.test(boundTarget) && boundTarget === journey)
+            || (exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id'])
+              || savedContinuation && exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id', 'continue_saved']))
+              && UUID.test(boundTarget) && boundTarget === journey)
             || context.state !== 'select_workspace'
             || !UUID.test(context.entry_id) || !/^[A-Za-z0-9_-]{43}$/u.test(context.csrf_token) || selectionUnknown)) throw new Error('Entry unconfirmed');
           if (!configured) {
@@ -82,7 +89,8 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
           }
           if (!configured && runtime?.sendMessage && /^[a-p]{32}$/u.test(extensionId)) {
             const prepared = await bounded(runtime.sendMessage(extensionId,
-              { type: 'ofca.workspace.recovery-prepare.v1', entry_id: context.entry_id }));
+              { type: savedContinuation ? 'ofca.workspace.saved-continuation-prepare.v1' : 'ofca.workspace.recovery-prepare.v1',
+                entry_id: context.entry_id }));
             if (controller.signal.aborted || current !== generation) return false;
             if (exact(prepared, ['ok', 'result']) && prepared.ok === true) {
               const result = prepared.result;
@@ -101,9 +109,9 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
               } else throw new Error('Entry unconfirmed');
             } else {
               if (!(exact(prepared, ['ok', 'code']) && prepared.ok === false && prepared.code === 'no_workspace')) throw new Error('Entry unconfirmed');
-              if (boundTarget) localRecovery = true;
+                if (boundTarget && !savedContinuation) localRecovery = true;
             }
-          } else if (!configured && boundTarget) {
+          } else if (!configured && boundTarget && !savedContinuation) {
             localRecovery = true;
           } else if (!journey && runtime?.sendMessage && /^[a-p]{32}$/u.test(extensionId)) {
             const discovered = await bounded(runtime.sendMessage(extensionId, { type: 'ofca.workspace.launch-discover.v1' }));
@@ -118,6 +126,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
           }
           if (controller.signal.aborted || current !== generation) return false;
           if (localRecovery) recovery = { entry_id: context.entry_id, previous_journey_id: boundTarget };
+          if (savedContinuation && !recovery) recovery = { entry_id: context.entry_id, previous_journey_id: boundTarget };
           if (configured) {
             if (!journey) { finished = true; location.replace('/'); return true; }
           } else {
@@ -127,13 +136,15 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
             if (!storage) throw new Error('Entry unconfirmed');
             storage.setItem('native_workspace_selection_v1', JSON.stringify({ entry_id: context.entry_id,
               journey_id: journey || null, expires_at: now() + 300_000,
-              ...(localRecovery ? { local_recovery: true } : recovery ? { recovery_id: recovery.recovery_id } : {}) }));
+              ...(savedContinuation ? { continue_saved: true, ...(recovery?.recovery_id ? { recovery_id: recovery.recovery_id } : {}) }
+                : localRecovery ? { local_recovery: true } : recovery ? { recovery_id: recovery.recovery_id } : {}) }));
             const selectedEntryId = context.entry_id;
             try {
               const selectedReply = await bounded(fetch('/api/v1/provisioning/native-entry', {
                 method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: controller.signal,
                 headers: { 'Content-Type': 'application/json', 'X-Provisioning-CSRF': context.csrf_token },
-                body: JSON.stringify({ journey_id: journey || null, ...(recovery ? { recover: true } : {}) }),
+                body: JSON.stringify({ journey_id: journey || null,
+                  ...(savedContinuation ? { continue_saved: true } : recovery ? { recover: true } : {}) }),
               }));
               if (recovery && selectedReply.status === 409) failureMessage = 'Setup could not be recovered.';
               context = await entryJson(selectedReply);
@@ -142,7 +153,9 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
             }
             if (failureMessage === 'Setup could not be recovered.' && context?.state === 'select_workspace'
               && context.entry_id === selectedEntryId && (exact(context, ['state', 'csrf_token', 'entry_id'])
-                || exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id']))) {
+                || exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id'])
+                || context.continue_saved === true
+                  && exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id', 'continue_saved']))) {
               closedRefusal = true; finished = true;
             }
             if (recovery ? (!selectedRecovery(context) || context.previous_journey_id !== recovery.previous_journey_id)
@@ -179,6 +192,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
       }
       if (controller.signal.aborted || current !== generation) return false;
       const fallback = () => { finished = true; location.replace(`${route === 'bridge' ? '/' : '/provisioning'}#journey=${journey}`); };
+      if (savedContinuation && !recovery?.recovery_id) { fallback(); return true; }
       if (localRecovery) {
         const { returnToLocalWorkspace } = await bounded(loadLocalWorkspace());
         const result = await bounded(returnToLocalWorkspace({ fetch, location, storage,

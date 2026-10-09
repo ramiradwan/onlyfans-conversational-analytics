@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 
 import { getConfig } from '@/config/fastapiConfig';
 import { journeyFromHash, startOnboardingSession } from '@services/onboardingSession';
+import { useActivationReturn } from '@services/useActivationReturn';
 import { websocketService } from '@services/websocketService';
 import { analyticsStoreActions } from '@store/analyticsStore';
 import { useUserStore } from '@store/userStore';
@@ -45,6 +46,7 @@ export function App() {
   const hasSessionIdentity = Boolean(
     config.CREATOR_ID && config.BRIDGE_AUTH_TICKET && userRole !== null,
   );
+  const activationReturn = useActivationReturn(hasSessionIdentity && userRole === 'creator-ceo' ? journeyId : null);
 
   useEffect(() => {
     const changed = () => setJourneyId(journeyFromHash(window.location.hash));
@@ -87,7 +89,7 @@ export function App() {
       {globalStyles}
       {hasSessionIdentity ? (
         <BrowserRouter>
-          <OnboardingContinuation key={journeyId ?? 'app'}><AppRouter /></OnboardingContinuation>
+          <OnboardingContinuation key={journeyId ?? 'app'} activationReturn={activationReturn}><AppRouter /></OnboardingContinuation>
         </BrowserRouter>
       ) : <WebAuthnAccessView />}
     </ThemeProvider>

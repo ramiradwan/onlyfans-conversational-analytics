@@ -384,6 +384,30 @@ def test_activation_protected_material_stays_inside_brain_and_delegates(
     assert all("package" not in body for _path, body in transport.requests)
 
 
+@pytest.mark.parametrize("index", range(4))
+def test_automatic_return_cannot_redeem_for_a_different_staged_installation_scope(tmp_path, monkeypatch, index):
+    delivery = RecordingDelivery(CapabilityLicenseDeliveryReceipt("ref", "license", "issuance"))
+    action, transport = _composed_action(tmp_path, monkeypatch, protected_response=_delivery(), delivery=delivery)
+    scope = [ORGANIZATION_ID, INSTALLATION_ID, KEY_ID, KEY_JKT]
+    scope[index] = "different-scope"
+    assert action.redeem(continuation=CONTINUATION, expected_scope=tuple(scope)) == "redemption_mismatch"
+    assert transport.requests == [] and delivery.activations == delivery.reissues == []
+
+
+@pytest.mark.parametrize("key_changed", [False, True])
+def test_automatic_return_rechecks_the_exact_key_before_existing_local_delivery(tmp_path, monkeypatch, key_changed):
+    from dataclasses import replace
+    receipt = CapabilityLicenseDeliveryReceipt("ref", "license", "issuance")
+    delivery = RecordingDelivery(receipt)
+    action, transport = _composed_action(tmp_path, monkeypatch, protected_response=_delivery(), delivery=delivery)
+    current = replace(_key(), provider_key_name="changed") if key_changed else _key()
+    monkeypatch.setattr(SQLiteAuthenticationStore, "installation_key_reference", lambda _: current)
+    result = action.redeem(continuation=CONTINUATION, expected_scope=(ORGANIZATION_ID, INSTALLATION_ID, KEY_ID, KEY_JKT))
+    assert result == ("redemption_mismatch" if key_changed else receipt)
+    assert delivery.activations == ([] if key_changed else [("QUJD", "seat.primary")])
+    assert len(transport.requests) == 2
+
+
 def test_reissue_is_hosted_selected_and_delegates_to_existing_reissue_authority(
     tmp_path,
     monkeypatch,

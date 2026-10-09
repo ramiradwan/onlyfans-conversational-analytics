@@ -338,6 +338,8 @@
         "app/persistence/deletion_operations.py",
         "app/persistence/auth.py",
         "app/persistence/onboarding.py",
+        "app/persistence/continuation_selection.py",
+        "app/persistence/installation_continuation.py",
         "app/persistence/companion_pairing.py",
         "app/persistence/private_files.py",
         "app/persistence/sqlite_api.py",

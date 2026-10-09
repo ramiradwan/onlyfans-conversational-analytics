@@ -59,8 +59,9 @@ def select_brain_application(
     from app.provisioning.app import create_provisioning_app
     from app.provisioning.claim_submission import durable_claim_submission
     from app.provisioning.claim_submission import hosted_transport, installation_proof_authority
-    from app.provisioning.progress import durable_provisioning_progress
+    from app.provisioning.progress import durable_provisioning_progress, scoped_durable_provisioning_progress
     from app.security.capability_license_composition import durable_capability_license_delivery
+    from app.security.capability_license_redemption import durable_capability_license_opaque_redemption
     from app.security.grant_refresh import configured_grant_refresh
     from app.provisioning.creator_association import durable_creator_association_initiation
     from app.provisioning.binding_acquisition import durable_creator_account_binding_acquisition
@@ -87,24 +88,32 @@ def select_brain_application(
     from app.persistence.onboarding import OnboardingJourneyStore
     from app.provisioning.session import ProvisioningSessionManager
     from app.provisioning.initial_handoff import InitialInstallationEnrollment
+    from app.provisioning.installation_continuation import RegisteredInstallationContinuation
     from app.provisioning.state import brain_snapshot, next_authority_expiry
     store = open_store()
     journeys = OnboardingJourneyStore(store)
     initial_enrollment = None
-    from app.core.customer_release import resolve_hosted_onboarding_start
+    registered_continuation = None
+    continuation_key = installation_proof_authority(store)
+    from app.core.customer_release import resolve_hosted_onboarding_start, resolve_hosted_continuation_start
     hosted_start = resolve_hosted_onboarding_start(customer_release)
     if hosted_origin and hosted_start:
         initial_enrollment = InitialInstallationEnrollment(store, hosted_origin=hosted_origin,
             hosted_start_url=hosted_start)
+        registered_continuation = RegisteredInstallationContinuation(store, hosted_origin=hosted_origin,
+            hosted_start_url=resolve_hosted_continuation_start(customer_release))
     async def shutdown():
         if initial_enrollment is not None:
             await initial_enrollment.stop()
+        if registered_continuation is not None:
+            await registered_continuation.stop()
         await grant_refresh.stop()
     return create_provisioning_app(
         initial_enrollment=initial_enrollment,
+        registered_continuation=registered_continuation,
         onboarding_snapshot=lambda journey_id: brain_snapshot(store, journey_id),
         onboarding_expiry=lambda: next_authority_expiry(store),
-        session_manager=ProvisioningSessionManager(handoff_token, journeys=journeys),
+        session_manager=ProvisioningSessionManager(handoff_token, journeys=journeys, continuation_key=continuation_key),
         claim_submission=durable_claim_submission(open_store, hosted_origin=hosted_origin),
         creator_association_initiation=durable_creator_association_initiation(
             open_store, hosted_origin=hosted_origin
@@ -116,6 +125,7 @@ def select_brain_application(
             open_store, data_directory=data_directory
         ),
         provisioning_progress=durable_provisioning_progress(open_store),
+        scoped_provisioning_progress=scoped_durable_provisioning_progress(open_store),
         finalize_action=durable_finalize_action(
             open_store,
             extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),
@@ -123,6 +133,9 @@ def select_brain_application(
             grant_refresh=grant_refresh,
         ),
         capability_license_delivery=durable_capability_license_delivery(
+            open_store, hosted_origin=hosted_origin
+        ),
+        capability_license_redemption=durable_capability_license_opaque_redemption(
             open_store, hosted_origin=hosted_origin
         ),
         extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),

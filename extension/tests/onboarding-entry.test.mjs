@@ -125,14 +125,16 @@ test('a persisted identity changed while the worker was absent cannot inherit th
   assert.deepEqual(f.local[recordKey].draft, { ...checked, full_checked: false });
 });
 
-test('external recovery messages use the closed union and reconcile creator scope before dispatch', async () => {
+for (const type of ['ofca.workspace.recovery-prepare.v1', 'ofca.workspace.saved-continuation-prepare.v1'])
+test(`external ${type} uses the closed union and reconciles creator scope before dispatch`, async () => {
   const f = await savedFixture(); const entryId = crypto.randomUUID();
   const callback = { id: 8, windowId: 1, documentId: 'native-callback', url: 'http://bridge.localhost:17871/provisioning/native-return' };
   f.tabs.push(callback);
   const sender = { tab: { id: callback.id }, frameId: 0, documentId: callback.documentId, url: callback.url };
   const command = (message) => new Promise((resolve) => f.chromeApi.runtime.onMessageExternal.listeners[0](message, sender, resolve));
-  const prepare = { type: 'ofca.workspace.recovery-prepare.v1', entry_id: entryId };
+  const prepare = { type, entry_id: entryId };
   assert.deepEqual(await command({ ...prepare, url: 'https://example.test/' }), { ok: false, code: 'return_unavailable' });
+  assert.deepEqual(await command({ ...prepare, creator_account_id: 'untrusted' }), { ok: false, code: 'return_unavailable' });
   const prepared = await command(prepare);
   assert.equal(prepared.ok, true); assert.equal(prepared.result.status, 'recovery_ready');
   const previous = structuredClone(f.local[recordKey]);

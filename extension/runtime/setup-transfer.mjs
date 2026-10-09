@@ -182,7 +182,7 @@ export function registerSetupTransfer({ chromeApi, workspace, identityBridge, ho
         const request = await (await getOwner()).prepare(journeyId, message.setup_code);
         // Re-admit after asynchronous storage/key generation before exposing data.
         require((await workspace.admit(sender)).record.journey_id === journeyId);
-        return { journey_id: journeyId, request, hosted_start_url: `${hostedOrigin}/public/onboarding/receive` };
+        return { journey_id: journeyId, request, hosted_start_url: `${hostedOrigin}/public/onboarding/setup/receive` };
       }
       if (exact(message, ['type', 'action', 'request', 'challenge']) && message.action === 'sign' && admitted.route === 'hosted') {
         const result = await (await getOwner()).sign(journeyId, message.request, message.challenge);

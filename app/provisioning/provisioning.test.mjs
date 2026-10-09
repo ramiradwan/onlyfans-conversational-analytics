@@ -149,7 +149,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
       },
     });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /could not find/i);
+    assert.equal(elements.identityStatus.textContent, 'Your account could not be checked.');
     assert.equal(elements.confirmIdentity.disabled, true);
     assert.equal(parseIdentityResponse({
       type: 'provisioning.identity.result', version: 1, authenticated_profile: {},

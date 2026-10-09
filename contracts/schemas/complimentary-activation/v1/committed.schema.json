@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/complimentary-activation/v1/committed.schema.json",
+  "title": "Complimentary onboarding activation committed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "state",
+    "redemption"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    },
+    "operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "state": {
+      "enum": [
+        "committed",
+        "already-committed"
+      ]
+    },
+    "redemption": {
+      "$ref": "../../commercial/v1/capability-license-redemption-continuation.schema.json"
+    }
+  }
+}

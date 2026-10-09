@@ -63,7 +63,10 @@ const EXPECTED_OPTIONAL_HOST_PERMISSIONS = Object.freeze([
 ]);
 let workspaceHostedOrigin = null;
 const workspaceHostPermissions = () => ['http://bridge.localhost/*', ...(workspaceHostedOrigin ? [`${workspaceHostedOrigin}/*`] : [])];
-const workspaceExternalMatches = () => [...EXPECTED_EXTERNAL_MATCHES, ...(workspaceHostedOrigin ? [`${workspaceHostedOrigin}/public/onboarding`] : [])];
+const workspaceExternalMatches = () => [...EXPECTED_EXTERNAL_MATCHES, ...(workspaceHostedOrigin ? [
+  `${workspaceHostedOrigin}/public/onboarding/setup`,
+  `${workspaceHostedOrigin}/public/onboarding/installation-continuation`,
+] : [])];
 const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['http://bridge.localhost:17871/*']);
 const EXPECTED_EXTENSION_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;";
 const FORBIDDEN_PERMISSIONS = Object.freeze([
@@ -1052,7 +1055,7 @@ export function validateOnboardingReleaseConfig(document, { required = false } =
     assert.equal(value.protocol, 'https:');
     assert.ok(!value.username && !value.password && !value.search && !value.hash && !value.hostname.endsWith('.invalid'));
   }
-  assert.equal(url.pathname, '/public/onboarding');
+  assert.equal(url.pathname, '/public/onboarding/setup');
   assert.equal(api.pathname, '/');
   return url.origin;
 }

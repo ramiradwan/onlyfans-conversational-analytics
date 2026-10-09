@@ -96,6 +96,52 @@ def store(tmp_path: Path) -> SQLiteAuthenticationStore:
     return SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
 
 
+def test_reopen_existing_never_creates_or_activates_a_missing_key(store):
+    provider = EmulatedPlatformProvider()
+    authority = InstallationKeyAuthority(store, provider)
+    with pytest.raises(InstallationKeyUnavailable, match="not active"):
+        authority.reopen_existing()
+    assert provider.create_calls == 0
+    assert store.installation_key_reservation() is None
+
+
+def test_reopen_existing_reuses_exact_activated_key(store, monkeypatch):
+    provider = EmulatedPlatformProvider()
+    authority = InstallationKeyAuthority(store, provider)
+    reference = authority.ensure_ready()
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("reopening entered initial key enrollment")
+
+    monkeypatch.setattr(authority, "ensure_ready", forbidden)
+    monkeypatch.setattr(store, "reserve_installation_key", forbidden)
+    monkeypatch.setattr(store, "activate_installation_key", forbidden)
+    assert authority.reopen_existing() == reference
+    assert provider.create_calls == 1
+
+
+def test_reopen_existing_refuses_lost_provider_key_without_replacement(store):
+    provider = EmulatedPlatformProvider()
+    authority = InstallationKeyAuthority(store, provider)
+    reference = authority.ensure_ready()
+    del provider._keys[reference.provider_key_name]
+    with pytest.raises(InstallationKeyUnavailable, match="no longer available"):
+        authority.reopen_existing()
+    assert provider.create_calls == 1
+    assert store.installation_key_reference() == reference
+
+
+def test_reopen_existing_refuses_changed_provider_key(store):
+    provider = EmulatedPlatformProvider()
+    authority = InstallationKeyAuthority(store, provider)
+    reference = authority.ensure_ready()
+    provider._keys[reference.provider_key_name] = ec.generate_private_key(ec.SECP256R1())
+    with pytest.raises(InstallationKeyPolicyError, match="does not match"):
+        authority.reopen_existing()
+    assert provider.create_calls == 1
+    assert store.installation_key_reference() == reference
+
+
 def _skip_or_fail_unavailable_hardware_provider(
     error: InstallationKeyUnavailable | InstallationKeyPolicyError,
 ) -> NoReturn:

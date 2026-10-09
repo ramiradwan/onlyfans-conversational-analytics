@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "af7c958c218c35f74ce1370e0fca5b8ff37d6dfa"
-APPROVED_SOURCE_TREE = "d5ee1acd3ff8ba9623d1cb4d820daaec7dbbb406"
-APPROVED_SOURCE_MANIFEST_SHA256 = "a46e26b69302c573b821248415c25e80b196433e9745b6a89079f94cd0c5d93e"
+APPROVED_SOURCE_COMMIT = "5c4fa232cca728fbdd206f2ca101409afec8275a"
+APPROVED_SOURCE_TREE = "a3d600aeff28629e3b5c04be167e2f3bfd8e2aa8"
+APPROVED_SOURCE_MANIFEST_SHA256 = "549074bab1cf6eb0e10502b9d9ebcc77ada15dca7e14af27d3e63d303ca6048e"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "af8a689be9bd7e329970227ea403bb6c9218d3f4aacb1a0b237cd995e8cb6dd5",
-    "contract-manifest.json": "c9a2d20615c745508c86d79c5f6e784527a614099244511246384d3a57bd699f",
+    "catalog/contracts.yaml": "9acf51e5e559b8165d2f109fc3181d5ee85937db2348be45bcd81acea69aa456",
+    "contract-manifest.json": "29efb33b799497f98e4ad77636a1d6804c7219e6c4d025e920c074dfa1e03eec"
 }
 
 EXPORT_SET = [
@@ -49,10 +49,15 @@ EXPORT_SET = [
     "capability-license-hosted-api-v1",
     "onboarding-continuity-v1",
     "initial-installation-handoff-v1",
-    SOURCE_MANIFEST_EXPORT,
+    "installation-setup-continuation-v1",
+    "initial-installation-handoff-v2",
+    "installation-setup-continuation-v2",
+    "complimentary-onboarding-activation-v1",
+    "source-contract-manifest"
 ]
 
 EXPORT_SOURCES = {
+    "installation-setup-continuation-v1": "test-vectors/installation-setup-continuation-v1",
     "initial-installation-handoff-v1": "test-vectors/initial-installation-handoff-v1",
     "onboarding-continuity-v1": "test-vectors/onboarding-continuity-v1",
     "grant-profile-v1": "test-vectors/grant-profile-v1",
@@ -67,9 +72,13 @@ EXPORT_SOURCES = {
     "installation-key-proof-v1": "test-vectors/installation-key-proof-v1",
     "bootstrap-recovery-v2": "api-vectors/bootstrap-recovery-v2",
     "capability-license-hosted-api-v1": "api-vectors/capability-license-hosted-api-v1",
+    "initial-installation-handoff-v2": "test-vectors/initial-installation-handoff-v2",
+    "installation-setup-continuation-v2": "test-vectors/installation-setup-continuation-v2",
+    "complimentary-onboarding-activation-v1": "test-vectors/complimentary-onboarding-activation-v1"
 }
 
 APPROVED_EXPORT_DIGESTS = {
+    "installation-setup-continuation-v1": "63b47522da7a855e4e01b3e2bdbac7d39f9ec99af32780a64dbcc1fbc1a97b5d",
     "initial-installation-handoff-v1": "2b8522ba09c6b57629af52a312f9b424d74d9276add8b36cdbc850250df3c48b",
     "onboarding-continuity-v1": "98569965245348223b3fefa97ceb21744628090f5a37436f73bac5a7b91256ba",
     "grant-profile-v1": "5059ee95f0c847f7a33a787c80066e84359a2d4e0d2e8774637bfc387bece09b",
@@ -84,6 +93,9 @@ APPROVED_EXPORT_DIGESTS = {
     "installation-key-proof-v1": "19b9b5bfcb412086c5a03e4e6d776111420a404bba81924eeb8d0fd91bfcf799",
     "bootstrap-recovery-v2": "96d3adb571cc3f90f93748203f601dbdaf6fad95c2a7c891ecaa3ebbfcbe81d1",
     "capability-license-hosted-api-v1": "0ef82e619681e9beb7d0842a5a948171e3e5057ac81f498af38cf20d69a5731e",
+    "initial-installation-handoff-v2": "95682bf35a5133d0bc6edd778133e8c31388a8917589b69a021413f4feac9c08",
+    "installation-setup-continuation-v2": "9673deaa3c38aba0832a68e2e290720447f8c566c8f0e12f5c5875e67c29ea97",
+    "complimentary-onboarding-activation-v1": "b9eb0b9a68dec64a67ce2522b641d5eddf9ef5a86e5cc67a459a66af9fd37cba"
 }
 
 EXPECTED_PROGRESS_VECTOR_FILES = frozenset(
@@ -110,8 +122,8 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 829
-EXPECTED_PUBLISHED_FILE_COUNT = 99
+EXPECTED_FILE_COUNT = 918
+EXPECTED_PUBLISHED_FILE_COUNT = 159
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -129,15 +141,22 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:capability-license:v1",
     "urn:bridge-clean:capability-permit:v1",
     "urn:bridge-clean:companion-pairing:v1",
+    "urn:bridge-clean:complimentary-onboarding-activation:v1",
     "urn:bridge-clean:creator-association:v1",
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:hosted-onboarding:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v1",
+    "urn:bridge-clean:initial-installation-handoff-proof:v2",
     "urn:bridge-clean:initial-installation-handoff:v1",
+    "urn:bridge-clean:initial-installation-handoff:v2",
     "urn:bridge-clean:installation-claim-package:v1",
     "urn:bridge-clean:installation-claim-package:v2",
     "urn:bridge-clean:installation-claim:v1",
     "urn:bridge-clean:installation-claim:v2",
+    "urn:bridge-clean:installation-setup-continuation-proof:v1",
+    "urn:bridge-clean:installation-setup-continuation-proof:v2",
+    "urn:bridge-clean:installation-setup-continuation:v1",
+    "urn:bridge-clean:installation-setup-continuation:v2",
     "urn:bridge-clean:onboarding-continuation:v1",
     "urn:bridge-clean:onboarding-progress:v1",
     "urn:bridge-clean:onboarding-proof:v1",
@@ -158,12 +177,16 @@ TRUST_SETS = {
     "companion-pairing-v1": "companion-pairing-v1/trust-set.json",
 }
 CONFORMANCE_MANIFESTS = {
+    "installation-setup-continuation-v1": "installation-setup-continuation-v1/manifest.json",
     "initial-installation-handoff-v1": "initial-installation-handoff-v1/manifest.json",
     "onboarding-continuity-v1": "onboarding-continuity-v1/manifest.json",
     "capability-license-v1": "capability-license-v1/manifest.json",
     "installation-claim-package-v1": "installation-claim-package-v1/manifest.json",
     "bootstrap-recovery-v2": "bootstrap-recovery-v2/manifest.json",
     "capability-license-hosted-api-v1": "capability-license-hosted-api-v1/manifest.json",
+    "initial-installation-handoff-v2": "initial-installation-handoff-v2/manifest.json",
+    "installation-setup-continuation-v2": "installation-setup-continuation-v2/manifest.json",
+    "complimentary-onboarding-activation-v1": "complimentary-onboarding-activation-v1/manifest.json"
 }
 PAIRING_PROFILE_RECORD = "companion-pairing-profile/profile.json"
 

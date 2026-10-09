@@ -101,7 +101,7 @@ const snapshot = JSON.parse(readFileSync(new URL('../../shared/onboarding/vector
 function lifecycleFixture({ stage, mutation, identity = async () => ({ type: 'provisioning.identity.result', version: 1,
   authenticated_profile: { creator_account_id: CREATOR_ID } }), extensionId = 'a'.repeat(32) }) {
   const callbacks = new Map(), connections = [], calls = [], ui = elements(), forms = [], navigations = [];
-  const hosted = 'https://setup.example.test/public/onboarding';
+  const hosted = 'https://setup.example.test/public/onboarding/setup';
   const link = { href: hosted, hidden: false, addEventListener() {} };
   const recovery = element();
   const doc = { ...document(), defaultView: {
@@ -146,7 +146,7 @@ for (const operation of ['acquire', 'initial-handoff', 'finalize']) {
       ? { association_request_id: ASSOCIATION_ID, status: 'approved' }
       : operation === 'finalize' ? { state: 'configured_restart' }
         : { state: 'waiting', journey_id: journeyId, handoff_reference: 'a'.repeat(43),
-          hosted_start_url: 'https://setup.example.test/public/onboarding/start' }));
+          hosted_start_url: 'https://setup.example.test/public/onboarding/setup/start' }));
     await settle();
     if (!replyAfterRestore) await f.restore();
     await f.controller.acquireAssociation();
@@ -196,7 +196,7 @@ test('a restored handoff is recovered from a fresh owner GET, never the retired 
   await f.controller.start(); f.connections[0].onState(snapshot); await settle();
   f.hide(); await f.restore();
   f.state.handoff = { state: 'waiting', journey_id: journeyId, handoff_reference: 'c'.repeat(43),
-    hosted_start_url: 'https://setup.example.test/public/onboarding/start' };
+    hosted_start_url: 'https://setup.example.test/public/onboarding/setup/start' };
   mutation.resolve(response(200, { ...f.state.handoff, handoff_reference: 'b'.repeat(43) }));
   await settle();
   assert.equal(f.forms.length, 1);

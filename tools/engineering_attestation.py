@@ -1555,7 +1555,7 @@ def _qualified_workspace_policy(manifest: dict[str, Any]) -> bool:
                     or value.query or value.fragment or value.hostname.endswith(".invalid")
                     or "*" in value.netloc):
                 return False
-        if page.path != "/public/onboarding" or api.path not in {"", "/"}:
+        if page.path != "/public/onboarding/setup" or api.path not in {"", "/"}:
             return False
         origin = urllib.parse.urlunsplit(("https", page.netloc, "", "", ""))
     except (OSError, TypeError, ValueError):
@@ -1563,7 +1563,8 @@ def _qualified_workspace_policy(manifest: dict[str, Any]) -> bool:
     return (
         manifest.get("host_permissions") == ["http://bridge.localhost/*", origin + "/*"]
         and manifest.get("externally_connectable") == {
-            "matches": [local_match, origin + "/public/onboarding"]
+            "matches": [local_match, origin + "/public/onboarding/setup",
+                        origin + "/public/onboarding/installation-continuation"]
         }
     )
 

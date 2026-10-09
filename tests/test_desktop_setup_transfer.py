@@ -34,7 +34,7 @@ def receiver(tmp_path):
         sign_challenge=lambda data:(signed.append(data) or SimpleNamespace(installation_key_id="ik1.test",algorithm="ES256",signature=b"s"*64)))
     async def pause(_): pass
     enrollment=SimpleNamespace(store=store,journeys=journeys,client=SimpleNamespace(key=key),
-        hosted_start_url="https://setup.example/public/onboarding/start",pause_for_transfer=pause)
+        hosted_start_url="https://setup.example/public/onboarding/setup/start",pause_for_transfer=pause)
     transfer=DesktopSetupTransfer(enrollment)
     sessions=ProvisioningSessionManager("t"*43,journeys=journeys,wall_clock=lambda:clock[0].timestamp())
     session=sessions.redeem_handoff_code(sessions.issue_handoff_code("Provisioning "+"t"*43))
@@ -56,7 +56,7 @@ def test_preparation_needs_current_cookie_origin_and_csrf_and_retains_exact_inte
     first=response.json()
     again=receiver.client.post(path,json={"setup_code":"0123456789AB"},headers=receiver.headers).json()
     assert first==again and first["journey_id"]==receiver.session.journey_id
-    assert first["hosted_start_url"]=="https://setup.example/public/onboarding/receive"
+    assert first["hosted_start_url"]=="https://setup.example/public/onboarding/setup/receive"
     assert receiver.client.post(path,content='{"setup_code":"0123456789AB","setup_code":"0123456789AB"}',headers={**receiver.headers,"content-type":"application/json"}).status_code==400
 
 
@@ -154,7 +154,7 @@ def test_proof_response_loss_and_repeated_startup_never_resign_same_challenge(re
     # Simulate loss of response, including Set-Cookie; old entry cookie survives.
     for _ in range(2):
         projected=receiver.client.get("/api/v1/provisioning/setup-transfer/context",headers=headers)
-        assert projected.json()=={"state":"unconfirmed","journey_id":receiver.session.journey_id,"hosted_return_url":"https://setup.example/public/onboarding"}
+        assert projected.json()=={"state":"unconfirmed","journey_id":receiver.session.journey_id,"hosted_return_url":"https://setup.example/public/onboarding/setup"}
         replay=receiver.client.post("/api/v1/provisioning/setup-transfer/sign",json={"request":request,"challenge":challenge},headers=headers)
         assert replay.status_code==409
     # Re-posting public material cannot obtain a fresh signing operation.
@@ -191,7 +191,7 @@ def test_complete_local_hosted_relay_cycle_does_not_reenter_after_final_return(r
     async def prepare(journey):
         calls.append(journey)
         receiver.journeys.update(journey,state="waiting",handoff_reference="D"*43)
-        return {"state":"waiting","journey_id":journey,"handoff_reference":"D"*43,"hosted_start_url":"https://setup.example/public/onboarding/start"}
+        return {"state":"waiting","journey_id":journey,"handoff_reference":"D"*43,"hosted_start_url":"https://setup.example/public/onboarding/setup/start"}
     receiver.transfer.enrollment.prepare=prepare
     assert receiver.client.get("/api/v1/provisioning/setup-transfer/context",headers=headers).json()["state"]=="continue"
     forwarded=receiver.client.post("/api/v1/provisioning/setup-transfer/continue",json={"continuation":value},headers=headers)

@@ -24,7 +24,7 @@ class ProofCase:
     def __init__(self, family, *, wall_offset=0, response_delay=0, signing_delay=0, change=None,
                  operation="complete", preparation_change=None):
         initial = family == "initial"
-        directory = "initial-installation-handoff-v1" if initial else "onboarding-continuity-v1"
+        directory = "initial-installation-handoff-v2" if initial else "onboarding-continuity-v1"
         records = json.loads((CONTRACTS / directory / "proof-cases.json").read_bytes())
         self.vector = next(value for value in records if value["case_id"] ==
                            (f"{operation}-valid" if initial else "hosted-stream-valid"))
@@ -44,19 +44,19 @@ class ProofCase:
 
         def request(method, path, *, json_body):
             self.requests.append((method, path))
-            if initial and path == "/v1/onboarding/installation-handoffs:prepare":
+            if initial and path == "/v2/onboarding/installation-handoffs:prepare":
                 assert json_body["request"] == self.request
-                value = {"profile": "urn:bridge-clean:initial-installation-handoff:v1",
+                value = {"profile": "urn:bridge-clean:initial-installation-handoff:v2",
                          "reference": "A" * 43, "operation_id": self.request["operation_id"],
                          "expires_at": (INSTANT + timedelta(seconds=600)).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
                 if preparation_change is not None:
                     preparation_change(value)
                 return TransportResponse(201, json.dumps(value).encode(), "application/json")
-            assert path == ("/v1/onboarding/installation-handoff-proof-challenges" if initial
+            assert path == ("/v2/onboarding/installation-handoff-proof-challenges" if initial
                             else "/v1/onboarding/stream-proof-challenges")
             assert json_body["target"]["request"] == self.request
             self.elapsed += response_delay
-            value = {"profile": ("urn:bridge-clean:initial-installation-handoff-proof:v1" if initial
+            value = {"profile": ("urn:bridge-clean:initial-installation-handoff-proof:v2" if initial
                                   else "urn:bridge-clean:onboarding-proof:v1"),
                      "challenge": self.vector["challenge"],
                      "request_digest": hashlib.sha256(canonical(self.request)).hexdigest(),
@@ -147,7 +147,7 @@ def test_clock_independence_preserves_strict_challenge_validation(family, field,
     ("installation_key_jkt", "not-a-thumbprint"), ("unexpected", "closed-object"),
 ])
 def test_authorized_event_scope_validation_is_unchanged(field, value):
-    records = json.loads((CONTRACTS / "initial-installation-handoff-v1" / "schema-cases.json").read_bytes())
+    records = json.loads((CONTRACTS / "initial-installation-handoff-v2" / "schema-cases.json").read_bytes())
     event = copy.deepcopy(next(item["value"] for item in records if item["case_id"] == "wait-event-valid"))
     event["scope"][field] = value
     with pytest.raises(HostedGrantUnavailable):

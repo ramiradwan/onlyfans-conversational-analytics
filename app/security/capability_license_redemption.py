@@ -82,7 +82,8 @@ CapabilityLicenseOpaqueRedemptionResult: TypeAlias = (
 
 
 class CapabilityLicenseOpaqueRedemption(Protocol):
-    def redeem(self, *, continuation: str) -> CapabilityLicenseOpaqueRedemptionResult: ...
+    def redeem(self, *, continuation: str,
+               expected_scope: tuple[str, str, str, str] | None = None) -> CapabilityLicenseOpaqueRedemptionResult: ...
 
 
 class CapabilityLicenseRedemptionError(RuntimeError):
@@ -393,7 +394,8 @@ def durable_capability_license_opaque_redemption(
     """Build the thin opaque redemption action over the existing delivery authority."""
 
     class _Action:
-        def redeem(self, *, continuation: str) -> CapabilityLicenseOpaqueRedemptionResult:
+        def redeem(self, *, continuation: str,
+                   expected_scope: tuple[str, str, str, str] | None = None) -> CapabilityLicenseOpaqueRedemptionResult:
             if _CONTINUATION.fullmatch(continuation) is None:
                 return "redemption_invalid"
             store = open_store()
@@ -408,6 +410,9 @@ def durable_capability_license_opaque_redemption(
             if coordinates is None:
                 return "local_installation_authority_unavailable"
             organization_id, installation_id = coordinates
+            if expected_scope is not None and expected_scope != (
+                    organization_id, installation_id, key.installation_key_id, key.installation_key_jkt):
+                return "redemption_mismatch"
             journal = SQLiteCapabilityLicenseDeliveryJournal(store.database)
             try:
                 transport = transport_factory(hosted_origin, journal)
@@ -437,6 +442,10 @@ def durable_capability_license_opaque_redemption(
             # Protected package and seat coordinates remain inside Brain and are
             # immediately delegated to the existing verify-before-persist,
             # crash-safe CapabilityLicense delivery authority.
+            if expected_scope is not None:
+                current_key = store.installation_key_reference()
+                if current_key != key or _current_local_coordinates(store, key=key, instant=now()) != coordinates:
+                    return "redemption_mismatch"
             delivery = delivery_factory(open_store, hosted_origin)
             if protected.operation == "activation":
                 return delivery.activate(

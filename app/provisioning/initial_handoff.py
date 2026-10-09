@@ -19,6 +19,16 @@ from app.security.initial_handoff import InitialHandoffClient, InitialHandoffStr
 logger = logging.getLogger(__name__)
 
 
+def _current_profile(row: dict) -> bool:
+    if row["state"] == "completed" or (row["state"] == "new" and row["prepare_json"] is None):
+        return True
+    try:
+        request = json.loads(row["prepare_json"])
+    except (TypeError, ValueError):
+        return False
+    return isinstance(request, dict) and request.get("profile") == PROFILE
+
+
 def _continuity_failure_reason(error: Exception) -> str:
     from app.security.hosted_grants import CreatorAssociationRefused, GrantVerificationRefused
     from app.security.initial_handoff import OnboardingStreamAdmissionRefused
@@ -57,7 +67,7 @@ class InitialInstallationEnrollment:
     async def prepare(self, journey_id: str) -> dict:
         async with self._lock:
             try:
-                row = self.journeys.require_current(journey_id)
+                row = self._current_journey(journey_id)
             except OnboardingJourneyUnavailable as error:
                 raise InitialHandoffRefused(error.code) from None
             if row["state"] in {"completing", "unknown", "completed"}:
@@ -106,7 +116,12 @@ class InitialInstallationEnrollment:
 
     def _current_journey(self, journey_id: str) -> dict:
         try:
-            return self.journeys.require_current(journey_id)
+            row = self.journeys.require_current(journey_id)
+            if row["kind"] != "initial-enrollment":
+                raise InitialHandoffRefused("journey_unavailable")
+            if not _current_profile(row):
+                raise InitialHandoffRefused("unsupported_profile")
+            return row
         except OnboardingJourneyUnavailable as error:
             raise InitialHandoffRefused(error.code) from None
 
@@ -133,7 +148,8 @@ class InitialInstallationEnrollment:
                     "SELECT 1 FROM onboarding_transfer_intents WHERE journey_id=? AND expires_at>?",
                     (journey_id, now.timestamp()),
                 ).fetchone()
-            if (receiving is None and row is not None and row["state"] == "waiting"
+            if (receiving is None and row is not None and row["kind"] == "initial-enrollment" and row["state"] == "waiting"
+                    and _current_profile(row)
                     and isinstance(row["handoff_reference"], str)
                     and re.fullmatch(r"[A-Za-z0-9_-]{43}", row["handoff_reference"]) is not None
                     and datetime.fromisoformat(row["expires_at"]) > now
@@ -144,7 +160,9 @@ class InitialInstallationEnrollment:
 
     def resume(self, journey_id: str) -> None:
         row = self.journeys.get(journey_id)
-        if row is None:
+        if row is None or row["kind"] != "initial-enrollment":
+            return
+        if not _current_profile(row):
             return
         with self.store.database.read() as connection:
             receiving = connection.execute("SELECT 1 FROM onboarding_transfer_intents WHERE journey_id=? AND continuation_json IS NULL AND expires_at>?",
@@ -158,7 +176,7 @@ class InitialInstallationEnrollment:
     async def pause_for_transfer(self, journey_id: str) -> None:
         async with self._lock:
             row = self.journeys.get(journey_id)
-            if row is None or row["scope_json"] is not None or row["state"] not in {"new", "preparing", "prepare-unknown", "waiting", "transfer"}:
+            if row is None or row["kind"] != "initial-enrollment" or row["scope_json"] is not None or row["state"] not in {"new", "preparing", "prepare-unknown", "waiting", "transfer"}:
                 raise InitialHandoffRefused("handoff_unconfirmed")
             existing = self._tasks.get(journey_id)
             if existing is not None and not existing.done():
@@ -167,7 +185,9 @@ class InitialInstallationEnrollment:
 
     async def _run(self, journey_id: str) -> None:
         row = self.journeys.get(journey_id)
-        if row is None or row["state"] in {"new", "expired", "revoked", "reauthentication-required"}:
+        if row is None or row["kind"] != "initial-enrollment" or row["state"] in {"new", "expired", "revoked", "reauthentication-required"}:
+            return
+        if not _current_profile(row):
             return
         if row["state"] in {"preparing", "prepare-unknown"}:
             try:
@@ -228,13 +248,30 @@ class InitialInstallationEnrollment:
                         await self._recover(row)
                         await self._continuity(self.journeys.get(journey_id))
                         return
-                    if status in {"expired", "revoked", "reauthentication-required"}:
+                    if status in {"authentication-required", "confirmation-required"}:
+                        # Preserve the exact operation and live stream. The
+                        # hosted workspace owns sign-in or action confirmation.
+                        row = self._current_update(journey_id, state="waiting", reason=status)
+                        events.publish()
+                        continue
+                    if status in {"expired", "revoked"}:
                         self.journeys.update(journey_id, state=status, reason=status)
                         events.publish()
                         return
                 raise HostedGrantUnavailable("Initial wait disconnected")
             except asyncio.CancelledError:
                 raise
+            except InitialHandoffRefused as error:
+                if error.code not in {"authentication_required", "confirmation_required"}:
+                    # A closed refusal does not establish enrollment. Keep the
+                    # same operation for a later owner read, without escalation.
+                    self.journeys.update(journey_id, state="waiting", reason=None)
+                    events.publish()
+                    return
+                row = self._current_update(journey_id, state="waiting", reason=error.code.replace("_", "-"))
+                events.publish()
+                # A confirmed refusal did not enroll the key. Reconnect the
+                # same wait operation; never try registered receipt recovery.
             except Exception:
                 current = self.journeys.get(journey_id)
                 if current is None:
@@ -253,7 +290,11 @@ class InitialInstallationEnrollment:
         # A lost unregistered wait stream is not a completion attempt. Retain
         # its key-bound locator and reconnect that stream, never a registered
         # receipt endpoint that this key is not yet eligible to use.
-        self.journeys.update(journey_id, state="waiting", reason=None)
+        # A disconnected stream supplies no new fact about the current session
+        # or action receipt. Preserve the last confirmed owner reason.
+        current = self.journeys.get(journey_id)
+        if current is not None:
+            self.journeys.update(journey_id, state="waiting", reason=current["reason"])
         events.publish()
 
     def _record_claim(self, row: dict, value: dict) -> None:

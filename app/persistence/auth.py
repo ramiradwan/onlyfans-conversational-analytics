@@ -1119,6 +1119,90 @@ class SQLiteAuthenticationStore:
             return False
         return True
 
+    def admit_continuation_binding_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        grant: VerifiedGrantReference,
+        *,
+        membership_reference_id: str,
+        claim: ClaimSubmission,
+        candidate: ProvisioningCandidate,
+        key: InstallationKeyReference,
+        binding_revoked_at: str | None,
+    ) -> None:
+        """Admit signed continuation authority inside its workflow transaction.
+
+        The caller holds the exact saved selection in this same write
+        transaction and remains responsible for its workflow deadline/state.
+        Authorization rows, replacement and candidate approval belong here.
+        """
+        if not connection.in_transaction:
+            raise AuthenticationStateError("Continuation admission requires a transaction")
+        self._validate_verified_grant(grant)
+        now = self._now()
+        if (binding_revoked_at is not None
+                or grant.grant_type != "creator_account_binding"
+                or grant.organization_id != claim.organization_id
+                or grant.installation_id != claim.installation_id
+                or grant.creator_account_id != candidate.creator_account_id
+                or grant.installation_key_id != key.installation_key_id
+                or grant.installation_key_jkt != key.installation_key_jkt
+                or not grant.valid_from <= now < grant.expires_at):
+            raise AuthenticationStateError("Continuation binding is unavailable")
+        if any(self._scope_is_revoked(connection, key) for key in (
+                RevocationKey(RevocationScopeType.PRINCIPAL, grant.subject),
+                RevocationKey(RevocationScopeType.INSTALLATION, grant.installation_id),
+                RevocationKey(RevocationScopeType.CREATOR_ACCOUNT, grant.creator_account_id),
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, grant.reference_id),
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, membership_reference_id))):
+            raise AuthenticationStateError("Continuation authority is revoked")
+        membership = connection.execute(
+            "SELECT * FROM verified_grant_references WHERE reference_id=? AND revoked_at IS NULL",
+            (membership_reference_id,),
+        ).fetchone()
+        if (membership is None or membership["grant_type"] != "membership_snapshot"
+                or any(membership[name] != getattr(grant, name) for name in (
+                    "organization_id", "installation_id", "installation_key_id", "installation_key_jkt", "issuer", "subject"))
+                or self._grant_has_hosted_tombstone(connection, _verified_grant_reference(membership))
+                or self._grant_has_hosted_tombstone(connection, grant)):
+            raise AuthenticationStateError("Continuation membership is unavailable")
+        existing = connection.execute("SELECT * FROM verified_grant_references WHERE reference_id=?",
+                                      (grant.reference_id,)).fetchone()
+        active = connection.execute(
+            "SELECT * FROM verified_grant_references WHERE grant_type='creator_account_binding' "
+            "AND organization_id=? AND installation_id=? AND creator_account_id=? AND revoked_at IS NULL",
+            (grant.organization_id, grant.installation_id, grant.creator_account_id),
+        ).fetchall()
+        if len(active) > 1:
+            raise AuthenticationStateError("Continuation binding is ambiguous")
+        previous = _verified_grant_reference(active[0]) if active else None
+        if previous is not None and previous.reference_id != grant.reference_id:
+            identity = ("issuer", "subject", "organization_id", "installation_id", "installation_key_id",
+                        "installation_key_jkt", "creator_account_id", "approval_id", "approval_revision")
+            if (any(getattr(previous, name) != getattr(grant, name) for name in identity)
+                    or any(self._scope_is_revoked(connection, key) for key in (
+                        RevocationKey(RevocationScopeType.VERIFIED_GRANT, previous.reference_id),
+                        RevocationKey(RevocationScopeType.INSTALLATION, previous.installation_id),
+                        RevocationKey(RevocationScopeType.CREATOR_ACCOUNT, previous.creator_account_id)))):
+                raise AuthenticationStateError("Continuation binding changed")
+        if existing is None:
+            self._insert_verified_grant(connection, grant)
+        elif (existing["revoked_at"] is not None
+              or replace(_verified_grant_reference(existing), verified_at=grant.verified_at) != grant):
+            raise AuthenticationStateError("Continuation binding changed")
+        if previous is not None and previous.reference_id != grant.reference_id:
+            connection.execute("UPDATE authorized_account_binding_grants SET grant_reference_id=? WHERE grant_reference_id=?",
+                               (grant.reference_id, previous.reference_id))
+            self._revoke_in_transaction(connection,
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, previous.reference_id), reason="replaced")
+        if candidate.state.value == "pending":
+            if not self._approve_provisioning_candidate_in_transaction(
+                    connection, candidate.association_request_id, resolved_at=now):
+                raise AuthenticationStateError("Continuation target changed")
+        elif candidate.state.value != "approved":
+            raise AuthenticationStateError("Continuation target changed")
+        self._increment_authorization_epoch(connection)
+
     @capture_authority_change
     def replace_verified_grant(
         self, previous_reference_id: str, grant: VerifiedGrantReference,
@@ -3917,7 +4001,8 @@ class SQLiteAuthenticationStore:
 
     @capture_authority_change
     def record_authorized_account_binding(
-        self, binding: AuthorizedAccountBinding
+        self, binding: AuthorizedAccountBinding,
+        *, validate_current: Callable[[], None] | None = None,
     ) -> None:
         """Durably authorize one creator account for this installation.
 
@@ -3930,6 +4015,10 @@ class SQLiteAuthenticationStore:
 
         _require_authorized_account_binding(binding)
         with self.database.transaction() as connection:
+            # BEGIN IMMEDIATE excludes concurrent authority changes while the
+            # caller rechecks its exact verified tuple and this write commits.
+            if validate_current is not None:
+                validate_current()
             existing = connection.execute(
                 "SELECT creator_account_id FROM authorized_account_bindings"
             ).fetchall()

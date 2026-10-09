@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/complimentary-activation/v1/confirm-request.schema.json",
+  "title": "Complimentary onboarding activation confirm-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "confirmation_reference"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    },
+    "operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "confirmation_reference": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    }
+  }
+}

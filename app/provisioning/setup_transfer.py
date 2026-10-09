@@ -39,11 +39,11 @@ class DesktopSetupTransfer:
         self.store = enrollment.store
         self.journeys = enrollment.journeys
         parsed = urlsplit(enrollment.hosted_start_url)
-        if parsed.scheme != "https" or parsed.path != "/public/onboarding/start" or parsed.query or parsed.fragment or parsed.username or parsed.password:
+        if parsed.scheme != "https" or parsed.path != "/public/onboarding/setup/start" or parsed.query or parsed.fragment or parsed.username or parsed.password:
             raise ValueError("Invalid hosted setup destination")
         self.hosted_origin = f"https://{parsed.netloc}"
-        self.receive_url = self.hosted_origin + "/public/onboarding/receive"
-        self.return_url = self.hosted_origin + "/public/onboarding"
+        self.receive_url = self.hosted_origin + "/public/onboarding/setup/receive"
+        self.return_url = self.hosted_origin + "/public/onboarding/setup"
         self._entry_key = secrets.token_bytes(32)
 
     def _intent(self, journey_id: str) -> dict | None:
@@ -55,7 +55,7 @@ class DesktopSetupTransfer:
         if not isinstance(setup_code, str) or not re.fullmatch(r"[0-9A-HJKMNP-TV-Z]{12}", setup_code):
             raise ValueError("Invalid setup code")
         row = self.journeys.get(journey_id)
-        if row is None:
+        if row is None or row["kind"] != "initial-enrollment":
             raise ValueError("Journey expired")
         previous = self._intent(journey_id)
         if previous is not None and json.loads(previous["request_json"])["setup_code"] == setup_code:
@@ -77,6 +77,9 @@ class DesktopSetupTransfer:
         return {"journey_id": journey_id, "request": request, "hosted_start_url": self.receive_url}
 
     def sign(self, journey_id: str, request: object, challenge: object, relay_request: Request) -> dict:
+        row = self.journeys.require_current(journey_id)
+        if row["kind"] != "initial-enrollment":
+            raise ValueError("Setup context is unavailable")
         intent = self._intent(journey_id)
         if intent is None or canonical(request).decode() != intent["request_json"]:
             raise ValueError("Transfer intent changed")
@@ -119,7 +122,8 @@ class DesktopSetupTransfer:
             if len(body) != len(pairs) or set(body) not in ({"journey_id", "setup_code"}, {"journey_id", "request", "challenge"}, {"journey_id", "continuation"}):
                 raise ValueError("Invalid relay")
             require_journey(body["journey_id"])
-            if self.journeys.get(body["journey_id"]) is None:
+            current = self.journeys.get(body["journey_id"])
+            if current is None or current["kind"] != "initial-enrollment":
                 raise ValueError("Unknown journey")
             if "setup_code" in body:
                 if not re.fullmatch(r"[0-9A-HJKMNP-TV-Z]{12}", body["setup_code"]):
@@ -239,6 +243,7 @@ class DesktopSetupTransfer:
 
 def install_routes(application, sessions, transfer: DesktopSetupTransfer):
     def scoped_session(request,session):
+        sessions.require_initial_context(session)
         if request.url.query or request.headers.getlist("x-onboarding-journey") not in ([],[session.journey_id]):
             raise HTTPException(403,"Setup journey changed")
         return session

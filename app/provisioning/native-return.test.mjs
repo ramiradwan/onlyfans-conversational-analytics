@@ -330,3 +330,62 @@ test('a matching selected read wins over a recovery POST refusal', async () => {
     response(200, recovered), response(200, { ...snapshot, journey_id: renewedJourney })] });
   assert.equal(await f.run(), true); assert.equal(f.closed(), 1);
 });
+
+const savedContext = { ...entryContext, target_journey_id: journey, continue_saved: true };
+for (const noOwner of [false, true]) test(`saved continuation opens the fresh context without touching the expired document, noWorkspace=${noOwner}`, async () => {
+  const f = fixture({ nativeEntry: true, storage: memory(),
+    replies: [response(200, savedContext), response(200, recovered), response(200, { ...snapshot, journey_id: renewedJourney })],
+    runtime: noOwner ? { sendMessage: async () => ({ ok: false, code: 'no_workspace' }) } : undefined,
+    loadLocalWorkspace: async () => { throw Error('Expired document must stay inactive'); } });
+  assert.equal(await f.run(), true);
+  assert.deepEqual(JSON.parse(f.calls[1].request.body), { journey_id: journey, continue_saved: true });
+  assert.deepEqual(f.navigations, [`/provisioning#journey=${renewedJourney}`]);
+  assert.equal(f.closes, 0);
+});
+
+test('saved continuation returns to the exact extension-owned workspace using a distinct prepare intent', async () => {
+  const messages = [];
+  const f = fixture({ nativeEntry: true, storage: memory(),
+    replies: [response(200, savedContext), response(200, recovered), response(200, { ...snapshot, journey_id: renewedJourney })],
+    runtime: { sendMessage: async (_id, message) => { messages.push(message);
+      return message.type === 'ofca.workspace.saved-continuation-prepare.v1' ? recoveryReady : { ok: true, result: { status: 'returned' } };
+    } } });
+  assert.equal(await f.run(), true);
+  assert.deepEqual(JSON.parse(f.calls[1].request.body), { journey_id: journey, continue_saved: true });
+  assert.deepEqual(messages, [{ type: 'ofca.workspace.saved-continuation-prepare.v1', entry_id: entryId },
+    { type: 'ofca.workspace.recovery-return.v1', entry_id: entryId, recovery_id: recoveryId,
+      previous_journey_id: journey, journey_id: renewedJourney, route: 'provisioning' }]);
+  assert.equal(JSON.stringify(messages).includes(entryContext.csrf_token), false);
+  assert.equal(f.closes, 1); assert.deepEqual(f.navigations, []);
+});
+
+test('uncertain saved selection survives document recreation without another mutation or navigation', async () => {
+  const storage = memory(); let posts = 0;
+  const options = { nativeEntry: true, storage, runtime: undefined, fetch: async (_path, request) => {
+    if (request.method === 'POST') { posts++; throw Error('Lost selection result'); }
+    return response(200, savedContext);
+  } };
+  const first = fixture(options); assert.equal(await first.run(), false);
+  assert.equal(await first.run(), false); assert.equal(await fixture(options).run(), false);
+  assert.equal(posts, 1); assert.deepEqual(first.navigations, []);
+});
+
+test('saved selected receipt resumes only the retained native intent and never selects again', async () => {
+  const storage = memory(); storage.setItem('native_workspace_selection_v1', JSON.stringify({
+    entry_id: entryId, journey_id: journey, continue_saved: true, expires_at: Date.now() + 60_000,
+  }));
+  const f = fixture({ nativeEntry: true, storage, runtime: undefined,
+    replies: [response(200, recovered), response(200, { ...snapshot, journey_id: renewedJourney })] });
+  assert.equal(await f.run(), true);
+  assert.ok(f.calls.every(({ request }) => request.method !== 'POST'));
+  assert.deepEqual(f.navigations, [`/provisioning#journey=${renewedJourney}`]);
+});
+
+test('definitive saved continuation refusal has no repetitive retry action', async () => {
+  const f = fixture({ nativeEntry: true, storage: memory(), runtime: undefined,
+    replies: [response(200, savedContext), response(409, { detail: 'Saved setup changed' }), response(200, savedContext)] });
+  assert.equal(await f.run(), false); assert.equal(f.retry.hidden, true);
+  assert.equal(f.status.textContent, 'Setup could not be recovered.');
+  assert.equal(await f.run(), false);
+  assert.equal(f.calls.filter(({ request }) => request.method === 'POST').length, 1);
+});

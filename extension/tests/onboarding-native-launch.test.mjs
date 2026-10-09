@@ -7,7 +7,7 @@ const journey = 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fed';
 const scope = { scope_id: 'b88c2d88-dbbf-4fdb-8743-9f92cbe46fea', disclosure_bundle_id: 'a'.repeat(64) };
 const routes = { extension: 'chrome-extension://synthetic/setup.html', hosted: null,
   provisioning: 'http://bridge.localhost:17871/provisioning', bridge: 'http://bridge.localhost:17871/' };
-function fixture() {
+function fixture(routeOverrides = {}) {
   const local = {}, session = {}, calls = [], windowCalls = [], clock = [1000];
   const events = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn),
     removeListener: (fn) => listeners.delete(fn), emit: (...args) => { for (const fn of listeners) fn(...args); } }; };
@@ -38,7 +38,7 @@ function fixture() {
     }, update: async (id, options) => { calls.push({ id, ...options }); Object.assign(tabs.find((tab) => tab.id === id), options); },
     create: async () => { throw Error('must reuse workspace'); } },
     windows: { onFocusChanged: events(), get: async () => ({ focused: true }), update: async (...args) => { windowCalls.push(args); } } };
-  const make = () => createOnboardingWorkspace({ chromeApi, routes, now: () => clock[0], navigationTimeoutMs: 25 });
+  const make = () => createOnboardingWorkspace({ chromeApi, routes: { ...routes, ...routeOverrides }, now: () => clock[0], navigationTimeoutMs: 25 });
   const workspace = make();
   const sender = (id) => { const tab = tabs.find((value) => value.id === id); return {
     tab: { ...tab }, url: tab.url, frameId: 0, documentId: tab.documentId,
@@ -435,4 +435,33 @@ test('expired launch fallback cannot target an absent, changed or background own
     assert.equal(result.status, change === 'background' ? 'launch_expired' : 'recovery_ready');
     assert.deepEqual(f.calls, []);
   }
+});
+
+test('saved continuation prepares its own exact intent even when the original native launch has expired', async () => {
+  const f = await recoveryFixture('extension'); await f.workspace.prepareNativeLaunch(f.sender(2));
+  f.clock[0] += NATIVE_LAUNCH_TTL_MS;
+  const prepared = await f.workspace.prepareNativeRecovery(f.sender(3), { entry_id: entryId }, () => true, { savedContinuation: true });
+  assert.equal(prepared.status, 'recovery_ready');
+  assert.equal(f.session[NATIVE_RECOVERY_KEY].version, 2);
+  assert.equal(f.session[NATIVE_RECOVERY_KEY].saved_continuation, true);
+  assert.deepEqual(f.calls, []);
+  assert.deepEqual(await f.workspace.returnFromNativeRecovery(f.sender(3), f.recoveryRequest(prepared)), { status: 'returned' });
+  assert.equal(f.tabs[0].url, 'https://onlyfans.com/my/chats');
+});
+
+test('saved continuation reuses the exact hosted document; ordinary recovery does not gain that route', async () => {
+  const hosted = 'https://onboarding.example.test/public/onboarding/setup';
+  const f = fixture({ hosted }); await f.open();
+  await f.workspace.reconcileIdentity({ account_digest: 'c'.repeat(64) });
+  f.tabs[1].url = `${hosted}/installation-continuation#journey=${journey}`;
+  f.local[WORKSPACE_RECORD_KEY].route = 'hosted';
+  await assert.rejects(f.workspace.prepareNativeRecovery(f.sender(3), { entry_id: entryId }), /workspace_exists/);
+  const prepared = await f.workspace.prepareNativeRecovery(f.sender(3), { entry_id: entryId }, () => true, { savedContinuation: true });
+  const result = await f.workspace.returnFromNativeRecovery(f.sender(3), { entry_id: entryId, recovery_id: prepared.recovery_id,
+    previous_journey_id: journey, journey_id: renewedJourney, route: 'provisioning' });
+  assert.deepEqual(result, { status: 'returned' });
+  const script = f.calls.find((call) => call.script);
+  assert.deepEqual(script.target, { tabId: 2, documentIds: ['owner-document'] });
+  assert.deepEqual(script.args, [`${hosted}/installation-continuation#journey=${journey}`, `${routes.provisioning}#journey=${renewedJourney}`]);
+  assert.equal(f.tabs[0].url, 'https://onlyfans.com/my/chats');
 });

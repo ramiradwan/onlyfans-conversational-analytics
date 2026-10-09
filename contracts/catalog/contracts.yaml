@@ -507,3 +507,165 @@ contracts:
     openapi_operations:
       - issueInitialInstallationHandoffProofChallenge
     governing_adr: docs/adr/0025-initial-installation-key-handoff.md
+  - id: installation-setup-continuation-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Continue exact enrolled setup using registered-key proof and independent current owner authority without repeating enrollment.
+    profile: urn:bridge-clean:installation-setup-continuation:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/installation-continuation/v1/definitions.schema.json
+      - schemas/installation-continuation/v1/prepare-request.schema.json
+      - schemas/installation-continuation/v1/prepare-response.schema.json
+      - schemas/installation-continuation/v1/read-request.schema.json
+      - schemas/installation-continuation/v1/read-response.schema.json
+      - schemas/installation-continuation/v1/stream-request.schema.json
+      - schemas/installation-continuation/v1/snapshot.schema.json
+      - schemas/installation-continuation/v1/event.schema.json
+      - schemas/installation-continuation/v1/binding-request.schema.json
+      - schemas/installation-continuation/v1/binding-response.schema.json
+      - schemas/installation-continuation/v1/error.schema.json
+    openapi_operations:
+      - prepareInstallationSetupContinuation
+      - readInstallationSetupContinuation
+      - streamInstallationSetupContinuation
+      - acquireInstallationSetupContinuationBinding
+    governing_adr: docs/adr/0026-continue-setup-for-an-enrolled-installation.md
+  - id: installation-setup-continuation-proof-v1
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Continue exact enrolled setup using registered-key proof and independent current owner authority without repeating enrollment.
+    profile: urn:bridge-clean:installation-setup-continuation-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+      - schemas/installation-continuation/v1/proof-challenge-request.schema.json
+      - schemas/installation-continuation/v1/proof-challenge-response.schema.json
+    openapi_operations:
+      - issueInstallationSetupContinuationProofChallenge
+    governing_adr: docs/adr/0026-continue-setup-for-an-enrolled-installation.md
+  - id: initial-installation-handoff-v2
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Initial unregistered installation key admission with exact hosted authorization and separate proof recovery.
+    profile: urn:bridge-clean:initial-installation-handoff:v2
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 8192
+    max_response_bytes: 65536
+    schema_paths:
+    - schemas/initial-handoff/v2/definitions.schema.json
+    - schemas/initial-handoff/v2/prepare-request.schema.json
+    - schemas/initial-handoff/v2/prepare-response.schema.json
+    - schemas/initial-handoff/v2/authorize-request.schema.json
+    - schemas/initial-handoff/v2/authorize-response.schema.json
+    - schemas/initial-handoff/v2/wait-request.schema.json
+    - schemas/initial-handoff/v2/wait-event.schema.json
+    - schemas/initial-handoff/v2/complete-request.schema.json
+    - schemas/initial-handoff/v2/complete-response.schema.json
+    - schemas/initial-handoff/v2/receipt-request.schema.json
+    - schemas/initial-handoff/v2/receipt-response.schema.json
+    - schemas/initial-handoff/v2/error.schema.json
+    openapi_operations:
+    - prepareInitialInstallationHandoffV2
+    - authorizeInitialInstallationHandoffV2
+    - waitInitialInstallationHandoffV2
+    - completeInitialInstallationHandoffV2
+    - readInitialInstallationHandoffReceiptV2
+    governing_adr: docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md
+  - id: initial-installation-handoff-proof-v2
+    owner: provisioning
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Initial unregistered installation key admission with exact hosted authorization and separate proof recovery.
+    profile: urn:bridge-clean:initial-installation-handoff-proof:v2
+    classification: cross-plane-security
+    retention_class: security-audit
+    max_request_bytes: 8192
+    max_response_bytes: 65536
+    schema_paths:
+    - schemas/initial-handoff/v2/proof-challenge-request.schema.json
+    - schemas/initial-handoff/v2/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueInitialInstallationHandoffProofChallengeV2
+    governing_adr: docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md
+  - id: installation-setup-continuation-v2
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Continue exact enrolled setup using registered-key proof and independent current owner authority without
+      repeating enrollment.
+    profile: urn:bridge-clean:installation-setup-continuation:v2
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/installation-continuation/v2/definitions.schema.json
+    - schemas/installation-continuation/v2/prepare-request.schema.json
+    - schemas/installation-continuation/v2/prepare-response.schema.json
+    - schemas/installation-continuation/v2/read-request.schema.json
+    - schemas/installation-continuation/v2/read-response.schema.json
+    - schemas/installation-continuation/v2/stream-request.schema.json
+    - schemas/installation-continuation/v2/snapshot.schema.json
+    - schemas/installation-continuation/v2/event.schema.json
+    - schemas/installation-continuation/v2/binding-request.schema.json
+    - schemas/installation-continuation/v2/binding-response.schema.json
+    - schemas/installation-continuation/v2/error.schema.json
+    openapi_operations:
+    - prepareInstallationSetupContinuationV2
+    - readInstallationSetupContinuationV2
+    - streamInstallationSetupContinuationV2
+    - acquireInstallationSetupContinuationBindingV2
+    governing_adr: docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md
+  - id: installation-setup-continuation-proof-v2
+    owner: onboarding
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Continue exact enrolled setup using registered-key proof and independent current owner authority without
+      repeating enrollment.
+    profile: urn:bridge-clean:installation-setup-continuation-proof:v2
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/installation-continuation/v2/proof-challenge-request.schema.json
+    - schemas/installation-continuation/v2/proof-challenge-response.schema.json
+    openapi_operations:
+    - issueInstallationSetupContinuationProofChallengeV2
+    governing_adr: docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md
+  - id: complimentary-onboarding-activation-v1
+    owner: commercial-ledger
+    producer: hosted-customer-browser
+    consumer: commercial-control-plane
+    purpose: Explicitly authorize one server-qualified complimentary exchange and initial redemption under a current
+      customer session.
+    profile: urn:bridge-clean:complimentary-onboarding-activation:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 2048
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/complimentary-activation/v1/prepare-request.schema.json
+    - schemas/complimentary-activation/v1/prepare-response.schema.json
+    - schemas/complimentary-activation/v1/confirm-request.schema.json
+    - schemas/complimentary-activation/v1/confirm-response.schema.json
+    - schemas/complimentary-activation/v1/read-request.schema.json
+    - schemas/complimentary-activation/v1/read-response.schema.json
+    - schemas/complimentary-activation/v1/prepared.schema.json
+    - schemas/complimentary-activation/v1/committed.schema.json
+    - schemas/complimentary-activation/v1/error.schema.json
+    openapi_operations:
+    - prepareComplimentaryOnboardingActivation
+    - confirmComplimentaryOnboardingActivation
+    - readComplimentaryOnboardingActivation
+    governing_adr: docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md

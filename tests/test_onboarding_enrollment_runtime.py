@@ -142,7 +142,7 @@ def test_app_link_is_only_a_non_authorizing_exact_journey(suffix):
 
 
 def test_initial_key_client_uses_published_domain_and_body_proof():
-    cases = json.loads((Path(__file__).parents[1] / "contracts/initial-installation-handoff-v1/proof-cases.json").read_text())
+    cases = json.loads((Path(__file__).parents[1] / "contracts/initial-installation-handoff-v2/proof-cases.json").read_text())
     record = cases[0]
     thumbprint = base64.urlsafe_b64encode(hashlib.sha256(canonical(record["public_key"])).digest()).rstrip(b"=").decode()
     key_id = record["request"]["destination"]["installation_key"]["kid"]
@@ -198,7 +198,7 @@ class _WaitingStream:
 
 def _enrollment_worker(store, client):
     return InitialInstallationEnrollment(store, hosted_origin="https://fixture.invalid",
-        hosted_start_url="https://fixture.invalid/public/onboarding/start", client=client,
+        hosted_start_url="https://fixture.invalid/public/onboarding/setup/start", client=client,
         stream=_WaitingStream(), grants=SimpleNamespace(close=lambda: None),
         continuity=object(), continuity_stream=_WaitingStream())
 
@@ -265,12 +265,53 @@ async def test_lost_wait_never_attempts_registered_receipt(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_restart_unknown_completion_reconciles_without_replay(tmp_path, monkeypatch):
+@pytest.mark.parametrize("status", ["authentication-required", "confirmation-required"])
+@pytest.mark.parametrize("boundary", ["wait", "complete"])
+async def test_owner_session_and_confirmation_refusals_keep_exact_pending_operation(tmp_path, status, boundary):
+    from app.security.initial_handoff import InitialHandoffRefused
     store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
     client = _HandoffFixture()
     worker = _enrollment_worker(store, client)
     journey = worker.journeys.open()["journey_id"]
-    worker.journeys.update(journey, state="unknown", operation_id=worker.journeys.new_operation())
+    row = worker.journeys.get(journey)
+    completions = []
+    def complete(request):
+        completions.append(request)
+        raise InitialHandoffRefused(status.replace("-", "_"))
+    def receipt(request):
+        pytest.fail("An explicitly refused unregistered completion must not use registered receipt recovery")
+    client.complete, client.receipt = complete, receipt
+    class RefusingStream:
+        attempts = 0
+        async def events(self, envelope):
+            self.attempts += 1
+            if boundary == "complete" and self.attempts == 1:
+                yield {"status": "authorized", "revision": 1, "scope": {
+                    "installation_id": row["installation_id"], "installation_key_jkt": "A" * 43}}
+            else:
+                yield {"status": status, "revision": self.attempts + 1}
+    worker.stream = RefusingStream()
+    await worker.prepare(journey)
+    await worker._tasks[journey]
+    saved = worker.journeys.get(journey)
+    assert saved["state"] == "waiting" and saved["reason"] == status
+    assert len(client.preparations) == 1
+    assert len(completions) == (1 if boundary == "complete" else 0)
+    assert len(client.waits) == 3
+    assert all(request == client.waits[0][1] for _, request in client.waits)
+    assert saved["operation_id"] == client.preparations[0]["operation_id"]
+    await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_restart_unknown_completion_reconciles_without_replay(tmp_path, monkeypatch):
+    from app.security.initial_handoff import PROFILE
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    client = _HandoffFixture()
+    worker = _enrollment_worker(store, client)
+    journey = worker.journeys.open()["journey_id"]
+    worker.journeys.update(journey, state="unknown", operation_id=worker.journeys.new_operation(),
+        prepare_json=json.dumps({"profile": PROFILE}))
     recoveries, resumed = [], []
     async def recovery(row):
         recoveries.append(row["operation_id"])
@@ -800,7 +841,7 @@ async def test_hosted_sse_delivers_small_frames_before_eof_and_closes_on_cancell
         assert len(requests) == 1
         assert requests[0].method == "POST"
         assert requests[0].url.path == ("/v1/onboarding/streams" if continuity
-            else "/v1/onboarding/installation-handoffs:wait")
+            else "/v2/onboarding/installation-handoffs:wait")
         body.waiting.clear()
         pending = asyncio.create_task(anext(stream))
         await asyncio.wait_for(body.waiting.wait(), 1)

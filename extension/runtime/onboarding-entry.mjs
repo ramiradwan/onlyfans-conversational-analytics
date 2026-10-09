@@ -4,13 +4,13 @@ import { legalReleaseBindings } from './legal-release-bindings.mjs';
 import { onboardingHostedOrigin } from './onboarding-release-config.mjs';
 import { FULL_REVIEW_INTENT_KEY, fullReviewIntent } from './onboarding-full-intent.mjs';
 import { NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE,
-  NATIVE_RECOVERY_PREPARE_TYPE, NATIVE_RECOVERY_RETURN_TYPE } from './onboarding-native-launch.mjs';
+  NATIVE_RECOVERY_PREPARE_TYPE, NATIVE_RECOVERY_RETURN_TYPE, NATIVE_SAVED_CONTINUATION_PREPARE_TYPE } from './onboarding-native-launch.mjs';
 
 export const WORKSPACE_MESSAGE_TYPE = 'ofca.workspace.v1';
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 export function productionWorkspaceRoutes(chromeApi) {
-  return { extension: chromeApi.runtime.getURL('setup.html'), hosted: onboardingHostedOrigin === null ? null : `${onboardingHostedOrigin}/public/onboarding`,
+  return { extension: chromeApi.runtime.getURL('setup.html'), hosted: onboardingHostedOrigin === null ? null : `${onboardingHostedOrigin}/public/onboarding/setup`,
     provisioning: `${LOCAL_SERVICE_ORIGIN}/provisioning`, bridge: `${LOCAL_SERVICE_ORIGIN}/` };
 }
 export function registerOnboardingWorkspace({ chromeApi, consentController, identityBridge }) {
@@ -76,9 +76,10 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     return result;
   }
   const listener = (message, sender, reply) => {
-    if ([NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE, NATIVE_RECOVERY_PREPARE_TYPE, NATIVE_RECOVERY_RETURN_TYPE].includes(message?.type)) {
+    if ([NATIVE_RETURN_TYPE, NATIVE_DISCOVER_TYPE, NATIVE_FOCUS_TYPE, NATIVE_RECOVERY_PREPARE_TYPE, NATIVE_RECOVERY_RETURN_TYPE,
+      NATIVE_SAVED_CONTINUATION_PREPARE_TYPE].includes(message?.type)) {
       const keys = message.type === NATIVE_RETURN_TYPE ? ['type', 'journey_id', 'route']
-        : message.type === NATIVE_RECOVERY_PREPARE_TYPE ? ['type', 'entry_id']
+        : [NATIVE_RECOVERY_PREPARE_TYPE, NATIVE_SAVED_CONTINUATION_PREPARE_TYPE].includes(message.type) ? ['type', 'entry_id']
           : message.type === NATIVE_RECOVERY_RETURN_TYPE ? ['type', 'entry_id', 'recovery_id', 'previous_journey_id', 'journey_id', 'route'] : ['type'];
       if (!exact(message, keys)) {
         reply({ ok: false, code: 'return_unavailable' }); return false;
@@ -88,6 +89,8 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
         if (message.type === NATIVE_DISCOVER_TYPE) return workspace.discoverNativeLaunch(sender);
         if (message.type === NATIVE_FOCUS_TYPE) return workspace.focusFromNative(sender);
         if (message.type === NATIVE_RECOVERY_PREPARE_TYPE) return workspace.prepareNativeRecovery(sender, { entry_id: message.entry_id }, currentScope);
+        if (message.type === NATIVE_SAVED_CONTINUATION_PREPARE_TYPE) return workspace.prepareNativeRecovery(sender,
+          { entry_id: message.entry_id }, currentScope, { savedContinuation: true });
         if (message.type === NATIVE_RECOVERY_RETURN_TYPE) return workspace.returnFromNativeRecovery(sender, {
           entry_id: message.entry_id, recovery_id: message.recovery_id, previous_journey_id: message.previous_journey_id,
           journey_id: message.journey_id, route: message.route }, currentScope);

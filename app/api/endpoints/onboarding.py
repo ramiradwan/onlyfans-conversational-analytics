@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse, RedirectResponse, Response
 
 from app.api.security import get_runtime_policy
+from app.api.activation import require_activated_runtime
 from app.core.config import settings
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.persistence.onboarding import OnboardingJourneyStore, require_journey
@@ -155,3 +156,35 @@ def onboarding_module(request: Request, name: str):
     from app.core.resource_paths import resource_path
     return Response(resource_path("shared/onboarding/" + name + ".mjs").read_bytes(),
                     media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@lru_cache(maxsize=1)
+def _activation_return():
+    from app.api.activation import require_activated_runtime
+    from app.api.security import get_authenticated_runtime_policy, require_creator, verify_csrf_token, verify_same_origin
+    from app.api.endpoints.capability_license import _configured_redemption
+    from app.core.customer_release import load_customer_release_config
+    from app.provisioning.activation_return import ActivationReturn
+
+    def authorize(request, journey, mutation):
+        require_activated_runtime()
+        if request.headers.get("sec-fetch-site") not in {None, "same-origin", "none"}:
+            raise HTTPException(403, "Local origin is required")
+        origins = request.headers.getlist("origin")
+        if origins != ["http://" + PROVISIONING_HOST] and (mutation or origins):
+            raise HTTPException(403, "Local origin is required")
+        policy = get_authenticated_runtime_policy(get_runtime_policy(request))
+        require_creator(policy)
+        if mutation:
+            verify_same_origin(request)
+            values = request.headers.getlist("x-csrf-token")
+            verify_csrf_token(policy, values[0] if len(values) == 1 else None)
+        return policy.identity.creator_account_id
+
+    return ActivationReturn(_store(settings.auth_database_path),
+        hosted_url=load_customer_release_config().hosted_onboarding_url,
+        redeem=lambda **kwargs: _configured_redemption().redeem(**kwargs), authorize=authorize, runtime=True)
+
+
+from app.provisioning.activation_return import install_routes as install_activation_return_routes
+install_activation_return_routes(resume_router, _activation_return, dependencies=[Depends(require_activated_runtime)])

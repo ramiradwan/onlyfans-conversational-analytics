@@ -35,7 +35,7 @@ def configured_release_source(module, destination: Path):
     config = destination / "app/core/customer-release.json"
     config.write_text(json.dumps({
         "schema": "ofca-customer-release/v1",
-        "hosted_onboarding_url": "https://setup.example.com/public/onboarding",
+        "hosted_onboarding_url": "https://setup.example.com/public/onboarding/setup",
         "hosted_api_origin": "https://setup.example.com",
     }), encoding="utf-8")
     with pytest.MonkeyPatch.context() as patch:

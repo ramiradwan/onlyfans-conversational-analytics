@@ -187,6 +187,19 @@ class NativeWorkspaceRecoveryBody(BaseModel):
         return value
 
 
+class NativeWorkspaceSavedContinuationBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    journey_id: str
+    continue_saved: Literal[True]
+
+    @field_validator("continue_saved", mode="before")
+    @classmethod
+    def literal_saved(cls, value):
+        if type(value) is not bool or value is not True:
+            raise ValueError("Saved continuation must be explicitly true")
+        return value
+
+
 def create_provisioning_app(
     *,
     claim_submission: ClaimSubmission,
@@ -195,6 +208,7 @@ def create_provisioning_app(
     completion_ready: Callable[[], bool],
     finalize_action: FinalizeAction,
     capability_license_delivery: CapabilityLicenseDelivery | None = None,
+    capability_license_redemption=None,
     provisioning_progress: Callable[[], dict[str, str | None]] | None = None,
     extension_id: str | None = None,
     hosted_onboarding_url: str = "",
@@ -205,6 +219,8 @@ def create_provisioning_app(
     initial_enrollment: InitialInstallationAdmission | None = None,
     onboarding_snapshot: Callable[[str], dict[str, object]] | None = None,
     onboarding_expiry: Callable[[], float | None] | None = None,
+    registered_continuation: InitialInstallationAdmission | None = None,
+    scoped_provisioning_progress: Callable[[str], dict[str, str | None]] | None = None,
 ) -> FastAPI:
     sessions = session_manager or ProvisioningSessionManager(launcher_handoff_token)
     from app.provisioning.events import events, CAPABILITIES
@@ -218,6 +234,21 @@ def create_provisioning_app(
                 await shutdown_action()
 
     application = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifecycle)
+
+    if capability_license_redemption is not None and sessions._journeys is not None and hosted_onboarding_url:
+        from app.provisioning.activation_return import ActivationReturn, install_routes as install_activation_routes
+        def authorize_activation(request, journey, mutation):
+            if request.headers.get("sec-fetch-site") not in {None, "same-origin", "none"}:
+                raise HTTPException(403, "Local origin is required")
+            if not mutation and request.headers.getlist("origin") not in ([], [PROVISIONING_ORIGIN]):
+                raise HTTPException(403, "Local origin is required")
+            session = sessions.require_mutation(request) if mutation else sessions.require_session(request)
+            if session.journey_id != journey:
+                raise HTTPException(409, "Activation context changed")
+            return None
+        activation_return = ActivationReturn(sessions._journeys.authentication, hosted_url=hosted_onboarding_url,
+            redeem=capability_license_redemption.redeem, authorize=authorize_activation)
+        install_activation_routes(application, lambda: activation_return)
 
     if initial_enrollment is not None and hasattr(initial_enrollment, "store"):
         from app.provisioning.setup_transfer import DesktopSetupTransfer, install_routes
@@ -307,11 +338,13 @@ def create_provisioning_app(
         return JSONResponse(sessions.native_entry_context(request), headers={"Cache-Control": "no-store"})
 
     @application.post("/api/v1/provisioning/native-entry", include_in_schema=False)
-    async def select_native_workspace(request: Request, body: NativeWorkspaceBody | NativeWorkspaceRecoveryBody) -> JSONResponse:
+    async def select_native_workspace(request: Request, body: NativeWorkspaceBody | NativeWorkspaceRecoveryBody | NativeWorkspaceSavedContinuationBody) -> JSONResponse:
         recover = isinstance(body, NativeWorkspaceRecoveryBody)
-        session = sessions.select_native_workspace(request, body.journey_id, recover=recover)
+        saved = isinstance(body, NativeWorkspaceSavedContinuationBody)
+        session = await run_in_threadpool(sessions.select_native_workspace, request, body.journey_id,
+            recover=recover, continue_saved=saved)
         response = JSONResponse({"state": "selected", "journey_id": session.journey_id,
-            **({"previous_journey_id": body.journey_id} if recover else {})},
+            **({"previous_journey_id": body.journey_id} if recover or saved else {})},
             headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
         response.set_cookie(PROVISIONING_SESSION_COOKIE_NAME, session.identifier,
             httponly=True, secure=True, samesite="strict", path="/")
@@ -329,6 +362,8 @@ def create_provisioning_app(
         document = _SHELL_TEMPLATE.read_text(encoding="utf-8")
         document = document.replace(
             "{{PROVISIONING_CSRF}}", html.escape(session.csrf_token, quote=True)
+        ).replace(
+            "{{PROVISIONING_CONTEXT_KIND}}", sessions.context_kind(session)
         ).replace(
             "{{PROVISIONING_EXTENSION_ID}}",
             html.escape(provisioned_extension_id(), quote=True),
@@ -383,8 +418,10 @@ def create_provisioning_app(
         session = sessions.require_session(request)
         if onboarding_snapshot is None or session.journey_id is None:
             return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
-        if initial_enrollment is not None:
-            initial_enrollment.resume(session.journey_id)
+        owner = (registered_continuation if sessions.context_kind(session) == "registered-continuation"
+                 else initial_enrollment)
+        if owner is not None:
+            owner.resume(session.journey_id)
         def next_expiry():
             remaining = sessions.session_remaining(request)
             authority = None if onboarding_expiry is None else onboarding_expiry()
@@ -406,6 +443,7 @@ def create_provisioning_app(
     @application.get("/api/v1/provisioning/initial-handoff", include_in_schema=False)
     async def read_initial_handoff(request: Request):
         session = sessions.require_session(request)
+        sessions.require_initial_context(session)
         if initial_enrollment is None or session.journey_id is None:
             return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
         csrf_values = request.headers.getlist("X-Provisioning-CSRF")
@@ -427,6 +465,7 @@ def create_provisioning_app(
     async def prepare_initial_handoff(request: Request, body: CreatorBindingAcquisitionBody):
         del body
         session = sessions.require_mutation(request)
+        sessions.require_initial_context(session)
         if initial_enrollment is None or session.journey_id is None:
             return JSONResponse({"reason": "capability_unavailable"}, status_code=409)
         from app.security.initial_handoff import InitialHandoffRefused
@@ -442,23 +481,70 @@ def create_provisioning_app(
 
     @application.get(PROVISIONING_STATUS_PATH, include_in_schema=False)
     async def status(request: Request) -> JSONResponse:
-        sessions.require_session(request)
+        session = sessions.require_session(request)
         if completion_ready():
             return JSONResponse(
                 {"state": "configured_restart"},
                 background=BackgroundTask(request_completion_exit),
             )
-        if provisioning_progress is None:
+        if scoped_provisioning_progress is not None and session.journey_id is not None:
+            progress = _validated_progress(scoped_provisioning_progress(session.journey_id))
+        elif sessions.context_kind(session) == "registered-continuation":
+            progress = {"stage": "recovery_required", "association_request_id": None, "creator_account_id": None}
+        elif provisioning_progress is None:
             return JSONResponse({"state": "provisioning_ready"})
-        progress = _validated_progress(provisioning_progress())
+        else:
+            progress = _validated_progress(provisioning_progress())
+        continuation_fields = {}
+        if sessions.context_kind(session) == "registered-continuation":
+            context = sessions._journeys.require_current(session.journey_id)
+            continuation_fields = {"context_kind": "registered-continuation",
+                "continuation_state": ("authentication-required" if context["reason"] == "authentication-required"
+                                       else context["state"])}
         return JSONResponse(
-            {"state": "provisioning_ready", **progress},
+            {"state": "provisioning_ready", **progress, **continuation_fields},
             headers={"Cache-Control": "no-store"},
         )
 
+    def require_continuation(request: Request, *, mutate: bool = False):
+        session = sessions.require_mutation(request) if mutate else sessions.require_session(request)
+        if sessions.context_kind(session) != "registered-continuation" or registered_continuation is None:
+            raise HTTPException(409, "Setup context is unavailable")
+        csrf = request.headers.getlist("X-Provisioning-CSRF")
+        origins = request.headers.getlist("Origin")
+        if (request.query_params or request.headers.getlist("X-Onboarding-Journey") != [session.journey_id]
+                or len(csrf) != 1 or not secrets.compare_digest(csrf[0], session.csrf_token)
+                or (origins and origins != [PROVISIONING_ORIGIN])):
+            raise HTTPException(403, "Setup context is invalid")
+        return session
+
+    async def continuation_result(request: Request, *, mutate: bool):
+        session = require_continuation(request, mutate=mutate)
+        from app.security.hosted_grants import HostedGrantUnavailable
+        try:
+            result = await (registered_continuation.prepare(session.journey_id) if mutate else
+                            registered_continuation.read_browser_entry(session.journey_id))
+            current = require_continuation(request, mutate=mutate)
+            if current != session:
+                raise HTTPException(403, "Setup context changed")
+        except HostedGrantUnavailable:
+            return JSONResponse({"state": "unconfirmed"}, status_code=503, headers={"Cache-Control": "no-store"})
+        except ValueError:
+            return JSONResponse({"state": "unconfirmed"}, status_code=409, headers={"Cache-Control": "no-store"})
+        return JSONResponse(result, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+    @application.get("/api/v1/provisioning/installation-continuation", include_in_schema=False)
+    async def read_installation_continuation(request: Request):
+        return await continuation_result(request, mutate=False)
+
+    @application.post("/api/v1/provisioning/installation-continuation", include_in_schema=False)
+    async def prepare_installation_continuation(request: Request, body: CreatorBindingAcquisitionBody):
+        del body
+        return await continuation_result(request, mutate=True)
+
     @application.post(PROVISIONING_CLAIM_PATH, include_in_schema=False)
     async def submit_claim(request: Request, body: ClaimSubmissionBody) -> JSONResponse:
-        sessions.require_mutation(request)
+        sessions.require_initial_context(sessions.require_mutation(request))
         refusal = claim_submission(package=body.package.strip())
         events.publish()
         if refusal is not None:
@@ -526,7 +612,7 @@ def create_provisioning_app(
     async def initiate_creator_association(
         request: Request, body: CreatorAssociationBody
     ) -> JSONResponse:
-        sessions.require_mutation(request)
+        sessions.require_initial_context(sessions.require_mutation(request))
         outcome = creator_association_initiation(
             detected_creator_account_id=body.detected_creator_account_id,
             onboarding_transaction_id=body.onboarding_transaction_id,
@@ -553,7 +639,7 @@ def create_provisioning_app(
         request: Request, body: CreatorBindingAcquisitionBody
     ) -> JSONResponse:
         del body
-        sessions.require_mutation(request)
+        sessions.require_initial_context(sessions.require_mutation(request))
         outcome = creator_binding_acquisition()
         events.publish()
         if isinstance(outcome, str):
@@ -572,13 +658,25 @@ def create_provisioning_app(
 
     @application.post(PROVISIONING_FINALIZE_PATH, include_in_schema=False)
     async def finalize(request: Request, body: FinalizationBody) -> JSONResponse:
-        sessions.require_mutation(request)
+        session = sessions.require_mutation(request)
+        if sessions.context_kind(session) == "registered-continuation":
+            from app.persistence.continuation_selection import ContinuationSelectionUnavailable
+            from app.persistence.onboarding import OnboardingJourneyUnavailable
+            try:
+                selected = sessions._continuations.require_current(session.journey_id)["scope"]
+            except (ContinuationSelectionUnavailable, OnboardingJourneyUnavailable):
+                raise HTTPException(409, "Saved setup is unavailable") from None
+            if (body.association_request_id != selected["association_request_id"]
+                    or body.detected_creator_account_id != selected["creator_account_id"]):
+                raise HTTPException(409, "Setup context changed")
         try:
             refusal = await asyncio.wait_for(run_in_threadpool(
                 finalize_action,
                 association_request_id=body.association_request_id,
                 detected_creator_account_id=body.detected_creator_account_id,
                 reported_platform_creator_id=body.reported_platform_creator_id,
+                **({"trusted_journey_id": session.journey_id}
+                   if sessions.context_kind(session) == "registered-continuation" else {}),
             ), timeout=30.0)
         except TimeoutError:
             refusal = "membership_refresh_unavailable"

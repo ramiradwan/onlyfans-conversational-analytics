@@ -38,3 +38,12 @@ closed schemas, independent key-proof verification, exact authorization digests,
 single enrollment and lost-response recovery. Its preparation and receipt objects
 do not establish local access or commercial activation. Runtime adoption remains
 separate from this contract pin.
+
+The installation setup continuation family is pinned separately for recovery of
+an enrolled installation. Its contract and proof profiles preserve existing keys
+and creator bindings. Snapshot verification checks the complete family and its
+raw manifest digest; application behavior requires its own conformance tests.
+
+Current-session onboarding includes initial handoff v2, installation setup
+continuation v2 and complimentary activation v1. Each has a separate pinned
+vector family. The corresponding v1 contracts remain present without changes.

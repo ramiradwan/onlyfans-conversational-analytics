@@ -154,6 +154,7 @@ async def test_live_unresolved_completion_resumes_without_another_prepare(expiry
     row = worker.journeys.open()
     operation = worker.journeys.new_operation()
     worker.journeys.update(row["journey_id"], state=state, operation_id=operation,
+        prepare_json=json.dumps({"profile": PROFILE}),
         scope_json=json.dumps({"installation_id": row["installation_id"]}))
 
     result = await worker.prepare(row["journey_id"])
@@ -172,7 +173,8 @@ async def test_expired_unresolved_completion_requires_exact_workspace_receipt_re
     operation = worker.journeys.new_operation()
     scope = json.dumps({"installation_id": original["installation_id"]})
     worker.journeys.update(original["journey_id"], state=state,
-        operation_id=operation, scope_json=scope)
+        operation_id=operation, scope_json=scope,
+        prepare_json=json.dumps({"profile": PROFILE, "destination": {"display_name": "Private device detail"}}))
     clock[0] += timedelta(minutes=31)
 
     # Untargeted discovery cannot select the latest unrelated receipt.
@@ -188,7 +190,7 @@ async def test_expired_unresolved_completion_requires_exact_workspace_receipt_re
     assert recovered["operation_id"] == operation
     assert recovered["scope_json"] == scope
     assert recovered["handoff_reference"] is None
-    assert recovered["prepare_json"] is None
+    assert json.loads(recovered["prepare_json"]) == {"profile": PROFILE}
     assert recovered["expires_at"] == (INSTANT + timedelta(minutes=60)).isoformat()
     assert recovered["recovery_deadline"] == recovered["expires_at"]
     assert count(store, "onboarding_journeys") == count(store, "onboarding_uncertain_receipts") == 1

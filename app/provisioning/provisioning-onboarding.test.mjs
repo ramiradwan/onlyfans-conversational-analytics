@@ -5,7 +5,7 @@ import test from 'node:test';
 import { createProvisioningController, parseBrainOnboardingState, parseJourneyHash, submitHostedHandoff } from './provisioning.js';
 
 const journey = '11111111-1111-4111-8111-111111111111';
-const hosted = 'https://setup.example.test/public/onboarding';
+const hosted = 'https://setup.example.test/public/onboarding/setup';
 const payload = { state: 'waiting', journey_id: journey, handoff_reference: 'a'.repeat(43), hosted_start_url: `${hosted}/start` };
 const vectors = JSON.parse(readFileSync(new URL('../../shared/onboarding/vectors.json', import.meta.url)));
 const snapshot = structuredClone(vectors.cases.find((value) => value.id === 'brain-snapshot').value);

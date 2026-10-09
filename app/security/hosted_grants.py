@@ -181,6 +181,8 @@ class HostedTransport(Protocol):
 class InstallationProofAuthority(Protocol):
     def ensure_ready(self) -> InstallationKeyReference: ...
 
+    def reopen_existing(self) -> InstallationKeyReference: ...
+
     def sign_challenge(self, challenge: bytes) -> InstallationProof: ...
 
 
@@ -795,6 +797,30 @@ class HostedGrantClient:
             key=key,
             external_issuer=membership.issuer,
             external_subject=membership.subject,
+            requested_account_ids=(),
+        )
+        if reference.creator_account_id != association.creator_account_id:
+            raise GrantVerificationRefused("creator_account_mismatch")
+        return reference
+
+    def accept_continuation_binding(
+        self, token: str, association: CreatorAssociationRequest, *,
+        membership_reference_id: str,
+    ) -> VerifiedGrantReference:
+        """Verify a fresh continuation result against the saved installation.
+
+        The hosted approver need not be the original enrolling principal. The
+        local membership remains the source of that principal's identity.
+        """
+        key = self._installation_key.reopen_existing()
+        membership = self._association_membership(association, membership_reference_id, key)
+        if not isinstance(token, str):
+            raise GrantVerificationRefused("invalid_compact_jws")
+        reference = self._verified_reference(
+            token, _untrusted_payload(token), grant_type="creator_account_binding",
+            organization_id=association.organization_id,
+            installation_id=association.installation_id, key=key,
+            external_issuer=membership.issuer, external_subject=membership.subject,
             requested_account_ids=(),
         )
         if reference.creator_account_id != association.creator_account_id:

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-continuation/v1/prepare-request.schema.json",
+  "title": "Installation setup continuation prepare-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "scope"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:installation-setup-continuation:v1"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "scope": {
+          "$ref": "definitions.schema.json#/$defs/scope"
+        }
+      }
+    },
+    "proof": {
+      "$ref": "definitions.schema.json#/$defs/proof"
+    }
+  }
+}

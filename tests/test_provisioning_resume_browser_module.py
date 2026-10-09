@@ -11,7 +11,7 @@ pytestmark = [pytest.mark.ci_tier('fast')]
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("module", ["provisioning-resume.test.mjs", "native-return.test.mjs"])
+@pytest.mark.parametrize("module", ["provisioning-resume.test.mjs", "native-return.test.mjs", "installation-continuation.test.mjs"])
 def test_provisioning_resume_browser_module(module: str) -> None:
     """Keep restart/resume controller coverage in the ordinary CI test matrix."""
 

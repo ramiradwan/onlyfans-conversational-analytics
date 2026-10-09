@@ -38,7 +38,8 @@ def brain_snapshot(store: SQLiteAuthenticationStore, journey_id: str, identity: 
             and not store.scope_is_revoked(RevocationKey(RevocationScopeType.INSTALLATION, installation[0].installation_id))
             and not store.scope_is_revoked(RevocationKey(RevocationScopeType.VERIFIED_GRANT, installation[0].reference_id))):
         facts["installation"] = "verified"
-    elif not installation and journey["state"] in {"new", "preparing", "waiting"}:
+    elif (journey["kind"] == "initial-enrollment" and not installation
+          and journey["state"] in {"new", "preparing", "waiting"}):
         facts["installation"] = "missing"
     if identity is not None:
         readiness = current_analysis_readiness(store, identity)

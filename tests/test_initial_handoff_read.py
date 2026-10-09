@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import timedelta
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.provisioning.app import create_provisioning_app
 from app.provisioning.session import ProvisioningSessionManager, PROVISIONING_ORIGIN
+from app.security.initial_handoff import PROFILE
 from test_onboarding_enrollment_runtime import _enrollment_worker, _HandoffFixture, count
 from test_provisioning_surface import bounded_session, HANDOFF_TOKEN
 from test_webauthn_routes import _seeded_store, INSTANT
@@ -27,6 +29,7 @@ def owner(tmp_path):
 def waiting(worker):
     journey = worker.journeys.open()["journey_id"]
     worker.journeys.update(journey, state="waiting", handoff_reference="a" * 43,
+        prepare_json=json.dumps({"profile": PROFILE}),
         handoff_expires_at=(INSTANT + timedelta(minutes=10)).isoformat())
     return journey
 
@@ -45,6 +48,40 @@ async def test_saved_entry_read_never_creates_prepares_signs_or_resumes(tmp_path
     assert worker.journeys.get(journey) == before
     assert client.preparations == client.waits == []
     assert worker._tasks == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("preparation", [None, "{", "[]", json.dumps({"profile": "urn:bridge-clean:initial-installation-handoff:v1"})])
+@pytest.mark.parametrize("state", ["waiting", "unknown", "completing", "prepare-unknown"])
+async def test_missing_malformed_or_v1_preparation_is_never_relabelled_as_current_session_setup(tmp_path, preparation, state):
+    from app.security.initial_handoff import InitialHandoffRefused
+    worker, client = owner(tmp_path)
+    journey = waiting(worker)
+    worker.journeys.update(journey, state=state, prepare_json=preparation)
+    before = worker.journeys.get(journey)
+    assert await worker.read_browser_entry(journey) == {"state": "unknown", "journey_id": journey}
+    with pytest.raises(InitialHandoffRefused) as error:
+        await worker.prepare(journey)
+    assert error.value.code == "unsupported_profile"
+    worker.resume(journey)
+    await worker._run(journey)
+    assert worker.journeys.get(journey) == before
+    assert client.preparations == client.waits == []
+    assert worker._tasks == {}
+
+
+@pytest.mark.asyncio
+async def test_completed_old_enrollment_keeps_its_registered_continuity_without_initial_v2_proof(tmp_path, monkeypatch):
+    worker, client = owner(tmp_path)
+    journey = waiting(worker)
+    worker.journeys.update(journey, state="completed", prepare_json=None)
+    continued = []
+    async def continuity(row):
+        continued.append(row["journey_id"])
+    monkeypatch.setattr(worker, "_continuity", continuity)
+    await worker._run(journey)
+    assert continued == [journey]
+    assert client.preparations == client.waits == []
 
 
 @pytest.mark.asyncio
@@ -80,6 +117,7 @@ async def test_read_waits_for_prepare_lock_then_observes_commit(tmp_path):
     await asyncio.sleep(0)
     assert not read.done()
     worker.journeys.update(journey, state="waiting", handoff_reference="a" * 43,
+        prepare_json=json.dumps({"profile": PROFILE}),
         handoff_expires_at=(INSTANT + timedelta(minutes=10)).isoformat())
     worker._lock.release()
     assert (await read)["state"] == "waiting"

@@ -105,7 +105,7 @@ def customer_release_config(tmp_path_factory: pytest.TempPathFactory) -> Iterato
     path = tmp_path_factory.mktemp("customer-release") / "customer-release.json"
     path.write_text(json.dumps({
         "schema": "ofca-customer-release/v1",
-        "hosted_onboarding_url": "https://setup.example.com/public/onboarding",
+        "hosted_onboarding_url": "https://setup.example.com/public/onboarding/setup",
         "hosted_api_origin": "https://setup.example.com",
     }), encoding="utf-8")
     with pytest.MonkeyPatch.context() as patch:
@@ -478,7 +478,7 @@ def test_package_cannot_choose_its_own_hosted_workspace_origin(packaged_release,
     if field == "host_permissions":
         manifest[field][1] = "https://another.example.com/*"
     else:
-        manifest[field]["matches"][1] = "https://another.example.com/public/onboarding"
+        manifest[field]["matches"][1] = "https://another.example.com/public/onboarding/setup"
     entries["manifest.json"] = json.dumps(manifest).encode()
     metadata = json.loads(entries["build-meta.json"])
     metadata["outputs"]["manifest.json"] = (

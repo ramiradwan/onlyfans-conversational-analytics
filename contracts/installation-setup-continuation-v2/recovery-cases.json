@@ -1,0 +1,58 @@
+[
+  {
+    "automatic_prepare_count": 0,
+    "case_id": "found-unknown-resume-found",
+    "expected": "resume-found",
+    "known_id": null,
+    "read_result": "found",
+    "returned_id": "0199b234-5678-7000-8000-000000000002"
+  },
+  {
+    "automatic_prepare_count": 0,
+    "case_id": "found-known-resume-found",
+    "expected": "resume-found",
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "read_result": "found",
+    "returned_id": "0199b234-5678-7000-8000-000000000002"
+  },
+  {
+    "automatic_prepare_count": 0,
+    "case_id": "found-known-refuse-epoch-substitution",
+    "expected": "refuse-epoch-substitution",
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "read_result": "found",
+    "returned_id": "0199b234-5678-7000-8000-000000000003"
+  },
+  {
+    "automatic_prepare_count": 0,
+    "case_id": "expired-unknown-require-fresh-native-entry",
+    "expected": "require-fresh-native-entry",
+    "known_id": null,
+    "read_result": "expired",
+    "returned_id": null
+  },
+  {
+    "automatic_prepare_count": 0,
+    "case_id": "unavailable-unknown-require-fresh-native-entry",
+    "expected": "require-fresh-native-entry",
+    "known_id": null,
+    "read_result": "unavailable",
+    "returned_id": null
+  },
+  {
+    "automatic_prepare_count": 0,
+    "case_id": "unavailable-known-require-fresh-native-entry",
+    "expected": "require-fresh-native-entry",
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "read_result": "unavailable",
+    "returned_id": null
+  },
+  {
+    "automatic_prepare_count": 0,
+    "case_id": "transport-unavailable-known-read-same-operation",
+    "expected": "read-same-operation",
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "read_result": "transport-unavailable",
+    "returned_id": null
+  }
+]

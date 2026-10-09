@@ -1,0 +1,125 @@
+{
+  "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+  "governing_adr": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+  "proof_profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+  "scope_authority": "active-registered-key-and-independently-authenticated-current-owner",
+  "source_onboarding_transaction": "immutable-installation-provenance-not-current-authority",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "stream_frame_max_bytes": 16384,
+  "oversize_status": 413,
+  "oversize_reason": "invalid",
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "continuation_ttl_seconds": 1800,
+  "navigation_authority": false,
+  "operation_id": "original-prepare-operation-for-all-requests",
+  "prepare_deduplication": "retained-live-operation-and-exact-scope",
+  "new_record_reference": "fresh-provider-epoch-bound-256-bit",
+  "read": "non-creating-exact-result-or-proven-expiry-or-unavailable",
+  "unknown_prepare": "fresh-proof-read-only-no-automatic-new-prepare",
+  "known_continuation_id": "never-substitute-another-epoch",
+  "binding_grant": "existing-creator_account_binding-no-new-signing-purpose",
+  "existing_approval": "resume-without-reapproval",
+  "missing_approval": "one-explicit-exact-target-action-with-current-session",
+  "claim_issuance": false,
+  "key_registration": false,
+  "commercial_activation": false,
+  "local_access": false,
+  "retention": {
+    "working_state": "onboarding-working-state",
+    "eligible_for_cleanup": "fixed-context-expiry",
+    "abandoned_max_days": 90,
+    "audit": "security-audit",
+    "audit_days": 400,
+    "retain_proofs_or_signed_responses": false
+  },
+  "stream": {
+    "direction": "outbound-local-to-hosted",
+    "media_type": "text/event-stream",
+    "event": "installation-continuation",
+    "id": "epoch:revision",
+    "initial_frame": "complete-snapshot",
+    "update_frame": "complete-committed-projection",
+    "admission": "fresh-body-proof",
+    "recheck_authorization_before_each_frame": true,
+    "commit_and_journal": "atomic",
+    "subscription": "before-consistent-snapshot",
+    "history_gap": "complete-snapshot",
+    "notifications": "wakeup-only",
+    "polling_required": false,
+    "terminal_states": [
+      "expired",
+      "revoked"
+    ],
+    "session_expiry": "one-shot-earliest-deadline",
+    "session_revocation": "identity-journal-wakeup-current-read"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "scope_conflict": 409,
+    "authorization_denied": 403,
+    "expired": 410,
+    "not_ready": 409,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "messages": {
+    "definitions": "schemas/installation-continuation/v2/definitions.schema.json",
+    "prepare-request": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "prepare-response": "schemas/installation-continuation/v2/prepare-response.schema.json",
+    "read-request": "schemas/installation-continuation/v2/read-request.schema.json",
+    "read-response": "schemas/installation-continuation/v2/read-response.schema.json",
+    "stream-request": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "snapshot": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "event": "schemas/installation-continuation/v2/event.schema.json",
+    "binding-request": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "binding-response": "schemas/installation-continuation/v2/binding-response.schema.json",
+    "error": "schemas/installation-continuation/v2/error.schema.json"
+  },
+  "customer_session": {
+    "owner": "identity",
+    "max_lifetime_seconds": 1800,
+    "sliding_expiry": false,
+    "authority": "verified-live-unrevoked-session-and-current-permissions",
+    "provider_auth_time_required": false,
+    "provider_auth_time_max_age_seconds": null,
+    "forced_provider_login": false,
+    "source_session_transfer": false,
+    "context_binding": "immutable-workflow-actor-scope-deadline-and-separate-immutable-authorization-admission"
+  },
+  "action_receipt": {
+    "max_lifetime_seconds": 300,
+    "single_use": true,
+    "binding": [
+      "session-generation",
+      "authorization-admission-generation",
+      "actor",
+      "context",
+      "action",
+      "parameter-digest"
+    ],
+    "expiry": "resolve-and-confirm-action-not-provider-login",
+    "consume": "same-transaction-as-protected-mutation-and-audit",
+    "recheck": "after-blocking-locks-and-before-commit"
+  },
+  "authorization_admission": {
+    "wire_coordinates": false,
+    "plain_retry": "same-exact-live-binding-idempotent-no-journal",
+    "replacement": [
+      "correlated-one-use-oidc-callback",
+      "explicit-current-session-origin-csrf-post"
+    ],
+    "fence": [
+      "one-use-operation",
+      "expected-prior-admission-generation",
+      "expected-workflow-revision"
+    ],
+    "recheck": "current-session-permission-key-scope-after-locks",
+    "commit": "append-admission-retire-old-pending-receipts-audit-result-journal-atomic",
+    "workflow_deadline": "original-unchanged",
+    "previous_whole_session_revoked": false,
+    "read_or_get_can_replace": false
+  }
+}

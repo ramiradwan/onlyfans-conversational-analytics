@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/initial-handoff/v2/proof-challenge-request.schema.json",
+  "title": "Initial installation handoff proof-challenge-request v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "target"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:initial-installation-handoff-proof:v2"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "initial-handoff-prepare"
+            },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "profile",
+                "operation_id",
+                "destination"
+              ],
+              "properties": {
+                "profile": {
+                  "const": "urn:bridge-clean:initial-installation-handoff:v2"
+                },
+                "operation_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "destination": {
+                  "$ref": "definitions.schema.json#/$defs/destination"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "initial-handoff-wait"
+            },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "profile",
+                "operation_id",
+                "reference"
+              ],
+              "properties": {
+                "profile": {
+                  "const": "urn:bridge-clean:initial-installation-handoff:v2"
+                },
+                "operation_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "reference": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "initial-handoff-complete"
+            },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "profile",
+                "operation_id",
+                "reference",
+                "scope"
+              ],
+              "properties": {
+                "profile": {
+                  "const": "urn:bridge-clean:initial-installation-handoff:v2"
+                },
+                "operation_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "reference": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+                },
+                "scope": {
+                  "$ref": "definitions.schema.json#/$defs/authorizedScope"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "initial-handoff-receipt"
+            },
+            "request": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "profile",
+                "operation_id",
+                "installation_id",
+                "installation_key_id"
+              ],
+              "properties": {
+                "profile": {
+                  "const": "urn:bridge-clean:initial-installation-handoff:v2"
+                },
+                "operation_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+                },
+                "installation_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+                },
+                "installation_key_id": {
+                  "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
