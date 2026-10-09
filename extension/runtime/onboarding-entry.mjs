@@ -54,7 +54,7 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
     return operation;
   }
   identityBridge.onAccountChange?.(() => { identityRevision++; void reconcileAccount().catch(() => undefined); });
-  async function open({ section = '', anchorTab = null } = {}) {
+  async function open({ section = '', anchorTab = null, navigate = null } = {}) {
     await reconcileAccount();
     const draft_scope = await scope();
     // An exact existing setup tab wins, including a page open before installation.
@@ -63,16 +63,22 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
       await workspace.resumeExisting({ draft_scope, route: 'extension' });
       record = await workspace.read();
     }
-    const result = await workspace.open({ journey_id: record?.journey_id ?? crypto.randomUUID(), route: 'extension', explicit: true, draft_scope });
+    const desktopHandoff = section === 'desktop' && navigate
+      && anchorTab?.url?.startsWith(`${productionWorkspaceRoutes(chromeApi).bridge}#journey=`);
+    const anchorSender = desktopHandoff ? { tab: { id: anchorTab.id, windowId: anchorTab.windowId },
+      url: anchorTab.url, documentId: anchorTab.documentId, frameId: 0 } : null;
+    // A registered desktop document must be current before any focus or navigation.
+    if (desktopHandoff) await workspace.admit(anchorSender);
+    const result = desktopHandoff ? { journey_id: record.journey_id, tab_id: anchorTab.id, route: 'bridge' }
+      : await workspace.open({ journey_id: record?.journey_id ?? crypto.randomUUID(), route: 'extension', explicit: true, draft_scope });
     await reconcileAccount();
     const currentScope = (await workspace.read()).draft_scope;
     // Intent is UI only and does not grant Full consent or start pairing.
     if (['full', 'desktop'].includes(section)) await chromeApi.storage.session.set({
       [FULL_REVIEW_INTENT_KEY]: fullReviewIntent(result.journey_id, currentScope),
     });
-    if (anchorTab && result.tab_id !== anchorTab.id) {
-      // Legacy desktop callers may not have a journey reference. They keep the
-      // supported route; no arbitrary existing page can be adopted or navigated.
+    if (desktopHandoff) {
+      return workspace.handoffFromDesktop(anchorSender, navigate);
     }
     return result;
   }
@@ -116,6 +122,8 @@ export function registerOnboardingWorkspace({ chromeApi, consentController, iden
       }
       if (exact(message, ['type', 'action', 'route']) && message.action === 'navigate') return workspace.navigate(sender, { route: message.route });
       if (admitted.route !== 'extension') throw Error('workspace_draft_owner');
+      if (exact(message, ['type', 'action']) && message.action === 'desktop_handoff') return workspace.desktopHandoffContext(sender);
+      if (exact(message, ['type', 'action']) && message.action === 'return_desktop_handoff') return workspace.returnDesktopHandoff(sender);
       if (exact(message, ['type', 'action']) && message.action === 'prepare_launch') return workspace.prepareNativeLaunch(sender);
       if (exact(message, ['type', 'action', 'scope_id', 'draft']) && message.action === 'draft') {
         return workspace.saveDraft(sender, { scope_id: message.scope_id, draft: message.draft });

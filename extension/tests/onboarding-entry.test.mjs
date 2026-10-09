@@ -41,6 +41,36 @@ async function savedFixture() {
   return f;
 }
 
+test('desktop setup dispatches the owned Bridge document to the extension without another tab or focus request', async () => {
+  const f = await savedFixture();
+  await f.entry.workspace.navigate(f.sender(), { route: 'bridge' });
+  f.chromeApi.tabs.onUpdated = event();
+  f.chromeApi.tabs.onUpdated.removeListener = (fn) => {
+    const listeners = f.chromeApi.tabs.onUpdated.listeners;
+    const index = listeners.indexOf(fn); if (index >= 0) listeners.splice(index, 1);
+  };
+  const tab = f.tabs[0], before = f.calls.length, requests = [];
+  const anchorTab = { id: tab.id, windowId: tab.windowId, documentId: tab.documentId, url: tab.url };
+  const result = await f.entry.open({ section: 'desktop', anchorTab, navigate: (request) => {
+    requests.push(request);
+    tab.url = `${f.chromeApi.runtime.getURL('setup.html')}#journey=${request.journey_id}`;
+    tab.documentId = 'extension-document';
+    f.chromeApi.tabs.onUpdated.emit(tab.id, { status: 'complete' });
+  } });
+  assert.equal(result.tab_id, tab.id); assert.equal(result.route, 'extension');
+  assert.equal(f.tabs.length, 1); assert.equal(requests.length, 1);
+  assert.equal(requests[0].expected_url, anchorTab.url);
+  assert.equal(f.calls.length, before, 'handoff never navigates or focuses a tab by ID');
+});
+test('a stale desktop document cannot focus or reopen the workspace', async () => {
+  const f = await savedFixture();
+  await f.entry.workspace.navigate(f.sender(), { route: 'bridge' });
+  const tab = f.tabs[0], before = f.calls.length;
+  await assert.rejects(f.entry.open({ section: 'desktop', anchorTab: { id: tab.id, windowId: tab.windowId,
+    documentId: 'stale-document', url: tab.url }, navigate: () => assert.fail('stale dispatch') }), /workspace_sender_stale/);
+  assert.equal(f.calls.length, before); assert.equal(f.tabs.length, 1);
+});
+
 test('worker restoration initializes the actual current identity before preserving a valid draft and launch', async () => {
   const saved = await savedFixture(); const expected = structuredClone(saved.local[recordKey]);
   const f = fixture({ saved });

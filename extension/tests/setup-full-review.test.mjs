@@ -23,7 +23,7 @@ const stubs = {
   'surface-client.mjs': `export function createSurfaceClient(render) { return { model: fixture.model, async start() { render(this.model); } }; }
     export const send=fixture.send, openSurface=()=>{}, secureExternalUrl=()=>null;
     export class NoticeError extends Error {}`,
-  'presentation.mjs': `export const customerJourney=()=>({id:'preview_available',title:'Preview is ready'}),
+  'presentation.mjs': `export const customerJourney=()=>fixture.journey,
     needsAgreement=()=>false, modeChoiceAvailable=()=>false;`,
   'dom.mjs': `export const element=fixture.element, show=fixture.show, text=(id,value)=>{element(id).textContent=value};
     export const renderLoading=()=>{},renderJourney=()=>{},renderReadiness=()=>{},renderLegalLinks=()=>{};
@@ -47,7 +47,7 @@ function storage() {
   return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value),
     removeItem: (key) => values.delete(key) };
 }
-async function initialize(saved, admitted = record, intent = null) {
+async function initialize(saved, admitted = record, intent = null, options = {}) {
   const nodes = new Map(), actions = {}, visibility = [], calls = [];
   const element = (id) => {
     if (!nodes.has(id)) nodes.set(id, { dataset: {}, classList: { toggle() {} },
@@ -58,9 +58,15 @@ async function initialize(saved, admitted = record, intent = null) {
   const admittedRead = new Promise((resolve) => { admit = resolve; });
   const listeners = [];
   const state = { intent };
-  const fixture = { model: structuredClone(model), element, actions,
+  const fixture = { model: structuredClone(options.model ?? model), element, actions,
+    journey: options.journey ?? { id: 'preview_available', title: 'Preview is ready' },
     show(id, visible) { element(id).hidden = !visible; visibility.push([id, visible]); },
-    async send(message) { calls.push(message); return message.type === 'workspace' ? admittedRead : null; } };
+    async send(message) {
+      calls.push(message);
+      if (message.action === 'desktop_handoff') return options.handoff ?? null;
+      if (message.action === 'return_desktop_handoff') return { status: 'returned' };
+      return message.type === 'workspace' ? admittedRead : null;
+    } };
   runInNewContext(bundle.outputFiles[0].text, { fixture, sessionStorage: saved,
     location: { hash: `#journey=${admitted.journey_id}` },
     document: { querySelector: element, querySelectorAll: () => [] }, window: { addEventListener() {} },
@@ -78,6 +84,18 @@ async function initialize(saved, admitted = record, intent = null) {
   } };
 }
 
+for (const id of ['pairing_required', 'full_ready']) test(`the persistent extension step returns automatically at ${id} without granting consent`, async () => {
+  const full = structuredClone(model); full.status.consent.mode = 'full';
+  const run = await initialize(storage(), record, null, { model: full, journey: { id, title: 'Connect' },
+    handoff: { expires_at: Date.now() + 60_000 } });
+  assert.deepEqual(run.calls.map((call) => call.action), ['read', 'desktop_handoff', 'return_desktop_handoff', 'context']);
+  assert.equal(run.element('journey-body').textContent, 'Returning to setup…');
+});
+test('persistent handoff preserves Preview without activating Full or returning early', async () => {
+  const run = await initialize(storage(), record, null, { handoff: { expires_at: Date.now() + 60_000 } });
+  assert.deepEqual(run.calls.map((call) => call.action), ['read', 'desktop_handoff', 'context']);
+});
+
 for (const mismatch of ['legacy', 'journey', 'creator', 'disclosure']) {
   test(`setup initialization rejects ${mismatch} Full-review persistence and intent`, async () => {
     const saved = storage();
@@ -92,7 +110,7 @@ for (const mismatch of ['legacy', 'journey', 'creator', 'disclosure']) {
     assert.equal(run.element('journey-card').hidden, false);
     assert.ok(!run.visibility.some(([id, visible]) => id === 'full-disclosure' && visible));
     assert.equal(saved.getItem('full-review'), null);
-    assert.deepEqual(run.calls.map((call) => call.action), ['read', 'context'], 'initialization cannot grant consent');
+    assert.deepEqual(run.calls.map((call) => call.action), ['read', 'desktop_handoff', 'context'], 'initialization cannot grant consent');
   });
 }
 test('same-scope review survives reload, dismissal survives reload, and a new live request opens it once', async () => {

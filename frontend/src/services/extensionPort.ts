@@ -12,6 +12,11 @@ import { getConfig } from '../config/fastapiConfig';
  */
 export const EXTENSION_PORT_NAME = 'ofca.desktop';
 const EXTENSION_ID = /^[a-p]{32}$/;
+const JOURNEY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const navigationSchema = z.strictObject({
+  type: z.literal('navigate_setup'), version: z.literal(1),
+  request_id: z.string().regex(JOURNEY_ID), journey_id: z.string().regex(JOURNEY_ID), expected_url: z.string(),
+});
 
 const stageSchema = z.enum([
   'unavailable', 'needs_terms', 'paused', 'needs_full', 'needs_site_access',
@@ -68,15 +73,18 @@ export function createExtensionPort({
   runtime,
   resolveRuntime = () => runtime,
   extensionId,
+  location = globalThis.location,
 }: {
   runtime?: RuntimeLike;
   resolveRuntime?: () => RuntimeLike | undefined;
   extensionId: string;
+  location?: Pick<Location, 'href' | 'replace'>;
 }): ExtensionPort {
   const listeners = new Set<() => void>();
   const usable = () => EXTENSION_ID.test(extensionId) && typeof resolveRuntime()?.connect === 'function';
   let state: ExtensionPortState = usable() ? CONNECTING : ABSENT;
   let port: PortLike | null = null;
+  let pendingSetup = false, navigating = false;
 
   const publish = (next: ExtensionPortState) => {
     state = next;
@@ -104,6 +112,16 @@ export function createExtensionPort({
     port = current;
     current.onMessage.addListener((message) => {
       if (port !== current) return;
+      const navigation = navigationSchema.safeParse(message);
+      if (navigation.success) {
+        const request = navigation.data;
+        if (!pendingSetup || navigating || !location
+          || request.expected_url !== `http://bridge.localhost:17871/#journey=${request.journey_id}`
+          || location.href !== request.expected_url) return;
+        pendingSetup = false; navigating = true;
+        location.replace(`chrome-extension://${extensionId}/setup.html#journey=${request.journey_id}`);
+        return;
+      }
       const parsed = messageSchema.safeParse(message);
       if (!parsed.success) return;
       delivered = true;
@@ -113,6 +131,8 @@ export function createExtensionPort({
       void currentRuntime.lastError;
       if (port !== current) return;
       port = null;
+      pendingSetup = false;
+      if (navigating) return;
       if (listeners.size === 0) { publish(usable() ? CONNECTING : ABSENT); return; }
       if (delivered || retry) connect(false);
       else publish(ABSENT);
@@ -144,7 +164,12 @@ export function createExtensionPort({
         }
       };
     },
-    open: (step) => send({ type: 'open', version: 1, step }),
+    open: (step) => {
+      pendingSetup = ['setup', 'access'].includes(step);
+      const sent = send({ type: 'open', version: 1, step });
+      if (!sent) pendingSetup = false;
+      return sent;
+    },
     pair: () => send({ type: 'pair', version: 1 }),
     cancel: () => send({ type: 'cancel', version: 1 }),
     retry() {

@@ -198,9 +198,12 @@ test('opening a page is rate-limited and anchored to the desktop tab', async () 
   port.onMessage.listeners[0]({ type: 'open', version: 1, step: 'connection' });
   port.onMessage.listeners[0]({ type: 'open', version: 1, step: 'https://example.test' });
   await tick();
-  assert.deepEqual(h.calls.open, [
-    { step: 'setup', anchorTab: { id: 12, windowId: 4 } },
-    { step: 'connection', anchorTab: { id: 12, windowId: 4 } },
+  assert.deepEqual(h.calls.open.map(({ step, anchorTab }) => ({ step, anchorTab })), [
+    { step: 'setup', anchorTab: { id: 12, windowId: 4, documentId: undefined, url: `${ORIGIN}/settings` } },
+    { step: 'connection', anchorTab: { id: 12, windowId: 4, documentId: undefined, url: `${ORIGIN}/settings` } },
   ]);
+  assert.equal(typeof h.calls.open[0].navigate, 'function');
+  port.onDisconnect.listeners[0]();
+  assert.throws(() => h.calls.open[0].navigate({ type: 'navigate_setup' }), /desktop_document_closed/);
   assert.equal(h.calls.pair, 0);
 });

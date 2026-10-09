@@ -113,7 +113,8 @@ export function registerDesktopPort({
     if (!admitDesktopSender(port.sender, origin)) { try { port.disconnect(); } catch {} return; }
     const owner = Object.freeze({ desktop: true });
     const controller = new AbortController();
-    const anchorTab = Object.freeze({ id: port.sender.tab.id, windowId: port.sender.tab.windowId });
+    const anchorTab = Object.freeze({ id: port.sender.tab.id, windowId: port.sender.tab.windowId,
+      documentId: port.sender.documentId, url: port.sender.url });
     let attempt = null, lastSent = '', lastOpenAt = -Infinity, closed = false;
     const entry = {
       push(stage) {
@@ -148,7 +149,10 @@ export function registerDesktopPort({
         const at = now();
         if (at - lastOpenAt < OPEN_INTERVAL_MS) return;
         lastOpenAt = at;
-        void Promise.resolve(openStep(message.step, { anchorTab })).catch(() => undefined);
+        void Promise.resolve(openStep(message.step, { anchorTab, navigate: (request) => {
+          if (closed) throw Error('desktop_document_closed');
+          port.postMessage(request);
+        } })).catch(() => undefined);
         return;
       }
       if (message.type === 'cancel') { companion.cancelFor(owner); return; }

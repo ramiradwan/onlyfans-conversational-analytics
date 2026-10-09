@@ -29,6 +29,7 @@ const page = createPageActions(client, render);
 const steps = ['agree', 'mode', 'connect', 'activate'];
 let currentJourney = null;
 let workspaceRecord = null;
+let persistentHandoff = false, handoffReturnAttempted = false;
 createWorkspaceNavigation({ workspace: () => workspaceRecord });
 const desktopLaunch = createDesktopLaunch({ workspace: () => workspaceRecord,
   prepare: () => send({ type: WORKSPACE_MESSAGE_TYPE, action: 'prepare_launch' }),
@@ -61,6 +62,9 @@ async function readWorkspace() {
     fullReviewRequested = fullReviewPersistence.read(workspaceRecord);
     checkboxDraft = { ...workspaceRecord.draft };
     consumeFullReviewIntent(intent, workspaceRecord);
+    const handoffContext = await send({ type: WORKSPACE_MESSAGE_TYPE, action: 'desktop_handoff' });
+    if (generation !== receivingRead) return;
+    persistentHandoff = handoffContext?.expires_at > Date.now();
     render(client.model);
     const receiving = await send({ type: SETUP_TRANSFER_MESSAGE, action: 'context' });
     if (generation !== receivingRead) return;
@@ -181,6 +185,21 @@ function render(model) {
 // the creator account are in place. Pairing continues in the desktop app.
 const HANDOFF_PENDING = new Set(['analytics_off', 'preview_available', 'paused', 'setup_incomplete', 'desktop_app_needed']);
 function renderHandoff(model, view, journey) {
+  if (persistentHandoff && view === 'journey' && model.status.consent.mode === 'full'
+    && ['pairing_required', 'full_ready'].includes(journey.id)) {
+    text('journey-title', 'Continue setup');
+    text('journey-body', 'Returning to setup…');
+    show('journey-primary', false); show('journey-secondary', false); show('companion-pairing', false);
+    if (!handoffReturnAttempted) {
+      handoffReturnAttempted = true;
+      void send({ type: WORKSPACE_MESSAGE_TYPE, action: 'return_desktop_handoff' }).catch(() => {
+        persistentHandoff = false;
+        render(client.model);
+        text('journey-body', 'Couldn’t return to setup.');
+      });
+    }
+    return;
+  }
   const done = handoff && view === 'journey' && model.status.consent.mode === 'full' && !HANDOFF_PENDING.has(journey.id);
   document.querySelector('main').dataset.handoff = handoff ? (done ? 'complete' : 'active') : '';
   if (!done) return;
