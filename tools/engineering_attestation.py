@@ -1632,8 +1632,11 @@ def qualify_downloaded_artifact(
     if (
         manifest.get("optional_host_permissions") != ["https://onlyfans.com/*"]
         or not _qualified_workspace_policy(manifest)
+        or manifest.get("web_accessible_resources") != [
+            {"resources": ["setup.html"], "matches": ["http://bridge.localhost/*"]}
+        ]
         or manifest.get("content_security_policy") != {
-            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"
+            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871; frame-ancestors 'none';"
         }
     ):
         raise ContractError("Chrome ZIP does not carry the qualified companion transport policy")

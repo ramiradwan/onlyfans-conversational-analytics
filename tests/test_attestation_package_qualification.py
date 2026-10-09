@@ -471,14 +471,18 @@ def test_a_self_consistent_package_still_has_to_pass_the_audit(
     assert refusal.value.exit_code == 13
 
 
-@pytest.mark.parametrize("field", ["host_permissions", "externally_connectable"])
+@pytest.mark.parametrize("field", ["host_permissions", "externally_connectable", "web_accessible_resources", "content_security_policy"])
 def test_package_cannot_choose_its_own_hosted_workspace_origin(packaged_release, field):
     entries = _store_entries(packaged_release["bytes"])
     manifest = json.loads(entries["manifest.json"])
     if field == "host_permissions":
         manifest[field][1] = "https://another.example.com/*"
-    else:
+    elif field == "externally_connectable":
         manifest[field]["matches"][1] = "https://another.example.com/public/onboarding/setup"
+    elif field == "web_accessible_resources":
+        manifest[field][0]["matches"] = ["<all_urls>"]
+    else:
+        manifest[field]["extension_pages"] = manifest[field]["extension_pages"].replace("frame-ancestors 'none';", "")
     entries["manifest.json"] = json.dumps(manifest).encode()
     metadata = json.loads(entries["build-meta.json"])
     metadata["outputs"]["manifest.json"] = (
