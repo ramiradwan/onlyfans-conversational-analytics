@@ -285,8 +285,16 @@ stored journey, current creator/disclosure draft scope and exact native callback
 document. A live local setup owner also binds its tab and document. If the owner
 has closed, the coordinator first excludes conflicting registered workspaces and
 retains the same draft. Ambiguous ownership, changed scope, unrelated hosted or
-runtime pages, and replacement callback documents are refused. The UUID and draft
-remain navigation scope, never authentication, consent or approval.
+runtime pages, and unqualified replacement callback documents are refused. A
+saved-continuation callback that reloads may explicitly reattach after reading
+its committed local selection and current local state. The extension requires
+the same callback tab and exact URL, the original entry and recovery identifiers,
+unchanged creator/disclosure scope and owner, and the original fixed deadline.
+It replaces only the callback document reference and may bind a previously
+unbound target once. After navigation dispatch it may only reconcile the exact
+committed target document; it cannot reset the phase or repeat navigation.
+Ordinary recovery does not gain this exception. The UUID and draft remain
+navigation scope, never authentication, consent or approval.
 
 With extension coordination, verified selection returns fresh local context to
 the existing setup document in that same tab, or the callback becomes the sole

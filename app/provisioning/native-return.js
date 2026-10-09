@@ -38,6 +38,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
       let recovery = null;
       let localRecovery = false;
       let savedContinuation = false;
+      let restoredRecovery = false;
       {
         const entryRead = () => bounded(fetch('/api/v1/provisioning/native-entry', {
           credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: controller.signal,
@@ -71,14 +72,22 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
           savedContinuation = saved.continue_saved === true;
           recovery = { entry_id: saved.entry_id, previous_journey_id: saved.journey_id,
             ...(saved.recovery_id ? { recovery_id: saved.recovery_id } : {}) };
+          restoredRecovery = savedContinuation && Boolean(saved.recovery_id);
           journey = context.journey_id;
         } else if (context && exact(context, ['state', 'journey_id']) && context.state === 'selected' && UUID.test(context.journey_id)) {
           if ((journey && journey !== context.journey_id) || saved?.recovery_id || saved?.local_recovery) throw new Error('Entry unconfirmed');
+          if (saved?.continue_saved === true) {
+            if (!exact(saved, ['entry_id', 'journey_id', 'expires_at', 'continue_saved'])
+              || !UUID.test(saved.entry_id) || saved.journey_id !== null || !Number.isSafeInteger(saved.expires_at)
+              || saved.expires_at <= now() || saved.expires_at > now() + 300_000) throw new Error('Entry unconfirmed');
+            savedContinuation = true;
+          }
           journey = context.journey_id;
         } else {
           const boundTarget = context?.target_journey_id;
           savedContinuation = context?.continue_saved === true;
           if (!configured && (!(exact(context, ['state', 'csrf_token', 'entry_id'])
+            || savedContinuation && !journey && exact(context, ['state', 'csrf_token', 'entry_id', 'continue_saved'])
             || (exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id'])
               || savedContinuation && exact(context, ['state', 'csrf_token', 'entry_id', 'target_journey_id', 'continue_saved']))
               && UUID.test(boundTarget) && boundTarget === journey)
@@ -94,7 +103,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
             if (controller.signal.aborted || current !== generation) return false;
             if (exact(prepared, ['ok', 'result']) && prepared.ok === true) {
               const result = prepared.result;
-              if (exact(result, ['status', 'journey_id']) && result.status === 'launch_pending' && UUID.test(result.journey_id)) {
+              if (!savedContinuation && exact(result, ['status', 'journey_id']) && result.status === 'launch_pending' && UUID.test(result.journey_id)) {
                 if (journey && journey !== result.journey_id) throw new Error('Entry unconfirmed');
                 journey = result.journey_id;
               } else if (exact(result, ['status', 'recovery_id', 'previous_journey_id']) && result.status === 'recovery_ready'
@@ -102,7 +111,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
                 if (journey && journey !== result.previous_journey_id) throw new Error('Entry unconfirmed');
                 recovery = { entry_id: context.entry_id, recovery_id: result.recovery_id, previous_journey_id: result.previous_journey_id };
                 journey = result.previous_journey_id;
-              } else if (exact(result, ['status']) && result.status === 'launch_expired') {
+              } else if (!savedContinuation && exact(result, ['status']) && result.status === 'launch_expired') {
                 finished = true; status.textContent = 'Continue in your setup tab. You can close this tab.';
                 try { close(); } catch { /* The verified extension owner provides the next action. */ }
                 return true;
@@ -126,7 +135,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
           }
           if (controller.signal.aborted || current !== generation) return false;
           if (localRecovery) recovery = { entry_id: context.entry_id, previous_journey_id: boundTarget };
-          if (savedContinuation && !recovery) recovery = { entry_id: context.entry_id, previous_journey_id: boundTarget };
+          if (savedContinuation && !recovery && boundTarget) recovery = { entry_id: context.entry_id, previous_journey_id: boundTarget };
           if (configured) {
             if (!journey) { finished = true; location.replace('/'); return true; }
           } else {
@@ -146,7 +155,10 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
                 body: JSON.stringify({ journey_id: journey || null,
                   ...(savedContinuation ? { continue_saved: true } : recovery ? { recover: true } : {}) }),
               }));
-              if (recovery && selectedReply.status === 409) failureMessage = 'Setup could not be recovered.';
+              if ((recovery || savedContinuation) && selectedReply.status === 409) {
+                failureMessage = 'Setup could not be recovered.';
+                closedRefusal = true; finished = true;
+              }
               context = await entryJson(selectedReply);
             } catch {
               context = await entryJson(await entryRead());
@@ -207,6 +219,13 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
       if (!runtime?.sendMessage || !/^[a-p]{32}$/u.test(extensionId)) {
         if (recovery) throw new Error('Return unconfirmed');
         fallback(); return true;
+      }
+      if (restoredRecovery) {
+        const reattached = await bounded(runtime.sendMessage(extensionId,
+          { type: 'ofca.workspace.recovery-reattach.v1', ...recovery, journey_id: journey }));
+        if (controller.signal.aborted || current !== generation) return false;
+        if (!exact(reattached, ['ok', 'result']) || reattached.ok !== true
+          || !exact(reattached.result, ['status']) || reattached.result.status !== 'reattached') throw new Error('Return unconfirmed');
       }
       const result = await bounded(runtime.sendMessage(extensionId,
         recovery ? { type: 'ofca.workspace.recovery-return.v1', ...recovery, journey_id: journey, route }

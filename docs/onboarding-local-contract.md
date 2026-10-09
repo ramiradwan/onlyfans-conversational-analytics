@@ -94,10 +94,12 @@ generic extension messaging failure cannot establish recovery eligibility.
 | Message | Fields besides `type` | Successful result |
 | --- | --- | --- |
 | `ofca.workspace.recovery-prepare.v1` | `entry_id` | `{status:"recovery_ready", recovery_id, previous_journey_id}` |
+| `ofca.workspace.saved-continuation-prepare.v1` | `entry_id` | `{status:"recovery_ready", recovery_id, previous_journey_id}` |
+| `ofca.workspace.recovery-reattach.v1` | `entry_id`, `recovery_id`, `previous_journey_id`, `journey_id` | `{status:"reattached"}` |
 | `ofca.workspace.recovery-return.v1` | `entry_id`, `recovery_id`, `previous_journey_id`, `journey_id`, `route:"provisioning"` | `{status:"returned"}` for another existing owner, or `{status:"continued"}` when the callback becomes the owner |
 
 Identifiers are UUIDs. Replies use `{ok:true,result}` or `{ok:false,code}`.
-Preparation may instead return `{status:"launch_pending",journey_id}` for a
+Ordinary recovery preparation may instead return `{status:"launch_pending",journey_id}` for a
 current ordinary launch, or `{status:"launch_expired"}` after verifying the
 unchanged extension workspace that provides a fresh explicit launch action.
 Neither result renews expired launch authority.
@@ -105,12 +107,26 @@ Neither result renews expired launch authority.
 The recovery intent lives in extension session storage for at most five minutes.
 It binds the prior journey, creator/disclosure draft scope, callback tab/document
 and existing owner tab/document or verified absence. A conflicting owner,
-changed scope or replacement document invalidates it. No new browser permission
+changed scope or unqualified replacement document invalidates it. Saved
+continuation alone permits explicit reattachment after the callback has read its
+committed local selection and current local state. Reattachment requires the same
+callback tab and exact URL, unchanged intent identifiers, owner and scope, and the
+original deadline. A prepared intent may bind the selected target once. A dispatched
+intent may only reconcile that same target and its current committed document;
+reattachment cannot reset its phase or repeat navigation. No new browser permission
 is required. The callback verifies the backend result before requesting return;
 entry and recovery identifiers alone authorize no session or provisioning action.
 
 `POST /api/v1/provisioning/native-entry` accepts either the ordinary closed body
-`{journey_id}` or the recovery body `{journey_id:prior,recover:true}`. Recovery
+`{journey_id}`, the recovery body `{journey_id:prior,recover:true}`, or the saved
+continuation body `{journey_id:prior|null,continue_saved:true}`. The latter is allowed
+only when the preceding native read offered `continue_saved:true` and retained an
+exact current saved target. An untargeted entry may accept null when no extension
+workspace exists; its result omits `previous_journey_id`. A provided prior UUID is
+navigation correlation, and any retained scope for it must match the saved target.
+The target cannot be reselected through the ordinary null variant. All fresh
+registered admissions preserve protected initial work through the final commit.
+Recovery
 requires a fresh native-entry cookie, exact origin, matching CSRF and targeted
 prior context within the original bootstrap deadline. A selected recovery returns
 `{state:"selected",journey_id:resolved,previous_journey_id:prior}`. A subsequent

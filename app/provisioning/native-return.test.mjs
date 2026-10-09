@@ -389,3 +389,138 @@ test('definitive saved continuation refusal has no repetitive retry action', asy
   assert.equal(await f.run(), false);
   assert.equal(f.calls.filter(({ request }) => request.method === 'POST').length, 1);
 });
+
+
+const bareSavedContext = { ...entryContext, continue_saved: true };
+for (const noOwner of [false, true]) test(`bare saved continuation without an extension owner uses explicit null prior, noWorkspace=${noOwner}`, async () => {
+  const storage = memory();
+  const f = fixture({ nativeEntry: true, storage,
+    replies: [response(200, bareSavedContext), response(200, { state: 'selected', journey_id: renewedJourney }),
+      response(200, { ...snapshot, journey_id: renewedJourney })],
+    runtime: noOwner ? { sendMessage: async () => ({ ok: false, code: 'no_workspace' }) } : undefined });
+  f.options.location.hash = '';
+  assert.equal(await f.run(), true);
+  assert.deepEqual(JSON.parse(f.calls[1].request.body), { journey_id: null, continue_saved: true });
+  const journal = JSON.parse(storage.getItem('native_workspace_selection_v1'));
+  assert.deepEqual(Object.keys(journal).sort(), ['continue_saved', 'entry_id', 'expires_at', 'journey_id']);
+  assert.equal(journal.journey_id, null);
+  assert.equal(journal.continue_saved, true);
+  assert.deepEqual(f.navigations, [`/provisioning#journey=${renewedJourney}`]);
+  assert.equal(f.closes, 0);
+});
+
+test('bare saved continuation requests distinct intent and adopts the retained extension journey only as prior navigation', async () => {
+  const messages = [];
+  const f = fixture({ nativeEntry: true, storage: memory(),
+    replies: [response(200, bareSavedContext), response(200, recovered), response(200, { ...snapshot, journey_id: renewedJourney })],
+    runtime: { sendMessage: async (_id, message) => { messages.push(message);
+      return message.type === 'ofca.workspace.saved-continuation-prepare.v1' ? recoveryReady : { ok: true, result: { status: 'returned' } };
+    } } });
+  f.options.location.hash = '';
+  assert.equal(await f.run(), true);
+  assert.deepEqual(JSON.parse(f.calls[1].request.body), { journey_id: journey, continue_saved: true });
+  assert.deepEqual(messages, [{ type: 'ofca.workspace.saved-continuation-prepare.v1', entry_id: entryId },
+    { type: 'ofca.workspace.recovery-return.v1', entry_id: entryId, recovery_id: recoveryId,
+      previous_journey_id: journey, journey_id: renewedJourney, route: 'provisioning' }]);
+  assert.equal(JSON.stringify(messages).includes(entryContext.csrf_token), false);
+  assert.equal(f.closes, 1);
+});
+
+for (const result of [pendingLaunch, { ok: true, result: { status: 'launch_expired' } }, { ok: false, code: 'workspace_exists' }]) {
+  test(`bare saved selection refuses incompatible extension intent ${JSON.stringify(result)}`, async () => {
+    const f = fixture({ nativeEntry: true, storage: memory(), replies: [response(200, bareSavedContext)], result });
+    f.options.location.hash = '';
+    assert.equal(await f.run(), false);
+    assert.equal(f.calls.length, 1); assert.deepEqual(f.navigations, []);
+  });
+}
+
+for (const committed of [false, true]) test(`bare null-prior saved selection reconciles lost response without replay, committed=${committed}`, async () => {
+  const storage = memory(); let posts = 0;
+  const options = { nativeEntry: true, storage, runtime: undefined,
+    fetch: async (path, request) => {
+      if (request.method === 'POST') {
+        assert.equal(JSON.parse(storage.getItem('native_workspace_selection_v1')).continue_saved, true);
+        posts++; throw Error('Lost result');
+      }
+      return response(200, path.endsWith('native-entry')
+        ? posts && committed ? { state: 'selected', journey_id: renewedJourney } : bareSavedContext
+        : { ...snapshot, journey_id: renewedJourney });
+    } };
+  const first = fixture(options); first.options.location.hash = '';
+  assert.equal(await first.run(), committed);
+  const restored = fixture(options); restored.options.location.hash = '';
+  assert.equal(await restored.run(), committed);
+  assert.equal(posts, 1); assert.equal(restored.messages.length, 0);
+  assert.deepEqual(restored.navigations, committed ? [`/provisioning#journey=${renewedJourney}`] : []);
+});
+
+test('known null-prior saved refusal has no ineffective retry even when receipt read fails', async () => {
+  let reads = 0;
+  const f = fixture({ nativeEntry: true, storage: memory(), runtime: undefined,
+    fetch: async (_path, request) => {
+      if (request.method === 'POST') return response(409, { detail: 'Saved setup is unavailable' });
+      if (++reads > 1) throw Error('Unavailable');
+      return response(200, bareSavedContext);
+    } });
+  f.options.location.hash = '';
+  assert.equal(await f.run(), false); assert.equal(f.retry.hidden, true);
+  assert.equal(f.status.textContent, 'Setup could not be recovered.');
+  assert.equal(await f.run(), false); assert.equal(reads, 2);
+});
+
+
+function savedRecoveryJournal() {
+  const storage = memory();
+  storage.setItem('native_workspace_selection_v1', JSON.stringify({ entry_id: entryId, journey_id: journey,
+    recovery_id: recoveryId, continue_saved: true, expires_at: Date.now() + 60_000 }));
+  return storage;
+}
+
+test('restored saved callback reads committed selection and local state before exact reattachment and return', async () => {
+  const messages = [];
+  const f = fixture({ nativeEntry: true, storage: savedRecoveryJournal(),
+    replies: [response(200, recovered), response(200, { ...snapshot, journey_id: renewedJourney })],
+    runtime: { sendMessage: async (_id, message) => {
+      assert.equal(f.calls.length, 2); messages.push(message);
+      return { ok: true, result: { status: message.type.endsWith('reattach.v1') ? 'reattached' : 'returned' } };
+    } } });
+  f.options.location.hash = '';
+  assert.equal(await f.run(), true);
+  assert.deepEqual(messages, [{ type: 'ofca.workspace.recovery-reattach.v1', entry_id: entryId, recovery_id: recoveryId,
+    previous_journey_id: journey, journey_id: renewedJourney },
+  { type: 'ofca.workspace.recovery-return.v1', entry_id: entryId, recovery_id: recoveryId,
+    previous_journey_id: journey, journey_id: renewedJourney, route: 'provisioning' }]);
+  assert.ok(f.calls.every(({ request }) => request.method !== 'POST'));
+  assert.equal(f.closes, 1);
+});
+
+test('lost saved reattachment reply only repeats receipt and binding reads, never selection or preparation', async () => {
+  const storage = savedRecoveryJournal(); let attachments = 0; const messages = [];
+  const options = { nativeEntry: true, storage,
+    fetch: async (path, request) => {
+      assert.notEqual(request.method, 'POST');
+      return response(200, path.endsWith('native-entry') ? recovered : { ...snapshot, journey_id: renewedJourney });
+    }, runtime: { sendMessage: async (_id, message) => {
+      messages.push(message);
+      if (message.type.endsWith('reattach.v1')) {
+        if (++attachments === 1) throw Error('Lost binding reply');
+        return { ok: true, result: { status: 'reattached' } };
+      }
+      return { ok: true, result: { status: 'returned' } };
+    } } };
+  const first = fixture(options); first.options.location.hash = '';
+  assert.equal(await first.run(), false); assert.equal(first.closes, 0);
+  const restored = fixture(options); restored.options.location.hash = '';
+  assert.equal(await restored.run(), true);
+  assert.deepEqual(messages.map((value) => value.type), ['ofca.workspace.recovery-reattach.v1',
+    'ofca.workspace.recovery-reattach.v1', 'ofca.workspace.recovery-return.v1']);
+});
+
+for (const state of [response(409, {}), response(200, { ...snapshot, journey_id: journey })]) {
+  test('restored callback never reattaches without its accepted current local state', async () => {
+    const f = fixture({ nativeEntry: true, storage: savedRecoveryJournal(), replies: [response(200, recovered), state] });
+    f.options.location.hash = '';
+    assert.equal(await f.run(), false); assert.equal(f.messages.length, 0);
+  });
+}

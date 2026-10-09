@@ -178,3 +178,22 @@ test('an account notification during document navigation invalidates recovery be
   assert.equal(f.calls.length, baseline);
   assert.equal(f.session.onboarding_native_recovery_v1.phase, 'returning');
 });
+
+
+test('external saved reattachment is closed and preserves identity reconciliation before dispatch', async () => {
+  const f = await savedFixture(); const entryId = crypto.randomUUID();
+  const callback = { id: 8, windowId: 1, documentId: 'native-callback', url: 'http://bridge.localhost:17871/provisioning/native-return' };
+  f.tabs.push(callback);
+  const command = (message) => new Promise((resolve) => f.chromeApi.runtime.onMessageExternal.listeners[0](message,
+    { tab: { id: callback.id }, frameId: 0, documentId: callback.documentId, url: callback.url }, resolve));
+  const prepared = await command({ type: 'ofca.workspace.saved-continuation-prepare.v1', entry_id: entryId });
+  assert.equal(prepared.ok, true);
+  const message = { type: 'ofca.workspace.recovery-reattach.v1', entry_id: entryId, recovery_id: prepared.result.recovery_id,
+    previous_journey_id: prepared.result.previous_journey_id, journey_id: crypto.randomUUID() };
+  callback.documentId = 'restored-native-callback';
+  assert.deepEqual(await command({ ...message, route: 'provisioning' }), { ok: false, code: 'return_unavailable' });
+  assert.deepEqual(await command(message), { ok: true, result: { status: 'reattached' } });
+  assert.equal(f.local[recordKey].journey_id, message.previous_journey_id);
+  f.state.account = 'creator-b';
+  assert.deepEqual(await command(message), { ok: false, code: 'return_unavailable' });
+});

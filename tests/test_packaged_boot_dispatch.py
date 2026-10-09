@@ -151,7 +151,9 @@ def test_composed_native_admission_resolves_hardware_only_for_saved_setup(
         context = client.get("/api/v1/provisioning/native-entry", headers=headers)
         assert context.status_code == 200
         assert provider_calls == []
-        selected = client.post("/api/v1/provisioning/native-entry", json={"journey_id": None}, headers={
+        assert context.json().get("continue_saved") is (None if saved_setup == "absent" else True)
+        body = {"journey_id": None, **({"continue_saved": True} if saved_setup != "absent" else {})}
+        selected = client.post("/api/v1/provisioning/native-entry", json=body, headers={
             **headers, "Origin": PROVISIONING_ORIGIN, "X-Provisioning-CSRF": context.json()["csrf_token"],
         })
     assert provider_calls == ([] if saved_setup == "absent" else ["open"])

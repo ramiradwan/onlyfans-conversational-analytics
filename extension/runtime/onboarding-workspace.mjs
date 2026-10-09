@@ -354,6 +354,55 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       await chromeApi.storage.session.set({ [NATIVE_RECOVERY_KEY]: intent });
       return { status: 'recovery_ready', recovery_id: intent.recovery_id, previous_journey_id: record.journey_id };
     }),
+    reattachNativeRecovery: (sender, request, currentScope = () => true) => serialize(async () => {
+      if (!exact(request, ['entry_id', 'recovery_id', 'previous_journey_id', 'journey_id'])
+        || !Object.values(request).every((value) => typeof value === 'string' && UUID.test(value))
+        || !currentScope()) fail('return_unavailable');
+      const source = await nativeCaller(sender);
+      const intent = await recoveryIntent();
+      if (!intent || intent.saved_continuation !== true || source.id !== intent.source.tab_id || source.url !== intent.source.url
+        || request.entry_id !== intent.entry_id || request.recovery_id !== intent.recovery_id
+        || request.previous_journey_id !== intent.previous_journey_id
+        || (intent.journey_id !== null && intent.journey_id !== request.journey_id)) fail('return_unavailable');
+      const original = JSON.stringify(intent);
+      const check = async () => {
+        const record = await readRecord();
+        if (!record || ![intent.previous_journey_id, intent.journey_id].includes(record.journey_id)
+          || !sameScope(record.draft_scope, intent.draft_scope)) fail('return_unavailable');
+        const identity = await identityFor(record);
+        if (identity.account_digest !== intent.account_digest) fail('return_unavailable');
+        if (intent.phase === 'prepared') {
+          const owner = await recoveryOwner(record, { savedContinuation: intent.saved_continuation === true });
+          if (intent.owner === null ? owner !== null : !sameDocument(owner, intent.owner)) fail('workspace_exists');
+        } else {
+          // After dispatch this operation may only recover the committed target;
+          // it never resets the phase or sends another navigation command.
+          if (intent.journey_id === null) fail('return_unavailable');
+          const target = await getTab(intent.owner?.tab_id ?? source.id);
+          if (target.url !== reference('provisioning', intent.journey_id) || !target.documentId
+            || target.documentId === (intent.owner ?? intent.source).document_id
+            || (intent.target_document_id !== null && intent.target_document_id !== target.documentId)) fail('return_unavailable');
+          const candidates = await registeredTabs();
+          if (candidates.length !== 1 || candidates[0].id !== target.id) fail('workspace_exists');
+        }
+        if (JSON.stringify(await recoveryIntent()) !== original || !currentScope()) fail('return_unavailable');
+        await nativeCaller(sender);
+        return { record, identity };
+      };
+      const before = await check();
+      const after = await check();
+      if (JSON.stringify(before) !== JSON.stringify(after) || !currentScope()) fail('return_unavailable');
+      await nativeCaller(sender);
+      if (!currentScope() || intent.created_at > now() || intent.expires_at <= now()) fail('return_unavailable');
+      // The callback has independently read its local selection receipt. These
+      // coordinates restore navigation ownership only; no local proof is shared.
+      intent.source = documentReference(source);
+      if (intent.phase === 'prepared') intent.journey_id = request.journey_id;
+      await chromeApi.storage.session.set({ [NATIVE_RECOVERY_KEY]: intent });
+      await nativeCaller(sender);
+      if (!currentScope() || intent.created_at > now() || intent.expires_at <= now()) fail('return_unavailable');
+      return { status: 'reattached' };
+    }),
     returnFromNativeRecovery: (sender, request, currentScope = () => true) => serialize(async () => {
       if (!exact(request, ['entry_id', 'recovery_id', 'previous_journey_id', 'journey_id', 'route'])
         || !['entry_id', 'recovery_id', 'previous_journey_id', 'journey_id'].every((key) => UUID.test(request[key]))

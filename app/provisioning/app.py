@@ -189,7 +189,7 @@ class NativeWorkspaceRecoveryBody(BaseModel):
 
 class NativeWorkspaceSavedContinuationBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    journey_id: str
+    journey_id: str | None
     continue_saved: Literal[True]
 
     @field_validator("continue_saved", mode="before")
@@ -344,7 +344,7 @@ def create_provisioning_app(
         session = await run_in_threadpool(sessions.select_native_workspace, request, body.journey_id,
             recover=recover, continue_saved=saved)
         response = JSONResponse({"state": "selected", "journey_id": session.journey_id,
-            **({"previous_journey_id": body.journey_id} if recover or saved else {})},
+            **({"previous_journey_id": body.journey_id} if (recover or saved) and body.journey_id is not None else {})},
             headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
         response.set_cookie(PROVISIONING_SESSION_COOKIE_NAME, session.identifier,
             httponly=True, secure=True, samesite="strict", path="/")

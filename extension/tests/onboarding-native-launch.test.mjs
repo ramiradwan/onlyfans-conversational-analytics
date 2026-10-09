@@ -437,9 +437,10 @@ test('expired launch fallback cannot target an absent, changed or background own
   }
 });
 
-test('saved continuation prepares its own exact intent even when the original native launch has expired', async () => {
+for (const expired of [false, true]) test(`saved continuation replaces ordinary launch selection with its exact intent, expired=${expired}`, async () => {
   const f = await recoveryFixture('extension'); await f.workspace.prepareNativeLaunch(f.sender(2));
-  f.clock[0] += NATIVE_LAUNCH_TTL_MS;
+  if (expired) f.clock[0] += NATIVE_LAUNCH_TTL_MS;
+  else assert.deepEqual(await f.prepare(), { status: 'launch_pending', journey_id: journey });
   const prepared = await f.workspace.prepareNativeRecovery(f.sender(3), { entry_id: entryId }, () => true, { savedContinuation: true });
   assert.equal(prepared.status, 'recovery_ready');
   assert.equal(f.session[NATIVE_RECOVERY_KEY].version, 2);
@@ -465,4 +466,126 @@ test('saved continuation reuses the exact hosted document; ordinary recovery doe
   assert.deepEqual(script.target, { tabId: 2, documentIds: ['owner-document'] });
   assert.deepEqual(script.args, [`${continuation}#journey=${journey}`, `${routes.provisioning}#journey=${renewedJourney}`]);
   assert.equal(f.tabs[0].url, 'https://onlyfans.com/my/chats');
+});
+
+
+async function savedReattachFixture() {
+  const f = await recoveryFixture('extension');
+  f.tabs[2].url = `${routes.bridge}provisioning/native-return`;
+  const prepared = await f.workspace.prepareNativeRecovery(f.sender(3), { entry_id: entryId }, () => true, { savedContinuation: true });
+  const oldSender = f.sender(3);
+  const original = structuredClone(f.session[NATIVE_RECOVERY_KEY]);
+  f.tabs[2].documentId = 'restored-callback';
+  const request = { entry_id: entryId, recovery_id: prepared.recovery_id,
+    previous_journey_id: journey, journey_id: renewedJourney };
+  return { ...f, oldSender, original, reattach: request, recoveryReturn: { ...request, route: 'provisioning' } };
+}
+
+test('saved callback reattachment retains intent identity and deadline, then uses exact replacement document', async () => {
+  const f = await savedReattachFixture();
+  assert.deepEqual(await f.workspace.reattachNativeRecovery(f.sender(3), f.reattach), { status: 'reattached' });
+  assert.deepEqual(f.session[NATIVE_RECOVERY_KEY], { ...f.original, journey_id: renewedJourney,
+    source: { ...f.original.source, document_id: 'restored-callback' } });
+  assert.deepEqual(f.calls, []);
+  await assert.rejects(f.workspace.returnFromNativeRecovery(f.oldSender, f.recoveryReturn), /return_unavailable/);
+  assert.deepEqual(await f.workspace.returnFromNativeRecovery(f.sender(3), f.recoveryReturn), { status: 'returned' });
+  assert.equal(f.calls.filter((call) => call.url).length, 1);
+  assert.equal(f.tabs[0].url, 'https://onlyfans.com/my/chats');
+});
+
+for (const change of ['different-tab', 'url', 'owner-document', 'scope', 'identity', 'expired', 'target', 'entry', 'recovery', 'prior', 'ordinary']) {
+  test(`saved callback reattachment refuses ${change}`, async () => {
+    const f = await savedReattachFixture(); let id = 3;
+    if (change === 'different-tab') { f.tabs.push({ ...f.tabs[2], id: 4 }); id = 4; }
+    if (change === 'url') f.tabs[2].url += `#journey=${journey}`;
+    if (change === 'owner-document') f.tabs[1].documentId = 'replacement-owner';
+    if (change === 'scope') await f.workspace.refreshScope({ ...scope, scope_id: crypto.randomUUID() });
+    if (change === 'identity') await f.workspace.reconcileIdentity({ account_digest: null });
+    if (change === 'expired') f.clock[0] = f.original.expires_at;
+    if (change === 'target') f.session[NATIVE_RECOVERY_KEY].journey_id = crypto.randomUUID();
+    if (change === 'entry') f.reattach.entry_id = crypto.randomUUID();
+    if (change === 'recovery') f.reattach.recovery_id = crypto.randomUUID();
+    if (change === 'prior') f.reattach.previous_journey_id = crypto.randomUUID();
+    if (change === 'ordinary') { f.session[NATIVE_RECOVERY_KEY].version = 1; delete f.session[NATIVE_RECOVERY_KEY].saved_continuation; }
+    const before = structuredClone(f.session[NATIVE_RECOVERY_KEY]);
+    await assert.rejects(f.workspace.reattachNativeRecovery(f.sender(id), f.reattach), /return_unavailable|workspace_exists/);
+    assert.deepEqual(f.session[NATIVE_RECOVERY_KEY], before); assert.deepEqual(f.calls, []);
+  });
+}
+
+for (const change of ['source-document', 'intent-generation', 'owner-document', 'scope']) {
+  test(`saved reattachment rechecks ${change} after asynchronous reads`, async () => {
+    const f = await savedReattachFixture(); const sender = f.sender(3);
+    const get = f.chromeApi.storage.session.get; let reads = 0;
+    f.chromeApi.storage.session.get = async (key) => {
+      const result = await get(key);
+      if (key === NATIVE_RECOVERY_KEY && ++reads === 2) {
+        if (change === 'source-document') f.tabs[2].documentId = 'newer-callback';
+        if (change === 'intent-generation') f.session[NATIVE_RECOVERY_KEY].recovery_id = crypto.randomUUID();
+        if (change === 'owner-document') f.tabs[1].documentId = 'newer-owner';
+        if (change === 'scope') f.local[WORKSPACE_RECORD_KEY].draft_scope.scope_id = crypto.randomUUID();
+      }
+      return result;
+    };
+    await assert.rejects(f.workspace.reattachNativeRecovery(sender, f.reattach), /return_unavailable|workspace_exists/);
+    assert.equal(f.session[NATIVE_RECOVERY_KEY].source.document_id, f.original.source.document_id);
+    assert.deepEqual(f.calls, []);
+  });
+}
+
+test('lost reattachment reply can repeat the same binding without new intent or navigation', async () => {
+  const f = await savedReattachFixture();
+  await f.workspace.reattachNativeRecovery(f.sender(3), f.reattach);
+  const first = structuredClone(f.session[NATIVE_RECOVERY_KEY]);
+  f.clock[0]++;
+  assert.deepEqual(await f.workspace.reattachNativeRecovery(f.sender(3), f.reattach), { status: 'reattached' });
+  assert.deepEqual(f.session[NATIVE_RECOVERY_KEY], first); assert.deepEqual(f.calls, []);
+});
+
+for (const phase of ['returning', 'returned']) test(`reattachment after ${phase} only reconciles the exact committed target`, async () => {
+  const f = await savedReattachFixture();
+  await f.workspace.reattachNativeRecovery(f.sender(3), f.reattach);
+  await f.workspace.returnFromNativeRecovery(f.sender(3), f.recoveryReturn);
+  f.session[NATIVE_RECOVERY_KEY].phase = phase;
+  f.tabs[2].documentId = 'second-restored-callback';
+  const priorCalls = structuredClone(f.calls);
+  await f.workspace.reattachNativeRecovery(f.sender(3), f.reattach);
+  assert.equal(f.session[NATIVE_RECOVERY_KEY].phase, phase);
+  assert.equal(f.session[NATIVE_RECOVERY_KEY].expires_at, f.original.expires_at);
+  assert.deepEqual(await f.workspace.returnFromNativeRecovery(f.sender(3), f.recoveryReturn), { status: 'returned' });
+  assert.deepEqual(f.calls, priorCalls);
+});
+
+test('unknown navigation without a committed target cannot reattach or redispatch', async () => {
+  const f = await savedReattachFixture();
+  f.session[NATIVE_RECOVERY_KEY].phase = 'returning';
+  f.session[NATIVE_RECOVERY_KEY].journey_id = renewedJourney;
+  await assert.rejects(f.workspace.reattachNativeRecovery(f.sender(3), f.reattach), /return_unavailable/);
+  assert.deepEqual(f.calls, []);
+  assert.equal(f.session[NATIVE_RECOVERY_KEY].phase, 'returning');
+});
+
+
+for (const field of ['entry_id', 'recovery_id', 'previous_journey_id', 'journey_id']) {
+  test(`reattachment rejects coercible arrays for ${field}`, async () => {
+    const f = await savedReattachFixture();
+    f.reattach[field] = [f.reattach[field]];
+    await assert.rejects(f.workspace.reattachNativeRecovery(f.sender(3), f.reattach), /return_unavailable/);
+    assert.deepEqual(f.session[NATIVE_RECOVERY_KEY], f.original);
+  });
+}
+
+for (const change of ['scope', 'expiry']) test(`reattachment checks ${change} immediately before storing`, async () => {
+  const f = await savedReattachFixture(); const get = f.chromeApi.tabs.get;
+  let reads = 0; let current = true;
+  f.chromeApi.tabs.get = async (id) => {
+    const result = await get(id);
+    if (id === 3 && ++reads === 4) {
+      if (change === 'expiry') f.clock[0] = f.original.expires_at;
+      else current = false;
+    }
+    return result;
+  };
+  await assert.rejects(f.workspace.reattachNativeRecovery(f.sender(3), f.reattach, () => current), /return_unavailable/);
+  assert.deepEqual(f.session[NATIVE_RECOVERY_KEY], f.original); assert.deepEqual(f.calls, []);
 });

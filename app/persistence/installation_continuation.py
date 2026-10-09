@@ -68,6 +68,66 @@ class InstallationContinuationStore:
         self.journeys = OnboardingJourneyStore(authentication)
         self.selection = ContinuationSelectionStore(authentication)
 
+    def _saved_native_scope(self, connection, previous_journey_id: str | None) -> dict | None:
+        """Navigation history may constrain a native proposal, never authorize it."""
+        moment = self.authentication._now()
+        now = moment.isoformat()
+        protected = "('preparing','prepare-unknown','completing','unknown')"
+        initial = connection.execute("SELECT expires_at,recovery_deadline FROM onboarding_journeys WHERE kind=? AND state IN "
+            + protected, (INITIAL_ENROLLMENT,)).fetchall()
+        # Use the same original fixed deadline as journey cleanup, without
+        # deleting uncertainty before the admission decision has examined it.
+        if (any((datetime.fromisoformat(row["recovery_deadline"]) if row["recovery_deadline"]
+                else datetime.fromisoformat(row["expires_at"]) + timedelta(minutes=30)) > moment for row in initial)
+                or connection.execute("SELECT 1 FROM onboarding_workspace_recovery WHERE expires_at>? AND state IN "
+                    + protected + " LIMIT 1", (now,)).fetchone()
+                or connection.execute("SELECT 1 FROM onboarding_uncertain_receipts WHERE expires_at>? LIMIT 1",
+                    (now,)).fetchone()):
+            raise OnboardingJourneyUnavailable("journey_unavailable")
+        if previous_journey_id is None:
+            return None
+        previous = connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?",
+            (previous_journey_id,)).fetchone()
+        if previous is not None and previous["kind"] == REGISTERED_CONTINUATION:
+            detail = connection.execute("SELECT scope_json FROM installation_continuation_contexts WHERE journey_id=?",
+                (previous_journey_id,)).fetchone()
+            if detail is None:
+                raise OnboardingJourneyUnavailable("journey_unavailable")
+            return json.loads(detail["scope_json"])
+        if previous is not None and previous["expires_at"] > now:
+            raise OnboardingJourneyUnavailable("journey_unavailable")
+        if previous is None:
+            previous = connection.execute("SELECT * FROM onboarding_workspace_recovery WHERE previous_journey_id=?",
+                (previous_journey_id,)).fetchone()
+        if previous is None:
+            return None
+        scope = {} if previous["scope_json"] is None else json.loads(previous["scope_json"])
+        if previous["installation_id"] is not None:
+            if scope.get("installation_id", previous["installation_id"]) != previous["installation_id"]:
+                raise OnboardingJourneyUnavailable("journey_unavailable")
+            scope["installation_id"] = previous["installation_id"]
+        return scope
+
+    def saved_native_target(self, previous_journey_id: str | None) -> ContinuationTarget:
+        with self.authentication.database.transaction(immediate=False) as connection:
+            scope = self._saved_native_scope(connection, previous_journey_id)
+            association = None if scope is None else scope.get("association_request_id")
+            if association is not None:
+                target = self.selection.select_in_transaction(connection, association_request_id=association)
+            else:
+                target = self.select_for_admission()
+            self.require_saved_native_target(connection, target, previous_journey_id)
+            return target
+
+    def require_saved_native_target(self, connection, target: ContinuationTarget,
+                                    previous_journey_id: str | None) -> None:
+        scope = self._saved_native_scope(connection, previous_journey_id)
+        expected = {**_scope(target), "intended_creator_id": target.candidate.creator_account_id,
+                    "onboarding_transaction_id": target.claim.onboarding_transaction_id}
+        if scope is not None and any(key in scope and scope[key] != value for key, value in expected.items()):
+            raise OnboardingJourneyUnavailable("journey_unavailable")
+        self.selection.require_current(connection, target)
+
     def select_for_admission(self, journey_id: str | None = None) -> ContinuationTarget:
         """Retain an admitted live target before making an automatic proposal."""
         with self.authentication.database.transaction(immediate=False) as connection:
@@ -81,14 +141,18 @@ class InstallationContinuationStore:
                 if rows:
                     journey_id = rows[0]["journey_id"]
             if journey_id is not None:
-                return self.require_current(journey_id, connection=connection)["target"]
-            return self.selection.select_in_transaction(connection)
+                target = self.require_current(journey_id, connection=connection)["target"]
+            else:
+                target = self.selection.select_in_transaction(connection)
+            self._saved_native_scope(connection, None)
+            return target
 
     def admit_native_session(
         self, *, target: ContinuationTarget, reopened_key, identifier: str, csrf: str,
         entry_identifier: str, entry_id: str, entry_expires_at: float,
         existing_identifier: str | None, ttl_seconds: float, authorize,
         previous_journey_id: str | None = None,
+        saved_navigation: bool = False,
     ) -> dict:
         """Commit fresh native authority, an exact saved target and its session."""
         if reopened_key != target.key:
@@ -98,6 +162,9 @@ class InstallationContinuationStore:
             now = self.authentication._now()
             if entry_expires_at <= now.timestamp():
                 raise OnboardingJourneyUnavailable("journey_expired")
+            self._saved_native_scope(connection, None)
+            if saved_navigation:
+                self.require_saved_native_target(connection, target, previous_journey_id)
             self.journeys._cleanup(connection, now)
             self.selection.require_current(connection, target)
             receipt = connection.execute(
@@ -155,19 +222,26 @@ class InstallationContinuationStore:
             )
             authorize()
             self.selection.require_current(connection, target)
+            self._saved_native_scope(connection, None)
+            if saved_navigation:
+                self.require_saved_native_target(connection, target, previous_journey_id)
             if entry_expires_at <= self.authentication._now().timestamp():
                 raise OnboardingJourneyUnavailable("journey_expired")
             return {"identifier": identifier, "journey_id": journey_id, "expires_at": expires_at}
 
     def retain_native_session(self, *, journey_id: str, identifier: str, entry_identifier: str,
                               entry_id: str, entry_expires_at: float, authorize,
-                              previous_journey_id: str | None = None) -> None:
+                              previous_journey_id: str | None = None, saved_target: ContinuationTarget | None = None) -> None:
         """Record the same live session's result without issuing new authority."""
         with self.authentication.database.transaction() as connection:
             authorize()
             now = self.authentication._now()
+            if saved_target is not None:
+                self.require_saved_native_target(connection, saved_target, previous_journey_id)
             self.journeys._cleanup(connection, now)
             current = self.require_current(journey_id, connection=connection)
+            if saved_target is not None and current["target"] != saved_target:
+                raise OnboardingJourneyUnavailable("journey_unavailable")
             session = connection.execute(
                 "SELECT * FROM provisioning_browser_sessions WHERE session_digest=? AND journey_id=?",
                 (_digest(identifier), journey_id),
@@ -186,6 +260,8 @@ class InstallationContinuationStore:
             connection.execute("INSERT INTO onboarding_native_selection_receipts VALUES (?,?,?,?,?,?)",
                 (_digest(entry_identifier), entry_id, journey_id, _digest(identifier), deadline, previous_journey_id))
             authorize()
+            if saved_target is not None:
+                self.require_saved_native_target(connection, saved_target, previous_journey_id)
             if deadline <= self.authentication._now().timestamp():
                 raise OnboardingJourneyUnavailable("journey_expired")
 
