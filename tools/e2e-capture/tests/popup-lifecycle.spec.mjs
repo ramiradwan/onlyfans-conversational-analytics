@@ -134,7 +134,9 @@ const workerSource = (port) => `
   import { createCompanionClient } from './runtime/companion-client.mjs';
   import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
   import { registerOnboardingWorkspace } from './runtime/onboarding-entry.mjs';
-  const onboarding = registerOnboardingWorkspace({ chromeApi: chrome, consentController: {},
+  // This peer's consent state is already in memory; satisfy the initialization
+  // boundary before the production workspace reads the current identity.
+  const onboarding = registerOnboardingWorkspace({ chromeApi: chrome, consentController: { initialize: async () => {} },
     identityBridge: { currentAccountId: async () => 'synthetic-creator' } });
   const openOther = createSurfaceOpener();
   registerSurfaceNavigation(chrome, (request) => request.surface === 'setup'
