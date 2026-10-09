@@ -552,6 +552,189 @@ async def test_stream_denial_or_closure_requests_one_signed_reconciliation(tmp_p
     await worker.stop()
 
 
+def _continuity_diagnostic_fixture(tmp_path, monkeypatch):
+    store = _seeded_store(tmp_path / "auth.sqlite3", INSTANT)
+    worker = _enrollment_worker(store, _HandoffFixture())
+    snapshot = json.loads(json.dumps(next(value["value"] for value in _CONTINUITY_CASES if value["valid"])))
+    snapshot["facts"].update(association="pending", authorization="current")
+    scope = {"onboarding_transaction_id": snapshot["onboarding_transaction_id"],
+             "organization_id": "organization-fixture", "installation_id": "installation-fixture",
+             "association_request_id": "0199b234-5678-7000-8000-000000000002", "intended_creator_id": "creator-fixture"}
+    monkeypatch.setattr(store, "consumed_claim_submissions", lambda: (object(),))
+    monkeypatch.setattr(worker, "_candidate", lambda _: None)
+    async def refresh(_):
+        pass
+    monkeypatch.setattr(worker, "_refresh_current_grants", refresh)
+    return worker, {"scope_json": json.dumps(scope)}, snapshot
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage,reason", [
+    ("challenge_envelope", "unexpected_failure"),
+    ("stream_admission", "admission_refused"),
+    ("stream_frame", "hosted_unavailable"),
+    ("association_request", "association_refused"),
+    ("binding_acquisition", "installation_key_unavailable"),
+    ("authority_refresh", "grant_verification_refused"),
+])
+async def test_continuity_diagnostics_keep_closed_stage_codes_without_error_content(
+        tmp_path, monkeypatch, caplog, stage, reason):
+    from app.persistence.auth import ProvisioningCandidateState
+    from app.security.hosted_grants import CreatorAssociationRefused, GrantVerificationRefused
+    from app.security.initial_handoff import OnboardingStreamAdmissionRefused
+    from app.security.installation_key import InstallationKeyUnavailable
+    from app.security.onboarding_continuity import PROFILE as HOSTED_PROFILE
+
+    worker, row, snapshot = _continuity_diagnostic_fixture(tmp_path, monkeypatch)
+    secret = "fixture-challenge-key-cookie-session-must-not-be-logged"
+    class OpaqueFailure(RuntimeError):
+        def __str__(self):
+            raise AssertionError("Diagnostics must not format the exception")
+        def __repr__(self):
+            raise AssertionError("Diagnostics must not inspect the exception")
+    errors = {
+        "challenge_envelope": OpaqueFailure(secret),
+        "stream_admission": OnboardingStreamAdmissionRefused(secret),
+        "stream_frame": HostedGrantUnavailable(secret),
+        "association_request": CreatorAssociationRefused(secret),
+        "binding_acquisition": InstallationKeyUnavailable(secret),
+        "authority_refresh": GrantVerificationRefused(secret),
+    }
+    attempts, actions = [], []
+    def fail(*_, **__):
+        actions.append(stage)
+        raise errors[stage]
+    def envelope(request):
+        attempts.append(request)
+        return fail() if stage == "challenge_envelope" else {"request": request}
+    worker.continuity = SimpleNamespace(envelope=envelope)
+    if stage == "association_request":
+        snapshot["facts"]["association"] = "none"
+        worker.grants.request_creator_association = fail
+    if stage == "binding_acquisition":
+        snapshot["facts"]["association"] = "approved"
+        monkeypatch.setattr(worker.store, "provisioning_candidate",
+                            lambda _: SimpleNamespace(state=ProvisioningCandidateState.PENDING))
+        monkeypatch.setattr("app.provisioning.binding_acquisition.acquire_creator_account_binding", fail)
+    if stage == "authority_refresh":
+        snapshot["facts"]["authorization"] = "denied"
+        async def refresh(_):
+            fail()
+        monkeypatch.setattr(worker, "_refresh_current_grants", refresh)
+    class Stream:
+        async def events(self, envelope):
+            if stage == "stream_admission":
+                fail()
+            yield {"profile": HOSTED_PROFILE, "kind": "snapshot", "snapshot": snapshot}
+            if stage == "stream_frame":
+                fail()
+    worker.continuity_stream = Stream()
+    before = count(worker.store, "auth_revocation_bindings")
+    try:
+        await worker._continuity(row)
+        records = [record for record in caplog.records if record.msg.startswith("onboarding_continuity_event ")]
+        assert [record.getMessage() for record in records] == [
+            f"onboarding_continuity_event stage_code={stage} reason_code={reason} attempt={attempt} outcome={outcome}"
+            for attempt, outcome in [(1, "retry"), (2, "retry"), (3, "exhausted")]]
+        assert len(attempts) == 3
+        assert len(actions) == (4 if stage == "authority_refresh" else 3)
+        assert count(worker.store, "auth_revocation_bindings") == before
+        for record in caplog.records:
+            assert secret not in record.getMessage()
+            assert record.exc_info is None and record.stack_info is None
+    finally:
+        await worker.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result,reason", [
+    ("membership_reference_unavailable", "membership_reference_unavailable"),
+    ("fixture-secret-return-value", "invalid_binding_result"),
+])
+@pytest.mark.parametrize("frame_count", [1, 4], ids=["one-frame", "successive-frames"])
+async def test_continuity_binding_refusal_logs_only_allowlisted_result_and_then_stream_closure(
+        tmp_path, monkeypatch, caplog, result, reason, frame_count):
+    from app.persistence.auth import ProvisioningCandidateState
+    from app.security.onboarding_continuity import PROFILE as HOSTED_PROFILE
+
+    worker, row, snapshot = _continuity_diagnostic_fixture(tmp_path, monkeypatch)
+    snapshot["facts"]["association"] = "approved"
+    monkeypatch.setattr(worker.store, "provisioning_candidate",
+                        lambda _: SimpleNamespace(state=ProvisioningCandidateState.PENDING))
+    calls = []
+    def acquire(**_):
+        calls.append(1)
+        return result
+    monkeypatch.setattr("app.provisioning.binding_acquisition.acquire_creator_account_binding", acquire)
+    worker.continuity = SimpleNamespace(envelope=lambda request: {"request": request})
+    class Stream:
+        async def events(self, envelope):
+            for index in range(frame_count):
+                yield {"profile": HOSTED_PROFILE, "kind": "snapshot" if index == 0 else "committed",
+                       "snapshot": {**snapshot, "revision": snapshot["revision"] + index}}
+    worker.continuity_stream = Stream()
+    try:
+        await worker._continuity(row)
+        assert len(calls) == frame_count * 3
+        assert [record.getMessage() for record in caplog.records] == [message
+            for attempt, outcome in [(1, "retry"), (2, "retry"), (3, "exhausted")]
+            for message in [
+                f"onboarding_continuity_event stage_code=binding_acquisition reason_code={reason} attempt={attempt} outcome=unresolved",
+                f"onboarding_continuity_event stage_code=stream_frame reason_code=stream_closed attempt={attempt} outcome={outcome}"]]
+        assert "fixture-secret-return-value" not in caplog.text
+    finally:
+        await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_continuity_reconciliation_failure_logs_closed_category_without_changing_authority(
+        tmp_path, monkeypatch, caplog):
+    worker, row, _ = _continuity_diagnostic_fixture(tmp_path, monkeypatch)
+    async def refresh(_):
+        raise HostedGrantUnavailable("fixture-private-signed-response")
+    monkeypatch.setattr(worker, "_refresh_current_grants", refresh)
+    before = count(worker.store, "auth_revocation_bindings")
+    try:
+        await worker._reconcile_closed_stream(json.loads(row["scope_json"]))
+        assert [record.getMessage() for record in caplog.records] == [
+            "onboarding_continuity_reconciliation_failed stage_code=authority_refresh reason_code=hosted_unavailable"]
+        assert count(worker.store, "auth_revocation_bindings") == before
+        assert caplog.records[0].exc_info is None
+    finally:
+        await worker.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["challenge_envelope", "stream_admission", "reconciliation"])
+async def test_continuity_cancellation_propagates_without_failure_diagnostics(tmp_path, monkeypatch, caplog, stage):
+    worker, row, _ = _continuity_diagnostic_fixture(tmp_path, monkeypatch)
+    attempts = []
+    def envelope(request):
+        attempts.append(request)
+        if stage == "challenge_envelope":
+            raise asyncio.CancelledError()
+        return {"request": request}
+    worker.continuity = SimpleNamespace(envelope=envelope)
+    class Stream:
+        async def events(self, envelope):
+            raise asyncio.CancelledError()
+            yield
+    worker.continuity_stream = Stream()
+    async def refresh(_):
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(worker, "_refresh_current_grants", refresh)
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            if stage == "reconciliation":
+                await worker._reconcile_closed_stream(json.loads(row["scope_json"]))
+            else:
+                await worker._continuity(row)
+        assert len(attempts) == (0 if stage == "reconciliation" else 1)
+        assert caplog.records == []
+    finally:
+        await worker.stop()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("continuity", [False, True], ids=["initial", "registered"])
 async def test_hosted_sse_delivers_small_frames_before_eof_and_closes_on_cancellation(monkeypatch, continuity):

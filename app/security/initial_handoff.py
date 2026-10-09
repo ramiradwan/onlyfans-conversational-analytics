@@ -4,7 +4,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import re
+import time
 from datetime import datetime, timezone
 from typing import AsyncIterator, Callable, Mapping
 
@@ -60,6 +62,18 @@ def timestamp(value: object) -> datetime:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         raise HostedGrantUnavailable("Invalid hosted timestamp") from None
+
+
+def _require_proof_budget(started: float, current: float) -> None:
+    # The server enforces absolute expiry. Local elapsed time bounds challenge
+    # acquisition and signing without comparing clocks on different machines.
+    try:
+        elapsed = current - started
+        valid = math.isfinite(elapsed) and 0 <= elapsed < 60
+    except (TypeError, ValueError, OverflowError):
+        valid = False
+    if not valid:
+        raise HostedGrantUnavailable("Proof construction budget exhausted")
 
 
 def _object(raw: str) -> dict:
@@ -134,33 +148,32 @@ def validate_receipt(receipt: dict) -> None:
 
 class InitialHandoffClient:
     def __init__(self, transport: HostedTransport, key: InstallationProofAuthority,
-                 *, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+                 *, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+                 monotonic: Callable[[], float] = time.monotonic) -> None:
         self.transport = transport
         self.key = key
         self.clock = clock
+        self.monotonic = monotonic
 
     def envelope(self, operation: str, request: dict, *, before_send: Callable[[], None] | None = None) -> dict:
         if operation not in {"prepare", "wait", "complete", "receipt"}:
             raise ValueError("Invalid handoff operation")
         key = self.key.ensure_ready()
         purpose = "initial-handoff-" + operation
+        started = self.monotonic()
         challenge = self._request(CHALLENGE_PATH, {"profile": PROOF_PROFILE,
             "target": {"operation": purpose, "request": request}}, expected=200, before_send=before_send)
+        _require_proof_budget(started, self.monotonic())
         digest = hashlib.sha256(canonical(request)).digest()
         if (set(challenge) != {"profile", "challenge", "request_digest", "expires_at"}
                 or challenge["profile"] != PROOF_PROFILE or challenge["request_digest"] != digest.hex()):
             raise HostedGrantUnavailable("Invalid initial proof challenge")
-        try:
-            expiry = timestamp(challenge["expires_at"])
-            remaining = (expiry - self.clock()).total_seconds()
-        except (TypeError, ValueError, AttributeError):
-            raise HostedGrantUnavailable("Invalid initial proof expiry") from None
-        if not 0 < remaining <= 60:
-            raise HostedGrantUnavailable("Initial proof challenge expired")
+        timestamp(challenge["expires_at"])
         pieces = (_decode(challenge["challenge"]), b"POST", (PATH_PREFIX + operation).encode(), digest,
                   purpose.encode(), _decode(key.installation_key_jkt), _AUDIENCE)
         message = _DOMAIN + b"".join(len(piece).to_bytes(4, "big") + piece for piece in pieces)
         proof = self.key.sign_challenge(message)
+        _require_proof_budget(started, self.monotonic())
         if proof.installation_key_id != key.installation_key_id or proof.algorithm != "ES256" or len(proof.signature) != 64:
             raise HostedGrantUnavailable("Initial key proof unavailable")
         return {"request": request, "proof": {"challenge": challenge["challenge"], "key_id": key.installation_key_id,
@@ -174,7 +187,7 @@ class InitialHandoffClient:
             raise HostedGrantUnavailable("Invalid initial preparation")
         _decode(result["reference"])
         expiry = timestamp(result["expires_at"])
-        if not 0 < (expiry - self.clock()).total_seconds() <= 600:
+        if expiry <= self.clock():
             raise HostedGrantUnavailable("Initial preparation expired")
         return result
 

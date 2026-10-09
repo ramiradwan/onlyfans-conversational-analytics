@@ -4,9 +4,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
+import time
 from datetime import datetime, timezone
 
-from app.security.initial_handoff import canonical, _decode, timestamp
+from app.security.initial_handoff import canonical, _decode, _require_proof_budget, timestamp
 from app.security.hosted_grants import HostedGrantUnavailable, _response_object
 
 PROFILE = "urn:bridge-clean:hosted-onboarding:v1"
@@ -14,13 +15,16 @@ PROOF_PROFILE = "urn:bridge-clean:onboarding-proof:v1"
 
 
 class HostedOnboardingContinuity:
-    def __init__(self, transport, key, *, clock=lambda: datetime.now(timezone.utc)):
+    def __init__(self, transport, key, *, clock=lambda: datetime.now(timezone.utc), monotonic=time.monotonic):
         self.transport, self.key, self.clock = transport, key, clock
+        self.monotonic = monotonic
 
     def envelope(self, request: dict) -> dict:
         key = self.key.ensure_ready()
+        started = self.monotonic()
         response = self.transport.request("POST", "/v1/onboarding/stream-proof-challenges", json_body={
             "profile": PROOF_PROFILE, "target": {"operation": "hosted-stream", "request": request}})
+        _require_proof_budget(started, self.monotonic())
         if response.status_code != 200:
             raise HostedGrantUnavailable("Hosted continuity proof unavailable")
         value = _response_object(response)
@@ -28,17 +32,13 @@ class HostedOnboardingContinuity:
         if (set(value) != {"profile", "challenge", "expires_at", "request_digest"}
                 or value["profile"] != PROOF_PROFILE or value["request_digest"] != digest.hex()):
             raise HostedGrantUnavailable("Invalid continuity challenge")
-        try:
-            remaining = (timestamp(value["expires_at"]) - self.clock()).total_seconds()
-        except (ValueError, TypeError, AttributeError):
-            raise HostedGrantUnavailable("Invalid continuity expiry") from None
-        if not 0 < remaining <= 60:
-            raise HostedGrantUnavailable("Continuity challenge expired")
+        timestamp(value["expires_at"])
         fields = (_decode(value["challenge"]), b"POST", b"/v1/onboarding/streams", digest,
                   b"hosted-stream", _decode(key.installation_key_jkt),
                   b"urn:bridge-clean:commercial-control-plane:onboarding")
         message = b"BRIDGE-CLEAN-ONBOARDING-PROOF-V1\0" + b"".join(len(x).to_bytes(4, "big") + x for x in fields)
         proof = self.key.sign_challenge(message)
+        _require_proof_budget(started, self.monotonic())
         if proof.installation_key_id != key.installation_key_id or proof.algorithm != "ES256" or len(proof.signature) != 64:
             raise HostedGrantUnavailable("Continuity key proof unavailable")
         return {"request": request, "proof": {"challenge": value["challenge"],

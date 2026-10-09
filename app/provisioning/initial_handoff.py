@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import platform
 import re
 from datetime import datetime, timezone
@@ -13,6 +14,27 @@ from app.provisioning.claim_submission import PRODUCT_VERSION, installation_proo
 from app.provisioning.events import events
 from app.security.hosted_grants import HostedGrantClient, HostedGrantUnavailable
 from app.security.initial_handoff import InitialHandoffClient, InitialHandoffStream, PROFILE, InitialHandoffRefused
+
+
+logger = logging.getLogger(__name__)
+
+
+def _continuity_failure_reason(error: Exception) -> str:
+    from app.security.hosted_grants import CreatorAssociationRefused, GrantVerificationRefused
+    from app.security.initial_handoff import OnboardingStreamAdmissionRefused
+    from app.security.installation_key import InstallationKeyError
+
+    if isinstance(error, OnboardingStreamAdmissionRefused):
+        return "admission_refused"
+    if isinstance(error, GrantVerificationRefused):
+        return "grant_verification_refused"
+    if isinstance(error, CreatorAssociationRefused):
+        return "association_refused"
+    if isinstance(error, InstallationKeyError):
+        return "installation_key_unavailable"
+    if isinstance(error, HostedGrantUnavailable):
+        return "hosted_unavailable"
+    return "unexpected_failure"
 
 
 class InitialInstallationEnrollment:
@@ -280,7 +302,7 @@ class InitialInstallationEnrollment:
         # stream. Its projection triggers signed grant acquisition, never approval
         # or local readiness by itself.
         from app.security.onboarding_continuity import PROFILE as HOSTED_PROFILE, validated_event
-        from app.provisioning.binding_acquisition import acquire_creator_account_binding
+        from app.provisioning.binding_acquisition import BindingAcquisitionStatus, acquire_creator_account_binding
         if not row["scope_json"] or not self.store.consumed_claim_submissions():
             return
         self._candidate(row)
@@ -293,10 +315,14 @@ class InitialInstallationEnrollment:
             if cursor is not None:
                 request["cursor"] = cursor
             received = False
+            binding_refusal_logged = False
+            stage = "challenge_envelope"
             try:
                 envelope = await asyncio.to_thread(self.continuity.envelope, request)
                 initial = True
+                stage = "stream_admission"
                 async for event in self.continuity_stream.events(envelope):
+                    stage = "stream_frame"
                     value = validated_event(event, transaction_id=scope["onboarding_transaction_id"])
                     if initial and event["kind"] != "snapshot":
                         raise HostedGrantUnavailable("Continuity snapshot required")
@@ -311,11 +337,13 @@ class InitialInstallationEnrollment:
                     cursor = {"epoch": value["epoch"], "revision": value["revision"]}
                     facts = value["facts"]
                     if facts["authorization"] != "current":
+                        stage = "authority_refresh"
                         await self._refresh_current_grants(scope)
                         events.publish()
                         return
                     if facts["association"] == "none":
                         from app.security.hosted_grants import CreatorAssociationRequest, CreatorAssociationPending
+                        stage = "association_request"
                         try:
                             await asyncio.to_thread(self.grants.request_creator_association, CreatorAssociationRequest(
                                 association_request_id=scope["association_request_id"],
@@ -325,23 +353,40 @@ class InitialInstallationEnrollment:
                         except CreatorAssociationPending:
                             pass
                     elif facts["association"] == "approved":
+                        stage = "binding_acquisition"
                         candidate = self.store.provisioning_candidate(scope["association_request_id"])
                         if candidate is not None and candidate.state is ProvisioningCandidateState.PENDING:
-                            await asyncio.to_thread(acquire_creator_account_binding, store=self.store, client=self.grants,
-                                                    now=self.store._now)
+                            binding = await asyncio.to_thread(acquire_creator_account_binding, store=self.store, client=self.grants,
+                                                             now=self.store._now)
+                            if not isinstance(binding, BindingAcquisitionStatus) and not binding_refusal_logged:
+                                binding_refusal_logged = True
+                                reason = binding if type(binding) is str and binding in {
+                                    "binding_acquisition_unavailable", "candidate_resolution_conflict",
+                                    "grant_verification_refused", "hosted_origin_unavailable", "hosted_unavailable",
+                                    "installation_key_unavailable", "membership_reference_unavailable",
+                                } else "invalid_binding_result"
+                                logger.warning("onboarding_continuity_event stage_code=binding_acquisition reason_code=%s attempt=%d outcome=unresolved",
+                                               reason, attempt + 1)
                         events.publish()
                     elif facts["association"] in {"revoked", "rejected", "expired"}:
                         # The projection is a wake signal. Signed grant refresh
                         # performs revocation; this view makes no authority claim.
+                        stage = "authority_refresh"
                         await self._refresh_current_grants(scope)
                         events.publish()
+                    stage = "stream_frame"
                 if received and not reconciled_closure:
                     reconciled_closure = True
                     await self._reconcile_closed_stream(scope)
+                logger.warning("onboarding_continuity_event stage_code=%s reason_code=stream_closed attempt=%d outcome=%s",
+                               stage, attempt + 1, "exhausted" if attempt == 2 else "retry")
             except asyncio.CancelledError:
                 raise
             except Exception as error:
                 from app.security.initial_handoff import OnboardingStreamAdmissionRefused
+                logger.warning("onboarding_continuity_event stage_code=%s reason_code=%s attempt=%d outcome=%s",
+                               stage, _continuity_failure_reason(error), attempt + 1,
+                               "exhausted" if attempt == 2 else "retry")
                 if not reconciled_closure and (received or isinstance(error, OnboardingStreamAdmissionRefused)):
                     reconciled_closure = True
                     await self._reconcile_closed_stream(scope)
@@ -356,8 +401,9 @@ class InitialInstallationEnrollment:
             await self._refresh_current_grants(scope)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            pass
+        except Exception as error:
+            logger.warning("onboarding_continuity_reconciliation_failed stage_code=authority_refresh reason_code=%s",
+                           _continuity_failure_reason(error))
         events.publish()
 
     async def _refresh_current_grants(self, scope: dict) -> None:
