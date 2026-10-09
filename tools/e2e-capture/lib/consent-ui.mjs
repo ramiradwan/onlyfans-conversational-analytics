@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
 import { expect } from '@playwright/test';
+import { runNativePermissionInteraction } from './native-permission-diagnostics.mjs';
 
 const execFileAsync = promisify(execFile);
 const syntheticLegalBindings = JSON.parse(await readFile(
@@ -72,12 +73,18 @@ export async function browserProcessId(context) {
   }
 }
 
-export async function acceptNativeHostPermissionPrompt(context) {
+export async function acceptNativeHostPermissionPrompt(context, { readPermission, requestKind } = {}) {
   if (process.platform !== 'win32') {
     throw new Error('Native optional-permission automation is not configured for this platform');
   }
   const targetProcessId = await browserProcessId(context);
   const script = String.raw`
+$diagnostic = [ordered]@{schema='native-permission-diagnostic/v1';stage='started';window_found=$false;prompt_found=$false;invoke_attempted=$false;allow_invoked=$false;prompt_dismissed=$false}
+function Write-NativePermissionStage([string]$Stage) {
+  $diagnostic.stage = $Stage
+  [Console]::Out.WriteLine(($diagnostic | ConvertTo-Json -Compress))
+}
+Write-NativePermissionStage 'started'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $deadline = (Get-Date).AddSeconds(10)
@@ -87,6 +94,7 @@ do {
   # of the desktop can block on unrelated applications before reaching Chrome.
   $windowHandle = (Get-Process -Id $targetProcessId).MainWindowHandle
   if ($windowHandle -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100; continue }
+  if (-not $diagnostic.window_found) { $diagnostic.window_found = $true; Write-NativePermissionStage 'window_found' }
   $root = [System.Windows.Automation.AutomationElement]::FromHandle($windowHandle)
   $promptNameCondition = New-Object System.Windows.Automation.PropertyCondition(
     [System.Windows.Automation.AutomationElement]::NameProperty,
@@ -105,6 +113,7 @@ do {
     $promptCondition
   )
   if ($null -ne $prompt) {
+    if (-not $diagnostic.prompt_found) { $diagnostic.prompt_found = $true; Write-NativePermissionStage 'prompt_found' }
     $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
       [System.Windows.Automation.AutomationElement]::NameProperty,
       'Allow'
@@ -123,8 +132,10 @@ do {
     )
     if ($null -ne $button -and $button.Current.IsEnabled) {
       try {
+        if (-not $diagnostic.invoke_attempted) { $diagnostic.invoke_attempted = $true; Write-NativePermissionStage 'invoke_attempted' }
         $invoke = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
         $invoke.Invoke()
+        if (-not $diagnostic.allow_invoked) { $diagnostic.allow_invoked = $true; Write-NativePermissionStage 'allow_returned' }
       } catch {
         Start-Sleep -Milliseconds 100
         continue
@@ -136,7 +147,7 @@ do {
           [System.Windows.Automation.TreeScope]::Descendants,
           $promptCondition
         )
-        if ($null -eq $remaining) { exit 0 }
+        if ($null -eq $remaining) { $diagnostic.prompt_dismissed = $true; Write-NativePermissionStage 'prompt_dismissed'; exit 0 }
       } while ((Get-Date) -lt $dismissDeadline)
       throw 'Chrome optional host permission prompt did not close after Allow'
     }
@@ -145,13 +156,12 @@ do {
 } while ((Get-Date) -lt $deadline)
 throw 'Chrome optional host permission prompt was not found'
 `;
-  await execFileAsync('powershell.exe', [
-    '-NoLogo',
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    script,
-  ], { timeout: 15_000, windowsHide: true });
+  await runNativePermissionInteraction({
+    requestKind, readPermission,
+    run: (signal) => execFileAsync('powershell.exe', [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script,
+    ], { signal, windowsHide: true, maxBuffer: 16 * 1024 }),
+  });
 }
 
 export async function configureSyntheticLegalBindings(worker, popup) {
@@ -186,7 +196,10 @@ async function hasOrigins(worker, origins) {
 async function acceptPermissionFor(context, popup, worker, buttonName, origins) {
   const alreadyGranted = await hasOrigins(worker, origins);
   await popup.getByRole('button', { name: buttonName }).click();
-  if (!alreadyGranted) await acceptNativeHostPermissionPrompt(context);
+  if (!alreadyGranted) await acceptNativeHostPermissionPrompt(context, {
+    requestKind: buttonName === 'Enable Preview' ? 'preview' : 'full',
+    readPermission: () => hasOrigins(worker, origins),
+  });
   for (const origin of origins) {
     await expect.poll(
       () => worker.evaluate(

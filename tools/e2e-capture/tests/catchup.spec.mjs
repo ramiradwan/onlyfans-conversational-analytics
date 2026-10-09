@@ -60,7 +60,9 @@ async function grantHistoryPermission(context, popup, worker) {
     await expect.poll(hasPermission, { timeout: 1_500 }).toBe(true);
     grantedWithoutPrompt = true;
   } catch {}
-  if (!grantedWithoutPrompt) await acceptNativeHostPermissionPrompt(context);
+  if (!grantedWithoutPrompt) await acceptNativeHostPermissionPrompt(context, {
+    requestKind: 'history', readPermission: hasPermission,
+  });
   await expect.poll(hasPermission, {
     timeout: 12_000,
     message: 'History permission was not granted through the extension UI.',

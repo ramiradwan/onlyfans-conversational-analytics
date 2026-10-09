@@ -162,6 +162,7 @@ for name in (
     'provisioning.js',
     'resume.js',
     'native-return.js',
+    'native-workspace.mjs',
 ):
     shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
 core = stage / '_internal' / 'app' / 'core'
