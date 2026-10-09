@@ -549,3 +549,83 @@ async def test_stream_denial_or_closure_requests_one_signed_reconciliation(tmp_p
     assert calls==["current-grant"]*expected
     assert count(store,"auth_revocation_bindings")==before
     await worker.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("continuity", [False, True], ids=["initial", "registered"])
+async def test_hosted_sse_delivers_small_frames_before_eof_and_closes_on_cancellation(monkeypatch, continuity):
+    import httpx
+    from app.security.initial_handoff import InitialHandoffStream, PROFILE
+    from app.security.onboarding_continuity import PROFILE as HOSTED_PROFILE, validated_event
+
+    class OpenResponse(httpx.AsyncByteStream):
+        def __init__(self):
+            self.arrivals = asyncio.Queue()
+            self.waiting = asyncio.Event()
+            self.closed = False
+
+        async def __aiter__(self):
+            while True:
+                self.waiting.set()
+                chunk = await self.arrivals.get()
+                self.waiting.clear()
+                yield chunk
+
+        async def aclose(self):
+            self.closed = True
+
+    if continuity:
+        snapshot = json.loads(json.dumps(next(value["value"] for value in _CONTINUITY_CASES if value["valid"])))
+        second = {**snapshot, "revision": snapshot["revision"] + 1}
+        events = [{"profile": HOSTED_PROFILE, "kind": kind, "snapshot": value}
+            for kind, value in [("snapshot", snapshot), ("committed", second)]]
+        for event in events:
+            validated_event(event, transaction_id=snapshot["onboarding_transaction_id"])
+        packets = [(f"event: onboarding\nid: {event['snapshot']['epoch']}:{event['snapshot']['revision']}\n"
+                    + "data: " + json.dumps(event, separators=(",", ":")) + "\n\n").encode() for event in events]
+    else:
+        events = [{"profile": PROFILE, "status": "waiting", "expires_at": "2026-10-11T00:00:00.000Z", "revision": 0},
+                  {"profile": PROFILE, "status": "expired", "revision": 1}]
+        packets = [("event: initial-handoff\ndata: " + json.dumps(event, separators=(",", ":")) + "\n\n").encode()
+                   for event in events]
+    assert all(len(packet) < 1024 for packet in packets)
+    body = OpenResponse()
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=body)
+
+    actual_client = httpx.AsyncClient
+    transport = httpx.MockTransport(respond)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: actual_client(**kwargs, transport=transport))
+    stream = InitialHandoffStream("https://onboarding.example", continuity=continuity).events({})
+    pending = None
+    try:
+        body.arrivals.put_nowait(packets[0])
+        assert await asyncio.wait_for(anext(stream), 1) == events[0]
+        assert not body.closed
+        # The next owner transition arrives on the same still-open connection,
+        # split across transport arrivals. Neither delivery depends on EOF.
+        halfway = len(packets[1]) // 2
+        body.arrivals.put_nowait(b": keepalive\n\n")
+        body.arrivals.put_nowait(packets[1][:halfway])
+        body.arrivals.put_nowait(packets[1][halfway:])
+        assert await asyncio.wait_for(anext(stream), 1) == events[1]
+        assert not body.closed
+        assert len(requests) == 1
+        assert requests[0].method == "POST"
+        assert requests[0].url.path == ("/v1/onboarding/streams" if continuity
+            else "/v1/onboarding/installation-handoffs:wait")
+        body.waiting.clear()
+        pending = asyncio.create_task(anext(stream))
+        await asyncio.wait_for(body.waiting.wait(), 1)
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        assert body.closed
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+        await stream.aclose()

@@ -1007,6 +1007,8 @@
       .provisioning-stage .page-status { position:static; display:block; width:auto; height:auto; padding:0; margin:0; border:0; font-size:14px; line-height:20px; overflow:visible; clip-path:none; }
       .provisioning-stage .page-status:empty { visibility:hidden; }
       .provisioning-stage #claim-form { display:grid; align-content:start; gap:4px; }
+      /* Journey prerequisites replace the legacy code form and inactive actions. */
+      .provisioning-stage #claim-step [hidden] { display:none !important; }
       .provisioning-stage #claim-package { width:100%; min-height:48px; height:48px; border:1px solid var(--dipsy-color-divider); border-radius:12px; padding:0 12px; font:14px ui-monospace,monospace; color:inherit; background:var(--dipsy-color-paper); }
       .provisioning-stage #secure-setup-help { position:absolute; width:1px; height:1px; clip-path:inset(50%); }
       .provisioning-stage #claim-package-count { display:none; }
@@ -1104,6 +1106,19 @@
         <section id="claim-step" class="step" data-region-content data-step="registration" data-state="current" aria-current="step">
           <p id="claim-step-state" class="step-state">Step 1 of 4</p><h2 id="claim-heading">Connect this computer</h2>
           <p id="claim-step-description" class="step-description">Use a setup code to connect this computer.</p>
+          <div id="initial-browser-prerequisite" class="stage-body" hidden>
+            <div id="initial-extension-install">
+              <p>Open Conversation Analytics from your browser’s Extensions menu.</p>
+              <p>To add it, use the extension ZIP included with the Windows download:</p>
+              <ol>
+                <li>Extract the extension ZIP.</li>
+                <li>Open your browser’s Extensions page and turn on Developer mode.</li>
+                <li>Choose Load unpacked, then select the extracted folder.</li>
+              </ol>
+            </div>
+            <button id="initial-open-extension" type="button" hidden>Open extension setup</button>
+            <a id="initial-open-onlyfans" class="primary-link" href="https://onlyfans.com/" target="_blank" rel="noopener noreferrer" hidden>Open OnlyFans</a>
+          </div>
           <form id="claim-form" novalidate>
             <label for="claim-package">Setup code</label><p id="claim-package-help" class="help">Paste the whole code from the setup tab.</p>
             <input id="claim-package" name="package" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="claim-package-help claim-package-validation claim-package-count" aria-invalid="false">

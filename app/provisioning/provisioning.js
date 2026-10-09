@@ -39,6 +39,7 @@ const REQUEST_FAILURE = 'The desktop app could not be reached. Make sure it is r
 const MUTATION_FAILED = Symbol('mutation failed');
 const MUTATION_RETIRED = Symbol('mutation retired');
 const JOURNEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const HOSTED_CREATOR_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/u;
 
 /** Only the registered local workspace identifier; never an authentication value. */
 export function parseJourneyHash(hash) {
@@ -63,10 +64,14 @@ export function parseBrainOnboardingState(value) {
   return value;
 }
 
-export function submitHostedHandoff({ document, payload, journeyId, registeredHostedUrl }) {
+export function submitHostedHandoff({ document, payload, journeyId, registeredHostedUrl, intendedCreatorId }) {
   const keys = ['state', 'journey_id', 'handoff_reference', 'hosted_start_url'];
   const continuation = payload?.continuation_reference;
   if (continuation !== undefined) keys.push('continuation_reference');
+  // A receiving continuation derives its creator from the hosted receiver's
+  // authorized context. Fresh entry carries only an observed, nonauthorizing hint.
+  if (continuation === undefined ? typeof intendedCreatorId !== 'string' || !HOSTED_CREATOR_PATTERN.test(intendedCreatorId)
+    : intendedCreatorId !== undefined) return false;
   if (!isRecord(payload) || !hasOnlyKeys(payload, keys)
     || (continuation !== undefined && !/^[A-Za-z0-9_-]{43}$/u.test(continuation))
     || payload.state !== 'waiting' || payload.journey_id !== journeyId || !JOURNEY_PATTERN.test(journeyId)
@@ -81,7 +86,7 @@ export function submitHostedHandoff({ document, payload, journeyId, registeredHo
   // Submission carries only bounded nonauthorizing entry context. No proof,
   // claim/bootstrap authority, local session or return URL leaves this page.
   for (const [name, value] of Object.entries({ journey_id: journeyId, handoff_reference: payload.handoff_reference,
-    ...(continuation === undefined ? {} : { continuation_reference: continuation }) })) {
+    ...(continuation === undefined ? { intended_creator_id: intendedCreatorId } : { continuation_reference: continuation }) })) {
     const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value;
     form.append(input);
   }
@@ -476,6 +481,13 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   let returning = null;
   let onboarding = null;
   let handoffAttempted = false;
+  let handoffRunning = false;
+  let handoffAdvanceRequested = false;
+  let handoffSubmitted = false;
+  let handoffRefusal = null;
+  let handoffReadUnavailable = false;
+  let handoffRetryRunning = false;
+  let registrationKnown = false;
   let pushedRevision = -1;
   let pushedEpoch = null;
   let progressRead = null;
@@ -484,6 +496,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   let pageActive = true;
   let lifecycleGeneration = 0;
   let identityGeneration = 0;
+  let identityChecking = false;
   let activeMutation = null;
   let uncertainMutation = null;
   let resumeNeedsAction = false;
@@ -495,6 +508,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   const page = document.defaultView ?? globalThis;
   const journeyId = parseJourneyHash(page.location?.hash);
   const hostedLink = document.querySelector('#open-secure-setup');
+  const hostedSetupAvailable = Boolean(hostedLink && !hostedLink.hidden);
   const currentPage = () => {
     const generation = lifecycleGeneration;
     return () => pageActive && generation === lifecycleGeneration;
@@ -541,19 +555,94 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   async function beginHostedSetup(event) {
     event?.preventDefault();
     const current = currentPage();
-    if (!current() || !journeyId || installationRegistered || mutationInFlight || uncertainMutation || configurationComplete) return;
-    handoffAttempted = true;
-    setStatus('Connecting this computer…');
-    const payload = await mutate('/api/v1/provisioning/initial-handoff', {});
-    if (!current() || payload === MUTATION_RETIRED) return;
-    if (payload === MUTATION_FAILED) return;
-    if (submitHostedHandoff({ document, payload, journeyId, registeredHostedUrl: hostedLink?.href })) return;
-    if (isRecord(payload) && hasOnlyKeys(payload, ['state', 'journey_id']) && payload.journey_id === journeyId
-      && ['completing', 'completed', 'unknown'].includes(payload.state)) {
-      setStatus(payload.state === 'unknown' ? 'Setup could not be confirmed.' : 'Connecting this computer…');
-      return;
+    if (!current() || !journeyId || !hostedSetupAvailable || transferActive || !registrationKnown || installationRegistered
+      || configurationComplete || recoveryRequired || handoffSubmitted) return;
+    if (handoffRefusal !== null) { renderHandoffRecovery(); return; }
+    if (handoffRunning) { handoffAdvanceRequested = true; return; }
+    if (detectedAccountId === null || mutationInFlight) { renderFreshPrerequisite(); return; }
+    if (uncertainMutation && !uncertainMutation.path.endsWith('/initial-handoff')) return;
+    handoffRunning = true;
+    try {
+      if (await refreshIdentity({ advance: false }) === null || !current()) return;
+      if (handoffAttempted || uncertainMutation) { await recoverHandoff(current); return; }
+      handoffAttempted = true;
+      setStatus('Connecting this computer…');
+      const payload = await mutate('/api/v1/provisioning/initial-handoff', {});
+      if (!current() || payload === MUTATION_RETIRED || payload === MUTATION_FAILED) return;
+      // Preparation only binds the computer. Re-read admitted identity after it
+      // settles so an account switch cannot reuse the earlier creator hint.
+      if (await submitFreshHandoff(payload, current)) return;
+      if (!current() || detectedAccountId === null) return;
+      if (isRecord(payload) && hasOnlyKeys(payload, ['state', 'journey_id']) && payload.journey_id === journeyId
+        && ['completing', 'completed', 'unknown'].includes(payload.state)) {
+        setStatus(payload.state === 'unknown' ? 'Setup could not be confirmed.' : 'Connecting this computer…');
+        return;
+      }
+      setStatus('Setup could not be started.', true);
+    } finally {
+      if (current()) {
+        handoffRunning = false;
+        if (handoffAdvanceRequested) { handoffAdvanceRequested = false; void beginHostedSetup(); }
+      }
     }
-    setStatus('Setup could not be started.', true);
+  }
+
+  async function submitFreshHandoff(payload, current) {
+    if (!current() || installationRegistered || configurationComplete || recoveryRequired || transferActive
+      || handoffSubmitted || payload?.continuation_reference !== undefined) return false;
+    const creator = await refreshIdentity({ advance: false });
+    if (!current() || creator === null || creator !== detectedAccountId || installationRegistered
+      || configurationComplete || recoveryRequired || transferActive || handoffSubmitted) return false;
+    const submitted = submitHostedHandoff({ document, payload, journeyId,
+      registeredHostedUrl: hostedLink?.href, intendedCreatorId: creator });
+    if (submitted) handoffSubmitted = true;
+    return submitted;
+  }
+
+  function initialRefusal(status, payload) {
+    if (status === 409 && isRecord(payload) && hasOnlyKeys(payload, ['state', 'reason'])
+      && payload.state === 'unconfirmed' && ['handoff_refused', 'journey_expired'].includes(payload.reason)) return payload.reason;
+    return 'unavailable';
+  }
+
+  async function retryInitialHandoff() {
+    const current = currentPage();
+    if (handoffRefusal !== 'handoff_refused' || handoffRetryRunning || mutationInFlight || uncertainMutation) return;
+    handoffRetryRunning = true;
+    try {
+      const progress = await checkStatus(current);
+      if (!current() || progress?.stage !== 'registration_required' || recoveryRequired || configurationComplete
+        || handoffRefusal !== 'handoff_refused' || uncertainMutation) return;
+      if (await refreshIdentity({ advance: false }) === null || !current()) return;
+      // Only this explicit action after an exact owner refusal permits another
+      // preparation. Unknown outcomes and locator reads never clear this latch.
+      handoffRefusal = null; handoffAttempted = false; handoffReadUnavailable = false; resumeNeedsAction = false;
+      renderState();
+      await beginHostedSetup();
+    } finally { if (current()) { handoffRetryRunning = false; renderHandoffRecovery(); } }
+  }
+
+  function renderHandoffRecovery() {
+    if (!handoffAttempted || transferActive) return;
+    const action = document.querySelector('#transfer-recovery-action');
+    if (action) action.hidden = true;
+    if (installationRegistered || configurationComplete || handoffSubmitted) return;
+    if (handoffRefusal !== null) {
+      if (hostedLink) hostedLink.hidden = true;
+      setStatus(handoffRefusal === 'handoff_refused' ? 'Setup could not be started.'
+        : handoffRefusal === 'journey_expired' ? 'This setup has expired. Reopen the desktop app to start again.'
+          : 'Setup could not continue. Reopen the desktop app.');
+      if (action && handoffRefusal === 'handoff_refused' && !recoveryRequired) {
+        action.hidden = false; action.textContent = 'Try setup again'; action.onclick = retryInitialHandoff;
+        action.disabled = handoffRetryRunning || mutationInFlight;
+      }
+    } else if (handoffReadUnavailable) {
+      if (hostedLink) hostedLink.hidden = true;
+      setStatus('Setup could not be confirmed. Reopen the desktop app to continue.');
+    } else if (uncertainMutation?.path.endsWith('/initial-handoff') && action) {
+      if (hostedLink) hostedLink.hidden = true;
+      action.hidden = false; action.textContent = 'Check setup'; action.onclick = onReturn;
+    }
   }
 
   function onOwnerState(state) {
@@ -576,7 +665,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
         if (!current()) return;
         if (approvalAcquired && !configurationComplete && !recoveryRequired) await finalizeProvisioning();
         if (!current()) return;
-        if (!handoffAttempted && !installationRegistered && !recoveryRequired && hostedLink && !hostedLink.hidden) {
+        if (!handoffAttempted && !installationRegistered && !recoveryRequired && hostedLink) {
           await beginHostedSetup();
         }
       } while (readAgain);
@@ -595,6 +684,30 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (extensionStage === 'needs_account') return 'Sign in to your creator account on OnlyFans in this browser.';
     return null;
   };
+
+  function renderFreshPrerequisite() {
+    const fresh = Boolean(journeyId && !installationRegistered && !configurationComplete && !transferActive && !recoveryRequired);
+    const prerequisite = document.querySelector('#initial-browser-prerequisite');
+    if (prerequisite) prerequisite.hidden = !fresh || detectedAccountId !== null;
+    if (!fresh) return;
+    if (hostedLink) hostedLink.hidden = !hostedSetupAvailable || detectedAccountId === null || handoffAttempted || handoffRefusal !== null
+      || handoffReadUnavailable || uncertainMutation?.path.endsWith('/initial-handoff') === true;
+    const heading = document.querySelector('#claim-heading');
+    if (heading) heading.textContent = detectedAccountId !== null ? 'Connect this computer'
+      : identityChecking ? 'Checking creator account…'
+      : extensionStage === 'needs_account' ? 'Sign in to OnlyFans' : 'Set up the browser extension';
+    elements.claimActionHelp.textContent = detectedAccountId !== null ? `Signed in now: ${detectedAccountId}`
+      : identityChecking ? ''
+      : extensionStage === 'needs_account' ? 'Use the creator account you want to analyze.'
+        : EXTENSION_SETUP_STAGES.has(extensionStage) ? 'Finish Full analytics setup in the extension tab.'
+          : 'The creator account could not be checked.';
+    const install = document.querySelector('#initial-extension-install');
+    if (install) install.hidden = identityChecking || extensionStage !== null;
+    const open = document.querySelector('#initial-open-extension');
+    if (open) open.hidden = identityChecking || extensionStage === null || extensionStage === 'needs_account';
+    const account = document.querySelector('#initial-open-onlyfans');
+    if (account) account.hidden = identityChecking || extensionStage !== 'needs_account';
+  }
 
   function setStepState(step, stateOutput, state) {
     step.dataset.state = state;
@@ -649,6 +762,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     // Each step owns one instruction. Outcomes appear beside its controls.
     elements.claimStep.dataset.recovery = String(recoveryRequired);
     for (const step of steps) setAttribute(step, 'aria-busy', String(mutationInFlight && step.dataset.state === 'current'));
+    renderFreshPrerequisite();
+    renderHandoffRecovery();
     placeFeedback();
   }
 
@@ -683,6 +798,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   const setBusy = (busy) => { mutationInFlight = busy; renderState(); };
 
   function applyProgress(progress) {
+    registrationKnown = true;
     recoveryRequired = false;
     if (progress.stage === 'registration_required') {
       installationRegistered = false;
@@ -752,6 +868,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       || (path.endsWith('/acquire') && acquired)) uncertainMutation = null;
     else if (uncertainMutation.refused) {
       uncertainMutation = null;
+      if (path.endsWith('/initial-handoff')) handoffRefusal = operation.initialRefusal ?? 'unavailable';
       approvalFailed = progress.stage === 'creator_approval_pending';
       finalizeFailed = progress.stage === 'finalization_ready';
       finalizeRefused = true;
@@ -780,14 +897,21 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
           headers: { Accept: 'application/json', 'X-Provisioning-CSRF': csrf, 'X-Onboarding-Journey': journeyId },
         });
         const payload = await readJson(response);
-        if (!current() || !response.ok || !uncertainMutation?.path.endsWith('/initial-handoff')) return;
-        if (submitHostedHandoff({ document, payload, journeyId, registeredHostedUrl: hostedLink?.href })) {
+        if (!current() || transferActive || handoffSubmitted) return;
+        if (!response.ok) {
+          handoffReadUnavailable = true; renderHandoffRecovery(); return;
+        }
+        if (await submitFreshHandoff(payload, current)) {
           if (activeMutation === uncertainMutation) { activeMutation = null; mutationInFlight = false; }
           uncertainMutation = null;
           const recovery = document.querySelector('#transfer-recovery-action');
           if (recovery) recovery.hidden = true;
+        } else if (current() && (payload?.state !== 'waiting' || detectedAccountId !== null)) {
+          handoffReadUnavailable = true; renderHandoffRecovery();
         }
-      } catch { /* Preserve the unconfirmed outcome; an explicit check can retry the read. */ }
+      } catch {
+        if (current()) { handoffReadUnavailable = true; renderHandoffRecovery(); }
+      }
     })().finally(() => { if (handoffRecoveryRead === read) handoffRecoveryRead = null; });
     handoffRecoveryRead = read;
     return read;
@@ -813,11 +937,20 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       if (!current()) {
         // A refusal never authorizes progress. After a fresh owner read it can
         // offer an explicit retry, instead of trapping the user as uncertain.
-        if (response.status >= 400 && response.status < 500) { operation.refused = true; resumeNeedsAction = true; }
+        if (response.status >= 400 && response.status < 500) {
+          operation.refused = true; resumeNeedsAction = true;
+          if (path.endsWith('/initial-handoff')) operation.initialRefusal = initialRefusal(response.status, payload);
+        }
         return MUTATION_RETIRED;
       }
       if (!response.ok) {
+        if (path.endsWith('/initial-handoff') && response.status >= 500) {
+          uncertainMutation = operation;
+          setStatus('Setup could not be confirmed.');
+          return MUTATION_FAILED;
+        }
         if (path.endsWith('/finalize')) finalizeRefused = response.status >= 400 && response.status < 500;
+        if (path.endsWith('/initial-handoff')) handoffRefusal = initialRefusal(response.status, payload);
         if (response.status === 401 || response.status === 403) recoveryRequired = true;
         const reason = isRecord(payload) && typeof payload.reason === 'string' ? payload.reason : null;
         setStatus(explainProvisioningFailure(response, payload), !neutralReasons.includes(reason));
@@ -826,6 +959,11 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       return payload;
     } catch {
       if (!current()) return MUTATION_RETIRED;
+      if (path.endsWith('/initial-handoff')) {
+        uncertainMutation = operation;
+        setStatus('Setup could not be confirmed.');
+        return MUTATION_FAILED;
+      }
       setStatus(REQUEST_FAILURE, true); return MUTATION_FAILED;
     } finally {
       if (activeMutation === operation) {
@@ -838,36 +976,46 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     }
   }
 
-  async function refreshIdentity() {
+  async function refreshIdentity({ advance = true } = {}) {
     const pageCurrent = currentPage();
     const generation = ++identityGeneration;
     const current = () => pageCurrent() && generation === identityGeneration && associationRequestId === null;
-    if (!current() || recoveryRequired || configurationComplete) return;
+    if (!current() || recoveryRequired || configurationComplete) return null;
     detectedAccountId = null;
+    identityChecking = true;
 
     renderState();
     if (!EXTENSION_ID_PATTERN.test(extensionId)) {
-      setIdentityStatus('Enable the Conversation Analytics extension, then try again.'); renderExtensionSetup(); return;
+      identityChecking = false;
+      setIdentityStatus('Enable the Conversation Analytics extension, then try again.'); renderFreshPrerequisite(); renderExtensionSetup(); return null;
     }
     try {
       const identity = parseIdentityResponse(await sendExtensionMessage(extensionId, IDENTITY_QUERY));
-      if (!current()) return;
+      if (!current()) return null;
       if (identity === null) {
         setIdentityStatus(missingExtensionStep() ?? 'The extension could not find your account. Sign in on OnlyFans, then try again.');
-        renderExtensionSetup(); return;
+        renderExtensionSetup(); return null;
       }
       if (identity.accountId === null) {
         setIdentityStatus(missingExtensionStep() ?? 'Sign in to your creator account on OnlyFans, then try again.');
-        renderExtensionSetup(); return;
+        renderExtensionSetup(); return null;
+      }
+      if (journeyId && !installationRegistered && !HOSTED_CREATOR_PATTERN.test(identity.accountId)) {
+        setIdentityStatus('The creator account could not be checked.'); renderFreshPrerequisite(); return null;
       }
       detectedAccountId = identity.accountId;
 
       setIdentityStatus(`Signed in now: ${detectedAccountId}`);
       renderState(); renderExtensionSetup();
+      if (advance) void beginHostedSetup();
+      return detectedAccountId;
     } catch {
-      if (!current()) return;
+      if (!current()) return null;
       setIdentityStatus(missingExtensionStep() ?? 'Enable the Conversation Analytics extension, then try again.');
       renderExtensionSetup();
+      return null;
+    } finally {
+      if (current()) { identityChecking = false; renderFreshPrerequisite(); }
     }
   }
 
@@ -986,6 +1134,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   function onReturn() {
     if (!pageActive || transferActive || document.hidden || recoveryRequired || configurationComplete || (mutationInFlight && !uncertainMutation)) return returning;
     if (returning) return returning;
+    if (journeyId && extensionStage === null) connectExtensionState();
     const read = (async () => {
       const generation = ownerGeneration;
       const current = () => pageActive && generation === ownerGeneration;
@@ -1002,9 +1151,11 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   function connectExtensionState() {
     if (!EXTENSION_ID_PATTERN.test(extensionId) || typeof connectExtension !== 'function') return;
     const generation = ++extensionGeneration;
+    extensionPort?.close();
     extensionPort = connectExtension(extensionId, (stage) => {
       if (!pageActive || generation !== extensionGeneration) return;
       extensionStage = stage;
+      renderFreshPrerequisite();
       elements.refreshIdentity.hidden = stage !== null;
       if (!configurationComplete && !recoveryRequired && associationRequestId === null) void refreshIdentity();
       else renderExtensionSetup();
@@ -1053,6 +1204,9 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       if (activeMutation) uncertainMutation = activeMutation;
       progressRead = null; returning = null; handoffRecoveryRead = null; readAgain = false; finalizationRunning = false;
       detectedAccountId = null;
+      identityChecking = false;
+      registrationKnown = false; handoffRunning = false; handoffAdvanceRequested = false; handoffSubmitted = false;
+      handoffRetryRunning = false;
       onboarding?.close(); onboarding = null;
       extensionPort?.close(); extensionPort = null;
     });
@@ -1084,6 +1238,8 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     document.querySelector('#recovery-close')?.addEventListener('click', () => dialog?.close());
     document.querySelector('#feedback-details-open')?.addEventListener('click', () => document.querySelector('#feedback-dialog')?.showModal());
     elements.openExtensionSetup?.addEventListener('click', () => extensionPort?.open('setup'));
+    document.querySelector('#initial-open-extension')?.addEventListener('click', () => extensionPort?.open('setup'));
+    connectExtensionState();
     if (journeyId && typeof connectOnboarding === 'function') {
       elements.claimForm.hidden = true;
       elements.claimSubmit.hidden = true;
@@ -1096,7 +1252,6 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       await connectOwner();
       if (!current()) return;
     }
-    connectExtensionState();
     updatePackageGuidance(false); renderState();
     if (!onboarding) { await onReturn(); return; }
     if (approvalAcquired && !configurationComplete && !recoveryRequired) void finalizeProvisioning();

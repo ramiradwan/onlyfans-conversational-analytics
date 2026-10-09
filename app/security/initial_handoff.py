@@ -233,7 +233,10 @@ class InitialHandoffStream:
                     raise HostedGrantUnavailable("Onboarding stream unavailable")
                 pending = bytearray()
                 event, event_id, data, size = "", None, [], 0
-                async for chunk in response.aiter_bytes(chunk_size=1024):
+                # A fixed HTTPX chunk size buffers small SSE frames until enough
+                # bytes arrive or the connection closes. Parse each arrival now;
+                # the line and frame limits below still bound the response.
+                async for chunk in response.aiter_bytes():
                     pending.extend(chunk)
                     if len(pending) > maximum and b"\n" not in pending:
                         raise HostedGrantUnavailable("Onboarding stream line too large")

@@ -98,10 +98,12 @@ const journeyId = '11111111-1111-4111-8111-111111111111';
 const snapshot = JSON.parse(readFileSync(new URL('../../shared/onboarding/vectors.json', import.meta.url)))
   .cases.find((entry) => entry.id === 'brain-snapshot').value;
 
-function lifecycleFixture({ stage, mutation, identity = async () => null, extensionId = '' }) {
+function lifecycleFixture({ stage, mutation, identity = async () => ({ type: 'provisioning.identity.result', version: 1,
+  authenticated_profile: { creator_account_id: CREATOR_ID } }), extensionId = 'a'.repeat(32) }) {
   const callbacks = new Map(), connections = [], calls = [], ui = elements(), forms = [], navigations = [];
   const hosted = 'https://setup.example.test/public/onboarding';
   const link = { href: hosted, hidden: false, addEventListener() {} };
+  const recovery = element();
   const doc = { ...document(), defaultView: {
     location: { hash: `#journey=${journeyId}`, replace: (url) => navigations.push(url) },
     addEventListener: (name, callback) => callbacks.set(name, callback),
@@ -109,7 +111,7 @@ function lifecycleFixture({ stage, mutation, identity = async () => null, extens
   createElement: () => ({ append() {}, submit() { this.submitted = true; } }),
   querySelector: (selector) => selector === 'main'
     ? { dataset: { provisioningCsrf: 'csrf', provisioningExtensionId: extensionId } }
-    : selector === '#open-secure-setup' ? link : null,
+    : selector === '#open-secure-setup' ? link : selector === '#transfer-recovery-action' ? recovery : null,
   };
   const state = { progress: stage, handoff: { state: 'unknown', journey_id: journeyId } };
   const controller = createProvisioningController({ document: doc, elements: ui, sendExtensionMessage: identity,
@@ -121,7 +123,7 @@ function lifecycleFixture({ stage, mutation, identity = async () => null, extens
       if (path.endsWith('/finalize') && state.completeFinalize) return response(200, { state: 'configured_restart' });
       return mutation.promise;
     } });
-  return { controller, state, ui, calls, forms, navigations, connections,
+  return { controller, state, ui, calls, forms, navigations, connections, recovery,
     hide: () => callbacks.get('pagehide')(),
     async restore() { callbacks.get('pageshow')({ persisted: true }); await settle(); connections.at(-1).onState(snapshot); await settle(); },
   };
@@ -156,7 +158,9 @@ for (const operation of ['acquire', 'initial-handoff', 'finalize']) {
     assert.ok(f.connections.every((connection) => !connection.runtime), 'a retired finalize reply cannot restart or navigate');
     assert.notEqual(f.ui.finalizeStep.dataset.state, 'completed');
     assert.ok(f.calls.filter((call) => call.path.endsWith('/status')).length >= 2, 'restore reads current owner state');
-    assert.equal(f.ui.status.textContent, 'This step could not be confirmed. Reopen the desktop app to continue.');
+    assert.equal(f.ui.status.textContent, operation === 'initial-handoff'
+      ? 'Setup could not be confirmed. Reopen the desktop app to continue.'
+      : 'This step could not be confirmed. Reopen the desktop app to continue.');
 
     // A separate fresh read can prove completion, regardless of the retired reply.
     f.state.progress = { state: 'configured_restart' };
@@ -236,6 +240,22 @@ test('a retired refusal requires a fresh status and exposes an explicit retry wi
   assert.equal(f.calls.filter((call) => call.options?.method === 'POST').length, 1);
   await f.controller.acquireAssociation();
   assert.equal(f.calls.filter((call) => call.options?.method === 'POST').length, 2);
+});
+
+test('a retired exact preparation refusal needs a fresh owner read and explicit retry', async () => {
+  const mutation = deferred();
+  const f = lifecycleFixture({ mutation, stage: { state: 'provisioning_ready', stage: 'registration_required',
+    association_request_id: null, creator_account_id: null } });
+  await f.controller.start(); f.connections[0].onState(snapshot); await settle();
+  f.hide(); await f.restore();
+  mutation.resolve(response(409, { state: 'unconfirmed', reason: 'handoff_refused' })); await settle();
+  assert.equal(f.calls.filter((call) => call.options?.method === 'POST').length, 1);
+  assert.equal(f.recovery.hidden, false); assert.equal(f.recovery.textContent, 'Try setup again');
+  const before = f.calls.filter((call) => call.path.endsWith('/status')).length;
+  await f.recovery.onclick(); await settle();
+  assert.equal(f.calls.filter((call) => call.path.endsWith('/status')).length, before + 1);
+  assert.equal(f.calls.filter((call) => call.options?.method === 'POST').length, 2);
+  assert.equal(f.forms.length, 0);
 });
 
 test('browser Back restores a closed owner subscription and ignores the previous page generation', async () => {
