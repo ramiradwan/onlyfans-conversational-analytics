@@ -120,7 +120,7 @@ function loopbackPort(port) {
   return {
     name: 'loopback-port',
     setup(context) {
-      context.onLoad({ filter: /local-service-endpoints\.mjs$/ }, async (args) => {
+      context.onLoad({ filter: /(?:local-service-endpoints|onboarding-workspace)\.mjs$/ }, async (args) => {
         const source = await readFile(args.path, 'utf8');
         const contents = source.replaceAll(`:${PRODUCTION_PORT}`, `:${port}`);
         if (contents === source) throw new Error('loopback endpoints were not rewritten');
