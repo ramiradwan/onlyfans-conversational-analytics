@@ -9,6 +9,7 @@ import { useEffect, useId, useState, useSyncExternalStore } from 'react';
 
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
 import { RecentConversations } from '../components/dashboard/RecentConversations';
+import { OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
 import { SetupPrompt } from '../components/SetupPrompt';
 import { LoadingFrame, ReservedNotice, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
@@ -17,6 +18,7 @@ import {
   capabilityLicenseApi,
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
+import { journeyFromHash } from '../services/onboardingSession';
 import {
   bridgeTransportStore,
   type BridgeTransportState,
@@ -355,6 +357,18 @@ export default function CreatorDashboardView({
 
   const evidence = summarizeMetricEvidence(metrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
+  const emptyOnboarding = Boolean(journeyFromHash(window.location.hash)) && hasSnapshot
+    && state.conversations.length === 0 && issue === null && fullAnalyticsReady === true
+    && state.connection === 'connected' && metrics.every((metric) => metric?.value === 0 && metric.basis === 'complete');
+  if (emptyOnboarding) return (
+    <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
+      <Stack spacing={3} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
+        <Typography component="h1" variant="h4">Dashboard</Typography>
+        <OnboardingEmptyActivity browser={(state.agent as BridgeTransportState['agent'])?.browser ?? null}
+          connection={extensionConnection(state.agent)} desktopConnected={state.connection === 'connected'} />
+      </Stack>
+    </Box>
+  );
 
   return (
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', pb: 3 }}>

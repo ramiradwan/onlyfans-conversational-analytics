@@ -582,7 +582,7 @@ describe('critical accessibility gates', () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole('heading', { name: 'Protect access to your messages' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Sign in on this computer' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
   });
 });

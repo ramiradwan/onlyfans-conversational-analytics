@@ -44,10 +44,12 @@ function StepLabel({ index, children }: { index: number; children: ReactNode }) 
 export function CommercialActivationControls({
   api = capabilityLicenseApi,
   secureSetupUrl,
+  embedded = false,
 }: {
   api?: CapabilityLicenseApi;
   /** Hosted secure setup page; read from the served config when omitted. */
   secureSetupUrl?: string;
+  embedded?: boolean;
 }) {
   const [setupUrl] = useState(() => secureSetupUrl ?? getConfig().SECURE_SETUP_URL);
   const [readiness, setReadiness] = useState<CapabilityLicenseReadiness | null>(null);
@@ -157,45 +159,7 @@ export function CommercialActivationControls({
           ? { label: 'Off', tone: 'default' }
           : null;
 
-  return (
-    <Panel sx={{ gap: 1 }}>
-      <SectionHeader
-        sx={{ minHeight: { xs: '5.5rem', sm: '3rem' }, position: 'relative', flexDirection: { xs: 'column', sm: 'row' }, rowGap: { xs: 1, sm: 0 },
-          '& > :first-child': { width: '100%' }, '& h2': { pr: { xs: 0, sm: '9rem' } },
-          '& > [aria-live]': { display: 'flex', position: { xs: 'static', sm: 'absolute' }, top: 0, right: 0, m: 0, width: '100%', maxWidth: '8rem', minHeight: '1.5rem',
-            '& .MuiChip-root': { width: '100%', height: 'auto', minHeight: '1.5rem' },
-            '& .MuiChip-label': { width: '100%', textAlign: 'left', whiteSpace: 'normal' } } }}
-        status={status}
-        summary="Adds tone, reply, and topic insights to your conversations."
-        title="Full analytics"
-      />
-
-      <ReservedNotice essential id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
-        : checking ? { title: '', body: 'Checking activation…', severity: 'info' }
-          : activeButBlocked ? { title: "New messages aren't being analyzed", body: '', severity: 'warning' }
-            : activationUnavailable || readiness === null ? { title: '', body: "Activation couldn't be checked.", severity: 'warning' } : null} />
-      <Box sx={{ height: '2.5rem' }}>
-      {!checking && activationRequired && (
-        <Box data-journey-state="desktop.full_analytics_activation">
-          <Button aria-haspopup="dialog" onClick={() => setDialogOpen(true)} variant="outlined">
-            Turn on full analytics
-          </Button>
-        </Box>
-      )}
-      {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
-        <Button onClick={checkReadiness} variant="outlined">Check again</Button>
-      )}
-      </Box>
-
-      <Dialog
-        aria-labelledby={titleId}
-        fullWidth
-        maxWidth="xs"
-        onClose={() => setDialogOpen(false)}
-        open={dialogOpen}
-      >
-        <DialogTitle id={titleId}>Turn on full analytics</DialogTitle>
-        <DialogContent>
+  const codeEntry = (
           <Stack spacing={2.5}>
             <DialogContentText variant="body2">
               Use an activation code to turn on Full analytics on this computer.
@@ -218,7 +182,7 @@ export function CommercialActivationControls({
                   </Button>
                 </Box>
               )}
-              <ReservedNotice essential id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />
+              {(!embedded || setupOpened) && <ReservedNotice essential id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />}
             </Stack>
             <Stack spacing={1.5}>
               <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
@@ -237,8 +201,54 @@ export function CommercialActivationControls({
                 value={code}
               />
             </Stack>
-            <StatusLine essential id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />
+            {(!embedded || checking || error) && <StatusLine essential id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />}
           </Stack>
+  );
+
+  return (
+    <Panel emphasis={embedded ? 'quiet' : 'secondary'} sx={{ gap: 1, ...(embedded ? { p: 0 } : {}) }}>
+      {!embedded && <SectionHeader
+        sx={{ minHeight: { xs: '5.5rem', sm: '3rem' }, position: 'relative', flexDirection: { xs: 'column', sm: 'row' }, rowGap: { xs: 1, sm: 0 },
+          '& > :first-child': { width: '100%' }, '& h2': { pr: { xs: 0, sm: '9rem' } },
+          '& > [aria-live]': { display: 'flex', position: { xs: 'static', sm: 'absolute' }, top: 0, right: 0, m: 0, width: '100%', maxWidth: '8rem', minHeight: '1.5rem',
+            '& .MuiChip-root': { width: '100%', height: 'auto', minHeight: '1.5rem' },
+            '& .MuiChip-label': { width: '100%', textAlign: 'left', whiteSpace: 'normal' } } }}
+        status={status}
+        summary="Adds tone, reply, and topic insights to your conversations."
+        title="Full analytics"
+      />}
+
+      {(!embedded || error || checking || activeButBlocked || activationUnavailable || readiness === null) && <ReservedNotice essential id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
+        : checking ? { title: '', body: 'Checking activation…', severity: 'info' }
+          : activeButBlocked ? { title: "New messages aren't being analyzed", body: '', severity: 'warning' }
+            : activationUnavailable || readiness === null ? { title: '', body: "Activation couldn't be checked.", severity: 'warning' } : null} />}
+      {embedded && !checking && activationRequired && <Stack spacing={2}>
+        {codeEntry}
+        <Button disabled={checking} onClick={() => void submit()} variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate</Button>
+      </Stack>}
+      <Box sx={{ minHeight: embedded ? 0 : '2.5rem' }}>
+      {!embedded && !checking && activationRequired && (
+        <Box data-journey-state="desktop.full_analytics_activation">
+          <Button aria-haspopup="dialog" onClick={() => setDialogOpen(true)} variant="outlined">
+            Turn on full analytics
+          </Button>
+        </Box>
+      )}
+      {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
+        <Button onClick={checkReadiness} variant="outlined">Check again</Button>
+      )}
+      </Box>
+
+      <Dialog
+        aria-labelledby={titleId}
+        fullWidth
+        maxWidth="xs"
+        onClose={() => setDialogOpen(false)}
+        open={dialogOpen}
+      >
+        <DialogTitle id={titleId}>Turn on full analytics</DialogTitle>
+        <DialogContent>
+          {codeEntry}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>

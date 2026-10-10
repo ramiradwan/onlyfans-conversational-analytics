@@ -39,8 +39,10 @@ export function statusPresentation(model) {
   if (status.observer?.helper === 'closed') return choice('Background tab closed', 'Reopen the background tab to receive activity.');
   if (status.phase === 'permission_required' || status.phase === 'revoked') return choice('Needs access', 'Allow site access so the extension can read activity from your creator account.');
   if (status.consent.mode === 'paused') return choice('Paused', model.pairing?.desktop_control ? 'Pause and resume from the desktop app.' : 'New messages are not collected until you resume.');
-  if (status.consent.mode === 'preview') return choice('Ready', 'Preview counts update as you use OnlyFans.');
-  if (status.consent.mode === 'full' && !model.desktopRuntimeReachable) return choice('Desktop app closed', model.pairing?.state === 'paired' ? 'Open the desktop app. Your connection is saved.' : 'Install or open the desktop app to store and analyze messages on this computer.');
+  if (status.consent.mode === 'preview') return status.observer?.attachment === 'ready'
+    ? choice('Ready', 'Preview counts update as you use OnlyFans.')
+    : choice('Waiting for activity', 'Waiting for OnlyFans activity.');
+  if (status.consent.mode === 'full' && !model.desktopRuntimeReachable) return choice('Not connected', 'Open the desktop app to continue.');
   if (model.pairing?.state === 'paired' && (status.delivery?.transport_state !== 'authenticated' || model.analysisReadiness?.commercial_authority !== 'active' || model.analysisReadiness?.analysis_admission !== 'admitted')) return choice('Connecting', 'Open the desktop app. Your connection is saved.');
   if (status.consent.mode !== 'full' || model.pairing?.state !== 'paired') return choice('Not connected', 'Choose Connect extension in the desktop app to finish.');
   return choice('Ready', 'Keep your creator tab open so new messages can arrive.');

@@ -766,7 +766,7 @@ class WindowsPortOwnership:
 
 def _show_error(message: str) -> None:
     if os.name == "nt":
-        ctypes.windll.user32.MessageBoxW(None, message, "Brain", 0x10)
+        ctypes.windll.user32.MessageBoxW(None, message, "Conversation Analytics", 0x10)
     else:
         print(message, file=sys.stderr)
 
@@ -777,15 +777,14 @@ def _confirm_workspace_reopen() -> bool:
     if os.name == "nt":
         return ctypes.windll.user32.MessageBoxW(None,
             "Open setup in your browser?\n\nIf you already have a setup tab, continue there.",
-            "Brain", 0x24 | 0x100) == 6
+            "Conversation Analytics", 0x24 | 0x100) == 6
     return False
 
 
 def _show_workspace_status() -> None:
-    if os.name == "nt":
-        ctypes.windll.user32.MessageBoxW(None, "Setup is open in your browser.", "Brain", 0x40)
-    else:
-        print("Setup is open in your browser.")
+    # The authenticated workspace operation already supplies the visible status.
+    # A second modal would require an acknowledgement just to return to that tab.
+    print("Setup is open in your browser.")
 
 
 def launcher_log_file(data_directory: Path) -> Path:

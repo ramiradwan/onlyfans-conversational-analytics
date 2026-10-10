@@ -50,12 +50,13 @@ function remainingLabel(seconds: number): string {
   return `${minutes}:${remainder}`;
 }
 
-function PairingAttemptControls({ api, browserApi, port, connection, creatorAccountId }: {
+function PairingAttemptControls({ api, browserApi, port, connection, creatorAccountId, embedded }: {
   api: CompanionPairingApi;
   browserApi: BrowserControlApi;
   port: ExtensionPort;
   connection: ExtensionConnection;
   creatorAccountId: string;
+  embedded: boolean;
 }) {
   const [status, setStatus] = useState<CompanionPairingStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -309,11 +310,12 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       data-pairing-path={sameBrowser ? 'browser-verified' : 'operator-compared'}
       spacing={2}
     >
-      <SectionHeader
+      {!embedded && <SectionHeader
         sx={{ minHeight: '4.5rem', '& > [aria-live]': { width: '8rem', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
         status={sectionStatus}
         title="Browser extension"
-      />
+      />}
+      {embedded && sectionStatus && <Typography role="status">{sectionStatus.label}</Typography>}
       <ReservedRegion grow id="pairing-body" size={{ xs: 672, sm: 432 }} sx={{ display: 'grid' }}>
       <Box sx={{ gridArea: '1 / 1', visibility: active || waitingForExtension ? 'hidden' : 'visible' }}><AdmittedPairings
         api={api}
@@ -321,6 +323,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
         port={port}
         connection={connection}
         creatorAccountId={creatorAccountId}
+        embedded={embedded}
         onCount={setConnectedCount}
         refresh={`${status?.version ?? -1}:${notice?.revision ?? -1}:${notice?.changed_at ?? ''}`}
       /></Box>
@@ -453,7 +456,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
   );
 }
 
-function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId, onCount, refresh }: {
+function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId, onCount, refresh, embedded }: {
   api: CompanionPairingApi;
   browserApi: BrowserControlApi;
   port: ExtensionPort;
@@ -461,6 +464,7 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
   creatorAccountId: string;
   onCount: (count: number | null) => void;
   refresh: string;
+  embedded: boolean;
 }) {
   const [pins, setPins] = useState<CompanionPairingStatus[]>([]);
   const [failed, setFailed] = useState(false);
@@ -517,13 +521,13 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
   };
   return (
     <Stack spacing={0.75}>
-          <ReservedRegion grow id="browser-facts" size={{ xs: 560, sm: 340 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
+          {(!embedded || pins.length > 0) && <ReservedRegion grow id="browser-facts" size={{ xs: 560, sm: 340 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
             api={browserApi}
             browser={browser}
             canManage={isCreator}
             connection={connection}
             port={port}
-          /></ReservedRegion>
+          /></ReservedRegion>}
           <Box data-reading-viewport data-region-role="scroll" sx={{ height: '3.75rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>{pins.map((pin, index) => (
             <SettingRow
               key={pin.pairing_id}
@@ -541,10 +545,10 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
               )}
             />
           ))}</Box>
-      <Box sx={{ height: '2.5rem', display: 'flex', gap: 1 }}>
+      {(!embedded || failed) && <Box sx={{ height: '2.5rem', display: 'flex', gap: 1 }}>
         <Box sx={{ flex: 1, minWidth: 0 }}><StatusLine id="pairing-links-feedback" tone="error" text={failed ? "Connected extensions couldn't be checked." : null} /></Box>
         <Button sx={{ visibility: failed ? 'visible' : 'hidden', alignSelf: 'flex-start' }} color="inherit" disabled={busy} onClick={() => setRevision((value) => value + 1)} size="small">Try again</Button>
-      </Box>
+      </Box>}
       <Dialog open={confirming !== null} onClose={() => setConfirming(null)}>
         <DialogTitle>Disconnect the browser extension?</DialogTitle>
         <DialogContent>
@@ -568,10 +572,11 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
 }
 
 /** Browser extension section of Settings: connection status, pairing, and disconnect. */
-export function CompanionPairingControls({ api = companionPairingApi, browserApi = browserControlApi, port }: {
+export function CompanionPairingControls({ api = companionPairingApi, browserApi = browserControlApi, port, embedded = false }: {
   api?: CompanionPairingApi;
   browserApi?: BrowserControlApi;
   port?: ExtensionPort;
+  embedded?: boolean;
 }) {
   const extensionPort = port ?? defaultExtensionPort();
   const { canViewSettings } = usePermissions();
@@ -581,7 +586,11 @@ export function CompanionPairingControls({ api = companionPairingApi, browserApi
     bridgeTransportStore.getState,
   );
   return (
-    <Panel>
+    <Panel emphasis={embedded ? 'quiet' : 'secondary'} sx={embedded ? {
+      p: 0,
+      '& [data-reserved-region]': { minBlockSize: 0, minHeight: 0 },
+      '& [data-reading-viewport]': { height: 'auto' },
+    } : undefined}>
       {canViewSettings && creatorAccountId ? (
         <PairingAttemptControls
           key={creatorAccountId}
@@ -590,6 +599,7 @@ export function CompanionPairingControls({ api = companionPairingApi, browserApi
           port={extensionPort}
           connection={extensionConnection(connection === 'connected' ? agent : null)}
           creatorAccountId={creatorAccountId}
+          embedded={embedded}
         />
       ) : (
         <>

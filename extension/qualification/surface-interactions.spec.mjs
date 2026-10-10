@@ -13,7 +13,9 @@ test('Preview keeps its status and Full review action visible in the reserved fr
 });
 
 test('loading setup never records approvals or requests browser access', async ({ page }) => {
-  await renderSurfaceState(page, SURFACE_STATES.software_activation);
+  await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, permissionGranted: false });
+  await expect(page.locator('#start-choice')).toBeVisible();
+  await page.locator('#start-preview').click();
   await expect(page.locator('#terms-accepted')).not.toBeChecked();
   await expect(page.locator('#risk-acknowledged')).not.toBeChecked();
   await expect(page.locator('#activate-software')).toBeEnabled();
@@ -30,7 +32,7 @@ test('loading setup never records approvals or requests browser access', async (
   await page.locator('#risk-acknowledged').check();
   await expect(page.locator('#activate-software')).toBeEnabled();
   await page.locator('#activate-software').click();
-  await expect(page.locator('#mode-choice')).toBeVisible();
+  await expect(page.locator('#access-card')).toBeVisible();
   expect((await calls(page)).filter((call) => !call.type.endsWith('.status')).map((call) => call.type))
     .toEqual(['ofca.legal-activation.accept-terms', 'ofca.legal-activation.acknowledge-risk', 'ofca.legal-activation.activate-software']);
   expect((await calls(page)).some((call) => call.type === 'permission')).toBe(false);
@@ -145,8 +147,8 @@ test('options offers no second pause control', async ({ page }) => {
   await expect(page.locator('#pause')).toHaveCount(0);
 });
 
-test('setup progress names the current navigation item through agreement and mode selection', async ({ page }) => {
-  await renderSurfaceState(page, SURFACE_STATES.software_activation);
+test('Full setup progress names the current navigation item through agreement and mode selection', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, hash: 'full' });
   const current = page.locator('#setup-progress [aria-current="step"]');
   await expect(current).toHaveCount(1);
   await expect(current).toHaveAttribute('data-step', 'agree');
@@ -154,7 +156,7 @@ test('setup progress names the current navigation item through agreement and mod
   await page.locator('#risk-acknowledged').check();
   await page.locator('#activate-software').click();
   await expect(current).toHaveCount(1);
-  await expect(current).toHaveAttribute('data-step', 'mode');
+  await expect(current).toHaveAttribute('data-step', 'connect');
   await expect(page.locator('main')).not.toHaveAttribute('aria-current');
   await page.locator('#step-agree').click();
   await expect(current).toHaveAttribute('data-step', 'agree');

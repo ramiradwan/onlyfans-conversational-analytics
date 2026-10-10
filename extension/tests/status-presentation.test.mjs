@@ -16,7 +16,7 @@ test('popup readiness uses one precedence and never says Ready while disconnecte
   }
   const value = model();
   value.desktopRuntimeReachable = false;
-  assert.equal(presentation.statusPresentation(value).label, 'Desktop app closed');
+  assert.equal(presentation.statusPresentation(value).label, 'Not connected');
   value.status.consent.mode = 'paused';
   assert.equal(presentation.statusPresentation(value).label, 'Paused');
   value.status.phase = 'permission_required';

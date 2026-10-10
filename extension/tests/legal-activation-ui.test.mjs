@@ -65,16 +65,17 @@ test('mode choice keeps every required point visible without a collapsed section
   assert.deepEqual(hiddenByDefault, ['mode-choice', 'full-disclosure']);
 });
 
-test('Activate Software is separate from mode choice and no UI calls it consent', () => {
+test('combined mode review retains separate software activation and consent commands', () => {
   const preMode = requireFragment(
     /<section id="pre-mode"[\s\S]*?<\/section>/,
     'Pre-mode activation section',
   );
   assert.match(
     preMode,
-    /<button[^>]*id="activate-software"[^>]*>\s*Activate Software\s*<\/button>/,
+    /<button[^>]*id="activate-software"[^>]*>\s*Continue\s*<\/button>/,
   );
-  assert.match(preMode, /does not enable Full analytics/);
+  assert.match(script, /type: LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE/);
+  assert.match(script, /type: LEGAL_CHOOSE_MODE_MESSAGE_TYPE/);
   assert.doesNotMatch(html, /GDPR consent/i);
   assert.doesNotMatch(script, /Full consent saved/);
 });

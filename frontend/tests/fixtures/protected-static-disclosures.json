@@ -19,5 +19,6 @@
       "element_sha256": "9ddbc476b4ee490ba95b0972b1c27331a83d2ea7a63ce8f1006c59167eeb9118"
     }
   },
-  "element_baseline_source": "a97b311a4ca351d85182a2af91649e414fa98da5:extension/popup.html"
+  "element_baseline_source": "a97b311a4ca351d85182a2af91649e414fa98da5:extension/popup.html",
+  "acknowledgements_sha256": "3439558519daa54e726b24980c278f411bc64f9782f8eed0179e6f604344dea6"
 }

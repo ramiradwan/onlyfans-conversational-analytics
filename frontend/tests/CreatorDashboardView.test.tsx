@@ -211,9 +211,37 @@ beforeEach(() => useUserStore.getState().actions.setUserRole('creator-ceo'));
 afterEach(() => {
   cleanup();
   useUserStore.getState().actions.setUserRole(null);
+  window.location.hash = '';
 });
 
 describe('CreatorDashboardView', () => {
+  it('uses the reference empty card for confirmed zero activity, then renders arriving data', async () => {
+    window.location.hash = '#journey=11111111-1111-4111-8111-111111111111';
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    await renderDashboard(store);
+    expect(screen.getByRole('heading', { name: 'No new activity yet' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
+    expect(screen.getByText('Not checked', { exact: true })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Review' }).getAttribute('href')).toBe('/settings#message-history');
+    await act(async () => { store.applySnapshot(snapshot({ viewRevision: 2 })); });
+    expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
+    expectStat('Messages', '19');
+  });
+  it('does not treat unavailable counts as an empty received snapshot', async () => {
+    window.location.hash = '#journey=11111111-1111-4111-8111-111111111111';
+    await renderDashboard(readyStore({ ...snapshot({ analyticsView: analytics([null, null, null, null]) }), conversations: [] }));
+    expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
+  });
+  it('shows a paused browser without a ready claim in the empty journey', async () => {
+    window.location.hash = '#journey=11111111-1111-4111-8111-111111111111';
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'paused', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    await renderDashboard(store);
+    expect(screen.getByText('Paused', { exact: true })).toBeTruthy();
+    expect(screen.queryByText("You're all set")).toBeNull();
+  });
   it('shows the saved chat count after history completes', async () => {
     await renderDashboard(readyStore());
     expect(overview().getByText('History saved for 1 chats')).toBeTruthy();

@@ -19,7 +19,7 @@ const stubs = {
   'document-observer.mjs': 'export const OBSERVER_REOPEN_TYPE="observer";',
   'onboarding-entry.mjs': 'export const WORKSPACE_MESSAGE_TYPE="workspace";',
   'onboarding-workspace.mjs': 'export const WORKSPACE_RECORD_KEY="workspace-record";',
-  'legal-activation-controller.mjs': 'export const LEGAL_ACCEPT_TERMS_MESSAGE_TYPE="terms", LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE="risk", LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE="activate";',
+  'legal-activation-controller.mjs': 'export const LEGAL_ACCEPT_TERMS_MESSAGE_TYPE="terms", LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE="risk", LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE="activate", LEGAL_CHOOSE_MODE_MESSAGE_TYPE="choose";',
   'surface-client.mjs': `export function createSurfaceClient(render) { return { model: fixture.model, async start() { render(this.model); } }; }
     export const send=fixture.send, openSurface=()=>{}, secureExternalUrl=()=>null;
     export class NoticeError extends Error {}`,

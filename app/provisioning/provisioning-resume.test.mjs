@@ -172,21 +172,28 @@ for (const operation of ['acquire', 'initial-handoff', 'finalize']) {
 
 test('identity from a retired page cannot replace a fresh account after browser Back', async () => {
   const oldIdentity = deferred();
+  const mutation = deferred();
   let reads = 0;
   const signedIn = (creator) => ({ type: 'provisioning.identity.result', version: 1,
     authenticated_profile: { creator_account_id: creator } });
-  const f = lifecycleFixture({ mutation: deferred(), extensionId: 'a'.repeat(32),
+  const f = lifecycleFixture({ mutation, extensionId: 'a'.repeat(32),
     stage: { state: 'provisioning_ready', stage: 'creator_confirmation_required', association_request_id: null, creator_account_id: null },
     identity: () => ++reads === 1 ? oldIdentity.promise : Promise.resolve(signedIn('current-creator')) });
   const started = f.controller.start();
   await settle();
   f.hide(); await f.restore();
   await f.controller.refreshIdentity();
-  assert.equal(f.ui.identityStatus.textContent, 'Signed in now: current-creator');
+  assert.equal(f.ui.identityStatus.textContent, 'Signed in now: Account name unavailable');
   oldIdentity.resolve(signedIn('retired-creator'));
   await started;
-  assert.equal(f.ui.identityStatus.textContent, 'Signed in now: current-creator');
+  assert.equal(f.ui.identityStatus.textContent, 'Signed in now: Account name unavailable');
   assert.equal(f.calls.filter((call) => call.options?.method === 'POST').length, 0);
+  const confirmation = f.controller.confirmIdentity();
+  await settle();
+  const posted = f.calls.find((call) => call.path.endsWith('/creator-association') && call.options?.method === 'POST');
+  assert.equal(JSON.parse(posted.options.body).detected_creator_account_id, 'current-creator');
+  mutation.resolve(response(409, {}));
+  await confirmation;
 });
 
 test('a restored handoff is recovered from a fresh owner GET, never the retired reply or another POST', async () => {

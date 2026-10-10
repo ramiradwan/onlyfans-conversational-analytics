@@ -871,7 +871,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (heading) heading.textContent = detectedAccountId !== null ? 'Connect this computer'
       : identityChecking ? 'Checking creator account…'
       : extensionStage === 'needs_account' ? 'Sign in to OnlyFans' : 'Set up the browser extension';
-    elements.claimActionHelp.textContent = detectedAccountId !== null ? `Signed in now: ${detectedAccountId}`
+    elements.claimActionHelp.textContent = detectedAccountId !== null ? 'Signed in now: Account name unavailable'
       : identityChecking ? ''
       : extensionStage === 'needs_account' ? 'Use the creator account you want to analyze.'
         : EXTENSION_SETUP_STAGES.has(extensionStage) ? 'Finish Full analytics setup in the extension tab.'
@@ -907,7 +907,11 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     const steps = [elements.claimStep, elements.identityStep, elements.bindingStep, elements.finalizeStep];
     const outputs = [elements.claimStepState, elements.identityStepState, elements.bindingStepState, elements.finalizeStepState];
     steps.forEach((step, index) => setStepState(step, outputs[index], stepStates[index]));
-    document.querySelectorAll?.('[data-rail-step]').forEach((item, index) => { item.dataset.state = recoveryRequired ? 'locked' : stepStates[index]; });
+    document.querySelectorAll?.('[data-rail-step]').forEach((item, index) => {
+      const state = recoveryRequired ? 'locked' : stepStates[index];
+      item.dataset.state = state; item.dataset.complete = String(state === 'completed');
+      if (state === 'current') item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
+    });
     const stage = document.querySelector('.provisioning-stage');
     if (stage) stage.dataset.complete = String(configurationComplete);
     const heading = document.querySelector('#finalize-heading');
@@ -1205,7 +1209,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       }
       detectedAccountId = identity.accountId;
 
-      setIdentityStatus(`Signed in now: ${detectedAccountId}`);
+      setIdentityStatus('Signed in now: Account name unavailable');
       renderState(); renderExtensionSetup();
       if (advance) void beginHostedSetup();
       return detectedAccountId;
@@ -1260,7 +1264,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     if (isInstallationRegisteredResponse(payload)) {
       installationRegistered = true;
       setStatus('');
-      if (detectedAccountId !== null) setIdentityStatus(`Signed in now: ${detectedAccountId}`);
+      if (detectedAccountId !== null) setIdentityStatus('Signed in now: Account name unavailable');
       renderState();
       focusCurrentStep();
     } else if (payload !== MUTATION_FAILED) setStatus('The code could not be checked. Try again.', true);

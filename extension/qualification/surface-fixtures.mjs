@@ -8,13 +8,16 @@ import { SURFACE_STATES } from './surface-states.mjs';
 export { SURFACE_STATES } from './surface-states.mjs';
 
 const bundles = new Map();
-async function bundle(surface) {
-  if (!bundles.has(surface)) bundles.set(surface, build({ entryPoints: [path.join(ROOT, `${surface}.js`)],
+async function bundle(surface, receiving = false) {
+  const key = `${surface}:${receiving}`;
+  if (!bundles.has(key)) bundles.set(key, build({ entryPoints: [path.join(ROOT, `${surface}.js`)],
     bundle: true, format: 'iife', write: false, logLevel: 'silent', plugins: [{ name: 'fixture-download', setup(context) {
       context.onLoad({ filter: /customer-release-config\.mjs$/ }, () => ({ contents:
         `export const customerReleaseConfig = { desktop_app_download_url: 'https://downloads.example.test/desktop' };`, loader: 'js' }));
+      if (receiving) context.onLoad({ filter: /onboarding-release-config\.mjs$/ }, () => ({ contents:
+        `export const onboardingHostedOrigin = 'https://setup.example.test';`, loader: 'js' }));
     } }] }).then((result) => result.outputFiles[0].text));
-  return bundles.get(surface);
+  return bundles.get(key);
 }
 
 export const surfaceBundle = bundle;
@@ -29,7 +32,7 @@ export async function surfaceStyles(name) {
 import { installSurfaceFixture } from './surface-runtime-fixture.mjs';
 export async function renderSurfaceState(page, state) {
   const html = await surfaceDocument(state);
-  const script = await surfaceBundle(state.surface);
+  const script = await surfaceBundle(state.surface, Boolean(state.receiving));
   await page.addInitScript(installSurfaceFixture, state);
   await page.route('http://extension-ui.test/**', async (route) => {
     const name = new URL(route.request().url()).pathname.slice(1);

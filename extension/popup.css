@@ -266,6 +266,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   --dipsy-static-brand-size: 32px;
   --dipsy-static-caption-size: 0.75rem;
   --dipsy-static-control-height: 44px;
+  --dipsy-static-full-workspace-width: 65rem;
   --dipsy-static-header-height: 72px;
   --dipsy-static-label-size: 0.875rem;
   --dipsy-static-large-control-height: 48px;
@@ -282,8 +283,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   --dipsy-static-provisioning-stage-block: 30rem;
   --dipsy-static-provisioning-stage-block-narrow: 36rem;
   --dipsy-static-setup-max-width: 42rem;
+  --dipsy-static-setup-rail-width: 12.5rem;
   --dipsy-static-status-line-block: 20px;
   --dipsy-static-status-line-block-narrow: 40px;
+  --dipsy-static-task-heading-size: 1.625rem;
+  --dipsy-static-workspace-width: 49rem;
   --dipsy-static-brand-inset: 28px;
   --dipsy-font-weight-regular: 400;
   --dipsy-font-weight-medium: 500;
