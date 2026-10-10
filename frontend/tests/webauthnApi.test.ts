@@ -15,6 +15,19 @@ function bytes(value: number[]): ArrayBuffer {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('WebAuthn ceremony API', () => {
+  it('reads a closed owner session state once without beginning either ceremony', async () => {
+    const request = vi.fn(async () => json({ enrolled: false, authenticated: false }));
+    const api = createWebAuthnApi({ fetch: request as typeof fetch });
+    const signal = new AbortController().signal;
+    await expect(api.state!(signal)).resolves.toEqual({ enrolled: false, authenticated: false });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('/api/v1/webauthn/session-state', expect.objectContaining({ signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error' }));
+  });
+
+  it.each([{ enrolled: false, authenticated: true }, { enrolled: false, authenticated: false, extra: 'value' }])('refuses inconsistent or extended session facts', async (state) => {
+    const api = createWebAuthnApi({ fetch: vi.fn(async () => json(state)) as typeof fetch });
+    await expect(api.state!(new AbortController().signal)).rejects.toThrow('Passkey status unavailable');
+  });
   it.each([
     [{ authenticated: true, enrolled: true }, true],
     [{ authenticated: false, enrolled: true }, false],

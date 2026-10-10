@@ -11,6 +11,7 @@
     "desktop.app": {
       "implementation": [
         "frontend/src/views/WebAuthnAccessView.tsx",
+        "frontend/src/components/OnboardingPasskeyTask.tsx",
         "frontend/src/components/SetupPrompt.tsx",
         "frontend/src/components/CompanionPairingControls.tsx",
         "frontend/src/components/OnboardingContinuation.tsx",
@@ -51,7 +52,7 @@
   "journeys": [
     {
       "id": "extension-preview",
-      "entry_state": "extension.software_activation",
+      "entry_state": "extension.start_choice",
       "success_state": "extension.preview_available"
     },
     {
@@ -72,6 +73,43 @@
   ],
   "states": [
     {
+      "id": "extension.start_choice",
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"start-choice\""
+      },
+      "transitions": [
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "start-preview"
+        },
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "start-full"
+        },
+        {
+          "to": "extension.setup_code_entry",
+          "by": "user",
+          "action": "setup-transfer-open"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "browser",
+          "file": "extension/qualification/surface-interactions.spec.mjs",
+          "name": "loading setup never records approvals or requests browser access"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-states.mjs",
+          "name": "start_choice"
+        }
+      ]
+    },
+    {
       "id": "extension.software_activation",
       "surface": "extension.setup",
       "anchor": {
@@ -85,6 +123,11 @@
           "action": "activate-software"
         },
         {
+          "to": "extension.start_choice",
+          "by": "user",
+          "action": "start-back"
+        },
+        {
           "to": "extension.setup_code_entry",
           "by": "user",
           "action": "setup-transfer-open"
@@ -94,7 +137,7 @@
         {
           "kind": "unit",
           "file": "extension/tests/legal-activation-ui.test.mjs",
-          "name": "Activate Software is separate from mode choice and no UI calls it consent"
+          "name": "combined mode review retains separate software activation and consent commands"
         },
         {
           "kind": "browser",
@@ -538,7 +581,7 @@
         {
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
-          "name": "returning paired user gets a stopped-app recovery state"
+          "name": "returning paired user gets an unconfirmed connection without assuming the app stopped"
         },
         {
           "kind": "visual",
@@ -814,7 +857,7 @@
       "id": "desktop.passkey_sign_in",
       "surface": "desktop.app",
       "anchor": {
-        "file": "frontend/src/views/WebAuthnAccessView.tsx",
+        "file": "frontend/src/components/OnboardingPasskeyTask.tsx",
         "text": "data-journey-state=\"desktop.passkey_sign_in\""
       },
       "transitions": [
@@ -985,7 +1028,7 @@
         {
           "kind": "unit",
           "file": "frontend/tests/CompanionPairingControls.test.tsx",
-          "name": "opens the extension window for unfinished steps and continues as soon as they are done"
+          "name": "opens the extension setup tab for unfinished steps and continues once they are done"
         },
         {
           "kind": "unit",

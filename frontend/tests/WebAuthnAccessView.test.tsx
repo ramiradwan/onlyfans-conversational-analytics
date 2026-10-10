@@ -41,6 +41,26 @@ async function readFailure() {
 
 describe('WebAuthn access view', () => {
 
+  it('uses the confirmed first-passkey state without an initial sign-in action', async () => {
+    const api = { state: vi.fn(async () => ({ enrolled: false, authenticated: false })), enroll: vi.fn(async () => {}), login: vi.fn(async () => {}) };
+    const view = renderView(api);
+    const create = await screen.findByRole('button', { name: 'Create passkey' });
+    expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+    fireEvent.click(create);
+    await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
+    expect(api.enroll).toHaveBeenCalledTimes(1);
+    expect(api.login).not.toHaveBeenCalled();
+    expect(api.state).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips both ceremonies when the owner confirms the existing local session', async () => {
+    const api = { state: vi.fn(async () => ({ enrolled: true, authenticated: true })), enroll: vi.fn(async () => {}), login: vi.fn(async () => {}) };
+    const view = renderView(api);
+    await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
+    expect(api.enroll).not.toHaveBeenCalled();
+    expect(api.login).not.toHaveBeenCalled();
+  });
+
   it.each([
     [new Error('Finish response lost'), 'Passkey setup could not be confirmed.'],
     [{ name: 'NotAllowedError' }, 'Passkey setup could not be confirmed.'],
@@ -54,11 +74,11 @@ describe('WebAuthn access view', () => {
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
-  it('has one primary sign-in action, a header outside the main landmark and a compact card brand', () => {
+  it('has one primary sign-in action and one product header outside the task landmark', () => {
     const view = renderView({ enroll: vi.fn(), login: vi.fn() });
     const main = screen.getByRole('main');
-    expect(main.querySelectorAll('[data-visual="brand-tile"]')).toHaveLength(1);
-    expect(main.querySelector('[data-visual="passkey-card"] [data-visual="passkey-brand"] [data-visual="brand-tile"]')).not.toBeNull();
+    expect(main.querySelectorAll('[data-visual="brand-tile"]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-visual="brand-tile"]')).toHaveLength(1);
     expect(screen.getByRole('banner').querySelector('[data-visual="brand-tile"]')).not.toBeNull();
     expect(main.querySelectorAll('.MuiButton-contained')).toHaveLength(1);
     expect(view.signIn().classList.contains('MuiButton-contained')).toBe(true);
@@ -118,7 +138,7 @@ describe('WebAuthn access view', () => {
 
     const alert = await readFailure();
     expect(alert.textContent).toBe('Sign-in did not finish.');
-    expect(alert.closest('[data-visual="passkey-card"]')).toBeNull();
+    expect(alert.closest('[data-visual="passkey-card"]')).not.toBeNull();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 

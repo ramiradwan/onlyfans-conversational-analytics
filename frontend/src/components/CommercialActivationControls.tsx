@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogContentText,
   DialogTitle,
   Stack,
   TextField,
@@ -44,10 +43,12 @@ function StepLabel({ index, children }: { index: number; children: ReactNode }) 
 export function CommercialActivationControls({
   api = capabilityLicenseApi,
   secureSetupUrl,
+  embedded = false,
 }: {
   api?: CapabilityLicenseApi;
   /** Hosted secure setup page; read from the served config when omitted. */
   secureSetupUrl?: string;
+  embedded?: boolean;
 }) {
   const [setupUrl] = useState(() => secureSetupUrl ?? getConfig().SECURE_SETUP_URL);
   const [readiness, setReadiness] = useState<CapabilityLicenseReadiness | null>(null);
@@ -55,7 +56,7 @@ export function CommercialActivationControls({
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [setupOpened, setSetupOpened] = useState(false);
+  const [codeEntryRequested, setCodeEntryRequested] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const submitting = useRef(false);
   const titleId = useId();
@@ -157,9 +158,54 @@ export function CommercialActivationControls({
           ? { label: 'Off', tone: 'default' }
           : null;
 
+  const codeEntry = (
+          <Stack spacing={2.5}>
+            {(!embedded || !setupUrl) && <Stack spacing={1}>
+              <StepLabel index={1}>{setupUrl
+                ? 'Open secure setup and choose Activate Full.'
+                : 'Activation codes come from secure setup. Its link is unavailable here.'}</StepLabel>
+              {setupUrl && (
+                <Box>
+                  <Button
+                    component="a"
+                    endIcon={<OpenInNewIcon />}
+                    href={setupUrl}
+                    rel="noopener noreferrer"
+                    size="small"
+                    target="_blank"
+                    variant="outlined"
+                  >
+                    Open secure setup
+                  </Button>
+                </Box>
+              )}
+
+            </Stack>}
+            <Stack spacing={1.5}>
+              {embedded ? <Typography variant="body2">Paste your activation code.</Typography>
+                : <StepLabel index={2}>Paste your activation code.</StepLabel>}
+              <TextField
+                autoComplete="off"
+                fullWidth
+                label="Activation code"
+                helperText="Codes expire after a few minutes."
+                disabled={checking}
+                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submit(); } }}
+                onChange={(event) => {
+                  setCode(event.target.value.trim());
+                  if (error) setError(null);
+                }}
+                size="small"
+                value={code}
+              />
+            </Stack>
+            {(!embedded || checking || error) && <StatusLine essential id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />}
+          </Stack>
+  );
+
   return (
-    <Panel sx={{ gap: 1 }}>
-      <SectionHeader
+    <Panel emphasis={embedded ? 'quiet' : 'secondary'} sx={{ gap: 1, ...(embedded ? { p: 0 } : {}) }}>
+      {!embedded && <SectionHeader
         sx={{ minHeight: { xs: '5.5rem', sm: '3rem' }, position: 'relative', flexDirection: { xs: 'column', sm: 'row' }, rowGap: { xs: 1, sm: 0 },
           '& > :first-child': { width: '100%' }, '& h2': { pr: { xs: 0, sm: '9rem' } },
           '& > [aria-live]': { display: 'flex', position: { xs: 'static', sm: 'absolute' }, top: 0, right: 0, m: 0, width: '100%', maxWidth: '8rem', minHeight: '1.5rem',
@@ -168,22 +214,34 @@ export function CommercialActivationControls({
         status={status}
         summary="Adds tone, reply, and topic insights to your conversations."
         title="Full analytics"
-      />
+      />}
 
-      <ReservedNotice essential id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
+      {(!embedded || error || checking || activeButBlocked || activationUnavailable || readiness === null) && <ReservedNotice essential id="activation-notice" notice={error && !dialogOpen ? { title: '', body: error, severity: 'error' }
         : checking ? { title: '', body: 'Checking activation…', severity: 'info' }
           : activeButBlocked ? { title: "New messages aren't being analyzed", body: '', severity: 'warning' }
-            : activationUnavailable || readiness === null ? { title: '', body: "Activation couldn't be checked.", severity: 'warning' } : null} />
-      <Box sx={{ height: '2.5rem' }}>
-      {!checking && activationRequired && (
+            : activationUnavailable || readiness === null ? { title: '', body: "Activation couldn't be checked.", severity: 'warning' } : null} />}
+      {embedded && !checking && activationRequired && (setupUrl && !codeEntryRequested
+        ? <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+          <Typography variant="body2">Secure setup lets you activate Full analytics for this computer.</Typography>
+          <Button component="a" href={setupUrl} target="_self" variant="contained">
+            Open secure setup
+          </Button>
+          <Button onClick={() => setCodeEntryRequested(true)} variant="text">I have an activation code</Button>
+        </Stack>
+        : <Stack spacing={2}>
+          {codeEntry}
+          <Button disabled={checking} onClick={() => void submit()} variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate</Button>
+        </Stack>)}
+      <Box sx={{ minHeight: embedded ? 0 : '2.5rem' }}>
+      {!embedded && !checking && activationRequired && (
         <Box data-journey-state="desktop.full_analytics_activation">
           <Button aria-haspopup="dialog" onClick={() => setDialogOpen(true)} variant="outlined">
             Turn on full analytics
           </Button>
         </Box>
       )}
-      {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
-        <Button onClick={checkReadiness} variant="outlined">Check again</Button>
+      {!checking && (activationUnavailable || (readiness === null && error !== null)) && (
+        <Button onClick={checkReadiness} variant="outlined">Try again</Button>
       )}
       </Box>
 
@@ -196,49 +254,7 @@ export function CommercialActivationControls({
       >
         <DialogTitle id={titleId}>Turn on full analytics</DialogTitle>
         <DialogContent>
-          <Stack spacing={2.5}>
-            <DialogContentText variant="body2">
-              Use an activation code to turn on Full analytics on this computer.
-            </DialogContentText>
-            <Stack spacing={1}>
-              <StepLabel index={1}>Open secure setup and choose Activate Full.</StepLabel>
-              {setupUrl && (
-                <Box>
-                  <Button
-                    component="a"
-                    endIcon={<OpenInNewIcon />}
-                    href={setupUrl}
-                    onClick={() => setSetupOpened(true)}
-                    rel="noopener noreferrer"
-                    size="small"
-                    target="_blank"
-                    variant={setupOpened ? 'text' : 'outlined'}
-                  >
-                    Open secure setup
-                  </Button>
-                </Box>
-              )}
-              <ReservedNotice essential id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />
-            </Stack>
-            <Stack spacing={1.5}>
-              <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
-              <TextField
-                autoComplete="off"
-                fullWidth
-                label="Activation code"
-                helperText="Paste the code from the activation page."
-                disabled={checking}
-                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submit(); } }}
-                onChange={(event) => {
-                  setCode(event.target.value.trim());
-                  if (error) setError(null);
-                }}
-                size="small"
-                value={code}
-              />
-            </Stack>
-            <StatusLine essential id="activation-feedback" text={checking ? 'Checking code…' : error} tone={error ? 'error' : 'secondary'} />
-          </Stack>
+          {codeEntry}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>

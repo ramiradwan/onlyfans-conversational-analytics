@@ -34,8 +34,8 @@ test('receiving entry uses the same tab and a body, never a code or key in a URL
 test('receiving target stays separate from the independently observed account', () => {
   const run = page();
   renderReceivingContext(run.document, { intended_creator_id: 'creator-a', current_creator_id: 'creator-b' });
-  assert.equal(run.node('setup-transfer-intended').textContent, 'creator-a');
-  assert.equal(run.node('setup-transfer-current').textContent, 'creator-b');
+  assert.equal(run.node('setup-transfer-intended').textContent, 'Account name unavailable');
+  assert.equal(run.node('setup-transfer-current').textContent, 'Account name unavailable');
   assert.equal(run.node('setup-transfer-mismatch').classList.values.has('hidden'), false);
   renderReceivingContext(run.document, { intended_creator_id: 'creator-a', current_creator_id: null });
   assert.equal(run.node('setup-transfer-current').textContent, 'Not identified');

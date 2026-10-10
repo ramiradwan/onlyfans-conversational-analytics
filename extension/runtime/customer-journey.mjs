@@ -32,6 +32,7 @@ export function deriveCustomerJourney({
   pairing,
   desktopRuntimeReachable,
   desktopDownloadAvailable = false,
+  connectionRecovery = 'idle',
   analysisReadiness = { commercial_authority: 'unknown', analysis_admission: 'blocked' },
   resumeAvailable = false,
   modeChoiceAvailable = false,
@@ -47,6 +48,32 @@ export function deriveCustomerJourney({
         : 'No new activity is collected. Review the updated information to resume.',
       primaryAction: resumeAvailable ? 'resume' : reviewAvailable ? 'choose_mode' : null,
       primaryLabel: resumeAvailable ? 'Resume analytics' : reviewAvailable ? 'Review changes' : null,
+      secondaryAction: null,
+      secondaryLabel: null,
+    });
+  }
+
+  if (status?.phase === 'revoked' || status?.consent?.mode === 'revoked') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.ANALYTICS_OFF,
+      tone: 'info',
+      title: 'Analytics off',
+      body: 'Site access was removed.',
+      primaryAction: modeChoiceAvailable ? 'choose_mode' : null,
+      primaryLabel: modeChoiceAvailable ? 'Choose analytics mode' : null,
+      secondaryAction: null,
+      secondaryLabel: null,
+    });
+  }
+
+  if (status?.phase === 'permission_required') {
+    return Object.freeze({
+      id: CUSTOMER_STATES.SETUP_INCOMPLETE,
+      tone: 'warning',
+      title: 'Site access needed',
+      body: 'Allow site access to receive activity from OnlyFans.',
+      primaryAction: ['preview', 'full'].includes(status.consent.mode) ? 'restore_access' : null,
+      primaryLabel: ['preview', 'full'].includes(status.consent.mode) ? 'Allow site access' : null,
       secondaryAction: null,
       secondaryLabel: null,
     });
@@ -106,19 +133,35 @@ export function deriveCustomerJourney({
     });
   }
 
+  if (paired(pairing) && !desktopRuntimeReachable) {
+    const trying = ['authenticating', 'connecting'].includes(status?.delivery?.transport_state) || connectionRecovery === 'retrying';
+    return Object.freeze({
+      id: CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE,
+      tone: trying ? 'progress' : 'warning',
+      title: trying ? 'Connecting to the desktop app' : 'Desktop connection not confirmed',
+      body: trying ? '' : 'The desktop connection could not be confirmed.',
+      primaryAction: trying ? null : 'open_desktop',
+      primaryLabel: trying ? null : 'Open desktop app',
+      secondaryAction: null,
+      secondaryLabel: null,
+    });
+  }
+
+  if (pairing?.state === 'unavailable') {
+    const trying = connectionRecovery === 'retrying';
+    return Object.freeze({
+      id: CUSTOMER_STATES.SETUP_INCOMPLETE,
+      tone: trying ? 'progress' : 'warning',
+      title: trying ? 'Reconnecting to the extension' : 'Connection status unavailable',
+      body: trying ? '' : 'The extension connection could not be checked.',
+      primaryAction: trying ? null : 'retry_readiness',
+      primaryLabel: trying ? null : 'Try again',
+      secondaryAction: null,
+      secondaryLabel: null,
+    });
+  }
+
   if (!desktopRuntimeReachable) {
-    if (paired(pairing)) {
-      return Object.freeze({
-        id: CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE,
-        tone: 'warning',
-        title: 'Desktop app is unavailable',
-        body: 'Open the desktop app to continue.',
-        primaryAction: 'open_desktop',
-        primaryLabel: 'Open desktop app',
-        secondaryAction: null,
-        secondaryLabel: null,
-      });
-    }
     return Object.freeze({
       id: CUSTOMER_STATES.DESKTOP_APP_NEEDED,
       tone: 'warning',
@@ -140,11 +183,11 @@ export function deriveCustomerJourney({
       primaryAction: 'open_desktop_settings',
       primaryLabel: 'Open desktop app settings',
       secondaryAction: 'pair',
-      secondaryLabel: 'Pair device',
+      secondaryLabel: 'Connect extension',
     });
   }
 
-  if (pairing?.state === 'setup_incomplete' || pairing?.state === 'unavailable') {
+  if (pairing?.state === 'setup_incomplete') {
     return Object.freeze({
       id: CUSTOMER_STATES.SETUP_INCOMPLETE,
       tone: 'warning',
@@ -164,22 +207,23 @@ export function deriveCustomerJourney({
       title: 'Connect to the desktop app',
       body: 'Connect to view insights from your conversations.',
       primaryAction: 'pair',
-      primaryLabel: 'Pair device',
+      primaryLabel: 'Connect extension',
       secondaryAction: 'open_dashboard',
       secondaryLabel: 'Open desktop app',
     });
   }
 
   if (status?.delivery?.transport_state !== 'authenticated') {
+    const trying = ['authenticating', 'connecting'].includes(status?.delivery?.transport_state) || connectionRecovery === 'retrying';
     return Object.freeze({
       id: CUSTOMER_STATES.FULL_UNAVAILABLE,
-      tone: 'progress',
-      title: 'Finishing the desktop connection',
-      body: '',
-      primaryAction: 'retry_full',
-      primaryLabel: 'Retry connection',
-      secondaryAction: 'open_dashboard',
-      secondaryLabel: 'Open desktop app',
+      tone: trying ? 'progress' : 'warning',
+      title: trying ? 'Connecting to the desktop app' : 'Desktop connection not confirmed',
+      body: trying ? '' : 'The connection could not be confirmed.',
+      primaryAction: trying ? null : 'open_dashboard',
+      primaryLabel: trying ? null : 'Open desktop app',
+      secondaryAction: null,
+      secondaryLabel: null,
     });
   }
 
@@ -204,8 +248,8 @@ export function deriveCustomerJourney({
       body: 'Continue in Settings in the desktop app.',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open desktop app',
-      secondaryAction: 'retry_readiness',
-      secondaryLabel: 'Check activation',
+      secondaryAction: null,
+      secondaryLabel: null,
     });
   }
 
@@ -214,7 +258,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.ACTIVATION_UNAVAILABLE,
       tone: 'error',
       title: 'Couldn\'t check activation',
-      body: 'Your saved data is unchanged.',
+      body: '',
       primaryAction: 'retry_readiness',
       primaryLabel: 'Check again',
       secondaryAction: 'open_dashboard',
@@ -230,7 +274,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.FULL_UNAVAILABLE,
       tone: 'warning',
       title: 'Open OnlyFans to continue',
-      body: 'Your browser paused the OnlyFans tab. Open it and analytics will resume automatically.',
+      body: 'Your browser paused the OnlyFans tab.',
       primaryAction: 'open_creator_account',
       primaryLabel: 'Open OnlyFans',
       secondaryAction: null,
@@ -261,20 +305,20 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_ACTIVE,
       tone: 'warning',
-      title: 'Analysis is not available right now',
-      body: 'Full analytics is activated. Your saved data is unchanged.',
-      primaryAction: 'retry_readiness',
-      primaryLabel: 'Check again',
-      secondaryAction: 'open_dashboard',
-      secondaryLabel: 'Open desktop app',
+      title: "New messages aren't being analyzed",
+      body: '',
+      primaryAction: 'open_dashboard',
+      primaryLabel: 'Open desktop app',
+      secondaryAction: null,
+      secondaryLabel: null,
     });
   }
 
   return Object.freeze({
     id: CUSTOMER_STATES.FULL_UNAVAILABLE,
     tone: 'warning',
-    title: 'Full analytics is temporarily unavailable',
-    body: 'Open the desktop app to see what needs attention.',
+    title: 'Analysis status unavailable',
+    body: '',
     primaryAction: 'retry_readiness',
     primaryLabel: 'Check again',
     secondaryAction: 'open_dashboard',

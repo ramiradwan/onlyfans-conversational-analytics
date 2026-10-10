@@ -46,6 +46,16 @@ describe('capability license customer API', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it('does not send activation without a request token or guess the cause', async () => {
+    const request = vi.fn();
+    const api = createCapabilityLicenseApi({
+      fetch: request as unknown as typeof fetch,
+      getCsrfToken: () => null,
+    });
+    await expect(api.redeem(CONTINUATION)).rejects.toThrow("Activation couldn't start on this page.");
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('rejects a success response that exposes protected commercial fields', async () => {
     const request = vi.fn(async () => jsonResponse({
       state: 'checking',
@@ -103,9 +113,9 @@ describe('capability license customer API', () => {
   it.each([
     [410, 'expired'],
     [404, "wasn't recognized"],
-    [403, 'Reload the page'],
+    [403, 'could not be verified'],
     [409, 'get a new code'],
-    [503, 'Nothing has changed'],
+    [503, 'Check its status before trying another code'],
   ])('keeps redemption failure %i customer-safe and actionable', async (status, message) => {
     const api = createCapabilityLicenseApi({
       fetch: vi.fn(async () => jsonResponse({ detail: 'internal-provider-detail' }, status)) as unknown as typeof fetch,
@@ -121,7 +131,7 @@ describe('capability license customer API', () => {
     ['redemption_conflict', 409, 'already been used'],
     ['redemption_mismatch', 403, 'different computer or account'],
     ['installation_key_unavailable', 503, 'Restart it'],
-    ['hosted_unavailable', 503, 'Nothing has changed'],
+    ['hosted_unavailable', 503, 'Check its status before trying another code'],
   ])('names the recovery step for the %s refusal', async (detail, status, message) => {
     const api = createCapabilityLicenseApi({
       fetch: vi.fn(async () => jsonResponse({ detail }, status)) as unknown as typeof fetch,

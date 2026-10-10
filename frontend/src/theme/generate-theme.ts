@@ -406,6 +406,8 @@ function main(): void {
   writeIfChanged(staticTokensPath, css);
   const fonts = generateStaticFontsCss(repositoryRoot);
   writeIfChanged(path.join(themeDirectory, 'generated', 'static-fonts.css'), fonts);
+  const workspace = fs.readFileSync(path.join(themeDirectory, 'onboarding.css'), 'utf8');
+  writeIfChanged(path.join(themeDirectory, 'generated', 'hosted-onboarding.css'), css + '\n' + fonts + '\n' + workspace);
   console.log('Theme generated deterministically from tokens.json');
   const reportIndex = process.argv.indexOf('--color-report');
   if (reportIndex >= 0) {
@@ -415,6 +417,10 @@ function main(): void {
     writeIfChanged(output, generateColorReport(tokensSource));
   }
   if (process.argv.includes('--static-surfaces')) {
+    for (const consumer of ['extension/setup.css', 'app/provisioning/provisioning.html']) {
+      const consumerPath = path.join(repositoryRoot, consumer);
+      writeIfChanged(consumerPath, replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), workspace, 'onboarding-layout'));
+    }
     for (const consumer of staticTokenConsumers) {
       const consumerPath = path.join(repositoryRoot, consumer);
       const updated = replaceStaticTokenBlock(

@@ -32,7 +32,8 @@ async function renderSurface(surface, model) {
       nodes.set(id, { dataset: {}, disabled: false, checked: false, textContent: '',
         classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
           contains: (name) => classes.has(name) },
-        setAttribute() {}, removeAttribute() {}, addEventListener() {} });
+        setAttribute() {}, removeAttribute() {}, addEventListener() {},
+        querySelector: node, cloneNode() { return this; }, replaceChildren() {}, append() {} });
     }
     return nodes.get(id);
   };

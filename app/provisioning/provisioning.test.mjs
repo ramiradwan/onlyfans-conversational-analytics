@@ -105,18 +105,18 @@ test('identity detection is read-only and confirmation requires computer setup',
   await controller.refreshIdentity();
 
   assert.deepEqual(extensionCalls, [[EXTENSION_ID, { type: 'provisioning.identity.query', version: 1 }]]);
-  assert.equal(elements.identityStatus.textContent, 'Signed in now: creator-42');
+  assert.equal(elements.identityStatus.textContent, 'Signed in now: Account name unavailable');
   assert.equal(elements.confirmIdentity.disabled, true, 'identity_confirmation_requires_registration');
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(fetchCalls.length, 0, 'identity_query_never_starts_association');
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
 });
 
-test('extension missing, malformed, or signed out gives actionable identity guidance', async (context) => {
+test('extension failures and absent accounts show only confirmed guidance', async (context) => {
   await context.test('missing extension answer', async () => {
     const { controller, elements } = harness({ extensionResponse: new Error('no receiver') });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /Enable.*extension/i);
+    assert.equal(elements.identityStatus.textContent, 'The browser extension could not be reached.');
     assert.equal(elements.confirmIdentity.disabled, true);
   });
 
@@ -124,7 +124,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
     for (const extensionId of ['', 'wrong', 'q'.repeat(32)]) {
       const { controller, elements, extensionCalls } = harness({ extensionId });
       await controller.refreshIdentity();
-      assert.match(elements.identityStatus.textContent, /Enable.*extension/i);
+      assert.equal(elements.identityStatus.textContent, 'The browser extension could not be reached.');
       assert.equal(elements.confirmIdentity.disabled, true);
       assert.equal(extensionCalls.length, 0, 'invalid_extension_id_never_messages_extension');
     }
@@ -137,7 +137,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
       },
     });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /Sign in.*OnlyFans/i);
+    assert.equal(elements.identityStatus.textContent, 'No OnlyFans account was found in this browser.');
     assert.equal(elements.confirmIdentity.disabled, true);
   });
 
@@ -389,13 +389,13 @@ test('gated handlers issue no request before their prerequisite succeeds', async
   assert.equal(fetchCalls.length, 0, 'locked_handlers_make_no_requests');
 });
 
-test('session, host, and interrupted requests retain actionable guidance', async (context) => {
+test('authorization and interrupted requests report only confirmed causes', async (context) => {
   for (const status of [401, 403]) {
-    await context.test(`${status} restarts setup`, async () => {
+    await context.test(`${status} refuses unverifiable setup`, async () => {
       const { controller, elements } = harness({ fetch: async () => response(status, {}) });
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
-      assert.equal(elements.status.textContent, 'Setup could not continue. Open the desktop app.');
+      assert.equal(elements.status.textContent, 'The setup request could not be verified.');
     });
   }
 
@@ -410,7 +410,7 @@ test('session, host, and interrupted requests retain actionable guidance', async
     const { controller, elements } = harness({ fetch: async () => { throw new Error('offline'); } });
     elements.claimPackage.value = VALID_PACKAGE;
     await controller.submitClaim({ preventDefault() {} });
-    assert.match(elements.status.textContent, /desktop app.*running.*try again/i);
+    assert.equal(elements.status.textContent, 'Setup could not be confirmed.');
   });
 });
 
@@ -591,7 +591,7 @@ test('reload after intermediate success returns to the server-reported ready ste
 
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
   assert.equal(elements.confirmIdentity.disabled, true);
-  assert.equal(elements.identityStatus.textContent, 'Signed in now: creator-42');
+  assert.equal(elements.identityStatus.textContent, 'Signed in now: Account name unavailable');
 });
 
 
@@ -659,7 +659,7 @@ test('initial setup navigation requires one explicit open and the exact current 
   ports[0].drop(); assert.equal(ports.length, 1, 'navigation must not reconnect the departing page');
 });
 
-test('extension stage pushes refresh identity guidance and offer the extension setup window', async () => {
+test('extension stage pushes refresh identity guidance and opens the extension setup tab', async () => {
   const { runtime, ports } = fakePortRuntime();
   const main = { dataset: { provisioningCsrf: 'csrf-token', provisioningExtensionId: EXTENSION_ID } };
   const elements = Object.fromEntries([
@@ -683,7 +683,7 @@ test('extension stage pushes refresh identity guidance and offer the extension s
   ports[0].deliver({ type: 'state', version: 1, stage: 'needs_full', attempt: null });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(queries, before + 1, 'a stage push re-reads identity without a timer');
-  assert.match(elements.identityStatus.textContent, /extension window/);
+  assert.match(elements.identityStatus.textContent, /extension tab/);
   assert.equal(elements.openExtensionSetup.hidden, false);
   elements.openExtensionSetup.dispatch('click');
   assert.deepEqual(ports[0].sent, [{ type: 'open', version: 1, step: 'setup' }]);

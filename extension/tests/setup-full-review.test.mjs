@@ -19,11 +19,14 @@ const stubs = {
   'document-observer.mjs': 'export const OBSERVER_REOPEN_TYPE="observer";',
   'onboarding-entry.mjs': 'export const WORKSPACE_MESSAGE_TYPE="workspace";',
   'onboarding-workspace.mjs': 'export const WORKSPACE_RECORD_KEY="workspace-record";',
-  'legal-activation-controller.mjs': 'export const LEGAL_ACCEPT_TERMS_MESSAGE_TYPE="terms", LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE="risk", LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE="activate";',
+  'legal-activation-controller.mjs': 'export const LEGAL_ACCEPT_TERMS_MESSAGE_TYPE="terms", LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE="risk", LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE="activate", LEGAL_CHOOSE_MODE_MESSAGE_TYPE="choose";',
   'surface-client.mjs': `export function createSurfaceClient(render) { return { model: fixture.model, async start() { render(this.model); } }; }
     export const send=fixture.send, openSurface=()=>{}, secureExternalUrl=()=>null;
     export class NoticeError extends Error {}`,
   'presentation.mjs': `export const customerJourney=()=>fixture.journey,
+    desktopOwnsCapture=(model)=>(model.status?.consent.mode==='full'
+      || (model.status?.consent.mode==='paused' && model.status?.consent.resume_mode==='full'))
+      && model.pairing?.desktop_control===true,
     needsAgreement=()=>false, modeChoiceAvailable=()=>false;`,
   'dom.mjs': `export const element=fixture.element, show=fixture.show, text=(id,value)=>{element(id).textContent=value};
     export const renderLoading=()=>{},renderJourney=()=>{},renderReadiness=()=>{},renderLegalLinks=()=>{};

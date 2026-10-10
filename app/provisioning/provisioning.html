@@ -276,6 +276,7 @@
         --dipsy-static-brand-size: 32px;
         --dipsy-static-caption-size: 0.75rem;
         --dipsy-static-control-height: 44px;
+        --dipsy-static-full-workspace-width: 65rem;
         --dipsy-static-header-height: 72px;
         --dipsy-static-label-size: 0.875rem;
         --dipsy-static-large-control-height: 48px;
@@ -292,8 +293,11 @@
         --dipsy-static-provisioning-stage-block: 30rem;
         --dipsy-static-provisioning-stage-block-narrow: 36rem;
         --dipsy-static-setup-max-width: 42rem;
+        --dipsy-static-setup-rail-width: 12.5rem;
         --dipsy-static-status-line-block: 20px;
         --dipsy-static-status-line-block-narrow: 40px;
+        --dipsy-static-task-heading-size: 1.625rem;
+        --dipsy-static-workspace-width: 49rem;
         --dipsy-static-brand-inset: 28px;
         --dipsy-font-weight-regular: 400;
         --dipsy-font-weight-medium: 500;
@@ -1072,10 +1076,112 @@
         .provisioning-stage [data-step-feedback] { min-height:5rem; }
         #identity-step .actions { grid-template-rows:repeat(2,minmax(2.5rem,auto)); }
       }
+      .onboarding-workspace > main.onboarding-content { max-width:none; display:block; }
+      .onboarding-workspace .progress-rail { display:block; height:auto; margin:0; }
+      .onboarding-workspace .progress-rail li { flex-direction:row; justify-content:flex-start; }
+      .onboarding-workspace .progress-rail b { display:none; }
+      .onboarding-workspace .progress-rail li::after { display:none; }
+      .onboarding-workspace .provisioning-stage { height:auto; min-height:24rem; border:0; background:transparent; }
+      .onboarding-workspace .provisioning-stage::before { display:none; }
+      .onboarding-workspace .provisioning-stage .step { position:relative; inset:auto; height:auto; min-height:24rem; grid-template-rows:auto; gap:16px; align-content:start; }
+      .onboarding-workspace .provisioning-stage .step > * { grid-row:auto; height:auto; min-height:0; }
+      .onboarding-workspace .provisioning-stage h2 { line-height:1.25; }
+      .onboarding-workspace .provisioning-stage .actions { grid-row:auto; flex-wrap:wrap; }
+      .onboarding-workspace .provisioning-stage [data-step-feedback] { grid-row:auto; min-height:0; }
+      .onboarding-workspace .provisioning-stage .step { background:var(--dipsy-color-paper); border:var(--dipsy-border-thin) solid var(--dipsy-intent-surface-dominant-border); border-radius:var(--dipsy-radius-surface); box-shadow:var(--dipsy-shadow-raised); padding:28px; }
+      .onboarding-workspace .progress-rail li { border:0; }
+      .onboarding-workspace .progress-rail span { display:block; }
+      .onboarding-workspace .page-header h1 { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); }
+      .onboarding-workspace .page-header { margin:0; }
+      .onboarding-workspace .provisioning-stage .step-state { display:none; }
+      .onboarding-workspace .provisioning-stage [data-reading-viewport] { overflow:visible; }
+      .onboarding-workspace .site-brand-label { display:block; }
+      /* onboarding-layout:start */
+      /* Shared task layout for the persistent browser workspace. */
+      .onboarding-workspace {
+        margin: 0; min-height: 100dvh; padding: 0;
+        color: var(--dipsy-color-text); background: var(--dipsy-color-background);
+        font-family: var(--dipsy-font-family-ui); font-size: var(--dipsy-static-body-size);
+        line-height: 1.55; overflow-wrap: anywhere;
+        --app-bg: var(--dipsy-color-background); --app-surface: var(--dipsy-color-paper);
+        --app-text: var(--dipsy-color-text); --app-muted: var(--dipsy-color-text-muted);
+        --app-border: var(--dipsy-color-divider); --app-primary: var(--dipsy-color-primary);
+        --app-primary-text: var(--dipsy-color-on-primary); --app-accent: var(--dipsy-color-primary);
+        display: flex; flex-direction: column; align-items: stretch;
+      }
+      .onboarding-workspace *, .onboarding-workspace *::before, .onboarding-workspace *::after { box-sizing: border-box; }
+      .onboarding-header {
+        min-height: var(--dipsy-static-header-height); display: flex; align-items: center;
+        gap: 12px; padding: 16px 28px; border-bottom: var(--dipsy-border-thin) solid var(--dipsy-color-divider);
+      }
+      .onboarding-header .brand-mark { flex: 0 0 auto; }
+      .onboarding-header .product-name { margin: 0; font-size: 1rem; font-weight: var(--dipsy-font-weight-semibold); }
+      .onboarding-identity { margin-left: auto; color: var(--dipsy-color-text-muted); font-size: var(--dipsy-static-label-size); }
+      .onboarding-content { width: min(100%, var(--dipsy-static-workspace-width)); margin: 0 auto; padding: 28px; }
+      .onboarding-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+      .onboarding-card {
+        min-width: 0; padding: 28px; border: var(--dipsy-border-thin) solid var(--dipsy-intent-surface-dominant-border);
+        border-radius: var(--dipsy-radius-surface); background: var(--dipsy-color-paper); box-shadow: var(--dipsy-shadow-raised);
+      }
+      .onboarding-workspace main.onboarding-card { width: 100%; max-width: none; margin: 0; display: block; }
+      .onboarding-workspace .onboarding-facts:empty { display: none; }
+      .onboarding-header .brand-mark { width: 32px; min-height: 32px; display: grid; place-content: center; color: var(--dipsy-intent-brand-main); background: var(--dipsy-intent-brand-light); border-radius: var(--dipsy-radius-control); }
+      .onboarding-card h1, .onboarding-card h2 { margin: 0 0 16px; font-size: var(--dipsy-static-task-heading-size); line-height: 1.25; font-weight: var(--dipsy-font-weight-semibold); }
+      .onboarding-card p { margin: 0 0 16px; }
+      .onboarding-card p:empty { display: none; }
+      .onboarding-facts { margin: 20px 0; border: var(--dipsy-border-thin) solid var(--dipsy-color-divider); border-radius: var(--dipsy-radius-control); }
+      .onboarding-facts:has(> .onboarding-task) { border: 0; border-radius: 0; }
+      .onboarding-fact { margin: 0 !important; padding: 14px 16px; display: grid; gap: 2px; }
+      .onboarding-fact + .onboarding-fact { border-top: var(--dipsy-border-thin) solid var(--dipsy-color-divider); }
+      .onboarding-fact strong { font-size: var(--dipsy-static-caption-size); color: var(--dipsy-color-text-muted); font-weight: var(--dipsy-font-weight-regular); }
+      .onboarding-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin-top: 20px; }
+      .onboarding-workspace button, .onboarding-actions > a {
+        min-height: var(--dipsy-static-large-control-height); padding: 10px 18px; border-radius: var(--dipsy-radius-control);
+        font: inherit; font-weight: var(--dipsy-font-weight-semibold); cursor: pointer;
+      }
+      .onboarding-workspace .onboarding-actions > button, .onboarding-workspace .onboarding-actions > a {
+        color:var(--dipsy-color-on-primary); background:var(--dipsy-color-primary); border:var(--dipsy-border-thin) solid transparent; text-decoration:none;
+      }
+      .onboarding-workspace .onboarding-actions > button:not(:first-of-type),
+      .onboarding-workspace .onboarding-actions > a:not(:first-of-type) { color:var(--dipsy-color-primary); background:transparent; border:0; padding-inline:8px; }
+      .onboarding-workspace .onboarding-facts > section button { color:var(--dipsy-color-on-primary); background:var(--dipsy-color-primary); border:var(--dipsy-border-thin) solid transparent; }
+      .onboarding-workspace button:focus-visible, .onboarding-workspace a:focus-visible, .onboarding-workspace input:focus-visible {
+        outline: var(--dipsy-focus-width) solid var(--dipsy-color-primary); outline-offset: var(--dipsy-focus-offset);
+      }
+      .onboarding-progress { list-style: none; counter-reset: setup-step; margin: 0; padding: 0; }
+      .onboarding-progress li { counter-increment: setup-step; display: flex; align-items: flex-start; gap: 10px; padding: 10px; color: var(--dipsy-color-text-muted); }
+      .onboarding-progress li::before {
+        content: counter(setup-step); display: grid; place-content: center; flex: 0 0 24px; min-height: 24px;
+        border: var(--dipsy-border-thin) solid var(--dipsy-color-divider); border-radius: var(--dipsy-radius-pill); font-size: var(--dipsy-static-caption-size);
+      }
+      .onboarding-progress [aria-current="step"] { color: var(--dipsy-color-text); background: var(--dipsy-color-paper); border-radius: var(--dipsy-radius-control); font-weight: var(--dipsy-font-weight-semibold); }
+      .onboarding-progress [aria-current="step"]::before { background: var(--dipsy-color-primary); color: var(--dipsy-color-on-primary); border-color: transparent; }
+      .onboarding-progress [data-complete="true"]::before { content: '✓'; color: var(--dipsy-color-primary); background: var(--dipsy-intent-surface-trust-fill); }
+      .onboarding-status-icon { width: 44px; min-height: 44px; border-radius: var(--dipsy-radius-control); display: grid; place-content: center; color: var(--dipsy-color-primary); background: var(--dipsy-intent-surface-trust-fill); font-size: 1.5rem; }
+      .onboarding-footer { padding: 12px 28px; margin-top: auto; background: var(--dipsy-color-paper); border-top: var(--dipsy-border-thin) solid var(--dipsy-color-divider); color: var(--dipsy-color-text-muted); font-size: var(--dipsy-static-caption-size); }
+      .onboarding-footer span { display: block; }
+      .onboarding-card .onboarding-task { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 0; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+      .onboarding-card .onboarding-task > p { margin: 0; }
+      @media (min-width: 800px) {
+        .onboarding-content:has(.onboarding-layout[data-progress="full"]) { width: min(100%, var(--dipsy-static-full-workspace-width)); }
+        .onboarding-layout[data-progress="full"] { grid-template-columns: var(--dipsy-static-setup-rail-width) minmax(0, 1fr); }
+      }
+      @media (max-width: 600px) {
+        .onboarding-header { padding: 16px; flex-wrap: wrap; }
+        .onboarding-content { padding: 20px 16px; }
+        .onboarding-card { padding: 20px; }
+        .onboarding-card h1, .onboarding-card h2 { font-size: 1.5rem; }
+        .onboarding-identity { max-width: 100%; }
+        .onboarding-progress { display: flex; flex-wrap: wrap; }
+        .onboarding-progress li { flex: 1 1 45%; }
+        .onboarding-footer { padding: 12px 16px; }
+      }
+      @media (prefers-reduced-motion: reduce) { .onboarding-workspace * { animation: none !important; transition: none !important; } }
+      /* onboarding-layout:end */
     </style>
   </head>
-  <body>
-    <header class="site-brand" aria-label="Conversation Analytics">
+  <body class="onboarding-workspace">
+    <header class="site-brand onboarding-header" aria-label="Conversation Analytics">
       <div class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 20 20" fill="none" focusable="false">
             <path d="M5 3.75h10A2.25 2.25 0 0 1 17.25 6v6A2.25 2.25 0 0 1 15 14.25h-4.4L7 16.75v-2.5H5A2.25 2.25 0 0 1 2.75 12V6A2.25 2.25 0 0 1 5 3.75Z"/>
@@ -1088,24 +1194,24 @@
         </div>
       <span class="site-brand-label">Conversation Analytics</span>
     </header>
-    <main
+    <main class="onboarding-content"
       data-provisioning-csrf="{{PROVISIONING_CSRF}}"
       data-provisioning-context-kind="{{PROVISIONING_CONTEXT_KIND}}"
       data-provisioning-extension-id="{{PROVISIONING_EXTENSION_ID}}"
     >
       <header class="page-header">
         <h1>Set up the desktop app</h1>
-        <p class="intro">Read the <a class="disclosure-link" href="/provisioning/creator-platform-data-risk-disclosure.html" target="_blank" rel="noopener noreferrer">Creator platform &amp; data risk disclosure</a> before you continue. It opens in a new tab.</p>
         <span id="feedback-details" hidden>Details available <button type="button" id="feedback-details-open" class="secondary">Show details</button></span>
         <p id="provisioning-status" class="page-status" role="status" aria-live="polite" aria-atomic="true" data-tone="neutral"></p>
         <button id="transfer-recovery-action" type="button" hidden></button>
       </header>
 
-      <ol class="progress-rail" data-reserved-region="provisioning-rail" aria-label="Desktop setup progress">
+      <div class="onboarding-layout" data-progress="full">
+      <ol class="progress-rail onboarding-progress" data-reserved-region="provisioning-rail" aria-label="Desktop setup progress">
         <li data-rail-step="0"><span>Connect</span><b>1</b></li><li data-rail-step="1"><span>Account</span><b>2</b></li><li data-rail-step="2"><span>Approve</span><b>3</b></li><li data-rail-step="3"><span>Finish</span><b>4</b></li>
       </ol>
       <div class="provisioning-stage" data-reserved-region="provisioning-stage">
-        <section id="claim-step" class="step" data-region-content data-step="registration" data-state="current" aria-current="step">
+        <section id="claim-step" class="step onboarding-card" data-region-content data-step="registration" data-state="current" aria-current="step">
           <p id="claim-step-state" class="step-state">Step 1 of 4</p><h2 id="claim-heading">Connect this computer</h2>
           <p id="claim-step-description" class="step-description">Use a setup code to connect this computer.</p>
           <div id="initial-browser-prerequisite" class="stage-body" hidden>
@@ -1133,29 +1239,31 @@
           </div>
           <p id="secure-setup-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Setup opens in this tab.</p>
         </section>
-        <section id="identity-step" class="step" data-region-content data-step="identity" data-state="locked">
+        <section id="identity-step" class="step onboarding-card" data-region-content data-step="identity" data-state="locked">
           <p id="identity-step-state" class="step-state">Step 2 of 4</p><h2 id="identity-heading">Choose your creator account</h2>
           <p id="identity-step-description" class="step-description">Choose the creator account this computer should use.</p>
           <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="identity-status" role="status">Sign in to your creator account on OnlyFans, then return here.</p><p id="extension-install-reason">Finish extension setup in the browser where you sign in to OnlyFans.</p></div>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
           <div class="actions" data-reserved-region="provisioning-actions"><button id="open-extension-setup" type="button" aria-describedby="identity-status" hidden>Open extension setup</button><button id="refresh-identity" class="secondary" type="button" aria-describedby="identity-status">Try again</button><button id="confirm-identity" type="button" disabled aria-describedby="identity-step-description">Use this account</button></div>
         </section>
-        <section id="binding-step" class="step" data-region-content data-step="approval" data-state="locked">
+        <section id="binding-step" class="step onboarding-card" data-region-content data-step="approval" data-state="locked">
           <p id="binding-step-state" class="step-state">Step 3 of 4</p><h2 id="binding-heading">Connect your account</h2>
           <p id="binding-step-description" class="step-description">Approve which account this computer can use.</p>
           <div class="stage-body" data-region-role="scroll" data-reading-viewport><p id="creator-approval-unavailable" class="step-description approval-unavailable">Account setup is unavailable.</p><p id="creator-approval-return-help" class="control-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Continue setup in this tab.</p><button type="button" id="recovery-open" class="secondary" hidden>Can’t find the setup tab?</button></div>
           <div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
           <div class="actions" data-reserved-region="provisioning-actions"><a id="continue-creator-approval" class="primary-link" href="{{HOSTED_ONBOARDING_URL}}" target="_self" rel="noreferrer" aria-describedby="creator-approval-return-help" {{HOSTED_ONBOARDING_VISIBILITY}}>Approve account</a><button id="acquire-association" class="secondary" type="button" disabled aria-describedby="binding-step-description">Try again</button></div>
         </section>
-        <section id="finalize-step" class="step" data-region-content data-step="finalization" data-state="locked">
+        <section id="finalize-step" class="step onboarding-card" data-region-content data-step="finalization" data-state="locked">
           <p id="finalize-step-state" class="step-state">Step 4 of 4</p><h2 id="finalize-heading">Finish desktop setup</h2>
           <p id="finalize-step-description" class="step-description">The desktop app restarts when setup is finished.</p><div class="stage-body" data-region-role="scroll" data-reading-viewport></div><div data-step-feedback data-reserved-region="provisioning-feedback"><div data-feedback-content data-region-content></div></div>
           <div class="actions" data-reserved-region="provisioning-actions"><button id="finalize-provisioning" type="button" disabled aria-describedby="finalize-step-description">Try again</button></div>
         </section>
       </div>
+      </div>
       <dialog id="feedback-dialog" aria-labelledby="feedback-title"><h2 id="feedback-title">Details</h2><p id="feedback-copy"></p><form method="dialog"><button>Close</button></form></dialog>
       <dialog id="recovery-dialog" aria-labelledby="recovery-title"><h2 id="recovery-title">Can’t find the setup tab?</h2><p>Look in your browser history for the page where you signed in to get your setup code.</p><button id="recovery-close" type="button">Close</button></dialog>
     </main>
+    <footer class="onboarding-footer"><span>Use only with a creator account you are authorized to analyze.</span><span>Independent software. It is not affiliated with or endorsed by OnlyFans.</span><p class="intro"><a class="disclosure-link" href="/provisioning/creator-platform-data-risk-disclosure.html" target="_blank" rel="noopener noreferrer">Creator platform &amp; data risk disclosure</a></p></footer>
     <script type="module" src="/provisioning/provisioning.js"></script>
   </body>
 </html>

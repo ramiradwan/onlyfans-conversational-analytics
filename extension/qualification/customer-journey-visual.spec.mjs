@@ -10,7 +10,12 @@ for (const [name, state] of Object.entries(SURFACE_STATES)) {
         await page.setViewportSize({ width, height: state.surface === 'popup' ? 600 : 900 });
         await page.emulateMedia({ colorScheme: scheme });
         await renderSurfaceState(page, state);
-        await expect(page.locator('h1')).toBeVisible();
+        if (state.surface === 'setup') {
+          await expect(page.locator('main h1.visually-hidden')).toHaveCount(1);
+          await expect(page.locator('main h2:visible').first()).toBeVisible();
+        } else {
+          await expect(page.locator('h1')).toBeVisible();
+        }
         expect(await page.evaluate(() => Math.max(document.body.scrollWidth, document.documentElement.scrollWidth) - innerWidth)).toBeLessThanOrEqual(1);
         if (state.surface === 'popup') {
           await expect(page.locator('#pre-mode, #mode-choice, #companion-pairing, #delete-local-data')).toHaveCount(0);

@@ -8,8 +8,8 @@ export function renderReceivingContext(document, context) {
   const target = context?.intended_creator_id;
   region.classList.toggle('hidden', !target);
   if (!target) return;
-  document.getElementById('setup-transfer-intended').textContent = target;
-  document.getElementById('setup-transfer-current').textContent = context.current_creator_id ?? 'Not identified';
+  document.getElementById('setup-transfer-intended').textContent = 'Account name unavailable';
+  document.getElementById('setup-transfer-current').textContent = context.current_creator_id ? 'Account name unavailable' : 'Not identified';
   document.getElementById('setup-transfer-mismatch').classList.toggle('hidden',
     !context.current_creator_id || context.current_creator_id === target);
 }

@@ -170,7 +170,7 @@ describe('companion pairing controls', () => {
     await click('Connect extension');
     await click("Codes don't match");
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'decline', 3, expect.any(AbortSignal));
-    expect(screen.getByText(/codes didn't match, so nothing was connected/)).toBeTruthy();
+    expect(screen.getByText(/Connection declined/)).toBeTruthy();
   });
 
   it('preserves comparison acceptance across unchanged notices and resets it when the code changes', async () => {
@@ -312,16 +312,51 @@ describe('companion pairing controls', () => {
       expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     });
 
-    it('opens the extension window for unfinished steps and continues as soon as they are done', async () => {
+    it('preserves confirmation when the setup view unmounts before its reply', async () => {
+      let finish!: (value: CompanionPairingStatus) => void;
+      let signal: AbortSignal | undefined;
+      const api = makeApi({ confirmVerified: vi.fn((_id, _version, _code, controller) => {
+        signal = controller;
+        return new Promise<CompanionPairingStatus>((resolve) => { finish = resolve; });
+      }) });
+      const { port, push } = makePort(ready);
+      const view = mount(api, port);
+      await click('Connect extension');
+      await act(async () => push({ stage: 'pairing', attempt: { state: 'compare', comparison_code: '012345' } }));
+      await brainNotice();
+      expect(api.confirmVerified).toHaveBeenCalledTimes(1);
+      await act(async () => view.unmount());
+      expect(signal?.aborted).toBe(false);
+      expect(port.cancel).not.toHaveBeenCalled();
+      expect(api.change).not.toHaveBeenCalled();
+      await act(async () => finish({ ...awaiting, state: 'admitted', version: 4, comparison_code: null }));
+      expect(api.change).not.toHaveBeenCalled();
+    });
+
+    it('keeps an admitted connection when the setup view unmounts', async () => {
+      const { port, push } = makePort(ready);
+      const api = makeApi();
+      const view = mount(api, port);
+      await click('Connect extension');
+      await act(async () => push({ stage: 'pairing', attempt: { state: 'compare', comparison_code: '012345' } }));
+      await brainNotice();
+      await act(async () => {});
+      expect(api.confirmVerified).toHaveBeenCalledTimes(1);
+      view.unmount();
+      expect(port.cancel).not.toHaveBeenCalled();
+      expect(api.change).not.toHaveBeenCalled();
+    });
+
+    it('opens the extension setup tab for unfinished steps and continues once they are done', async () => {
       const { port, push } = makePort({ status: 'connected', stage: 'needs_full', attempt: null });
       const api = makeApi();
       mount(api, port);
       await click('Connect extension');
       expect(port.open).toHaveBeenCalledWith('setup');
       expect(api.open).not.toHaveBeenCalled();
-      expect(screen.getByText(/Turn on Full analytics in the extension window/)).toBeTruthy();
+      expect(screen.getByText(/Turn on Full analytics in the extension setup tab/)).toBeTruthy();
       await act(async () => push({ stage: 'needs_site_access' }));
-      expect(screen.getByText(/Allow site access in the extension window/)).toBeTruthy();
+      expect(screen.getByText(/Allow site access in the extension setup tab/)).toBeTruthy();
       await act(async () => push({ stage: 'ready_to_pair' }));
       expect(api.open).toHaveBeenCalledTimes(1);
       expect(port.pair).toHaveBeenCalledTimes(1);
@@ -334,7 +369,7 @@ describe('companion pairing controls', () => {
       await click('Connect extension');
       await act(async () => push({ attempt: { state: 'failed', comparison_code: null } }));
       expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'cancel', 0, expect.any(AbortSignal));
-      expect(screen.getByText('The extension stopped the connection. Try again.')).toBeTruthy();
+      expect(screen.getByText('The connection did not finish. Try again.')).toBeTruthy();
     });
 
     it('cancels both sides and closes nothing it did not open', async () => {
@@ -355,6 +390,6 @@ describe('companion pairing controls', () => {
     mount(api, port);
     await click('Connect extension');
     expect(port.pair).not.toHaveBeenCalled();
-    expect(screen.getByText(/Open the browser extension where it's installed/)).toBeTruthy();
+    expect(screen.getByText(/open its setup tab and choose Connect extension/)).toBeTruthy();
   });
 });

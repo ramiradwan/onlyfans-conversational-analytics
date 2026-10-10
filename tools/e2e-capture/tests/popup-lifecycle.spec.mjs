@@ -410,7 +410,7 @@ test('companion client ownership survives focus and observer closure; owner clos
     await sendPairingCommand(setup);
     await expect(setup.locator('#pairing-code')).toHaveText('483 217');
     const observer = await browser.openStatusPage();
-    await expect.poll(() => observer.text('#journey-title')).toBe('Desktop app closed');
+    await expect.poll(() => observer.text('#journey-title')).toBe('Confirm connection');
     await expect.poll(() => observer.text('#journey-primary')).toBe('Continue setup');
     expect(await observer.visible('#pairing-code')).toBe(false);
     await observer.close();

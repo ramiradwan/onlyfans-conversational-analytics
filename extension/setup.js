@@ -4,9 +4,9 @@ import { WORKSPACE_MESSAGE_TYPE } from './runtime/onboarding-entry.mjs';
 import { WORKSPACE_RECORD_KEY } from './runtime/onboarding-workspace.mjs';
 import { FULL_REVIEW_INTENT_KEY, createFullReviewIntentConsumer, createFullReviewPersistence } from './runtime/onboarding-full-intent.mjs';
 import { LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE,
-  LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE } from './runtime/legal-activation-controller.mjs';
+  LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE, LEGAL_CHOOSE_MODE_MESSAGE_TYPE } from './runtime/legal-activation-controller.mjs';
 import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError } from './ui/surface-client.mjs';
-import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
+import { customerJourney, desktopOwnsCapture, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
 import { createHandoffFinisher, returnToDesktop } from './ui/handoff.mjs';
@@ -16,6 +16,8 @@ import { createDesktopLaunch, desktopLaunchJourney } from './ui/desktop-launch.m
 import { createWorkspaceNavigation } from './ui/workspace-navigation.mjs';
 import { LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
 import { desktopStage } from './runtime/desktop-port.mjs';
+import { createSetupChoice } from './ui/setup-choice.mjs';
+import { previewCounts } from './ui/preview-counts.mjs';
 
 let failed = false;
 let dismissed = false;
@@ -30,6 +32,8 @@ const page = createPageActions(client, render);
 const steps = ['agree', 'mode', 'connect', 'activate'];
 let currentJourney = null;
 let workspaceRecord = null;
+const choicePersistence = createSetupChoice();
+let setupChoice = null;
 let persistentHandoff = false, handoffReturnAttempted = false;
 createWorkspaceNavigation({ workspace: () => workspaceRecord });
 const desktopLaunch = createDesktopLaunch({ workspace: () => workspaceRecord,
@@ -46,11 +50,13 @@ let checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: f
 let receivingRead = 0, receivingExpiry = null;
 const consumeFullReviewIntent = createFullReviewIntentConsumer({ apply() {
   reviewStep = null; dismissed = false; setFullReview(true);
+  setupChoice = { mode: 'full', stage: 'review' }; choicePersistence.write(workspaceRecord, setupChoice);
 } });
 async function readWorkspace() {
   if (!location.hash.startsWith('#journey=')) return;
   const generation = ++receivingRead;
   workspaceRecord = null;
+  setupChoice = null;
   fullReviewRequested = false;
   checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
   clearTimeout(receivingExpiry);
@@ -60,6 +66,7 @@ async function readWorkspace() {
     const intent = (await chrome.storage.session.get([FULL_REVIEW_INTENT_KEY]))[FULL_REVIEW_INTENT_KEY];
     if (generation !== receivingRead) return;
     workspaceRecord = next;
+    setupChoice = choicePersistence.read(workspaceRecord);
     fullReviewRequested = fullReviewPersistence.read(workspaceRecord);
     checkboxDraft = { ...workspaceRecord.draft };
     consumeFullReviewIntent(intent, workspaceRecord);
@@ -105,7 +112,8 @@ function renderProgress(model, view, journey) {
     && model.status.delivery?.transport_state === 'authenticated';
   const complete = view === 'journey' && ['preview_available', 'full_ready'].includes(journey.id);
   const index = view === 'agree' ? 0 : ['mode', 'access'].includes(view) ? 1 : connected ? 3 : 2;
-  show('setup-progress', ['agree', 'mode', 'access'].includes(view) || ['preview', 'full'].includes(model.status.consent.mode));
+  show('setup-progress', full && !complete);
+  document.querySelector('.onboarding-layout').dataset.progress = full && !complete ? 'full' : 'none';
   steps.forEach((step, position) => {
     const item = document.querySelector(`#setup-progress [data-step="${step}"]`);
     item.classList.toggle('hidden', position >= count);
@@ -113,14 +121,17 @@ function renderProgress(model, view, journey) {
     if (!complete && position === index) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
     page.lock(`step-${step}`, !complete && position > index);
   });
-  text('step-summary', complete ? (full ? 'Setup complete' : 'Preview is ready')
-    : view === 'agree' ? 'Review terms' : view === 'mode' ? 'Choose a mode'
-      : view === 'access' ? 'Browser site access' : full ? (connected ? 'Full activation' : 'Connect the desktop app') : journey.title);
+  const announced = complete ? (full ? 'Setup complete' : 'Preview is ready')
+    : view === 'start' ? 'Choose Preview or Full analytics'
+      : view === 'agree' ? 'Review terms and risk disclosure'
+        : view === 'mode' ? 'Choose a mode'
+          : view === 'access' ? 'Allow site access' : journey.title;
+  if (element('step-summary').textContent !== announced) text('step-summary', announced);
 }
 function render(model) {
   desktopLaunch.observe(model);
   const { status, legal } = model;
-  for (const id of ['pre-mode', 'mode-choice', 'access-card', 'journey-card', 'legal-unavailable', 'setup-progress', 'back-current']) show(id, false);
+  for (const id of ['start-choice', 'pre-mode', 'mode-choice', 'access-card', 'journey-card', 'legal-unavailable', 'setup-progress', 'back-current']) show(id, false);
   renderLoading(status, failed);
   renderLegalLinks(legal);
   if (!status || !legal) {
@@ -137,12 +148,35 @@ function render(model) {
   const active = ['preview', 'full'].includes(mode) && !legal.requires_reauthorization;
   const choose = (modeChoiceAvailable(model) && !dismissed) || (mode === 'preview' && fullReviewRequested) || reviewStep === 'mode';
   const access = status.phase === 'permission_required';
-  const view = agreement || reviewStep === 'agree' ? 'agree' : choose ? 'mode' : access ? 'access' : 'journey';
+  const selected = setupChoice?.mode ?? (fullReviewRequested ? 'full' : legal.requires_reauthorization
+    ? status.consent.resume_mode ?? (['preview', 'full'].includes(mode) ? mode : null) : null);
+  const pendingAccess = selected && setupChoice?.stage === 'access' && !agreement
+    && legal.flow.stage === 'mode_selection';
+  const view = agreement || reviewStep === 'agree' ? selected || reviewStep === 'agree' ? 'agree' : 'start'
+    : pendingAccess ? 'access' : choose ? 'mode' : access ? 'access' : 'journey';
   currentJourney = desktopLaunchJourney(customerJourney(model), desktopLaunch.state);
+  const icon = currentJourney.id === 'full_ready' || (currentJourney.id === 'preview_available' && status.observer?.attachment === 'ready') ? '✓'
+    : currentJourney.id === 'paused' ? 'Ⅱ'
+      : currentJourney.tone === 'progress' ? '↻' : currentJourney.tone === 'warning' || currentJourney.tone === 'error' ? '!' : '…';
+  text('journey-icon', icon);
   document.querySelector('main').dataset.step = view;
   renderProgress(model, view, currentJourney);
+  // Keep the verified current step available to assistive technology.
   show('back-current', reviewStep !== null);
   show('pre-mode', view === 'agree'); show('mode-choice', view === 'mode');
+  show('start-choice', view === 'start');
+  show('start-back', view === 'agree' && Boolean(setupChoice) && !legal.requires_reauthorization);
+  if (view === 'agree' && selected) {
+    text('activation-title', selected === 'full' ? 'Turn on Full analytics' : 'Turn on Preview');
+    text('activate-software', selected === 'full' ? 'Continue with Full analytics' : 'Continue with Preview');
+    const disclosure = element('start-disclosure');
+    if (disclosure.dataset.mode !== selected) {
+      const original = element(selected === 'full' ? 'full-disclosure' : 'preview-disclosure');
+      disclosure.replaceChildren(original.querySelector('.points').cloneNode(true));
+      if (selected === 'preview') disclosure.append(original.querySelector('.fine-print').cloneNode(true));
+      disclosure.dataset.mode = selected;
+    }
+  }
   show('access-card', view === 'access'); show('journey-card', view === 'journey');
   if (!page.busy) {
     element('terms-accepted').checked = Boolean(legal.flow.terms_event_id || checkboxDraft.terms_checked);
@@ -159,19 +193,29 @@ function render(model) {
   text('full-secondary', mode === 'preview' ? 'Keep Preview' : 'Not now');
   text('access-title', 'Allow site access');
   text('access-body', 'Allow the extension to read activity from your creator account.');
-  show('restore-access', status.phase === 'permission_required');
+  show('restore-access', Boolean(pendingAccess) || status.phase === 'permission_required');
   renderJourney(currentJourney, model);
   const preview = mode === 'preview' || (mode === 'paused' && status.consent.resume_mode === 'preview');
   show('preview-metrics', preview && view === 'journey');
-  show('pause', ['preview', 'full'].includes(mode) && model.pairing.desktop_control !== true);
+  const desktopOwned = desktopOwnsCapture(model);
+  show('pause', ['preview', 'full'].includes(mode) && !desktopOwned);
   show('background-tab-note', status.observer?.helper === 'open');
   show('reopen-background-tab', status.observer?.helper === 'closed');
-  for (const [id, key] of [['messages-count', 'message_observations'], ['inbound-count', 'inbound_observations'], ['outbound-count', 'outbound_observations']]) text(id, new Intl.NumberFormat().format(status.preview?.[key] ?? 0));
-  if (currentJourney.id === 'preview_available') text('journey-body', status.observer?.attachment === 'ready' ? 'Counts update as you use OnlyFans.' : 'Waiting for OnlyFans activity.');
-  if (currentJourney.id === 'full_ready') text('journey-body', 'Setup is finished. Insights and stored messages are in the desktop app.');
+  const daily = previewCounts(status.preview);
+  text('metrics-range', daily.label);
+  for (const [id, key] of [['messages-count', 'message_observations'], ['inbound-count', 'inbound_observations'], ['outbound-count', 'outbound_observations']]) text(id, new Intl.NumberFormat().format(daily.counts[key] ?? 0));
+  if (currentJourney.id === 'preview_available') {
+    text('journey-title', status.observer?.attachment === 'ready' ? 'Preview is ready' : 'Waiting for OnlyFans activity');
+    text('journey-badge', status.observer?.attachment === 'ready' ? 'Counting as you use OnlyFans' : '');
+    text('journey-body', '');
+  }
+  if (currentJourney.id === 'full_ready') text('journey-body', 'Open analytics to see your conversations.');
   renderPairing(model, currentJourney);
   renderReadiness(model); show('ready-details', currentJourney.id === 'full_ready');
-  for (const [id, action, label] of [['journey-primary', currentJourney.primaryAction, currentJourney.primaryLabel],
+  const resumeInDesktop = currentJourney.id === 'paused' && desktopOwned && currentJourney.primaryAction === 'resume';
+  for (const [id, action, label] of [['journey-primary',
+    resumeInDesktop ? 'open_dashboard' : currentJourney.primaryAction,
+    resumeInDesktop ? 'Resume in the desktop app' : currentJourney.primaryLabel],
     ['journey-secondary', currentJourney.secondaryAction, currentJourney.secondaryLabel]]) {
     element(id).dataset.action = action ?? ''; text(id, label ?? '');
     show(id, Boolean(action) && !['pair', 'cancel_pairing'].includes(action));
@@ -223,7 +267,7 @@ function renderPairing(model, journey) {
   show('companion-pairing', pending || pairAction);
   show('pair-companion', pairAction && !pending);
   element('pair-companion').className = (journey.primaryAction === 'pair' ? 'primary' : 'secondary') + (pairAction && !pending ? '' : ' hidden');
-  text('pair-companion', journey.primaryAction === 'pair' ? journey.primaryLabel : journey.secondaryLabel ?? 'Pair device');
+  text('pair-companion', journey.primaryAction === 'pair' ? journey.primaryLabel : journey.secondaryLabel ?? 'Connect extension');
   const code = pending ? model.pairing.comparison_code : null;
   show('pairing-code', code !== null); show('pairing-label', code !== null);
   text('pairing-code', code ? `${code.slice(0, 3)} ${code.slice(3)}` : '');
@@ -247,6 +291,7 @@ function runJourneyAction(action) {
   if (action === 'open_desktop_settings') return chrome.tabs.create({ url: client.model.config.history_settings_url });
   if (action === 'open_creator_account') return openCreatorAccount();
   if (action === 'retry_readiness') return client.sync();
+  if (action === 'restore_access') return restoreAccess(client.model);
   if (action === 'resume') return transition('resume', client.model);
   if (action === 'retry_full') return transition('full', client.model);
   if (action === 'install_desktop') {
@@ -257,6 +302,7 @@ function runJourneyAction(action) {
 }
 async function enableMode(mode) {
   await chooseMode(mode);
+  setupChoice = null; choicePersistence.write(workspaceRecord, null);
   setFullReview(false); reviewStep = null; dismissed = false;
 }
 for (const id of ['terms-accepted', 'risk-acknowledged']) {
@@ -270,17 +316,33 @@ element('activate-software').addEventListener('click', () => {
     return;
   }
   void page.run(async () => {
+    const chosen = setupChoice?.mode ?? (fullReviewRequested ? 'full' : client.model.status.consent.resume_mode ?? null);
+    const chosenScope = workspaceRecord?.draft_scope?.scope_id ?? null;
     if (!client.model.legal.flow.terms_event_id) await send({ type: LEGAL_ACCEPT_TERMS_MESSAGE_TYPE });
     if (!client.model.legal.flow.risk_event_id) await send({ type: LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE });
+    if (chosen) { setupChoice = { mode: chosen, stage: 'access' }; choicePersistence.write(workspaceRecord, setupChoice); }
     await send({ type: LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE });
+    if (chosen && chosenScope === (workspaceRecord?.draft_scope?.scope_id ?? null)
+      && client.model.status.onlyfans_permission === true
+      && (chosen === 'preview' || client.model.status.local_service_permission === true)) {
+      await send({ type: LEGAL_CHOOSE_MODE_MESSAGE_TYPE, mode: chosen });
+      setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false);
+    }
   });
+});
+for (const mode of ['preview', 'full']) page.bind(`start-${mode}`, () => {
+  setupChoice = { mode, stage: 'review' }; choicePersistence.write(workspaceRecord, setupChoice);
+  setFullReview(mode === 'full'); render(client.model);
+});
+page.bind('start-back', () => {
+  setupChoice = null; choicePersistence.write(workspaceRecord, null); setFullReview(false); render(client.model);
 });
 page.bind('enable-preview', () => enableMode('preview'));
 page.bind('enable-full', () => enableMode('full'));
 page.bind('review-full', () => { setFullReview(true); reviewStep = null; render(client.model); });
 page.bind('not-now-preview', () => { dismissed = true; reviewStep = null; render(client.model); });
 page.bind('full-secondary', () => { setFullReview(false); reviewStep = null; render(client.model); });
-page.bind('restore-access', () => restoreAccess(client.model));
+page.bind('restore-access', () => setupChoice?.stage === 'access' ? enableMode(setupChoice.mode) : restoreAccess(client.model));
 page.bind('reopen-background-tab', () => send({ type: OBSERVER_REOPEN_TYPE }));
 page.bind('setup-transfer-switch', () => openCreatorAccount());
 page.bind('pause', () => transition('pause', client.model));

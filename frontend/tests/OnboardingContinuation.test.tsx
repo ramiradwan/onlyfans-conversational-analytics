@@ -1,4 +1,6 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render as renderWithoutTheme, screen } from '@testing-library/react';
+import { ThemeProvider } from '@mui/material/styles';
+import type { ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 // eslint-disable-next-line import/extensions -- Runtime .mjs has a matching .d.mts declaration.
@@ -6,6 +8,9 @@ import { createOnboardingClient, type OnboardingClient, type OnboardingState } f
 import vectors from '../../shared/onboarding/vectors.json';
 import { OnboardingContinuation } from '../src/components/OnboardingContinuation';
 import { validateOnboardingMessage } from '../src/protocol/onboarding';
+import { theme } from '../src/theme';
+
+const render = (node: ReactNode) => renderWithoutTheme(<ThemeProvider theme={theme}>{node}</ThemeProvider>);
 
 const active = vi.hoisted(() => ({ client: null as OnboardingClient | null }));
 vi.mock('../src/services/onboardingSession', () => ({
@@ -18,10 +23,43 @@ vi.mock('../src/components/CommercialActivationControls', () => ({ CommercialAct
 const brain = vectors.cases.find((value) => value.id === 'brain-snapshot')!.value as OnboardingState;
 afterEach(() => { cleanup(); active.client = null; window.history.replaceState({}, '', '/'); });
 
+it('distinguishes waiting, checking and an unconfirmed activation return', () => {
+  window.history.replaceState({}, '', '/#journey=22222222-2222-4222-8222-222222222222');
+  const check = vi.fn();
+  const waiting = (state: 'waiting' | 'checking' | 'unconfirmed') => (
+    <OnboardingContinuation activationReturn={{ state, check }}><div>Analytics</div></OnboardingContinuation>
+  );
+  const view = render(waiting('waiting'));
+  expect(screen.getByText('Waiting for activation…')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+  view.rerender(<ThemeProvider theme={theme}>{waiting('checking')}</ThemeProvider>);
+  expect(screen.getByText('Checking activation…')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+  view.rerender(<ThemeProvider theme={theme}>{waiting('unconfirmed')}</ThemeProvider>);
+  expect(screen.getByText('Activation couldn’t be confirmed.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
+});
+
 it('normal app access does not reopen setup', () => {
   render(<OnboardingContinuation><div>Analytics</div></OnboardingContinuation>);
   expect(screen.getByText('Analytics')).toBeTruthy();
   expect(screen.queryByText('Pairing control')).toBeNull();
+});
+
+it('changing the journey in a mounted view clears its remembered completion', async () => {
+  window.history.replaceState({}, '', `/#journey=${brain.journey_id}`);
+  const client = createOnboardingClient({ journeyId: brain.journey_id, validate: validateOnboardingMessage });
+  active.client = client;
+  await client.attach('brain', {
+    subscribe() { return () => {}; }, readSnapshot: async () => brain,
+    sendCommand() { throw Error('read only'); },
+  });
+  const view = render(<OnboardingContinuation><div>Analytics</div></OnboardingContinuation>);
+  expect(screen.getByText('Analytics')).toBeTruthy();
+  window.history.replaceState({}, '', '/#journey=22222222-2222-4222-8222-222222222222');
+  view.rerender(<ThemeProvider theme={theme}><OnboardingContinuation><div>Analytics</div></OnboardingContinuation></ThemeProvider>);
+  expect(screen.getByText('Pairing control')).toBeTruthy();
+  expect(screen.queryByText('Analytics')).toBeNull();
 });
 
 it('a new journey cannot inherit completion from the previous active client', async () => {

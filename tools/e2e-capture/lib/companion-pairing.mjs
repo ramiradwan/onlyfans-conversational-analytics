@@ -256,6 +256,14 @@ export async function requestAgentPairingTicket(context) {
   expect(journey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
   let opened = null;
   let routeRemoved = false;
+  const pairingRequests = [];
+  const observePairingRequest = (request) => {
+    const url = new URL(request.url());
+    if (url.origin !== BRAIN_ORIGIN || request.method() !== 'POST') return;
+    const action = /^\/api\/v1\/companion\/pairings\/[^/]+\/(confirm|cancel|decline)$/u.exec(url.pathname)?.[1];
+    if (action) pairingRequests.push(action);
+  };
+  context.on('request', observePairingRequest);
   try {
     const creation = pairingPage.waitForResponse((response) => response.request().method() === 'POST'
       && new URL(response.url()).pathname === '/api/v1/companion/pairings');
@@ -280,9 +288,30 @@ export async function requestAgentPairingTicket(context) {
     // a response body tied to a document that Chrome has already discarded.
     const admitted = await bridge.evaluate(async (pathname) => {
       const response = await fetch(pathname, { credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
-      if (!response.ok) throw new Error('The confirmed pairing could not be read.');
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const reason = typeof body?.detail === 'string' && /^pairing_[a-z_]{1,48}$/u.test(body.detail)
+          ? body.detail : 'unavailable';
+        // Read-only evidence: never replay confirmation or expose pairing keys.
+        let pinState = 'unavailable';
+        try {
+          const pinsResponse = await fetch('/api/v1/companion/pins', {
+            credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+          });
+          if (!pinsResponse.ok) pinState = `HTTP ${pinsResponse.status}`;
+          else {
+            const result = await pinsResponse.json();
+            pinState = Array.isArray(result?.pins)
+              ? result.pins.some((pin) => pathname.endsWith(`/${pin.pairing_id}`)) ? 'admitted' : 'absent'
+              : 'invalid';
+          }
+        } catch { /* The pin list cannot be confirmed. */ }
+        throw new Error(`The confirmed pairing could not be read (HTTP ${response.status}; reason=${reason}; pin=${pinState}).`);
+      }
       return response.json();
-    }, pairingPath);
+    }, pairingPath).catch((error) => {
+      throw new Error(`Pairing lookup failed after browser requests: ${pairingRequests.join(',') || 'none'}. ${error.message}`, { cause: error });
+    });
     expect(admitted.state).toBe('admitted');
     expect(admitted.creator_account_id).toBe(config.CREATOR_ID);
     expect(pairingPath).toBe(`/api/v1/companion/pairings/${admitted.pairing_id}`);
@@ -297,6 +326,8 @@ export async function requestAgentPairingTicket(context) {
     if (!routeRemoved) await identity.removeRoute().catch(() => undefined);
     await identity.page.close().catch(() => undefined);
     throw error;
+  } finally {
+    context.off('request', observePairingRequest);
   }
 
   return {

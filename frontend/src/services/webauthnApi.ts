@@ -23,6 +23,7 @@ interface LoginOptions {
 export interface WebAuthnApi {
   enroll(): Promise<void>;
   login(): Promise<void>;
+  state?(signal: AbortSignal): Promise<{ enrolled: boolean; authenticated: boolean }>;
 }
 
 export class EnrollmentOutcomeError extends Error {
@@ -124,6 +125,17 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
   };
 
   return {
+    async state(signal) {
+      const response = await request('/api/v1/webauthn/session-state', {
+        signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'application/json' },
+      });
+      const value: unknown = response.ok ? parseOnboardingJson(await response.text()) : null;
+      if (typeof value !== 'object' || value === null || Object.keys(value).length !== 2
+        || !('authenticated' in value) || !('enrolled' in value)
+        || typeof value.authenticated !== 'boolean' || typeof value.enrolled !== 'boolean'
+        || value.authenticated && !value.enrolled) throw new Error('Passkey status unavailable');
+      return { enrolled: value.enrolled, authenticated: value.authenticated };
+    },
     async enroll() {
       const options = await post<RegistrationOptions>('/registration/begin');
       const credential = await navigator.credentials.create({

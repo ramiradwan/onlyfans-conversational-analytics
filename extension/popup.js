@@ -1,5 +1,5 @@
 import { createSurfaceClient, openSurface, send } from './ui/surface-client.mjs';
-import { customerJourney, isPreview, phaseLabel, statusPresentation } from './ui/presentation.mjs';
+import { customerJourney, desktopOwnsCapture, isPreview, phaseLabel, statusPresentation } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { transition, openCreatorAccount } from './ui/actions.mjs';
 
@@ -16,7 +16,7 @@ function render(model) {
   show('preview-metrics', isPreview(status));
   show('preview-limit', isPreview(status) && status?.preview?.limited === true);
   // While the desktop app can control this browser, it owns pause and resume.
-  const desktopOwned = model.pairing.desktop_control === true;
+  const desktopOwned = desktopOwnsCapture(model);
   show('pause', ['preview', 'full'].includes(status?.consent.mode) && !desktopOwned);
   // Explain the missing Pause where it would have been.
   show('desktop-control-note', desktopOwned && status?.consent.mode === 'full');
@@ -25,7 +25,7 @@ function render(model) {
   const showReadiness = status?.consent.mode === 'full' && model.pairing.state === 'paired';
   show('ready-details', showReadiness);
   renderReadiness(model);
-  text('desktop-status', model.desktopRuntimeReachable ? 'Running' : 'Not running');
+  text('desktop-status', model.desktopRuntimeReachable || desktopOwned ? 'Connected' : 'Not connected');
   if (!status) { text('mode-label', statusPresentation(model).label); return; }
   document.querySelector('main').dataset.ready = 'true';
   text('mode-label', phaseLabel(status));
@@ -64,6 +64,9 @@ function render(model) {
   text('journey-badge', summary.label);
   text('journey-title', summary.label);
   text('journey-body', summary.body);
+  const announcement = summary.body ? `${summary.label}. ${summary.body}` : summary.label;
+  if (element('popup-status-announcement').textContent !== announcement)
+    text('popup-status-announcement', announcement);
 }
 page.bind('journey-primary', () => {
   if (primaryAction === 'resume') return transition('resume', client.model);

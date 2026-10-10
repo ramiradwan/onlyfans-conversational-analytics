@@ -84,11 +84,22 @@ export function createExtensionPort({
   const usable = () => EXTENSION_ID.test(extensionId) && typeof resolveRuntime()?.connect === 'function';
   let state: ExtensionPortState = usable() ? CONNECTING : ABSENT;
   let port: PortLike | null = null;
-  let pendingSetup = false, navigating = false;
+  let pendingSetup = false, navigating = false, pairingInFlight = false;
 
   const publish = (next: ExtensionPortState) => {
     state = next;
     listeners.forEach((listener) => listener());
+  };
+
+  const closeWhenIdle = () => {
+    // A React screen can unmount while Bridge has already started a protected
+    // pairing. Keep the browser document's port until that attempt settles;
+    // closing the document still disconnects the port and cancels the owner.
+    if (listeners.size !== 0 || pairingInFlight || port === null) return;
+    const closing = port;
+    port = null;
+    state = usable() ? CONNECTING : ABSENT;
+    try { closing.disconnect(); } catch { /* already closed */ }
   };
 
   // A port that answered and then dropped usually means the extension worker
@@ -125,13 +136,18 @@ export function createExtensionPort({
       const parsed = messageSchema.safeParse(message);
       if (!parsed.success) return;
       delivered = true;
+      if (['paired', 'failed', 'not_ready', 'cancelled'].includes(parsed.data.attempt?.state ?? '')) {
+        pairingInFlight = false;
+      }
       publish({ status: 'connected', stage: parsed.data.stage, attempt: parsed.data.attempt });
+      closeWhenIdle();
     });
     current.onDisconnect.addListener(() => {
       void currentRuntime.lastError;
       if (port !== current) return;
       port = null;
       pendingSetup = false;
+      pairingInFlight = false;
       if (navigating) return;
       if (listeners.size === 0) { publish(usable() ? CONNECTING : ABSENT); return; }
       if (delivered || retry) connect(false);
@@ -156,12 +172,7 @@ export function createExtensionPort({
       connect(true);
       return () => {
         listeners.delete(listener);
-        if (listeners.size === 0 && port !== null) {
-          const closing = port;
-          port = null;
-          state = usable() ? CONNECTING : ABSENT;
-          try { closing.disconnect(); } catch { /* already closed */ }
-        }
+        closeWhenIdle();
       };
     },
     open: (step) => {
@@ -170,8 +181,17 @@ export function createExtensionPort({
       if (!sent) pendingSetup = false;
       return sent;
     },
-    pair: () => send({ type: 'pair', version: 1 }),
-    cancel: () => send({ type: 'cancel', version: 1 }),
+    pair: () => {
+      const sent = send({ type: 'pair', version: 1 });
+      if (sent) pairingInFlight = true;
+      return sent;
+    },
+    cancel: () => {
+      const sent = send({ type: 'cancel', version: 1 });
+      if (sent) pairingInFlight = false;
+      closeWhenIdle();
+      return sent;
+    },
     retry() {
       if (state.status !== 'absent' || listeners.size === 0) return;
       publish(CONNECTING);

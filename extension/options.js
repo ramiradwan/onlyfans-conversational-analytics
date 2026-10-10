@@ -44,7 +44,7 @@ function render(model) {
   text('capture-health', status.delivery?.startup_error_code ? 'Full analytics could not start. Open the desktop app, then retry in setup.'
     : drops ? `${new Intl.NumberFormat().format(drops)} updates could not be recorded.` : 'No capture issues reported.');
   text('history-health', status.delivery?.browser_tab_sleeping
-    ? 'Your browser paused OnlyFans. Open the tab and history sync will resume automatically.'
+    ? 'Your browser paused OnlyFans. Open the tab to continue.'
     : status.delivery?.history_error_code ? 'Message history needs attention in the desktop app.' : '');
 }
 function confirmAction(title, body, label) {
@@ -71,7 +71,7 @@ destructive('forget-companion', 'Forget the desktop app?',
   () => client.command('forget'), 'The desktop connection has been removed.');
 destructive('delete-local-data', 'Delete extension data?',
   'Removes your extension data and saved setup choices, stops collection, revokes site access and disconnects the desktop app. Messages already stored by the desktop app are not deleted.',
-  'Delete extension data', () => send({ type: UI_DELETE_LOCAL_DATA_MESSAGE_TYPE }), 'Extension data deleted. Desktop-stored messages are unchanged.');
+  'Delete extension data', () => send({ type: UI_DELETE_LOCAL_DATA_MESSAGE_TYPE }), 'Extension data deleted.');
 page.bind('clear-preview', () => send({ type: UI_CLEAR_PREVIEW_MESSAGE_TYPE }), 'Preview counts cleared.');
 page.bind('restore-access', () => restoreAccess(client.model));
 page.bind('history', () => client.model.status.history_permission

@@ -79,7 +79,7 @@ const NEW_CODE = 'In secure setup, choose Activate Full to get a new code, then 
 const WRONG_SETUP = 'This code was made for a different computer or account. '
   + 'Sign in to secure setup with the account you used for this computer and get a new code there.';
 const RESTART = "The desktop app couldn't finish activating. Restart it, then paste a new code from secure setup.";
-const UNREACHABLE = "Activation couldn't be confirmed right now. Nothing has changed. Try again in a moment.";
+const UNREACHABLE = "Activation couldn't be confirmed. Check its status before trying another code.";
 
 const REFUSAL_MESSAGES: Record<string, string> = {
   redemption_expired: `This code has expired. ${NEW_CODE}`,
@@ -103,7 +103,7 @@ function redemptionFailure(status: number, detail: unknown): CapabilityLicenseAp
     return new CapabilityLicenseApiError(REFUSAL_MESSAGES.redemption_invalid, status);
   }
   if (status === 401 || status === 403) {
-    return new CapabilityLicenseApiError('Your session on this page has ended. Reload the page and try again.', status);
+    return new CapabilityLicenseApiError('The activation request could not be verified.', status);
   }
   if (status === 409) {
     return new CapabilityLicenseApiError(`Activation couldn't be finished with this code. ${NEW_CODE}`, status);
@@ -161,7 +161,7 @@ export function createCapabilityLicenseApi(
       }
       const csrf = await getCsrfToken();
       if (!csrf) {
-        throw new CapabilityLicenseApiError("Activation isn't available in this browser. Reload the page and try again.");
+        throw new CapabilityLicenseApiError("Activation couldn't start on this page.");
       }
       let response: Response;
       try {

@@ -98,6 +98,14 @@ class RaisingClient(FakeClient):
         raise OSError("loopback unavailable")
 
 
+def test_confirmed_workspace_status_requires_no_modal_acknowledgement(monkeypatch, capsys):
+    from types import SimpleNamespace
+    monkeypatch.setattr(launcher_module, "ctypes", SimpleNamespace(windll=SimpleNamespace(
+        user32=SimpleNamespace(MessageBoxW=lambda *args: pytest.fail("status must stay in the browser workspace")))))
+    launcher_module._show_workspace_status()
+    assert capsys.readouterr().out == "Setup is open in your browser.\n"
+
+
 def test_live_authenticated_workspace_does_not_open_another_browser(tmp_path):
     from uuid import uuid4
     journey = str(uuid4())

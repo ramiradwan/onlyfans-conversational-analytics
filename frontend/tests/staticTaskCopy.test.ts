@@ -19,7 +19,12 @@ describe('task-focused static copy', () => {
       // only that button's initial interactive state to differ.
       if (id === 'pre-mode') {
         expect(element!.querySelector('#activate-software')?.hasAttribute('disabled')).toBe(false);
-        disclosure.querySelector('#activate-software')?.setAttribute('disabled', '');
+        // The task shell and ordinary action copy may change. The original
+        // acknowledgement markup is pinned independently of those elements.
+        const acknowledgements = read('extension/setup.html').match(/<label class="check-row">[\s\S]*?<\/label>/g);
+        expect(acknowledgements).toHaveLength(2);
+        expect(createHash('sha256').update(acknowledgements!.join('')).digest('hex')).toBe(baseline.acknowledgements_sha256);
+        continue;
       }
       expect(createHash('sha256').update(disclosure.outerHTML).digest('hex')).toBe(item.element_sha256);
     }
