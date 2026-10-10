@@ -166,6 +166,12 @@ for (const [name, visible] of [['connection', true], ['connection_desktop_contro
   });
 }
 
+test('history recovery does not promise collection is ready after waking the tab', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.connection, sleeping: true });
+  await expect(page.locator('#history-health')).toHaveText('Your browser paused OnlyFans. Open the tab to continue.');
+  await expect(page.locator('#history-health')).not.toContainText('automatically');
+});
+
 test('options offers no second pause control', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.preview, surface: 'options' });
   await expect(page.locator('#pause')).toHaveCount(0);

@@ -44,7 +44,7 @@ function render(model) {
   text('capture-health', status.delivery?.startup_error_code ? 'Full analytics could not start. Open the desktop app, then retry in setup.'
     : drops ? `${new Intl.NumberFormat().format(drops)} updates could not be recorded.` : 'No capture issues reported.');
   text('history-health', status.delivery?.browser_tab_sleeping
-    ? 'Your browser paused OnlyFans. Open the tab and history sync will resume automatically.'
+    ? 'Your browser paused OnlyFans. Open the tab to continue.'
     : status.delivery?.history_error_code ? 'Message history needs attention in the desktop app.' : '');
 }
 function confirmAction(title, body, label) {

@@ -39,7 +39,8 @@ export function installSurfaceFixture(input) {
     local_service_permission: state.localPermissionGranted !== false, history_permission: false,
     observer: state.observer ?? { attachment: 'ready', helper: 'none' },
     preview: state.preview ?? { message_observations: 128, chat_observations: 24, inbound_observations: 80, outbound_observations: 48 },
-    delivery: { transport_state: state.paired ? 'authenticated' : 'disconnected', pending_entries: 0, capture_drop_counts: {} } });
+    delivery: { transport_state: state.paired ? 'authenticated' : 'disconnected', browser_tab_sleeping: state.sleeping === true,
+      pending_entries: 0, capture_drop_counts: {} } });
   const legal = () => ({ configured: state.configured !== false, consent_mode: state.mode,
     requires_reauthorization: state.reauthorization === true,
     bindings: { public_origin: 'https://legal.example.test', instruments: {
