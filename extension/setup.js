@@ -260,7 +260,7 @@ function renderPairing(model, journey) {
   show('companion-pairing', pending || pairAction);
   show('pair-companion', pairAction && !pending);
   element('pair-companion').className = (journey.primaryAction === 'pair' ? 'primary' : 'secondary') + (pairAction && !pending ? '' : ' hidden');
-  text('pair-companion', journey.primaryAction === 'pair' ? journey.primaryLabel : journey.secondaryLabel ?? 'Pair device');
+  text('pair-companion', journey.primaryAction === 'pair' ? journey.primaryLabel : journey.secondaryLabel ?? 'Connect extension');
   const code = pending ? model.pairing.comparison_code : null;
   show('pairing-code', code !== null); show('pairing-label', code !== null);
   text('pairing-code', code ? `${code.slice(0, 3)} ${code.slice(3)}` : '');

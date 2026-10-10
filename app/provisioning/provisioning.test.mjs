@@ -659,7 +659,7 @@ test('initial setup navigation requires one explicit open and the exact current 
   ports[0].drop(); assert.equal(ports.length, 1, 'navigation must not reconnect the departing page');
 });
 
-test('extension stage pushes refresh identity guidance and offer the extension setup window', async () => {
+test('extension stage pushes refresh identity guidance and opens the extension setup tab', async () => {
   const { runtime, ports } = fakePortRuntime();
   const main = { dataset: { provisioningCsrf: 'csrf-token', provisioningExtensionId: EXTENSION_ID } };
   const elements = Object.fromEntries([
@@ -683,7 +683,7 @@ test('extension stage pushes refresh identity guidance and offer the extension s
   ports[0].deliver({ type: 'state', version: 1, stage: 'needs_full', attempt: null });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(queries, before + 1, 'a stage push re-reads identity without a timer');
-  assert.match(elements.identityStatus.textContent, /extension window/);
+  assert.match(elements.identityStatus.textContent, /extension tab/);
   assert.equal(elements.openExtensionSetup.hidden, false);
   elements.openExtensionSetup.dispatch('click');
   assert.deepEqual(ports[0].sent, [{ type: 'open', version: 1, step: 'setup' }]);

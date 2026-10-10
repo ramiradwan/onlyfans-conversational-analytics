@@ -140,7 +140,7 @@ export function deriveCustomerJourney({
       primaryAction: 'open_desktop_settings',
       primaryLabel: 'Open desktop app settings',
       secondaryAction: 'pair',
-      secondaryLabel: 'Pair device',
+      secondaryLabel: 'Connect extension',
     });
   }
 
@@ -164,7 +164,7 @@ export function deriveCustomerJourney({
       title: 'Connect to the desktop app',
       body: 'Connect to view insights from your conversations.',
       primaryAction: 'pair',
-      primaryLabel: 'Pair device',
+      primaryLabel: 'Connect extension',
       secondaryAction: 'open_dashboard',
       secondaryLabel: 'Open desktop app',
     });
@@ -214,7 +214,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.ACTIVATION_UNAVAILABLE,
       tone: 'error',
       title: 'Couldn\'t check activation',
-      body: 'Your saved data is unchanged.',
+      body: '',
       primaryAction: 'retry_readiness',
       primaryLabel: 'Check again',
       secondaryAction: 'open_dashboard',
@@ -230,7 +230,7 @@ export function deriveCustomerJourney({
       id: CUSTOMER_STATES.FULL_UNAVAILABLE,
       tone: 'warning',
       title: 'Open OnlyFans to continue',
-      body: 'Your browser paused the OnlyFans tab. Open it and analytics will resume automatically.',
+      body: 'Your browser paused the OnlyFans tab.',
       primaryAction: 'open_creator_account',
       primaryLabel: 'Open OnlyFans',
       secondaryAction: null,
@@ -261,8 +261,8 @@ export function deriveCustomerJourney({
     return Object.freeze({
       id: CUSTOMER_STATES.ACTIVATION_ACTIVE,
       tone: 'warning',
-      title: 'Analysis is not available right now',
-      body: 'Full analytics is activated. Your saved data is unchanged.',
+      title: "New messages aren't being analyzed",
+      body: '',
       primaryAction: 'retry_readiness',
       primaryLabel: 'Check again',
       secondaryAction: 'open_dashboard',

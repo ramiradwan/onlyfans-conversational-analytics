@@ -105,7 +105,7 @@ describe('capability license customer API', () => {
     [404, "wasn't recognized"],
     [403, 'Reload the page'],
     [409, 'get a new code'],
-    [503, 'Nothing has changed'],
+    [503, 'Check its status before trying another code'],
   ])('keeps redemption failure %i customer-safe and actionable', async (status, message) => {
     const api = createCapabilityLicenseApi({
       fetch: vi.fn(async () => jsonResponse({ detail: 'internal-provider-detail' }, status)) as unknown as typeof fetch,
@@ -121,7 +121,7 @@ describe('capability license customer API', () => {
     ['redemption_conflict', 409, 'already been used'],
     ['redemption_mismatch', 403, 'different computer or account'],
     ['installation_key_unavailable', 503, 'Restart it'],
-    ['hosted_unavailable', 503, 'Nothing has changed'],
+    ['hosted_unavailable', 503, 'Check its status before trying another code'],
   ])('names the recovery step for the %s refusal', async (detail, status, message) => {
     const api = createCapabilityLicenseApi({
       fetch: vi.fn(async () => jsonResponse({ detail }, status)) as unknown as typeof fetch,

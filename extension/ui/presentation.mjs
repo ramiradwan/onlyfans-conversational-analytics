@@ -43,7 +43,16 @@ export function statusPresentation(model) {
     ? choice('Ready', 'Preview counts update as you use OnlyFans.')
     : choice('Waiting for activity', 'Waiting for OnlyFans activity.');
   if (status.consent.mode === 'full' && !model.desktopRuntimeReachable) return choice('Not connected', 'Open the desktop app to continue.');
-  if (model.pairing?.state === 'paired' && (status.delivery?.transport_state !== 'authenticated' || model.analysisReadiness?.commercial_authority !== 'active' || model.analysisReadiness?.analysis_admission !== 'admitted')) return choice('Connecting', 'Open the desktop app. Your connection is saved.');
+  if (model.pairing?.state === 'paired') {
+    if (status.delivery?.transport_state !== 'authenticated') return status.delivery?.transport_state === 'connecting'
+      ? choice('Connecting', 'Connecting to the desktop app.')
+      : choice('Not connected', 'The desktop connection could not be confirmed.');
+    if (model.analysisReadiness?.commercial_authority === 'required') return choice('Activation needed', 'Turn on Full analytics in the desktop app.');
+    if (model.analysisReadiness?.commercial_authority === 'unavailable') return choice('Needs attention', 'Activation could not be checked.');
+    if (model.analysisReadiness?.commercial_authority !== 'active') return choice('Checking activation', '');
+    if (model.analysisReadiness?.analysis_admission === 'blocked') return choice('Not ready', "New messages aren't being analyzed.");
+    if (model.analysisReadiness?.analysis_admission !== 'admitted') return choice('Checking analysis', '');
+  }
   if (status.consent.mode !== 'full' || model.pairing?.state !== 'paired') return choice('Not connected', 'Choose Connect extension in the desktop app to finish.');
   return choice('Ready', 'Keep your creator tab open so new messages can arrive.');
 }

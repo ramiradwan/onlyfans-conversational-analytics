@@ -850,7 +850,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
   };
   // With a live extension stage, name the one thing still missing.
   const missingExtensionStep = () => {
-    if (EXTENSION_SETUP_STAGES.has(extensionStage)) return 'Finish Full analytics setup in the extension window.';
+    if (EXTENSION_SETUP_STAGES.has(extensionStage)) return 'Finish Full analytics setup in the extension tab.';
     if (extensionStage === 'needs_account') return 'Sign in to your creator account on OnlyFans in this browser.';
     return null;
   };

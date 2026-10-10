@@ -132,7 +132,7 @@ describe('commercial activation controls', () => {
       .mockResolvedValueOnce(required);
     const redeem = vi.fn(async () => {
       throw new CapabilityLicenseApiError(
-        "Activation couldn't be confirmed right now. Nothing has changed. Try again in a moment.",
+        "Activation couldn't be confirmed. Check its status before trying another code.",
         503,
       );
     });
@@ -144,7 +144,7 @@ describe('commercial activation controls', () => {
 
     expect(readiness).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('button', { name: 'Show details' })).toBeNull();
-    expect(await screen.findByText(/Nothing has changed. Try again in a moment/)).toBeTruthy();
+    expect(await screen.findByText(/Check its status before trying another code/)).toBeTruthy();
     expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
     expect((screen.getByLabelText('Activation code') as HTMLInputElement).value).toBe(CONTINUATION);

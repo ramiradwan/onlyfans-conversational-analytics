@@ -27,6 +27,32 @@ test('popup readiness uses one precedence and never says Ready while disconnecte
   assert.equal(presentation.statusPresentation(value).label, 'Checking…');
 });
 
+test('paired status distinguishes connection, activation and analysis without guessing', () => {
+  for (const [transport, authority, admission, expected] of [
+    ['connecting', 'active', 'admitted', 'Connecting'],
+    ['disconnected', 'active', 'admitted', 'Not connected'],
+    ['authenticated', 'required', 'blocked', 'Activation needed'],
+    ['authenticated', 'unavailable', 'blocked', 'Needs attention'],
+    ['authenticated', 'unknown', 'blocked', 'Checking activation'],
+    ['authenticated', 'active', 'blocked', 'Not ready'],
+    ['authenticated', 'active', 'unknown', 'Checking analysis'],
+  ]) {
+    const value = model();
+    value.status.delivery.transport_state = transport;
+    value.analysisReadiness = { commercial_authority: authority, analysis_admission: admission };
+    const presentationState = presentation.statusPresentation(value);
+    assert.equal(presentationState.label, expected);
+    assert.doesNotMatch(presentationState.body, /saved data is unchanged/i);
+  }
+});
+
+test('setup derives the current customer journey from confirmed readiness', () => {
+  const value = model();
+  value.config = { desktop_app_download_url: null };
+  value.legal.flow = { stage: 'complete' };
+  assert.equal(presentation.customerJourney(value).id, 'full_ready');
+});
+
 test('creator navigation only focuses an existing tab or creates a missing one', async () => {
   for (const exists of [true, false]) {
     const calls = [];

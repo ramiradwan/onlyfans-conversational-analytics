@@ -79,7 +79,7 @@ const NEW_CODE = 'In secure setup, choose Activate Full to get a new code, then 
 const WRONG_SETUP = 'This code was made for a different computer or account. '
   + 'Sign in to secure setup with the account you used for this computer and get a new code there.';
 const RESTART = "The desktop app couldn't finish activating. Restart it, then paste a new code from secure setup.";
-const UNREACHABLE = "Activation couldn't be confirmed right now. Nothing has changed. Try again in a moment.";
+const UNREACHABLE = "Activation couldn't be confirmed. Check its status before trying another code.";
 
 const REFUSAL_MESSAGES: Record<string, string> = {
   redemption_expired: `This code has expired. ${NEW_CODE}`,

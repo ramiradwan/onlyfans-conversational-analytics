@@ -128,7 +128,7 @@ test('running desktop app advances an unpaired user to pairing', () => {
     desktopRuntimeReachable: true,
   });
   assert.equal(result.id, CUSTOMER_STATES.PAIRING_REQUIRED);
-  assert.equal(result.primaryLabel, 'Pair device');
+  assert.equal(result.primaryLabel, 'Connect extension');
 });
 
 test('pairing progress explains comparison and never claims success early', () => {
@@ -211,7 +211,8 @@ test('commercial authority failure is distinct and recoverable', () => {
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_UNAVAILABLE);
   assert.equal(result.primaryLabel, 'Check again');
-  assert.doesNotMatch(result.body, /invalid license/i);
+  assert.equal(result.body, '');
+  assert.doesNotMatch(result.body, /invalid license|saved data is unchanged/i);
 });
 
 test('commercial authority alone renders activation active but not Full-ready', () => {
@@ -222,9 +223,9 @@ test('commercial authority alone renders activation active but not Full-ready', 
     analysisReadiness: readiness('active', 'blocked'),
   });
   assert.equal(result.id, CUSTOMER_STATES.ACTIVATION_ACTIVE);
-  assert.equal(result.title, 'Analysis is not available right now');
+  assert.equal(result.title, "New messages aren't being analyzed");
   assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
-  assert.match(result.body, /Full analytics is activated/);
+  assert.equal(result.body, '');
 });
 
 test('sleeping OnlyFans tab has a direct recovery action after activation', () => {
@@ -238,6 +239,8 @@ test('sleeping OnlyFans tab has a direct recovery action after activation', () =
   assert.equal(result.title, 'Open OnlyFans to continue');
   assert.equal(result.primaryAction, 'open_creator_account');
   assert.equal(result.primaryLabel, 'Open OnlyFans');
+  assert.equal(result.body, 'Your browser paused the OnlyFans tab.');
+  assert.doesNotMatch(result.body, /resume automatically|ready/i);
 });
 
 test('Full is ready only after secure delivery, commercial authority, and analysis admission', () => {

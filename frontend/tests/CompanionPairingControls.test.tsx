@@ -347,16 +347,16 @@ describe('companion pairing controls', () => {
       expect(api.change).not.toHaveBeenCalled();
     });
 
-    it('opens the extension window for unfinished steps and continues as soon as they are done', async () => {
+    it('opens the extension setup tab for unfinished steps and continues once they are done', async () => {
       const { port, push } = makePort({ status: 'connected', stage: 'needs_full', attempt: null });
       const api = makeApi();
       mount(api, port);
       await click('Connect extension');
       expect(port.open).toHaveBeenCalledWith('setup');
       expect(api.open).not.toHaveBeenCalled();
-      expect(screen.getByText(/Turn on Full analytics in the extension window/)).toBeTruthy();
+      expect(screen.getByText(/Turn on Full analytics in the extension setup tab/)).toBeTruthy();
       await act(async () => push({ stage: 'needs_site_access' }));
-      expect(screen.getByText(/Allow site access in the extension window/)).toBeTruthy();
+      expect(screen.getByText(/Allow site access in the extension setup tab/)).toBeTruthy();
       await act(async () => push({ stage: 'ready_to_pair' }));
       expect(api.open).toHaveBeenCalledTimes(1);
       expect(port.pair).toHaveBeenCalledTimes(1);
@@ -390,6 +390,6 @@ describe('companion pairing controls', () => {
     mount(api, port);
     await click('Connect extension');
     expect(port.pair).not.toHaveBeenCalled();
-    expect(screen.getByText(/Open the browser extension where it's installed/)).toBeTruthy();
+    expect(screen.getByText(/open its setup tab and choose Connect extension/)).toBeTruthy();
   });
 });

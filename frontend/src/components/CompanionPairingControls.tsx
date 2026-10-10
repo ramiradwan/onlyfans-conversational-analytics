@@ -37,10 +37,10 @@ const EXTENSION_SETUP_STAGES: ReadonlySet<ExtensionStage> = new Set([
   'needs_terms', 'paused', 'needs_full', 'needs_site_access', 'needs_account',
 ]);
 const EXTENSION_STAGE_COPY: Partial<Record<ExtensionStage, string>> = {
-  needs_terms: 'Review the terms in the extension window.',
-  paused: 'Resume analytics in the extension window.',
-  needs_full: 'Turn on Full analytics in the extension window.',
-  needs_site_access: 'Allow site access in the extension window.',
+  needs_terms: 'Review the required information in the extension setup tab.',
+  paused: 'Resume analytics in the extension setup tab.',
+  needs_full: 'Turn on Full analytics in the extension setup tab.',
+  needs_site_access: 'Allow site access in the extension setup tab.',
   needs_account: 'Sign in to your creator account on OnlyFans in this browser.',
 };
 
@@ -338,8 +338,8 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       {waitingForExtension && (
         <Stack data-journey-state="desktop.extension_handoff" spacing={0.5}>
           <Typography role="status">
-            {(extension.stage && EXTENSION_STAGE_COPY[extension.stage]) ?? 'Finish setup in the extension window.'}
-            {' '}This continues here automatically.
+            {(extension.stage && EXTENSION_STAGE_COPY[extension.stage]) ?? 'Finish setup in the extension setup tab.'}
+
           </Typography>
         </Stack>
       )}
@@ -356,7 +356,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       {active && !browserPairing && !awaiting && !failed && (
         <Stack spacing={0.5}>
           <Typography role="status">
-            Open the browser extension where it&apos;s installed, choose Continue setup, then Pair device. Keep this page open.
+            In the browser where you installed the extension, open its setup tab and choose Connect extension. Keep this page open.
           </Typography>
           {remainingSeconds !== null && (
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -438,7 +438,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
         )}
         {waitingForExtension && (
           <Button onClick={() => port.open('setup')} variant="outlined">
-            Show extension window
+            Open extension setup
           </Button>
         )}
         {active && failed && (
