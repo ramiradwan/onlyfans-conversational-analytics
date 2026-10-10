@@ -119,6 +119,46 @@ describe('extension port', () => {
     expect(port.getState().status).toBe('connecting');
   });
 
+  it('keeps an ongoing pairing connected across an internal screen transition', () => {
+    const { runtime, ports } = fakeRuntime();
+    const port = createExtensionPort({ runtime, extensionId: EXTENSION_ID });
+    const unsubscribe = port.subscribe(() => {});
+    ports[0].deliver({ type: 'state', version: 1, stage: 'ready_to_pair', attempt: null });
+    expect(port.pair()).toBe(true);
+    unsubscribe();
+    expect(ports[0].disconnect).not.toHaveBeenCalled();
+    ports[0].deliver({ type: 'state', version: 1, stage: 'pairing', attempt: { state: 'compare', comparison_code: '012345' } });
+    expect(ports[0].disconnect).not.toHaveBeenCalled();
+    ports[0].deliver({ type: 'state', version: 1, stage: 'paired', attempt: { state: 'paired', comparison_code: null } });
+    expect(ports[0].disconnect).toHaveBeenCalledOnce();
+    expect(port.getState().status).toBe('connecting');
+  });
+
+  it('releases the held port if a pending connection fails', () => {
+    const { runtime, ports } = fakeRuntime();
+    const port = createExtensionPort({ runtime, extensionId: EXTENSION_ID });
+    const unsubscribe = port.subscribe(() => {});
+    ports[0].deliver({ type: 'state', version: 1, stage: 'ready_to_pair', attempt: null });
+    expect(port.pair()).toBe(true);
+    unsubscribe();
+    ports[0].deliver({ type: 'state', version: 1, stage: 'ready_to_pair', attempt: { state: 'failed', comparison_code: null } });
+    expect(ports[0].disconnect).toHaveBeenCalledOnce();
+    expect(port.getState().status).toBe('connecting');
+  });
+
+  it('keeps page closure authoritative for an ongoing pairing', () => {
+    const { runtime, ports } = fakeRuntime();
+    const port = createExtensionPort({ runtime, extensionId: EXTENSION_ID });
+    const unsubscribe = port.subscribe(() => {});
+    ports[0].deliver({ type: 'state', version: 1, stage: 'ready_to_pair', attempt: null });
+    expect(port.pair()).toBe(true);
+    unsubscribe();
+    ports[0].drop();
+    expect(ports[0].disconnect).not.toHaveBeenCalled();
+    expect(port.getState().status).toBe('connecting');
+    expect(ports).toHaveLength(1);
+  });
+
   it('closes the port when the last subscriber leaves', () => {
     const { runtime, ports } = fakeRuntime();
     const port = createExtensionPort({ runtime, extensionId: EXTENSION_ID });
