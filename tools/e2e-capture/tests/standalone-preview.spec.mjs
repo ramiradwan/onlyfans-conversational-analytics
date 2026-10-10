@@ -344,7 +344,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       const options = await openManageExtension(popup);
       await options.locator('#delete-local-data').click();
       await options.getByRole('dialog').getByRole('button', { name: 'Delete extension data', exact: true }).click();
-      await expect(options.locator('#feedback')).toHaveText('Extension data deleted. Desktop-stored messages are unchanged.');
+      await expect(options.locator('#feedback')).toHaveText('Extension data deleted.');
       await popup.bringToFront();
       await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
       const deleted = await extensionSnapshot(worker);
