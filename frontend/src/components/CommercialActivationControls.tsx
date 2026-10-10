@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
-  DialogContentText,
   DialogTitle,
   Stack,
   TextField,
@@ -57,7 +56,7 @@ export function CommercialActivationControls({
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [setupOpened, setSetupOpened] = useState(false);
+  const [codeEntryRequested, setCodeEntryRequested] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const submitting = useRef(false);
   const titleId = useId();
@@ -161,10 +160,7 @@ export function CommercialActivationControls({
 
   const codeEntry = (
           <Stack spacing={2.5}>
-            <DialogContentText variant="body2">
-              Use an activation code to turn on Full analytics on this computer.
-            </DialogContentText>
-            <Stack spacing={1}>
+            {(!embedded || !setupUrl) && <Stack spacing={1}>
               <StepLabel index={1}>{setupUrl
                 ? 'Open secure setup and choose Activate Full.'
                 : 'Activation codes come from secure setup. Its link is unavailable here.'}</StepLabel>
@@ -174,25 +170,25 @@ export function CommercialActivationControls({
                     component="a"
                     endIcon={<OpenInNewIcon />}
                     href={setupUrl}
-                    onClick={() => setSetupOpened(true)}
                     rel="noopener noreferrer"
                     size="small"
                     target="_blank"
-                    variant={setupOpened ? 'text' : 'outlined'}
+                    variant="outlined"
                   >
                     Open secure setup
                   </Button>
                 </Box>
               )}
-              {(!embedded || setupOpened) && <ReservedNotice essential id="activation-transfer" notice={setupOpened ? { title: '', body: 'Secure setup opened. When it gives you an activation code, return here and paste it below.', severity: 'info' } : null} />}
-            </Stack>
+
+            </Stack>}
             <Stack spacing={1.5}>
-              <StepLabel index={2}>Paste the code here. Codes expire after a few minutes.</StepLabel>
+              {embedded ? <Typography variant="body2">Paste your activation code.</Typography>
+                : <StepLabel index={2}>Paste your activation code.</StepLabel>}
               <TextField
                 autoComplete="off"
                 fullWidth
                 label="Activation code"
-                helperText="Paste the code from the activation page."
+                helperText="Codes expire after a few minutes."
                 disabled={checking}
                 onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void submit(); } }}
                 onChange={(event) => {
@@ -224,10 +220,18 @@ export function CommercialActivationControls({
         : checking ? { title: '', body: 'Checking activation…', severity: 'info' }
           : activeButBlocked ? { title: "New messages aren't being analyzed", body: '', severity: 'warning' }
             : activationUnavailable || readiness === null ? { title: '', body: "Activation couldn't be checked.", severity: 'warning' } : null} />}
-      {embedded && !checking && activationRequired && <Stack spacing={2}>
-        {codeEntry}
-        <Button disabled={checking} onClick={() => void submit()} variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate</Button>
-      </Stack>}
+      {embedded && !checking && activationRequired && (setupUrl && !codeEntryRequested
+        ? <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+          <Typography variant="body2">Secure setup lets you activate Full analytics for this computer.</Typography>
+          <Button component="a" href={setupUrl} target="_self" variant="contained">
+            Open secure setup
+          </Button>
+          <Button onClick={() => setCodeEntryRequested(true)} variant="text">I have an activation code</Button>
+        </Stack>
+        : <Stack spacing={2}>
+          {codeEntry}
+          <Button disabled={checking} onClick={() => void submit()} variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate</Button>
+        </Stack>)}
       <Box sx={{ minHeight: embedded ? 0 : '2.5rem' }}>
       {!embedded && !checking && activationRequired && (
         <Box data-journey-state="desktop.full_analytics_activation">
@@ -236,8 +240,8 @@ export function CommercialActivationControls({
           </Button>
         </Box>
       )}
-      {!checking && (activationUnavailable || activeButBlocked || readiness === null) && (
-        <Button onClick={checkReadiness} variant="outlined">Check again</Button>
+      {!checking && (activationUnavailable || (readiness === null && error !== null)) && (
+        <Button onClick={checkReadiness} variant="outlined">Try again</Button>
       )}
       </Box>
 

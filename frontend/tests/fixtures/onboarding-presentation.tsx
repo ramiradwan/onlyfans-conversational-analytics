@@ -36,7 +36,8 @@ if (surface === 'complete') {
 }
 const config = document.createElement('script');
 config.id = 'fastapi-config'; config.type = 'application/json';
-config.textContent = JSON.stringify({ CREATOR_ID: 'presentation-test-creator' });
+config.textContent = JSON.stringify({ CREATOR_ID: 'presentation-test-creator',
+  SECURE_SETUP_URL: surface === 'activation-hosted' ? 'https://setup.example.test/onboarding' : undefined });
 document.body.append(config);
 if (surface !== 'passkey') {
   const session = startOnboardingSession({ journeyId: '11111111-1111-4111-8111-111111111111',

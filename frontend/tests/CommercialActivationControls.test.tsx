@@ -74,10 +74,33 @@ describe('commercial activation controls', () => {
   it('exposes the customer action when canonical readiness requires activation', async () => {
     await showRequired(makeApi(), 'https://setup.example/onboarding');
     expect(screen.getByText('Open secure setup and choose Activate Full.')).toBeTruthy();
-    expect(screen.getByText(/Paste the code here/)).toBeTruthy();
+    expect(screen.getByText('Paste your activation code.')).toBeTruthy();
     const link = screen.getByRole('link', { name: 'Open secure setup' });
     expect(link.getAttribute('href')).toBe('https://setup.example/onboarding');
     expect(link.getAttribute('target')).toBe('_blank');
+  });
+
+  it('keeps ordinary activation in one workspace with code entry only on request', async () => {
+    render(<ThemeProvider theme={theme}>
+      <CommercialActivationControls embedded api={makeApi()} secureSetupUrl="https://setup.example/onboarding" />
+    </ThemeProvider>);
+    const open = await screen.findByRole('link', { name: 'Open secure setup' });
+    expect(open.getAttribute('href')).toBe('https://setup.example/onboarding');
+    expect(open.getAttribute('target')).toBe('_self');
+    expect(screen.queryByLabelText('Activation code')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Activate' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'I have an activation code' }));
+    expect(screen.getByLabelText('Activation code')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
+  });
+
+  it('keeps code recovery available when no hosted setup link is configured', async () => {
+    render(<ThemeProvider theme={theme}>
+      <CommercialActivationControls embedded api={makeApi()} secureSetupUrl="" />
+    </ThemeProvider>);
+    expect(await screen.findByLabelText('Activation code')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Open secure setup' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Activate' })).toBeTruthy();
   });
 
   it('names the missing secure setup link without requesting an impossible action', async () => {
@@ -126,6 +149,7 @@ describe('commercial activation controls', () => {
     expect(await screen.findByText("New messages aren't being analyzed")).toBeTruthy();
     expect(screen.getByText('Needs attention')).toBeTruthy();
     expect(screen.queryByText('On')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Check again|Try again/ })).toBeNull();
   });
 
   it('keeps a failed redemption recoverable and re-reads canonical readiness', async () => {
