@@ -35,7 +35,7 @@ const OPERATION_REFUSALS = Object.freeze({
 });
 
 const GENERIC_REFUSAL = 'This step could not be completed.';
-const REQUEST_FAILURE = 'The desktop app could not be reached. Make sure it is running and try again.';
+const REQUEST_FAILURE = 'Setup could not be confirmed.';
 const MUTATION_FAILED = Symbol('mutation failed');
 const MUTATION_RETIRED = Symbol('mutation retired');
 const JOURNEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -410,7 +410,7 @@ export function explainProvisioningFailure(response, payload) {
     if (typeof reason === 'string' && Object.hasOwn(OPERATION_REFUSALS, reason)) return OPERATION_REFUSALS[reason];
     return GENERIC_REFUSAL;
   }
-  if (response.status === 401 || response.status === 403) return 'Setup could not continue. Open the desktop app.';
+  if (response.status === 401 || response.status === 403) return 'The setup request could not be verified.';
   if (response.status === 421) return 'Open the desktop app setup page and continue there.';
   return REQUEST_FAILURE;
 }
@@ -1191,7 +1191,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
     renderState();
     if (!EXTENSION_ID_PATTERN.test(extensionId)) {
       identityChecking = false;
-      setIdentityStatus('Enable the Conversation Analytics extension, then try again.'); renderFreshPrerequisite(); renderExtensionSetup(); return null;
+      setIdentityStatus('The browser extension could not be reached.'); renderFreshPrerequisite(); renderExtensionSetup(); return null;
     }
     try {
       const identity = parseIdentityResponse(await sendExtensionMessage(extensionId, IDENTITY_QUERY));
@@ -1201,7 +1201,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
         renderExtensionSetup(); return null;
       }
       if (identity.accountId === null) {
-        setIdentityStatus(missingExtensionStep() ?? 'Sign in to your creator account on OnlyFans, then try again.');
+        setIdentityStatus(missingExtensionStep() ?? 'No OnlyFans account was found in this browser.');
         renderExtensionSetup(); return null;
       }
       if (journeyId && !installationRegistered && !HOSTED_CREATOR_PATTERN.test(identity.accountId)) {
@@ -1215,7 +1215,7 @@ export function createProvisioningController({ fetch, sendExtensionMessage, conn
       return detectedAccountId;
     } catch {
       if (!current()) return null;
-      setIdentityStatus(missingExtensionStep() ?? 'Enable the Conversation Analytics extension, then try again.');
+      setIdentityStatus(missingExtensionStep() ?? 'The browser extension could not be reached.');
       renderExtensionSetup();
       return null;
     } finally {

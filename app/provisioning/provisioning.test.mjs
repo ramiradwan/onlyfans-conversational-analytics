@@ -112,11 +112,11 @@ test('identity detection is read-only and confirmation requires computer setup',
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
 });
 
-test('extension missing, malformed, or signed out gives actionable identity guidance', async (context) => {
+test('extension failures and absent accounts show only confirmed guidance', async (context) => {
   await context.test('missing extension answer', async () => {
     const { controller, elements } = harness({ extensionResponse: new Error('no receiver') });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /Enable.*extension/i);
+    assert.equal(elements.identityStatus.textContent, 'The browser extension could not be reached.');
     assert.equal(elements.confirmIdentity.disabled, true);
   });
 
@@ -124,7 +124,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
     for (const extensionId of ['', 'wrong', 'q'.repeat(32)]) {
       const { controller, elements, extensionCalls } = harness({ extensionId });
       await controller.refreshIdentity();
-      assert.match(elements.identityStatus.textContent, /Enable.*extension/i);
+      assert.equal(elements.identityStatus.textContent, 'The browser extension could not be reached.');
       assert.equal(elements.confirmIdentity.disabled, true);
       assert.equal(extensionCalls.length, 0, 'invalid_extension_id_never_messages_extension');
     }
@@ -137,7 +137,7 @@ test('extension missing, malformed, or signed out gives actionable identity guid
       },
     });
     await controller.refreshIdentity();
-    assert.match(elements.identityStatus.textContent, /Sign in.*OnlyFans/i);
+    assert.equal(elements.identityStatus.textContent, 'No OnlyFans account was found in this browser.');
     assert.equal(elements.confirmIdentity.disabled, true);
   });
 
@@ -389,13 +389,13 @@ test('gated handlers issue no request before their prerequisite succeeds', async
   assert.equal(fetchCalls.length, 0, 'locked_handlers_make_no_requests');
 });
 
-test('session, host, and interrupted requests retain actionable guidance', async (context) => {
+test('authorization and interrupted requests report only confirmed causes', async (context) => {
   for (const status of [401, 403]) {
-    await context.test(`${status} restarts setup`, async () => {
+    await context.test(`${status} refuses unverifiable setup`, async () => {
       const { controller, elements } = harness({ fetch: async () => response(status, {}) });
       elements.claimPackage.value = VALID_PACKAGE;
       await controller.submitClaim({ preventDefault() {} });
-      assert.equal(elements.status.textContent, 'Setup could not continue. Open the desktop app.');
+      assert.equal(elements.status.textContent, 'The setup request could not be verified.');
     });
   }
 
@@ -410,7 +410,7 @@ test('session, host, and interrupted requests retain actionable guidance', async
     const { controller, elements } = harness({ fetch: async () => { throw new Error('offline'); } });
     elements.claimPackage.value = VALID_PACKAGE;
     await controller.submitClaim({ preventDefault() {} });
-    assert.match(elements.status.textContent, /desktop app.*running.*try again/i);
+    assert.equal(elements.status.textContent, 'Setup could not be confirmed.');
   });
 });
 

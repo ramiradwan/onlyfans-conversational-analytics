@@ -46,6 +46,16 @@ describe('capability license customer API', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it('does not send activation without a request token or guess the cause', async () => {
+    const request = vi.fn();
+    const api = createCapabilityLicenseApi({
+      fetch: request as unknown as typeof fetch,
+      getCsrfToken: () => null,
+    });
+    await expect(api.redeem(CONTINUATION)).rejects.toThrow("Activation couldn't start on this page.");
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('rejects a success response that exposes protected commercial fields', async () => {
     const request = vi.fn(async () => jsonResponse({
       state: 'checking',
@@ -103,7 +113,7 @@ describe('capability license customer API', () => {
   it.each([
     [410, 'expired'],
     [404, "wasn't recognized"],
-    [403, 'Reload the page'],
+    [403, 'could not be verified'],
     [409, 'get a new code'],
     [503, 'Check its status before trying another code'],
   ])('keeps redemption failure %i customer-safe and actionable', async (status, message) => {
