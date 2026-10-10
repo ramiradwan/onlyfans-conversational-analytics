@@ -280,7 +280,26 @@ export async function requestAgentPairingTicket(context) {
     // a response body tied to a document that Chrome has already discarded.
     const admitted = await bridge.evaluate(async (pathname) => {
       const response = await fetch(pathname, { credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
-      if (!response.ok) throw new Error(`The confirmed pairing could not be read (HTTP ${response.status}).`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const reason = typeof body?.detail === 'string' && /^pairing_[a-z_]{1,48}$/u.test(body.detail)
+          ? body.detail : 'unavailable';
+        // Read-only evidence: never replay confirmation or expose pairing keys.
+        let pinState = 'unavailable';
+        try {
+          const pinsResponse = await fetch('/api/v1/companion/pins', {
+            credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+          });
+          if (!pinsResponse.ok) pinState = `HTTP ${pinsResponse.status}`;
+          else {
+            const result = await pinsResponse.json();
+            pinState = Array.isArray(result?.pins)
+              ? result.pins.some((pin) => pathname.endsWith(`/${pin.pairing_id}`)) ? 'admitted' : 'absent'
+              : 'invalid';
+          }
+        } catch { /* The pin list cannot be confirmed. */ }
+        throw new Error(`The confirmed pairing could not be read (HTTP ${response.status}; reason=${reason}; pin=${pinState}).`);
+      }
       return response.json();
     }, pairingPath);
     expect(admitted.state).toBe('admitted');
