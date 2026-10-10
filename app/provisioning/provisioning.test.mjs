@@ -105,7 +105,7 @@ test('identity detection is read-only and confirmation requires computer setup',
   await controller.refreshIdentity();
 
   assert.deepEqual(extensionCalls, [[EXTENSION_ID, { type: 'provisioning.identity.query', version: 1 }]]);
-  assert.equal(elements.identityStatus.textContent, 'Signed in now: creator-42');
+  assert.equal(elements.identityStatus.textContent, 'Signed in now: Account name unavailable');
   assert.equal(elements.confirmIdentity.disabled, true, 'identity_confirmation_requires_registration');
   assert.equal(elements.confirmIdentity.disabled, true);
   assert.equal(fetchCalls.length, 0, 'identity_query_never_starts_association');
@@ -591,7 +591,7 @@ test('reload after intermediate success returns to the server-reported ready ste
 
   assert.deepEqual(stepStates(elements), ['current', 'locked', 'locked', 'locked']);
   assert.equal(elements.confirmIdentity.disabled, true);
-  assert.equal(elements.identityStatus.textContent, 'Signed in now: creator-42');
+  assert.equal(elements.identityStatus.textContent, 'Signed in now: Account name unavailable');
 });
 
 
