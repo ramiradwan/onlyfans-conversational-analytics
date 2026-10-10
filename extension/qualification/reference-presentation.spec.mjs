@@ -54,6 +54,29 @@ for (const width of [800, 640]) {
   });
 }
 
+test('setup consent works by keyboard in forced colors and reduced motion', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
+  await renderSurfaceState(page, SURFACE_STATES.start_choice);
+  const full = page.locator('#start-full');
+  await full.focus();
+  await full.press('Enter');
+  await expect(page.locator('#pre-mode')).toBeVisible();
+  const terms = page.locator('#terms-accepted');
+  await terms.focus();
+  await page.keyboard.press('Space');
+  await expect(terms).toBeChecked();
+  const risk = page.locator('#risk-acknowledged');
+  await risk.focus();
+  await page.keyboard.press('Space');
+  await expect(risk).toBeChecked();
+  const action = page.locator('#activate-software');
+  await action.focus();
+  await expect(action).toBeFocused();
+  expect(await action.evaluate((element) => getComputedStyle(element).transitionDuration)).toBe('0s');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('Preview waiting does not display a verified icon before observer attachment', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, observer: { attachment: 'checking', helper: 'none' } });
   await expect(page.locator('#journey-icon')).not.toHaveText('✓');
