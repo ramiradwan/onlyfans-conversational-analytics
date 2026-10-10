@@ -78,6 +78,31 @@ test('setup consent works by keyboard in forced colors and reduced motion', asyn
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+for (const width of [320, 390]) {
+  test(`long setup feedback and heading do not overlap the primary action at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 640 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await renderSurfaceState(page, SURFACE_STATES.activation_required);
+    await page.locator('#journey-title').evaluate((element) => {
+      element.textContent = 'The connection to the selected creator account and this computer could not be confirmed.';
+    });
+    await page.locator('#feedback').evaluate((element) => {
+      element.textContent = 'The connection could not be checked. Your earlier request may still be processing. Return to the current setup page before starting another attempt.';
+    });
+    const action = page.locator('#journey-primary');
+    await action.scrollIntoViewIfNeeded();
+    await expect(action).toBeInViewport();
+    const rects = await page.evaluate(() => {
+      const rect = id => document.getElementById(id).getBoundingClientRect();
+      return { title: rect('journey-title').toJSON(), action: rect('journey-primary').toJSON(),
+        feedback: rect('feedback').toJSON(), overflow: document.documentElement.scrollWidth > window.innerWidth };
+    });
+    expect(rects.overflow).toBe(false);
+    expect(rects.action.top).toBeGreaterThanOrEqual(rects.title.bottom);
+    expect(rects.feedback.top).toBeGreaterThanOrEqual(rects.action.bottom);
+  });
+}
+
 test('Preview waiting does not display a verified icon before observer attachment', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, observer: { attachment: 'checking', helper: 'none' } });
   await expect(page.locator('#journey-icon')).not.toHaveText('✓');

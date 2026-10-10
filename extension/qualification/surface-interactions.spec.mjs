@@ -137,6 +137,46 @@ test('refused permission preserves the blocked state and never claims readiness'
   expect((await calls(page)).some((call) => call.type === 'ofca.ui.transition')).toBe(false);
 });
 
+test('verified setup changes reach a single nonvisual status announcement', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.activation_required);
+  const announcement = page.locator('#step-summary');
+  await expect(announcement).toHaveAttribute('role', 'status');
+  await expect(announcement).toHaveAttribute('aria-live', 'polite');
+  await expect(announcement).toHaveAttribute('aria-atomic', 'true');
+  await expect(announcement).toHaveClass(/visually-hidden/);
+  await expect(announcement).toHaveText('Finish activating Full analytics');
+  await page.evaluate(() => {
+    window.__announcementChanges = 0;
+    new MutationObserver(() => { window.__announcementChanges++; })
+      .observe(document.querySelector('#step-summary'), { childList: true, characterData: true, subtree: true });
+    window.__surfaceFixture.change({ commercial: 'active', ready: true });
+  });
+  await expect(announcement).toHaveText('Setup complete');
+  await expect(page.locator('#journey-title')).toHaveText('Your analysis is ready');
+  const initial = await page.evaluate(() => window.__announcementChanges);
+  await page.evaluate(() => window.__surfaceFixture.change({}));
+  await expect.poll(async () => page.evaluate(() => window.__announcementChanges)).toBe(initial);
+});
+
+test('popup announces a changed connection status only once', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_ready);
+  const announcement = page.locator('#popup-status-announcement');
+  await expect(announcement).toHaveAttribute('role', 'status');
+  await expect(announcement).toHaveAttribute('aria-live', 'polite');
+  await expect(announcement).toHaveAttribute('aria-atomic', 'true');
+  await expect(announcement).toHaveText(/Ready/);
+  await page.evaluate(() => {
+    window.__popupAnnouncements = 0;
+    new MutationObserver(() => { window.__popupAnnouncements++; })
+      .observe(document.querySelector('#popup-status-announcement'), { childList: true, characterData: true, subtree: true });
+    window.__surfaceFixture.change({ reachable: false });
+  });
+  await expect(announcement).toContainText('Not connected');
+  const changes = await page.evaluate(() => window.__popupAnnouncements);
+  await page.evaluate(() => window.__surfaceFixture.change({}));
+  await expect.poll(async () => page.evaluate(() => window.__popupAnnouncements)).toBe(changes);
+});
+
 test('popup reports an unavailable status without claiming reconnection is still running', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.runtime_unavailable, surface: 'popup' });
   await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');

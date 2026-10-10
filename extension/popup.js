@@ -64,6 +64,9 @@ function render(model) {
   text('journey-badge', summary.label);
   text('journey-title', summary.label);
   text('journey-body', summary.body);
+  const announcement = summary.body ? `${summary.label}. ${summary.body}` : summary.label;
+  if (element('popup-status-announcement').textContent !== announcement)
+    text('popup-status-announcement', announcement);
 }
 page.bind('journey-primary', () => {
   if (primaryAction === 'resume') return transition('resume', client.model);

@@ -121,9 +121,12 @@ function renderProgress(model, view, journey) {
     if (!complete && position === index) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
     page.lock(`step-${step}`, !complete && position > index);
   });
-  text('step-summary', complete ? (full ? 'Setup complete' : 'Preview is ready')
-    : view === 'agree' ? 'Review terms' : view === 'mode' ? 'Choose a mode'
-      : view === 'access' ? 'Browser site access' : full ? (connected ? 'Full activation' : 'Connect the desktop app') : journey.title);
+  const announced = complete ? (full ? 'Setup complete' : 'Preview is ready')
+    : view === 'start' ? 'Choose Preview or Full analytics'
+      : view === 'agree' ? 'Review terms and risk disclosure'
+        : view === 'mode' ? 'Choose a mode'
+          : view === 'access' ? 'Allow site access' : journey.title;
+  if (element('step-summary').textContent !== announced) text('step-summary', announced);
 }
 function render(model) {
   desktopLaunch.observe(model);
@@ -158,7 +161,7 @@ function render(model) {
   text('journey-icon', icon);
   document.querySelector('main').dataset.step = view;
   renderProgress(model, view, currentJourney);
-  text('step-summary', '');
+  // Keep the verified current step available to assistive technology.
   show('back-current', reviewStep !== null);
   show('pre-mode', view === 'agree'); show('mode-choice', view === 'mode');
   show('start-choice', view === 'start');
