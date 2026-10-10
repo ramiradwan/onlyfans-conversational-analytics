@@ -24,6 +24,9 @@ const stubs = {
     export const send=fixture.send, openSurface=()=>{}, secureExternalUrl=()=>null;
     export class NoticeError extends Error {}`,
   'presentation.mjs': `export const customerJourney=()=>fixture.journey,
+    desktopOwnsCapture=(model)=>(model.status?.consent.mode==='full'
+      || (model.status?.consent.mode==='paused' && model.status?.consent.resume_mode==='full'))
+      && model.pairing?.desktop_control===true,
     needsAgreement=()=>false, modeChoiceAvailable=()=>false;`,
   'dom.mjs': `export const element=fixture.element, show=fixture.show, text=(id,value)=>{element(id).textContent=value};
     export const renderLoading=()=>{},renderJourney=()=>{},renderReadiness=()=>{},renderLegalLinks=()=>{};

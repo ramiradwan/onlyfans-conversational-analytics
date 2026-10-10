@@ -27,6 +27,21 @@ test('popup readiness uses one precedence and never says Ready while disconnecte
   assert.equal(presentation.statusPresentation(value).label, 'Checking…');
 });
 
+test('desktop control applies to Full, not Preview, and requires a live control channel', () => {
+  for (const [mode, resumeMode, channel, expected] of [
+    ['preview', null, true, false],
+    ['paused', 'preview', true, false],
+    ['paused', 'full', true, true],
+    ['full', null, true, true],
+    ['full', null, false, false],
+  ]) {
+    const value = model();
+    value.status.consent = { mode, resume_mode: resumeMode };
+    value.pairing.desktop_control = channel;
+    assert.equal(presentation.desktopOwnsCapture(value), expected);
+  }
+});
+
 test('paired status distinguishes connection, activation and analysis without guessing', () => {
   for (const [transport, authority, admission, expected] of [
     ['connecting', 'active', 'admitted', 'Connecting'],

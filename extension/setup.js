@@ -6,7 +6,7 @@ import { FULL_REVIEW_INTENT_KEY, createFullReviewIntentConsumer, createFullRevie
 import { LEGAL_ACCEPT_TERMS_MESSAGE_TYPE, LEGAL_ACKNOWLEDGE_RISK_MESSAGE_TYPE,
   LEGAL_ACTIVATE_SOFTWARE_MESSAGE_TYPE, LEGAL_CHOOSE_MODE_MESSAGE_TYPE } from './runtime/legal-activation-controller.mjs';
 import { createSurfaceClient, openSurface, send, secureExternalUrl, NoticeError } from './ui/surface-client.mjs';
-import { customerJourney, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
+import { customerJourney, desktopOwnsCapture, needsAgreement, modeChoiceAvailable } from './ui/presentation.mjs';
 import { element, show, text, renderLoading, renderJourney, renderReadiness, renderLegalLinks, createPageActions } from './ui/dom.mjs';
 import { chooseMode, transition, restoreAccess, openCreatorAccount } from './ui/actions.mjs';
 import { createHandoffFinisher, returnToDesktop } from './ui/handoff.mjs';
@@ -194,7 +194,8 @@ function render(model) {
   renderJourney(currentJourney, model);
   const preview = mode === 'preview' || (mode === 'paused' && status.consent.resume_mode === 'preview');
   show('preview-metrics', preview && view === 'journey');
-  show('pause', ['preview', 'full'].includes(mode) && model.pairing.desktop_control !== true);
+  const desktopOwned = desktopOwnsCapture(model);
+  show('pause', ['preview', 'full'].includes(mode) && !desktopOwned);
   show('background-tab-note', status.observer?.helper === 'open');
   show('reopen-background-tab', status.observer?.helper === 'closed');
   const daily = previewCounts(status.preview);
@@ -208,7 +209,10 @@ function render(model) {
   if (currentJourney.id === 'full_ready') text('journey-body', 'Open analytics to see your conversations.');
   renderPairing(model, currentJourney);
   renderReadiness(model); show('ready-details', currentJourney.id === 'full_ready');
-  for (const [id, action, label] of [['journey-primary', currentJourney.primaryAction, currentJourney.primaryLabel],
+  const resumeInDesktop = currentJourney.id === 'paused' && desktopOwned && currentJourney.primaryAction === 'resume';
+  for (const [id, action, label] of [['journey-primary',
+    resumeInDesktop ? 'open_dashboard' : currentJourney.primaryAction,
+    resumeInDesktop ? 'Resume in the desktop app' : currentJourney.primaryLabel],
     ['journey-secondary', currentJourney.secondaryAction, currentJourney.secondaryLabel]]) {
     element(id).dataset.action = action ?? ''; text(id, label ?? '');
     show(id, Boolean(action) && !['pair', 'cancel_pairing'].includes(action));

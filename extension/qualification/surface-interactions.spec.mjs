@@ -121,6 +121,21 @@ test('the popup shows no desktop pause note while it owns pause itself', async (
   await expect(page.locator('#desktop-control-note')).toBeHidden();
 });
 
+test('persistent setup sends paused Full to desktop control instead of duplicating Resume', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.desktop_controlled_paused, surface: 'setup' });
+  await expect(page.locator('#pause')).toBeHidden();
+  await expect(page.locator('#journey-primary')).toHaveText('Resume in the desktop app');
+  await page.locator('#journey-primary').click();
+  expect((await calls(page)).filter((call) => call.type === 'ofca.ui.transition')).toEqual([]);
+});
+
+test('paused Preview keeps Resume in the extension even with an existing desktop channel', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.desktop_controlled_paused, surface: 'setup', resume: 'preview' });
+  await expect(page.locator('#journey-primary')).toHaveText('Resume analytics');
+  await page.locator('#journey-primary').click();
+  await expect.poll(async () => (await calls(page)).filter((call) => call.type === 'ofca.ui.transition').length).toBe(1);
+});
+
 test('the compact setup window for the desktop app shows only its task', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.pairing_required, hash: 'desktop' });
   await expect(page.locator('main')).toHaveAttribute('data-handoff', /active|complete/);
@@ -165,7 +180,7 @@ test('Full setup progress names the current navigation item through agreement an
 test('popup readiness follows connection loss without leaving a stale ready claim', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.full_ready);
   await expect(page.locator('#ready-details')).toBeVisible();
-  await expect(page.locator('#desktop-status')).toHaveText('Running');
+  await expect(page.locator('#desktop-status')).toHaveText('Connected');
   await expect(page.locator('#delivery-status')).toHaveText('Connected');
   await expect(page.locator('#activation-status')).toHaveText('Active');
   await expect(page.locator('#analysis-status')).toHaveText('Ready');
@@ -173,7 +188,7 @@ test('popup readiness follows connection loss without leaving a stale ready clai
     window.__surfaceFixture.change({ reachable: false });
     window.dispatchEvent(new Event('focus'));
   });
-  await expect(page.locator('#desktop-status')).toHaveText('Not running');
+  await expect(page.locator('#desktop-status')).toHaveText('Not connected');
   await expect(page.locator('#delivery-status')).toHaveText('Not connected');
   await expect(page.locator('#analysis-status')).toHaveText('Not ready');
 });

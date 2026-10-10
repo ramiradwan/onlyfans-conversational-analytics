@@ -32,13 +32,18 @@ export function customerJourney(model) {
 export function isPreview(status) {
   return status?.consent.mode === 'preview' || (status?.consent.mode === 'paused' && status.consent.resume_mode === 'preview');
 }
+export function desktopOwnsCapture(model) {
+  const mode = model.status?.consent.mode;
+  return (mode === 'full' || (mode === 'paused' && model.status?.consent.resume_mode === 'full'))
+    && model.pairing?.desktop_control === true;
+}
 export function statusPresentation(model) {
   const status = model.status;
   const choice = (label, body) => ({ label, body });
   if (!status) return choice('Checking…', 'Checking the extension.');
   if (status.observer?.helper === 'closed') return choice('Background tab closed', 'Reopen the background tab to receive activity.');
   if (status.phase === 'permission_required' || status.phase === 'revoked') return choice('Needs access', 'Allow site access so the extension can read activity from your creator account.');
-  if (status.consent.mode === 'paused') return choice('Paused', model.pairing?.desktop_control ? 'Pause and resume from the desktop app.' : 'New messages are not collected until you resume.');
+  if (status.consent.mode === 'paused') return choice('Paused', desktopOwnsCapture(model) ? 'Pause and resume from the desktop app.' : 'New messages are not collected until you resume.');
   if (status.consent.mode === 'preview') return status.observer?.attachment === 'ready'
     ? choice('Ready', 'Preview counts update as you use OnlyFans.')
     : choice('Waiting for activity', 'Waiting for OnlyFans activity.');
