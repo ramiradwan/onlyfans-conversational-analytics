@@ -103,6 +103,40 @@ test('losing runtime access hides the old comparison and offers recovery', async
   await expect(page.locator('#runtime-unavailable')).toBeHidden();
 });
 
+test('status badge and next action reflect a confirmed sleeping browser tab', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_tab_sleeping);
+  await expect(page.locator('#journey-title')).toHaveText('Open OnlyFans to continue');
+  await expect(page.locator('#journey-badge')).toHaveText('Browser tab paused');
+  await expect(page.locator('#analysis-status')).not.toHaveText('Ready');
+  await expect(page.locator('#journey-primary')).toHaveText('Open OnlyFans');
+});
+
+test('unknown extension connection does not ask for another creator sign-in', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.extension_connection_unknown);
+  await expect(page.locator('#journey-title')).toHaveText('Connection status unavailable');
+  await expect(page.locator('#journey-badge')).toHaveText('Status unavailable');
+  await expect(page.locator('#journey-primary')).toHaveText('Try again');
+  await expect(page.locator('#journey-card')).not.toContainText('Sign in to your creator account');
+});
+
+test('consent revocation shows analytics off without restoring it automatically', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.full_access_revoked);
+  await expect(page.locator('#journey-title')).toHaveText('Analytics off');
+  await expect(page.locator('#journey-badge')).toHaveText('Off');
+  await expect(page.locator('#journey-icon')).not.toHaveText('✓');
+  await expect(page.locator('#journey-primary')).toBeHidden();
+  expect((await calls(page)).some(call => call.type === 'permission')).toBe(false);
+});
+
+test('refused permission preserves the blocked state and never claims readiness', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.permission_required, permissionGranted: false });
+  await expect(page.locator('#access-card')).toBeVisible();
+  await page.locator('#restore-access').click();
+  await expect(page.locator('#feedback')).toContainText('Site access was not allowed');
+  await expect(page.locator('#journey-badge')).toHaveText('Needs access');
+  expect((await calls(page)).some((call) => call.type === 'ofca.ui.transition')).toBe(false);
+});
+
 test('popup reports an unavailable status without claiming reconnection is still running', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.runtime_unavailable, surface: 'popup' });
   await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');

@@ -288,6 +288,7 @@ function runJourneyAction(action) {
   if (action === 'open_desktop_settings') return chrome.tabs.create({ url: client.model.config.history_settings_url });
   if (action === 'open_creator_account') return openCreatorAccount();
   if (action === 'retry_readiness') return client.sync();
+  if (action === 'restore_access') return restoreAccess(client.model);
   if (action === 'resume') return transition('resume', client.model);
   if (action === 'retry_full') return transition('full', client.model);
   if (action === 'install_desktop') {

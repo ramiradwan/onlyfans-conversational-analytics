@@ -581,7 +581,7 @@
         {
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
-          "name": "returning paired user gets a stopped-app recovery state"
+          "name": "returning paired user gets an unconfirmed connection without assuming the app stopped"
         },
         {
           "kind": "visual",

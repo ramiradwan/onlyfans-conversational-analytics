@@ -23,6 +23,23 @@ vi.mock('../src/components/CommercialActivationControls', () => ({ CommercialAct
 const brain = vectors.cases.find((value) => value.id === 'brain-snapshot')!.value as OnboardingState;
 afterEach(() => { cleanup(); active.client = null; window.history.replaceState({}, '', '/'); });
 
+it('distinguishes waiting, checking and an unconfirmed activation return', () => {
+  window.history.replaceState({}, '', '/#journey=22222222-2222-4222-8222-222222222222');
+  const check = vi.fn();
+  const waiting = (state: 'waiting' | 'checking' | 'unconfirmed') => (
+    <OnboardingContinuation activationReturn={{ state, check }}><div>Analytics</div></OnboardingContinuation>
+  );
+  const view = render(waiting('waiting'));
+  expect(screen.getByText('Waiting for activation…')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+  view.rerender(<ThemeProvider theme={theme}>{waiting('checking')}</ThemeProvider>);
+  expect(screen.getByText('Checking activation…')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+  view.rerender(<ThemeProvider theme={theme}>{waiting('unconfirmed')}</ThemeProvider>);
+  expect(screen.getByText('Activation couldn’t be confirmed.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
+});
+
 it('normal app access does not reopen setup', () => {
   render(<OnboardingContinuation><div>Analytics</div></OnboardingContinuation>);
   expect(screen.getByText('Analytics')).toBeTruthy();

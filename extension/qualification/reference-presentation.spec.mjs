@@ -4,7 +4,8 @@ import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
 for (const width of [1280, 390, 320]) {
   for (const theme of ['light', 'dark']) {
     for (const name of ['start_choice', 'software_activation', 'mode_choice', 'preview_complete', 'permission_required',
-      'desktop_app_needed', 'pairing_required', 'pairing_failed', 'activation_required', 'setup_complete', 'runtime_unavailable']) {
+      'desktop_app_needed', 'extension_connection_unknown', 'full_tab_sleeping', 'full_access_revoked',
+      'pairing_required', 'pairing_failed', 'activation_required', 'setup_complete', 'runtime_unavailable']) {
       test(`${name} uses the persistent workspace at ${width}px in ${theme}`, async ({ page }, info) => {
         await page.setViewportSize({ width, height: 960 });
         await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });

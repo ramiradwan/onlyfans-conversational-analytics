@@ -24,6 +24,7 @@ export function needsAgreement(model) {
 export function customerJourney(model) {
   return deriveCustomerJourney({ status: model.status, pairing: model.pairing,
     desktopRuntimeReachable: model.desktopRuntimeReachable,
+    connectionRecovery: model.connectionRecovery,
     desktopDownloadAvailable: secureExternalUrl(model.config.desktop_app_download_url) !== null,
     analysisReadiness: model.analysisReadiness,
     resumeAvailable: model.legal?.configured === true && !model.legal.requires_reauthorization,
@@ -41,20 +42,36 @@ export function statusPresentation(model) {
   const status = model.status;
   const choice = (label, body) => ({ label, body });
   if (!status) return choice('Checking…', 'Checking the extension.');
-  if (status.observer?.helper === 'closed') return choice('Background tab closed', 'Reopen the background tab to receive activity.');
-  if (status.phase === 'permission_required' || status.phase === 'revoked') return choice('Needs access', 'Allow site access so the extension can read activity from your creator account.');
+  if (['preview', 'full'].includes(status.consent.mode) && status.observer?.helper === 'closed'
+    && status.observer.attachment !== 'ready')
+    return choice('Background tab closed', 'Reopen the background tab to receive activity.');
+  if (status.phase === 'revoked' || status.consent.mode === 'revoked')
+    return choice('Off', 'Analytics is off. Choose an analytics mode to start again.');
+  if (status.phase === 'permission_required')
+    return choice('Needs access', 'Allow site access so the extension can read activity from your creator account.');
   if (status.consent.mode === 'paused') return choice('Paused', desktopOwnsCapture(model) ? 'Pause and resume from the desktop app.' : 'New messages are not collected until you resume.');
   if (status.consent.mode === 'preview') return status.observer?.attachment === 'ready'
     ? choice('Ready', 'Preview counts update as you use OnlyFans.')
     : choice('Waiting for activity', 'Waiting for OnlyFans activity.');
-  if (status.consent.mode === 'full' && !model.desktopRuntimeReachable) return choice('Not connected', 'Open the desktop app to continue.');
+  if (status.consent.mode === 'full' && ['pairing', 'compare'].includes(model.pairing?.state))
+    return model.pairing.state === 'compare' ? choice('Confirm connection', 'Compare the codes in both places.')
+      : choice('Connecting', 'Connecting to the desktop app.');
+  if (status.consent.mode === 'full' && model.pairing?.state === 'unavailable')
+    return model.connectionRecovery === 'retrying' ? choice('Reconnecting', 'Reconnecting to the extension.')
+      : choice('Status unavailable', 'The extension connection could not be checked.');
+  if (status.consent.mode === 'full' && !model.desktopRuntimeReachable)
+    return ['authenticating', 'connecting'].includes(status.delivery?.transport_state) || model.connectionRecovery === 'retrying'
+      ? choice('Connecting', 'Connecting to the desktop app.')
+      : choice('Not connected', 'The desktop connection could not be confirmed.');
   if (model.pairing?.state === 'paired') {
-    if (status.delivery?.transport_state !== 'authenticated') return status.delivery?.transport_state === 'connecting'
+    if (status.delivery?.transport_state !== 'authenticated') return ['authenticating', 'connecting'].includes(status.delivery?.transport_state)
       ? choice('Connecting', 'Connecting to the desktop app.')
       : choice('Not connected', 'The desktop connection could not be confirmed.');
     if (model.analysisReadiness?.commercial_authority === 'required') return choice('Activation needed', 'Turn on Full analytics in the desktop app.');
     if (model.analysisReadiness?.commercial_authority === 'unavailable') return choice('Needs attention', 'Activation could not be checked.');
     if (model.analysisReadiness?.commercial_authority !== 'active') return choice('Checking activation', '');
+    if (status.delivery?.browser_tab_sleeping === true)
+      return choice('Browser tab paused', 'Open OnlyFans to continue.');
     if (model.analysisReadiness?.analysis_admission === 'blocked') return choice('Not ready', "New messages aren't being analyzed.");
     if (model.analysisReadiness?.analysis_admission !== 'admitted') return choice('Checking analysis', '');
   }

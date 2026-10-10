@@ -40,8 +40,8 @@ export function OnboardingContinuation({ children, activationReturn }: {
         {(paired || pendingActivation !== 'none') && (pendingActivation === 'none' ? <CommercialActivationControls embedded /> : (
           <Stack spacing={1}>
             <Typography role="status">
-              {pendingActivation === 'waiting' ? 'Finishing setup…'
-                : pendingActivation === 'checking' ? 'Completing activation…' : 'Activation couldn’t be confirmed.'}
+              {pendingActivation === 'waiting' ? 'Waiting for activation…'
+                : pendingActivation === 'checking' ? 'Checking activation…' : 'Activation couldn’t be confirmed.'}
             </Typography>
             {pendingActivation === 'unconfirmed' && <Button onClick={activationReturn?.check}>Check again</Button>}
           </Stack>

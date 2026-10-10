@@ -101,7 +101,7 @@ test('first Full attempt explains that the desktop app is required', () => {
   assert.doesNotMatch(noDownload.body, /Preview/);
 });
 
-test('returning paired user gets a stopped-app recovery state', () => {
+test('returning paired user gets an unconfirmed connection without assuming the app stopped', () => {
   const result = deriveCustomerJourney({
     status: status(),
     pairing: pairing('paired'),
@@ -109,6 +109,55 @@ test('returning paired user gets a stopped-app recovery state', () => {
   });
   assert.equal(result.id, CUSTOMER_STATES.DESKTOP_APP_UNAVAILABLE);
   assert.equal(result.primaryAction, 'open_desktop');
+  assert.equal(result.title, 'Desktop connection not confirmed');
+  assert.doesNotMatch(result.title + result.body, /app.*(closed|stopped|unavailable)/i);
+});
+
+test('a confirmed active connection attempt differs from an unconfirmed result', () => {
+  const input = { status: status({ transport: 'authenticating' }), pairing: pairing('paired'), desktopRuntimeReachable: false };
+  const pending = deriveCustomerJourney(input);
+  assert.equal(pending.title, 'Connecting to the desktop app');
+  assert.equal(pending.tone, 'progress');
+  assert.equal(pending.primaryAction, null);
+  const unknown = deriveCustomerJourney({ ...input, status: status(), connectionRecovery: 'exhausted' });
+  assert.equal(unknown.title, 'Desktop connection not confirmed');
+  assert.equal(unknown.tone, 'warning');
+  assert.notEqual(unknown.title, 'Connecting to the desktop app');
+});
+
+test('a missing pairing status never instructs the customer to sign in to OnlyFans', () => {
+  const model = { status: status(), pairing: pairing('unavailable'), desktopRuntimeReachable: false };
+  const recovering = deriveCustomerJourney({ ...model, connectionRecovery: 'retrying' });
+  assert.equal(recovering.title, 'Reconnecting to the extension');
+  assert.equal(recovering.primaryAction, null);
+  const exhausted = deriveCustomerJourney({ ...model, connectionRecovery: 'exhausted' });
+  assert.equal(exhausted.title, 'Connection status unavailable');
+  assert.equal(exhausted.primaryLabel, 'Try again');
+  assert.doesNotMatch(exhausted.title + exhausted.body, /sign in|enable extension|desktop app closed/i);
+});
+
+test('missing site permission cannot inherit the old Full-ready state', () => {
+  for (const mode of ['preview', 'full']) {
+    const output = deriveCustomerJourney({
+      status: status({ mode, phase: 'permission_required', transport: 'authenticated' }),
+      pairing: pairing('paired'), desktopRuntimeReachable: true,
+      analysisReadiness: readiness('active', 'admitted'),
+    });
+    assert.notEqual(output.id, CUSTOMER_STATES.FULL_READY);
+    assert.equal(output.title, 'Site access needed');
+    assert.equal(output.primaryAction, 'restore_access');
+  }
+});
+
+test('revoked analytics require a new mode choice, not permission reactivation', () => {
+  const model = { status: status({ mode: 'revoked', phase: 'revoked', transport: 'authenticated' }),
+    pairing: pairing('paired'), desktopRuntimeReachable: true, analysisReadiness: readiness('active', 'admitted') };
+  const off = deriveCustomerJourney(model);
+  assert.equal(off.id, CUSTOMER_STATES.ANALYTICS_OFF);
+  assert.equal(off.title, 'Analytics off');
+  assert.equal(off.primaryAction, null);
+  assert.doesNotMatch(off.title + off.body, /allow site access|ready/i);
+  assert.equal(deriveCustomerJourney({ ...model, modeChoiceAvailable: true }).primaryAction, 'choose_mode');
 });
 
 test('running desktop app with no usable creator context explains setup is incomplete', () => {
