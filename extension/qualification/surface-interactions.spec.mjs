@@ -192,6 +192,23 @@ test('Full setup progress names the current navigation item through agreement an
   await expect(current).toHaveAttribute('data-step', 'agree');
 });
 
+test('activation progress updates from verified events without asking for another manual check', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.activation_required);
+  await expect(page.locator('#journey-primary')).toHaveText('Open desktop app');
+  await expect(page.locator('#journey-secondary')).toBeHidden();
+  await page.evaluate(() => window.__surfaceFixture.change({ commercial: 'active', ready: true }));
+  await expect(page.locator('#journey-title')).toHaveText('Your analysis is ready');
+  await expect(page.locator('#journey-primary')).toHaveText('Open analysis');
+  expect((await calls(page)).some((call) => call.type === 'retry_readiness')).toBe(false);
+});
+
+test('blocked analysis offers the desktop app instead of a redundant manual check', async ({ page }) => {
+  await renderSurfaceState(page, SURFACE_STATES.activation_active);
+  await expect(page.locator('#journey-title')).toHaveText("New messages aren't being analyzed");
+  await expect(page.locator('#journey-primary')).toHaveText('Open desktop app');
+  await expect(page.locator('#journey-secondary')).toBeHidden();
+});
+
 test('popup readiness follows connection loss without leaving a stale ready claim', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.full_ready);
   await expect(page.locator('#ready-details')).toBeVisible();

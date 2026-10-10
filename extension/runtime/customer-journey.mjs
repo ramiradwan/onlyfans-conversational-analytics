@@ -204,8 +204,8 @@ export function deriveCustomerJourney({
       body: 'Continue in Settings in the desktop app.',
       primaryAction: 'open_dashboard',
       primaryLabel: 'Open desktop app',
-      secondaryAction: 'retry_readiness',
-      secondaryLabel: 'Check activation',
+      secondaryAction: null,
+      secondaryLabel: null,
     });
   }
 
@@ -263,10 +263,10 @@ export function deriveCustomerJourney({
       tone: 'warning',
       title: "New messages aren't being analyzed",
       body: '',
-      primaryAction: 'retry_readiness',
-      primaryLabel: 'Check again',
-      secondaryAction: 'open_dashboard',
-      secondaryLabel: 'Open desktop app',
+      primaryAction: 'open_dashboard',
+      primaryLabel: 'Open desktop app',
+      secondaryAction: null,
+      secondaryLabel: null,
     });
   }
 

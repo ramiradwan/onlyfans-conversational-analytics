@@ -193,8 +193,8 @@ test('commercial activation required routes the customer to desktop activation w
   assert.equal(result.title, 'Finish activating Full analytics');
   assert.equal(result.primaryAction, 'open_dashboard');
   assert.equal(result.primaryLabel, 'Open desktop app');
-  assert.equal(result.secondaryAction, 'retry_readiness');
-  assert.equal(result.secondaryLabel, 'Check activation');
+  assert.equal(result.secondaryAction, null);
+  assert.equal(result.secondaryLabel, null);
   assert.match(result.body, /Settings in the desktop app/);
   assert.doesNotMatch(
     `${result.title} ${result.body} ${result.primaryLabel} ${result.secondaryLabel}`,
@@ -226,6 +226,9 @@ test('commercial authority alone renders activation active but not Full-ready', 
   assert.equal(result.title, "New messages aren't being analyzed");
   assert.notEqual(result.id, CUSTOMER_STATES.FULL_READY);
   assert.equal(result.body, '');
+  assert.equal(result.primaryAction, 'open_dashboard');
+  assert.equal(result.primaryLabel, 'Open desktop app');
+  assert.equal(result.secondaryAction, null);
 });
 
 test('sleeping OnlyFans tab has a direct recovery action after activation', () => {
