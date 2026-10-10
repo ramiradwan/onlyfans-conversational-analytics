@@ -165,7 +165,9 @@ export function CommercialActivationControls({
               Use an activation code to turn on Full analytics on this computer.
             </DialogContentText>
             <Stack spacing={1}>
-              <StepLabel index={1}>Open secure setup and choose Activate Full.</StepLabel>
+              <StepLabel index={1}>{setupUrl
+                ? 'Open secure setup and choose Activate Full.'
+                : 'Activation codes come from secure setup. Its link is unavailable here.'}</StepLabel>
               {setupUrl && (
                 <Box>
                   <Button

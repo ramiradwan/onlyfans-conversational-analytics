@@ -80,9 +80,12 @@ describe('commercial activation controls', () => {
     expect(link.getAttribute('target')).toBe('_blank');
   });
 
-  it('omits the secure setup link when the release has no setup URL', async () => {
+  it('names the missing secure setup link without requesting an impossible action', async () => {
     await showRequired(makeApi());
     expect(screen.queryByRole('link', { name: 'Open secure setup' })).toBeNull();
+    expect(screen.getByText('Activation codes come from secure setup. Its link is unavailable here.')).toBeTruthy();
+    expect(screen.queryByText('Open secure setup and choose Activate Full.')).toBeNull();
+    expect(screen.getByLabelText('Activation code')).toBeTruthy();
   });
 
   it('rejects malformed input before redemption', async () => {
