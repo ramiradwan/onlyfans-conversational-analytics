@@ -170,7 +170,7 @@ describe('companion pairing controls', () => {
     await click('Connect extension');
     await click("Codes don't match");
     expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'decline', 3, expect.any(AbortSignal));
-    expect(screen.getByText(/codes didn't match, so nothing was connected/)).toBeTruthy();
+    expect(screen.getByText(/Connection declined/)).toBeTruthy();
   });
 
   it('preserves comparison acceptance across unchanged notices and resets it when the code changes', async () => {
@@ -369,7 +369,7 @@ describe('companion pairing controls', () => {
       await click('Connect extension');
       await act(async () => push({ attempt: { state: 'failed', comparison_code: null } }));
       expect(api.change).toHaveBeenCalledWith(open.pairing_id, 'cancel', 0, expect.any(AbortSignal));
-      expect(screen.getByText('The extension stopped the connection. Try again.')).toBeTruthy();
+      expect(screen.getByText('The connection did not finish. Try again.')).toBeTruthy();
     });
 
     it('cancels both sides and closes nothing it did not open', async () => {

@@ -71,7 +71,7 @@ destructive('forget-companion', 'Forget the desktop app?',
   () => client.command('forget'), 'The desktop connection has been removed.');
 destructive('delete-local-data', 'Delete extension data?',
   'Removes your extension data and saved setup choices, stops collection, revokes site access and disconnects the desktop app. Messages already stored by the desktop app are not deleted.',
-  'Delete extension data', () => send({ type: UI_DELETE_LOCAL_DATA_MESSAGE_TYPE }), 'Extension data deleted. Desktop-stored messages are unchanged.');
+  'Delete extension data', () => send({ type: UI_DELETE_LOCAL_DATA_MESSAGE_TYPE }), 'Extension data deleted.');
 page.bind('clear-preview', () => send({ type: UI_CLEAR_PREVIEW_MESSAGE_TYPE }), 'Preview counts cleared.');
 page.bind('restore-access', () => restoreAccess(client.model));
 page.bind('history', () => client.model.status.history_permission

@@ -420,10 +420,10 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       <StatusLine essential id="pairing-result" tone={failed ? 'error' : 'secondary'} text={failed
         ? "The connection couldn't be checked. Keep this page open and try again."
         : approved ? connection === 'connected' ? 'Extension connected.' : 'Connection approved. Waiting for the extension.'
-          : status && terminal(status) ? extensionRefused ? 'The extension stopped the connection. Try again.'
+          : status && terminal(status) ? extensionRefused ? 'The connection did not finish. Try again.'
             : status.state === 'expired' ? 'Time ran out before the connection finished. Try again.'
               : status.state === 'revoked' ? 'This browser extension was disconnected.'
-                : status.state === 'declined' ? "The codes didn't match, so nothing was connected. Try again."
+                : status.state === 'declined' ? 'Connection declined. Try again.'
                   : 'Connection cancelled.' : connectedCount === 0 && status === null && !waitingForExtension ? 'Connect the browser extension so your messages reach this app.' : null} />
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: 'flex-start', minHeight: '3rem', '& > button': { minWidth: '12.5rem', height: '3rem', justifyContent: 'flex-start' } }} useFlexGap>
         {!active && !waitingForExtension && (

@@ -5,7 +5,7 @@ export function phaseLabel(status) {
   return ({ off: 'Analytics off', preview: 'Preview on', identity: 'Full setup in progress',
     full: status.delivery?.transport_state === 'authenticated' ? 'Desktop connected' : 'Full setup in progress',
     paused: 'Analytics paused', revoked: 'Site access revoked', permission_required: 'Site access needs approval',
-    transitioning: 'Applying your choice…', unavailable: 'Analytics temporarily unavailable' })[status.phase] ?? 'Analytics inactive';
+    transitioning: 'Applying your choice…', unavailable: 'Analytics unavailable' })[status.phase] ?? 'Analytics inactive';
 }
 export function modeChoiceAvailable(model) {
   const { legal, status } = model;

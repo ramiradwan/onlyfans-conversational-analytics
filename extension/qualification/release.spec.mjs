@@ -51,7 +51,7 @@ test('extracted release starts disabled, records UI choices and deletes without 
     await options.waitForURL(`chrome-extension://${extensionId}/options.html`);
     await options.locator('#delete-local-data').click();
     await options.getByRole('dialog').getByRole('button', { name: 'Delete extension data', exact: true }).click();
-    await expect(options.locator('#feedback')).toHaveText('Extension data deleted. Desktop-stored messages are unchanged.');
+    await expect(options.locator('#feedback')).toHaveText('Extension data deleted.');
     await setup.bringToFront();
     await expect(setup.locator('#start-choice')).toBeVisible();
     // Reaccept through the setup page after the worker has closed its database.

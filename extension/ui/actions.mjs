@@ -26,7 +26,7 @@ export async function restoreAccess(model) {
 }
 export async function allowHistory(model) {
   const granted = await chrome.permissions.request({ permissions: ['webRequest'], origins: [ONLYFANS_ORIGIN_PATTERN] });
-  if (!granted) throw new NoticeError('Message history access was not allowed. New-message analytics is unchanged.');
+  if (!granted) throw new NoticeError('Message history access was not allowed.');
   return chrome.tabs.create({ url: model.config.history_settings_url });
 }
 

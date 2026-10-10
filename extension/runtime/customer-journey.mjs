@@ -317,8 +317,8 @@ export function deriveCustomerJourney({
   return Object.freeze({
     id: CUSTOMER_STATES.FULL_UNAVAILABLE,
     tone: 'warning',
-    title: 'Full analytics is temporarily unavailable',
-    body: 'Open the desktop app to see what needs attention.',
+    title: 'Analysis status unavailable',
+    body: '',
     primaryAction: 'retry_readiness',
     primaryLabel: 'Check again',
     secondaryAction: 'open_dashboard',
