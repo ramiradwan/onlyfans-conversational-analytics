@@ -72,6 +72,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
   const deadline = useRef(0);
   const operation = useRef<AbortController | null>(null);
   const epoch = useRef(0);
+  const confirmationInFlight = useRef(false);
   const verifiedVersion = useRef<string | null>(null);
   const automaticAttempted = useRef(false);
   const onboarding = useSyncExternalStore(subscribeOnboarding, onboardingView, onboardingView);
@@ -90,8 +91,11 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
 
   useEffect(() => () => {
     epoch.current += 1;
-    operation.current?.abort();
+    // The owner may advance before the confirmation response arrives.
+    // Neither an unresolved confirmation nor an admitted connection may be cancelled.
     const pending = current.current;
+    if (confirmationInFlight.current || pending?.state === 'confirmed' || pending?.state === 'admitted') return;
+    operation.current?.abort();
     if (pending && !terminal(pending)) {
       // Best effort only: the server deadline remains authoritative if navigation interrupts this.
       void api.change(pending.pairing_id, 'cancel', pending.version).catch(() => undefined);
@@ -124,6 +128,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
   };
 
   const run = async (action: 'open' | 'get' | CompanionPairingAction | 'verified', code?: string) => {
+    if (confirmationInFlight.current) return false;
     const previous = current.current;
     if (action !== 'open' && previous === null) return;
     if (action === 'confirm' && (!codesMatch || previous?.state !== 'awaiting_confirmation')) return;
@@ -131,6 +136,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
     const controller = new AbortController();
     operation.current = controller;
     const version = ++epoch.current;
+    if (action === 'verified') confirmationInFlight.current = true;
     setBusy(true);
     setFailed(false);
     setCodesMatch(false);
@@ -155,6 +161,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       if (!controller.signal.aborted && epoch.current === version) setFailed(true);
       return false;
     } finally {
+      if (action === 'verified') confirmationInFlight.current = false;
       if (!controller.signal.aborted && epoch.current === version) setBusy(false);
     }
   };

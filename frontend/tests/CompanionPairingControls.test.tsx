@@ -312,6 +312,41 @@ describe('companion pairing controls', () => {
       expect(screen.queryByLabelText('Connection comparison code')).toBeNull();
     });
 
+    it('preserves confirmation when the setup view unmounts before its reply', async () => {
+      let finish!: (value: CompanionPairingStatus) => void;
+      let signal: AbortSignal | undefined;
+      const api = makeApi({ confirmVerified: vi.fn((_id, _version, _code, controller) => {
+        signal = controller;
+        return new Promise<CompanionPairingStatus>((resolve) => { finish = resolve; });
+      }) });
+      const { port, push } = makePort(ready);
+      const view = mount(api, port);
+      await click('Connect extension');
+      await act(async () => push({ stage: 'pairing', attempt: { state: 'compare', comparison_code: '012345' } }));
+      await brainNotice();
+      expect(api.confirmVerified).toHaveBeenCalledTimes(1);
+      await act(async () => view.unmount());
+      expect(signal?.aborted).toBe(false);
+      expect(port.cancel).not.toHaveBeenCalled();
+      expect(api.change).not.toHaveBeenCalled();
+      await act(async () => finish({ ...awaiting, state: 'admitted', version: 4, comparison_code: null }));
+      expect(api.change).not.toHaveBeenCalled();
+    });
+
+    it('keeps an admitted connection when the setup view unmounts', async () => {
+      const { port, push } = makePort(ready);
+      const api = makeApi();
+      const view = mount(api, port);
+      await click('Connect extension');
+      await act(async () => push({ stage: 'pairing', attempt: { state: 'compare', comparison_code: '012345' } }));
+      await brainNotice();
+      await act(async () => {});
+      expect(api.confirmVerified).toHaveBeenCalledTimes(1);
+      view.unmount();
+      expect(port.cancel).not.toHaveBeenCalled();
+      expect(api.change).not.toHaveBeenCalled();
+    });
+
     it('opens the extension window for unfinished steps and continues as soon as they are done', async () => {
       const { port, push } = makePort({ status: 'connected', stage: 'needs_full', attempt: null });
       const api = makeApi();
