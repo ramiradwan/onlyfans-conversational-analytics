@@ -1028,7 +1028,7 @@
         {
           "kind": "unit",
           "file": "frontend/tests/CompanionPairingControls.test.tsx",
-          "name": "opens the extension window for unfinished steps and continues as soon as they are done"
+          "name": "opens the extension setup tab for unfinished steps and continues once they are done"
         },
         {
           "kind": "unit",
