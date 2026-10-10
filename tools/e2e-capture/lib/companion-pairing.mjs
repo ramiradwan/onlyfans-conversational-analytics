@@ -280,7 +280,7 @@ export async function requestAgentPairingTicket(context) {
     // a response body tied to a document that Chrome has already discarded.
     const admitted = await bridge.evaluate(async (pathname) => {
       const response = await fetch(pathname, { credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
-      if (!response.ok) throw new Error('The confirmed pairing could not be read.');
+      if (!response.ok) throw new Error(`The confirmed pairing could not be read (HTTP ${response.status}).`);
       return response.json();
     }, pairingPath);
     expect(admitted.state).toBe('admitted');
