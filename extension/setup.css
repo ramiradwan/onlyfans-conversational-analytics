@@ -19,6 +19,9 @@
 }
 .onboarding-header .brand-mark { flex: 0 0 auto; }
 .onboarding-header .product-name { margin: 0; font-size: 1rem; font-weight: var(--dipsy-font-weight-semibold); }
+.onboarding-workspace .onboarding-header { flex-wrap: wrap; }
+.onboarding-workspace .onboarding-header > div:not(.brand-mark) { min-width: min-content; }
+.onboarding-workspace .onboarding-header .product-name { overflow-wrap: normal; word-break: normal; }
 .onboarding-identity { margin-left: auto; color: var(--dipsy-color-text-muted); font-size: var(--dipsy-static-label-size); }
 .onboarding-content { width: min(100%, var(--dipsy-static-workspace-width)); margin: 0 auto; padding: 28px; }
 .onboarding-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }

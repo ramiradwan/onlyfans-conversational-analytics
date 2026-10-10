@@ -96,7 +96,16 @@ test('losing runtime access hides the old comparison and offers recovery', async
   await expect(page.locator('#pairing-code')).toBeVisible();
   await page.evaluate(() => { window.__surfaceFixture.change({ runtimeUnavailable: true }); window.dispatchEvent(new Event('focus')); });
   await expect(page.locator('#runtime-unavailable')).toBeVisible();
+  await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');
   await expect(page.locator('#pairing-code')).toBeHidden();
+  await expect(page.locator('#retry-runtime')).toBeEnabled();
+  await page.evaluate(() => window.__surfaceFixture.change({ runtimeUnavailable: false }));
+  await expect(page.locator('#runtime-unavailable')).toBeHidden();
+});
+
+test('popup reports an unavailable status without claiming reconnection is still running', async ({ page }) => {
+  await renderSurfaceState(page, { ...SURFACE_STATES.runtime_unavailable, surface: 'popup' });
+  await expect(page.locator('#runtime-title')).toHaveText('Extension status is unavailable');
   await expect(page.locator('#retry-runtime')).toBeEnabled();
 });
 

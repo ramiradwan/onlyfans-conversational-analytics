@@ -32,6 +32,28 @@ for (const width of [1280, 390, 320]) {
   }
 }
 
+for (const width of [800, 640]) {
+  test(`Full review keeps consent and its action reachable at 200% zoom in ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await renderSurfaceState(page, SURFACE_STATES.start_choice);
+    await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
+    const brandHeight = await page.locator('.onboarding-header .product-name').evaluate((element) => element.getBoundingClientRect().height);
+    expect(brandHeight).toBeLessThan(130);
+    await expect(page.locator('#start-choice')).toBeVisible();
+    await page.locator('#start-full').click();
+    await expect(page.locator('#pre-mode')).toBeVisible();
+    await expect(page.locator('#start-disclosure')).toContainText('no general automatic age-based expiry');
+    await page.locator('#terms-accepted').check();
+    await page.locator('#risk-acknowledged').check();
+    const action = page.locator('#activate-software');
+    await action.scrollIntoViewIfNeeded();
+    await expect(action).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`full-review-zoom-200-${width}.png`), fullPage: true });
+  });
+}
+
 test('Preview waiting does not display a verified icon before observer attachment', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.preview_complete, observer: { attachment: 'checking', helper: 'none' } });
   await expect(page.locator('#journey-icon')).not.toHaveText('✓');
