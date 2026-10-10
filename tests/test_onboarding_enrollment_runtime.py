@@ -539,20 +539,27 @@ async def test_live_workspace_focus_is_bounded_to_journey_without_new_revision()
 async def test_known_expiry_wakes_snapshot_without_repeating_status_reads():
     owner = OnboardingEvents()
     journey = str(uuid4())
-    expires = asyncio.get_running_loop().time() + 0.02
+    expires = None
     reads = []
     def read():
+        nonlocal expires
+        now = asyncio.get_running_loop().time()
+        if expires is None:
+            expires = now + 0.02
         reads.append(1)
-        current = asyncio.get_running_loop().time() < expires
-        return owner.snapshot(journey_id=journey, facts={"installation": "verified" if current else "unknown"})
+        return owner.snapshot(journey_id=journey, facts={"installation": "verified" if now < expires else "unknown"})
     def remaining():
-        value = expires - asyncio.get_running_loop().time()
-        return value if value > 0 else None
+        if len(reads) > 1:
+            return None
+        return max(0.0, expires - asyncio.get_running_loop().time())
     stream = owner.stream(read, lambda: None, expires_in=remaining)
-    await anext(stream)
-    result = await asyncio.wait_for(anext(stream), 1)
-    if result.startswith(": keepalive"):
-        result = await asyncio.wait_for(anext(stream), 1)
+    first = await anext(stream)
+    assert '"installation":"verified"' in first
+    async with asyncio.timeout(1):
+        while True:
+            result = await anext(stream)
+            if result.startswith("event: onboarding"):
+                break
     assert '"installation":"unknown"' in result and len(reads) == 2
     await stream.aclose()
 
