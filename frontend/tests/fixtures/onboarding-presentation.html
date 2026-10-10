@@ -1,4 +1,10 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="csrf-token" content="presentation-fixture"><title>Onboarding presentation qualification</title></head>
+<meta name="csrf-token" content="presentation-fixture"><title>Onboarding presentation qualification</title>
+<script>
+  // Exercise the production first-paint color scheme for each browser test.
+  const scheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  localStorage.setItem('mui-mode', scheme);
+  document.documentElement.setAttribute('data-mui-color-scheme', scheme);
+</script></head>
 <body style="margin:0"><div id="root"></div><script type="module" src="./onboarding-presentation.tsx"></script></body></html>

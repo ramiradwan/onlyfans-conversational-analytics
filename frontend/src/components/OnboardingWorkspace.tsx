@@ -14,7 +14,7 @@ export function OnboardingWorkspace({ children, steps = [], creator }: {
 }) {
   const roles = componentTokens.staticUi;
   return (
-    <Stack sx={{ minHeight: '100dvh', bgcolor: 'background.default', overflowY: 'auto' }}>
+    <Stack sx={{ minHeight: '100dvh', bgcolor: 'background.default', color: 'text.primary', overflowY: 'auto' }}>
       <Stack component="header" direction="row" spacing={1.5} sx={{ p: { xs: 2, sm: 3.5 }, alignItems: 'center', flexWrap: 'wrap', rowGap: 1,
         borderBottom: '1px solid', borderColor: 'divider',
         '& > :first-child .MuiTypography-root': { display: 'block', whiteSpace: 'normal' } }}>
