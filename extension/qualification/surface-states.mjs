@@ -9,6 +9,7 @@ export const SURFACE_STATES = Object.freeze({
   full_ready: Object.freeze(make('popup', 'full', { paired: true, ready: true })),
   desktop_controlled: Object.freeze(make('popup', 'full', { paired: true, ready: true, desktopControl: true })),
   desktop_controlled_paused: Object.freeze(make('popup', 'paused', { paired: true, resume: 'full', desktopControl: true })),
+  start_choice: Object.freeze(make('setup', 'off', { agreement: true })),
   software_activation: Object.freeze(make('setup', 'off', { agreement: true })),
   software_activation_ready: Object.freeze(make('setup', 'off', { agreement: true, accepted: true })),
   legal_unavailable: Object.freeze(make('setup', 'off', { configured: false })),

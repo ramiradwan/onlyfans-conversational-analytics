@@ -52,7 +52,7 @@
   "journeys": [
     {
       "id": "extension-preview",
-      "entry_state": "extension.software_activation",
+      "entry_state": "extension.start_choice",
       "success_state": "extension.preview_available"
     },
     {
@@ -73,6 +73,43 @@
   ],
   "states": [
     {
+      "id": "extension.start_choice",
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"start-choice\""
+      },
+      "transitions": [
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "start-preview"
+        },
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "start-full"
+        },
+        {
+          "to": "extension.setup_code_entry",
+          "by": "user",
+          "action": "setup-transfer-open"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "browser",
+          "file": "extension/qualification/surface-interactions.spec.mjs",
+          "name": "loading setup never records approvals or requests browser access"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-states.mjs",
+          "name": "start_choice"
+        }
+      ]
+    },
+    {
       "id": "extension.software_activation",
       "surface": "extension.setup",
       "anchor": {
@@ -84,6 +121,11 @@
           "to": "extension.mode_choice",
           "by": "user",
           "action": "activate-software"
+        },
+        {
+          "to": "extension.start_choice",
+          "by": "user",
+          "action": "start-back"
         },
         {
           "to": "extension.setup_code_entry",

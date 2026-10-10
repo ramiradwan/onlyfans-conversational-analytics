@@ -3,7 +3,7 @@ import { SURFACE_STATES, renderSurfaceState } from './surface-fixtures.mjs';
 
 for (const width of [1280, 390, 320]) {
   for (const theme of ['light', 'dark']) {
-    for (const name of ['software_activation', 'mode_choice', 'preview_complete', 'permission_required',
+    for (const name of ['start_choice', 'software_activation', 'mode_choice', 'preview_complete', 'permission_required',
       'desktop_app_needed', 'pairing_required', 'pairing_failed', 'activation_required', 'setup_complete', 'runtime_unavailable']) {
       test(`${name} uses the persistent workspace at ${width}px in ${theme}`, async ({ page }, info) => {
         await page.setViewportSize({ width, height: 960 });
@@ -14,6 +14,12 @@ for (const width of [1280, 390, 320]) {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         const title = page.locator('main h1:visible, main h2:visible').first();
         await expect(title).toBeVisible();
+        if (name === 'start_choice') {
+          await expect(page.locator('#start-choice')).toBeVisible();
+          await expect(page.locator('#start-preview')).toBeVisible();
+          await expect(page.locator('#start-full')).toBeVisible();
+          await expect(page.locator('#pre-mode')).toBeHidden();
+        }
         if (name === 'preview_complete') {
           await expect(page.locator('#messages-count')).toHaveText('128');
           await expect(page.locator('#setup-progress')).toBeHidden();
