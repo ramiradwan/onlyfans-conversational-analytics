@@ -11,6 +11,7 @@
     "desktop.app": {
       "implementation": [
         "frontend/src/views/WebAuthnAccessView.tsx",
+        "frontend/src/components/OnboardingPasskeyTask.tsx",
         "frontend/src/components/SetupPrompt.tsx",
         "frontend/src/components/CompanionPairingControls.tsx",
         "frontend/src/components/OnboardingContinuation.tsx",
@@ -94,7 +95,7 @@
         {
           "kind": "unit",
           "file": "extension/tests/legal-activation-ui.test.mjs",
-          "name": "Activate Software is separate from mode choice and no UI calls it consent"
+          "name": "combined mode review retains separate software activation and consent commands"
         },
         {
           "kind": "browser",
@@ -814,7 +815,7 @@
       "id": "desktop.passkey_sign_in",
       "surface": "desktop.app",
       "anchor": {
-        "file": "frontend/src/views/WebAuthnAccessView.tsx",
+        "file": "frontend/src/components/OnboardingPasskeyTask.tsx",
         "text": "data-journey-state=\"desktop.passkey_sign_in\""
       },
       "transitions": [

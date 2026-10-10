@@ -172,16 +172,21 @@ export async function configureSyntheticLegalBindings(worker, popup) {
   await expect(popup.locator('#legal-unavailable')).toBeHidden();
 }
 
-export async function completePreModeLegalActions(popup) {
+export async function completePreModeLegalActions(popup, mode = 'preview') {
   popup = await openSetup(popup);
+  await expect(popup.locator('#start-choice')).toBeVisible();
+  await popup.locator(mode === 'full' ? '#start-full' : '#start-preview').click();
   await expect(popup.locator('#pre-mode')).toBeVisible();
+  if (mode === 'full') await assertFullProminentDisclosure(popup, { initial: true });
+  else await expect(popup.locator('#start-disclosure')).toContainText('Seven-day retention:');
   await popup.locator('#terms-accepted').check();
   await expect(popup.locator('#risk-acknowledged')).toBeEnabled();
   await popup.locator('#risk-acknowledged').check();
-  const activate = popup.getByRole('button', { name: 'Activate Software' });
+  const activate = popup.locator('#activate-software');
   await expect(activate).toBeEnabled();
   await activate.click();
-  await expect(popup.locator('#mode-choice')).toBeVisible();
+  await expect(popup.locator('#access-card')).toBeVisible();
+  return popup;
 }
 
 async function hasOrigins(worker, origins) {
@@ -193,11 +198,11 @@ async function hasOrigins(worker, origins) {
   }, origins);
 }
 
-async function acceptPermissionFor(context, popup, worker, buttonName, origins) {
+async function acceptPermissionFor(context, popup, worker, buttonName, origins, requestKind = 'full') {
   const alreadyGranted = await hasOrigins(worker, origins);
   await popup.getByRole('button', { name: buttonName }).click();
   if (!alreadyGranted) await acceptNativeHostPermissionPrompt(context, {
-    requestKind: buttonName === 'Enable Preview' ? 'preview' : 'full',
+    requestKind,
     readPermission: () => hasOrigins(worker, origins),
   });
   for (const origin of origins) {
@@ -213,29 +218,32 @@ async function acceptPermissionFor(context, popup, worker, buttonName, origins) 
 
 export async function enablePreviewAnalytics(context, popup, worker) {
   const setup = await openSetup(popup);
-  await expect(setup.locator('#preview-disclosure')).toBeVisible();
-  await expect(setup.getByRole('button', { name: 'Enable Preview' })).toBeVisible();
+  await expect(setup.locator('#access-card')).toBeVisible();
+  await expect(setup.locator('#restore-access')).toHaveText('Allow site access');
   await acceptPermissionFor(
     context,
     setup,
     worker,
-    'Enable Preview',
+    'Allow site access',
     [ONLYFANS_ORIGIN_PATTERN],
+    'preview',
   );
+  await expect(setup.locator('#preview-metrics')).toBeVisible();
   await popup.bringToFront();
 }
 
-export async function assertFullProminentDisclosure(popup) {
-  const full = popup.locator('#full-disclosure');
+export async function assertFullProminentDisclosure(popup, { initial = false } = {}) {
+  const full = popup.locator(initial ? '#start-disclosure' : '#full-disclosure');
   await expect(full).toBeVisible();
-  await expect(full).toContainText('Before choosing Full, review these points:');
+  if (initial) await expect(popup.locator('#activation-title')).toHaveText('Turn on Full analytics');
+  else await expect(full).toContainText('Before choosing Full, review these points:');
   await expect(full).toContainText('Message content:');
   await expect(full).toContainText('leaves the Extension but remains on the same computer');
   await expect(full).toContainText('no general automatic age-based expiry');
   await expect(full).toContainText('does not delete Full information already retained by the companion analytics service');
   await expect(full).toContainText('not consent on behalf of a subscriber or another person');
   await expect(full.getByRole('link', { name: 'read the complete data-handling description' })).toBeVisible();
-  await expect(full.getByRole('button', { name: 'Enable Full analytics' })).toBeVisible();
+  if (!initial) await expect(full.getByRole('button', { name: 'Enable Full analytics' })).toBeVisible();
 }
 
 export async function upgradePreviewToFull(context, popup, worker) {
@@ -250,10 +258,7 @@ export async function upgradePreviewToFull(context, popup, worker) {
 
 export async function connectFullAnalytics(context, popup, worker) {
   await configureSyntheticLegalBindings(worker, popup);
-  await completePreModeLegalActions(popup);
-  const setup = await openSetup(popup);
-  await setup.getByRole('button', { name: 'Review Full analytics' }).click();
-  await assertFullProminentDisclosure(setup);
-  await acceptPermissionFor(context, setup, worker, 'Enable Full analytics', [ONLYFANS_ORIGIN_PATTERN]);
+  const setup = await completePreModeLegalActions(popup, 'full');
+  await acceptPermissionFor(context, setup, worker, 'Allow site access', [ONLYFANS_ORIGIN_PATTERN]);
   await popup.bringToFront();
 }

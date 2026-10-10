@@ -31,14 +31,18 @@ test('extracted release starts disabled, records UI choices and deletes without 
     const setup = await openedSetup;
     await setup.waitForURL(`chrome-extension://${extensionId}/setup.html`);
     await expect(setup.locator('#legal-unavailable')).toBeHidden();
-    await expect(setup.locator('#pre-mode')).toBeVisible();
+    await expect(setup.locator('#start-choice')).toBeVisible();
     const access = () => worker.evaluate(() => chrome.permissions.getAll());
     expect((await access()).origins ?? []).toEqual([]);
+    await setup.locator('#start-preview').click();
+    await expect(setup.locator('#pre-mode')).toBeVisible();
+    await setup.locator('#start-back').click();
+    await expect(setup.locator('#start-choice')).toBeVisible();
+    await setup.locator('#start-preview').click();
     await setup.locator('#terms-accepted').check();
     await setup.locator('#risk-acknowledged').check();
     await setup.locator('#activate-software').click();
-    await expect(setup.locator('#mode-choice')).toBeVisible();
-    await setup.locator('#not-now-preview').click();
+    await expect(setup.locator('#access-card')).toBeVisible();
     await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
     expect((await access()).origins ?? []).toEqual([]);
     const openedOptions = context.waitForEvent('page');
@@ -49,14 +53,16 @@ test('extracted release starts disabled, records UI choices and deletes without 
     await options.getByRole('dialog').getByRole('button', { name: 'Delete extension data', exact: true }).click();
     await expect(options.locator('#feedback')).toHaveText('Extension data deleted. Desktop-stored messages are unchanged.');
     await setup.bringToFront();
-    await expect(setup.locator('#pre-mode')).toBeVisible();
+    await expect(setup.locator('#start-choice')).toBeVisible();
     // Reaccept through the setup page after the worker has closed its database.
+    await setup.locator('#start-preview').click();
+    await expect(setup.locator('#pre-mode')).toBeVisible();
     await setup.locator('#terms-accepted').check();
     await setup.locator('#risk-acknowledged').check();
     await setup.locator('#activate-software').click();
-    await expect(setup.locator('#mode-choice')).toBeVisible();
+    await expect(setup.locator('#access-card')).toBeVisible();
     await setup.reload();
-    await expect(setup.locator('#mode-choice')).toBeVisible();
+    await expect(setup.locator('#access-card')).toBeVisible();
     await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
     expect(requests).toEqual([]);
     const report = {
