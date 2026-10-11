@@ -26,35 +26,39 @@ export function submitReceivingEntry(document, payload, hostedOrigin = onboardin
   document.body.append(form); form.submit();
 }
 
-export function bindSetupTransfer({ document, send, hostedOrigin = onboardingHostedOrigin }) {
+export function bindSetupTransfer({ document, send, hostedOrigin = onboardingHostedOrigin,
+  eligible = () => false, changed = () => {}, restoreFocus = () => {} }) {
   const button = document.getElementById('setup-transfer-open');
   if (!hostedOrigin || !button) return;
-  button.classList.remove('hidden');
   const form = document.getElementById('setup-transfer-form');
   const input = document.getElementById('setup-transfer-code');
   const status = document.getElementById('setup-transfer-status');
   const submit = document.getElementById('setup-transfer-submit');
-  const region = document.getElementById('setup-transfer-entry');
-  const normal = ['setup-rail', 'extension-stage', 'surface-feedback'].map((id) => document.querySelector(`[data-reserved-region="${id}"]`));
-  let busy = false;
-  const setOpen = (open) => {
-    region.classList.toggle('hidden', !open);
-    button.classList.toggle('hidden', open);
-    normal.forEach((item) => item?.classList.toggle('hidden', open));
-    (open ? input : button).focus();
+  let busy = false, opened = false, direct = false, generation = 0;
+  const open = (options = {}) => {
+    if (!options.direct && !eligible()) return;
+    generation++; opened = true; direct = options.direct === true;
+    changed(); input.focus();
   };
-  button.addEventListener('click', () => setOpen(true));
-  document.getElementById('setup-transfer-back').addEventListener('click', () => { if (!busy) setOpen(false); });
+  const close = ({ notify = true, focus = true } = {}) => {
+    generation++; opened = false; direct = false;
+    if (notify) changed();
+    if (focus) restoreFocus();
+  };
+  button.addEventListener('click', () => open());
+  document.getElementById('setup-transfer-back').addEventListener('click', () => { if (!busy) close(); });
   form.addEventListener('submit', async (event) => {
-    event.preventDefault(); if (busy) return;
+    event.preventDefault(); if (busy || !opened) return;
     const code = normalizeSetupCode(input.value);
     if (!code) { status.textContent = 'Enter the 12-character setup code.'; input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
     input.removeAttribute('aria-invalid'); busy = true; submit.disabled = true; status.textContent = 'Opening setup…';
+    const attempt = generation;
     try {
       const payload = await send({ type: SETUP_TRANSFER_MESSAGE, action: 'prepare', setup_code: code });
+      if (!opened || generation !== attempt) return;
       submitReceivingEntry(document, payload, hostedOrigin);
-    } catch { status.textContent = 'Setup could not be opened.'; }
+    } catch { if (opened && generation === attempt) status.textContent = 'Setup could not be opened.'; }
     finally { busy = false; submit.disabled = false; }
   });
-  return { open: () => setOpen(true) };
+  return { open, close, get opened() { return opened; }, get direct() { return direct; } };
 }

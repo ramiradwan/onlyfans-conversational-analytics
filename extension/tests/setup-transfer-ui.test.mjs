@@ -45,7 +45,8 @@ test('receiving target stays separate from the independently observed account', 
 });
 test('code validation stays on the receiving screen and preserves input on an unknown response', async () => {
   const run = page(); let calls = 0;
-  bindSetupTransfer({ document: run.document, hostedOrigin, send: async () => { calls++; throw new Error('lost response'); } });
+  bindSetupTransfer({ document: run.document, hostedOrigin, eligible: () => true,
+    send: async () => { calls++; throw new Error('lost response'); } });
   run.node('setup-transfer-open').handlers.click();
   assert.equal(run.node('setup-transfer-code').focused, true);
   const submit = () => run.node('setup-transfer-form').handlers.submit({ preventDefault() {} });
@@ -55,4 +56,35 @@ test('code validation stays on the receiving screen and preserves input on an un
   assert.equal(calls, 1); assert.equal(run.node('setup-transfer-code').value, '0123-4567-89AB');
   assert.equal(run.node('setup-transfer-status').textContent, 'Setup could not be opened.');
   assert.equal(run.node('setup-transfer-submit').disabled, false); assert.equal(run.forms.length, 0);
+});
+
+test('the binding leaves visibility to its renderer and rejects an ineligible shortcut', () => {
+  const run = page(); let eligible = false, changes = 0, restored = 0;
+  run.node('setup-transfer-open').classList.values.add('hidden');
+  const transfer = bindSetupTransfer({ document: run.document, hostedOrigin, send: async () => {},
+    eligible: () => eligible, changed: () => { changes++; }, restoreFocus: () => { restored++; } });
+  assert.equal(run.node('setup-transfer-open').classList.values.has('hidden'), true);
+  run.node('setup-transfer-open').handlers.click();
+  assert.equal(transfer.opened, false); assert.equal(changes, 0);
+  eligible = true; run.node('setup-transfer-open').handlers.click();
+  assert.equal(transfer.opened, true); assert.equal(changes, 1);
+  run.node('setup-transfer-back').handlers.click();
+  assert.equal(transfer.opened, false); assert.equal(changes, 2); assert.equal(restored, 1);
+  assert.equal(run.node('setup-transfer-open').classList.values.has('hidden'), true);
+  transfer.open({ direct: true });
+  assert.equal(transfer.opened, true); assert.equal(transfer.direct, true);
+  transfer.close({ notify: false, focus: false });
+  assert.equal(transfer.direct, false); assert.equal(changes, 3); assert.equal(restored, 1);
+});
+
+test('an invalidated code-entry task ignores a late prepared navigation', async () => {
+  const run = page(); let release;
+  const response = new Promise((resolve) => { release = resolve; });
+  const transfer = bindSetupTransfer({ document: run.document, hostedOrigin,
+    eligible: () => true, send: () => response });
+  transfer.open(); run.node('setup-transfer-code').value = '0123456789AB';
+  const pending = run.node('setup-transfer-form').handlers.submit({ preventDefault() {} });
+  transfer.close({ notify: false, focus: false });
+  release(payload); await pending;
+  assert.equal(run.forms.length, 0); assert.equal(transfer.opened, false);
 });

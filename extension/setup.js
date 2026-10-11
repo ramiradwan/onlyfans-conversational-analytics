@@ -27,9 +27,24 @@ let reviewStep = null;
 // only: every action on this page keeps its usual authorization.
 let handoff = location.hash === '#desktop';
 let fullReviewRequested = location.hash === '#full' || handoff;
+let currentTask = null, taskHeading = null, taskLifetime = 0;
+let receivingSetup = null, receivingEligible = false, receivingTask = null, receivingFocusPending = false;
 const fullReviewPersistence = createFullReviewPersistence();
 const client = createSurfaceClient((model) => { if (model.status) failed = false; render(model); }, () => { failed = true; render(client.model); });
-const page = createPageActions(client, render);
+const page = createPageActions(client, render, {
+  beforeAction: () => ({ task: currentTask, lifetime: taskLifetime }),
+  async afterAction(previous, focused) {
+    if (previous.lifetime !== taskLifetime || previous.task === currentTask || currentTask === null) return true;
+    const next = currentTask;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (next !== currentTask || previous.lifetime !== taskLifetime) return true;
+    const active = document.activeElement;
+    if (active !== focused && active !== document.body && active?.getClientRects().length) return true;
+    document.querySelector('.onboarding-layout').scrollIntoView({ block: 'start', behavior: 'instant' });
+    focusTask();
+    return true;
+  },
+});
 const steps = ['agree', 'mode', 'connect', 'activate'];
 let currentJourney = null;
 let workspaceRecord = null;
@@ -46,7 +61,10 @@ const desktopLaunch = createDesktopLaunch({ workspace: () => workspaceRecord,
   },
   changed: () => render(client.model),
 });
-window.addEventListener('pagehide', () => desktopLaunch.stop());
+window.addEventListener('pagehide', () => {
+  taskLifetime++; receivingFocusPending = false;
+  desktopLaunch.stop(); receivingSetup?.close({ notify: false, focus: false });
+});
 let checkboxDraft = { terms_checked: false, risk_checked: false, full_checked: false };
 let receivingRead = 0, receivingExpiry = null;
 const consumeFullReviewIntent = createFullReviewIntentConsumer({ apply() {
@@ -131,12 +149,18 @@ function render(model) {
   renderLoading(status, failed);
   renderLegalLinks(legal);
   if (!status || !legal) {
+    currentTask = failed ? 'unavailable' : null;
+    taskHeading = failed ? 'runtime-title' : null;
+    renderSetupTransfer(false);
     delete document.querySelector('main').dataset.ready;
     text('pairing-code', ''); show('pairing-code', false);
     return;
   }
   document.querySelector('main').dataset.ready = 'true';
-  if (!legal.configured) { show('legal-unavailable', true); text('step-summary', 'Setup unavailable'); return; }
+  if (!legal.configured) {
+    currentTask = 'legal-unavailable'; taskHeading = null;
+    show('legal-unavailable', true); text('step-summary', 'Setup unavailable'); renderSetupTransfer(false); return;
+  }
   const mode = status.consent.mode;
   const agreement = needsAgreement(model);
   // A new legal review supersedes an earlier optional mode-choice dismissal.
@@ -151,6 +175,12 @@ function render(model) {
   const view = agreement || reviewStep === 'agree' ? selected || reviewStep === 'agree' ? 'agree' : 'start'
     : pendingAccess || reviewStep === 'access' ? 'access' : choose ? 'mode' : access ? 'access' : 'journey';
   currentJourney = desktopLaunchJourney(customerJourney(model), desktopLaunch.state);
+  currentTask = view === 'journey' ? `journey:${currentJourney.id}`
+    : ['agree', 'mode'].includes(view) ? `${view}:${selected ?? fullReviewRequested}` : view;
+  taskHeading = view === 'start' ? 'start-title' : view === 'agree' ? 'activation-title'
+    : view === 'access' ? 'access-title' : view === 'mode'
+      ? fullReviewRequested || (reviewStep === 'mode' && mode === 'full') ? 'full-choice-title' : 'preview-choice-title'
+      : 'journey-title';
   const icon = currentJourney.id === 'full_ready' || (currentJourney.id === 'preview_available' && status.observer?.attachment === 'ready') ? '✓'
     : currentJourney.id === 'paused' ? 'Ⅱ'
       : currentJourney.tone === 'progress' ? '↻' : currentJourney.tone === 'warning' || currentJourney.tone === 'error' ? '!' : '…';
@@ -222,6 +252,33 @@ function render(model) {
   }
   renderHandoff(model, view, currentJourney);
   show('review-notice', legal.requires_reauthorization === true);
+  renderSetupTransfer(view === 'start');
+}
+function focusTask() {
+  const heading = taskHeading ? element(taskHeading) : document.querySelector('#legal-unavailable h2');
+  if (heading?.getClientRects().length) {
+    heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); return true;
+  }
+  return false;
+}
+function renderSetupTransfer(eligible) {
+  receivingEligible = Boolean(receivingSetup) && eligible;
+  const entry = element('setup-transfer-entry');
+  const obsolete = receivingSetup?.opened && ((receivingTask !== null && receivingTask !== currentTask)
+    || (!receivingEligible && !receivingSetup.direct));
+  const restore = obsolete && entry.contains(document.activeElement);
+  if (restore) receivingFocusPending = true;
+  if (obsolete) receivingSetup.close({ notify: false, focus: false });
+  const open = receivingSetup?.opened === true;
+  if (open && receivingTask === null) receivingTask = currentTask;
+  if (!open) receivingTask = null;
+  show('setup-transfer-entry', open);
+  show('setup-transfer-open', receivingEligible && !open);
+  show('setup-transfer-shortcut', receivingEligible && !open);
+  for (const id of ['setup-rail', 'extension-stage', 'surface-feedback']) {
+    document.querySelector(`[data-reserved-region="${id}"]`).classList.toggle('hidden', open);
+  }
+  if (receivingFocusPending && focusTask()) receivingFocusPending = false;
 }
 // Extension-side steps for the desktop app end once Full mode, site access and
 // the creator account are in place. Pairing continues in the desktop app.
@@ -356,10 +413,14 @@ for (const step of steps) page.bind(`step-${step}`, () => {
   render(client.model);
 });
 for (const heading of document.querySelectorAll('h2')) heading.setAttribute('tabindex', '-1');
-const receivingSetup = bindSetupTransfer({ document, send });
+receivingSetup = bindSetupTransfer({ document, send, eligible: () => receivingEligible,
+  changed: () => render(client.model), restoreFocus: () => {
+    const shortcut = element('setup-transfer-open');
+    if (shortcut.getClientRects().length) shortcut.focus(); else receivingFocusPending = !focusTask();
+  } });
 void chrome.storage.session.get(['onboarding_code_entry_v1']).then(async (values) => {
   if (location.hash === `#journey=${values.onboarding_code_entry_v1}`) {
-    receivingSetup?.open();
+    receivingSetup?.open({ direct: true });
     await chrome.storage.session.remove('onboarding_code_entry_v1');
   }
 }).catch(() => undefined);

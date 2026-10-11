@@ -3,7 +3,7 @@ export function installSurfaceFixture(input) {
   const state = structuredClone(input), calls = [], ports = new Set();
   const event = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn),
     removeListener: (fn) => listeners.delete(fn), emit: (...values) => { for (const fn of listeners) fn(...values); } }; };
-  const storageChanged = event(), sessionValues = {};
+  const storageChanged = event(), sessionValues = structuredClone(input.sessionValues ?? {});
   const session = {
     async get(keys) {
       if (keys == null) return structuredClone(sessionValues);

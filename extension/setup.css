@@ -202,7 +202,7 @@ body[data-surface="options"] .settings-row.hidden { display: flex !important; vi
 body.onboarding-workspace[data-surface="setup"] { padding: 0; display: flex; flex-direction: column; }
 body.onboarding-workspace > main { max-width: none; padding: 28px; }
 .onboarding-workspace > .onboarding-header { margin: 0; }
-.onboarding-header .header-action { margin-left: auto; }
+.onboarding-header .header-action { margin-left: auto; min-width: 0; max-width: 100%; }
 .onboarding-header .product-name { font-size: 1rem; color: var(--dipsy-color-text); }
 .onboarding-workspace .reserved-rail { height: auto; min-height: 0; margin: 0; }
 .onboarding-workspace .reserved-rail:has(#setup-progress.hidden) { display: none; }

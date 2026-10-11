@@ -214,7 +214,7 @@ test('persistent setup sends paused Full to desktop control instead of duplicati
 
 test('paused Preview keeps Resume in the extension even with an existing desktop channel', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.desktop_controlled_paused, surface: 'setup', resume: 'preview' });
-  await expect(page.locator('#journey-primary')).toHaveText('Resume analytics');
+  await expect(page.locator('#journey-primary')).toHaveText('Resume');
   await page.locator('#journey-primary').click();
   await expect.poll(async () => (await calls(page)).filter((call) => call.type === 'ofca.ui.transition').length).toBe(1);
 });
