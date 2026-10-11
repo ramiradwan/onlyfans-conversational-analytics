@@ -20,6 +20,7 @@ Use these pages to find the instructions or reference material for a specific ta
 - [Attest a released Chrome package](engineering-attestation.md)
 - [Run product qualification](qualification.md)
 - [Run Windows acceptance](installation-and-acceptance.md)
+- [Diagnose desktop setup return](operations/native-setup-return.md)
 
 ## Understand the system
 

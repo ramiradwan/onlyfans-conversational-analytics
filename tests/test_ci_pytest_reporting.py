@@ -84,6 +84,21 @@ def test_empty_selected_suite_keeps_pytest_exit_five(tmp_path):
     assert report["selected"] == [] and len(report["deselected"]) == 1
 
 
+def test_only_the_exact_full_windows_marker_is_canonical_not_partial(tmp_path):
+    from tools.ci_windows_shards import LEGACY_WINDOWS_EXPRESSION
+    source = "import pytest\n@pytest.mark.slow\ndef test_excluded(): pass\ndef test_included(): pass\n"
+    result, report, _ = run_suite(tmp_path, source, "-m", LEGACY_WINDOWS_EXPRESSION, "test_sample.py")
+    assert result.returncode == 0
+    assert report["partial"] is False
+    assert report["selection"]["marker"] == LEGACY_WINDOWS_EXPRESSION
+    assert report["selected"] == ["test_sample.py::test_included"]
+    assert report["deselected"] == ["test_sample.py::test_excluded"]
+    result, report, _ = run_suite(tmp_path, source, "-m", "not slow", "test_sample.py")
+    assert result.returncode == 0 and report["partial"] is True
+    result, report, _ = run_suite(tmp_path, source, "-m", LEGACY_WINDOWS_EXPRESSION, "-k", "included", "test_sample.py")
+    assert result.returncode == 0 and report["partial"] is True
+
+
 def test_collect_only_is_distinguished_from_executed_coverage(tmp_path):
     result, report, _ = run_suite(tmp_path, "def test_one(): assert False\n", "--collect-only")
     assert result.returncode == 0 and report["collect_only"] is True

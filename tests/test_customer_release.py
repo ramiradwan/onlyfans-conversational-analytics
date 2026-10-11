@@ -103,6 +103,8 @@ def spec_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     project = tmp_path / "project"
     for relative in ("packaging", "app/core", "app/static/dist", "contracts", "extension/dist"):
         (project / relative).mkdir(parents=True, exist_ok=True)
+    (project / "packaging/windows_branding.py").write_text(
+        "def version_resource(path):\n    return None\n", encoding="utf-8")
     (project / "packaging/runtime-files.json").write_text(json.dumps({
         "required_files": [], "frontend": {"dist_path": "_internal/app/static/dist"},
         "sql_catalogs": [], "contracts": {"path": "_internal/contracts"},
@@ -116,11 +118,12 @@ def spec_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         calls.append((args, kwargs))
         return SimpleNamespace(pure=[], zipped_data=[], scripts=[], binaries=[], datas=kwargs["datas"])
 
-    for name in ("PyInstaller", "PyInstaller.building", "PyInstaller.utils",
+    for name in ("PyInstaller", "PyInstaller.config", "PyInstaller.building", "PyInstaller.utils",
                  "PyInstaller.building.api", "PyInstaller.building.build_main", "PyInstaller.utils.hooks"):
         module = ModuleType(name)
         module.__path__ = []
         monkeypatch.setitem(sys.modules, name, module)
+    sys.modules["PyInstaller.config"].CONF = {"workpath": str(tmp_path / "spec-work")}
     api = sys.modules["PyInstaller.building.api"]
     api.COLLECT = api.EXE = api.PYZ = lambda *args, **kwargs: None
     sys.modules["PyInstaller.building.build_main"].Analysis = analysis

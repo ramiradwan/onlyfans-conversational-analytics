@@ -38,7 +38,9 @@ OutputBaseFilename={#InstallerName}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=..\windows\conversation-analytics.ico
+#ifdef AppIconFile
+SetupIconFile={#AppIconFile}
+#endif
 UninstallDisplayIcon={app}\{#AppExecutable}
 VersionInfoDescription={#AppName} installer
 VersionInfoProductName={#AppName}

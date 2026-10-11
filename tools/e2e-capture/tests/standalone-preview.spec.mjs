@@ -126,7 +126,11 @@ function expectNoOptionalAccess(snapshot) {
 }
 
 function expectEmptyProvisioningIdentitySession(snapshot) {
-  expect(snapshot.session).toEqual({
+  // A browser-session helper ownership nonce is not an identity or an
+  // analytics grant. Preserve the exact empty authority assertion.
+  const { onboarding_observer_session_v2: helperSession, ...authoritySession } = snapshot.session;
+  expect(helperSession).toMatch(UUID_V4);
+  expect(authoritySession).toEqual({
     [DESKTOP_LINK_STORAGE_KEY]: 0,
     [PROVISIONING_IDENTITY_STORAGE_KEY]: {
       schema: PROVISIONING_IDENTITY_STORAGE_SCHEMA,

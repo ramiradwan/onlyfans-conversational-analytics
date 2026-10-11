@@ -228,6 +228,7 @@
     "tests/test_membership_proof_falsifiers.py": 2,
     "tests/test_membership_validation_bounds.py": 2,
     "tests/test_membership_write_cache.py": 1,
+    "tests/test_native_return_presentation.py": 1,
     "tests/test_native_workspace_recovery.py": 1,
     "tests/test_onboarding_activation_return.py": 2,
     "tests/test_onboarding_contract.py": 1,
@@ -344,6 +345,7 @@
     "tests/test_webauthn_authority_port.py": 1,
     "tests/test_webauthn_routes.py": 1,
     "tests/test_websocket_transport.py": 2,
+    "tests/test_windows_branding.py": 2,
     "tests/test_witness_source_cache.py": 1,
     "tests/test_workflow_action_pinning.py": 2,
     "tests/test_workflow_contexts.py": 1
@@ -691,6 +693,7 @@
       "tests/test_insights_snapshot_retention.py",
       "tests/test_installation_continuation_client.py",
       "tests/test_installation_continuation_owner.py",
+      "tests/test_native_return_presentation.py",
       "tests/test_native_workspace_recovery.py",
       "tests/test_onboarding_activation_return.py",
       "tests/test_onboarding_contract.py",
@@ -705,7 +708,8 @@
       "tests/test_question_coverage.py",
       "tests/test_question_work.py",
       "tests/test_registered_continuation_context.py",
-      "tests/test_saved_continuation_native.py"
+      "tests/test_saved_continuation_native.py",
+      "tests/test_windows_branding.py"
     ]
   }
 }

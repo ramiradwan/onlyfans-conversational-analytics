@@ -96,6 +96,15 @@ class Evidence:
             except OSError:
                 pass
 
+    def selection_is_partial(self):
+        # The frozen exhaustive Windows predicate is the canonical legacy
+        # selection, not an arbitrary narrower -m filter. Its raw inventory
+        # may be consumed only after node-level selection is independently
+        # checked against the exact predicate by ci_windows_shards.
+        marker = self.config.option.markexpr or ""
+        from tools.ci_windows_shards import LEGACY_WINDOWS_EXPRESSION
+        return bool(self.config.option.keyword or (marker and marker != LEGACY_WINDOWS_EXPRESSION))
+
     def payload(self, exit_code):
         return {
             "schema": "ci-test-report/v1",
@@ -117,7 +126,7 @@ class Evidence:
             "exit_code": int(exit_code),
             "wall_seconds": round(time.monotonic() - self.start, 6),
             "collect_only": bool(self.config.option.collectonly),
-            "partial": bool(self.config.option.keyword or self.config.option.markexpr),
+            "partial": self.selection_is_partial(),
             "selection": {"keyword": self.config.option.keyword or "", "marker": self.config.option.markexpr or "", "targets": list(self.config.args)},
             "complete": True,
         }

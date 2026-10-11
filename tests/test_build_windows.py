@@ -559,14 +559,15 @@ def test_app_id_upgrade_survives_a_product_rename_and_fails_without_it(
         encoding="utf-8"
     )
     app_id_directive = "AppId={{a860574e-ff86-4305-be8f-93b5c91cde44}"
-    original_name = '#define AppName "OnlyFans Conversational Analytics"'
+    original_name = '#define AppName "Conversation Analytics"'
+    assert original_script.count(original_name) == 1
     renamed_name = '#define AppName "OnlyFans Conversational Analytics Renamed Test"'
     first_prefix = tmp_path / "installed-current"
     second_prefix = tmp_path / "installed-renamed"
     renamed_script = tmp_path / "brain-renamed.iss"
     renamed_script.write_text(
         original_script.replace(original_name, renamed_name, 1).replace(
-            "DefaultDirName={localappdata}\\Programs\\{#AppName}",
+            "DefaultDirName={localappdata}\\Programs\\{#InstallDirectoryName}",
             f"DefaultDirName={second_prefix}",
             1,
         ),
@@ -598,7 +599,7 @@ def test_app_id_upgrade_survives_a_product_rename_and_fails_without_it(
     without_app_id_renamed_script = tmp_path / "brain-renamed-without-app-id.iss"
     without_app_id_renamed_script.write_text(
         without_app_id.replace(original_name, renamed_name, 1).replace(
-            "DefaultDirName={localappdata}\\Programs\\{#AppName}",
+            "DefaultDirName={localappdata}\\Programs\\{#InstallDirectoryName}",
             f"DefaultDirName={second_prefix}",
             1,
         ),

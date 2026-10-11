@@ -668,6 +668,7 @@ Invoke-RequiredCommand -FilePath $compiler -Arguments @(
     "/DStagingRoot=$stagingRoot",
     "/DOutputRoot=$installerOutput",
     "/DAppVersion=$version",
+    "/DAppIconFile=$(Join-Path $ProjectRoot 'packaging\windows\conversation-analytics.ico')",
     $InnoScriptPath
 )
 $installerName = "OnlyFans-Conversational-Analytics-Setup-$version-x64.exe"

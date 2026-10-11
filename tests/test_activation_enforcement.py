@@ -70,6 +70,8 @@ UNGATED_SURFACES: dict[str, str] = {
     "GET /provisioning/resume.js": "static local setup-return script; no account state",
     "GET /provisioning/native-return": "credential-free native navigation return; destination retains normal authentication",
     "GET /provisioning/native-return.js": "static native return script; no account state",
+    "GET /provisioning/native-return.css": "fixed local callback stylesheet; no account state",
+    "GET /provisioning/native-tokens.css": "fixed local presentation tokens; no account state",
     "GET /provisioning/native-json.mjs": "static bounded JSON parser; no account state",
     "GET /provisioning/provisioning.js": "static setup script requires a persisted provisioning or authenticated runtime session",
     "GET /provisioning/onboarding/{name}.mjs": (
