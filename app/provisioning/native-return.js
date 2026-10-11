@@ -20,6 +20,8 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
     pending = true;
     const current = ++generation;
     let failureMessage = 'Setup could not be opened.';
+    let stage = 'entry';
+    if (status.dataset) delete status.dataset.failureStage;
     let closedRefusal = false;
     retry.hidden = true;
     focus.hidden = true;
@@ -97,6 +99,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
             if (saved?.entry_id === context.entry_id) throw new Error('Entry unconfirmed');
           }
           if (!configured && runtime?.sendMessage && /^[a-p]{32}$/u.test(extensionId)) {
+            stage = 'workspace-prepare';
             const prepared = await bounded(runtime.sendMessage(extensionId,
               { type: savedContinuation ? 'ofca.workspace.saved-continuation-prepare.v1' : 'ofca.workspace.recovery-prepare.v1',
                 entry_id: context.entry_id }));
@@ -141,6 +144,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
           } else {
             // Only this same-origin request sees the bootstrap entry's CSRF.
             // Unknown selection is reconciled once by read, never mutation replay.
+            stage = 'workspace-select';
             selectionUnknown = true;
             if (!storage) throw new Error('Entry unconfirmed');
             storage.setItem('native_workspace_selection_v1', JSON.stringify({ entry_id: context.entry_id,
@@ -185,6 +189,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
       const read = (path) => bounded(fetch(path, { credentials: 'same-origin', cache: 'no-store',
         redirect: 'error', signal: controller.signal,
         headers: { Accept: 'application/json', 'X-Onboarding-Journey': journey } }));
+      stage = 'state-read';
       let route = 'provisioning';
       let response = await read('/api/v1/provisioning/state');
       if (recovery && response.status === 404) throw new Error('Return unconfirmed');
@@ -203,6 +208,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
         if (!state || state.kind !== 'snapshot' || state.journey_id !== journey) throw new Error('Invalid state');
       }
       if (controller.signal.aborted || current !== generation) return false;
+      stage = 'workspace-return';
       const fallback = () => { finished = true; location.replace(`${route === 'bridge' ? '/' : '/provisioning'}#journey=${journey}`); };
       if (savedContinuation && !recovery?.recovery_id) { fallback(); return true; }
       if (localRecovery) {
@@ -250,6 +256,7 @@ export function createNativeReturn({ fetch, location, status, retry, extensionId
       throw new Error('Return unconfirmed');
     } catch {
       if (current !== generation) return false;
+      if (status.dataset) status.dataset.failureStage = stage;
       status.textContent = failureMessage;
       retry.hidden = closedRefusal;
       return false;

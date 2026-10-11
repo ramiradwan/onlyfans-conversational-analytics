@@ -80,11 +80,19 @@ class OnboardingJourneyStore:
         return dict(connection.execute("SELECT * FROM onboarding_journeys WHERE journey_id=?", (journey_id,)).fetchone())
 
     def create_session(self, *, journey_id: str | None, identifier: str, csrf: str,
-                       expires_at: float, authorize=None) -> dict:
+                       expires_at: float, authorize=None, initial_only: bool = False) -> dict:
         with self.authentication.database.transaction() as connection:
             if authorize is not None:
                 authorize()
+            if initial_only and connection.execute(
+                "SELECT 1 FROM onboarding_journeys WHERE journey_id=?", (journey_id,)
+            ).fetchone() is None:
+                self._require_initial_native_candidate(connection)
             journey = self._open(connection, journey_id, self.authentication._now())
+            # Native initial admission must recheck under the write lock. A
+            # concurrent registered selection cannot inherit this session path.
+            if initial_only and journey["kind"] != "initial-enrollment":
+                raise OnboardingJourneyUnavailable("journey_unavailable")
             expires_at = min(expires_at, datetime.fromisoformat(journey["expires_at"]).timestamp())
             self.record_session(identifier=identifier, csrf=csrf, journey_id=journey["journey_id"],
                 expires_at=expires_at, authorize=authorize, connection=connection)
@@ -101,6 +109,38 @@ class OnboardingJourneyStore:
                 self._cleanup(connection,now)
             return None
         return value
+
+    def native_admission_kind(self, journey_id: str) -> str:
+        """Classify an exact locator without creating, cleaning up or renewing it.
+
+        Initial creation rechecks kind and all retirement/receipt barriers in
+        create_session's transaction; this read grants no session authority.
+        """
+        with self.authentication.database.read() as connection:
+            row = connection.execute("SELECT kind, expires_at FROM onboarding_journeys WHERE journey_id=?",
+                                     (require_journey(journey_id),)).fetchone()
+            if row is not None:
+                if datetime.fromisoformat(row["expires_at"]) <= self.authentication._now():
+                    raise OnboardingJourneyUnavailable("journey_expired")
+                return row["kind"]
+            if connection.execute("SELECT 1 FROM onboarding_workspace_recovery WHERE previous_journey_id=?",
+                                  (journey_id,)).fetchone() is not None:
+                raise OnboardingJourneyUnavailable("journey_expired")
+            self._require_initial_native_candidate(connection)
+        return "new"
+
+    def _require_initial_native_candidate(self, connection) -> None:
+        # Even if old journey/tombstone rows were removed, a registered target
+        # must use saved-continuation admission, not a fresh UUID substitution.
+        from app.persistence.continuation_selection import (
+            ContinuationSelectionStore, ContinuationSelectionUnavailable,
+        )
+        try:
+            ContinuationSelectionStore(self.authentication).select_in_transaction(connection)
+        except ContinuationSelectionUnavailable as error:
+            if error.reason in {"registration_required", "target_unavailable"}:
+                return
+        raise OnboardingJourneyUnavailable("journey_unavailable")
 
     def require_current(self, journey_id: str) -> dict:
         """Read an existing draft only; a stale command can never recreate it."""

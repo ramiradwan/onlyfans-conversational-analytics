@@ -1,7 +1,9 @@
 import { PAGE_CONTROL_MESSAGE_TYPE, PAGE_CONTROL_VERSION } from '../capture/envelopes.mjs';
 
 export const OBSERVER_STATE_TYPE = 'ofca.observer.state';
-export const OBSERVER_HELPER_KEY = 'onboarding_observer_helper_v1';
+export const OBSERVER_HELPER_KEY = 'onboarding_observer_helper_v2';
+const LEGACY_HELPER_KEY = 'onboarding_observer_helper_v1';
+const HELPER_SESSION_KEY = 'onboarding_observer_session_v2';
 export const OBSERVER_REOPEN_TYPE = 'ofca.ui.reopen-background-tab';
 const ONLYFANS = 'https://onlyfans.com/*';
 const HELPER_URL = 'https://onlyfans.com/';
@@ -19,6 +21,7 @@ export class DocumentObserverCoordinator {
     this.tabs = new Map(); this.mode = null; this.paused = false; this.generation = 0;
     this.dropTotals = { expired: 0, rejected: 0 }; this.dropDocuments = new Map();
     this.helper = null; this.started = false; this.queue = Promise.resolve();
+    this.ownerSession = null; this.helperSuspended = false;
   }
   serialize(work) {
     const result = this.queue.then(work); this.queue = result.catch(() => undefined); return result;
@@ -49,9 +52,14 @@ export class DocumentObserverCoordinator {
         void this.serialize(() => this.attach(id, generation)).catch(() => undefined);
       }
     });
-    this.chrome.tabs?.onRemoved?.addListener((id) => {
+    this.chrome.tabs?.onRemoved?.addListener((id, info = {}) => {
       this.tabs.delete(id);
-      if (this.helper?.tab_id === id) { this.helper = { ...this.helper, tab_id: null, closed: true }; void this.persistHelper(); }
+      if (this.helper?.tab_id === id) {
+        const windowClosing = info.isWindowClosing === true;
+        this.helperSuspended = windowClosing;
+        this.helper = { ...this.helper, tab_id: null, closed: !windowClosing, closure: windowClosing ? 'lifecycle' : 'explicit' };
+        void this.persistHelper();
+      }
       this.changed();
     });
     this.chrome.tabs?.onActivated?.addListener(({ tabId }) => {
@@ -59,7 +67,17 @@ export class DocumentObserverCoordinator {
     });
     this.chrome.tabs?.onReplaced?.addListener((added, removed) => {
       this.tabs.delete(removed);
-      if (this.helper?.tab_id === removed) { this.helper = { ...this.helper, tab_id: null, closed: true }; void this.persistHelper(); }
+      if (this.helper?.tab_id === removed) {
+        this.helper = { ...this.helper, tab_id: null, closed: false, closure: 'lifecycle' };
+        void this.persistHelper();
+      }
+      // A replacement is not a stop request and is not automatically our tab.
+      // Discover/attach it before considering any new helper navigation.
+      const generation = this.generation;
+      void this.serialize(async () => {
+        await this.discover();
+        if (generation === this.generation && this.tabs.has(added)) await this.attach(added, generation);
+      }).catch(() => undefined);
       this.changed();
     });
   }
@@ -67,18 +85,33 @@ export class DocumentObserverCoordinator {
   async discover() {
     const tabs = await this.chrome.tabs.query({ url: [ONLYFANS] }).catch(() => []);
     this.tabs = new Map(tabs.map((tab) => [tab.id, { ...this.tabs.get(tab.id), ...tab }]));
+    if (!this.ownerSession) {
+      const session = this.chrome.storage.session;
+      const stored = session ? await session.get([HELPER_SESSION_KEY]) : {};
+      this.ownerSession = typeof stored[HELPER_SESSION_KEY] === 'string' ? stored[HELPER_SESSION_KEY] : crypto.randomUUID();
+      if (session && !stored[HELPER_SESSION_KEY]) await session.set({ [HELPER_SESSION_KEY]: this.ownerSession });
+    }
     if (!this.helper) {
-      const stored = await this.chrome.storage.local.get([OBSERVER_HELPER_KEY]);
-      const candidate = stored?.[OBSERVER_HELPER_KEY];
-      if (candidate?.version === 1 && candidate.initial_url === HELPER_URL && typeof candidate.closed === 'boolean') {
-        this.helper = candidate;
-        // Restored metadata alone never gives permission to navigate or close a tab.
-        if (candidate.tab_id !== null && !this.tabs.has(candidate.tab_id)) {
-          this.helper = { ...candidate, tab_id: null, closed: true }; await this.persistHelper();
-        }
+      const stored = await this.chrome.storage.local.get([OBSERVER_HELPER_KEY, LEGACY_HELPER_KEY]);
+      const candidate = stored?.[OBSERVER_HELPER_KEY] ?? stored?.[LEGACY_HELPER_KEY];
+      if ([1, 2].includes(candidate?.version) && candidate.initial_url === HELPER_URL
+        && typeof candidate.closed === 'boolean'
+        && (candidate.tab_id === null || Number.isSafeInteger(candidate.tab_id) && candidate.tab_id >= 0)) {
+        const owned = candidate.version === 2 && candidate.owner_session === this.ownerSession
+          && this.tabs.has(candidate.tab_id);
+        this.helper = { version: 2, initial_url: HELPER_URL, owner_session: this.ownerSession,
+          tab_id: owned ? candidate.tab_id : null, closed: candidate.closed,
+          closure: candidate.closed ? candidate.version === 1 ? 'legacy' : 'explicit' : owned ? 'none' : 'lifecycle',
+          touched: !owned || candidate.touched === true };
+        await this.persistHelper();
       }
+    } else if (this.helper.tab_id !== null && !this.tabs.has(this.helper.tab_id)) {
+      // Absence after a restart is not evidence of a deliberate helper close.
+      this.helper = { ...this.helper, tab_id: null, closed: false, closure: 'lifecycle' };
+      await this.persistHelper();
     }
   }
+
   invalidate() {
     ++this.generation;
     for (const tab of this.tabs.values()) {
@@ -89,6 +122,7 @@ export class DocumentObserverCoordinator {
   }
   configure(mode, paused = false) {
     this.start(); const generation = ++this.generation; this.mode = mode; this.paused = paused;
+    this.helperSuspended = false;
     return this.serialize(async () => {
       await this.discover();
       if (generation !== this.generation) return;
@@ -163,12 +197,13 @@ export class DocumentObserverCoordinator {
     return true;
   }
   async openHelper(generation, explicit = false) {
-    if (!this.mode || this.paused || generation !== this.generation || (this.helper?.closed && !explicit)
+    if (!this.mode || this.paused || this.helperSuspended || generation !== this.generation || (this.helper?.closed && !explicit)
       || !this.chrome.tabs.create || !this.chrome.tabs.update) return;
     if (this.helper?.tab_id !== null && this.helper?.tab_id !== undefined) return;
     // Content observation has already been registered before initial navigation.
     const tab = await this.chrome.tabs.create({ url: 'about:blank', active: false });
-    this.helper = { version: 1, tab_id: tab.id, initial_url: HELPER_URL, closed: false, touched: false };
+    this.helper = { version: 2, tab_id: tab.id, initial_url: HELPER_URL, closed: false, touched: false,
+      closure: 'none', owner_session: this.ownerSession };
     await this.persistHelper();
     if (generation !== this.generation) return;
     this.tabs.set(tab.id, { ...tab, url: HELPER_URL, status: null, document_id: null });

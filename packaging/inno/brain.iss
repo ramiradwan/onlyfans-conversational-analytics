@@ -11,7 +11,9 @@
   #error AppVersion must be supplied by packaging/build-windows.ps1
 #endif
 
-#define AppName "OnlyFans Conversational Analytics"
+#define AppName "Conversation Analytics"
+; Keep the historical install folder independently of customer-visible naming.
+#define InstallDirectoryName "OnlyFans Conversational Analytics"
 #define AppExecutable "Brain.exe"
 ; Must match RUNNING_APPLICATION_MUTEX_NAME in app/packaged_entry.py.
 #define AppMutexName "OnlyFansConversationalAnalyticsBrain"
@@ -26,7 +28,7 @@ AppVersion={#AppVersion}
 ; delete a running Brain.exe, and removes the rest of the installation and
 ; itself around it, leaving an executable no uninstaller can reach.
 AppMutex={#AppMutexName}
-DefaultDirName={localappdata}\Programs\{#AppName}
+DefaultDirName={localappdata}\Programs\{#InstallDirectoryName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -36,16 +38,27 @@ OutputBaseFilename={#InstallerName}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\windows\conversation-analytics.ico
+UninstallDisplayIcon={app}\{#AppExecutable}
+VersionInfoDescription={#AppName} installer
+VersionInfoProductName={#AppName}
 
 [Files]
 Source: "{#StagingRoot}\*"; DestDir: "{app}"; Excludes: "Agent,Agent\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; Remove only the shortcut created by earlier versions; never customer data.
+Type: files; Name: "{autoprograms}\OnlyFans Conversational Analytics.lnk"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExecutable}"
 
 [Registry]
-Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: ""; ValueData: "URL:OnlyFans Conversational Analytics"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: ""; ValueData: "URL:{#AppName}"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: "FriendlyTypeName"; ValueData: "{#AppName}"
+Root: HKCU; Subkey: "Software\Classes\ofca\Application"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#AppName}"
+Root: HKCU; Subkey: "Software\Classes\ofca\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExecutable}"",0"
 Root: HKCU; Subkey: "Software\Classes\ofca\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExecutable}"" --open-workspace ""%1"""
 
 [UninstallDelete]

@@ -8,12 +8,13 @@ export const authenticatedDesktop = (model) => model?.desktopRuntimeReachable ==
 /** Presentation of one explicit launch. The worker separately owns return intent. */
 export function createDesktopLaunch({ workspace, prepare, dispatch, navigate, changed,
   setTimer = setTimeout, clearTimer = clearTimeout, fallbackMs = 12_000 }) {
-  let state = 'idle', scope = null, generation = 0, timer = null;
+  let state = 'idle', scope = null, generation = 0, timer = null, attemptedNavigation = -1;
   const publish = (next) => { state = next; changed(); };
   const cancelTimer = () => { if (timer !== null) clearTimer(timer); timer = null; };
   const current = (value) => value === generation && scope === identity(workspace());
   async function continueToApp(value) {
-    if (!current(value) || state === 'continuing') return;
+    if (!current(value) || state === 'continuing' || attemptedNavigation === value) return;
+    attemptedNavigation = value;
     cancelTimer(); publish('continuing');
     try { await navigate(); }
     catch { if (current(value)) publish('unconfirmed'); }
@@ -54,8 +55,8 @@ export function desktopLaunchJourney(journey, state) {
   if (state === 'opening' || state === 'continuing') return { ...journey, tone: 'progress',
     title: state === 'opening' ? 'Waiting for the desktop app…' : 'Opening setup…',
     body: '', primaryAction: null, primaryLabel: null };
-  if (state === 'unconfirmed') return { ...journey, tone: 'warning', title: 'Open the desktop app',
-    body: 'Open the app from the Start menu.',
+  if (state === 'unconfirmed') return { ...journey, tone: 'warning', title: 'Desktop connection not confirmed',
+    body: 'The desktop connection hasn’t been confirmed.',
     primaryAction: 'open_desktop', primaryLabel: 'Open desktop app' };
   return journey;
 }

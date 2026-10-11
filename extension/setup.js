@@ -18,6 +18,7 @@ import { LOCAL_SERVICE_ORIGIN } from './transport/local-service-endpoints.mjs';
 import { desktopStage } from './runtime/desktop-port.mjs';
 import { createSetupChoice } from './ui/setup-choice.mjs';
 import { previewCounts } from './ui/preview-counts.mjs';
+import { setupProgress } from './ui/setup-progress.mjs';
 
 let failed = false;
 let dismissed = false;
@@ -107,26 +108,21 @@ function setFullReview(value) {
 }
 function renderProgress(model, view, journey) {
   const full = model.status.consent.mode === 'full' || fullReviewRequested;
-  const count = full ? 4 : 2;
   const connected = model.pairing.state === 'paired' && model.desktopRuntimeReachable
     && model.status.delivery?.transport_state === 'authenticated';
-  const complete = view === 'journey' && ['preview_available', 'full_ready'].includes(journey.id);
-  const index = view === 'agree' ? 0 : ['mode', 'access'].includes(view) ? 1 : connected ? 3 : 2;
-  show('setup-progress', full && !complete);
-  document.querySelector('.onboarding-layout').dataset.progress = full && !complete ? 'full' : 'none';
-  steps.forEach((step, position) => {
-    const item = document.querySelector(`#setup-progress [data-step="${step}"]`);
-    item.classList.toggle('hidden', position >= count);
-    item.dataset.complete = String(complete || position < index);
-    if (!complete && position === index) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
-    page.lock(`step-${step}`, !complete && position > index);
-  });
-  const announced = complete ? (full ? 'Setup complete' : 'Preview is ready')
-    : view === 'start' ? 'Choose Preview or Full analytics'
-      : view === 'agree' ? 'Review terms and risk disclosure'
-        : view === 'mode' ? 'Choose a mode'
-          : view === 'access' ? 'Allow site access' : journey.title;
-  if (element('step-summary').textContent !== announced) text('step-summary', announced);
+  const progress = setupProgress({ full, view, connected, journey });
+  show('setup-progress', progress.visible);
+  document.querySelector('.onboarding-layout').dataset.progress = progress.visible ? 'full' : 'none';
+  for (const step of progress.steps) {
+    const item = document.querySelector(`#setup-progress [data-step="${step.id}"]`);
+    item.classList.toggle('hidden', step.hidden);
+    item.dataset.complete = String(step.complete);
+    if (step.current) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
+    text(`step-${step.id}`, step.label);
+    element(`step-${step.id}`).dataset.review = step.review ?? '';
+    page.lock(`step-${step.id}`, step.locked);
+  }
+  if (element('step-summary').textContent !== progress.summary) text('step-summary', progress.summary);
 }
 function render(model) {
   desktopLaunch.observe(model);
@@ -153,7 +149,7 @@ function render(model) {
   const pendingAccess = selected && setupChoice?.stage === 'access' && !agreement
     && legal.flow.stage === 'mode_selection';
   const view = agreement || reviewStep === 'agree' ? selected || reviewStep === 'agree' ? 'agree' : 'start'
-    : pendingAccess ? 'access' : choose ? 'mode' : access ? 'access' : 'journey';
+    : pendingAccess || reviewStep === 'access' ? 'access' : choose ? 'mode' : access ? 'access' : 'journey';
   currentJourney = desktopLaunchJourney(customerJourney(model), desktopLaunch.state);
   const icon = currentJourney.id === 'full_ready' || (currentJourney.id === 'preview_available' && status.observer?.attachment === 'ready') ? '✓'
     : currentJourney.id === 'paused' ? 'Ⅱ'
@@ -192,7 +188,8 @@ function render(model) {
   show('enable-preview', !active); show('enable-full', mode !== 'full' || legal.requires_reauthorization);
   text('full-secondary', mode === 'preview' ? 'Keep Preview' : 'Not now');
   text('access-title', 'Allow site access');
-  text('access-body', 'Allow the extension to read activity from your creator account.');
+  text('access-body', reviewStep === 'access' && !access && !pendingAccess
+    ? 'Site access is allowed.' : 'Allow the extension to read activity from your creator account.');
   show('restore-access', Boolean(pendingAccess) || status.phase === 'permission_required');
   renderJourney(currentJourney, model);
   const preview = mode === 'preview' || (mode === 'paused' && status.consent.resume_mode === 'preview');
@@ -200,7 +197,7 @@ function render(model) {
   const desktopOwned = desktopOwnsCapture(model);
   show('pause', ['preview', 'full'].includes(mode) && !desktopOwned);
   show('background-tab-note', status.observer?.helper === 'open');
-  show('reopen-background-tab', status.observer?.helper === 'closed');
+  show('reopen-background-tab', status.observer?.helper === 'closed' && status.observer?.attachment !== 'ready');
   const daily = previewCounts(status.preview);
   text('metrics-range', daily.label);
   for (const [id, key] of [['messages-count', 'message_observations'], ['inbound-count', 'inbound_observations'], ['outbound-count', 'outbound_observations']]) text(id, new Intl.NumberFormat().format(daily.counts[key] ?? 0));
@@ -215,7 +212,7 @@ function render(model) {
   const resumeInDesktop = currentJourney.id === 'paused' && desktopOwned && currentJourney.primaryAction === 'resume';
   for (const [id, action, label] of [['journey-primary',
     resumeInDesktop ? 'open_dashboard' : currentJourney.primaryAction,
-    resumeInDesktop ? 'Resume in the desktop app' : currentJourney.primaryLabel],
+    resumeInDesktop ? 'Resume in the desktop app' : currentJourney.primaryAction === 'resume' ? 'Resume' : currentJourney.primaryLabel],
     ['journey-secondary', currentJourney.secondaryAction, currentJourney.secondaryLabel]]) {
     element(id).dataset.action = action ?? ''; text(id, label ?? '');
     show(id, Boolean(action) && !['pair', 'cancel_pairing'].includes(action));
@@ -355,7 +352,7 @@ page.bind('open-options', () => openSurface('options'));
 page.bind('retry-runtime', () => client.sync());
 page.bind('back-current', () => { reviewStep = null; setFullReview(false); render(client.model); });
 for (const step of steps) page.bind(`step-${step}`, () => {
-  reviewStep = ['agree', 'mode'].includes(step) ? step : null;
+  reviewStep = element(`step-${step}`).dataset.review || null;
   render(client.model);
 });
 for (const heading of document.querySelectorAll('h2')) heading.setAttribute('tabindex', '-1');

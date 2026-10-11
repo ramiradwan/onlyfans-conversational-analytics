@@ -22,7 +22,8 @@ test('only an explicit click dispatches once; fallback does not mean launch fail
   f.timers.get(1).callback(); assert.equal(f.controller.state, 'unconfirmed');
   assert.equal(f.calls.length, 1);
   const card = desktopLaunchJourney({ id: 'desktop_app_needed' }, 'unconfirmed');
-  assert.match(card.body, /Start menu/); assert.equal(card.primaryAction, 'open_desktop');
+  assert.match(card.body, /hasn’t been confirmed/); assert.equal(card.primaryAction, 'open_desktop');
+  assert.doesNotMatch(card.body, /Start menu|closed|not installed|failed/);
 });
 test('focus, HTTP hints and desktop ports cannot confirm launch; delayed authenticated transport continues automatically', async () => {
   const f = fixture(); await f.controller.launch({}); f.timers.get(1).callback();
@@ -52,4 +53,17 @@ test('malformed preparation cannot open arbitrary URLs or embed extra authority'
     const f = fixture(async () => result); await f.controller.launch({});
     assert.deepEqual(f.calls, []); assert.equal(f.controller.state, 'unconfirmed');
   }
+});
+
+test('a failed navigation cannot be replayed by subsequent status renders', async () => {
+  let attempts = 0;
+  const controller = createDesktopLaunch({ workspace: () => record, prepare: async () => undefined,
+    dispatch: () => assert.fail('No relaunch'), changed: () => {},
+    navigate: async () => { attempts++; throw Error('Navigation unavailable'); } });
+  await controller.launch(connected);
+  for (let i = 0; i < 4; i++) controller.observe(connected);
+  await new Promise((done) => setImmediate(done));
+  assert.equal(attempts, 1); assert.equal(controller.state, 'unconfirmed');
+  await controller.launch(connected);
+  assert.equal(attempts, 2, 'an explicit click can retry once');
 });

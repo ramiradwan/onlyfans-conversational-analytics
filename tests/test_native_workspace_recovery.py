@@ -39,8 +39,11 @@ def owner(tmp_path):
     clock = [INSTANT]
     store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=lambda: clock[0])
     journeys = OnboardingJourneyStore(store)
+    def no_registered_key():
+        pytest.fail("Initial admission/recovery must not resolve registered installation keys")
     sessions = ProvisioningSessionManager(TOKEN, journeys=journeys,
-        monotonic=lambda: clock[0].timestamp())
+        monotonic=lambda: clock[0].timestamp(),
+        continuation_key=SimpleNamespace(reopen_existing=no_registered_key))
     app = create_provisioning_app(claim_submission=lambda **_: None,
         creator_association_initiation=lambda **_: None, creator_binding_acquisition=lambda: None,
         completion_ready=lambda: False, finalize_action=lambda **_: None, session_manager=sessions)
@@ -356,3 +359,47 @@ def test_recovery_migration_preserves_existing_auth_ledger_and_journey_rows(tmp_
     assert OnboardingJourneyStore(current).get(journeys[0][0]) is None
     with current.database.read() as connection:
         assert {row[0] for row in connection.execute("SELECT state FROM onboarding_workspace_recovery")} == set(states)
+
+
+@pytest.mark.parametrize("prior_state", ["fresh", "current", "expired", "retired", "uncertain"])
+def test_initial_native_admission_with_production_key_dependency(owner, prior_state):
+    prior = str(uuid4())
+    if prior_state in {"current", "expired", "retired"}:
+        owner.journeys.open(prior)
+    if prior_state in {"expired", "retired"}:
+        owner.clock[0] += timedelta(minutes=31)
+    if prior_state == "retired":
+        assert owner.journeys.get(prior) is None
+    if prior_state == "uncertain":
+        with owner.store.database.transaction() as connection:
+            connection.execute("INSERT INTO onboarding_uncertain_receipts VALUES (?,?,?,?,?)",
+                ("prior-installation", "prior-operation", "{}", INSTANT.isoformat(),
+                 (INSTANT+timedelta(minutes=30)).isoformat()))
+    native, headers = entry(owner, targeted=prior)
+    result = owner.browser.post(PATH, json={"journey_id": prior}, headers=headers)
+    if prior_state in {"fresh", "current"}:
+        assert result.status_code == 200, result.text
+        assert result.json()["journey_id"] == prior
+        assert owner.journeys.require_current(prior)["kind"] == "initial-enrollment"
+        assert count(owner.store, "provisioning_browser_sessions") == 1
+    else:
+        assert result.status_code == 409 and "set-cookie" not in result.headers
+        assert native.consumed is False
+        assert count(owner.store, "provisioning_browser_sessions") == 0
+
+
+def test_initial_admission_rechecks_kind_under_write_lock(owner, monkeypatch):
+    prior = owner.journeys.open()["journey_id"]
+    native, headers = entry(owner, targeted=prior)
+    classify = owner.journeys.native_admission_kind
+    def raced_kind(journey):
+        kind = classify(journey)
+        with owner.store.database.transaction() as connection:
+            connection.execute("UPDATE onboarding_journeys SET kind='registered-continuation' WHERE journey_id=?", (prior,))
+        return kind
+    monkeypatch.setattr(owner.journeys, "native_admission_kind", raced_kind)
+    result = owner.browser.post(PATH, json={"journey_id": prior}, headers=headers)
+    assert result.status_code == 409 and "set-cookie" not in result.headers
+    assert native.consumed is False
+    assert count(owner.store, "provisioning_browser_sessions") == 0
+    assert owner.journeys.require_current(prior)["kind"] == "registered-continuation"

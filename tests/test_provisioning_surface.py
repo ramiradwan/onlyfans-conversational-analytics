@@ -232,6 +232,8 @@ def test_provisioning_app_exposes_no_runtime_route() -> None:
         ("/provisioning/resume.js", ("GET",)),
         ("/provisioning/native-return", ("GET",)),
         ("/provisioning/native-return.js", ("GET",)),
+        ("/provisioning/native-return.css", ("GET",)),
+        ("/provisioning/native-tokens.css", ("GET",)),
         ("/provisioning/native-json.mjs", ("GET",)),
         ("/provisioning/native-workspace.mjs", ("GET",)),
         ("/provisioning/native-entry", ("GET",)),

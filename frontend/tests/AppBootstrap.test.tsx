@@ -14,6 +14,13 @@ vi.mock('../src/routing/AppRouter', () => ({
   AppRouter: () => <main>Application routes</main>,
 }));
 
+vi.mock('../src/services/webauthnApi', async () => {
+  const actual = await vi.importActual<typeof import('../src/services/webauthnApi')>('../src/services/webauthnApi');
+  return { ...actual, webauthnApi: { ...actual.webauthnApi,
+    state: vi.fn(async () => ({ enrolled: true, authenticated: false })),
+  } };
+});
+
 import { App } from '../src/App';
 import { useUserStore } from '../src/store/userStore';
 
@@ -89,7 +96,7 @@ describe('signed Bridge role bootstrap', () => {
     render(<App />);
 
     await waitFor(() => expect(useUserStore.getState().role).toBeNull());
-    expect(document.querySelector('h1')?.textContent).toBe('Sign in on this computer');
+    await waitFor(() => expect(document.querySelector('h1')?.textContent).toBe('Sign in on this computer'));
     expect(document.body.textContent).not.toContain('Application routes');
     expect(transport.connect).not.toHaveBeenCalled();
   });

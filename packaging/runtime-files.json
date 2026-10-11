@@ -17,7 +17,9 @@
     "_internal/contracts/consumer-pin.json",
     "THIRD_PARTY_NOTICES.md",
     "NATIVE_SNOW_NOTICES.txt",
-    "release-manifest.json"
+    "release-manifest.json",
+    "_internal/app/provisioning/native-return.css",
+    "_internal/app/provisioning/native-tokens.css"
   ],
   "required_directories": [
     "_internal/app/static",

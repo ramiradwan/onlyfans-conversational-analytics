@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import json
+import runpy
 import os
 import sys
 from pathlib import Path, PurePosixPath
 
+from PyInstaller.config import CONF
 from PyInstaller.building.api import COLLECT, EXE, PYZ  # type: ignore[import-not-found]
 from PyInstaller.building.build_main import Analysis  # type: ignore[import-not-found]
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, copy_metadata  # type: ignore[import-not-found]
@@ -48,6 +50,11 @@ def _source_relative(staged_relative: str) -> PurePosixPath:
 def _add_file(entries: list[tuple[str, str]], staged_relative: str) -> None:
     source_relative = _source_relative(staged_relative)
     source = _PROJECT_ROOT / source_relative
+    if source_relative == PurePosixPath("app/provisioning/native-tokens.css"):
+        # Reuse generated semantic tokens without shipping frontend source.
+        source = Path(CONF["workpath"]) / "native-assets" / "native-tokens.css"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes((_PROJECT_ROOT / "frontend/src/theme/generated/static-tokens.css").read_bytes())
     if not source.is_file():
         raise FileNotFoundError(f"declared runtime file is absent: {source}")
     entries.append((str(source), str(source_relative.parent)))
@@ -136,12 +143,17 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data)
 
+_BRANDING = runpy.run_path(str(_PROJECT_ROOT / "packaging" / "windows_branding.py"))
+_VERSION_RESOURCE = _BRANDING["version_resource"](_PROJECT_ROOT / "app" / "core" / "config.py")
+
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
     name="Brain",
+    version=_VERSION_RESOURCE,
+    icon=str(_PROJECT_ROOT / "packaging" / "windows" / "conversation-analytics.ico"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

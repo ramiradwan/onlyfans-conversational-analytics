@@ -92,8 +92,10 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
         "resume.js",
         "native-return.js",
         "native-workspace.mjs",
+        "native-return.css",
     ):
         shutil.copy2(ROOT / "app" / "provisioning" / name, provisioning / name)
+    shutil.copy2(ROOT / "frontend/src/theme/generated/static-tokens.css", provisioning / "native-tokens.css")
     shared = stage / "_internal" / "shared" / "onboarding"
     shared.mkdir(parents=True)
     for name in ("client", "projection", "json", "sse"):
@@ -175,6 +177,8 @@ def test_required_files_cover_the_provisioning_page_assets(tmp_path: Path) -> No
         "_internal/app/provisioning/provisioning.js",
         "_internal/app/provisioning/native-return.js",
         "_internal/app/provisioning/native-workspace.mjs",
+        "_internal/app/provisioning/native-return.css",
+        "_internal/app/provisioning/native-tokens.css",
     }
 
     assert assets <= required

@@ -2,6 +2,7 @@
 
 import html
 import re
+import sys
 
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -39,14 +40,17 @@ def native_return_shell(request: Request, extension_id: str) -> HTMLResponse:
     return HTMLResponse(
         '<!doctype html><html lang="en"><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>Continue setup</title><main data-native-return '
+        '<title>Continue setup — Conversation Analytics</title>'
+        '<link rel="stylesheet" href="/provisioning/native-tokens.css">'
+        '<link rel="stylesheet" href="/provisioning/native-return.css">'
+        '<header class="native-brand">Conversation Analytics</header><main data-native-return '
         f'data-extension-id="{html.escape(identity, quote=True)}">'
-        '<h1>Continue setup</h1><p id="native-return-status" role="status">Continuing setup…</p>'
+        '<h1>Continue setup</h1><p id="native-return-status" role="status" aria-live="polite" aria-atomic="true">Continuing setup…</p>'
         '<button id="native-return-retry" type="button" hidden>Try again</button>'
         '<button id="native-return-focus" type="button" hidden>Go to setup</button></main>'
         '<script type="module" src="/provisioning/native-return.js"></script></html>',
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
-                 "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
+                 "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
     )
 
 
@@ -61,4 +65,18 @@ def native_return_script(request: Request) -> Response:
         raise HTTPException(404, "Not found")
     return Response(resource_path(path).read_bytes(),
                     media_type="application/javascript",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+def native_return_style(request: Request) -> Response:
+    """Expose only nonauthorizing, packaged styles at the fixed local origin."""
+    _host(request)
+    path = {
+        "/provisioning/native-return.css": "app/provisioning/native-return.css",
+        "/provisioning/native-tokens.css": ("app/provisioning/native-tokens.css"
+            if getattr(sys, "frozen", False) else "frontend/src/theme/generated/static-tokens.css"),
+    }.get(request.url.path)
+    if path is None:
+        raise HTTPException(404, "Not found")
+    return Response(resource_path(path).read_bytes(), media_type="text/css",
                     headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockFeedbackOverflow } from './feedbackGeometry';
 
-import type { WebAuthnApi } from '../src/services/webauthnApi';
+import { LoginOutcomeError, EnrollmentOutcomeError, type WebAuthnApi } from '../src/services/webauthnApi';
 import { theme } from '../src/theme';
 import { WebAuthnAccessView } from '../src/views/WebAuthnAccessView';
 
@@ -215,4 +215,37 @@ describe('WebAuthn access view', () => {
     expect(login).toHaveBeenCalledTimes(2);
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
+});
+
+it('an unavailable status offers only a bounded status retry, not invented enrollment facts', async () => {
+  const state = vi.fn().mockRejectedValueOnce(Error('Unavailable')).mockResolvedValueOnce({ enrolled: true, authenticated: false });
+  const api = { state, enroll: vi.fn(), login: vi.fn() };
+  renderView(api);
+  const retry = await screen.findByRole('button', { name: 'Try again' });
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Set up a passkey' })).toBeNull();
+  fireEvent.click(retry);
+  await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect(state).toHaveBeenCalledTimes(2); expect(api.enroll).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled();
+});
+it('stage-specific begin refusal does not claim the user cancelled a passkey', async () => {
+  const view = renderView({ enroll: vi.fn(), login: vi.fn(async () => { throw new LoginOutcomeError('begin'); }) });
+  fireEvent.click(view.signIn());
+  expect((await readFailure()).textContent).toBe('Sign-in could not start. Try again.');
+});
+it('an unmounted sign-in cannot navigate when its stale success resolves', async () => {
+  const pending = deferred(); let signal: AbortSignal | undefined;
+  const view = renderView({ enroll: vi.fn(), login: vi.fn((incoming?: AbortSignal) => { signal = incoming; return pending.promise; }) });
+  fireEvent.click(view.signIn()); cleanup();
+  expect(signal?.aborted).toBe(true);
+  pending.resolve(); await pending.promise;
+  expect(view.onAuthenticated).not.toHaveBeenCalled();
+});
+it('a confirmed created passkey with no session offers sign-in rather than another creation', async () => {
+  const view = renderView({ state: vi.fn(async () => ({ enrolled: false, authenticated: false })),
+    enroll: vi.fn(async () => { throw new EnrollmentOutcomeError(true); }), login: vi.fn() });
+  fireEvent.click(await screen.findByRole('button', { name: 'Create passkey' }));
+  await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
+  expect(view.onAuthenticated).not.toHaveBeenCalled();
 });

@@ -1,0 +1,13 @@
+/* Shared semantic tokens are served separately; this sheet owns layout only. */
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; min-block-size: 100vh; background: var(--dipsy-color-background); color: var(--dipsy-color-text); font: var(--dipsy-static-body-size)/1.6 var(--dipsy-font-family-ui); }
+.native-brand { padding: 1.5rem clamp(1rem, 4vw, 2.5rem); border-block-end: 1px solid var(--dipsy-color-divider); font-weight: var(--dipsy-font-weight-semibold); }
+main { margin: clamp(1.5rem, 6vh, 4rem) auto; inline-size: min(calc(100% - 2rem), var(--dipsy-static-workspace-width)); padding: clamp(1.25rem, 4vw, 2.5rem); border: 1px solid var(--dipsy-color-divider); border-radius: var(--dipsy-radius-surface); background: var(--dipsy-color-paper); box-shadow: var(--dipsy-shadow-raised); overflow-wrap: anywhere; }
+h1 { margin: 0 0 1rem; font-size: var(--dipsy-static-task-heading-size); line-height: 1.3; }
+p { margin: 0 0 1.5rem; color: var(--dipsy-color-text-secondary); }
+button { min-block-size: var(--dipsy-static-large-control-height); max-inline-size: 100%; padding: .75rem 1.25rem; border: 1px solid transparent; border-radius: var(--dipsy-radius-control); background: var(--dipsy-color-primary); color: var(--dipsy-color-on-primary); font: inherit; font-weight: var(--dipsy-font-weight-semibold); white-space: normal; cursor: pointer; }
+button:focus-visible { outline: var(--dipsy-focus-width) solid var(--dipsy-color-primary); outline-offset: var(--dipsy-focus-offset); }
+@media (max-width: 36rem) { button { inline-size: 100%; } }
+@media (forced-colors: active) { button, main { border-color: CanvasText; } }

@@ -524,3 +524,14 @@ for (const state of [response(409, {}), response(200, { ...snapshot, journey_id:
     assert.equal(await f.run(), false); assert.equal(f.messages.length, 0);
   });
 }
+
+test('bounded diagnostic stages never include secrets or exception messages', async () => {
+  const status = { dataset: {} };
+  const f = fixture({ status, fetch: async () => { throw Error('secret-token-never-log'); } });
+  assert.equal(await f.run(), false);
+  assert.equal(status.dataset.failureStage, 'entry');
+  assert.equal(JSON.stringify(status).includes('secret-token'), false);
+  const stateStatus = { dataset: {} };
+  const g = fixture({ status: stateStatus, replies: [response(503)] });
+  assert.equal(await g.run(), false); assert.equal(stateStatus.dataset.failureStage, 'state-read');
+});

@@ -245,3 +245,5 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
   .onboarding-workspace #setup-progress ol { display: flex; flex-wrap: wrap; }
   .onboarding-workspace #setup-progress li { flex: 1 1 45%; }
 }
+
+.setup-code-secondary { margin-block-start: 1.5rem; text-align: start; }

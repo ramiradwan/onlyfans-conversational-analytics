@@ -314,6 +314,13 @@ def create_provisioning_app(
         from app.provisioning.native_return import native_return_shell
         return native_return_shell(request, provisioned_extension_id())
 
+    @application.get("/provisioning/native-return.css", include_in_schema=False)
+    @application.get("/provisioning/native-tokens.css", include_in_schema=False)
+    def native_style(request: Request):
+        from app.provisioning.native_return import native_return_style
+        return native_return_style(request)
+
+
     @application.get("/provisioning/native-return.js", include_in_schema=False)
     @application.get("/provisioning/native-json.mjs", include_in_schema=False)
     @application.get("/provisioning/native-workspace.mjs", include_in_schema=False)

@@ -69,7 +69,7 @@ export function createPageActions(client, render) {
       setBusy(false); render(client.model);
       if (focused instanceof HTMLElement && (focused.getClientRects().length === 0 || focused.hasAttribute('disabled'))) {
         const target = [...document.querySelectorAll('h2, #journey-primary')].find((node) => node.getClientRects().length > 0);
-        if (target) { target.setAttribute('tabindex', '-1'); target.focus({ preventScroll: true }); }
+        if (target) { target.setAttribute('tabindex', '-1'); target.focus(); }
       }
     }
   }

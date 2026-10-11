@@ -163,8 +163,10 @@ for name in (
     'resume.js',
     'native-return.js',
     'native-workspace.mjs',
+    'native-return.css',
 ):
     shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
+shutil.copyfile(root / 'frontend' / 'src' / 'theme' / 'generated' / 'static-tokens.css', provisioning / 'native-tokens.css')
 core = stage / '_internal' / 'app' / 'core'
 core.mkdir()
 shutil.copyfile(root / 'app' / 'core' / 'customer-release.json', core / 'customer-release.json')

@@ -578,7 +578,7 @@ describe('critical accessibility gates', () => {
   it('keeps WebAuthnAccessView at the application gate free of serious axe findings in resting state', async () => {
     render(
       <ThemeProvider theme={theme} defaultMode="light">
-        <WebAuthnAccessView />
+        <WebAuthnAccessView api={{ state: async () => ({ enrolled: true, authenticated: false }), enroll: vi.fn(), login: vi.fn() }} />
       </ThemeProvider>,
     );
 

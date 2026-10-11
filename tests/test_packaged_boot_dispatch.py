@@ -253,3 +253,51 @@ def test_installer_mutex_directive_matches_the_packaged_name() -> None:
     # so neither can drift from the name the application publishes.
     assert "AppMutex={#AppMutexName}" in script
     assert "OpenRunningApplicationMutex(Synchronize, False, '{#AppMutexName}')" in script
+
+
+@pytest.mark.parametrize("entry_kind", ["targeted", "discover-pending", "discover-empty"])
+def test_composed_fresh_native_admission_keeps_extension_journey(tmp_path, monkeypatch, entry_kind):
+    """Fresh extension locators use the real composition, including its key provider."""
+    from uuid import uuid4
+    from app.core.customer_release import CustomerReleaseConfig
+    from app.persistence.onboarding import OnboardingJourneyStore
+    from app.provisioning import claim_submission
+    from app.provisioning.completion import durable_authentication_store
+    from app.provisioning.session import NATIVE_ENTRY_COOKIE_NAME, PROVISIONING_ORIGIN
+
+    token = "t" * 32
+    journey_id = None if entry_kind == "discover-empty" else str(uuid4())
+    monkeypatch.setenv(packaged_entry.PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, token)
+    monkeypatch.setattr(packaged_entry, "load_customer_release_config", lambda: CustomerReleaseConfig("", ""))
+    def no_hardware():
+        pytest.fail("An initial browser session must not create or reopen installation keys")
+    monkeypatch.setattr(claim_submission, "WindowsCNGInstallationKeyProvider", no_hardware)
+    application = packaged_entry.select_brain_application(tmp_path)
+    with TestClient(application, base_url=PROVISIONING_ORIGIN) as client:
+        launch = {"Authorization": "Provisioning " + token,
+                  "X-Onboarding-Native-Entry": "targeted" if entry_kind == "targeted" else "discover"}
+        if entry_kind == "targeted":
+            launch["X-Onboarding-Journey"] = journey_id
+        issued = client.post("/api/v1/provisioning/handoff", headers=launch)
+        assert issued.status_code == 200
+        redeemed = client.get("/provisioning/native-entry", params={"code": issued.json()["handoff_code"]}, follow_redirects=False)
+        assert redeemed.status_code == 303
+        cookie = {"Cookie": f"{NATIVE_ENTRY_COOKIE_NAME}={redeemed.cookies[NATIVE_ENTRY_COOKIE_NAME]}"}
+        context = client.get("/api/v1/provisioning/native-entry", headers=cookie)
+        assert context.status_code == 200
+        headers = {**cookie, "Origin": PROVISIONING_ORIGIN, "X-Provisioning-CSRF": context.json()["csrf_token"]}
+        selected = client.post("/api/v1/provisioning/native-entry", json={"journey_id": journey_id}, headers=headers)
+        assert selected.status_code == 200, selected.text
+        selected_id = selected.json()["journey_id"]
+        if journey_id is not None:
+            assert selected_id == journey_id
+        assert client.post("/api/v1/provisioning/native-entry", json={"journey_id": journey_id}, headers=headers).status_code == 409
+    store = durable_authentication_store(tmp_path)()
+    journey = OnboardingJourneyStore(store).require_current(selected_id)
+    assert journey["kind"] == "initial-enrollment" and journey["state"] == "new"
+    assert journey["operation_id"] is None and journey["scope_json"] is None
+    assert store.installation_key_reference() is None
+    assert not (tmp_path / "runtime.env").exists()
+    with store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM onboarding_journeys").fetchone()[0] == 1
+        assert connection.execute("SELECT count(*) FROM provisioning_browser_sessions").fetchone()[0] == 1

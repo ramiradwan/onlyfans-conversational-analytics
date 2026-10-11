@@ -120,6 +120,13 @@ def native_return(request: Request):
     return native_return_shell(request, settings.extension_id)
 
 
+@resume_router.get("/provisioning/native-return.css", include_in_schema=False)
+@resume_router.get("/provisioning/native-tokens.css", include_in_schema=False)
+def native_style(request: Request):
+    from app.provisioning.native_return import native_return_style
+    return native_return_style(request)
+
+
 @resume_router.get("/provisioning/native-return.js", include_in_schema=False)
 @resume_router.get("/provisioning/native-json.mjs", include_in_schema=False)
 def native_script(request: Request):

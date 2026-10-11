@@ -263,7 +263,8 @@ class ProvisioningSessionManager:
         else:
             session = self._admit_registered_session(request, entry, journey_id)
             if session is None:
-                session = self._create_session(journey_id, authorize=lambda: self.require_native_entry(request))
+                session = self._create_session(journey_id, authorize=lambda: self.require_native_entry(request),
+                                               initial_only=True)
         entry.session_identifier = session.identifier
         entry.selected_journey_id = session.journey_id
         entry.consumed = True
@@ -282,9 +283,11 @@ class ProvisioningSessionManager:
             if target is not None:
                 pass
             elif journey_id is not None:
-                current = self._journeys.require_current(journey_id)
-                if current["kind"] != "registered-continuation":
+                kind = self._journeys.native_admission_kind(journey_id)
+                if kind in {"new", "initial-enrollment"}:
                     return None
+                if kind != "registered-continuation":
+                    raise OnboardingJourneyUnavailable("journey_unavailable")
                 target = self._continuations.select_for_admission(journey_id)
             else:
                 try:
@@ -383,14 +386,16 @@ class ProvisioningSessionManager:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "provisioning handoff is invalid")
         return self._create_session(handoff[1])
 
-    def _create_session(self, journey_id: str | None, *, authorize=None) -> ProvisioningBrowserSession:
+    def _create_session(self, journey_id: str | None, *, authorize=None,
+                        initial_only: bool = False) -> ProvisioningBrowserSession:
         identifier = secrets.token_urlsafe(32)
         csrf = _session_csrf(identifier)
         if self._journeys is not None:
             from app.persistence.onboarding import OnboardingJourneyUnavailable
             try:
                 selected = self._journeys.create_session(identifier=identifier, csrf=csrf,
-                    journey_id=journey_id, expires_at=self._wall_clock()+self._ttl_seconds, authorize=authorize)
+                    journey_id=journey_id, expires_at=self._wall_clock()+self._ttl_seconds,
+                    authorize=authorize, initial_only=initial_only)
             except (OnboardingJourneyUnavailable, ValueError):
                 raise HTTPException(409, "Onboarding scope is unavailable") from None
             session = ProvisioningBrowserSession(identifier, csrf, selected["expires_at"], selected["journey_id"])

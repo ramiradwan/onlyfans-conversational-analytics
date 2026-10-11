@@ -21,8 +21,8 @@ interface LoginOptions {
 }
 
 export interface WebAuthnApi {
-  enroll(): Promise<void>;
-  login(): Promise<void>;
+  enroll(signal?: AbortSignal): Promise<void>;
+  login(signal?: AbortSignal): Promise<void>;
   state?(signal: AbortSignal): Promise<{ enrolled: boolean; authenticated: boolean }>;
 }
 
@@ -36,6 +36,7 @@ export class EnrollmentOutcomeError extends Error {
 interface WebAuthnApiOptions {
   fetch?: typeof fetch;
   getCsrfToken?: () => string | null;
+  requestTimeoutMs?: number;
 }
 
 function csrfToken(): string | null {
@@ -87,14 +88,54 @@ function loginCredential(credential: PublicKeyCredential) {
   };
 }
 
+export class LoginOutcomeError extends Error {
+  constructor(readonly stage: 'begin' | 'credential' | 'finish') {
+    super('Sign-in did not finish.');
+    this.name = 'LoginOutcomeError';
+  }
+}
+
+class RequestRefused extends Error {
+  constructor(readonly status: number) { super('Passkey request refused'); }
+}
+
+/** Bound the response body as well as the fetch, and retire all work on unmount. */
+async function bounded<T>(operation: (signal: AbortSignal) => Promise<T>, parent: AbortSignal | undefined, ms: number): Promise<T> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (parent?.aborted) throw new DOMException('Operation ended', 'AbortError');
+  parent?.addEventListener('abort', abort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([new Promise<T>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new DOMException('Operation ended', 'AbortError')), { once: true });
+      timer = setTimeout(abort, ms);
+    }), operation(controller.signal)]);
+  } finally {
+    clearTimeout(timer); parent?.removeEventListener('abort', abort);
+  }
+}
+
 export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi {
   const request = options.fetch ?? globalThis.fetch.bind(globalThis);
   const getCsrfToken = options.getCsrfToken ?? csrfToken;
+  const deadline = options.requestTimeoutMs ?? 8000;
+  const state = (signal?: AbortSignal) => bounded(async (requestSignal) => {
+    const response = await request('/api/v1/webauthn/session-state', {
+      signal: requestSignal, credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'application/json' },
+    });
+    const value: unknown = response.ok ? parseOnboardingJson(await response.text()) : null;
+    if (typeof value !== 'object' || value === null || Object.keys(value).length !== 2
+      || !('authenticated' in value) || !('enrolled' in value)
+      || typeof value.authenticated !== 'boolean' || typeof value.enrolled !== 'boolean'
+      || value.authenticated && !value.enrolled) throw new Error('Passkey status unavailable');
+    return { enrolled: value.enrolled, authenticated: value.authenticated };
+  }, signal, deadline);
 
-  const post = async <ResponseBody>(path: string, body?: object): Promise<ResponseBody> => {
+  const post = <ResponseBody>(path: string, body?: object, signal?: AbortSignal): Promise<ResponseBody> => bounded(async (requestSignal) => {
     const csrf = getCsrfToken();
     const response = await request(`/api/v1/webauthn${path}`, {
-      credentials: 'same-origin',
+      signal: requestSignal, credentials: 'same-origin', cache: 'no-store', redirect: 'error',
       headers: {
         Accept: 'application/json',
         ...(body ? { 'Content-Type': 'application/json' } : {}),
@@ -103,75 +144,72 @@ export function createWebAuthnApi(options: WebAuthnApiOptions = {}): WebAuthnApi
       method: 'POST',
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    if (!response.ok) throw new Error(`WebAuthn request failed (${response.status})`);
-    if (path === '/registration/finish') return parseOnboardingJson(await response.text()) as ResponseBody;
-    return response.json() as Promise<ResponseBody>;
-  };
+    if (!response.ok) throw new RequestRefused(response.status);
+    return parseOnboardingJson(await response.text()) as ResponseBody;
+  }, signal, deadline);
 
-  const login = async () => {
-    const options = await post<LoginOptions>('/login/begin');
-    const credential = await navigator.credentials.get({
-      publicKey: {
-        ...options,
-        challenge: base64urlToArrayBuffer(options.challenge),
-        allowCredentials: options.allowCredentials.map((allowed) => ({
-          ...allowed,
-          id: base64urlToArrayBuffer(allowed.id),
-        })),
-      },
-    }) as PublicKeyCredential | null;
-    if (credential === null) throw new Error('No passkey was selected.');
-    await post('/login/finish', loginCredential(credential));
+  const login = async (signal?: AbortSignal) => {
+    let loginOptions: LoginOptions;
+    try { loginOptions = await post<LoginOptions>('/login/begin', undefined, signal); }
+    catch { throw new LoginOutcomeError('begin'); }
+    let credential: PublicKeyCredential;
+    try {
+      const selected = await bounded((ceremonySignal) => navigator.credentials.get({
+        signal: ceremonySignal,
+        publicKey: {
+          ...loginOptions,
+          challenge: base64urlToArrayBuffer(loginOptions.challenge),
+          allowCredentials: loginOptions.allowCredentials.map((allowed) => ({
+            ...allowed, id: base64urlToArrayBuffer(allowed.id),
+          })),
+        },
+      }), signal, 120_000) as PublicKeyCredential | null;
+      if (selected === null) throw new Error('No passkey selected');
+      credential = selected;
+    } catch { throw new LoginOutcomeError('credential'); }
+    try {
+      const result = await post<unknown>('/login/finish', loginCredential(credential), signal);
+      if (typeof result !== 'object' || result === null || Object.keys(result).length !== 1
+        || !('csrf_token' in result) || typeof result.csrf_token !== 'string' || !result.csrf_token) {
+        throw new Error('Sign-in response unavailable');
+      }
+    } catch (error) {
+      if (signal?.aborted || error instanceof RequestRefused && error.status < 500) throw new LoginOutcomeError('finish');
+      // Finish can commit before its reply is lost. Reconcile once by read,
+      // never replay the assertion or start another browser ceremony.
+      try { if ((await state(signal)).authenticated) return; } catch { /* Keep the outcome unconfirmed. */ }
+      throw new LoginOutcomeError('finish');
+    }
   };
 
   return {
-    async state(signal) {
-      const response = await request('/api/v1/webauthn/session-state', {
-        signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error', headers: { Accept: 'application/json' },
-      });
-      const value: unknown = response.ok ? parseOnboardingJson(await response.text()) : null;
-      if (typeof value !== 'object' || value === null || Object.keys(value).length !== 2
-        || !('authenticated' in value) || !('enrolled' in value)
-        || typeof value.authenticated !== 'boolean' || typeof value.enrolled !== 'boolean'
-        || value.authenticated && !value.enrolled) throw new Error('Passkey status unavailable');
-      return { enrolled: value.enrolled, authenticated: value.authenticated };
-    },
-    async enroll() {
-      const options = await post<RegistrationOptions>('/registration/begin');
-      const credential = await navigator.credentials.create({
+    state,
+    async enroll(signal) {
+      const registrationOptions = await post<RegistrationOptions>('/registration/begin', undefined, signal);
+      const credential = await bounded((ceremonySignal) => navigator.credentials.create({
+        signal: ceremonySignal,
         publicKey: {
-          ...options,
-          challenge: base64urlToArrayBuffer(options.challenge),
-          user: {
-            ...options.user,
-            id: base64urlToArrayBuffer(options.user.id),
-          },
+          ...registrationOptions,
+          challenge: base64urlToArrayBuffer(registrationOptions.challenge),
+          user: { ...registrationOptions.user, id: base64urlToArrayBuffer(registrationOptions.user.id) },
         },
-      }) as PublicKeyCredential | null;
+      }), signal, 120_000) as PublicKeyCredential | null;
       if (credential === null) throw new Error('No passkey was created.');
       try {
-        const result = await post<unknown>('/registration/finish', registrationCredential(credential));
+        const result = await post<unknown>('/registration/finish', registrationCredential(credential), signal);
         if (!validateOnboardingMessage(result)
           || (result as { profile: string }).profile !== 'local-first-enrollment-result.v1') {
           throw new Error('Passkey session was not confirmed.');
         }
       } catch {
-        // A lost body can follow a committed credential/session. Read once;
-        // never repeat finish, mint another session, or silently invoke get().
         let enrolled = false;
-        try {
-          const response = await request('/api/v1/webauthn/session-state', {
-            credentials: 'same-origin', cache: 'no-store', redirect: 'error',
-            headers: { Accept: 'application/json' },
-          });
-          const status: unknown = response.ok ? parseOnboardingJson(await response.text()) : null;
-          if (typeof status === 'object' && status !== null
-            && Object.keys(status).length === 2 && 'authenticated' in status && 'enrolled' in status
-            && typeof status.authenticated === 'boolean' && typeof status.enrolled === 'boolean') {
-            if (status.authenticated && status.enrolled) return;
+        if (!signal?.aborted) {
+          try {
+            const status = await state(signal);
+            if (status.authenticated) return;
             enrolled = status.enrolled;
-          }
-        } catch { /* Preserve uncertainty; this read grants no authority. */ }
+          } catch { /* Preserve uncertainty; this read grants no authority. */ }
+        }
         throw new EnrollmentOutcomeError(enrolled);
       }
     },

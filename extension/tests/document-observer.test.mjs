@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { DocumentObserverCoordinator, OBSERVER_HELPER_KEY, OBSERVER_STATE_TYPE } from '../runtime/document-observer.mjs';
 const event = () => { const listeners = []; return { addListener(fn) { listeners.push(fn); }, emit(...args) { for (const fn of listeners) fn(...args); } }; };
 function fixture({ silent = false, tabs = [{ id: 7, url: 'https://onlyfans.com/my/chats', frozen: false }] } = {}) {
-  const stored = {}, calls = [], documents = new Map(); let scans = 0;
+  const stored = {}, session = {}, calls = [], documents = new Map(); let scans = 0;
   const browserTabs = new Map(tabs.map((value) => [value.id, { ...value }]));
   const api = { runtime: { id: 'fixture' }, storage: { local: {
     async get(keys) { return Object.fromEntries(keys.map((key) => [key, structuredClone(stored[key])])); },
     async set(values) { Object.assign(stored, structuredClone(values)); },
-  } }, tabs: { onUpdated: event(), onRemoved: event(), onReplaced: event(), onActivated: event(),
+  }, session: { async get(keys) { return Object.fromEntries(keys.map((key) => [key, session[key]])); },
+    async set(values) { Object.assign(session, values); } } }, tabs: { onUpdated: event(), onRemoved: event(), onReplaced: event(), onActivated: event(),
     async query() { scans++; return [...browserTabs.values()].map((value) => ({ ...value })); },
     async sendMessage(id, value) { calls.push(['message', id, value.action]);
       if (value.action !== 'status') return { ok: true };
@@ -22,7 +23,7 @@ function fixture({ silent = false, tabs = [{ id: 7, url: 'https://onlyfans.com/m
     return [{ frameId: 0, documentId: `document-${request.target.tabId}` }];
   } } };
   const observer = new DocumentObserverCoordinator({ chromeApi: api });
-  return { api, observer, calls, stored, scans: () => scans, browserTabs };
+  return { api, observer, calls, stored, session, scans: () => scans, browserTabs };
 }
 test('attaches to an existing user document without navigation; reads cached status', async () => {
   const f = fixture(); await f.observer.configure('preview');
@@ -96,4 +97,62 @@ test('a socket-close push attempts at most one helper without probing or navigat
   assert.equal(f.calls.filter(([type]) => type === 'create').length, 1);
   assert.equal(f.scans(), 1);
   assert.equal(f.browserTabs.get(7).url, 'https://onlyfans.com/my/chats');
+});
+
+test('window shutdown suspends helper creation but permits recovery on browser restart', async () => {
+  const f = fixture({ silent: true }); await f.observer.configure('preview');
+  f.browserTabs.delete(12); f.api.tabs.onRemoved.emit(12, { isWindowClosing: true });
+  assert.equal(f.observer.snapshot().helper, 'none');
+  await f.observer.openHelper(f.observer.generation);
+  assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 1);
+  for (const key of Object.keys(f.session)) delete f.session[key];
+  const restarted = new DocumentObserverCoordinator({ chromeApi: f.api });
+  await restarted.configure('preview');
+  assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 2);
+  assert.equal(f.stored[OBSERVER_HELPER_KEY].closed, false);
+});
+test('a missing helper is lifecycle loss, while legacy explicit/unknown closures remain respected', async () => {
+  for (const closed of [false, true]) {
+    const f = fixture({ silent: true, tabs: [] });
+    f.stored.onboarding_observer_helper_v1 = { version: 1, tab_id: closed ? null : 90,
+      initial_url: 'https://onlyfans.com/', closed, touched: false };
+    await f.observer.configure('preview');
+    assert.equal(f.calls.filter(([kind]) => kind === 'create').length, closed ? 0 : 1);
+    assert.equal(f.stored[OBSERVER_HELPER_KEY].version, 2);
+    assert.equal(f.observer.snapshot().helper, closed ? 'closed' : 'open');
+  }
+});
+test('a restored usable user tab is attached, never reclaimed as a helper by URL or reused ID', async () => {
+  const f = fixture({ tabs: [{ id: 12, url: 'https://onlyfans.com/' }] });
+  f.stored[OBSERVER_HELPER_KEY] = { version: 2, tab_id: 12, owner_session: 'previous-browser',
+    initial_url: 'https://onlyfans.com/', closed: false, touched: false, closure: 'none' };
+  await f.observer.configure('preview');
+  assert.equal(f.observer.snapshot().attached, true);
+  assert.equal(f.observer.snapshot().helper, 'none');
+  f.api.tabs.onRemoved.emit(12, { isWindowClosing: false });
+  assert.equal(f.stored[OBSERVER_HELPER_KEY].closed, false);
+  assert.equal(f.calls.some(([kind]) => ['create', 'update'].includes(kind)), false);
+});
+test('worker restart in the same browser keeps ownership and creates no duplicate helper', async () => {
+  const f = fixture({ silent: true }); await f.observer.configure('preview');
+  await new DocumentObserverCoordinator({ chromeApi: f.api }).configure('preview');
+  assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 1);
+});
+test('replacement is discovered without stop intent, new navigation or stale readiness', async () => {
+  const f = fixture({ silent: true }); await f.observer.configure('preview');
+  f.browserTabs.delete(12); f.browserTabs.set(33, { id: 33, url: 'https://onlyfans.com/' });
+  f.api.tabs.onReplaced.emit(33, 12); await f.observer.queue;
+  assert.equal(f.stored[OBSERVER_HELPER_KEY].closed, false);
+  assert.equal(f.observer.snapshot().helper, 'none');
+  assert.ok(f.calls.some(([kind, id]) => kind === 'inject' && id === 33));
+  assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 1);
+});
+test('lifecycle recovery never creates a helper while paused or without an observation phase', async () => {
+  for (const [mode, paused] of [[null, false], ['preview', true]]) {
+    const f = fixture({ silent: true, tabs: [] });
+    f.stored[OBSERVER_HELPER_KEY] = { version: 2, tab_id: 90, owner_session: 'old',
+      initial_url: 'https://onlyfans.com/', closed: false };
+    await f.observer.configure(mode, paused);
+    assert.equal(f.calls.some(([kind]) => kind === 'create'), false);
+  }
 });

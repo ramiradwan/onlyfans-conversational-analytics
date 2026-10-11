@@ -21,7 +21,7 @@ describe('WebAuthn ceremony API', () => {
     const signal = new AbortController().signal;
     await expect(api.state!(signal)).resolves.toEqual({ enrolled: false, authenticated: false });
     expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith('/api/v1/webauthn/session-state', expect.objectContaining({ signal, credentials: 'same-origin', cache: 'no-store', redirect: 'error' }));
+    expect(request).toHaveBeenCalledWith('/api/v1/webauthn/session-state', expect.objectContaining({ signal: expect.any(AbortSignal), credentials: 'same-origin', cache: 'no-store', redirect: 'error' }));
   });
 
   it.each([{ enrolled: false, authenticated: true }, { enrolled: false, authenticated: false, extra: 'value' }])('refuses inconsistent or extended session facts', async (state) => {
@@ -135,4 +135,61 @@ describe('WebAuthn ceremony API', () => {
       },
     });
   });
+});
+
+function assertion() {
+  return { id: 'Bwg', rawId: bytes([7, 8]), type: 'public-key', response: {
+    clientDataJSON: bytes([9, 10]), authenticatorData: bytes([11, 12]), signature: bytes([13, 14]), userHandle: null,
+  } };
+}
+const loginOptions = { challenge: 'AQID', rpId: 'bridge.localhost', allowCredentials: [{ type: 'public-key', id: 'Bwg' }] };
+it.each([true, false])('reconciles lost login finish once without another assertion authenticated=%s', async (authenticated) => {
+  const get = vi.fn(async () => assertion()); const create = vi.fn();
+  vi.stubGlobal('navigator', { credentials: { get, create } });
+  const request = vi.fn(async (path: string) => {
+    if (path.endsWith('/begin')) return json(loginOptions);
+    if (path.endsWith('/finish')) throw Error('Lost reply');
+    return json({ enrolled: true, authenticated });
+  });
+  const attempt = createWebAuthnApi({ fetch: request as typeof fetch }).login();
+  if (authenticated) await expect(attempt).resolves.toBeUndefined();
+  else await expect(attempt).rejects.toMatchObject({ name: 'LoginOutcomeError', stage: 'finish' });
+  expect(request.mock.calls.map(([path]) => path)).toEqual([
+    '/api/v1/webauthn/login/begin', '/api/v1/webauthn/login/finish', '/api/v1/webauthn/session-state',
+  ]);
+  expect(get).toHaveBeenCalledTimes(1); expect(create).not.toHaveBeenCalled();
+});
+it('does not reconcile a definite assertion refusal or begin a replacement enrollment', async () => {
+  vi.stubGlobal('navigator', { credentials: { get: vi.fn(async () => assertion()) } });
+  const request = vi.fn(async (path: string) => path.endsWith('/begin') ? json(loginOptions) : new Response('', { status: 403 }));
+  await expect(createWebAuthnApi({ fetch: request as typeof fetch }).login()).rejects.toMatchObject({ stage: 'finish' });
+  expect(request).toHaveBeenCalledTimes(2);
+});
+it.each([null, 'NotAllowedError'])('keeps the browser refusal ambiguous without submitting finish (%s)', async (failure) => {
+  vi.stubGlobal('navigator', { credentials: { get: vi.fn(async () => {
+    if (failure) throw new DOMException('Private technical cause', failure);
+    return null;
+  }) } });
+  const request = vi.fn(async () => json(loginOptions));
+  await expect(createWebAuthnApi({ fetch: request as typeof fetch }).login()).rejects.toMatchObject({ stage: 'credential' });
+  expect(request).toHaveBeenCalledTimes(1);
+});
+it('bounds a stalled begin and does not start a browser ceremony', async () => {
+  const get = vi.fn(); vi.stubGlobal('navigator', { credentials: { get } });
+  const request = vi.fn(() => new Promise<Response>(() => {}));
+  await expect(createWebAuthnApi({ fetch: request as typeof fetch, requestTimeoutMs: 5 }).login()).rejects.toMatchObject({ stage: 'begin' });
+  expect(get).not.toHaveBeenCalled();
+});
+it('retiring a ceremony aborts credential acquisition and prevents finish', async () => {
+  const controller = new AbortController();
+  let signal: AbortSignal | undefined;
+  vi.stubGlobal('navigator', { credentials: { get: vi.fn((options: CredentialRequestOptions) => {
+    signal = options.signal; return new Promise<Credential>(() => {});
+  }) } });
+  const request = vi.fn(async () => json(loginOptions));
+  const attempt = createWebAuthnApi({ fetch: request as typeof fetch }).login(controller.signal);
+  while (!signal) await new Promise((resolve) => setTimeout(resolve, 0));
+  controller.abort();
+  await expect(attempt).rejects.toMatchObject({ stage: 'credential' });
+  expect(signal.aborted).toBe(true); expect(request).toHaveBeenCalledTimes(1);
 });
