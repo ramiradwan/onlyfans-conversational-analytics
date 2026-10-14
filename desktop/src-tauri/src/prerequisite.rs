@@ -233,20 +233,73 @@ pub fn show_failure(reason: &'static str) {
         show_installation_conflict();
         return;
     }
-    use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let message = match reason {
-        "webview_acquisition_unavailable" => "Microsoft's download page could not be opened. Use your browser to get Microsoft Edge WebView2 from Microsoft's website, or ask your administrator. After installation, open Conversation Analytics again.",
-        "webview_recovery_unavailable" => "Conversation Analytics could not open its WebView2 recovery window. Get Microsoft Edge WebView2 from Microsoft's website or ask your administrator, then open the app again.",
-        _ => "Conversation Analytics could not verify this installation. Repair or reinstall the app from its approved source, or contact your administrator.",
+    use windows_sys::Win32::UI::{Controls::*, WindowsAndMessaging::*};
+    let (heading, message) = match reason {
+        "data_directory_unavailable" | "invalid_data_directory" => (
+            "Your data folder is unavailable",
+            "Close Conversation Analytics and ask your administrator to check your data folder's permissions and location. Keep your existing data and keys. After access is restored, reopen the app.",
+        ),
+        "webview_acquisition_unavailable" => ("WebView2 could not be acquired", "Microsoft's download page could not be opened. Use your browser to get Microsoft Edge WebView2 from Microsoft's website, or ask your administrator. After installation, open Conversation Analytics again."),
+        "webview_recovery_unavailable" => ("WebView2 recovery is unavailable", "Conversation Analytics could not open its WebView2 recovery window. Get Microsoft Edge WebView2 from Microsoft's website or ask your administrator, then open the app again."),
+        _ => ("This installation could not be verified", "Conversation Analytics could not verify this installation. Repair or reinstall the app from its approved source, or contact your administrator."),
     };
-    unsafe {
-        MessageBoxW(
+    let title = wide("Conversation Analytics");
+    let heading = wide(heading);
+    let message = wide(message);
+    // The property contains only a source-selected static error code. No
+    // paths, activation arguments, account data or credentials are exposed.
+    let code = wide(&format!("OFCA.StartupFailure.{reason}"));
+    let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
+    config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
+    config.pszWindowTitle = title.as_ptr();
+    config.pszMainInstruction = heading.as_ptr();
+    config.pszContent = message.as_ptr();
+    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+    config.pfCallback = Some(failure_callback);
+    config.lpCallbackData = code.as_ptr() as isize;
+    if unsafe {
+        TaskDialogIndirect(
+            &config,
             std::ptr::null_mut(),
-            wide(message).as_ptr(),
-            wide("Conversation Analytics").as_ptr(),
-            MB_OK | MB_ICONERROR,
-        );
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    } < 0
+    {
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                message.as_ptr(),
+                title.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
+        }
     }
+}
+
+pub const FAILURE_STATE: &str = "desktop.installation_unavailable";
+
+unsafe extern "system" fn failure_callback(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    message: u32,
+    _: usize,
+    _: isize,
+    data: isize,
+) -> i32 {
+    use windows_sys::Win32::UI::{
+        Controls::{TDN_CREATED, TDN_DESTROYED},
+        WindowsAndMessaging::{RemovePropW, SetPropW},
+    };
+    let code = data as *const u16;
+    if message == TDN_CREATED as u32 {
+        SetPropW(hwnd, wide(FAILURE_STATE).as_ptr(), 1usize as _);
+        SetPropW(hwnd, code, 1usize as _);
+    }
+    if message == TDN_DESTROYED as u32 {
+        RemovePropW(hwnd, wide(FAILURE_STATE).as_ptr());
+        RemovePropW(hwnd, code);
+    }
+    0
 }
 
 pub const INSTALLATION_CONFLICT_STATE: &str = "desktop.installation_conflict";

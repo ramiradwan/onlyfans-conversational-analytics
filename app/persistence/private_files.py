@@ -120,6 +120,53 @@ def _sid_string(sid: object, advapi32: object, kernel32: object) -> str:
         local_free(ctypes.cast(value, ctypes.c_void_p))
 
 
+def _windows_user_sid(advapi32: object, kernel32: object) -> str:
+    """Read TokenUser, never the elevated token's Administrators default owner."""
+    import ctypes
+
+    kernel32.GetCurrentThread.restype = ctypes.c_void_p
+    kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+    advapi32.OpenThreadToken.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    advapi32.OpenThreadToken.restype = ctypes.c_int
+    advapi32.OpenProcessToken.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p),
+    ]
+    advapi32.OpenProcessToken.restype = ctypes.c_int
+    advapi32.GetTokenInformation.argtypes = [
+        ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
+    advapi32.GetTokenInformation.restype = ctypes.c_int
+    token = ctypes.c_void_p()
+    if not advapi32.OpenThreadToken(kernel32.GetCurrentThread(), 0x0008, True,
+                                    ctypes.byref(token)):
+        error = ctypes.get_last_error()
+        if error != 1008:  # ERROR_NO_TOKEN; do not ignore an inaccessible token.
+            raise ctypes.WinError(error)
+        if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008,
+                                         ctypes.byref(token)):
+            raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        size = ctypes.c_uint32()
+        advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+        if ctypes.get_last_error() != 122 or not 0 < size.value <= 65536:
+            raise OSError("TokenUser size could not be read")
+        buffer = ctypes.create_string_buffer(size.value)
+        if not advapi32.GetTokenInformation(token, 1, buffer, size.value,
+                                            ctypes.byref(size)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        # TOKEN_USER starts with SID_AND_ATTRIBUTES.Sid.
+        return _sid_string(ctypes.c_void_p.from_buffer(buffer), advapi32, kernel32)
+    finally:
+        if not kernel32.CloseHandle(token):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+
 def _set_windows_owner_only_acl(path: Path) -> None:
     import ctypes
 
@@ -159,6 +206,10 @@ def _set_windows_owner_only_acl(path: Path) -> None:
     finally:
         local_free(descriptor)
 
+    user_sid = _windows_user_sid(advapi32, kernel32)
+    if owner_sid not in (user_sid, "S-1-5-32-544"):
+        raise OSError("private object belongs to another Windows owner")
+
     convert = advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW
     convert.argtypes = [
         ctypes.c_wchar_p,
@@ -175,6 +226,10 @@ def _set_windows_owner_only_acl(path: Path) -> None:
         ctypes.POINTER(ctypes.c_int),
     ]
     get_dacl.restype = ctypes.c_int
+    get_owner = advapi32.GetSecurityDescriptorOwner
+    get_owner.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p),
+                         ctypes.POINTER(ctypes.c_int)]
+    get_owner.restype = ctypes.c_int
     set_security = advapi32.SetNamedSecurityInfoW
     set_security.argtypes = [
         ctypes.c_wchar_p,
@@ -188,7 +243,7 @@ def _set_windows_owner_only_acl(path: Path) -> None:
     set_security.restype = ctypes.c_uint32
     private_descriptor = ctypes.c_void_p()
     if not convert(
-        f"D:P(A;;FA;;;{owner_sid})",
+        f"O:{user_sid}D:P(A;;FA;;;{user_sid})",
         1,
         ctypes.byref(private_descriptor),
         None,
@@ -207,11 +262,15 @@ def _set_windows_owner_only_acl(path: Path) -> None:
             raise ctypes.WinError(ctypes.get_last_error())
         if not present.value or not dacl.value:
             raise OSError("private DACL was not created")
+        user_owner = ctypes.c_void_p()
+        if not get_owner(private_descriptor, ctypes.byref(user_owner),
+                         ctypes.byref(defaulted)):
+            raise ctypes.WinError(ctypes.get_last_error())
         result = set_security(
             str(path),
             1,
-            0x00000004 | 0x80000000,
-            None,
+            (0x00000001 if owner_sid != user_sid else 0) | 0x00000004 | 0x80000000,
+            user_owner if owner_sid != user_sid else None,
             None,
             dacl,
             None,
@@ -298,6 +357,7 @@ def _windows_acl_is_owner_only(path: Path, *, handle=None) -> bool:
             and mask & 0x001F01FF == 0x001F01FF
             and _sid_string(ace_sid, advapi32, kernel32)
             == _sid_string(owner, advapi32, kernel32)
+            == _windows_user_sid(advapi32, kernel32)
         )
     finally:
         local_free(descriptor)

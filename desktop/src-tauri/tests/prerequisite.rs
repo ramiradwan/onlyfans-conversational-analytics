@@ -57,6 +57,19 @@ fn real_native_installation_conflict_has_close_and_guidance() {
 }
 
 #[test]
+fn real_native_startup_failure_identifies_data_access_and_installation_errors() {
+    for (scenario, code) in [
+        ("data-unavailable", "data_directory_unavailable"),
+        ("installation-invalid", "invalid_installation"),
+    ] {
+        let value = run(scenario);
+        assert_eq!(value["state"], "desktop.installation_unavailable");
+        assert_eq!(value["code"], code);
+        assert_eq!(value["close_and_guidance_observed"], true);
+    }
+}
+
+#[test]
 fn real_native_recovery_controls_cover_loader_failure_retry_download_and_close() {
     for scenario in ["loader-missing", "too-old", "preview", "retry", "acquire"] {
         let value = run(scenario);

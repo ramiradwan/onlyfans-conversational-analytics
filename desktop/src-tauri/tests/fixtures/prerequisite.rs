@@ -37,16 +37,29 @@ unsafe extern "system" fn find(hwnd: HWND, data: isize) -> i32 {
     1
 }
 
-fn close_conflict() {
+fn close_failure(state: &'static str, code: Option<&'static str>) {
+    struct Expected {
+        hwnd: usize,
+        state: &'static str,
+        code: Option<&'static str>,
+    }
     unsafe extern "system" fn find(hwnd: HWND, data: isize) -> i32 {
         let mut pid = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
-        let marker: Vec<u16> = prerequisite::INSTALLATION_CONFLICT_STATE
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
+        let expected = &mut *(data as *mut Expected);
+        let marker: Vec<u16> = expected.state.encode_utf16().chain(Some(0)).collect();
         if pid == std::process::id() && !GetPropW(hwnd, marker.as_ptr()).is_null() {
-            *(data as *mut usize) = hwnd as usize;
+            if let Some(code) = expected.code {
+                let marker: Vec<u16> = format!("OFCA.StartupFailure.{code}")
+                    .encode_utf16()
+                    .chain(Some(0))
+                    .collect();
+                assert!(
+                    !GetPropW(hwnd, marker.as_ptr()).is_null(),
+                    "startup failure code absent"
+                );
+            }
+            expected.hwnd = hwnd as usize;
             return 0;
         }
         1
@@ -65,22 +78,31 @@ fn close_conflict() {
     }
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let mut found = 0usize;
+        let mut found = Expected {
+            hwnd: 0,
+            state,
+            code,
+        };
         unsafe {
-            EnumWindows(Some(find), &mut found as *mut usize as isize);
+            EnumWindows(Some(find), &mut found as *mut Expected as isize);
         }
-        if found != 0 {
+        if found.hwnd != 0 {
             let mut observed = [false; 2];
             unsafe {
                 EnumChildWindows(
-                    found as HWND,
+                    found.hwnd as HWND,
                     Some(labels),
                     &mut observed as *mut [bool; 2] as isize,
                 );
             }
             if observed == [true; 2] {
                 unsafe {
-                    SendMessageW(found as HWND, TDM_CLICK_BUTTON as u32, IDCLOSE as usize, 0);
+                    SendMessageW(
+                        found.hwnd as HWND,
+                        TDM_CLICK_BUTTON as u32,
+                        IDCLOSE as usize,
+                        0,
+                    );
                 }
                 return;
             }
@@ -189,12 +211,30 @@ impl Platform for Qualification {
 fn main() {
     let scenario = std::env::args().nth(1).unwrap();
     if scenario == "installation-conflict" {
-        let closer = std::thread::spawn(close_conflict);
+        let closer =
+            std::thread::spawn(|| close_failure(prerequisite::INSTALLATION_CONFLICT_STATE, None));
         prerequisite::show_failure("runtime_installation_conflict");
         closer.join().unwrap();
         println!(
             "{}",
             serde_json::json!({"state":prerequisite::INSTALLATION_CONFLICT_STATE,"close_and_guidance_observed":true})
+        );
+        return;
+    }
+    if scenario == "data-unavailable" || scenario == "installation-invalid" {
+        let reason = if scenario == "data-unavailable" {
+            "data_directory_unavailable"
+        } else {
+            "invalid_installation"
+        };
+        let closer =
+            std::thread::spawn(move || close_failure(prerequisite::FAILURE_STATE, Some(reason)));
+        prerequisite::show_failure(reason);
+        closer.join().unwrap();
+        println!(
+            "{}",
+            serde_json::json!({"state": prerequisite::FAILURE_STATE,
+                  "code": reason, "close_and_guidance_observed": true})
         );
         return;
     }

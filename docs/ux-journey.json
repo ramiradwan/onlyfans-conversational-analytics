@@ -133,6 +133,11 @@
       "id": "native-installation-ownership",
       "entry_state": "desktop.installation_conflict",
       "success_state": "desktop.setup_loading"
+    },
+    {
+      "id": "native-startup-recovery",
+      "entry_state": "desktop.installation_unavailable",
+      "success_state": "desktop.setup_loading"
     }
   ],
   "states": [
@@ -2591,6 +2596,28 @@
           "kind": "unit",
           "file": "desktop/src-tauri/tests/process_lifetime.rs",
           "name": "uncoordinated_legacy_instance_refuses_before_data_or_child_creation"
+        }
+      ]
+    },
+    {
+      "id": "desktop.installation_unavailable",
+      "surface": "desktop.installation",
+      "anchor": {
+        "file": "desktop/src-tauri/src/prerequisite.rs",
+        "text": "pub const FAILURE_STATE: &str = \"desktop.installation_unavailable\";"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "Close, restore data-folder access or repair the installation, then reopen"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/prerequisite.rs",
+          "name": "real_native_startup_failure_identifies_data_access_and_installation_errors"
         }
       ]
     }
