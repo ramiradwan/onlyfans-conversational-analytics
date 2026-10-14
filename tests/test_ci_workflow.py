@@ -49,6 +49,19 @@ def test_native_desktop_contracts_are_required_without_installing_or_publishing_
     assert "$LASTEXITCODE -ne 0" in command
     assert "--include-ignored" not in command and "Add-AppxPackage" not in command
     assert "desktop-native-contracts" in jobs["required-ci-gate"]["needs"]
+
+
+def test_required_web_job_qualifies_delivery_without_upload_credentials():
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["web-build-and-test"]
+    steps = job["steps"]
+    install = next(i for i, step in enumerate(steps) if step.get("name") == "Install locked desktop delivery test dependencies")
+    execute = next(i for i, step in enumerate(steps) if step.get("name") == "Test desktop serving and publication boundaries")
+    assert install < execute
+    assert steps[install]["run"] == "npm ci --ignore-scripts --no-audit --no-fund --prefix tools/desktop-delivery"
+    assert steps[execute]["run"] == "npm test --prefix tools/desktop-delivery"
+    assert "if" not in steps[execute] and not steps[execute].get("continue-on-error")
+    assert "secrets." not in json.dumps(job)
 FIXED_SQLCIPHER_BUILDER = "packaging\\sqlcipher\\build-fixed-wheel.ps1"
 STATEFUL_TIER_A_MARKER = "stateful_tier_a"
 STATEFUL_TIER_B_MARKER = "stateful_tier_b"
@@ -983,6 +996,8 @@ def _assert_web_feedback_keeps_its_checks(workflow: dict[str, Any]) -> None:
         ("", "git diff --exit-code -- frontend/src/theme/generated"),
         ("", "npm test --prefix frontend"),
         ("", "npm test --prefix extension"),
+        ("", "npm ci --ignore-scripts --no-audit --no-fund --prefix tools/desktop-delivery"),
+        ("", "npm test --prefix tools/desktop-delivery"),
         ("", "node --test app/provisioning/*.test.mjs"),
         ("", "npm ci --prefix tools/analytics_cosmos_node"),
         ("", "npm test --prefix tools/analytics_cosmos_node"),

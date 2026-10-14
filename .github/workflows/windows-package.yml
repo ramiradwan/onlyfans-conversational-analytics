@@ -329,7 +329,7 @@ jobs:
     # The federated credential is scoped to a job, not to a step, so this job
     # installs no dependency, compiles nothing, checks out no build tooling,
     # and pins every action it runs to a commit.
-    name: Sign and verify the selected package
+    name: Sign and publish the package
     needs: build
     runs-on: windows-2022
     environment: release

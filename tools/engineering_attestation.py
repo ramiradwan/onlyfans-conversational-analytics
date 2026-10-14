@@ -33,6 +33,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -767,6 +768,7 @@ class QualifiedSource:
     artifact_name: str
     artifact_server_digest: str
     archive_download_url: str
+    source_tree: str = ""
 
 
 def _ci_literal_mapping(source: str, indent: int) -> dict[str, str]:
@@ -1403,6 +1405,8 @@ def qualify_windows_package_source(
     allowed_artifact_names = required_artifact_names | {
         f"windows-package-sqlcipher-{source_commit}",
         f"windows-package-companion-{source_commit}",
+        f"desktop-publisher-runtime-{source_commit}-{run_id}-{run_attempt}",
+        f"desktop-publication-{source_commit}-{run_id}-{run_attempt}",
     }
     observed_artifact_names = [
         item.get("name") for item in artifacts if isinstance(item, dict)
@@ -1441,6 +1445,12 @@ def qualify_windows_package_source(
         "https://api.github.com/"
     ):
         raise ContractError("qualified Actions artifact download URL is not GitHub API")
+    source_document = client.get(f"{_repo_path(PRODUCT_REPOSITORY)}/git/commits/{source_commit}")
+    tree_document = source_document.get("tree") if isinstance(source_document, dict) else None
+    source_tree = tree_document.get("sha") if isinstance(tree_document, dict) else None
+    if not isinstance(source_tree, str):
+        raise ContractError("Windows package source has no Git tree coordinate")
+    _require_hex(source_tree, HEX_40, "Windows package source tree")
     return QualifiedSource(
         run_id=run_id,
         run_attempt=run_attempt,
@@ -1450,6 +1460,7 @@ def qualify_windows_package_source(
         artifact_name=expected_name,
         artifact_server_digest=digest,
         archive_download_url=archive_download_url,
+        source_tree=source_tree,
     )
 
 
@@ -1588,11 +1599,158 @@ def _qualified_workspace_policy(manifest: dict[str, Any]) -> bool:
     )
 
 
+def _msix_profile_from_source(client: GitHubApi, source: QualifiedSource, target: str) -> dict[str, Any]:
+    profiles = {"msix-direct": "production-direct.json", "msix-store": "production-store.json"}
+    if target not in profiles:
+        raise ContractError("unknown MSIX Agent container channel")
+    _, data = fetch_git_blob(client, PRODUCT_REPOSITORY,
+        "packaging/msix/profiles/" + profiles[target], source.source_commit)
+    profile = load_json_strict(data, label="source MSIX profile")
+    if not isinstance(profile, dict):
+        raise ContractError("source MSIX profile must be an object")
+    return profile
+
+
+def _msix_agent_container(
+    outer: dict[str, bytes], agent_names: list[str], source: QualifiedSource | None,
+    profile_reader: Callable[[str], dict[str, Any]] | None,
+) -> set[str]:
+    """Bind the linked Agent to the Windows-verified release container.
+
+    This does not verify a Windows trust chain or attest MSIX installation.
+    Windows package verification remains its independent release boundary.
+    """
+    if source is None or profile_reader is None or len(agent_names) != 1:
+        raise ContractError("MSIX Agent container requires independently resolved source and profile")
+    def document(name: str, maximum: int = 32768) -> dict[str, Any]:
+        data = outer.get(name, b"")
+        if not data or len(data) > maximum:
+            raise ContractError("missing or oversized MSIX Agent container metadata")
+        value = load_json_strict(data, label=name)
+        if not isinstance(value, dict):
+            raise ContractError("MSIX Agent container metadata must be objects")
+        return value
+    final = document("desktop.artifact-release.json")
+    final_keys = {"schema","source_commit","source_tree","target","application_version","package_version",
+        "package_file","package_sha256","profile_sha256","inventory_sha256","build_sha256","expected_family",
+        "verification_sha256","signature_scope","agent_file","agent_sha256","resolved_direct_inputs_sha256","descriptor_sha256"}
+    target = final.get("target")
+    if set(final) != final_keys or final["schema"] != "ofca-desktop-artifact-release/v1" or target not in {"msix-direct","msix-store"}:
+        raise ContractError("MSIX Agent container final record is not the closed channel record")
+    if final["source_commit"] != source.source_commit or final["source_tree"] != source.source_tree:
+        raise ContractError("MSIX Agent container source does not match resolved Git coordinates")
+    version = final["package_version"]
+    if not isinstance(version, str) or not re.fullmatch(r"1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.0", version):
+        raise ContractError("invalid MSIX deployment version")
+    parts = [int(value) for value in version.split(".")]
+    if max(parts) > 65535 or parts[1] * 65536 + parts[2] == 0:
+        raise ContractError("invalid MSIX deployment sequence")
+    package_name = f"ConversationAnalytics_{version}_x64.msix"
+    if final["package_file"] != package_name or final["agent_file"] != agent_names[0]:
+        raise ContractError("MSIX Agent container artifact names differ")
+    names = {package_name,agent_names[0],"sha256sums.txt","desktop.artifact-release.json","desktop.release-inputs.json",
+        "desktop.profile.json","desktop.inventory.json","desktop.build.json","desktop.verification.json"}
+    if target == "msix-direct":
+        names |= {"desktop.appinstaller-template.xml","ConversationAnalytics.appinstaller","desktop.resolved-direct-inputs.json"}
+    if set(outer) != names:
+        raise ContractError("MSIX Agent container must have the exact channel file closure")
+    for name, field_name in ((package_name,"package_sha256"),(agent_names[0],"agent_sha256"),
+        ("desktop.profile.json","profile_sha256"),("desktop.inventory.json","inventory_sha256"),
+        ("desktop.build.json","build_sha256"),("desktop.verification.json","verification_sha256")):
+        if sha256_bytes(outer[name]) != final[field_name]:
+            raise ContractError("MSIX Agent container frozen file hash differs")
+    candidate = document("desktop.release-inputs.json")
+    candidate_keys = {"schema","target","source_commit","source_tree","package_file","package_version","application_version",
+        "profile_sha256","inventory_sha256","build_sha256","unsigned_package_sha256","agent_file","agent_sha256",
+        "expected_family","direct_delivery_sha256","appinstaller_template_sha256"}
+    if set(candidate) != candidate_keys or candidate["schema"] != "ofca-msix-release-inputs/v1":
+        raise ContractError("MSIX Agent container candidate record differs")
+    for field_name in candidate_keys & final_keys:
+        if field_name != "schema" and candidate[field_name] != final[field_name]:
+            raise ContractError("MSIX Agent container candidate and final coordinates differ")
+    profile = document("desktop.profile.json")
+    if profile != profile_reader(target) or profile.get("schema") != "ofca-msix-package-profile/v1" or profile.get("purpose") != "production":
+        raise ContractError("MSIX Agent container profile differs from its source-approved production profile")
+    sequence = profile.get("release_sequence")
+    if type(sequence) is not int or not 1 <= sequence <= 4294967295 or not isinstance(profile.get("identity"), dict):
+        raise ContractError("MSIX Agent container source profile is malformed")
+    expected_version = f"1.{profile['release_sequence'] // 65536}.{profile['release_sequence'] % 65536}.0"
+    distribution, mode, signature = (("direct-appinstaller","DirectSigned","trusted-timestamped")
+        if target == "msix-direct" else ("microsoft-store","StoreSubmission","unsigned-store-submission"))
+    if (version != expected_version or final["application_version"] != profile["application_version"]
+            or profile["distribution"] != distribution or final["signature_scope"] != signature):
+        raise ContractError("MSIX Agent container version or channel scope differs")
+    inventory = document("desktop.inventory.json", 16 * 1024 * 1024)
+    build = document("desktop.build.json")
+    verification = document("desktop.verification.json")
+    if (inventory.get("schema") != "ofca-msix-inventory/v1" or inventory.get("identity") != profile["identity"]
+            or inventory.get("profile_sha256") != final["profile_sha256"] or inventory.get("package_version") != version
+            or inventory.get("application_version") != final["application_version"]
+            or inventory.get("runtime_release", {}).get("source_commit") != source.source_commit
+            or build.get("producer_source", {}).get("base_commit") != source.source_commit
+            or build.get("producer_source", {}).get("dirty") is not False
+            or build.get("verification", {}).get("package_sha256") != candidate["unsigned_package_sha256"]):
+        raise ContractError("MSIX Agent container runtime provenance differs")
+    identity = verification.get("identity", {})
+    expected_identity = {"Name":profile["identity"]["name"],"Publisher":profile["identity"]["publisher"],
+        "Version":version,"Architecture":"x64","FamilyName":final["expected_family"]}
+    if (verification.get("schema") != "ofca-msix-release-verification/v1" or verification.get("purpose") != "production"
+            or verification.get("distribution") != distribution or verification.get("mode") != mode
+            or verification.get("signature") != signature or verification.get("package_sha256") != final["package_sha256"]
+            or verification.get("profile_sha256") != final["profile_sha256"]
+            or verification.get("inventory_sha256") != final["inventory_sha256"]
+            or any(identity.get(key) != value for key,value in expected_identity.items())):
+        raise ContractError("MSIX Agent container Windows verification binding differs")
+    if target == "msix-direct":
+        for name, field_name in (("ConversationAnalytics.appinstaller","descriptor_sha256"),
+                ("desktop.resolved-direct-inputs.json","resolved_direct_inputs_sha256")):
+            if sha256_bytes(outer[name]) != final[field_name]:
+                raise ContractError("MSIX Agent container direct metadata hash differs")
+        if sha256_bytes(outer["desktop.appinstaller-template.xml"]) != candidate["appinstaller_template_sha256"]:
+            raise ContractError("MSIX Agent container template hash differs")
+        descriptor = outer["ConversationAnalytics.appinstaller"]
+        if len(descriptor) > 16384 or b"<!" in descriptor:
+            raise ContractError("MSIX Agent container descriptor is not closed XML")
+        try:
+            root = ET.fromstring(descriptor)
+        except ET.ParseError as exc:
+            raise ContractError("MSIX Agent container descriptor is not XML") from exc
+        ns = "{http://schemas.microsoft.com/appx/appinstaller/2018}"
+        main = root.find(ns + "MainPackage")
+        nodes = list(root.iter())
+        expected_elements = ["AppInstaller","MainPackage","UpdateSettings","OnLaunch","AutomaticBackgroundTask"]
+        if (len(nodes) != 5 or [node.tag for node in nodes] != [ns + value for value in expected_elements]
+                or set(root.attrib) != {"Version","Uri"}
+                or set(nodes[1].attrib) != {"Name","Publisher","Version","ProcessorArchitecture","Uri"}
+                or nodes[2].attrib or nodes[4].attrib
+                or nodes[3].attrib != {"HoursBetweenUpdateChecks":"6","ShowPrompt":"false","UpdateBlocksActivation":"false"}
+                or list(root) != nodes[1:3] or list(nodes[2]) != nodes[3:]
+                or any((node.text or "").strip() or (node.tail or "").strip() for node in nodes)):
+            raise ContractError("MSIX Agent container descriptor update policy differs")
+        feed_uri = urllib.parse.urlsplit(profile["app_installer_uri"])
+        package_uri = urllib.parse.urlsplit(main.get("Uri", "")) if main is not None else None
+        if (root.tag != ns + "AppInstaller" or root.get("Version") != version
+                or root.get("Uri") != profile["app_installer_uri"] or main is None
+                or any(main.get(key) != value for key,value in {"Name":expected_identity["Name"],
+                    "Publisher":expected_identity["Publisher"],"Version":version,"ProcessorArchitecture":"x64"}.items())
+                or package_uri is None or package_uri.scheme != "https" or package_uri.netloc != feed_uri.netloc
+                or package_uri.query or package_uri.fragment or package_uri.username is not None or package_uri.password is not None
+                or not package_uri.path.endswith(f"/packages/{final['package_sha256']}/{package_name}")):
+            raise ContractError("MSIX Agent container descriptor binding differs")
+    elif (final["resolved_direct_inputs_sha256"] is not None or final["descriptor_sha256"] is not None
+            or candidate["direct_delivery_sha256"] is not None or candidate["appinstaller_template_sha256"] is not None
+            or profile.get("app_installer_uri") is not None):
+        raise ContractError("Store Agent container cannot carry direct delivery metadata")
+    return names
+
+
 def qualify_downloaded_artifact(
     actions_archive: bytes,
     *,
     expected_server_digest: str,
     release_tag: str,
+    source: QualifiedSource | None = None,
+    profile_reader: Callable[[str], dict[str, Any]] | None = None,
 ) -> QualifiedChromeZip:
     if not TAG.fullmatch(release_tag):
         raise ContractError("release tag has an invalid format")
@@ -1603,7 +1761,11 @@ def qualify_downloaded_artifact(
     agent_names = [name for name in outer if AGENT_ZIP.fullmatch(name)]
     installer_names = [name for name in outer if INSTALLER.fullmatch(name)]
     expected_names = set(agent_names + installer_names + ["sha256sums.txt"])
-    if len(agent_names) != 1 or len(installer_names) != 1 or set(outer) != expected_names:
+    if "desktop.artifact-release.json" in outer:
+        expected_names = _msix_agent_container(outer, agent_names, source, profile_reader)
+        if installer_names:
+            raise ContractError("MSIX Agent container cannot also carry an Inno installer")
+    elif len(agent_names) != 1 or len(installer_names) != 1 or set(outer) != expected_names:
         raise ContractError(
             "Actions artifact must contain exactly one installer, one Agent ZIP, "
             "and sha256sums.txt"
@@ -1613,7 +1775,7 @@ def qualify_downloaded_artifact(
     if release_tag != f"v{agent_match.group('version')}":
         raise ContractError("release tag and packaged Agent version differ")
     sums = _parse_sha256sums(outer["sha256sums.txt"])
-    expected_sum_names = set(agent_names + installer_names)
+    expected_sum_names = expected_names - {"sha256sums.txt"}
     if set(sums) != expected_sum_names:
         raise ContractError("sha256sums.txt does not describe the exact published files")
     for name in expected_sum_names:
@@ -3213,6 +3375,8 @@ def command_qualify_package(args: argparse.Namespace) -> int:
             actions_archive_path.read_bytes(),
             expected_server_digest=source.artifact_server_digest,
             release_tag=args.release_tag,
+            source=source,
+            profile_reader=lambda target: _msix_profile_from_source(client, source, target),
         )
         release = qualify_store_release(
             chrome_zip,
@@ -3260,6 +3424,8 @@ def command_sign_and_handoff(args: argparse.Namespace) -> int:
             actions_archive_path.read_bytes(),
             expected_server_digest=source.artifact_server_digest,
             release_tag=args.release_tag,
+            source=source,
+            profile_reader=lambda target: _msix_profile_from_source(client, source, target),
         )
         # Every precondition runs before any key material is decoded, so a
         # refusal cannot reach a signature.

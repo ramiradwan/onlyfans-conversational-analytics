@@ -106,6 +106,8 @@ The MSIX handoff contains one package, one linked Agent artifact, sealed profile
 
 The separate protected direct publication job requires `publish_direct`, which defaults to false, and successful build/sign jobs. It independently verifies final MSIX bytes before receiving upload secrets. The [direct delivery client](../../tools/desktop-delivery/README.md#signing-and-publication-boundary) defines source-bound tooling, immutable upload, exact served-byte verification and conditional descriptor promotion. Its local tests do not establish live Product publication or authorize requesting that job. Installed compatibility evidence and customer release approval remain required.
 
+Chrome Agent engineering attestation accepts its linked ZIP from either the original Inno archive or a closed MSIX release archive. The adapter resolves the production profile at the qualified Git commit, checks source/tree and all container hashes, and preserves the existing Agent audit and attestation schema. It does not attest Windows signature trust, installed MSIX behavior or Microsoft Store delivery. The original required signing-job name remains stable for historical and current qualification.
+
 ## External-review disposition and installed gates
 
 These are release obligations, not claims that the producer has fixed the runtime:

@@ -489,6 +489,122 @@ def test_v203_release_tag_accepts_v203_packaged_agent() -> None:
     assert qualified.metadata["extension_version"] == RELEASE_VERSION
 
 
+def _msix_actions_artifact(target, mutation=None):
+    """Container/linkage evidence only; synthetic MSIX bytes prove no Windows trust."""
+    from tools.msix_packaging import render_appinstaller
+    profile = json.loads((ROOT / "packaging/msix/profiles" / ("production-direct.json" if target == "msix-direct" else "production-store.json")).read_text())
+    sequence = profile["release_sequence"]
+    version = f"1.{sequence // 65536}.{sequence % 65536}.0"
+    package_name = f"ConversationAnalytics_{version}_x64.msix"
+    agent_name, agent = _chrome_zip()
+    package = b"synthetic package: not signature qualification"
+    digest = lambda data: hashlib.sha256(data).hexdigest()
+    encode = lambda obj: (json.dumps(obj, sort_keys=True) + "\n").encode()
+    distribution, mode, signature = (("direct-appinstaller", "DirectSigned", "trusted-timestamped")
+        if target == "msix-direct" else ("microsoft-store", "StoreSubmission", "unsigned-store-submission"))
+    family = ("Dipsy.OnlyFansConversationalAnalytics_bvmm2ppd090g2" if target == "msix-direct"
+        else "Dipsy.ConversationAnalytics_nhwt8as2n81zj")
+    outer = {package_name:package, agent_name:agent, "desktop.profile.json":encode(profile)}
+    inventory = {"schema":"ofca-msix-inventory/v1", "identity":profile["identity"], "profile_sha256":digest(outer["desktop.profile.json"]),
+        "package_version":version, "application_version":profile["application_version"], "runtime_release":{"source_commit":SOURCE_COMMIT}}
+    build = {"producer_source":{"base_commit":SOURCE_COMMIT,"dirty":False}, "verification":{"package_sha256":"0" * 64}}
+    if mutation == "runtime-source":
+        inventory["runtime_release"]["source_commit"] = "c" * 40
+    outer["desktop.inventory.json"] = encode(inventory)
+    outer["desktop.build.json"] = encode(build)
+    verification = {"schema":"ofca-msix-release-verification/v1", "purpose":"production", "distribution":distribution,
+        "mode":mode, "signature":signature, "package_sha256":digest(package), "profile_sha256":digest(outer["desktop.profile.json"]),
+        "inventory_sha256":digest(outer["desktop.inventory.json"]), "identity":{"Name":profile["identity"]["name"],
+            "Publisher":profile["identity"]["publisher"], "FamilyName":family, "Version":version, "Architecture":"x64"}}
+    if mutation == "wrong-publisher":
+        verification["identity"]["Publisher"] = "CN=Other"
+    outer["desktop.verification.json"] = encode(verification)
+    candidate = {"schema":"ofca-msix-release-inputs/v1", "target":target, "source_commit":SOURCE_COMMIT, "source_tree":"1" * 40,
+        "package_file":package_name, "package_version":version, "application_version":profile["application_version"],
+        "profile_sha256":digest(outer["desktop.profile.json"]), "inventory_sha256":digest(outer["desktop.inventory.json"]),
+        "build_sha256":digest(outer["desktop.build.json"]), "unsigned_package_sha256":"0" * 64, "agent_file":agent_name,
+        "agent_sha256":digest(agent), "expected_family":family, "direct_delivery_sha256":None, "appinstaller_template_sha256":None}
+    final = {key:value for key,value in candidate.items() if key not in {"unsigned_package_sha256", "direct_delivery_sha256", "appinstaller_template_sha256"}}
+    final.update(schema="ofca-desktop-artifact-release/v1", package_sha256=digest(package), verification_sha256=digest(outer["desktop.verification.json"]),
+        signature_scope=signature, resolved_direct_inputs_sha256=None, descriptor_sha256=None)
+    if target == "msix-direct":
+        prefix = "https://updates.dipsy.fi/desktop/v1/packages/"
+        template = render_appinstaller(profile, prefix + "0" * 64 + "/" + package_name)
+        descriptor = render_appinstaller(profile, prefix + digest(package) + "/" + package_name)
+        if mutation == "descriptor-origin":
+            descriptor = descriptor.replace(b"updates.dipsy.fi/desktop/v1/packages", b"other.example.test/desktop/v1/packages")
+        if mutation == "descriptor-policy":
+            descriptor = descriptor.replace(b'ShowPrompt="false"', b'ShowPrompt="true"')
+        outer.update({"desktop.appinstaller-template.xml":template, "ConversationAnalytics.appinstaller":descriptor,
+            "desktop.resolved-direct-inputs.json":encode({"schema":"ofca-direct-release-environment/v1"})})
+        candidate["appinstaller_template_sha256"] = digest(template)
+        candidate["direct_delivery_sha256"] = "d" * 64
+        final["descriptor_sha256"] = digest(descriptor)
+        final["resolved_direct_inputs_sha256"] = digest(outer["desktop.resolved-direct-inputs.json"])
+    if mutation == "source-tree":
+        candidate["source_tree"] = final["source_tree"] = "2" * 40
+    if mutation == "agent-link":
+        candidate["agent_sha256"] = final["agent_sha256"] = "0" * 64
+    if mutation == "channel-scope":
+        final["signature_scope"] = "unqualified"
+    if mutation == "store-feed-authority":
+        candidate["direct_delivery_sha256"] = "d" * 64
+    outer["desktop.release-inputs.json"] = encode(candidate)
+    outer["desktop.artifact-release.json"] = encode(final)
+    if mutation == "package-bytes":
+        outer[package_name] = b"different final package bytes"
+    if mutation == "extra-file":
+        outer["unapproved.exe"] = b"unexpected"
+    outer["sha256sums.txt"] = "".join(f"{digest(data)} *{name}\n" for name,data in sorted(outer.items())).encode()
+    archive = _zip_bytes(outer)
+    return archive, "sha256:" + digest(archive), profile
+
+
+@pytest.mark.parametrize("target", ["msix-direct", "msix-store"])
+def test_msix_container_extracts_the_same_agent_without_attesting_desktop_trust(target):
+    archive, digest, profile = _msix_actions_artifact(target)
+    source = _qualify_source(QualificationApi())
+    qualified = producer.qualify_downloaded_artifact(archive, expected_server_digest=digest, release_tag=RELEASE_TAG,
+        source=source, profile_reader=lambda route: profile if route == target else {})
+    assert qualified.filename == _chrome_zip()[0]
+    assert qualified.sha256 == hashlib.sha256(_chrome_zip()[1]).hexdigest()
+    with pytest.raises(producer.ContractError, match="resolved source"):
+        producer.qualify_downloaded_artifact(archive, expected_server_digest=digest, release_tag=RELEASE_TAG)
+
+
+@pytest.mark.parametrize("mutation", ["runtime-source", "source-tree", "wrong-publisher", "agent-link", "channel-scope", "package-bytes", "extra-file", "descriptor-origin", "descriptor-policy"])
+def test_msix_agent_container_refuses_rehashed_but_inconsistent_metadata(mutation):
+    archive, digest, profile = _msix_actions_artifact("msix-direct", mutation)
+    with pytest.raises(producer.ContractError):
+        producer.qualify_downloaded_artifact(archive, expected_server_digest=digest, release_tag=RELEASE_TAG,
+            source=_qualify_source(QualificationApi()), profile_reader=lambda route: profile)
+
+
+def test_msix_agent_profile_must_come_from_the_resolved_source():
+    archive, digest, profile = _msix_actions_artifact("msix-direct")
+    profile["purpose"] = "qualification"
+    with pytest.raises(producer.ContractError, match="source-approved"):
+        producer.qualify_downloaded_artifact(archive, expected_server_digest=digest, release_tag=RELEASE_TAG,
+            source=_qualify_source(QualificationApi()), profile_reader=lambda route: profile)
+
+
+def test_store_agent_container_cannot_carry_direct_delivery_authority():
+    archive, digest, profile = _msix_actions_artifact("msix-store", "store-feed-authority")
+    with pytest.raises(producer.ContractError, match="direct delivery"):
+        producer.qualify_downloaded_artifact(archive, expected_server_digest=digest, release_tag=RELEASE_TAG,
+            source=_qualify_source(QualificationApi()), profile_reader=lambda route: profile)
+
+
+def test_current_publisher_artifacts_are_scoped_to_the_exact_run_and_attempt():
+    api = QualificationApi()
+    api.artifacts.append(_artifact(f"desktop-publisher-runtime-{SOURCE_COMMIT}-42-2", identifier=93))
+    api.artifacts.append(_artifact(f"desktop-publication-{SOURCE_COMMIT}-42-2", identifier=94))
+    assert _qualify_source(api).source_tree == "1" * 40
+    api.artifacts[-1]["name"] = f"desktop-publication-{SOURCE_COMMIT}-42-1"
+    with pytest.raises(producer.ContractError, match="artifact identity/count"):
+        _qualify_source(api)
+
+
 def test_release_tag_and_packaged_agent_version_mismatch_is_rejected() -> None:
     archive, digest = _actions_artifact()
     with pytest.raises(producer.ContractError, match="Agent version differ"):
