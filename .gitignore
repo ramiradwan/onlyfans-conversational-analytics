@@ -89,6 +89,7 @@ tools/e2e-capture/playwright-report/
 tools/e2e-capture/test-results/
 tools/visual-capture/node_modules/
 tools/visual-capture/output/
+tools/desktop-credential-check/node_modules/
 
 # Generated Product -> Legal evidence bundles are handoff artifacts, not source.
 /artifacts/legal/

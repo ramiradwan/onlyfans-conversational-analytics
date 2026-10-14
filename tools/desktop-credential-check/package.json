@@ -1,0 +1,8 @@
+{
+  "name": "dipsy-desktop-credential-check",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test check.test.mjs" },
+  "dependencies": { "@aws-sdk/client-s3": "3.1152.0" }
+}
