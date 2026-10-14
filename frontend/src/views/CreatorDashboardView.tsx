@@ -378,8 +378,7 @@ export default function CreatorDashboardView({
         <ReservedRegion id="dashboard-recent" size={{ xs: 440, sm: 360 }} regionRole="scroll">
           {hasSnapshot ? <Box data-region-content><RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} /></Box> : <LoadingFrame label="Loading dashboard…" />}
         </ReservedRegion>
-        <ReservedRegion id="dashboard-setup" size={extensionConnection(state.agent) === 'connected'
-          ? { xs: 352, sm: 240 } : { xs: 720, sm: 600 }} regionRole="scroll">
+        <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
           {showSetup && <Box data-region-content>
             {extensionConnection(state.agent) === 'connected'
               ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} />

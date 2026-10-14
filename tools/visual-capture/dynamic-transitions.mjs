@@ -169,9 +169,13 @@ async function driveSurface(page, surface, step) {
     if (path === `/${surface}.html`) return route.fulfill({ contentType: 'text/html', body: html });
     return route.fulfill({ status: 404 });
   });
-  await page.goto(`http://surface-fixture.localhost/${surface}.html`);
+  const initialHash = initial.hash ?? (surface === 'setup' ? 'journey=11111111-1111-4111-8111-111111111111' : '');
+  await page.goto(`http://surface-fixture.localhost/${surface}.html${initialHash ? '#' + initialHash : ''}`);
   for (const prior of [cases[0], cases.at(-1)]) for (const [name, state] of cases) {
-    const change = (value) => page.evaluate((value) => { window.__surfaceFixture.change(value, true); location.hash = value.hash ?? ''; }, value);
+    const change = (value) => page.evaluate((value) => {
+      window.__surfaceFixture.change(value, true);
+      location.hash = value.hash ?? (value.surface === 'setup' ? 'journey=11111111-1111-4111-8111-111111111111' : '');
+    }, value);
     await change(prior[1]);
     await page.waitForTimeout(250);
     await step(`${prior[0]}:${name}`, () => change(state));
@@ -194,12 +198,13 @@ async function driveProduction(page, step) {
   });
   await page.route('**/*', async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path === '/api/v1/webauthn/session-state') return route.fulfill({ status: stateAvailable ? 200 : 503, contentType: 'application/json', body: JSON.stringify({ enrolled, authenticated: false }) });
+    if (path === '/api/v1/webauthn/session-state') return route.fulfill({ status: stateAvailable ? 200 : 503, contentType: 'application/json', body: JSON.stringify({ enrolled, authenticated: false, csrf_token: null }) });
     if (route.request().method() === 'POST') requests.push(path);
     if (path.startsWith('/api/')) return route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
-    if (!/^\/(assets\/[\w.-]+|index.html)?$/.test(path)) return route.abort();
-    if (/\.(js|woff2)$/.test(path)) await new Promise((resolve) => setTimeout(resolve, 750));
-    const body = await readFile(new URL(path === '/' ? 'index.html' : path.slice(1), root));
+    const assetPath = path.replace(/^\/static\/dist\//u, '/');
+    if (!/^\/(assets\/[\w.-]+|index.html)?$/.test(assetPath)) return route.abort();
+    if (/\.(js|woff2)$/.test(assetPath)) await new Promise((resolve) => setTimeout(resolve, 750));
+    const body = await readFile(new URL(assetPath === '/' ? 'index.html' : assetPath.slice(1), root));
     await route.fulfill({ body, contentType: path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/html' });
   });
   await page.goto('http://production-fixture.localhost/');
