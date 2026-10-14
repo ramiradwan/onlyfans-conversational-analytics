@@ -267,10 +267,10 @@ export async function readCompanionPairingStatus(context, pairingId) {
   return parsePairingDocument(response, 'Companion pairing status');
 }
 
-export async function confirmCompanionPairing(context, pairingId, version) {
+export async function confirmCompanionPairing(context, pairingId, version, agentComparisonCode) {
   const cookie = await browserSessionCookieHeader(context);
   const { csrfToken } = await servedBootstrap(context);
-  const body = JSON.stringify({ version });
+  const body = JSON.stringify({ version, ...(agentComparisonCode === undefined ? {} : { agent_comparison_code: agentComparisonCode }) });
   const response = await requestBrain(
     `/api/v1/companion/pairings/${encodeURIComponent(pairingId)}/confirm`,
     {

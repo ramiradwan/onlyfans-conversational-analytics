@@ -7,11 +7,11 @@ import {
   PROVISIONING_IDENTITY_STORAGE_SCHEMA,
 } from '../../../extension/transport/provisioning-identity.mjs';
 import { BRAIN_ORIGIN } from './brain.mjs';
+import { openCompanionPairing, readCompanionPairingStatus, confirmCompanionPairing } from './brain-probe-base.mjs';
 import { openPopup, openSetup } from './consent-ui.mjs';
 import { observeProductTabReloads } from './extension-browser.mjs';
 import { EXTENSION_DIST, PRODUCT_ROOT } from './paths.mjs';
 
-const COMPATIBILITY_MARKER = 'e2e-companion-pairing-v1';
 const PACKAGED_GRANT_TRUST = path.join(EXTENSION_DIST, 'companion-grant-trust.json');
 const QUALIFICATION_GRANT_TRUST = path.join(
   PRODUCT_ROOT,
@@ -202,139 +202,66 @@ async function assertSameDocumentFull(pairingPage, identityPage, worker, account
   await waitForBoundFullSession(worker);
 }
 
-async function installLegacyBindNoop(worker, accountId) {
-  await worker.evaluate(({ account, marker, bridgeOrigin }) => {
-    if (globalThis.__OFCA_E2E_BIND_COMPATIBILITY__ === true) return;
-    chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-      let origin = null;
-      try { origin = new URL(sender?.url ?? '').origin; } catch {}
-      if (
-        origin !== bridgeOrigin
-        || message?.type !== 'ofca.agent.bind'
-        || message?.protocol_version !== '2'
-        || message?.creator_account_id !== account
-        || message?.auth_ticket !== marker
-        || message?.storage_bootstrap !== marker
-      ) return false;
-      sendResponse({ ok: true, code: 'already_paired' });
-      return true;
-    });
-    Object.defineProperty(globalThis, '__OFCA_E2E_BIND_COMPATIBILITY__', {
-      configurable: false,
-      enumerable: false,
-      value: true,
-      writable: false,
-    });
-  }, { account: accountId, marker: COMPATIBILITY_MARKER, bridgeOrigin: BRAIN_ORIGIN });
-}
-
-/**
- * Compatibility wrapper for the long capture scenario. The historical helper
- * name is retained so the rest of the proof stays unchanged, but this function
- * now performs the shipping companion flow: content-script identity discovery,
- * the App-owned automatic pairing and confirmation, Noise session authorization,
- * storage unseal, and same-document
- * identity-to-full attachment. The final external-bind response is a no-op only
- * because the old call site still invokes a transport that no longer exists;
- * pairing and the bound Full session have already succeeded before it is armed.
+/** Capture-protocol fixture, not native-host/automatic-task qualification.
+ * Keep real content identity, authenticated operator admission, independent
+ * comparison, signed grants, Noise authorization and durable pin/storage commit.
+ * The browser test supplies the explicit operator actions through the retained
+ * comparison-recovery API; installed qualification covers native task dispatch.
  */
-export async function requestAgentPairingTicket(context) {
+export async function pairCompanionForCapture(context) {
   const bridge = bridgePage(context);
   await bridge.reload({ waitUntil: 'domcontentloaded' });
   const config = await servedRuntimeConfig(bridge);
   const worker = activeWorker(context);
   installQualificationTrust(context);
   await assertQualificationTrustVisible(worker);
-
   const productReloads = await observeProductTabReloads(worker);
   const identity = await establishPairingIdentity(context, worker, config.CREATOR_ID);
   const documentId = await identity.page.evaluate(() => globalThis.__OFCA_E2E_DOCUMENT__);
-  const popup = context.pages().find((page) => page.url() === `chrome-extension://${config.EXTENSION_ID}/popup.html`)
+  const popup = context.pages().find(page => page.url() === `chrome-extension://${config.EXTENSION_ID}/popup.html`)
     ?? await openPopup(context, config.EXTENSION_ID, []);
-  const pairingPage = await openSetup(popup);
-  const journey = new URLSearchParams(new URL(pairingPage.url()).hash.slice(1)).get('journey');
-  expect(journey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
-  let opened = null;
+  const setup = await openSetup(popup);
   let routeRemoved = false;
-  const pairingRequests = [];
-  const observePairingRequest = (request) => {
-    const url = new URL(request.url());
-    if (url.origin !== BRAIN_ORIGIN || request.method() !== 'POST') return;
-    const action = /^\/api\/v1\/companion\/pairings\/[^/]+\/(confirm|cancel|decline)$/u.exec(url.pathname)?.[1];
-    if (action) pairingRequests.push(action);
-  };
-  context.on('request', observePairingRequest);
   try {
-    const creation = pairingPage.waitForResponse((response) => response.request().method() === 'POST'
-      && new URL(response.url()).pathname === '/api/v1/companion/pairings');
-    const confirmation = pairingPage.waitForResponse((response) => response.request().method() === 'POST'
-      && /^\/api\/v1\/companion\/pairings\/[^/]+\/confirm$/u.test(new URL(response.url()).pathname));
-    // A failed creation must remain the reported cause when teardown closes a
-    // pending confirmation wait. Awaiting either original still rejects.
-    void creation.catch(() => undefined);
-    void confirmation.catch(() => undefined);
-    // Resume the authenticated App in the same registered workspace, exactly as
-    // the completed desktop/hosted continuation does. No Settings click or
-    // direct test POST starts or confirms the connection.
-    await pairingPage.goto(`${BRAIN_ORIGIN}/#journey=${journey}`, { waitUntil: 'domcontentloaded' });
-    const created = await creation;
-    expect(created.ok()).toBe(true);
-    expect(created.request().postDataJSON().creator_account_id).toBe(config.CREATOR_ID);
-    const confirmed = await confirmation;
-    expect(confirmed.ok()).toBe(true);
-    const pairingPath = new URL(confirmed.url()).pathname.replace(/\/confirm$/u, '');
-    // App completion may navigate immediately after the response. Read the
-    // committed result through the authenticated owner instead of depending on
-    // a response body tied to a document that Chrome has already discarded.
-    const admitted = await bridge.evaluate(async (pathname) => {
-      const response = await fetch(pathname, { credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        const reason = typeof body?.detail === 'string' && /^pairing_[a-z_]{1,48}$/u.test(body.detail)
-          ? body.detail : 'unavailable';
-        // Read-only evidence: never replay confirmation or expose pairing keys.
-        let pinState = 'unavailable';
-        try {
-          const pinsResponse = await fetch('/api/v1/companion/pins', {
-            credentials: 'same-origin', cache: 'no-store', redirect: 'error',
-          });
-          if (!pinsResponse.ok) pinState = `HTTP ${pinsResponse.status}`;
-          else {
-            const result = await pinsResponse.json();
-            pinState = Array.isArray(result?.pins)
-              ? result.pins.some((pin) => pathname.endsWith(`/${pin.pairing_id}`)) ? 'admitted' : 'absent'
-              : 'invalid';
-          }
-        } catch { /* The pin list cannot be confirmed. */ }
-        throw new Error(`The confirmed pairing could not be read (HTTP ${response.status}; reason=${reason}; pin=${pinState}).`);
-      }
-      return response.json();
-    }, pairingPath).catch((error) => {
-      throw new Error(`Pairing lookup failed after browser requests: ${pairingRequests.join(',') || 'none'}. ${error.message}`, { cause: error });
+    const opened = await openCompanionPairing(context);
+    expect(opened.creatorAccountId).toBe(config.CREATOR_ID);
+    await setup.evaluate(() => {
+      if (globalThis.__capturePairingPort) throw Error('fixture_pairing_already_started');
+      const port = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
+      globalThis.__capturePairingPort = port;
+      globalThis.__capturePairingStatus = null;
+      port.onMessage.addListener(value => {
+        if (typeof value?.state === 'string') globalThis.__capturePairingStatus = value;
+      });
+      port.postMessage({ type: 'pair' });
     });
-    expect(admitted.state).toBe('admitted');
-    expect(admitted.creator_account_id).toBe(config.CREATOR_ID);
-    expect(pairingPath).toBe(`/api/v1/companion/pairings/${admitted.pairing_id}`);
-    opened = admitted;
+    await expect.poll(() => setup.evaluate(() => globalThis.__capturePairingStatus?.state),
+      { timeout: 20_000 }).toBe('compare');
+    const code = await setup.evaluate(() => globalThis.__capturePairingStatus.comparison_code);
+    expect(code).toMatch(/^[0-9]{6}$/u);
+    let current;
+    await expect.poll(async () => {
+      current = await readCompanionPairingStatus(context, opened.pairing_id);
+      return current.state;
+    }, { timeout: 20_000 }).toBe('awaiting_confirmation');
+    expect(current.pairing_id).toBe(opened.pairing_id);
+    expect(current.creator_account_id).toBe(config.CREATOR_ID);
+    expect(current.comparison_code).toBe(code);
+    const confirmed = await confirmCompanionPairing(context, opened.pairing_id, current.version, code);
+    expect(confirmed.state).toBe('confirmed');
+    await expect.poll(() => setup.evaluate(() => globalThis.__capturePairingStatus?.state),
+      { timeout: 20_000 }).toBe('paired');
     await waitForBoundFullSession(worker);
-    await assertSameDocumentFull(pairingPage, identity.page, worker, config.CREATOR_ID, documentId);
+    await assertSameDocumentFull(setup, identity.page, worker, config.CREATOR_ID, documentId);
     expect(await productReloads()).toEqual([]);
     await identity.removeRoute();
     routeRemoved = true;
-    await installLegacyBindNoop(worker, config.CREATOR_ID);
-  } catch (error) {
-    if (!routeRemoved) await identity.removeRoute().catch(() => undefined);
-    await identity.page.close().catch(() => undefined);
-    throw error;
+    return { creatorAccountId: config.CREATOR_ID, extensionId: config.EXTENSION_ID,
+      pairingId: opened.pairing_id, expiresAt: opened.expires_at };
   } finally {
-    context.off('request', observePairingRequest);
+    if (!routeRemoved) {
+      await identity.removeRoute().catch(() => undefined);
+      await identity.page.close().catch(() => undefined);
+    }
   }
-
-  return {
-    creatorAccountId: config.CREATOR_ID,
-    extensionId: config.EXTENSION_ID,
-    pairingTicket: COMPATIBILITY_MARKER,
-    storageBootstrap: COMPATIBILITY_MARKER,
-    expiresAt: opened.expires_at,
-  };
 }

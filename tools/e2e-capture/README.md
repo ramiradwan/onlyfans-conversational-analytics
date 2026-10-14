@@ -36,6 +36,8 @@ node tools/e2e-capture/ci/run.mjs --lane catchup --output-dir artifacts/browser-
 
 Run these commands serially on a local machine. The list command collects the full inventory without starting a journey. The checked-in registry assigns complete files to `core` or `catchup`; unknown, missing or duplicate identities fail selection. `--lane legacy` runs the complete original selection as the rollout control. CI uses the same runner, one Playwright worker, the same production builds and existing retry/deadline settings. The catch-up negative-observation window remains unchanged.
 
+The current inventory has 11 core and two catch-up cases. ADR 0050 retires the browser provisioning wizard and its registration/resume fixtures; their removed files are not browser-lane identities. Native setup admission, original-operation recovery, configured restart and enrollment are covered by the desktop backend/frontend suites, Windows host tests and source-matched installed qualification. This browser gate does not claim to replace installed native-host or Windows Hello qualification.
+
 Hosted comparison uses the existing Product CI workflow with both dispatch inputs `browser_qualification` and `browser_serial_control` set to true. The serial control gets its own Windows runner at the same source/run as core and catch-up; the aggregate validates all three before publishing the Legal bundle. Normal runs skip only the optional serial control. Qualification rejects retry passes without changing the configured retry behavior. Three distinct clean dispatches provide the planned comparison samples; a targeted local run or repeated attempt of one dispatch does not replace them.
 
 To reproduce one test after preparing the builds, use ordinary Playwright targeting:
@@ -63,9 +65,9 @@ The Python command needs the `pytest` and `pytest-asyncio` versions in `requirem
 
 The test checks the complete local capture path rather than isolated modules. It verifies that:
 
-- the built Agent can pair with Brain through Bridge;
-- the existing setup workspace returns to App home, which creates and confirms
-  same-browser pairing automatically through the production ports;
+- the built Agent completes the production companion pairing protocol with Brain;
+- an authenticated operator fixture opens one comparison-recovery window, compares
+  the independently delivered extension code and confirms that exact window;
 - the initial passkey registration issues the session without a second ceremony;
 - Preview permission and Full pairing attach to the existing platform document
   with no product-requested tab reload;
@@ -82,9 +84,17 @@ The exact sequence numbers, row counts, recovery timing, and failure assertions 
 pages; the shipping action has no toolbar popup. Its Options and disclosure
 checks exercise the UI. Its three explicitly named companion-client checks are
 supplemental port-ownership, cancellation, and result tests against a synthetic
-desktop peer. They do not claim to exercise the App-owned automatic pairing
-journey; the real-Brain capture scenarios exercise that journey. The obsolete
+desktop peer. The real-Brain scenarios verify signed grants, Noise authorization,
+durable pin commit, storage unseal and same-document capture through the retained
+comparison-recovery ports. Native automatic task dispatch and its independent
+pairing receipt belong to desktop-owner tests and installed qualification. The obsolete
 manual extension pairing and Settings steps are not required by those scenarios.
+
+The consent fixtures first verify that Full intent returns to the desktop without
+changing Preview. They then supply a synthetic, already admitted `browser.access`
+task for that real workspace. Disclosure review, permission gestures and the
+distinct Legal audit transactions still use production controllers. This task
+precondition does not qualify native launcher or browser-task admission.
 
 The harness blocks OnlyFans requests until an explicit synthetic fixture handles
 them. Deliberate test-driven page reloads remain in the durable replay checks;

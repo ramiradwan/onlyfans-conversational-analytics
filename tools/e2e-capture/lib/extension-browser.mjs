@@ -62,55 +62,6 @@ export function extensionId(worker) {
   return id;
 }
 
-export async function bindAgentFromBridgePage(
-  page,
-  {
-    extensionId: targetExtensionId,
-    creatorAccountId,
-    authTicket,
-    storageBootstrap,
-  },
-) {
-  return page.evaluate(
-    ({
-      extensionId: id,
-      creatorAccountId: account,
-      authTicket: ticket,
-      storageBootstrap: bootstrap,
-    }) => (
-      new Promise((resolve, reject) => {
-        if (typeof globalThis.chrome?.runtime?.sendMessage !== 'function') {
-          reject(new Error('Chrome external messaging is unavailable at the Bridge origin.'));
-          return;
-        }
-        chrome.runtime.sendMessage(id, {
-          type: 'ofca.agent.bind',
-          protocol_version: '2',
-          creator_account_id: account,
-          auth_ticket: ticket,
-          storage_bootstrap: bootstrap,
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-          if (response?.ok !== true) {
-            reject(new Error(`Agent rejected pairing: ${response?.code ?? 'unknown'}`));
-            return;
-          }
-          resolve(response);
-        });
-      })
-    ),
-    {
-      extensionId: targetExtensionId,
-      creatorAccountId,
-      authTicket,
-      storageBootstrap,
-    },
-  );
-}
-
 export async function extensionOutboxProof(worker) {
   return worker.evaluate(async (databasePrefix) => {
     const databases = await indexedDB.databases();

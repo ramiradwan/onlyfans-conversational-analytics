@@ -4,9 +4,9 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import { BrainProcess } from '../lib/brain.mjs';
-import { establishBrowserWebAuthnSession, readBrainSummary, requestAgentPairingTicket } from '../lib/brain-probe.mjs';
+import { establishBrowserWebAuthnSession, readBrainSummary, pairCompanionForCapture } from '../lib/brain-probe.mjs';
 import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
-import { bindAgentFromBridgePage, extensionId, extensionState, extensionWorker,
+import { extensionId, extensionState, extensionWorker,
   launchExtensionBrowser } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 
@@ -32,9 +32,7 @@ test('an own message pushed by the platform socket reaches the Brain as outbound
     }
     const binding = context.pages()[0] ?? await context.newPage();
     await establishBrowserWebAuthnSession(binding, authDatabasePath);
-    const pairing = await requestAgentPairingTicket(context);
-    await bindAgentFromBridgePage(binding, { extensionId: id, creatorAccountId: pairing.creatorAccountId,
-      authTicket: pairing.pairingTicket, storageBootstrap: pairing.storageBootstrap });
+    await pairCompanionForCapture(context);
     const platform = new SyntheticPlatform();
     await platform.install(context);
     const page = await context.newPage();

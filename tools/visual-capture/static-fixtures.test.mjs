@@ -20,7 +20,7 @@ test('static capture covers the existing popup matrix, both disclosure steps, an
   for (const name of ['start_choice', 'software_activation', 'software_activation_ready', 'mode_choice', 'mode_choice_full', 'full_review', 'desktop_app_needed', 'desktop_app_unavailable', 'pairing_compare']) {
     assert.equal(fixtures.find((item) => item.name === name).surface, 'setup');
   }
-  for (const name of ['software_activation', 'software_activation_ready']) assert.equal(fixtures.find(item => item.name === name).state.hash, 'full');
+  for (const name of ['software_activation', 'software_activation_ready']) assert.equal(fixtures.find(item => item.name === name).state.fullIntent, true);
   for (const fixture of fixtures) {
     // Extension fixtures load the unchanged production document and its real bundle.
     // Visibility is exercised by the browser, not a separately maintained fake DOM.

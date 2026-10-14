@@ -8,6 +8,7 @@ import path from 'node:path';
 import { chromium, expect, test } from '@playwright/test';
 
 import { EXTENSION_DIST, EXTENSION_ROOT, assertBuiltExtension } from '../lib/paths.mjs';
+import { admitSyntheticBrowserAccess } from '../lib/consent-ui.mjs';
 
 // Drives the persistent status and setup pages against a loopback desktop
 // peer. The peer moves off the production port so a running desktop app is
@@ -120,7 +121,7 @@ function loopbackPort(port) {
   return {
     name: 'loopback-port',
     setup(context) {
-      context.onLoad({ filter: /(?:local-service-endpoints|onboarding-workspace)\.mjs$/ }, async (args) => {
+      context.onLoad({ filter: /(?:local-service-endpoints|desktop-port|browser-task-owner)\.mjs$|[\\/]browser-tasks[\\/]wire\.mjs$/ }, async (args) => {
         const source = await readFile(args.path, 'utf8');
         const contents = source.replaceAll(`:${PRODUCTION_PORT}`, `:${port}`);
         if (contents === source) throw new Error('loopback endpoints were not rewritten');
@@ -145,7 +146,7 @@ const workerSource = (port) => `
   const PAIRING_ID = ${JSON.stringify(PAIRING_ID)};
   const CHALLENGE = ${JSON.stringify(CHALLENGE)};
   const LEGAL_ORIGIN = 'https://legal.example.test';
-  const state = { mode: 'full', paired: false, cancelled: 0 };
+  const state = { mode: 'full', paired: false, cancelled: 0, readinessRequests: 0 };
   const identity = crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
 
   function channel(accountId) {
@@ -161,8 +162,10 @@ const workerSource = (port) => `
           storage_bootstrap: 'synthetic-bootstrap' };
         if (method === 'agent.storage.unseal') return { schema: 'ofca-extension-storage-unlock/v1', creator_account_id: accountId,
           credential_kind: 'pairing', auth_ticket: 'synthetic-ticket', storage_key_base64: btoa('\\u0000'.repeat(32)) };
-        if (method === 'agent.analysis.readiness') return { schema: 'ofca-analysis-readiness/v1',
-          commercial_authority: 'active', analysis_admission: 'admitted' };
+        if (method === 'agent.analysis.readiness') {
+          state.readinessRequests += 1;
+          return { schema: 'ofca-analysis-readiness/v1', commercial_authority: 'active', analysis_admission: 'admitted' };
+        }
         throw new Error('unsupported_rpc');
       },
     };
@@ -370,6 +373,9 @@ test('Full disclosure stays in the setup tab while a legal document is reviewed'
     await expect.poll(() => popup.visible('#preview-metrics')).toBe(true);
     expect(await popup.visible('#full-disclosure')).toBe(false);
     const setup = await setupFrom(browser, popup);
+    await expect(setup.locator('#desktop-entry')).toBeVisible();
+    expect((await browser.state()).mode).toBe('preview');
+    await admitSyntheticBrowserAccess(setup);
     await expect(setup.locator('#full-disclosure')).toBeVisible();
     await setup.locator('#full-disclosure .extension-privacy-link').click();
     await expect.poll(() => desktop.pages).toContain('/extension-privacy');
@@ -396,7 +402,8 @@ test('companion client pairs only after an explicit command and recovers from th
     expect(desktop.refusals).toBe(1);
     desktop.pairingWindowOpen = true;
     await sendPairingCommand(setup);
-    await expect(setup.locator('#pairing-code')).toHaveText('483 217');
+    await expect.poll(async () => (await browser.pairing()).comparison_code).toBe('483217');
+    await expect(setup.locator('#desktop-entry')).toBeVisible();
     expect(desktop.requests).toBe(2);
   } finally { await browser.close(); }
 });
@@ -408,15 +415,15 @@ test('companion client ownership survives focus and observer closure; owner clos
     const popup = await browser.openStatusPage();
     const setup = await setupFrom(browser, popup);
     await sendPairingCommand(setup);
-    await expect(setup.locator('#pairing-code')).toHaveText('483 217');
+    await expect.poll(async () => (await browser.pairing()).comparison_code).toBe('483217');
     const observer = await browser.openStatusPage();
     await expect.poll(() => observer.text('#journey-title')).toBe('Confirm connection');
-    await expect.poll(() => observer.text('#journey-primary')).toBe('Continue setup');
+    await expect.poll(() => observer.text('#journey-primary')).toBe('Continue in the desktop app');
     expect(await observer.visible('#pairing-code')).toBe(false);
     await observer.close();
     const other = await browser.context.newPage(); await other.goto('about:blank'); await other.bringToFront();
     expect((await browser.state()).cancelled).toBe(0);
-    await expect(setup.locator('#pairing-code')).toHaveText('483 217');
+    await expect.poll(async () => (await browser.pairing()).comparison_code).toBe('483217');
     await setup.close();
     await expect.poll(async () => (await browser.state()).cancelled).toBe(1);
     await expect.poll(() => desktop.abandoned).toBe(1);
@@ -435,16 +442,18 @@ test('companion client confirmation preserves setup and readiness comes from the
     const popup = await browser.openStatusPage();
     const setup = await setupFrom(browser, popup);
     await sendPairingCommand(setup);
-    await expect(setup.locator('#pairing-code')).toHaveText('483 217');
-    await expect(setup.locator('#journey-title')).not.toHaveText('Your analysis is ready');
+    await expect.poll(async () => (await browser.pairing()).comparison_code).toBe('483217');
+    expect((await browser.state()).readinessRequests).toBe(0);
     desktop.confirm();
-    await expect(setup.locator('#journey-title')).toHaveText('Your analysis is ready');
+    await expect.poll(async () => (await browser.pairing()).state).toBe('paired');
     await expect(setup.locator('#pairing-code')).toBeHidden();
-    await expect(setup.locator('#ready-details')).toBeVisible();
+    await expect(setup.locator('#desktop-entry')).toBeVisible();
+    await expect.poll(async () => (await browser.state()).readinessRequests).toBeGreaterThan(0);
     expect(setup.isClosed()).toBe(false);
     expect(await browser.state()).toMatchObject({ paired: true, cancelled: 0 });
     const reopened = await browser.openStatusPage();
     await expect.poll(() => reopened.text('#journey-title')).toBe('Ready');
+    await expect.poll(() => reopened.text('#analysis-status')).toBe('Ready');
     expect(await reopened.visible('#pair-companion')).toBe(false);
   } finally { await browser.close(); }
 });

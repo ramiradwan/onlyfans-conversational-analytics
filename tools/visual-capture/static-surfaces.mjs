@@ -82,7 +82,7 @@ async function inspect(page, fixture, width, session) {
       }
     }
     if (fixture.surface === 'setup') {
-      const disclosure = { software_activation: '#pre-mode', mode_choice: '#preview-disclosure',
+      const disclosure = { mode_choice: '#preview-disclosure',
         mode_choice_full: '#full-disclosure', full_review: '#full-disclosure' }[fixture.name];
       if (disclosure) {
         assert(await page.locator(disclosure).isVisible(), 'Required disclosure must be visible');
@@ -147,7 +147,8 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
           return route.fulfill({ status: 404 });
         });
         try {
-          await page.goto(ORIGIN + `/${fixture.surface}.html${fixture.state?.hash ? '#' + fixture.state.hash : ''}`, { waitUntil: 'networkidle' });
+          const hash = fixture.state?.hash ?? (fixture.surface === 'setup' ? 'journey=11111111-1111-4111-8111-111111111111' : '');
+          await page.goto(ORIGIN + `/${fixture.surface}.html${hash ? '#' + hash : ''}`, { waitUntil: 'networkidle' });
           if (fixture.state) await page.waitForFunction(() => document.querySelector('main[data-ready="true"]') || document.querySelector('#runtime-unavailable:not(.hidden)'));
           if (fixture.state?.dialog) await page.locator('#delete-local-data').click();
           await page.evaluate(() => document.fonts.ready);

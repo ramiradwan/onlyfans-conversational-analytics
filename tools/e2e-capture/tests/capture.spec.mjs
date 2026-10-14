@@ -14,11 +14,10 @@ import { BOOTSTRAP_CONFIG_REVISION, BRAIN_ORIGIN, BrainProcess } from '../lib/br
 import {
   establishBrowserWebAuthnSession,
   readBrainSummary,
-  requestAgentPairingTicket,
+  pairCompanionForCapture,
 } from '../lib/brain-probe.mjs';
 import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
 import {
-  bindAgentFromBridgePage,
   contentBridgeIsActive,
   extensionId,
   extensionOutboxProof,
@@ -232,15 +231,9 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
         version: 1,
         authenticated_profile: null,
       });
-      const pairing = await requestAgentPairingTicket(context);
+      const pairing = await pairCompanionForCapture(context);
       expect(pairing.creatorAccountId).toBe('dev-creator-account');
       expect(pairing.extensionId).toBe(actualExtensionId);
-      await bindAgentFromBridgePage(bindingPage, {
-        extensionId: actualExtensionId,
-        creatorAccountId: pairing.creatorAccountId,
-        authTicket: pairing.pairingTicket,
-        storageBootstrap: pairing.storageBootstrap,
-      });
 
       await expect.poll(async () => (await extensionState(worker)).capturePhase, {
         message: 'Pairing did not reconcile the capture phase to full.',

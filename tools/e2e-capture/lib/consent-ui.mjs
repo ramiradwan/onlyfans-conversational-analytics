@@ -1,9 +1,11 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import { expect } from '@playwright/test';
 import { runNativePermissionInteraction } from './native-permission-diagnostics.mjs';
+import { isTask } from '../../../shared/browser-tasks/wire.mjs';
 
 const execFileAsync = promisify(execFile);
 const syntheticLegalBindings = JSON.parse(await readFile(
@@ -176,6 +178,10 @@ export async function completePreModeLegalActions(popup, mode = 'preview') {
   popup = await openSetup(popup);
   await expect(popup.locator('#start-choice')).toBeVisible();
   await popup.locator(mode === 'full' ? '#start-full' : '#start-preview').click();
+  if (mode === 'full') {
+    await expect(popup.locator('#desktop-entry')).toBeVisible();
+    await admitSyntheticBrowserAccess(popup);
+  }
   await expect(popup.locator('#pre-mode')).toBeVisible();
   if (mode === 'full') await assertFullProminentDisclosure(popup, { initial: true });
   else await expect(popup.locator('#start-disclosure')).toContainText('Seven-day retention:');
@@ -187,6 +193,32 @@ export async function completePreModeLegalActions(popup, mode = 'preview') {
   await activate.click();
   await expect(popup.locator('#access-card')).toBeVisible();
   return popup;
+}
+
+/** Extension-consent precondition only, not proof of native/task admission.
+ * The installed and desktop-owner suites qualify that separate boundary. The
+ * real workspace, disclosure, user gestures and audit transactions remain in use.
+ */
+export async function admitSyntheticBrowserAccess(setup) {
+  const record = await setup.evaluate(async () => {
+    const result = await chrome.runtime.sendMessage({ type: 'ofca.workspace.v1', action: 'read' });
+    if (result?.ok !== true) throw Error('fixture_workspace_unavailable');
+    return result.result;
+  });
+  const task = { task_id: randomUUID(), journey_id: record.journey_id, operation_id: randomUUID(),
+    purpose: 'browser.access', scope_digest: randomBytes(32).toString('hex'), source_revision: 0,
+    admission_generation: randomUUID(), state: 'accepted', expires_at: Date.now() / 1000 + 300 };
+  if (!isTask(task)) throw Error('fixture_browser_task_invalid');
+  await setup.evaluate(entry => chrome.storage.session.set({ browser_task_entry_v1: entry }),
+    { task, draft_scope: record.draft_scope });
+}
+
+async function finishSyntheticBrowserAccess(setup) {
+  const dismissed = await setup.evaluate(async () => {
+    const result = await chrome.runtime.sendMessage({ type: 'ofca.workspace.v1', action: 'dismiss_browser_task' });
+    return result?.ok === true && result.result?.dismissed === true;
+  });
+  expect(dismissed).toBe(true);
 }
 
 async function hasOrigins(worker, origins) {
@@ -251,8 +283,11 @@ export async function upgradePreviewToFull(context, popup, worker) {
   await expect(review).toHaveText('Review Full analytics');
   await review.click();
   const setup = await openSetup(popup);
+  await expect(setup.locator('#desktop-entry')).toBeVisible();
+  await admitSyntheticBrowserAccess(setup);
   await assertFullProminentDisclosure(setup);
   await acceptPermissionFor(context, setup, worker, 'Enable Full analytics', [ONLYFANS_ORIGIN_PATTERN]);
+  await finishSyntheticBrowserAccess(setup);
   await popup.bringToFront();
 }
 
@@ -260,5 +295,6 @@ export async function connectFullAnalytics(context, popup, worker) {
   await configureSyntheticLegalBindings(worker, popup);
   const setup = await completePreModeLegalActions(popup, 'full');
   await acceptPermissionFor(context, setup, worker, 'Allow site access', [ONLYFANS_ORIGIN_PATTERN]);
+  await finishSyntheticBrowserAccess(setup);
   await popup.bringToFront();
 }

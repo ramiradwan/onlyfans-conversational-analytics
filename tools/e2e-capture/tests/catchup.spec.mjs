@@ -4,7 +4,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import { BrainProcess } from '../lib/brain.mjs';
-import { establishBrowserWebAuthnSession, readBrainSummary, requestAgentPairingTicket,
+import { establishBrowserWebAuthnSession, readBrainSummary, pairCompanionForCapture,
   readServedRuntimeConfig } from '../lib/brain-probe.mjs';
 import {
   ONLYFANS_ORIGIN_PATTERN,
@@ -13,7 +13,7 @@ import {
   openManageExtension,
   openPopup,
 } from '../lib/consent-ui.mjs';
-import { bindAgentFromBridgePage, extensionId, extensionWorker, launchExtensionBrowser,
+import { extensionId, extensionWorker, launchExtensionBrowser,
   terminateExtensionWorker } from '../lib/extension-browser.mjs';
 import { EXTENSION_DIST, assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { installCatchupShim, readCatchupMessageIds, withCatchupDiagnostics } from '../lib/catchup-diagnostics.mjs';
@@ -139,9 +139,7 @@ for (const enabled of [true, false]) {
       for (const page of context.pages()) if (page.url().startsWith('chrome-extension://')) await page.close();
       const bridge = context.pages()[0] ?? await context.newPage();
       await establishBrowserWebAuthnSession(bridge, auth);
-      const pairing = await requestAgentPairingTicket(context);
-      await bindAgentFromBridgePage(bridge, { extensionId: id, creatorAccountId: pairing.creatorAccountId,
-        authTicket: pairing.pairingTicket, storageBootstrap: pairing.storageBootstrap });
+      await pairCompanionForCapture(context);
       const historyPopup = await openPopup(context, id, []);
       await grantHistoryPermission(context, historyPopup, worker);
       await historyPopup.close();

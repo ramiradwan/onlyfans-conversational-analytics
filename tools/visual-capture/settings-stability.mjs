@@ -41,6 +41,21 @@ const fixtureStable = new Set([
   'fixture:pairing-companion-notice', 'fixture:pairing-codes-match', 'fixture:scroll-audit',
 ]);
 
+// Ordinary screenshots use the same task policy as the causal Settings matrix.
+// They must not treat initial owner responses or an explicit form opening as a
+// passive status update, or extend those windows into subsequent idle frames.
+export function ordinarySettingsTransition(variant) {
+  const transitions = {
+    'activation-review': 'activation:review', 'activation-waiting': 'activation:waiting',
+    'activation-error': 'activation:review', 'activation-provider-selection': 'activation:selection',
+    'pairing-comparison': 'pairing:open', 'history-consent': 'pairing:confirmed:result',
+    'archive-dialog': 'archive:open', 'delete-confirmation': 'control:authoritative',
+    'linked-reconnecting': 'control:authoritative',
+  };
+  if (!Object.hasOwn(transitions, variant)) throw new Error('Unclassified ordinary Settings action: ' + variant);
+  return transitions[variant];
+}
+
 export function settingsFixturePolicy(id) {
   const reason = fixtureContentChanges.get(id);
   if (reason) return { geometry: 'content-transition', reason };

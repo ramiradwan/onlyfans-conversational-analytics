@@ -10,6 +10,10 @@ export const VIEWPORTS = [
 
 const heading = (name) => (page) => page.getByRole('heading', { level: 1, name });
 const text = (value) => (page) => page.getByText(value, { exact: true }).first();
+const openPairingComparison = async page => {
+  await page.getByRole('button', { name: 'Connection options', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Compare connection codes', exact: true }).click();
+};
 
 /** Each screen names the locator that proves its state rendered before capture. */
 export function createScreens({ assertMaxWidth, assertCentered, assertLoadingGeometry, assertMetricHierarchy } = {}) {
@@ -147,13 +151,13 @@ return [
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'pairing-comparison', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Pair manually in another Chrome profile' }).click(),
+    act: openPairingComparison,
     ready: (page) => page.getByText('Check the code', { exact: true }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'history-consent', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
-      await page.getByRole('button', { name: 'Pair manually in another Chrome profile' }).click();
+      await openPairingComparison(page);
       await page.getByText('Check the code', { exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('checkbox', { name: 'The codes match' }).check();
       await page.getByRole('button', { name: 'Confirm connection' }).click();
@@ -173,7 +177,7 @@ return [
   {
     // Pushed browser state and its controls stack under their text at narrow widths.
     workspace: 'settings', state: 'populated', variant: 'browser-controls', viewports: ['narrow'], modes: ['light', 'dark'],
-    ready: text('Collecting in the browser.'),
+    ready: text('New message collection is enabled.'),
   },
   {
     workspace: 'settings', state: 'populated', variant: 'linked-reconnecting', viewports: ['narrow'], modes: ['light'],

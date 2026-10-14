@@ -40,12 +40,12 @@ export async function inspectTaskCopy(page, fixture) {
       assert(await page.locator('#preview-metrics').isVisible(), 'Preview counts are missing');
       assert.equal(await page.locator('#journey-title').innerText(), 'Ready');
     }
-    if (fixture.name === 'full_ready') assert.equal(await page.locator('#journey-primary').textContent(), 'Open analysis');
+    if (fixture.name === 'full_ready') assert.equal(await page.locator('#journey-primary').textContent(), 'Continue in the desktop app');
     return result;
   }
   if (fixture.surface === 'setup') {
     result.geometry = await assertSetupTaskGeometry(page);
-    if (['software_activation', 'mode_choice', 'mode_choice_full', 'full_review'].includes(fixture.name)) {
+    if (['mode_choice', 'mode_choice_full', 'full_review'].includes(fixture.name)) {
       assert(!await page.locator('#journey-card').isVisible(), 'another task competes with required review');
     }
     assert.equal(await page.locator('#delete-local-data').count(), 0, 'Destructive controls must remain in Options');
@@ -56,7 +56,11 @@ export async function inspectTaskCopy(page, fixture) {
     const fullProgress = await page.locator('.onboarding-layout').getAttribute('data-progress') === 'full';
     assert.equal(await page.locator('#setup-progress').isVisible(), fullProgress, 'The progress rail must follow the confirmed Full setup task');
     if (fullProgress) assert.equal(await page.locator('#setup-progress [aria-current="step"]').count(), 1, 'Full setup must identify its current task');
-    if (fixture.name === 'pairing_compare') assert((await page.locator('#pairing-label').innerText()).includes('confirm in the desktop app'));
+    if (['software_activation', 'software_activation_ready', 'full_handoff', 'pairing_compare'].includes(fixture.name)) {
+      assert(await page.locator('#desktop-entry').isVisible(), 'Full setup and pairing decisions belong in the desktop app');
+      assert(await page.locator('#open-desktop').isEnabled(), 'The admitted workspace must offer desktop return');
+      assert.equal(await page.locator('#companion-pairing').count(), 0, 'The retired extension pairing wizard must not return');
+    }
     return result;
   }
   if (fixture.surface === 'options') {
