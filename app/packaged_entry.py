@@ -193,10 +193,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         from app.core.startup_maintenance import StartupRefused
         try:
             return run_brain()
-        except StartupRefused:
+        except StartupRefused as error:
             # The status pipe already reports the bounded recovery reason.
             # An expected refusal must terminate a windowed frozen process,
             # rather than enter PyInstaller's unhandled-exception dialog.
+            if sys.stderr is not None:
+                import re
+                reason = str(error)
+                print(reason if re.fullmatch(r"[a-z][a-z_]{0,95}", reason) else "startup_refused", file=sys.stderr)
             return 78
     raise SystemExit("Open Conversation Analytics using Bridge.exe. Brain.exe is an internal service.")
 
