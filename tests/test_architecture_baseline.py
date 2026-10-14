@@ -347,7 +347,7 @@ def test_composition_census_fences_governance_and_ci_remain_closed() -> None:
 
 def test_computed_baseline_counts_are_stable() -> None:
     assert baseline_counts() == {
-        "modules": 25,
+        "modules": 26,
         "semantic_invariants": 22,
         "qualified_semantic_invariants": 13,
         "permanent_semantic_oracle_falsifiers": 8,
