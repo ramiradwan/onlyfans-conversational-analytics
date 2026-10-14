@@ -3,7 +3,7 @@
   "max_message_bytes": 4096,
   "classification": "local-only",
   "files": {
-    "schema.json": "26a2a56e9866ef73509e42e9d3319a3a2b053dbecb95710929041428b5a46f9f",
-    "vectors.json": "2009a143bba254389cec7ed2960617c2c1bde35cc819247d0a6b30c917108178"
+    "schema.json": "078d47e1449dcd11b84024eddac12be4597570ed1347fa12d9d8cffa7da6d8fc",
+    "vectors.json": "700f05fb867b7edb91f1be990d1c26474c3c35388c1d07873109d53bb5628f38"
   }
 }

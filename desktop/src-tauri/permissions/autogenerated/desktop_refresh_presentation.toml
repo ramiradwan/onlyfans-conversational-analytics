@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-refresh-presentation"
+description = "Enables the desktop_refresh_presentation command without any pre-configured scope."
+commands.allow = ["desktop_refresh_presentation"]
+
+[[permission]]
+identifier = "deny-desktop-refresh-presentation"
+description = "Denies the desktop_refresh_presentation command without any pre-configured scope."
+commands.deny = ["desktop_refresh_presentation"]

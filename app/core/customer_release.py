@@ -26,6 +26,7 @@ class CustomerReleaseConfigurationError(ValueError):
 class CustomerReleaseConfig:
     hosted_onboarding_url: str
     hosted_api_origin: str
+    authentication_providers: tuple[str, ...] = ("default",)
 
     @property
     def hosted_configured(self) -> bool:
@@ -63,10 +64,16 @@ def validate_customer_release_document(
         "schema",
         "hosted_onboarding_url",
         "hosted_api_origin",
+        "authentication_providers",
     }:
         raise CustomerReleaseConfigurationError("customer release document has an invalid shape")
     if document["schema"] != CUSTOMER_RELEASE_SCHEMA:
         raise CustomerReleaseConfigurationError("customer release schema is unsupported")
+    providers = document["authentication_providers"]
+    if (not isinstance(providers, list) or not providers or any(type(value) is not str for value in providers)
+            or len(set(providers)) != len(providers) or "default" not in providers
+            or not set(providers) <= {"google", "microsoft-personal", "default"}):
+        raise CustomerReleaseConfigurationError("customer authentication providers are invalid")
 
     onboarding_url = _https_url(
         document["hosted_onboarding_url"],
@@ -86,7 +93,7 @@ def validate_customer_release_document(
         raise CustomerReleaseConfigurationError(
             "a production release requires hosted customer onboarding"
         )
-    return CustomerReleaseConfig(onboarding_url, api_origin)
+    return CustomerReleaseConfig(onboarding_url, api_origin, tuple(providers))
 
 
 def load_customer_release_config(
@@ -131,6 +138,7 @@ def main() -> int:
                 "schema": CUSTOMER_RELEASE_SCHEMA,
                 "hosted_onboarding_url": config.hosted_onboarding_url,
                 "hosted_api_origin": config.hosted_api_origin,
+                "authentication_providers": list(config.authentication_providers),
             },
             sort_keys=True,
             separators=(",", ":"),

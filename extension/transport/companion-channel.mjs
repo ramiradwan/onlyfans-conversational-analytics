@@ -1,13 +1,15 @@
 import { createCompanionSession } from './companion-noise-session.mjs';
 import { key32 } from './pairing-contract.mjs';
 import { createFragmentReceiver, fragmentMessage } from './companion-fragments.mjs';
+import { isBrowserTaskControl } from '../../shared/browser-tasks/wire.mjs';
 
 export class CompanionChannelError extends Error {
   constructor(code = 'companion_session_refused') { super(code); this.code = code; }
 }
 const refused = () => new CompanionChannelError();
 const MAX_BUFFERED = 128 * 1024;
-export const SESSION_CONTROLS = Object.freeze(new Set(['capture.pause', 'capture.resume', 'companion.revoked']));
+export const SESSION_CONTROLS = Object.freeze(new Set(['capture.pause', 'capture.resume', 'companion.revoked',
+  'browser.open.setup', 'browser.open.access', 'browser.open.history', 'browser.open.creator']));
 const CLOSE_REASONS = new Set([
   'pairing_account_refused', 'pairing_generation_refused', 'pairing_grant_refused',
   'pairing_key_refused', 'pairing_message_invalid', 'pairing_nonce_refused',
@@ -240,6 +242,11 @@ export async function openCompanionChannel({ url, store, SnowSession, accountId,
             const item = pending.get(document.id); pending.delete(document.id);
             if (failure) item.reject(new CompanionChannelError(document.error)); else item.resolve(document.result);
           } else if (document.type === 'session.control') {
+            if (document.action === 'browser.task') {
+              if (!isBrowserTaskControl(document)) throw refused();
+              for (const listener of controlObservers) listener({ id: document.id, action: document.action, payload: document.payload });
+              continue;
+            }
             // A session-level control from Brain (ADR 0045). It is closed and
             // carries no data; the receiver applies it through its own controllers.
             const keys = Object.keys(document);

@@ -3,16 +3,14 @@ import {
   isCaptureEpoch,
 } from '../runtime/capture-context.mjs';
 
-import { LOCAL_SERVICE_ORIGIN } from './local-service-endpoints.mjs';
 import { PAGE_CONTROL_MESSAGE_TYPE, PAGE_CONTROL_VERSION,
   PROVISIONING_IDENTITY_RESET_TYPE, isProvisioningIdentityEnvelope } from '../capture/envelopes.mjs';
+import { profileLabels, validProfileLabels } from '../capture/profile-labels.mjs';
 
 export const PROVISIONING_IDENTITY_MESSAGE_TYPE = 'ofca.provisioning.identity.update';
 export const PROVISIONING_IDENTITY_VERSION = 1;
 export const PROVISIONING_IDENTITY_STORAGE_KEY = 'provisioning_authenticated_profile_v1';
 export const PROVISIONING_IDENTITY_STORAGE_SCHEMA = 'ofca-provisioning-identities/v2';
-export const PROVISIONING_IDENTITY_QUERY_TYPE = 'provisioning.identity.query';
-export const PROVISIONING_IDENTITY_RESULT_TYPE = 'provisioning.identity.result';
 
 const MAX_CONTEXTS = 32;
 
@@ -28,7 +26,8 @@ function hasExactKeys(value, expected) {
 function profileAccountId(profile) {
   if (
     !isRecord(profile)
-    || !hasExactKeys(profile, ['creator_account_id'])
+    || !hasExactKeys(profile, ['creator_account_id', ...['display_name', 'username'].filter(field => Object.hasOwn(profile, field))])
+    || !validProfileLabels(profile)
     || typeof profile.creator_account_id !== 'string'
     || profile.creator_account_id.length < 1
     || profile.creator_account_id.length > 200
@@ -53,22 +52,7 @@ function identityUpdate(message) {
   const accountId = profileAccountId(message.authenticated_profile);
   return accountId === undefined
     ? undefined
-    : { accountId, pageEpoch: message.page_epoch };
-}
-
-function isIdentityQuery(message) {
-  return isRecord(message)
-    && hasExactKeys(message, ['type', 'version'])
-    && message.type === PROVISIONING_IDENTITY_QUERY_TYPE
-    && message.version === PROVISIONING_IDENTITY_VERSION;
-}
-
-function senderOrigin(sender) {
-  try {
-    return typeof sender?.url === 'string' ? new URL(sender.url).origin : null;
-  } catch (_error) {
-    return null;
-  }
+    : { accountId, pageEpoch: message.page_epoch, ...profileLabels(message.authenticated_profile) };
 }
 
 function storageGet(storage, key, chromeApi) {
@@ -101,11 +85,12 @@ function validStoredContext(value) {
     'page_epoch',
     'observed_platform_id',
     'consent_epoch',
+    ...['display_name', 'username'].filter(field => Object.hasOwn(value, field)),
   ];
   const validKeys = keys.length === baseKeys.length
     ? hasExactKeys(value, baseKeys)
     : hasExactKeys(value, [...baseKeys, 'identity_conflict']);
-  return validKeys
+  return validKeys && validProfileLabels(value)
     && (value.identity_conflict === undefined || value.identity_conflict === true)
     && typeof value.sender_key === 'string'
     && value.sender_key.length > 0
@@ -145,14 +130,6 @@ function storedDocument(contexts) {
   };
 }
 
-function result(accountId) {
-  return {
-    type: PROVISIONING_IDENTITY_RESULT_TYPE,
-    version: PROVISIONING_IDENTITY_VERSION,
-    authenticated_profile: accountId === null ? null : { creator_account_id: accountId },
-  };
-}
-
 function provisioningAccountId(contexts) {
   if (contexts.some((context) => context.identity_conflict === true
     || context.observed_platform_id === null)) return null;
@@ -166,21 +143,15 @@ function provisioningAccountId(contexts) {
 
 export function createProvisioningIdentityBridge({
   chromeApi = globalThis.chrome,
-  allowedOrigins = [LOCAL_SERVICE_ORIGIN],
   currentConsent = () => null,
   allowsIdentity = () => currentConsent()?.mode === 'full',
-  allowsExternalIdentity = allowsIdentity,
   ensureReady = async () => {},
 } = {}) {
   if (!chromeApi?.runtime?.onMessage?.addListener) {
     throw new Error('chrome.runtime.onMessage is unavailable');
   }
-  if (!chromeApi?.runtime?.onMessageExternal?.addListener) {
-    throw new Error('chrome.runtime.onMessageExternal is unavailable');
-  }
   if (!chromeApi?.storage?.session) throw new Error('chrome.storage.session is unavailable');
 
-  const origins = new Set(allowedOrigins);
   const sessionStorage = chromeApi.storage.session;
   let registered = false;
   let contextQueue = Promise.resolve();
@@ -188,6 +159,7 @@ export function createProvisioningIdentityBridge({
   const accountListeners = new Set();
   const notifyAccount = () => { for (const listener of accountListeners) listener(); };
   const observedDocuments = new Map();
+  let persistedContextTabs = null;
   const documentGenerations = new Map();
   const invalidateDocument = (tabId) => {
     documentGenerations.set(tabId, (documentGenerations.get(tabId) ?? 0) + 1);
@@ -205,8 +177,25 @@ export function createProvisioningIdentityBridge({
 
   const loadContexts = async () => {
     const stored = await storageGet(sessionStorage, PROVISIONING_IDENTITY_STORAGE_KEY, chromeApi);
-    return normalizeContexts(stored[PROVISIONING_IDENTITY_STORAGE_KEY])
-      .filter((context) => context.consent_epoch === currentConsent()?.consent_epoch);
+    const contexts = normalizeContexts(stored[PROVISIONING_IDENTITY_STORAGE_KEY]);
+    persistedContextTabs = new Set(contexts.map((context) => context.tab_id));
+    return contexts.filter((context) => context.consent_epoch === currentConsent()?.consent_epoch);
+  };
+  const publishContexts = async (contexts, previous) => {
+    const document = storedDocument(contexts);
+    await storageSet(sessionStorage, {
+      [PROVISIONING_IDENTITY_STORAGE_KEY]: document,
+    }, chromeApi);
+    persistedContextTabs = new Set(document.contexts.map((context) => context.tab_id));
+    // The early notification fences work immediately. Readers also need an
+    // event after persistence so they cannot keep the previous account until
+    // an unrelated tab event happens to wake them.
+    const signature = (values) => JSON.stringify(values.map((context) => JSON.stringify([
+      context.sender_key, context.tab_id, context.document_id, context.page_epoch,
+      context.observed_platform_id, context.consent_epoch, context.identity_conflict === true,
+      context.display_name, context.username,
+    ])).sort());
+    if (signature(document.contexts) !== signature(previous)) notifyAccount();
   };
 
   const internalListener = (message, sender, sendResponse) => {
@@ -240,26 +229,12 @@ export function createProvisioningIdentityBridge({
           sender_key: senderKey, tab_id: sender.tab.id, document_id: sender.documentId,
           page_epoch: update.pageEpoch, observed_platform_id: update.accountId,
           consent_epoch: currentConsent().consent_epoch,
+          ...profileLabels(update),
         });
-        await storageSet(sessionStorage, {
-          [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument(retained),
-        }, chromeApi);
+        await publishContexts(retained, contexts);
         return { ok: true };
       });
     })().then(sendResponse, () => sendResponse({ ok: false }));
-    return true;
-  };
-
-  const externalListener = (message, sender, sendResponse) => {
-    if (!origins.has(senderOrigin(sender)) || !isIdentityQuery(message)) return false;
-    void (async () => {
-      await ensureReady();
-      if (!await allowsExternalIdentity()) return result(null);
-      return serializeContext(async () => {
-        const contexts = await loadContexts();
-        return result(await allowsExternalIdentity() ? provisioningAccountId(contexts) : null);
-      });
-    })().then(sendResponse, () => sendResponse(result(null)));
     return true;
   };
 
@@ -274,15 +249,18 @@ export function createProvisioningIdentityBridge({
     generation += 1;
     documentGenerations.clear();
     observedDocuments.clear();
+    persistedContextTabs = null;
     notifyAccount();
-    return serializeContext(() => storageSet(sessionStorage, {
-      [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument([]),
-    }, chromeApi));
+    return serializeContext(async () => publishContexts([], await loadContexts()));
   };
   const removeTab = (tabId) => {
+    const affectsIdentity = persistedContextTabs === null || persistedContextTabs.has(tabId)
+      || observedDocuments.has(tabId);
     invalidateDocument(tabId);
     observedDocuments.delete(tabId);
-    notifyAccount();
+    // Unknown restored membership remains conservative. Once loaded, lifecycle
+    // changes to unrelated setup tabs cannot invalidate the creator context.
+    if (affectsIdentity) notifyAccount();
     void (async () => {
       // A tab lifecycle event can be the event that wakes a cold MV3 worker.
       // Wait until persisted consent has been restored before filtering durable
@@ -290,10 +268,9 @@ export function createProvisioningIdentityBridge({
       // default epoch can erase valid contexts from the previous worker.
       await ensureReady();
       return serializeContext(async () => {
-        const retained = (await loadContexts()).filter((context) => context.tab_id !== tabId);
-        await storageSet(sessionStorage, {
-          [PROVISIONING_IDENTITY_STORAGE_KEY]: storedDocument(retained),
-        }, chromeApi);
+        const contexts = await loadContexts();
+        const retained = contexts.filter((context) => context.tab_id !== tabId);
+        await publishContexts(retained, contexts);
       });
     })().catch(() => undefined);
   };
@@ -319,6 +296,13 @@ export function createProvisioningIdentityBridge({
 
   return Object.freeze({
     currentAccountId() { return serializeContext(async () => provisioningAccountId(await loadContexts())); },
+    currentProfile() { return serializeContext(async () => {
+      const contexts = await loadContexts();
+      const accountId = provisioningAccountId(contexts);
+      if (accountId === null) return null;
+      const observed = contexts.findLast(context => context.observed_platform_id === accountId);
+      return { creator_account_id: accountId, ...profileLabels(observed) };
+    }); },
     onAccountChange(listener) { accountListeners.add(listener); return () => accountListeners.delete(listener); },
     clearContexts,
     contextFor(sender) {
@@ -339,7 +323,6 @@ export function createProvisioningIdentityBridge({
     register() {
       if (registered) return;
       chromeApi.runtime.onMessage.addListener(internalListener);
-      chromeApi.runtime.onMessageExternal.addListener(externalListener);
       chromeApi.tabs?.onRemoved?.addListener(removeTab);
       chromeApi.tabs?.onUpdated?.addListener(tabUpdated);
       chromeApi.runtime.onStartup?.addListener(resetSession);
@@ -349,7 +332,6 @@ export function createProvisioningIdentityBridge({
     unregister() {
       if (!registered) return;
       chromeApi.runtime.onMessage.removeListener?.(internalListener);
-      chromeApi.runtime.onMessageExternal.removeListener?.(externalListener);
       chromeApi.tabs?.onRemoved?.removeListener?.(removeTab);
       chromeApi.tabs?.onUpdated?.removeListener?.(tabUpdated);
       chromeApi.runtime.onStartup?.removeListener?.(resetSession);

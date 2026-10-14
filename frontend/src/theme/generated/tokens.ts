@@ -1237,6 +1237,7 @@ export const componentTokens = {
     "brandSize": 32,
     "captionSize": "0.75rem",
     "controlHeight": 44,
+    "fullWorkspaceWidth": "65rem",
     "headerHeight": 72,
     "labelSize": "0.875rem",
     "largeControlHeight": 48,
@@ -1253,8 +1254,11 @@ export const componentTokens = {
     "provisioningStageBlock": "30rem",
     "provisioningStageBlockNarrow": "36rem",
     "setupMaxWidth": "42rem",
+    "setupRailWidth": "12.5rem",
     "statusLineBlock": 20,
-    "statusLineBlockNarrow": 40
+    "statusLineBlockNarrow": 40,
+    "taskHeadingSize": "1.625rem",
+    "workspaceWidth": "49rem"
   }
 } as const;
 

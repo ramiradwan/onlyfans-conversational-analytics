@@ -9,6 +9,9 @@ from typing import Mapping
 import pytest
 
 from app.persistence.auth import SQLiteAuthenticationStore
+from app.persistence import sqlite_api
+from app.security.activation_delivery_recovery import ActivationDeliveryJournal
+from app.security.capability_license_redemption_journal import SQLiteRedemptionJournal
 from app.security.capability_license_delivery_journal import (
     SQLiteCapabilityLicenseDeliveryJournal,
 )
@@ -134,7 +137,7 @@ def test_committed_delivery_recovers_exact_request_after_brain_restart(
 
     first_store = SQLiteAuthenticationStore(auth_path, clock=lambda: NOW)
     first_journal = SQLiteCapabilityLicenseDeliveryJournal(
-        first_store.database,
+        first_store.database, "https://control.example",
         clock=lambda: NOW,
     )
     first_transport = DurableCapabilityLicenseTransport(server, first_journal)
@@ -157,12 +160,11 @@ def test_committed_delivery_recovers_exact_request_after_brain_restart(
     assert pending.response_object_digest is None
     assert server.issue_count == 1
 
-    # Process-local state is discarded. The restarted Brain generates a new
-    # challenge/proof and a new provisional key, but the durable transport must
-    # ignore both and replay the exact pending commit.
+    # The delivery client already checks the journal before requesting a proof.
+    # The transport independently fences a caller supplying a different request.
     restarted_store = SQLiteAuthenticationStore(auth_path, clock=lambda: NOW)
     restarted_journal = SQLiteCapabilityLicenseDeliveryJournal(
-        restarted_store.database,
+        restarted_store.database, "https://control.example",
         clock=lambda: NOW,
     )
     restarted_transport = DurableCapabilityLicenseTransport(server, restarted_journal)
@@ -199,3 +201,67 @@ def test_committed_delivery_recovers_exact_request_after_brain_restart(
         operation, authority_reference  # type: ignore[arg-type]
     ) is None
     assert restarted_store.verified_capability_license(reference.reference_id) == reference
+
+
+@pytest.mark.parametrize("already_verified", [False, True])
+def test_verified_license_atomically_completes_redemption_and_activation(tmp_path, already_verified):
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=lambda: NOW)
+    origin = "https://control.example"
+    context = _context()
+    token = (VECTORS / "accepted/token.jws").read_text("ascii").strip()
+    authority = _authority(store)
+    reference = authority.verify(token, context=context)
+    if already_verified:
+        authority.persist(reference)
+    epoch = store.build_runtime_policy().authorization_epoch
+    scope = {"organization_id": context.expected_organization_id,
+        "installation_id": context.expected_installation_id,
+        "installation_key_id": context.expected_installation_key_id,
+        "installation_key_jkt": context.expected_installation_key_jkt}
+    binding = {**scope, "creator_account_id": "creator.fixture"}
+    operation = "019a00b0-0000-7000-8000-000000000034"
+    continuation = "clr1." + "A" * 43
+    activation = ActivationDeliveryJournal(store.database, origin)
+    activation.reserve(operation, binding)
+    activation.handoff(operation, binding, 0, {
+        "profile": "urn:bridge-clean:capability-license-redemption-continuation:v1",
+        "continuation": continuation, "expires_at": "2026-09-13T12:10:00.000Z"})
+    redemption = SQLiteRedemptionJournal(store.database, origin)
+    request = {"request": {"continuation": continuation}, "proof": {}}
+    opaque = redemption.prepare(continuation, scope, request, "original-redemption-key")
+    redemption.complete(opaque, TransportResponse(201, b'{"fixture":"protected-package"}', "application/json"))
+    redemption.bind_delivery(continuation, scope, "activate", "exchange.fixture")
+    delivery = SQLiteCapabilityLicenseDeliveryJournal(store.database, origin)
+    pending = delivery.prepare("activate", "exchange.fixture", "/fixture:activate", "original-issuance-key",
+        {"request": {"organization_id": scope["organization_id"], "installation_id": scope["installation_id"]},
+            "proof": {"key_id": scope["installation_key_id"]}})
+    delivery.bind_committed_response(pending, token)
+    delivery.prepare("activate", "exchange.unresolved", "/unresolved:activate", "unresolved-issuance-key",
+        {"request": {}, "proof": {}})
+
+    # A failed authority transaction must not settle either delivery record.
+    with store.database.transaction() as connection:
+        connection.execute("CREATE TRIGGER fail_qualification_completion AFTER UPDATE ON capability_license_redemption_journal "
+            "BEGIN SELECT RAISE(ABORT, 'fixture interrupted commit'); END")
+    with pytest.raises(sqlite_api.IntegrityError, match="fixture interrupted commit"):
+        authority.persist(reference)
+    assert store.verified_capability_license(reference.reference_id) == (reference if already_verified else None)
+    assert store.build_runtime_policy().authorization_epoch == epoch
+    assert activation.require(operation, binding)["completed_reference_id"] is None
+    assert delivery.pending("activate", "exchange.fixture") is not None
+    with store.database.transaction() as connection:
+        assert connection.execute("SELECT completed_reference_id FROM capability_license_redemption_journal").fetchone()[0] is None
+        connection.execute("DROP TRIGGER fail_qualification_completion")
+
+    authority.persist(reference)
+    reopened = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=lambda: NOW)
+    assert reopened.verified_capability_license(reference.reference_id) == reference
+    if already_verified:
+        assert reopened.build_runtime_policy().authorization_epoch == epoch
+    else:
+        assert reopened.build_runtime_policy().authorization_epoch > epoch
+    assert ActivationDeliveryJournal(reopened.database, origin).require(operation, binding)["completed_reference_id"] == reference.reference_id
+    assert SQLiteCapabilityLicenseDeliveryJournal(reopened.database, origin).pending("activate", "exchange.fixture") is None
+    assert SQLiteCapabilityLicenseDeliveryJournal(reopened.database, origin).pending("activate", "exchange.unresolved") is not None
+    with reopened.database.read() as connection:
+        assert connection.execute("SELECT completed_reference_id FROM capability_license_redemption_journal").fetchone()[0] == reference.reference_id

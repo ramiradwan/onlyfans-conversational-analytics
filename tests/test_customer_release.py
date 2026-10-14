@@ -28,6 +28,7 @@ def document(onboarding: str = "", api: str = "") -> dict[str, str]:
         "schema": "ofca-customer-release/v1",
         "hosted_onboarding_url": onboarding,
         "hosted_api_origin": api,
+        "authentication_providers": ["default"],
     }
 
 
@@ -51,6 +52,16 @@ def test_release_document_accepts_one_customer_entry_and_one_api_origin() -> Non
     assert config.hosted_configured is True
 
 
+def test_authentication_choices_are_closed_and_preserve_email_fallback():
+    value = document("https://setup.example.com/public/onboarding/setup", "https://api.example.com")
+    value["authentication_providers"] = ["google", "microsoft-personal", "default"]
+    assert validate_customer_release_document(value).authentication_providers == (
+        "google", "microsoft-personal", "default")
+    for invalid in ([], ["google"], ["default", "default"], ["https://example.com", "default"], "default", [True]):
+        with pytest.raises(CustomerReleaseConfigurationError):
+            validate_customer_release_document({**value, "authentication_providers": invalid})
+
+
 @pytest.mark.parametrize(
     "candidate",
     [
@@ -68,6 +79,7 @@ def test_release_document_accepts_one_customer_entry_and_one_api_origin() -> Non
             "schema": "ofca-customer-release/v1",
             "hosted_onboarding_url": "https://setup.example.com/start",
             "hosted_api_origin": "https://api.example.com",
+            "authentication_providers": ["default"],
             "extra": True,
         },
     ],
@@ -93,6 +105,8 @@ def spec_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     project = tmp_path / "project"
     for relative in ("packaging", "app/core", "app/static/dist", "contracts", "extension/dist"):
         (project / relative).mkdir(parents=True, exist_ok=True)
+    (project / "packaging/windows_branding.py").write_text(
+        "def version_resource(path):\n    return None\n", encoding="utf-8")
     (project / "packaging/runtime-files.json").write_text(json.dumps({
         "required_files": [], "frontend": {"dist_path": "_internal/app/static/dist"},
         "sql_catalogs": [], "contracts": {"path": "_internal/contracts"},
@@ -106,11 +120,12 @@ def spec_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         calls.append((args, kwargs))
         return SimpleNamespace(pure=[], zipped_data=[], scripts=[], binaries=[], datas=kwargs["datas"])
 
-    for name in ("PyInstaller", "PyInstaller.building", "PyInstaller.utils",
+    for name in ("PyInstaller", "PyInstaller.config", "PyInstaller.building", "PyInstaller.utils",
                  "PyInstaller.building.api", "PyInstaller.building.build_main", "PyInstaller.utils.hooks"):
         module = ModuleType(name)
         module.__path__ = []
         monkeypatch.setitem(sys.modules, name, module)
+    sys.modules["PyInstaller.config"].CONF = {"workpath": str(tmp_path / "spec-work")}
     api = sys.modules["PyInstaller.building.api"]
     api.COLLECT = api.EXE = api.PYZ = lambda *args, **kwargs: None
     sys.modules["PyInstaller.building.build_main"].Analysis = analysis

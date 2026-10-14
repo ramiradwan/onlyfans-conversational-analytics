@@ -2,7 +2,6 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 from app.provisioning import progress
-from app.provisioning.app import _validated_progress
 
 import pytest
 
@@ -120,26 +119,3 @@ def test_progress_fails_closed_when_more_than_one_active_candidate_exists(monkey
     )
     read = _reader(monkeypatch, _Store(consumed=(claim,), rows=rows))
     assert read()["stage"] == "recovery_required"
-
-
-def test_status_progress_contract_rejects_coordinates_on_non_coordinate_stages():
-    assert _validated_progress(
-        {
-            "stage": "creator_approval_pending",
-            "association_request_id": "request-1",
-            "creator_account_id": "creator-1",
-        }
-    )["stage"] == "creator_approval_pending"
-
-    try:
-        _validated_progress(
-            {
-                "stage": "registration_required",
-                "association_request_id": "request-1",
-                "creator_account_id": None,
-            }
-        )
-    except RuntimeError:
-        pass
-    else:
-        raise AssertionError("registration state accepted hidden coordinates")

@@ -111,12 +111,19 @@ const baseRules = {
 
 export default [
   {
+    files: ['browser-tasks/**/*.js', 'setup-code/**/*.js', 'onboarding/**/*.js', 'shared-setup/**/*.js', 'tests/**/*.test.js'],
+    languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: { ...globals.browser } },
+    rules: { ...js.configs.recommended.rules },
+  },
+  {
     // Ignore build artifacts, dependencies, and generated sources
     ignores: [
       "node_modules/",
       "dist/",
       "build/",
       "src/theme/generated/**",
+      "onboarding/generated-contract.js",
+      "shared-setup/generated-enrollment.js",
       "src/types/backend.ts",
       ".vite/",
       ".swc/",
@@ -275,4 +282,4 @@ export default [
       "@typescript-eslint/no-require-imports": "off",
     },
   },
-];  
+];

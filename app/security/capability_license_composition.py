@@ -14,8 +14,11 @@ from app.persistence.auth import (
     VerifiedCapabilityLicenseReference,
 )
 from app.security.capability_license_delivery_journal import (
+    CapabilityLicenseDeliveryCompleted,
+    CapabilityLicenseDeliveryJournalError,
     SQLiteCapabilityLicenseDeliveryJournal,
 )
+from app.security.capability_license_redemption_journal import RedemptionJournalError, SQLiteRedemptionJournal
 from app.security.analysis_authorization import (
     _ANALYSIS_ARTIFACT_FAMILY as ANALYSIS_ARTIFACT_FAMILY,
     _ANALYSIS_CAPABILITY as ANALYSIS_CAPABILITY,
@@ -194,7 +197,36 @@ def durable_capability_license_delivery(
             verifier_factory(),
             verification_source="production",
         )
-        journal = SQLiteCapabilityLicenseDeliveryJournal(store.database)
+        journal = SQLiteCapabilityLicenseDeliveryJournal(store.database, hosted_origin)
+        authority_reference_id = (
+            decoded.exchange_id if operation == "activate" else decoded.reissue_authorization_id
+        )
+
+        def recover_completed() -> CapabilityLicenseDeliveryResult | None:
+            try:
+                if journal.pending(operation, authority_reference_id) is not None:
+                    return None
+                completed = SQLiteRedemptionJournal(store.database, hosted_origin).completed_delivery(
+                    operation, authority_reference_id,
+                    {"organization_id": organization_id, "installation_id": installation_id,
+                        "installation_key_id": key.installation_key_id,
+                        "installation_key_jkt": key.installation_key_jkt},
+                    {"operation": "activation" if operation == "activate" else "reissue",
+                        "package": package, "seat_id": seat_id})
+                if completed is None:
+                    return None
+                reference = authority.recover(completed[0], context=context)
+                if (reference.reference_id, reference.object_digest) != completed:
+                    return "capability_license_verification_refused"
+                return _receipt(reference)
+            except (CapabilityLicenseDeliveryJournalError, RedemptionJournalError):
+                return "durable_store_unavailable"
+            except CapabilityLicenseVerificationError:
+                return "capability_license_verification_refused"
+
+        completed_result = recover_completed()
+        if completed_result is not None:
+            return completed_result
         try:
             transport = transport_factory(hosted_origin, journal)
         except ValueError:
@@ -205,12 +237,15 @@ def durable_capability_license_delivery(
                 transport,
                 proof_authority,
                 authority,
+                journal,
             )
             reference = (
                 client.activate(package, context=context)
                 if operation == "activate"
                 else client.finalize_reissue(package, context=context)
             )
+        except CapabilityLicenseDeliveryCompleted:
+            return recover_completed() or "durable_store_unavailable"
         except CapabilityLicenseDeliveryRefused as refusal:
             return _known_refusal(refusal.result)
         except CapabilityLicenseDeliveryUnavailable:

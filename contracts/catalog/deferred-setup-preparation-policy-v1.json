@@ -1,0 +1,83 @@
+{
+  "policy": "urn:bridge-clean:onboarding-admission-policy:deferred-setup-preparation-v1",
+  "governing_adr": "docs/adr/0036-deferred-setup-milestone-preparation.md",
+  "supersedes": {
+    "path": "catalog/authentication-selection-admission-policy.json",
+    "clause": "admitted_browser_reentry",
+    "scope": "additional-original-accepted-deferred-preparation-trigger-only"
+  },
+  "owner": "onboarding",
+  "classification": "provisioning-security",
+  "retention_class": "onboarding-working-state",
+  "wire_profiles_unchanged": true,
+  "new_public_operations": [],
+  "new_proof_purposes": [],
+  "legacy_adapters_required": false,
+  "acceptance": {
+    "trigger": "original-protected-explicit-authenticated-preparation",
+    "source": "registered",
+    "purpose": "activate-complimentary",
+    "policy": "setup-milestones-v1",
+    "sole_missing_condition": "approved-milestone-facts",
+    "classification": ["complete", "awaiting-milestones", "refused"],
+    "milestones": ["installed", "enrolled", "account-bound", "first-capture-ready"],
+    "admission_commits_before_preparation_transaction": true,
+    "classification_and_deferral_atomic": true,
+    "operator_funding_independent": true,
+    "existing_quote_or_commit_must_reconcile": true,
+    "retained_record_checked_by_every_preparation_caller": true,
+    "operator_or_generic_prepare_bypasses_retained_record": false,
+    "reads_challenges_and_progress_create_work": false
+  },
+  "execution": {
+    "requires_accepted_record": true,
+    "same_original_operation": true,
+    "same_live_customer_session": true,
+    "same_current_admitted_child": true,
+    "actual_source_and_child_generations": true,
+    "source_digest_and_current_owner_gates": true,
+    "immutable_policy_and_offer_plus_current_configuration": true,
+    "unobserved_configuration_history_claimed": false,
+    "observed_mismatch_terminal": true,
+    "scheduler_transaction_ends_before_owner_locks": true,
+    "owner_lock_order": ["organization/source", "commercial", "authentication-child/ceremony", "identity"],
+    "recheck_after_lock_wait_and_before_commit": true,
+    "preparation_and_completion_atomic": true,
+    "stale_lease_cannot_overwrite_completion": true,
+    "explicit_browser_retry_preserved": true,
+    "browser_cookie_synthesis": false,
+    "auto_confirm": false,
+    "debit_exchange_license_or_redemption": false
+  },
+  "bounds": {
+    "global_records": 4096,
+    "records_per_original_operation": 1,
+    "claim_batch": 16,
+    "minimum_retry_seconds": 5,
+    "first_quote_maximum_seconds": 300,
+    "authority_deadline": "minimum-original-source-ceremony-child-session",
+    "retention_deadline": "minimum-original-source-ceremony",
+    "deadlines_renewable": false
+  },
+  "retention": {
+    "terminal_fields": ["original-operation", "scope-digest", "authority-expires-at", "retain-until", "terminal-state"],
+    "terminal_fence_survives_shorter_authority_cleanup": true,
+    "retained_parent_or_domain_evidence_allows_fresh_preparation": false,
+    "permanent_no_effect_uuid_history_required": false,
+    "new_parent_no_effect_uuid_reuse": "only-new-independent-explicit-authenticated-review-after-legitimate-full-temporary-cleanup-and-all-current-owner-checks",
+    "old_source_child_session_or_job_revives_after_cleanup": false,
+    "commercial_evidence_independent": true,
+    "quote_cleanup_allows_replacement": false
+  },
+  "product": {
+    "reconcile_original_review_only": true,
+    "generic_unavailable_proves_noncommit": false,
+    "automatic_replacement_or_id_reuse": false,
+    "new_explicit_reviews_use_fresh_ids": true,
+    "pending_reason_exposed": false,
+    "explicit_exact_offer_confirmation_required": true,
+    "expiry_stops_preparation_not_permitted_outcome_recovery": true,
+    "committed_delivery_recovery_unchanged": true
+  },
+  "supplemental_vectors": "test-vectors/deferred-setup-preparation-v1/manifest.json"
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-continuation/v1/error.schema.json",
+  "title": "Installation setup continuation error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:installation-setup-continuation:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "proof_invalid",
+        "scope_conflict",
+        "authorization_denied",
+        "expired",
+        "not_ready",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  }
+}

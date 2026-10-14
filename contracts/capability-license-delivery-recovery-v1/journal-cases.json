@@ -1,0 +1,223 @@
+[
+  {
+    "case_id": "expired-undelivered",
+    "expected": "recover-next",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "authorization-expired",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "pending-redemption-before-expiry-check",
+    "expected": "replay-redemption",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "authorization-expired",
+      "redemption_pending": true,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "pending-redemption-before-new-challenge",
+    "expected": "replay-redemption",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "redemption-completed",
+      "redemption_pending": true,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "protected-result-before-issuance",
+    "expected": "deliver-original",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "authorization-expired",
+      "redemption_pending": false,
+      "redemption_result_saved": true,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "pending-issuance-before-recovery",
+    "expected": "replay-issuance",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": true,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "authorization-expired",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "completed-license-is-local-fact",
+    "expected": "ready",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": true,
+      "now": 100,
+      "read_state": "authorization-expired",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "missing-journal-no-authority",
+    "expected": "unavailable",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": false,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "authorization-expired",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "completed-without-local-evidence",
+    "expected": "unavailable",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "redemption-completed",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "not-issued-needs-current-read",
+    "expected": "read-current",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": false,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "not-issued",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "future-skip-not-accepted",
+    "expected": "read-current",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "authorization-expired",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 4,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "rate-waits-automatically",
+    "expected": "wait",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "authorization-expired",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 101
+    }
+  },
+  {
+    "case_id": "live-reference-use",
+    "expected": "redeem-current",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "authorization-available",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  },
+  {
+    "case_id": "foreign-unavailable",
+    "expected": "unavailable",
+    "input": {
+      "current": 0,
+      "current_read_after_not_issued": true,
+      "issuance_pending": false,
+      "journal_available": true,
+      "license_verified_persisted": false,
+      "now": 100,
+      "read_state": "unavailable",
+      "redemption_pending": false,
+      "redemption_result_saved": false,
+      "requested": 1,
+      "retry_at": 100
+    }
+  }
+]

@@ -330,7 +330,7 @@ const messagePayloadValidators: Record<string, Validator> = {
       history_permission: literal('granted', 'missing'),
       legal_review_required: boolean,
       reported_at: isoDateTime,
-    })),
+    }, { history_error_code: nullable(literal('identity_required', 'unsupported_revision', 'history_unavailable')) })),
   }),
   'system.state': object({
     creator_account_id: nonEmptyString,

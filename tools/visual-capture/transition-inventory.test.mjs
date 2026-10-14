@@ -6,6 +6,7 @@ import * as dynamic from './dynamic-transitions.mjs';
 import { staticFixtures } from './static-fixtures.mjs';
 import { runInNewContext } from 'node:vm';
 import { installSurfaceFixture } from '../../extension/qualification/surface-runtime-fixture.mjs';
+import { SURFACE_STATES } from '../../extension/qualification/surface-states.mjs';
 
 test('the route inventory includes every graph projection state', () => {
   for (const state of ['current', 'pending', 'unavailable', 'degraded']) assert(SCREENS.some((screen) => screen.workspace === 'graph' && screen.state === state));
@@ -16,10 +17,17 @@ test('freshness registers every directed state transition', () => {
   const states = new Set(matrix.flatMap(({ from, to }) => [from.id, to.id]));
   for (const from of states) for (const to of states) if (from !== to) assert(matrix.some((edge) => edge.from.id === from && edge.to.id === to));
 });
-test('each provisioning fixture retains the live controller driver', async () => {
-  const fixtures = (await staticFixtures()).filter((fixture) => fixture.surface === 'provisioning');
-  assert.equal(fixtures.length, 12);
-  for (const fixture of fixtures) assert(fixture.provisioning, `${fixture.name} has no browser controller driver`);
+test('each current browser setup fixture retains its production renderer and input state', async () => {
+  const fixtures = (await staticFixtures()).filter((fixture) => fixture.surface === 'setup');
+  const expected = Object.entries(SURFACE_STATES).filter(([, state]) => state.surface === 'setup');
+  assert.deepEqual(fixtures.map(fixture => fixture.name), expected.map(([name]) => name));
+  for (const fixture of fixtures) {
+    assert(fixture.script.length > 0, `${fixture.name} has no production renderer`);
+    assert.equal(fixture.state.surface, 'setup');
+  }
+  for (const name of ['runtime_unavailable', 'reauthorization', 'pairing_compare', 'setup_complete']) {
+    assert(fixtures.some(fixture => fixture.name === name), `Missing native journey handoff state: ${name}`);
+  }
 });
 test('surface state changes publish the storage notification used by renderers', () => {
   const window = { fetch() {} };
@@ -32,7 +40,7 @@ test('surface state changes publish the storage notification used by renderers',
 });
 
 test('every dynamic view requires its reservations on the first surface frame', () => {
-  assert.deepEqual(dynamic.DYNAMIC_VIEWS, ['home', 'analytics', 'inbox', 'settings', 'passkey', 'graph', 'popup', 'setup', 'options', 'provisioning', 'production-boot']);
+  assert.deepEqual(dynamic.DYNAMIC_VIEWS, ['home', 'analytics', 'inbox', 'settings', 'passkey', 'graph', 'popup', 'setup', 'options', 'production-boot']);
   for (const view of dynamic.DYNAMIC_VIEWS) assert(dynamic.REQUIRED_REGIONS?.[view]?.length, `${view} has no reservation inventory`);
 });
 
@@ -43,7 +51,7 @@ test('dynamic inventory rejects a skipped trace and an unknown view', () => {
 });
 
 test('dynamic inventory rejects a registered view with missing states', () => {
-  assert.throws(() => dynamic.validateInventory([{ view: 'provisioning', transitions: 1, states: ['invalid-code'] }], ['provisioning']), /missing.*state/i);
+  assert.throws(() => dynamic.validateInventory([{ view: 'setup', transitions: 1, states: ['unknown:phase'] }], ['setup']), /missing.*state/i);
 });
 
 test('directed trace records its declared source before the destination', async () => {

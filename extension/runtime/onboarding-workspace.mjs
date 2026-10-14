@@ -1,9 +1,14 @@
-// Navigation and unfinished checkbox choices only. This module cannot grant
-// consent, authenticate a creator, pair a computer, or start capture.
+// Preview drafts, exact browser-task ownership, and explicit receiving only.
+import { workspaceAppLink, NATIVE_LAUNCH_KEY, NATIVE_LAUNCH_TTL_MS } from './onboarding-native-launch.mjs';
+import { createWorkspaceStore } from './onboarding-workspace-store.mjs';
+export { WORKSPACE_STATE_KEY } from './onboarding-workspace-store.mjs';
 export const WORKSPACE_RECORD_KEY = 'onboarding_workspace_v1';
 export const WORKSPACE_TAB_KEY = 'onboarding_workspace_tab_v1';
+export const WORKSPACE_ACTIVITY_KEY = 'onboarding_workspace_activity_v1';
+export const WORKSPACE_IDENTITY_KEY = 'onboarding_workspace_identity_v1';
+const MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
-const ROUTES = ['extension', 'hosted', 'provisioning', 'bridge'];
+const ROUTES = ['extension', 'hosted'];
 const DRAFT_FIELDS = ['terms_checked', 'risk_checked', 'full_checked'];
 const validScope = (scope) => exact(scope, ['scope_id', 'disclosure_bundle_id']) && UUID.test(scope.scope_id)
   && /^[0-9a-f]{64}$/u.test(scope.disclosure_bundle_id);
@@ -12,30 +17,41 @@ const isObject = (value) => value !== null && typeof value === 'object' && !Arra
 const exact = (value, keys) => isObject(value) && Object.keys(value).length === keys.length
   && keys.every((key) => Object.hasOwn(value, key));
 function fail(code) { throw new Error(code); }
-
+const validRecord = record => exact(record, ['version', 'journey_id', 'route', 'draft_scope', 'draft']) && record.version === 1
+  && UUID.test(record.journey_id) && ROUTES.includes(record.route) && validScope(record.draft_scope)
+  && exact(record.draft, DRAFT_FIELDS) && DRAFT_FIELDS.every(key => typeof record.draft[key] === 'boolean');
+const validIdentity = (identity, record) => exact(identity, ['version', 'journey_id', 'scope_id', 'disclosure_bundle_id', 'account_digest'])
+  && identity.version === 1 && identity.journey_id === record.journey_id && identity.scope_id === record.draft_scope.scope_id
+  && identity.disclosure_bundle_id === record.draft_scope.disclosure_bundle_id
+  && (identity.account_digest === null || /^[0-9a-f]{64}$/u.test(identity.account_digest));
 /** Build-time routes, never a URL supplied by an incoming command. */
-export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, routes }) {
+export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, routes, now = Date.now }) {
   if (!exact(routes, ROUTES)) fail('workspace_routes_invalid');
   const registered = new Map();
   for (const route of ROUTES) {
+    if (route === 'hosted' && routes[route] === null) continue;
     const url = new URL(routes[route]);
     const extension = chromeApi.runtime.getURL('setup.html');
     if (url.username || url.password || url.search || url.hash || url.href !== routes[route]
       || (route === 'extension' ? url.href !== extension
-        : !(url.protocol === 'https:' || (url.protocol === 'http:' && url.hostname === 'bridge.localhost')))) {
+        : !(url.protocol === 'https:' && url.pathname === '/public/onboarding/setup'))) {
       fail('workspace_routes_invalid');
     }
     if (registered.has(url.href)) fail('workspace_routes_invalid');
     registered.set(url.href, route);
+
   }
   let queue = Promise.resolve();
+  const localStorage = createWorkspaceStore({ storage: chromeApi.storage.local,
+    keys: { record: WORKSPACE_RECORD_KEY, identity: WORKSPACE_IDENTITY_KEY, activity: WORKSPACE_ACTIVITY_KEY },
+    validRecord, validIdentity });
   const serialize = (work) => {
     const operation = queue.then(work);
     queue = operation.catch(() => undefined);
     return operation;
   };
   const reference = (route, journeyId) => {
-    if (!ROUTES.includes(route) || !UUID.test(journeyId)) fail('workspace_reference_invalid');
+    if (!ROUTES.includes(route) || !routes[route] || !UUID.test(journeyId)) fail('workspace_reference_invalid');
     return `${routes[route]}#journey=${journeyId}`;
   };
   function parse(value) {
@@ -45,12 +61,18 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       url.hash = '';
       const route = registered.get(url.href);
       const journeyId = fragment.startsWith('#journey=') ? fragment.slice(9) : '';
-      if (route && UUID.test(journeyId) && reference(route, journeyId) === value) return { route, journeyId };
+      if (route && UUID.test(journeyId) && `${url.href}#journey=${journeyId}` === value) return { route, journeyId };
     } catch { /* Unregistered or malformed navigation is never adopted. */ }
     return null;
   }
+  const saveRecord = (record) => localStorage.set({ [WORKSPACE_RECORD_KEY]: record, [WORKSPACE_ACTIVITY_KEY]: now() });
   const readRecord = async () => {
-    const record = (await chromeApi.storage.local.get(WORKSPACE_RECORD_KEY))[WORKSPACE_RECORD_KEY];
+    const touched = (await localStorage.get(WORKSPACE_ACTIVITY_KEY))[WORKSPACE_ACTIVITY_KEY];
+    if (Number.isFinite(touched) && (now() - touched > MAX_IDLE_MS || touched > now())) {
+      await localStorage.remove([WORKSPACE_RECORD_KEY, WORKSPACE_ACTIVITY_KEY, WORKSPACE_IDENTITY_KEY]);
+      return null;
+    }
+    const record = (await localStorage.get(WORKSPACE_RECORD_KEY))[WORKSPACE_RECORD_KEY];
     if (!exact(record, ['version', 'journey_id', 'route', 'draft_scope', 'draft']) || record.version !== 1
       || !UUID.test(record.journey_id) || !ROUTES.includes(record.route)
       || !validScope(record.draft_scope)
@@ -58,17 +80,22 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     return record;
   };
   const storeTab = (tab, journeyId) => chromeApi.storage.session.set({
-    [WORKSPACE_TAB_KEY]: { version: 1, journey_id: journeyId, tab_id: tab.id, window_id: tab.windowId },
+    [WORKSPACE_TAB_KEY]: { version: 1, journey_id: journeyId, tab_id: tab.id, window_id: tab.windowId,
+      ...(typeof tab.documentId === 'string' && tab.documentId ? { document_id: tab.documentId } : {}) },
   });
   const extensionContexts = async () => typeof chromeApi.runtime.getContexts === 'function'
     ? chromeApi.runtime.getContexts({ contextTypes: ['TAB'] }) : [];
   const getTab = async (id) => {
     const tab = await chromeApi.tabs.get(id);
-    // Even this extension's own URL may be withheld by tabs.get without tabs
-    // permission. getContexts proves which packaged document occupies the tab.
-    if (!tab.url) {
-      const context = (await extensionContexts()).find((value) => value.tabId === id && value.frameId === 0);
-      if (context) return { ...tab, url: context.documentUrl, documentId: context.documentId };
+    const context = (await extensionContexts()).find((value) => value.tabId === id && value.frameId === 0);
+    // Always compare the current document, including reload to the same URL.
+    if (context) return { ...tab, url: context.documentUrl, documentId: context.documentId };
+    if (tab.url && parse(tab.url) && chromeApi.scripting?.executeScript) {
+      const documents = await chromeApi.scripting.executeScript({ target: { tabId: id, frameIds: [0] },
+        world: 'ISOLATED', func: () => null });
+      const document = documents.find((value) => value.frameId === 0);
+      if (!document?.documentId) fail('workspace_document_unavailable');
+      return { ...tab, documentId: document.documentId };
     }
     return tab;
   };
@@ -119,9 +146,110 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
     await storeTab(tab, record.journey_id);
     return { record, tab, parsed };
   }
+  async function pendingLaunch() {
+    const launch = (await chromeApi.storage.session.get(NATIVE_LAUNCH_KEY))[NATIVE_LAUNCH_KEY];
+    if (launch === undefined) return null;
+    if (!exact(launch, ['version', 'journey_id', 'draft_scope', 'tab_id', 'document_id', 'url',
+      'created_at', 'expires_at', 'phase']) || launch.version !== 1 || launch.phase !== 'pending'
+      || !UUID.test(launch.journey_id) || !validScope(launch.draft_scope)
+      || !Number.isInteger(launch.tab_id) || launch.tab_id < 0 || typeof launch.document_id !== 'string'
+      || !launch.document_id || launch.url !== reference('extension', launch.journey_id)
+      || !Number.isFinite(launch.created_at) || launch.created_at > now()
+      || launch.expires_at !== launch.created_at + NATIVE_LAUNCH_TTL_MS) fail('task_changed');
+    return launch;
+  }
+  async function inspectLaunchDocument(launch) {
+    // Intent is not a live task owner. Retire only an exactly identified or
+    // confirmed replaced/closed document; an unavailable inspection fails closed.
+    try {
+      if (typeof chromeApi.runtime.getContexts !== 'function') fail('task_changed');
+      const contexts = await extensionContexts();
+      const current = contexts.filter(value => value.tabId === launch.tab_id && value.frameId === 0);
+      if (current.length > 1) fail('task_changed');
+      if (current.length === 1) {
+        if (!current[0].documentId || !current[0].documentUrl) fail('task_changed');
+        return;
+      }
+      const tabs = await chromeApi.tabs.query({});
+      const tab = tabs.find(value => value.id === launch.tab_id);
+      if (tab && (!tab.url || tab.url === launch.url)) fail('task_changed');
+    } catch { fail('task_changed'); }
+  }
   return Object.freeze({
-    reference,
     read: () => serialize(readRecord),
+    // Save only presentation coordinates for an admitted desktop-first task.
+    // The shared task owner fences other tasks and live authentication flows.
+    adoptBrowserTask: (request, canAdopt = () => false, authorize = async () => {}) => serialize(async () => {
+      if (!exact(request, ['journey_id', 'draft_scope']) || !UUID.test(request.journey_id)
+        || !validScope(request.draft_scope)) fail('workspace_reference_invalid');
+      const existing = await readRecord();
+      const rebind = existing?.journey_id !== request.journey_id;
+      const launch = await pendingLaunch();
+      const tab = (await chromeApi.storage.session.get(WORKSPACE_TAB_KEY))[WORKSPACE_TAB_KEY];
+      const retireLaunch = launch && (rebind || launch.journey_id !== existing.journey_id
+        || launch.draft_scope.scope_id !== existing.draft_scope.scope_id
+        || launch.draft_scope.disclosure_bundle_id !== existing.draft_scope.disclosure_bundle_id);
+      const retireTab = tab && tab.journey_id !== request.journey_id;
+      if (!rebind && !retireLaunch && !retireTab) return existing;
+      if (canAdopt() !== true) fail('task_changed');
+      if (retireLaunch) await inspectLaunchDocument(launch);
+      await authorize();
+      if (canAdopt() !== true) fail('task_changed');
+      const record = rebind ? { version: 1, journey_id: request.journey_id, route: 'extension',
+        draft_scope: { ...request.draft_scope, ...(existing ? { scope_id: crypto.randomUUID() } : {}) }, draft: blankDraft() }
+        : existing;
+      // The canonical record commits first. If cleanup fails, an exact retry
+      // finishes only obsolete presentation cleanup without rotating its scope.
+      if (rebind) await saveRecord(record);
+      await authorize();
+      if (canAdopt() !== true) fail('task_changed');
+      const retire = [...(retireLaunch ? [NATIVE_LAUNCH_KEY] : []), ...(retireTab ? [WORKSPACE_TAB_KEY] : [])];
+      if (retire.length) await chromeApi.storage.session.remove(retire);
+      return record;
+    }),
+    admit: (sender) => serialize(async () => { const { record, parsed } = await admitted(sender); return { record, route: parsed.route }; }),
+    prepareNativeLaunch: (sender) => serialize(async () => {
+      const { record, tab, parsed } = await admitted(sender);
+      if (parsed.route !== 'extension' || typeof tab.documentId !== 'string') fail('workspace_launch_unavailable');
+      const createdAt = now();
+      await chromeApi.storage.session.set({ [NATIVE_LAUNCH_KEY]: {
+        version: 1, journey_id: record.journey_id, draft_scope: { ...record.draft_scope },
+        tab_id: tab.id, document_id: tab.documentId, url: tab.url,
+        created_at: createdAt, expires_at: createdAt + NATIVE_LAUNCH_TTL_MS, phase: 'pending',
+      } });
+      return { journey_id: record.journey_id, app_link: workspaceAppLink(record.journey_id) };
+    }),
+    refreshScope: (scope) => serialize(async () => {
+      if (!validScope(scope)) fail('workspace_scope_invalid');
+      const record = await readRecord();
+      if (!record) return null;
+      if (record.draft_scope.disclosure_bundle_id !== scope.disclosure_bundle_id) record.draft = blankDraft();
+      else if (record.draft_scope.scope_id !== scope.scope_id) record.draft.full_checked = false;
+      record.draft_scope = { ...scope };
+      await saveRecord(record);
+      return record;
+    }),
+    // Presentation only. Linking the marker to a fresh scope makes either
+    // partial write fail closed; the marker never establishes account authority.
+    reconcileIdentity: (request) => serialize(async () => {
+      if (!exact(request, ['account_digest']) || (request.account_digest !== null
+        && !/^[0-9a-f]{64}$/u.test(request.account_digest))) fail('workspace_identity_invalid');
+      const record = await readRecord();
+      if (!record) return null;
+      const previous = (await localStorage.get(WORKSPACE_IDENTITY_KEY))[WORKSPACE_IDENTITY_KEY];
+      if (exact(previous, ['version', 'journey_id', 'scope_id', 'disclosure_bundle_id', 'account_digest'])
+        && previous.version === 1 && previous.journey_id === record.journey_id
+        && previous.scope_id === record.draft_scope.scope_id
+        && previous.disclosure_bundle_id === record.draft_scope.disclosure_bundle_id
+        && previous.account_digest === request.account_digest) return record;
+      record.draft.full_checked = false;
+      record.draft_scope.scope_id = crypto.randomUUID();
+      const identity = { version: 1, journey_id: record.journey_id, ...record.draft_scope,
+        account_digest: request.account_digest };
+      await localStorage.set({ [WORKSPACE_RECORD_KEY]: record,
+        [WORKSPACE_ACTIVITY_KEY]: now(), [WORKSPACE_IDENTITY_KEY]: identity });
+      return record;
+    }),
     // A worker-only install continuation. Adopts a uniquely identified existing
     // journey without focusing it. The route change refreshes only its setup
     // document when Chrome cannot expose runtime to a pre-install document.
@@ -138,7 +266,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       record ??= { version: 1, journey_id: journeyId, route: request.route,
         draft_scope: { ...request.draft_scope }, draft: blankDraft() };
       record.route = request.route;
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       await storeTab(tab, record.journey_id);
       await chromeApi.tabs.update(tab.id, { url: reference(request.route, record.journey_id) });
       return { journey_id: record.journey_id, tab_id: tab.id, route: record.route };
@@ -155,7 +283,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       record ??= { version: 1, journey_id: request.journey_id, route: request.route,
         draft_scope: { ...request.draft_scope }, draft: blankDraft() };
       if (tab) record.route = parse(tab.url).route;
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       const selected = tab ?? await chromeApi.tabs.create({ url, active: true });
       await storeTab(selected, record.journey_id);
       if (tab) await chromeApi.tabs.update(tab.id, { active: true });
@@ -168,7 +296,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       const url = reference(request.route, record.journey_id);
       await chromeApi.tabs.update(tab.id, { url });
       record.route = request.route;
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       return { journey_id: record.journey_id, tab_id: tab.id, route: record.route };
     }),
     saveDraft: (sender, request) => serialize(async () => {
@@ -178,7 +306,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       const { record } = await admitted(sender);
       if (request.scope_id !== record.draft_scope.scope_id) fail('workspace_draft_stale');
       record.draft = { ...draft };
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       return { ...record.draft };
     }),
     resetDraftScope: (sender, request) => serialize(async () => {
@@ -191,7 +319,7 @@ export function createOnboardingWorkspace({ chromeApi = globalThis.chrome, route
       if (request.draft_scope.disclosure_bundle_id !== record.draft_scope.disclosure_bundle_id) record.draft = blankDraft();
       else record.draft.full_checked = false;
       record.draft_scope = { ...request.draft_scope };
-      await chromeApi.storage.local.set({ [WORKSPACE_RECORD_KEY]: record });
+      await saveRecord(record);
       return { draft_scope: { ...record.draft_scope }, draft: { ...record.draft } };
     }),
   });

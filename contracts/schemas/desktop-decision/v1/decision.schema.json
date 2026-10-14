@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/desktop-decision/v1/decision.schema.json",
+  "title": "Desktop decision decision v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "expires_at",
+        "creator_id",
+        "computer_name"
+      ],
+      "properties": {
+        "action": {
+          "const": "connect-account"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "creator_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "computer_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "expires_at",
+        "offer"
+      ],
+      "properties": {
+        "action": {
+          "const": "activate-complimentary"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "offer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "offer_version_id",
+            "description",
+            "funding",
+            "pilot_credit_cost",
+            "capability",
+            "licensed_major_version",
+            "compatible_artifact_family",
+            "update_rights",
+            "fallback_major_versions"
+          ],
+          "properties": {
+            "offer_version_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "funding": {
+              "const": "complimentary-pilot"
+            },
+            "pilot_credit_cost": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "capability": {
+              "const": "analysis-run"
+            },
+            "licensed_major_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "compatible_artifact_family": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "update_rights": {
+              "type": "boolean"
+            },
+            "fallback_major_versions": {
+              "type": "array",
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -75,3 +75,19 @@ test('the desktop handoff focuses an existing setup page instead of opening anot
   assert.deepEqual(updates, [{ id: 8, active: true, url: runtime.getURL('setup.html#desktop') }]);
   assert.deepEqual(focused, [{ id: 3, focused: true }]);
 });
+
+test('history handoff updates its owned popup scope without claiming a customer tab', async () => {
+  const { openSurfacePage, DESKTOP_HANDOFF_WINDOW_KEY } = await import('../runtime/ui-surfaces.mjs');
+  for (const owned of [true, false]) {
+    const priorUrl = runtime.getURL('options.html#connection');
+    const saved = { [DESKTOP_HANDOFF_WINDOW_KEY]: { window_id: owned ? 3 : 99, url: priorUrl } };
+    const updates = [];
+    const api = { runtime: { ...runtime, getContexts: async () => [{ tabId: 8, windowId: 3, documentUrl: priorUrl }] },
+      storage: { session: { async get() { return saved; }, async set(value) { Object.assign(saved, value); } } },
+      tabs: { async update(id, options) { updates.push({ id, ...options }); } },
+      windows: { async update() {}, async create() { assert.fail('duplicate window'); } } };
+    await openSurfacePage(api, { surface: 'options', section: 'history', presentation: 'window' });
+    assert.equal(updates[0].url, runtime.getURL('options.html#history'));
+    assert.equal(saved[DESKTOP_HANDOFF_WINDOW_KEY].url, owned ? runtime.getURL('options.html#history') : priorUrl);
+  }
+});

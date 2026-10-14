@@ -298,7 +298,7 @@ class FakeDatabase {
   }
 
   transaction(storeNames, mode) {
-    return new FakeTransaction(this.state, storeNames, mode);
+    return new FakeTransaction(this.state, typeof storeNames === 'string' ? [storeNames] : storeNames, mode);
   }
 
   close() {}

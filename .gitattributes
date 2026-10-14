@@ -49,3 +49,4 @@ contracts/grant-profile-v1/*/*/** linguist-generated=true
 # Generated upstream license notices retain their original internal whitespace.
 native/companion-snow/THIRD_PARTY_NOTICES.txt -whitespace
 extension/vendor/companion-snow/THIRD_PARTY_NOTICES.txt -whitespace
+frontend/shared-setup/providers/OFL.txt -whitespace

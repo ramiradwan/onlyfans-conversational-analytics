@@ -15,6 +15,7 @@ it('explains the destination beside the setup link', () => {
 it('skips the completed connection and keeps history out of required setup', () => {
   render(<ThemeProvider theme={theme}><MemoryRouter><SetupPrompt extensionConnected title="Finish setup" /></MemoryRouter></ThemeProvider>);
   expect(screen.getByRole('link', { name: 'Continue setup' }).getAttribute('href')).toBe('/settings#full-analytics');
-  expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  expect(screen.getAllByRole('listitem')).toHaveLength(1);
+  expect(screen.getByRole('listitem').getAttribute('data-step-state')).toBe('done');
   expect(screen.queryByText('Turn on message history')).toBeNull();
 });

@@ -23,10 +23,19 @@ from app.security.capability_license_verifier import CapabilityLicenseVerificati
 from app.security.hosted_grants import TransportResponse
 from app.security.installation_key import InstallationProof
 
+from app.security.capability_license_delivery_journal import SQLiteCapabilityLicenseDeliveryJournal
+from app.persistence.auth import SQLiteAuthenticationStore
+
 pytestmark = [pytest.mark.ci_tier('fast')]
 
 VECTORS = Path(__file__).resolve().parents[1] / "contracts" / "capability-license-v1"
 NOW = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def journal(tmp_path):
+    store = SQLiteAuthenticationStore(tmp_path / "auth.sqlite3")
+    return SQLiteCapabilityLicenseDeliveryJournal(store.database, "https://control.example")
 
 
 def _b64(value: bytes) -> str:
@@ -191,7 +200,7 @@ def test_activation_package_is_exact_and_path_bound() -> None:
         decode_activation_package(_encode(bad))
 
 
-def test_activation_proof_uses_capability_license_domain_and_persists_only_after_bindings() -> None:
+def test_activation_proof_uses_capability_license_domain_and_persists_only_after_bindings(journal) -> None:
     context = _context()
     key = _key(context)
     proof = ProofAuthority(key)
@@ -241,7 +250,7 @@ def test_activation_proof_uses_capability_license_domain_and_persists_only_after
         "capability_license": reference.compact_jws,
     }
     transport = QueueTransport([_json_response(201, challenge), _json_response(201, response)])
-    client = CapabilityLicenseDeliveryClient(transport, proof, authority)  # type: ignore[arg-type]
+    client = CapabilityLicenseDeliveryClient(transport, proof, authority, journal=journal)  # type: ignore[arg-type]
 
     accepted = client.activate(_encode(package), context=context)
 
@@ -263,7 +272,7 @@ def test_activation_proof_uses_capability_license_domain_and_persists_only_after
         "/v1/capability-license-reissue-authorizations/0198a1b2-c3d4-7300-8000-000000000011:finalize",
     ],
 )
-def test_commit_retry_reuses_one_idempotency_key(path: str) -> None:
+def test_commit_retry_reuses_one_idempotency_key(journal, path: str) -> None:
     context = _context()
     reference = _reference(context)
     transport = QueueTransport(
@@ -276,9 +285,9 @@ def test_commit_retry_reuses_one_idempotency_key(path: str) -> None:
         transport,
         ProofAuthority(_key(context)),
         Authority(reference),  # type: ignore[arg-type]
-    )
+    journal=journal)
 
-    response = client._request(path, {"request": {}})
+    response = client._request(path, {"request": {}}, idempotency_key="test.original.commit")
 
     assert response.status_code == 201
     assert len(transport.headers) == 2
@@ -287,7 +296,7 @@ def test_commit_retry_reuses_one_idempotency_key(path: str) -> None:
     assert transport.headers[0].get("Idempotency-Key")
 
 
-def test_commit_transport_retry_reuses_one_idempotency_key() -> None:
+def test_commit_transport_retry_reuses_one_idempotency_key(journal) -> None:
     context = _context()
     reference = _reference(context)
     transport = QueueTransport(
@@ -297,18 +306,19 @@ def test_commit_transport_retry_reuses_one_idempotency_key() -> None:
         transport,
         ProofAuthority(_key(context)),
         Authority(reference),  # type: ignore[arg-type]
-    )
+    journal=journal)
 
     response = client._request(
         "/v1/capability-license-exchanges/0198a1b2-c3d4-7300-8000-000000000002:activate",
         {"request": {}},
+        idempotency_key="test.original.commit",
     )
 
     assert response.status_code == 201
     assert transport.headers[0] == transport.headers[1]
 
 
-def test_transport_failure_does_not_withdraw_existing_local_authority() -> None:
+def test_transport_failure_does_not_withdraw_existing_local_authority(journal) -> None:
     context = _context()
     reference = _reference(context)
     authority = Authority(reference)
@@ -330,7 +340,7 @@ def test_transport_failure_does_not_withdraw_existing_local_authority() -> None:
         QueueTransport([]),
         ProofAuthority(_key(context)),
         authority,  # type: ignore[arg-type]
-    )
+    journal=journal)
     with pytest.raises(CapabilityLicenseDeliveryUnavailable):
         client.activate(_encode(package), context=context)
     assert authority.persisted == [reference]
@@ -423,7 +433,7 @@ def test_published_activation_package_decodes_directly() -> None:
     assert package.authority_target == "capability-license"
 
 
-def test_replacement_brain_cannot_authorize_customer_reissue() -> None:
+def test_replacement_brain_cannot_authorize_customer_reissue(journal) -> None:
     prior_context = CapabilityLicenseVerificationContext(
         expected_subject=(
             "organization:org.acme:installation:install.primary:"
@@ -450,7 +460,7 @@ def test_replacement_brain_cannot_authorize_customer_reissue() -> None:
         transport,
         ProofAuthority(_key(prior_context)),
         Authority(prior),  # type: ignore[arg-type]
-    )
+    journal=journal)
 
     with pytest.raises(CapabilityLicenseDeliveryRefused) as refused:
         client.authorize_reissue(
@@ -463,7 +473,7 @@ def test_replacement_brain_cannot_authorize_customer_reissue() -> None:
     assert transport.requests == []
 
 
-def test_published_reissue_finalization_proves_replacement_key_and_persists_replacement_only() -> None:
+def test_published_reissue_finalization_proves_replacement_key_and_persists_replacement_only(journal) -> None:
     handoff_vectors = json.loads(
         (
             Path(__file__).resolve().parents[1]
@@ -501,7 +511,7 @@ def test_published_reissue_finalization_proves_replacement_key_and_persists_repl
     authority = Authority(reference)
     proof = ProofAuthority(_key(context))
     transport = QueueTransport([_json_response(201, challenge), _json_response(201, response)])
-    client = CapabilityLicenseDeliveryClient(transport, proof, authority)  # type: ignore[arg-type]
+    client = CapabilityLicenseDeliveryClient(transport, proof, authority, journal=journal)  # type: ignore[arg-type]
 
     accepted = client.finalize_reissue(handoff, context=context)
 
@@ -522,7 +532,7 @@ def test_published_reissue_finalization_proves_replacement_key_and_persists_repl
     assert transport.headers[1].get("Idempotency-Key")
 
 
-def test_unsigned_reissue_refusal_never_mutates_existing_signed_authority() -> None:
+def test_unsigned_reissue_refusal_never_mutates_existing_signed_authority(journal) -> None:
     context = _replacement_context()
     existing = _synthetic_reference(
         context,
@@ -547,7 +557,7 @@ def test_unsigned_reissue_refusal_never_mutates_existing_signed_authority() -> N
         QueueTransport([_json_response(409, refusal)]),
         ProofAuthority(_key(context)),
         authority,  # type: ignore[arg-type]
-    )
+    journal=journal)
 
     with pytest.raises(CapabilityLicenseDeliveryRefused):
         client.finalize_reissue(encoded, context=context)

@@ -200,12 +200,7 @@ export function CreatorVaultControls({
     }}>
       <Stack data-journey-state="desktop.stored_messages" spacing={0}
         sx={{ '& > .MuiAlert-root, & > [role="status"]': { m: 3 } }}>
-        <SectionHeader sx={{ p: 3 }} summary="Saved only on this computer." title="Stored messages" />
-
-        <Box sx={{ display: 'flex', gap: 1, px: 3 }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}><StatusLine id="vault-feedback" tone={error ? 'error' : 'secondary'} text={!editingArchive && error ? error : notice ?? (status?.deletion_operation ? "Deleting isn't finished. The messages are gone, but some of your numbers still include them." : null)} /></Box>
-          {api.retryDeletion && <Button sx={{ alignSelf: 'flex-start', visibility: status?.deletion_operation ? 'visible' : 'hidden' }} color="inherit" disabled={busy} onClick={() => void retryDeletion()} size="small">Finish deleting</Button>}
-        </Box>
+        <SectionHeader sx={{ px: 3, pt: 3, pb: 1.5 }} summary="Saved only on this computer." title="Stored messages" />
 
         {loading && (
           <Stack spacing={1} role="status" aria-label="Loading stored message settings">
@@ -219,7 +214,7 @@ export function CreatorVaultControls({
             <Divider />
 
             <SettingRow
-              sx={{ px: 3, py: 2.25 }}
+              sx={{ px: 3, py: 2 }}
               action={status.policy.enabled ? (
                 <Button
                   disabled={busy}
@@ -247,7 +242,7 @@ export function CreatorVaultControls({
             <Divider />
 
             <SettingRow
-              sx={{ px: 3, py: 2.25 }}
+              sx={{ px: 3, py: 2 }}
               action={(
                 <Button
                   disabled={busy || !status.capabilities.export}
@@ -265,7 +260,7 @@ export function CreatorVaultControls({
             <Divider />
 
             <SettingRow
-              sx={{ px: 3, py: 2.25 }}
+              sx={{ px: 3, py: 2 }}
               action={(
                 <Button
                   aria-haspopup="dialog"
@@ -282,6 +277,10 @@ export function CreatorVaultControls({
             />
           </>
         )}
+        <Box sx={{ display: 'flex', gap: 1, px: 3 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}><StatusLine id="vault-feedback" tone={error ? 'error' : 'secondary'} text={!editingArchive && error ? error : notice ?? (status?.deletion_operation ? "Deleting isn't finished. The messages are gone, but some of your numbers still include them." : null)} /></Box>
+          {api.retryDeletion && <Button sx={{ alignSelf: 'flex-start', visibility: status?.deletion_operation ? 'visible' : 'hidden' }} color="inherit" disabled={busy} onClick={() => void retryDeletion()} size="small">Finish deleting</Button>}
+        </Box>
       </Stack>
 
       <Dialog

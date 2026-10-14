@@ -6,12 +6,11 @@ import { openCompanionChannel, openLoopbackSocket, CompanionChannelError, safeCo
 import { parseMessage } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { LOCAL_SERVICE_WS, LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
-import { createConnectionRecovery, CONNECTION_STABLE_MS } from './recovery-backoff.mjs';
+import { createConnectionRecovery, CONNECTION_STABLE_MS, CONNECTION_RECONCILE_ALARM } from './recovery-backoff.mjs';
 
 export const PAIRING_PORT_NAME = 'ofca.companion.pairing';
 const INSTALLATION_KEY = 'agent_installation_id';
 const ACTIVE_PARTITION_KEY = 'active_account_partition_v5';
-const RECONCILE_ALARM = 'ofca-agent-reconcile';
 const ANALYSIS_READINESS_SCHEMA = 'ofca-analysis-readiness/v1';
 const failure = () => new CompanionChannelError();
 const exact = (value, fields) => value && typeof value === 'object' && !Array.isArray(value)
@@ -41,7 +40,7 @@ function validatedAnalysisReadiness(value) {
 export function createCompanionClient({
   chromeApi = globalThis.chrome, allowsFull, detectedAccountId,
   // Paused Full keeps a control-only session so the desktop app can resume it.
-  allowsControl = () => false, onControl = async () => {},
+  allowsControl = () => false, onControl = async () => {}, onBrowserTask = null,
   accountDatabaseName,
   storeFactory = openPairingStore, loadSnow = loadPackagedSnow,
   channelFactory = openCompanionChannel, wireFactory = openLoopbackSocket,
@@ -227,7 +226,26 @@ export function createCompanionClient({
   const seenControls = new Set();
   let lastSurface = null, lastSurfaceEncoded = null, reportedSurfaceChannel = null;
   function attachControls(channel) {
-    channel.onControl?.(({ id, action }) => {
+    const lifetime = new AbortController();
+    channel.onClose(() => lifetime.abort());
+    channel.onControl?.(({ id, action, payload }) => {
+      if (action === 'browser.task') {
+        const guard = () => {
+          if (lifetime.signal.aborted || channel !== controlChannel() || !(allowsFull?.() || allowsControl())
+            || payload?.creator_account_id !== channel.identity.creator_account_id) throw failure();
+        };
+        void Promise.resolve().then(() => {
+          guard();
+          if (!onBrowserTask) throw failure();
+          return onBrowserTask(payload, { guard, signal: lifetime.signal, creatorAccountId: channel.identity.creator_account_id,
+            notify: async status => {
+              guard();
+              await channel.rpc('agent.browser-task.report', { task_id: payload.task.task_id,
+                admission_generation: payload.task.admission_generation, ...status });
+            } });
+        }).catch(() => undefined);
+        return;
+      }
       if (seenControls.has(id)) return;
       seenControls.add(id);
       if (seenControls.size > 256) seenControls.delete(seenControls.values().next().value);
@@ -453,9 +471,10 @@ export function createCompanionClient({
     async loadBrainBinding(controls = {}) {
       const bound = await connect(controls);
       controls.signal?.throwIfAborted(); controls.assertCurrent?.();
-      await chromeApi.storage.session.set({ [ACTIVE_PARTITION_KEY]: await accountDatabaseName(bound.accountId) });
+      const installationId = bound.channel.identity.installation_id;
+      await chromeApi.storage.session.set({ [ACTIVE_PARTITION_KEY]: await accountDatabaseName(bound.accountId, installationId) });
       controls.signal?.throwIfAborted(); controls.assertCurrent?.();
-      return { creatorAccountId: bound.accountId, authTicket: bound.authTicket, storageKey: bound.storageKey };
+      return { creatorAccountId: bound.accountId, installationId, authTicket: bound.authTicket, storageKey: bound.storageKey };
     },
     async loadReconnectAuthTicket() { return null; },
     async saveReconnectAuthTicket(credential, controls = {}) {
@@ -528,9 +547,9 @@ export function createCompanionClient({
       const events = [chromeApi.runtime.onStartup, chromeApi.runtime.onInstalled, chromeApi.runtime.onMessage,
         chromeApi.tabs?.onUpdated].filter(Boolean);
       for (const event of events) event.addListener(listener);
-      const alarm = (value) => { if (value?.name === RECONCILE_ALARM) listener(); };
+      const alarm = (value) => { if (value?.name === CONNECTION_RECONCILE_ALARM) listener(); };
       chromeApi.alarms?.onAlarm?.addListener(alarm);
-      void chromeApi.alarms?.create(RECONCILE_ALARM, { delayInMinutes: 1, periodInMinutes: 1 });
+      void chromeApi.alarms?.create(CONNECTION_RECONCILE_ALARM, { delayInMinutes: 1, periodInMinutes: 1 });
       return () => { for (const event of events) event.removeListener?.(listener); chromeApi.alarms?.onAlarm?.removeListener?.(alarm); };
     },
   });
@@ -551,12 +570,33 @@ export function createCompanionClient({
   };
   // One attempt at a time. Its owner is a setup page port or a desktop port;
   // closing the owner cancels the attempt it started.
-  async function pairFor(owner, { signal, onPaired = async () => {} } = {}) {
+  async function savedPairing() { return (await store()).savedPairing(); }
+  async function pairFor(owner, { signal, onPaired = async () => {}, replacement = null,
+    authorize = async () => {}, assertCurrent = () => {} } = {}) {
     if (pairingOwner !== null) return false;
     pairingOwner = owner;
     try {
       const existing = await status();
-      if (existing.state === 'paired') return true;
+      if (replacement !== null) {
+        const account = await permitted();
+        const version = generation;
+        await authorize();
+        signal?.throwIfAborted();
+        await permitted(account);
+        if (version !== generation || pairingOwner !== owner) throw failure();
+        const pairingStore = await store();
+        await pairingStore.forget({ expectedToken: replacement, signal, assertCurrent() {
+          assertCurrent();
+          if (version !== generation || pairingOwner !== owner || !allowsFull?.()) throw failure();
+        } });
+        invalidate();
+        announce({ state: 'unpaired', comparison_code: null });
+        await authorize();
+        signal?.throwIfAborted();
+      } else if (existing.state === 'paired') {
+        if (owner?.desktop) throw failure();
+        return true;
+      }
       await pair({ signal }); await onPaired();
       return true;
     } finally {
@@ -624,7 +664,7 @@ export function createCompanionClient({
     });
   }
   return Object.freeze({ adapter, configAdapter, webSocketFactory, invalidate, pair, forget, hasSavedPairing, status, analysisReadiness, registerPopup,
-    pairFor, cancelFor, owns, subscribe, notifySurfaces, reportSurface, ensureControl, controlReady,
+    pairFor, savedPairing, cancelFor, owns, subscribe, notifySurfaces, reportSurface, ensureControl, controlReady,
     onRevoked(listener) { revocationListener = listener; },
     get diagnosticEvents() { return diagnosticEvents.map((entry) => ({ ...entry })); },
     get credentialRotation() { return structuredClone(credentialRotation); },

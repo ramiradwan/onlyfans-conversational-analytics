@@ -7,10 +7,12 @@ import { connectionGrace } from '@/utils/connectionGrace';
 
 import { AppAppBar } from './AppAppBar';
 import { AppDrawer } from './AppDrawer';
+import { hasDesktopWindowControls } from './DesktopWindowControls';
 
 const { desktopRailWidth, headerHeight, mobileDrawerWidth, railInset } = componentTokens.shell;
 
 export function AppShell() {
+  const statusBreakpoint = hasDesktopWindowControls() ? 'md' : 'sm';
   const phase = useSyncExternalStore(connectionGrace.subscribe, connectionGrace.getSnapshot);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -23,7 +25,8 @@ export function AppShell() {
   }, []);
 
   return (
-    <Box sx={{ bgcolor: 'background.default', display: 'flex', height: '100dvh', minHeight: 0 }}>
+    <Box sx={{ bgcolor: 'background.default', display: 'flex', height: '100dvh', minHeight: 0,
+      '--shell-header-height': { xs: `${headerHeight + componentTokens.FreshnessStatus.narrowRowHeight}px`, [statusBreakpoint]: `${headerHeight}px` } }}>
       <AppAppBar headerHeight={headerHeight} onDrawerToggle={handleDrawerToggle} />
 
       <AppDrawer
@@ -45,7 +48,7 @@ export function AppShell() {
           minHeight: 0,
           minWidth: 0,
           overflow: 'hidden',
-          pt: { xs: `${headerHeight + componentTokens.FreshnessStatus.narrowRowHeight}px`, sm: `${headerHeight}px` },
+          pt: 'var(--shell-header-height)',
           '--issue-band-height': phase === 'interrupted' ? { xs: '104px', sm: '64px' } : '0px',
           '& [data-scroll-container], & [data-reading-viewport]': { scrollPaddingTop: 'calc(var(--issue-band-height) + 16px)' },
           width: { sm: `calc(100% - ${desktopRailWidth + railInset}px)` },

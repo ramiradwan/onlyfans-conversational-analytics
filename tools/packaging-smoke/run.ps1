@@ -229,10 +229,8 @@ function Get-ListeningProcessIdsForPort {
     param([Parameter(Mandatory)] [int] $Port)
 
     Write-SmokeProgress -Stage 'listener-query' -Phase begin -Details @{ port = $Port }
-    $listenerProcessIds = @(
-        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty OwningProcess -Unique
-    )
+    Initialize-SmokeProcessInterop
+    $listenerProcessIds = @([PackagingSmokeNativeProcess]::ListeningProcessIds($Port) | Select-Object -Unique)
     Write-SmokeProgress -Stage 'listener-query' -Phase end -Details @{ port = $Port; process_ids = $listenerProcessIds }
     return $listenerProcessIds
 }
@@ -271,12 +269,12 @@ function Invoke-InstallArtifact {
         $installerProcess = Start-Process -FilePath $ArtifactPath -ArgumentList @(
             '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
             ("/DIR=`"" + $Layout.InstallationPrefix + "`"")
-        ) -Wait -PassThru
+        ) -Wait -PassThru -WindowStyle Hidden
         Write-SmokeProgress -Stage 'installer-wait' -Phase end -Details @{ exit_code = $installerProcess.ExitCode }
         if ($installerProcess.ExitCode -ne 0) {
             throw "installer exited with code $($installerProcess.ExitCode)"
         }
-        $launcherPath = Join-Path -Path $Layout.InstallationPrefix -ChildPath 'Brain.exe'
+        $launcherPath = Join-Path -Path $Layout.InstallationPrefix -ChildPath 'Bridge.exe'
         $uninstallerPath = Join-Path -Path $Layout.InstallationPrefix -ChildPath 'unins000.exe'
         if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
             throw "installer did not create the required launcher: $launcherPath"
@@ -358,6 +356,38 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
 public static class PackagingSmokeNativeProcess {
+    [DllImport("iphlpapi.dll")]
+    private static extern uint GetExtendedTcpTable(IntPtr table, ref uint size,
+        bool ordered, uint family, uint tableClass, uint reserved);
+
+    public static int[] ListeningProcessIds(int port) {
+        // Read the listener table directly, as the native host does. A CIM
+        // State projection can be unavailable even for a live listener.
+        var found = new System.Collections.Generic.List<int>();
+        foreach (uint family in new uint[] { 2, 23 }) {
+            uint size = 0;
+            uint status = GetExtendedTcpTable(IntPtr.Zero, ref size, false, family, 3, 0);
+            if (status != 122 || size < 4 || size > 16 * 1024 * 1024)
+                throw new Win32Exception((int)status);
+            IntPtr table = Marshal.AllocHGlobal((int)size);
+            try {
+                status = GetExtendedTcpTable(table, ref size, false, family, 3, 0);
+                if (status != 0) throw new Win32Exception((int)status);
+                int count = Marshal.ReadInt32(table);
+                int rowSize = family == 2 ? 24 : 56;
+                if (count < 0 || count > (size - 4) / rowSize)
+                    throw new InvalidOperationException("Listener table unavailable.");
+                for (int i = 0; i < count; i++) {
+                    int row = 4 + i * rowSize;
+                    int rawPort = Marshal.ReadInt32(table, row + (family == 2 ? 8 : 20));
+                    int localPort = ((rawPort & 255) << 8) | ((rawPort >> 8) & 255);
+                    if (localPort == port) found.Add(Marshal.ReadInt32(table, row + (family == 2 ? 20 : 52)));
+                }
+            } finally { Marshal.FreeHGlobal(table); }
+        }
+        return found.ToArray();
+    }
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetProcessTimes(SafeProcessHandle process, out long creation,
         out long exit, out long kernel, out long user);
@@ -968,7 +998,7 @@ function Invoke-VerifyInstallationKey {
     param([bool] $ListenerReady)
 
     $reason = if ($ListenerReady) {
-        'no_public_nonsecret_installation-key status is exposed before claim consumption'
+        'installed device-key enrollment requires the authenticated setup ceremony'
     } else {
         'provisioning_listener_is_not_available'
     }
@@ -979,22 +1009,22 @@ function Invoke-VerifyProvisioningHandoff {
     param([bool] $ListenerReady)
 
     $reason = if ($ListenerReady) {
-        'handoff is browser-session-bound; the harness does not extract or manufacture the launcher secret'
+        'native and browser tasks require scoped admissions; this harness does not drive their UI'
     } else {
         'provisioning_listener_is_not_available'
     }
     Add-Result -Step 'provisioning-handoff' -Outcome blocked -Evidence @{ reason = $reason }
 }
 
-function Invoke-SubmitInstallationClaim {
-    Add-Result -Step 'submit-installation-claim' -Outcome blocked -Evidence @{
-        reason = 'a real claim must be pasted into the browser; the harness never accepts claim material on its command line or transcript'
+function Invoke-VerifyHostedSignIn {
+    Add-Result -Step 'hosted-sign-in' -Outcome blocked -Evidence @{
+        reason = 'requires the installed browser task and a compatible hosted Provider'
     }
 }
 
-function Invoke-ConsumeInstallationClaim {
-    Add-Result -Step 'consume-installation-claim' -Outcome blocked -Evidence @{
-        reason = 'requires the browser-submitted claim and a reachable hosted provisioning plane'
+function Invoke-VerifyEnrollmentCompletion {
+    Add-Result -Step 'installation-enrollment' -Outcome blocked -Evidence @{
+        reason = 'requires authenticated account approval and verified device-bound enrollment'
     }
 }
 
@@ -1018,8 +1048,8 @@ try {
         $listenerReady = Invoke-VerifyProvisioningListener -LauncherProcess $launcher
         Invoke-VerifyInstallationKey -ListenerReady $listenerReady
         Invoke-VerifyProvisioningHandoff -ListenerReady $listenerReady
-        Invoke-SubmitInstallationClaim
-        Invoke-ConsumeInstallationClaim
+        Invoke-VerifyHostedSignIn
+        Invoke-VerifyEnrollmentCompletion
     }
 } finally {
     Stop-LauncherProcess -LauncherProcess $launcher

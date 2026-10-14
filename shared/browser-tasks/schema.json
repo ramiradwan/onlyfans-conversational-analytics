@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofca:browser-tasks:v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/observation"
+    },
+    {
+      "$ref": "#/$defs/payload"
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "extension": {
+      "type": "string",
+      "pattern": "^[a-p]{32}$"
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "task_id",
+        "journey_id",
+        "admission_generation",
+        "extension_id",
+        "instance_id",
+        "epoch",
+        "revision",
+        "account_generation",
+        "consent_generation",
+        "draft_scope_id",
+        "disclosure_bundle_id",
+        "state",
+        "creator_account_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "browser-task-observation.v1"
+        },
+        "task_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "journey_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "admission_generation": {
+          "$ref": "#/$defs/uuid"
+        },
+        "extension_id": {
+          "$ref": "#/$defs/extension"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "epoch": {
+          "$ref": "#/$defs/uuid"
+        },
+        "revision": {
+          "$ref": "#/$defs/generation"
+        },
+        "account_generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "consent_generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "draft_scope_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "disclosure_bundle_id": {
+          "$ref": "#/$defs/digest"
+        },
+        "state": {
+          "enum": [
+            "unavailable",
+            "needs-consent",
+            "needs-permission",
+            "needs-account",
+            "ready",
+            "paused"
+          ]
+        },
+        "creator_account_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+            }
+          ]
+        },
+        "creator_display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069])\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "creator_username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069])\\S(?:[\\s\\S]*\\S)?$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "ready",
+                  "paused"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "creator_account_id": {
+                "type": "string"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "creator_account_id": {
+                "type": "null"
+              },
+              "creator_display_name": false,
+              "creator_username": false
+            }
+          }
+        }
+      ]
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "journey_id",
+        "operation_id",
+        "purpose",
+        "scope_digest",
+        "source_revision",
+        "admission_generation",
+        "state",
+        "expires_at"
+      ],
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "journey_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "scope_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "source_revision": {
+          "$ref": "#/$defs/generation"
+        },
+        "admission_generation": {
+          "$ref": "#/$defs/uuid"
+        },
+        "purpose": {
+          "enum": [
+            "browser.access",
+            "browser.identity",
+            "browser.authentication",
+            "browser.pairing-confirmation",
+            "browser.history-permission"
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "accepted",
+            "outcome_unknown",
+            "completed",
+            "cancelled",
+            "expired"
+          ]
+        },
+        "expires_at": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "ceremony": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_url",
+        "ceremony_id",
+        "attempt_id",
+        "completion",
+        "expires_at"
+      ],
+      "properties": {
+        "preparation_recovery": {
+          "const": true
+        },
+        "entry_url": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[^/?#@]+/onboarding/browser-ceremonies/[A-Za-z0-9_-]{43}$"
+        },
+        "ceremony_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "attempt_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 40
+        },
+        "completion": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "system-browser"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "return_uri"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "extension-auth-flow"
+                },
+                "return_uri": {
+                  "type": "string",
+                  "pattern": "^https://[a-p]{32}\\.chromiumapp\\.org/browser-ceremony/v1/complete$"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "task",
+        "extension_id",
+        "ceremony",
+        "entry_source",
+        "participant",
+        "creator_account_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "browser-task.v1"
+        },
+        "task": {
+          "$ref": "#/$defs/task"
+        },
+        "extension_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/extension"
+            }
+          ]
+        },
+        "ceremony": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ceremony"
+            }
+          ]
+        },
+        "entry_source": {
+          "enum": [
+            "desktop",
+            "extension"
+          ]
+        },
+        "creator_account_id": {
+          "$ref": "#/$defs/observation/properties/creator_account_id"
+        },
+        "participant": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/participant"
+            }
+          ]
+        }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instance_id",
+        "draft_scope_id",
+        "disclosure_bundle_id"
+      ],
+      "properties": {
+        "instance_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "draft_scope_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "disclosure_bundle_id": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}

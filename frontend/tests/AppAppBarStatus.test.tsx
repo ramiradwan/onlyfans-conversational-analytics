@@ -98,14 +98,14 @@ describe('AppBar freshness authority', () => {
   });
   it('does not manufacture freshness from metrics, history, configuration or liveness', () => {
     for (const input of [state(), partialState('paused'), partialState('backfilling'), state({ projection: { ...state().projection, status: 'unavailable' } }), state({ agent: { ...state().agent!, applied_config_revision: null } })]) {
-      expect(getStatusPresentation(input).label).toBe('Messages not checked');
+      expect(getStatusPresentation(input).label).toBe('History not verified');
     }
   });
   it('follows catch-up state independently of the live arrival indicator', () => {
     const catchupFreshness = { status: 'current' as const, reason: null, uncertain_since: null, last_closed_at: AS_OF, observing_since: AS_OF };
     expect(getStatusPresentation(state({ catchupFreshness, liveFreshness: { ...state().liveFreshness, status: 'unknown' } })).label).toBe('Up to date');
-    expect(getStatusPresentation(state({ catchupFreshness: { ...catchupFreshness, status: 'paused', reason: 'applying_settings' } })).label).toBe('Paused · applying settings');
-    expect(getStatusPresentation(state({ catchupFreshness, viewRevision: null })).label).toBe('Messages not checked');
-    expect(getStatusPresentation(state({ catchupFreshness, connection: 'disconnected' })).label).toBe('Paused · Brain offline');
+    expect(getStatusPresentation(state({ catchupFreshness: { ...catchupFreshness, status: 'paused', reason: 'applying_settings' } })).label).toBe('Applying collection settings');
+    expect(getStatusPresentation(state({ catchupFreshness, viewRevision: null })).label).toBe('History not verified');
+    expect(getStatusPresentation(state({ catchupFreshness, connection: 'disconnected' })).label).toBe('Status connection interrupted');
   });
 });

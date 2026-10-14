@@ -1,0 +1,4566 @@
+[
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "defer-missing-installed",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {
+      "milestones": [
+        "enrolled",
+        "account-bound",
+        "first-capture-ready"
+      ]
+    }
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "defer-missing-enrolled",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {
+      "milestones": [
+        "installed",
+        "account-bound",
+        "first-capture-ready"
+      ]
+    }
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "defer-missing-account-bound",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {
+      "milestones": [
+        "installed",
+        "enrolled",
+        "first-capture-ready"
+      ]
+    }
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "defer-missing-first-capture-ready",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {
+      "milestones": [
+        "installed",
+        "enrolled",
+        "account-bound"
+      ]
+    }
+  },
+  {
+    "actions": [
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "read"
+      },
+      {
+        "action": "challenge"
+      },
+      {
+        "action": "startup"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "no-accepted-record-no-worker-authority",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "progress",
+        "unavailable",
+        "noncreating",
+        "noncreating",
+        "no-work",
+        "stale-lease"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "read"
+      },
+      {
+        "action": "claim"
+      }
+    ],
+    "case_id": "admission-alone-no-read-repair",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "progress",
+        "unavailable",
+        "no-work"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "restart"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "read"
+      }
+    ],
+    "case_id": "lost-deferral-reply-and-restart",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "restarted",
+        "existing-pending",
+        "unavailable"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "wakeup"
+      },
+      {
+        "action": "claim"
+      }
+    ],
+    "case_id": "wakeups-cannot-bypass-backoff",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 1,
+      "licenses": 0,
+      "next_attempt": 105,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "claimed:1",
+        "awaiting-milestones",
+        "noncreating",
+        "not-due"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "other",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "another-installation-progress",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 1,
+      "licenses": 0,
+      "next_attempt": 105,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "ignored",
+        "claimed:1",
+        "awaiting-milestones"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "read"
+      }
+    ],
+    "case_id": "automatic-exact-offer-no-consent",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "prepared"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "confirm"
+      },
+      {
+        "action": "confirm"
+      },
+      {
+        "action": "read"
+      }
+    ],
+    "case_id": "explicit-confirm-after-automatic-offer",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 1,
+      "debits": 1,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 1,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "committed",
+        "committed",
+        "committed"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "committed",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "confirm"
+      }
+    ],
+    "case_id": "no-confirm-before-offer",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "refused"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "browser-retry"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "worker-browser-race-browser-first",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "stale-lease"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "browser-retry"
+      }
+    ],
+    "case_id": "worker-browser-race-worker-first",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "existing-prepared"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "original-prepared"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "read"
+      }
+    ],
+    "case_id": "lost-prepared-result-reconciles-original",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "result-lost",
+        "claimed:1",
+        "existing-prepared",
+        "prepared"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "original-prepared"
+      },
+      {
+        "action": "time",
+        "now": 400
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "browser-retry"
+      },
+      {
+        "action": "read"
+      }
+    ],
+    "case_id": "existing-expired-quote-never-replaced",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "result-lost",
+        "time",
+        "terminal",
+        "expired",
+        "original-prepared-expired"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "time",
+        "now": 105
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 2
+      },
+      {
+        "action": "execute",
+        "lease": 1,
+        "outcome": "failure"
+      }
+    ],
+    "case_id": "stale-lease-cannot-overwrite-completion",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "time",
+        "claimed:2",
+        "prepared",
+        "stale-lease"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1,
+        "outcome": "failure"
+      },
+      {
+        "action": "read"
+      },
+      {
+        "action": "time",
+        "now": 105
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 2
+      }
+    ],
+    "case_id": "infrastructure-failure-is-not-success",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "retry",
+        "unavailable",
+        "time",
+        "claimed:2",
+        "prepared"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "source_digest"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-source_digest",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "source_generation"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-source_generation",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "ceremony_generation"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-ceremony_generation",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "child"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-child",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "child_generation"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-child_generation",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "session"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-session",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "actor"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-actor",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "installation"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-installation",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "key"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-key",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "jkt"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-jkt",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "creator"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-creator",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "policy"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-policy",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "offer"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-offer",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "change",
+        "field": "funding"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "changed-original-funding",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "changed",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "source_active",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-source_active",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "ceremony_active",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-ceremony_active",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "child_current",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-child_current",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "session_live",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-session_live",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "member_allowed",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-member_allowed",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "key_active",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-key_active",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "creator_approved",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-creator_approved",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "policy_enabled",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-policy_enabled",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "offer_current",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-offer_current",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "funding_eligible",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "owner-refuses-funding_eligible",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "aba",
+        "field": "source_generation"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "unobserved-aba-source_generation",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "aba",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "aba",
+        "field": "child_generation"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "unobserved-aba-child_generation",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "aba",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "policy_enabled",
+        "value": false
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "gate",
+        "field": "policy_enabled",
+        "value": true
+      },
+      {
+        "action": "time",
+        "now": 105
+      },
+      {
+        "action": "claim"
+      }
+    ],
+    "case_id": "observed-config-mismatch-cannot-revive",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "claimed:1",
+        "terminal",
+        "gate",
+        "time",
+        "no-work"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "gate",
+        "field": "policy_enabled",
+        "value": false
+      },
+      {
+        "action": "gate",
+        "field": "policy_enabled",
+        "value": true
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "unobserved-config-toggle-no-invented-epoch",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "gate",
+        "gate",
+        "claimed:1",
+        "prepared"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1,
+        "locked_at": 400
+      }
+    ],
+    "case_id": "delayed-lock-expiry",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "commit_gate": false,
+        "lease": 1
+      }
+    ],
+    "case_id": "before-commit-owner-change-rolls-back",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "terminal"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "time",
+        "now": 390
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "quote-capped-by-original-deadline",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "time",
+        "claimed:1",
+        "prepared"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "quote-max-300",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 800,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {
+      "child_expires_at": 850,
+      "session_expires_at": 800
+    }
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 400
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-child-session"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "short-session-cleanup-new-child-fenced",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "terminal",
+        "new-child-session",
+        "scope-conflict"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-child-session"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "parent-expiry-cleanup-does-not-reopen",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "removed",
+        "new-child-session",
+        "expired"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "replacement-parent"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "replacement-parent-without-new-explicit-review-refused",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "removed",
+        "replacement-parent",
+        "refused"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "confirm"
+      },
+      {
+        "action": "time",
+        "now": 901
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "read"
+      }
+    ],
+    "case_id": "post-expiry-original-committed-recovery",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 1,
+      "debits": 1,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 1,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "committed",
+        "time",
+        "removed",
+        "committed"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "committed",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "time",
+        "now": 901
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "read"
+      }
+    ],
+    "case_id": "post-expiry-original-prepared-recovery",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "time",
+        "removed",
+        "original-prepared-expired"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "close-dialog"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      }
+    ],
+    "case_id": "dialog-close-does-not-cancel-authority",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "noncreating",
+        "progress",
+        "claimed:1",
+        "prepared"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "operator-funding-normal-no-deferred-row",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "prepared"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {
+      "funding": "operator"
+    }
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare",
+        "rollback": true
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      }
+    ],
+    "case_id": "rollback-never-accepted",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "failure",
+        "progress",
+        "no-work"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "original-prepared"
+      },
+      {
+        "action": "time",
+        "now": 410
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "read"
+      }
+    ],
+    "case_id": "expired-quote-cleanup-before-authority-no-replacement",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 800,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "result-lost",
+        "time",
+        "pending",
+        "claimed:1",
+        "expired-quote",
+        "original-prepared-expired"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {
+      "child_expires_at": 850,
+      "session_expires_at": 800
+    }
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "generic-prepare"
+      }
+    ],
+    "case_id": "retained-pending-fences-generic-prepare",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "reserved"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 400
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "generic-prepare"
+      }
+    ],
+    "case_id": "retained-terminal-fences-generic-prepare",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "terminal",
+        "new-review",
+        "admitted",
+        "scope-conflict"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "operator-prepare"
+      }
+    ],
+    "case_id": "retained-pending-fences-operator-prepare",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "reserved"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 400
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "operator-prepare"
+      }
+    ],
+    "case_id": "retained-terminal-fences-operator-prepare",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "terminal",
+        "new-review",
+        "admitted",
+        "scope-conflict"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "terminal"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "retained-pending-new-parent-cannot-substitute",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 100,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "new-review",
+        "admitted",
+        "scope-conflict"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "read"
+      },
+      {
+        "action": "challenge"
+      },
+      {
+        "action": "startup"
+      },
+      {
+        "action": "wakeup"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "old-source-replay"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "full-cleanup-no-read-progress-startup-or-old-job-resurrection",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "claimed:1",
+        "time",
+        "removed",
+        "progress",
+        "unavailable",
+        "noncreating",
+        "noncreating",
+        "noncreating",
+        "stale-lease",
+        "expired",
+        "expired"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "no-effect-new-explicit-parent-still-needs-authentication",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "removed",
+        "new-review",
+        "refused"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "no-effect-new-explicit-authenticated-parent-may-defer-same-uuid",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": 1500,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": 0,
+      "licenses": 0,
+      "next_attempt": 900,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "removed",
+        "new-review",
+        "admitted",
+        "deferred"
+      ],
+      "retain_until": 1800,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": true,
+      "state": "pending"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "no-effect-new-explicit-authenticated-parent-may-prepare-same-uuid",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 1200,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "removed",
+        "progress",
+        "new-review",
+        "admitted",
+        "prepared"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "gate",
+        "field": "key_active",
+        "value": false
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "new-parent-no-effect-does-not-skip-current-key-owner",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "time",
+        "removed",
+        "new-review",
+        "admitted",
+        "gate",
+        "refused"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "retain-effect",
+        "kind": "authorization"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "retained-commercial-authorization-survives-working-cleanup",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "retained-effect",
+        "time",
+        "removed",
+        "new-review",
+        "admitted",
+        "commercial-conflict"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "authorization",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "retain-effect",
+        "kind": "allocation-operation"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "retained-commercial-allocation-operation-survives-working-cleanup",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "retained-effect",
+        "time",
+        "removed",
+        "new-review",
+        "admitted",
+        "commercial-conflict"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "allocation-operation",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "retain-effect",
+        "kind": "accepted-unresolved"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      }
+    ],
+    "case_id": "retained-commercial-accepted-unresolved-survives-working-cleanup",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "deferred",
+        "retained-effect",
+        "time",
+        "removed",
+        "new-review",
+        "admitted",
+        "commercial-conflict"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "accepted-unresolved",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "read-original"
+      }
+    ],
+    "case_id": "retained-expired-quote-survives-working-cleanup-and-new-parent",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "time",
+        "removed",
+        "new-review",
+        "admitted",
+        "commercial-conflict",
+        "original-prepared-expired"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "confirm"
+      },
+      {
+        "action": "time",
+        "now": 900
+      },
+      {
+        "action": "cleanup"
+      },
+      {
+        "action": "new-review"
+      },
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "read-original"
+      }
+    ],
+    "case_id": "retained-commit-survives-working-cleanup-and-new-parent",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 1,
+      "debits": 1,
+      "explicit_reviews": 2,
+      "lease": null,
+      "licenses": 1,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "committed",
+        "time",
+        "removed",
+        "new-review",
+        "admitted",
+        "commercial-conflict",
+        "committed"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "committed",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "claim"
+      },
+      {
+        "action": "execute",
+        "lease": 1
+      },
+      {
+        "action": "generic-prepare"
+      },
+      {
+        "action": "read-original"
+      },
+      {
+        "action": "confirm"
+      }
+    ],
+    "case_id": "retained-fence-does-not-block-exact-existing-offer-or-confirmation",
+    "expected": {
+      "allocations": 1,
+      "authority_expires_at": 400,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 1,
+      "debits": 1,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 1,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "deferred",
+        "progress",
+        "claimed:1",
+        "prepared",
+        "existing-prepared",
+        "prepared",
+        "committed"
+      ],
+      "retain_until": 900,
+      "retained_commercial_effect": "committed",
+      "scheduling_detail_retained": false,
+      "state": "completed"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "operator-prepare"
+      }
+    ],
+    "case_id": "unreserved-operator-preparation-remains-independent",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 1,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": 400,
+      "quotes": 1,
+      "responses": [
+        "admitted",
+        "prepared"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "prepared",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "generic-prepare"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "read"
+      },
+      {
+        "action": "claim"
+      }
+    ],
+    "case_id": "no-accepted-record-generic-prepare-cannot-enqueue",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "not-eligible",
+        "progress",
+        "unavailable",
+        "no-work"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  },
+  {
+    "actions": [
+      {
+        "action": "admit"
+      },
+      {
+        "action": "browser-retry"
+      },
+      {
+        "action": "progress",
+        "installation": "original",
+        "milestones": [
+          "installed",
+          "enrolled",
+          "account-bound",
+          "first-capture-ready"
+        ]
+      },
+      {
+        "action": "read"
+      },
+      {
+        "action": "claim"
+      }
+    ],
+    "case_id": "no-accepted-record-browser-retry-cannot-enqueue",
+    "expected": {
+      "allocations": 0,
+      "authority_expires_at": null,
+      "authority_renewals": 0,
+      "authorizations": 0,
+      "commercial_operations": 1,
+      "confirmations": 0,
+      "debits": 0,
+      "explicit_reviews": 1,
+      "lease": null,
+      "licenses": 0,
+      "next_attempt": null,
+      "quote_expires_at": null,
+      "quotes": 0,
+      "responses": [
+        "admitted",
+        "not-eligible",
+        "progress",
+        "unavailable",
+        "no-work"
+      ],
+      "retain_until": null,
+      "retained_commercial_effect": "none",
+      "scheduling_detail_retained": false,
+      "state": "absent"
+    },
+    "initial": {}
+  }
+]

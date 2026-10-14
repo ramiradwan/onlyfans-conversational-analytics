@@ -14,6 +14,10 @@ import {
 import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
 
 (function installCaptureBridge() {
+  if (globalThis.__OFCA_CAPTURE_BRIDGE_CONTROLLER__?.version === 2) {
+    void globalThis.__OFCA_CAPTURE_BRIDGE_CONTROLLER__.resume();
+    return;
+  }
   if (globalThis.__OFCA_CAPTURE_BRIDGE_ACTIVE__) return;
   globalThis.__OFCA_CAPTURE_BRIDGE_ACTIVE__ = true;
 
@@ -163,6 +167,8 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
         pageControl('refresh_identity');
       }
       for (const resolve of [...statusWaiters]) resolve(envelope.status);
+      if (active && envelope.status) forwardRuntimeMessage({ type: 'ofca.observer.state',
+        status: { ...envelope.status, active: active && envelope.status.active, forwarding: forwarding && envelope.status.forwarding } }, () => false);
       return;
     }
     if (!active || !forwarding) return;
@@ -180,7 +186,7 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
         reportBridgeDrop('invalid_preview_envelope');
         return;
       }
-      forwardRuntimeMessage(envelope, (response) => response?.ok !== true);
+      forwardRuntimeMessage({ type: 'ofca.preview.delivery', consent_epoch: consentEpoch, envelope }, (response) => response?.ok !== true);
       return;
     }
     if (!isProvisioningIdentityEnvelope(envelope)) {
@@ -204,10 +210,12 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
       version: PAGE_CONTROL_VERSION,
       action: 'stop',
     }, pageOrigin);
+    chrome.runtime.onMessage.removeListener?.(runtimeMessageListener);
+    delete globalThis.__OFCA_CAPTURE_BRIDGE_CONTROLLER__;
     delete globalThis.__OFCA_CAPTURE_BRIDGE_ACTIVE__;
   }
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  const runtimeMessageListener = (message, _sender, sendResponse) => {
     if (message?.type !== PAGE_CONTROL_MESSAGE_TYPE) return false;
     if (message.action === 'status' && message.version === PAGE_CONTROL_VERSION) {
       let timer;
@@ -233,6 +241,12 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
       sendResponse?.({ ok: active });
       return false;
     }
+    if (message.action === 'reset_identity' && message.version === PAGE_CONTROL_VERSION && active) {
+      pause();
+      pageControl('reset_identity');
+      sendResponse?.({ ok: true });
+      return false;
+    }
     if (message.action === 'refresh_identity' && message.version === PAGE_CONTROL_VERSION && active) {
       window.postMessage({
         type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action: 'refresh_identity',
@@ -244,7 +258,9 @@ import { CaptureDeliveryQueue } from './capture/delivery-queue.mjs';
     stop();
     sendResponse?.({ ok: true });
     return false;
-  });
+  };
+  chrome.runtime.onMessage.addListener(runtimeMessageListener);
+  globalThis.__OFCA_CAPTURE_BRIDGE_CONTROLLER__ = Object.freeze({ version: 2, resume, stop });
   window.addEventListener('message', pageMessageListener);
   window.addEventListener('pagehide', stop);
   void resume();

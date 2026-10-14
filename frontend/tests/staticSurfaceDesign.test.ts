@@ -44,7 +44,7 @@ describe('static surface font delivery', () => {
   });
 });
 
-it.each([['extension/popup.html', 2], ['extension/setup.html', 2], ['extension/options.html', 2], ['app/provisioning/provisioning.html', 1]] as const)('keeps early font preloads current in %s', (file, count) => {
+it.each([['extension/popup.html', 2], ['extension/setup.html', 2], ['extension/options.html', 2]] as const)('keeps early font preloads current in %s', (file, count) => {
   expect(replaceStaticFontPreloads(read(file), fonts, count)).toBe(read(file));
 });
 
@@ -54,15 +54,13 @@ describe('static surface content and behavior boundaries', () => {
     expect(sha(read(file))).toBe(baseline.sha256[file]);
   });
   it('keeps setup branding, guidance and the authoritative step order', () => {
-    const doc = new DOMParser().parseFromString(read('app/provisioning/provisioning.html'), 'text/html');
-    expect(doc.querySelector('body > header.site-brand')).not.toBeNull();
-    expect([...doc.querySelectorAll('[data-step]')].map((node) => node.getAttribute('data-step')))
-      .toEqual(['registration', 'identity', 'approval', 'finalization']);
-    expect(doc.querySelectorAll('link')).toHaveLength(1);
-    expect(doc.querySelector('link')?.getAttribute('href')).toMatch(/^data:font\/woff2;base64,/);
-    expect(doc.querySelector('#full-disclosure')).toBeNull();
-    expect(doc.querySelector('input#claim-package')?.getAttribute('aria-describedby'))
-      .toBe('claim-package-help claim-package-validation claim-package-count');
+    const doc = new DOMParser().parseFromString(read('frontend/onboarding/index.html'), 'text/html');
+    expect(doc.querySelector('body > header.setup-header')).not.toBeNull();
+    expect([...doc.querySelectorAll('[data-step]')].map(node => node.getAttribute('data-step')))
+      .toEqual(['browser-access', 'account-connection', 'finish-setup']);
+    expect(doc.querySelector('desktop-window-controls')).not.toBeNull();
+    expect(doc.querySelector('textarea')).toBeNull();
+
   });
 });
 

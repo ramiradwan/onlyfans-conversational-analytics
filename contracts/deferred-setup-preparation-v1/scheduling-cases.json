@@ -1,0 +1,76 @@
+[
+  {
+    "batch": 16,
+    "case_id": "empty",
+    "due": 0,
+    "expected": {
+      "can_insert": true,
+      "claimed": 0
+    },
+    "records": 0
+  },
+  {
+    "batch": 16,
+    "case_id": "last-slot",
+    "due": 20,
+    "expected": {
+      "can_insert": true,
+      "claimed": 16
+    },
+    "records": 4095
+  },
+  {
+    "batch": 16,
+    "case_id": "capacity-includes-terminal-fences",
+    "due": 0,
+    "expected": {
+      "can_insert": false,
+      "claimed": 0
+    },
+    "records": 4096
+  },
+  {
+    "batch": 16,
+    "case_id": "full-still-processes-pending",
+    "due": 4096,
+    "expected": {
+      "can_insert": false,
+      "claimed": 16
+    },
+    "records": 4096
+  },
+  {
+    "batch": 16,
+    "case_id": "one-due",
+    "due": 1,
+    "expected": {
+      "can_insert": true,
+      "claimed": 1
+    },
+    "records": 100
+  },
+  {
+    "batch": 3,
+    "case_id": "small-batch",
+    "due": 100,
+    "expected": {
+      "can_insert": true,
+      "claimed": 3
+    },
+    "records": 100
+  },
+  {
+    "batch": 17,
+    "case_id": "oversized-batch-refused",
+    "due": 100,
+    "expected": "refused",
+    "records": 100
+  },
+  {
+    "batch": 0,
+    "case_id": "zero-batch-refused",
+    "due": 100,
+    "expected": "refused",
+    "records": 100
+  }
+]

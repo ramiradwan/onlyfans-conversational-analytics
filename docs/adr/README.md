@@ -8,6 +8,18 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 ## Accepted
 
+- [ADR 0054: Consolidate onboarding coordination](0054-consolidate-onboarding-coordination.md)
+
+- [ADR 0053: Observe deferred activation offer preparation](0053-observe-deferred-activation-offer-preparation.md)
+
+- [ADR 0052: Recover delivery of an accepted activation](0052-recover-accepted-activation-delivery.md)
+
+- [ADR 0051: Keep account and activation decisions in the desktop](0051-native-account-and-activation-decisions.md)
+
+- [ADR 0050: Coordinate setup in the native desktop application](0050-desktop-onboarding-and-browser-tasks.md)
+
+- [ADR 0049: Reconcile saved setup with its browser workspace](0049-reconcile-saved-workspace-presentation.md)
+
 - [ADR 0047: Keep onboarding in one persistent browser workspace](0047-persistent-onboarding-workspace.md)
 
 - [ADR 0001: Agent owns raw ingestion](0001-agent-owned-raw-ingestion.md)
@@ -63,6 +75,8 @@ Start from [the ADR template](template.md). Use the next number after the highes
 - [ADR 0044: Message catch-up and freshness](0044-message-catch-up-and-freshness.md)
 
 - [ADR 0046: Preserve both canonical version-9 migration histories](0046-canonical-migration-lineages.md)
+
+- [ADR 0048: Continue setup from saved installation records](0048-continue-saved-installation-setup.md)
 
 ## Proposed
 

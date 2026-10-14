@@ -1,5 +1,7 @@
 import { createStore, type StoreApi, useStore } from 'zustand';
 
+import { bridgeTransportStore, type BridgeTransportStore } from './transportStore';
+
 import {
   AnalyticsClientError,
   AnalyticsContractError,
@@ -27,6 +29,7 @@ export interface AnalyticsStoreState {
 
 interface AnalyticsStoreDependencies {
   fetchUpdate?: typeof fetchAnalyticsUpdate;
+  source?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
 }
 
 const loadingState = (): AnalyticsReadState => ({
@@ -63,6 +66,17 @@ export function createAnalyticsStore(
   let active = false;
   let activeRequest: AbortController | null = null;
   let requestSequence = 0;
+  const source = dependencies.source ?? bridgeTransportStore;
+  let unsubscribe: (() => void) | null = null;
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingInvalidation = false;
+  let retryCount = 0;
+  let sourceKey = '';
+  const currentSourceKey = () => {
+    const value = source.getState();
+    return value.connection === 'connected' && value.viewRevision !== null
+      ? `${value.creatorAccountId}:${value.projection.canonical_revision}:${value.projection.projected_revision}:${value.projection.status}:${value.coverage.generation_id}:${value.coverage.status}` : '';
+  };
 
   return createStore<AnalyticsStoreState>((set, get) => {
     const invalidate = () => {
@@ -121,6 +135,16 @@ export function createAnalyticsStore(
       });
     };
 
+    const scheduleRefresh = (delay = 1000) => {
+      pendingInvalidation = true;
+      if (!active || activeRequest || refreshTimer !== null) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        pendingInvalidation = false;
+        void refresh();
+      }, delay);
+    };
+
     const refresh = async (): Promise<void> => {
       if (!active) return;
       const { state, dateRange } = get();
@@ -164,7 +188,11 @@ export function createAnalyticsStore(
       } catch (error) {
         handleError(error, sequence, priorData, priorStatus, allowPriorFrame);
       } finally {
-        if (sequence === requestSequence) activeRequest = null;
+        if (sequence === requestSequence) {
+          activeRequest = null;
+          if (pendingInvalidation) scheduleRefresh();
+          else if (get().state.status === 'building' && retryCount < 5) scheduleRefresh(2000 * 2 ** retryCount++);
+        }
       }
     };
 
@@ -172,11 +200,26 @@ export function createAnalyticsStore(
       async activate() {
         if (active) return;
         active = true;
+        sourceKey = currentSourceKey();
+        unsubscribe = source.subscribe(() => {
+          const next = currentSourceKey();
+          if (!next) { sourceKey = ''; return; }
+          if (next === sourceKey) return;
+          sourceKey = next;
+          retryCount = 0;
+          scheduleRefresh();
+        });
         set({ state: loadingState() });
         await refresh();
       },
       deactivate() {
         active = false;
+        unsubscribe?.(); unsubscribe = null;
+        if (refreshTimer !== null) clearTimeout(refreshTimer);
+        refreshTimer = null;
+        pendingInvalidation = false;
+        retryCount = 0;
+        sourceKey = '';
         invalidate();
         set({ state: loadingState() });
       },

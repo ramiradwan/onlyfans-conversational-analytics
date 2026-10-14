@@ -75,6 +75,13 @@ def test_production_manifest_without_entry_fails_as_a_packaging_error(monkeypatc
     assert "Vite manifest has no entry" in response.text
 
 
+def test_dashboard_entry_is_explicit_when_setup_appears_first_in_the_manifest():
+    setup = {"isEntry": True, "file": "assets/setup.js"}
+    dashboard = {"isEntry": True, "file": "assets/dashboard.js"}
+    assert frontend._manifest_entry({"onboarding/index.html": setup, "index.html": dashboard}) == ("index.html", dashboard)
+    assert frontend._manifest_entry({"onboarding/index.html": setup}) == (None, {})
+
+
 def test_production_manifest_rejects_asset_that_escapes_dist_root(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -90,7 +97,7 @@ def test_production_manifest_rejects_asset_that_escapes_dist_root(
     monkeypatch.setattr(
         frontend,
         "_manifest_load",
-        frontend.ManifestLoad({"entry": {"isEntry": True, "file": "../escaped.js"}}),
+        frontend.ManifestLoad({"index.html": {"isEntry": True, "file": "../escaped.js"}}),
     )
 
     response = _frontend_client().get("/")
@@ -113,7 +120,7 @@ def test_production_manifest_rejects_missing_css_asset(monkeypatch, tmp_path: Pa
         "_manifest_load",
         frontend.ManifestLoad(
             {
-                "entry": {
+                "index.html": {
                     "isEntry": True,
                     "file": "entry.js",
                     "css": ["missing.css"],
@@ -146,7 +153,7 @@ def test_production_manifest_rejects_css_asset_that_escapes_dist_root(
         "_manifest_load",
         frontend.ManifestLoad(
             {
-                "entry": {
+                "index.html": {
                     "isEntry": True,
                     "file": "entry.js",
                     "css": ["../escaped.css"],
@@ -217,7 +224,7 @@ def test_production_manifest_rejects_preload_font_that_escapes_dist_root(
         "_manifest_load",
         frontend.ManifestLoad(
             {
-                "entry": {
+                "index.html": {
                     "isEntry": True,
                     "file": "entry.js",
                     "assets": ["../inter-latin-opsz-normal-X.woff2"],

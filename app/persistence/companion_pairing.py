@@ -5,10 +5,11 @@ from __future__ import annotations
 from app.persistence.catchup_events import capture_authority_change
 
 import base64
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Final
+from typing import Final, Literal
 
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.auth import (
@@ -298,6 +299,7 @@ class CompanionPairingPersistence:
         brain_nonce: bytes,
         brain_noise_public_key: bytes,
         wrapped_brain_noise_private_key: bytes,
+        authorize=None,
     ) -> CompanionPairingWindow:
         """Open and freeze authority in the same transaction as the generation."""
         _require_text(session_id, name="session_id")
@@ -314,6 +316,8 @@ class CompanionPairingPersistence:
         if expires_at - opened_at > _MAX_WINDOW_LIFETIME:
             raise ValueError("pairing window exceeds the contract lifetime")
         with self.database.transaction() as connection:
+            if authorize is not None:
+                authorize(connection=connection)
             now = self.authentication._now()
             if opened_at > now or expires_at <= now:
                 raise ValueError("pairing window must be live when opened")
@@ -368,6 +372,19 @@ class CompanionPairingPersistence:
                 installation_id,
                 organization_id=str(grant["organization_id"]),
             )
+            existing = connection.execute(
+                "SELECT * FROM companion_pairing_windows WHERE pairing_id = ?", (pairing_id,)
+            ).fetchone()
+            if existing is not None:
+                if (existing["installation_id"] != installation_id
+                        or existing["creator_account_id"] != creator_account_id
+                        or existing["opening_principal_id"] != session["principal_id"]
+                        or existing["opened_at"] != _time_text(opened_at)
+                        or existing["expires_at"] != _time_text(expires_at)):
+                    raise CompanionPairingConflict("Companion pairing reservation changed")
+                return _window(existing)
+            if self._optional_pin_in_transaction(connection, pairing_id) is not None:
+                raise CompanionPairingConflict("Companion pairing is already admitted")
             self._expire_live_window_if_due(connection, installation_id, now)
             if (
                 connection.execute(
@@ -702,6 +719,7 @@ class CompanionPairingPersistence:
         confirmation_session_id: str,
         confirmed_at: datetime,
         confirmation_method: str = "operator_compared",
+        authorize=None,
     ) -> CompanionPin:
         """Commit the confirmed pin and erase staging in one authority transaction."""
         _require_bytes32(pairing_id, name="pairing_id")
@@ -710,6 +728,8 @@ class CompanionPairingPersistence:
         _require_version(expected_version)
         _time_text(confirmed_at)
         with self.database.transaction() as connection:
+            if authorize is not None:
+                authorize(connection=connection)
             now = self.authentication._now()
             row = self._require_expected_window(
                 connection,
@@ -864,6 +884,41 @@ class CompanionPairingPersistence:
         with self.database.read() as connection:
             return self._optional_pin_in_transaction(connection, pairing_id)
 
+    def current_pairing_state(
+        self, creator_account_id: str, *, connection=None
+    ) -> Literal["missing", "unknown", "verified"]:
+        """Report an account's pairing through the owning authority checks."""
+        with (self.database.transaction() if connection is None else nullcontext(connection)) as current:
+            now = self.authentication._now()
+            rows = current.execute(
+                "SELECT pairing_id, pairing_generation FROM agent_pairings "
+                "WHERE creator_account_id = ? AND revoked_at IS NULL",
+                (creator_account_id,),
+            ).fetchall()
+            if not rows:
+                return "missing"
+            for row in rows:
+                if row["pairing_generation"] is not None:
+                    continue
+                try:
+                    self.authentication._require_pairing_current(
+                        current, row["pairing_id"], now
+                    )
+                except AuthenticationStateError:
+                    continue
+                return "verified"
+        for row in rows:
+            if row["pairing_generation"] is None:
+                continue
+            try:
+                self.session_authority(
+                    base64.urlsafe_b64decode(row["pairing_id"] + "="), connection=connection
+                )
+            except (CompanionPairingPersistenceError, AuthenticationStateError, ValueError):
+                continue
+            return "verified"
+        return "unknown"
+
     def authorized_pins(self, session_id: str) -> tuple[CompanionPin, ...]:
         """Return at most sixteen current pins within the Bridge account scope."""
         with self.database.transaction() as connection:
@@ -893,10 +948,10 @@ class CompanionPairingPersistence:
                 for row in rows
             )
 
-    def session_authority(self, pairing_id: bytes) -> CompanionSessionSnapshot:
+    def session_authority(self, pairing_id: bytes, *, connection=None) -> CompanionSessionSnapshot:
         """Select current retained grants for the pin without changing its identity."""
         _require_bytes32(pairing_id, name="pairing_id")
-        with self.database.transaction() as connection:
+        with (self.database.transaction() if connection is None else nullcontext(connection)) as connection:
             now = self.authentication._now()
             pin = self._pin_in_transaction(connection, pairing_id)
             parent = connection.execute(
@@ -996,10 +1051,13 @@ class CompanionPairingPersistence:
         expected_version: int,
         session_id: str,
         decline: bool = False,
+        authorize=None,
     ) -> CompanionPairingWindow:
         _require_bytes32(pairing_id, name="pairing_id")
         _require_version(expected_version)
         with self.database.transaction() as connection:
+            if authorize is not None:
+                authorize(connection=connection)
             now = self.authentication._now()
             row = connection.execute(
                 "SELECT * FROM companion_pairing_windows WHERE pairing_id = ?",

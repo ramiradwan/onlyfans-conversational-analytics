@@ -20,12 +20,14 @@ Use these pages to find the instructions or reference material for a specific ta
 - [Attest a released Chrome package](engineering-attestation.md)
 - [Run product qualification](qualification.md)
 - [Run Windows acceptance](installation-and-acceptance.md)
+- [Diagnose desktop setup return](operations/native-setup-return.md)
 
 ## Understand the system
 
 - [Architecture boundaries](architecture-boundaries.md)
 - [Architecture assurance baseline](architecture-assurance.md)
 - [Architecture decisions](adr/README.md)
+- [Desktop setup coordination](desktop-onboarding-contract.md)
 - [Communication overview](../communication-spec.md)
 - [Brain](../app/README.md)
 - [Agent](../extension/README.md)

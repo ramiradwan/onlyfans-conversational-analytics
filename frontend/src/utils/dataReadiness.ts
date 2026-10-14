@@ -87,24 +87,11 @@ export function summarizeMetricEvidence(
   };
 }
 
-// Brain reports readiness setbacks as internal snake_case codes (e.g.
-// "projection_missing"). Those are identifiers for us, not copy — map the ones we
-// know about to friendly text, and fall back to a generic message for anything else
-// so an unrecognized code never reaches the screen verbatim.
-const PROJECTION_REASON_TEXT: Record<string, string> = {
-  projection_missing: 'Getting your conversations ready…',
-  projection_activation_pending: 'Applying the latest update…',
-  projection_lag: 'Catching up on the latest messages…',
-  projection_degraded: "Your conversations couldn't be prepared right now.",
-};
-
 const COVERAGE_REASON_TEXT: Record<string, string> = {
   consent_revoked: 'Message history sync was turned off.',
   configuration_not_applied: "The browser extension hasn't applied your latest settings yet.",
   history_sync_paused: 'Message history sync is paused.',
 };
-
-const UNRECOGNIZED_REASON_TEXT = 'This needs attention.';
 
 export function humanizeProjectionReason(
   reason: string | null,
@@ -112,12 +99,14 @@ export function humanizeProjectionReason(
   overrides?: Record<string, string>,
 ): string {
   if (reason === null) return whenAbsent;
-  return overrides?.[reason] ?? PROJECTION_REASON_TEXT[reason] ?? UNRECOGNIZED_REASON_TEXT;
+  // Projection reasons do not establish active work or a customer remedy.
+  // The caller's state title carries availability; only explicit copy adds detail.
+  return overrides?.[reason] ?? '';
 }
 
 export function humanizeCoverageReason(reason: string | null, whenAbsent: string): string {
   if (reason === null) return whenAbsent;
-  return COVERAGE_REASON_TEXT[reason] ?? UNRECOGNIZED_REASON_TEXT;
+  return COVERAGE_REASON_TEXT[reason] ?? whenAbsent;
 }
 
 export function coverageProgressLabel(coverage: HistoricalCoverage): string {

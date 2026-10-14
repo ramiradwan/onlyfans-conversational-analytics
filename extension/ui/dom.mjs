@@ -39,7 +39,7 @@ export function renderLegalLinks(legal) {
   }
 }
 
-export function createPageActions(client, render) {
+export function createPageActions(client, render, { beforeAction, afterAction } = {}) {
   let busy = false;
   function lock(id, locked) {
     element(id).dataset.locked = String(locked);
@@ -56,6 +56,7 @@ export function createPageActions(client, render) {
   async function run(operation, success = '') {
     if (busy) return;
     const focused = document.activeElement;
+    const previous = beforeAction?.();
     setBusy(true); feedback('');
     try {
       // Call before the first await: browser permission prompts need this click.
@@ -67,9 +68,10 @@ export function createPageActions(client, render) {
       feedback(noticeText(error, 'That did not complete. Try again.'), true);
     } finally {
       setBusy(false); render(client.model);
-      if (focused instanceof HTMLElement && (focused.getClientRects().length === 0 || focused.hasAttribute('disabled'))) {
+      const handled = await afterAction?.(previous, focused);
+      if (!handled && focused instanceof HTMLElement && (focused.getClientRects().length === 0 || focused.hasAttribute('disabled'))) {
         const target = [...document.querySelectorAll('h2, #journey-primary')].find((node) => node.getClientRects().length > 0);
-        if (target) { target.setAttribute('tabindex', '-1'); target.focus({ preventScroll: true }); }
+        if (target) { target.setAttribute('tabindex', '-1'); target.focus(); }
       }
     }
   }

@@ -27,7 +27,7 @@ export default function GraphExplorerView() {
           severity: 'info', title: 'Not available yet', body: "Exploring how your fans and conversations connect isn't available in this version.",
         } : {
           severity: state.projection.status === 'unavailable' ? 'error' : 'info', title: 'Not ready yet',
-          body: humanizeProjectionReason(state.projection.reason, 'Your conversations are still being prepared.'),
+          body: humanizeProjectionReason(state.projection.reason, ''),
         }} />
       </Stack>
     </Box>

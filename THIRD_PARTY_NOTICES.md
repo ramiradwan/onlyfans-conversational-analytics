@@ -576,3 +576,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 `tzdata` 2026.4 supplies offline timezone data for analytics question validation. The Python package is licensed under Apache-2.0. The frozen application retains the package metadata and upstream license files through `copy_metadata("tzdata")`.
 
 Project: https://github.com/python/tzdata
+
+## Google Sans sign-in label font
+
+Copyright 2025 The Google Sans Project Authors (https://github.com/googlefonts/googlesans).
+
+The Google sign-in button bundles the official Google Fonts subset of Google Sans Medium for its label. This font is licensed under the SIL Open Font License, Version 1.1, whose complete terms are reproduced in the font sections above. The source license is also retained at `frontend/shared-setup/providers/OFL.txt`.
+
+## Sign-in logos
+
+Google and Microsoft logos identify their respective sign-in options. The unmodified assets come from the official Google Identity and Microsoft identity platform branding guides. Their marks remain the property of their respective owners; source coordinates are retained in `frontend/shared-setup/providers/README.md`.

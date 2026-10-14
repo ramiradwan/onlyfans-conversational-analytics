@@ -1,0 +1,756 @@
+[
+  {
+    "case_id": "original-authenticated-missing-only",
+    "expected": "deferred",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "milestones-complete-normal-preparation",
+    "expected": "prepared",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "complete",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "operator-funding-independent",
+    "expected": "prepared",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "refused",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "operator",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "operator-does-not-require-setup-policy",
+    "expected": "prepared",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "operator",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": false,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "not-a-trigger-read",
+    "expected": "noncreating",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "read"
+    }
+  },
+  {
+    "case_id": "not-a-trigger-challenge",
+    "expected": "noncreating",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "challenge"
+    }
+  },
+  {
+    "case_id": "not-a-trigger-progress",
+    "expected": "noncreating",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "progress"
+    }
+  },
+  {
+    "case_id": "not-a-trigger-completion",
+    "expected": "noncreating",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "completion"
+    }
+  },
+  {
+    "case_id": "not-a-trigger-startup",
+    "expected": "noncreating",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "startup"
+    }
+  },
+  {
+    "case_id": "not-a-trigger-timer",
+    "expected": "noncreating",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "timer"
+    }
+  },
+  {
+    "case_id": "refused-source_kind",
+    "expected": "refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "initial",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "refused-purpose",
+    "expected": "refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "connect",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "refused-admission_committed",
+    "expected": "refused",
+    "input": {
+      "admission_committed": false,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "refused-owners_current",
+    "expected": "refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": false,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "refused-classification",
+    "expected": "refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "refused",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "refused-funding",
+    "expected": "refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "other-policy",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "refused-policy_enabled",
+    "expected": "refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": false,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "refused-offer_matches",
+    "expected": "refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": false,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "refused-funding_eligible",
+    "expected": "refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": false,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "classification-error",
+    "expected": "failure",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "failure",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "existing-prepared",
+    "expected": "reconcile-only",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "prepared",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "existing-committed",
+    "expected": "reconcile-only",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "committed",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "existing-expired-quote",
+    "expected": "reconcile-only",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "expired-quote",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "existing-cleaned-quote",
+    "expected": "reconcile-only",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "cleaned-quote",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "capacity-last-slot",
+    "expected": "deferred",
+    "input": {
+      "admission_committed": true,
+      "capacity": 4095,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "capacity-full",
+    "expected": "capacity-refused",
+    "input": {
+      "admission_committed": true,
+      "capacity": 4096,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "expired-authority",
+    "expected": "expired",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 400,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "rollback-never-queued",
+    "expected": "failure",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": false,
+      "trigger": "protected-prepare"
+    }
+  },
+  {
+    "case_id": "committed-admission-but-preparation-interrupted",
+    "expected": "noncreating",
+    "input": {
+      "admission_committed": true,
+      "capacity": 0,
+      "classification": "awaiting-milestones",
+      "deadlines": [
+        1000,
+        900,
+        600,
+        400
+      ],
+      "existing": "none",
+      "funding": "setup-milestones-v1",
+      "funding_eligible": true,
+      "now": 100,
+      "offer_matches": true,
+      "owners_current": true,
+      "policy_enabled": true,
+      "purpose": "activate-complimentary",
+      "source_kind": "registered",
+      "transaction_commits": true,
+      "trigger": "read"
+    }
+  }
+]

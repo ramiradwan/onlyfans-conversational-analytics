@@ -27,6 +27,7 @@ export function allowsUiMessage(sender, message, chromeApi) {
 }
 
 export const DESKTOP_HANDOFF_STORAGE_KEY = 'desktop_handoff_v1';
+export const DESKTOP_HANDOFF_WINDOW_KEY = 'desktop_handoff_window_v1';
 const SECTIONS = Object.freeze({ setup: ['', 'full', 'desktop'], options: ['', 'connection', 'data', 'history'] });
 const WINDOW_SIZE = Object.freeze({ width: 480, height: 760 });
 
@@ -41,9 +42,7 @@ async function centredOn(chromeApi, windowId) {
   } catch { return {}; }
 }
 
-// Focus an existing page rather than starting another ceremony. The window
-// presentation is a compact extension window opened for the desktop app; it
-// remembers which desktop tab to return to when its step is complete.
+// Reuse an existing page. Only windows created here acquire completion ownership.
 export async function openSurfacePage(chromeApi, { surface, section = '', presentation = 'tab', anchorTab = null }) {
   if (!Object.hasOwn(SECTIONS, surface) || !SECTIONS[surface].includes(section)) throw new Error('page_unavailable');
   const base = chromeApi.runtime.getURL(`${surface}.html`);
@@ -58,11 +57,20 @@ export async function openSurfacePage(chromeApi, { surface, section = '', presen
     && (context.documentUrl === base || context.documentUrl?.startsWith(`${base}#`)));
   if (existing) {
     await chromeApi.tabs.update(existing.tabId, { active: true, ...(section ? { url } : {}) });
+    if (presentation === 'window' && section) {
+      const saved = (await chromeApi.storage.session.get?.([DESKTOP_HANDOFF_WINDOW_KEY]))?.[DESKTOP_HANDOFF_WINDOW_KEY];
+      if (saved?.window_id === existing.windowId && saved.url === existing.documentUrl) {
+        await chromeApi.storage.session.set({ [DESKTOP_HANDOFF_WINDOW_KEY]: { window_id: existing.windowId, url } });
+      }
+    }
     await chromeApi.windows.update(existing.windowId, { focused: true });
   } else if (presentation === 'window') {
-    await chromeApi.windows.create({
+    const opened = await chromeApi.windows.create({
       url, type: 'popup', focused: true, ...WINDOW_SIZE,
       ...(anchorTab ? await centredOn(chromeApi, anchorTab.windowId) : {}),
+    });
+    if (Number.isInteger(opened?.id)) await chromeApi.storage.session.set({
+      [DESKTOP_HANDOFF_WINDOW_KEY]: { window_id: opened.id, url },
     });
   } else {
     await chromeApi.tabs.create({ url });

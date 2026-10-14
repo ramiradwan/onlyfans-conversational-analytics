@@ -1,0 +1,366 @@
+[
+  {
+    "action": "activate-complimentary",
+    "case_id": "fresh-admission-needs-new-explicit-consent",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 1,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "authenticated:2",
+        "confirmation:2"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "authenticate",
+      "read"
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "old-retry-is-only-historical-acceptance",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 1,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "authenticated:2",
+        "accepted:1",
+        "confirmation:2"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "authenticate",
+      "submit:1",
+      "read"
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "new-explicit-consent-may-commit-once",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 1,
+      "receipts": 2,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "authenticated:2",
+        "accepted:2",
+        "stale-receipt",
+        "committed",
+        "committed"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "authenticate",
+      "submit:2",
+      "worker:1",
+      "worker:2",
+      "worker:2"
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "shared-source-A-B-A-does-not-revalidate-old-ceremony",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 1,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "source-rebound:2",
+        "source-rebound:3",
+        "authentication_required",
+        "accepted:1"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "other-auth",
+      "other-auth",
+      "read",
+      "submit:1"
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "explicit-re-admission-after-A-B-A",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 1,
+      "receipts": 2,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "source-rebound:2",
+        "source-rebound:3",
+        "authenticated:4",
+        "confirmation:4",
+        "accepted:4",
+        "stale-receipt",
+        "committed"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "other-auth",
+      "other-auth",
+      "authenticate",
+      "read",
+      "submit:4",
+      "worker:1",
+      "worker:4"
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "committed-truth-survives-admission-change",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 1,
+      "receipts": 1,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "committed",
+        "authenticated:2",
+        "committed",
+        "committed",
+        "accepted:1"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "worker:1",
+      "authenticate",
+      "read",
+      "submit:2",
+      "submit:1"
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "stale-unaccepted-reference-cannot-consent",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 0,
+      "responses": [
+        "authenticated:1",
+        "authenticated:2",
+        "decision_conflict",
+        "confirmation:2"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "authenticate",
+      "submit:1",
+      "read"
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "connect-fresh-admission-needs-new-explicit-consent",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 1,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "authenticated:2",
+        "confirmation:2"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "authenticate",
+      "read"
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "connect-old-retry-is-only-historical-acceptance",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 1,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "authenticated:2",
+        "accepted:1",
+        "confirmation:2"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "authenticate",
+      "submit:1",
+      "read"
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "connect-new-explicit-consent-may-commit-once",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 2,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "authenticated:2",
+        "accepted:2",
+        "stale-receipt",
+        "committed",
+        "committed"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "authenticate",
+      "submit:2",
+      "worker:1",
+      "worker:2",
+      "worker:2"
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "connect-shared-source-A-B-A-does-not-revalidate-old-ceremony",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 1,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "source-rebound:2",
+        "source-rebound:3",
+        "authentication_required",
+        "accepted:1"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "other-auth",
+      "other-auth",
+      "read",
+      "submit:1"
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "connect-explicit-re-admission-after-A-B-A",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 2,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "source-rebound:2",
+        "source-rebound:3",
+        "authenticated:4",
+        "confirmation:4",
+        "accepted:4",
+        "stale-receipt",
+        "committed"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "other-auth",
+      "other-auth",
+      "authenticate",
+      "read",
+      "submit:4",
+      "worker:1",
+      "worker:4"
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "connect-committed-truth-survives-admission-change",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 1,
+      "responses": [
+        "authenticated:1",
+        "accepted:1",
+        "committed",
+        "authenticated:2",
+        "committed",
+        "committed",
+        "accepted:1"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "submit:1",
+      "worker:1",
+      "authenticate",
+      "read",
+      "submit:2",
+      "submit:1"
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "connect-stale-unaccepted-reference-cannot-consent",
+    "expected": {
+      "authority_renewals": 0,
+      "commercial_operations": 1,
+      "debits": 0,
+      "receipts": 0,
+      "responses": [
+        "authenticated:1",
+        "authenticated:2",
+        "decision_conflict",
+        "confirmation:2"
+      ]
+    },
+    "steps": [
+      "authenticate",
+      "authenticate",
+      "submit:1",
+      "read"
+    ]
+  }
+]

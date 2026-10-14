@@ -1,0 +1,287 @@
+openapi: 3.1.0
+info:
+  title: Recovery of already committed activation delivery
+  version: 1.0.0
+paths:
+  /v1/capability-license-delivery-recovery-proof-challenges:
+    post:
+      operationId: issueCapabilityLicenseDeliveryRecoveryProofChallenge
+      summary: Issue a uniform nonauthorizing exact-request challenge
+      x-contract-profile: urn:bridge-clean:capability-license-delivery-recovery-proof:v1
+      x-max-request-bytes: 4096
+      x-max-response-bytes: 4096
+      x-authentication: Uniform nonauthorizing challenge allocation; no proof, customer
+        admission or source-existence disclosure is created by this response.
+      x-idempotency: Bounded fresh single-use challenge only; no delivery generation
+        or accepted recovery result is created.
+      x-rate-limit: Existing bounded ingress and proof-challenge controls with uniform
+        behavior for unknown, foreign and revoked scopes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-proof-challenge-request.schema.json
+      responses:
+        '200':
+          description: Single-use exact-request challenge with a fixed lifetime of at most 60 seconds
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-proof-challenge-response.schema.json
+        '400':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '413':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '429':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '503':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+  /v1/capability-license-delivery-recoveries:read:
+    post:
+      operationId: readCapabilityLicenseDeliveryRecovery
+      summary: Read exact original delivery truth without creating authority
+      x-contract-profile: urn:bridge-clean:capability-license-delivery-recovery:v1
+      x-max-request-bytes: 4096
+      x-max-response-bytes: 4096
+      x-authentication: Exact registered original installation-key proof; no customer/browser
+        session authority. Challenge disclosure is uniform.
+      x-idempotency: Noncreating current or exact-generation projection; does not
+        allocate or renew any delivery authorization or recovery result.
+      x-rate-limit: Existing bounded ingress and proof-challenge controls; reads do
+        not spend a recovery creation slot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-read-request.schema.json
+      responses:
+        '200':
+          description: Closed noncreating projection with completion before past or future generation state
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-read-response.schema.json
+        '400':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '401':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '403':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '409':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '413':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '429':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '503':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+  /v1/capability-license-delivery-recoveries:recover:
+    post:
+      operationId: recoverCapabilityLicenseDelivery
+      summary: Authorize delivery of the same accepted activation at the exact next
+        generation
+      x-contract-profile: urn:bridge-clean:capability-license-delivery-recovery:v1
+      x-max-request-bytes: 4096
+      x-max-response-bytes: 4096
+      x-authentication: Exact registered original installation-key proof; no customer/browser
+        session authority. Challenge disclosure is uniform.
+      x-idempotency: Original operation plus generation; exact accepted current result
+        is byte/deadline stable, past generations never create; no Idempotency-Key
+        header.
+      x-rate-limit: At most one fresh authorization per rolling 600 seconds; bounded
+        ingress and proof challenges; no lifetime limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-recover-request.schema.json
+      responses:
+        '200':
+          description: Exact current-generation accepted retry with original response bytes and deadline
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-recover-response.schema.json
+        '201':
+          description: Atomically committed next-generation delivery authorization for the same original scope
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-recover-response.schema.json
+        '400':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '401':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '403':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '409':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '413':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '429':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json
+        '503':
+          description: Closed refusal; no authority from unknown or foreign scopes
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json

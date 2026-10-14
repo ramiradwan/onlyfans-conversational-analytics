@@ -6,7 +6,6 @@ import vm from 'node:vm';
 
 import { build } from 'esbuild';
 
-import { parseIdentityResponse } from '../../app/provisioning/provisioning.js';
 import { createCompanionClient } from '../runtime/companion-client.mjs';
 import {
   PROVISIONING_IDENTITY_MESSAGE_TYPE,
@@ -16,8 +15,6 @@ import {
 } from '../transport/provisioning-identity.mjs';
 
 const CONSENT = { mode: 'full', consent_epoch: '10000000-0000-4000-8000-000000000008' };
-const QUERY = Object.freeze({ type: 'provisioning.identity.query', version: 1 });
-const BRIDGE_SENDER = Object.freeze({ url: 'http://bridge.localhost:17871/provisioning' });
 const CONTENT_SENDER = Object.freeze({
   id: 'synthetic-extension-id',
   frameId: 0,
@@ -44,7 +41,7 @@ function storageArea(values) {
   };
 }
 
-function bridgeHarness({ register = true, allowsExternalIdentity } = {}) {
+function bridgeHarness({ register = true } = {}) {
   const session = {};
   const local = {};
   const internalListeners = [];
@@ -78,7 +75,7 @@ function bridgeHarness({ register = true, allowsExternalIdentity } = {}) {
       async sendMessage(...args) { tabMessages.push(args); },
     },
   };
-  const bridge = createProvisioningIdentityBridge({ chromeApi, currentConsent: () => CONSENT, allowsExternalIdentity });
+  const bridge = createProvisioningIdentityBridge({ chromeApi, currentConsent: () => CONSENT });
   if (register) bridge.register();
   return { bridge, chromeApi, externalListeners, internalListeners, local, session, tabUpdatedListeners, tabMessages };
 }
@@ -122,6 +119,25 @@ test('an unknown navigation observation clears current capture authority until f
   assert.equal((await h.bridge.contextFor(CONTENT_SENDER)).observed_platform_id, null);
   await dispatch(h.internalListeners[0], update('creator-a', PAGE_EPOCH_C), CONTENT_SENDER);
   assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+});
+
+test('profile labels share document and consent fences and never establish identity', async () => {
+  const h = bridgeHarness();
+  const observed = update('creator-a');
+  observed.authenticated_profile.display_name = 'Synthetic Creator';
+  observed.authenticated_profile.username = 'synthetic_handle';
+  await dispatch(h.internalListeners[0], observed, CONTENT_SENDER);
+  assert.deepEqual(await h.bridge.currentProfile(), observed.authenticated_profile);
+  h.tabUpdatedListeners[0](17, { status: 'loading' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(await h.bridge.currentProfile(), null);
+  await dispatch(h.internalListeners[0], update('creator-b', PAGE_EPOCH_B), CONTENT_SENDER);
+  assert.deepEqual(await h.bridge.currentProfile(), { creator_account_id: 'creator-b' });
+  for (const invalid of ['x'.repeat(81), 'a\nb', '\u202eevil', ' padded ']) {
+    const bad = update('creator-c', PAGE_EPOCH_C); bad.authenticated_profile.display_name = invalid;
+    assert.equal(await dispatch(h.internalListeners[0], bad, CONTENT_SENDER), undefined);
+    assert.equal(await h.bridge.currentAccountId(), 'creator-b');
+  }
 });
 
 test('hooked identity responses bind the observed account to the current document', async () => {
@@ -187,6 +203,7 @@ test('hooked identity responses bind the observed account to the current documen
             callback({ ok: true, mode: 'full', consent_epoch: CONSENT.consent_epoch });
             return;
           }
+          if (message.type === 'ofca.observer.state') { callback({ ok: true }); return; }
           const listener = h.internalListeners[0];
           assert.equal(listener(message, CONTENT_SENDER, callback), true);
         },
@@ -199,18 +216,20 @@ test('hooked identity responses bind the observed account to the current documen
     bundledSource('../content.js').then((source) => vm.runInContext(source, contentContext)),
   ]);
 
+  dispatchPageMessage({ type: 'ofca.capture.control', version: 1, action: 'resume' });
   await pageWindow.fetch('/api2/v2/users/me');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(posts[0].message.type, PROVISIONING_IDENTITY_MESSAGE_TYPE);
-  assert.equal(posts[0].message.page_epoch, PAGE_EPOCH_B);
-  assert.deepEqual(posts[0].message.authenticated_profile, {
+  const observedPosts = posts.filter(({ message }) => message.type === PROVISIONING_IDENTITY_MESSAGE_TYPE);
+  assert.equal(observedPosts.length > 0, true);
+  assert.equal(observedPosts[0].message.page_epoch, PAGE_EPOCH_B);
+  assert.deepEqual(observedPosts[0].message.authenticated_profile, {
     creator_account_id: 'creator-from-platform',
   });
-  dispatchPageMessage(posts[0].message);
+  dispatchPageMessage(observedPosts[0].message);
   await new Promise((resolve) => setImmediate(resolve));
 
-  const signedIn = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.deepEqual(parseIdentityResponse(signedIn), { accountId: 'creator-from-platform' });
+  const signedIn = await h.bridge.currentAccountId();
+  assert.deepEqual(signedIn, 'creator-from-platform');
   assert.deepEqual(await h.bridge.contextFor(CONTENT_SENDER), {
     sender_key: '17:document-a',
     tab_id: 17,
@@ -223,12 +242,13 @@ test('hooked identity responses bind the observed account to the current documen
   identityBody = { user: null };
   await pageWindow.fetch('/api2/v2/init');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(posts[1].message.page_epoch, PAGE_EPOCH_C);
-  dispatchPageMessage(posts[1].message);
+  const signedOutPost = posts.filter(({ message }) => message.type === 'ofca.provisioning.identity.reset').at(-1);
+  assert.equal(signedOutPost.message.page_epoch, PAGE_EPOCH_C);
+  dispatchPageMessage(signedOutPost.message);
   await new Promise((resolve) => setImmediate(resolve));
 
-  const signedOut = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.deepEqual(parseIdentityResponse(signedOut), { accountId: null });
+  const signedOut = await h.bridge.currentAccountId();
+  assert.deepEqual(signedOut, null);
   assert.equal(
     h.session[PROVISIONING_IDENTITY_STORAGE_KEY].schema,
     PROVISIONING_IDENTITY_STORAGE_SCHEMA,
@@ -243,12 +263,12 @@ test('hooked identity responses bind the observed account to the current documen
 
 test('identity reads fail closed for malformed or ambiguous document state', async () => {
   const h = bridgeHarness();
-  const absent = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.deepEqual(parseIdentityResponse(absent), { accountId: null });
+  const absent = await h.bridge.currentAccountId();
+  assert.deepEqual(absent, null);
 
   h.session[PROVISIONING_IDENTITY_STORAGE_KEY] = { creator_account_id: 7 };
-  const malformed = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.deepEqual(parseIdentityResponse(malformed), { accountId: null });
+  const malformed = await h.bridge.currentAccountId();
+  assert.deepEqual(malformed, null);
 
   h.session[PROVISIONING_IDENTITY_STORAGE_KEY] = {
     schema: PROVISIONING_IDENTITY_STORAGE_SCHEMA,
@@ -271,17 +291,11 @@ test('identity reads fail closed for malformed or ambiguous document state', asy
       },
     ],
   };
-  const ambiguous = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.deepEqual(parseIdentityResponse(ambiguous), { accountId: null });
+  const ambiguous = await h.bridge.currentAccountId();
+  assert.deepEqual(ambiguous, null);
 
-  assert.equal(
-    await dispatch(h.externalListeners[0], QUERY, { url: 'https://bridge.localhost:17872/provisioning' }),
-    undefined,
-  );
-  assert.equal(
-    await dispatch(h.externalListeners[0], { ...QUERY, extra: true }, BRIDGE_SENDER),
-    undefined,
-  );
+  assert.equal(h.externalListeners.length, 0, 'only scoped browser tasks expose identity');
+
 });
 
 test('identity updates are document-bound and replace stale context for the same tab', async () => {
@@ -315,8 +329,8 @@ test('identity updates are document-bound and replace stale context for the same
     observed_platform_id: 'creator-b',
     consent_epoch: CONSENT.consent_epoch,
   });
-  const repeated = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.deepEqual(parseIdentityResponse(repeated), { accountId: 'creator-b' });
+  const repeated = await h.bridge.currentAccountId();
+  assert.deepEqual(repeated, 'creator-b');
 });
 
 test('background binds capture to provisioning identity before consent-controlled ingestion', async () => {
@@ -342,7 +356,7 @@ test('identity changes fence admitted writes immediately and permit the new docu
   release();
   await assert.rejects(work, { code: 'stale_capture_context' });
   assert.equal((await h.bridge.contextFor(CONTENT_SENDER)).observed_platform_id, 'creator-b');
-  assert.equal(parseIdentityResponse(await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER)).accountId, 'creator-b');
+  assert.equal(await h.bridge.currentAccountId(), 'creator-b');
 });
 
 test('clearing consent contexts fences admitted captures before session persistence settles', async () => {
@@ -361,21 +375,76 @@ test('account or document changes invalidate companion sessions before storage s
   let invalidations = 0;
   h.bridge.onAccountChange(() => { invalidations++; });
   await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
-  assert.equal(invalidations, 1);
+  assert.equal(invalidations, 2, 'early invalidation and committed publication');
   await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
-  assert.equal(invalidations, 1);
+  assert.equal(invalidations, 2, 'an identical observation does not republish');
   const changing = dispatch(h.internalListeners[0], update('creator-b', PAGE_EPOCH_B), CONTENT_SENDER);
-  assert.equal(invalidations, 2);
+  assert.equal(invalidations, 3, 'invalidation precedes storage completion');
   await changing;
+  assert.equal(invalidations, 4);
   assert.equal(await h.bridge.currentAccountId(), 'creator-b');
 });
 
-test('active Full identity capture can continue while external bootstrap queries are disabled', async () => {
-  const h = bridgeHarness({ allowsExternalIdentity: async () => false });
+test('subscribers observe a committed identity without requiring another tab event', async () => {
+  const h = bridgeHarness();
+  const observed = []; const reads = [];
+  h.bridge.onAccountChange(() => { reads.push(h.bridge.currentAccountId().then((value) => observed.push(value))); });
+  const originalSet = h.chromeApi.storage.session.set;
+  let publish;
+  h.chromeApi.storage.session.set = (value, callback) => { publish = () => originalSet(value, callback); };
+  const pending = dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  while (!publish) await new Promise((resolve) => setImmediate(resolve));
+  await Promise.all(reads);
+  assert.deepEqual(observed, [null], 'early notification cannot claim an uncommitted account');
+  publish(); assert.deepEqual(await pending, { ok: true });
+  await Promise.all(reads);
+  assert.deepEqual(observed, [null, 'creator-a']);
+});
+
+test('an identical observation from either of two documents does not republish or invalidate', async () => {
+  const h = bridgeHarness();
+  const second = { ...CONTENT_SENDER, tab: { id: 18 }, documentId: 'document-b' };
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  await dispatch(h.internalListeners[0], update('creator-a', PAGE_EPOCH_B), second);
+  let notifications = 0; h.bridge.onAccountChange(() => { notifications++; });
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  await dispatch(h.internalListeners[0], update('creator-a', PAGE_EPOCH_B), second);
+  assert.equal(notifications, 0);
+  assert.equal(await h.bridge.currentAccountId(), 'creator-a');
+  assert.equal(h.session[PROVISIONING_IDENTITY_STORAGE_KEY].contexts.length, 2);
+});
+
+test('a failed write does not publish success and the same observation can publish after recovery', async () => {
+  const h = bridgeHarness(); const reads = []; const observed = [];
+  h.bridge.onAccountChange(() => { reads.push(h.bridge.currentAccountId().then((value) => observed.push(value))); });
+  const originalSet = h.chromeApi.storage.session.set;
+  h.chromeApi.storage.session.set = (_value, callback) => {
+    h.chromeApi.runtime.lastError = { message: 'fixture write failure' }; callback(); delete h.chromeApi.runtime.lastError;
+  };
+  assert.deepEqual(await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER), { ok: false });
+  await Promise.all(reads); assert.deepEqual(observed, [null]);
+  h.chromeApi.storage.session.set = originalSet;
+  assert.deepEqual(await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER), { ok: true });
+  await Promise.all(reads); assert.deepEqual(observed, [null, 'creator-a']);
+});
+
+for (const operation of ['clear', 'remove']) test(`committed ${operation} publishes an empty current identity`, async () => {
+  const h = bridgeHarness();
+  await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
+  const observed = []; const reads = [];
+  h.bridge.onAccountChange(() => { reads.push(h.bridge.currentAccountId().then((value) => observed.push(value))); });
+  if (operation === 'clear') await h.bridge.clearContexts();
+  else h.tabUpdatedListeners[0](CONTENT_SENDER.tab.id, { status: 'loading' });
+  await new Promise((resolve) => setImmediate(resolve));
+  await Promise.all(reads);
+  assert.deepEqual(observed, ['creator-a', null]);
+});
+
+test('identity capture exposes no unscoped external query listener', async () => {
+  const h = bridgeHarness();
   await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
   assert.equal(await h.bridge.currentAccountId(), 'creator-a');
-  assert.equal(parseIdentityResponse(await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER)).accountId, null);
-  assert.equal(await dispatch(h.externalListeners[0], QUERY, { url: 'https://bridge.localhost:17871/' }), undefined);
+  assert.equal(h.externalListeners.length, 0);
 });
 
 test('a completed loading cycle requests current-document identity without reviving the old context', async () => {
@@ -395,10 +464,10 @@ test('a completed loading cycle requests current-document identity without reviv
   assert.equal(await h.bridge.currentAccountId(), 'creator-a');
 });
 
-test('unpaired bootstrap admission completes without reentering the creator identity queue', { timeout: 1000 }, async () => {
+test('companion status reads the identity owner without reentering its queue', { timeout: 1000 }, async () => {
   let companion;
   let paired = false;
-  const h = bridgeHarness({ allowsExternalIdentity: async () => !await companion.hasSavedPairing() });
+  const h = bridgeHarness();
   companion = createCompanionClient({
     chromeApi: h.chromeApi,
     allowsFull: () => true,
@@ -406,12 +475,12 @@ test('unpaired bootstrap admission completes without reentering the creator iden
     storeFactory: async () => ({ async status() { return { paired }; } }),
   });
   await dispatch(h.internalListeners[0], update('creator-a'), CONTENT_SENDER);
-  const identity = await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER);
-  assert.equal(parseIdentityResponse(identity).accountId, 'creator-a');
+  const identity = await h.bridge.currentAccountId();
+  assert.equal(identity, 'creator-a');
   assert.equal((await companion.status()).state, 'unpaired');
 
   paired = true;
-  assert.equal(parseIdentityResponse(await dispatch(h.externalListeners[0], QUERY, BRIDGE_SENDER)).accountId, null);
+  assert.equal(h.externalListeners.length, 0);
   assert.equal(await h.bridge.currentAccountId(), 'creator-a');
   assert.equal((await companion.status()).state, 'paired');
 });

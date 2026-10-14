@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 from dotenv import dotenv_values
-from fastapi.testclient import TestClient
 
 from app import packaged_entry
 from app.core.runtime_paths import runtime_configuration_file, runtime_data_directory
@@ -21,21 +20,14 @@ from app.persistence.auth import (
     InstallationKeyReservation,
     ProvisioningCandidate,
     ProvisioningCandidateState,
-    SQLiteAuthenticationStore,
     VerifiedGrantReference,
 )
-from app.provisioning.app import PROVISIONING_FINALIZE_PATH, PROVISIONING_STATUS_PATH
 from app.provisioning.completion import (
     durable_authentication_store,
     durable_completion_reader,
     durable_finalize_action,
 )
 from app.provisioning.finalize import FinalizationRequest, finalize_provisioning
-from app.provisioning.session import (
-    PROVISIONING_CSRF_HEADER,
-    PROVISIONING_ORIGIN,
-    PROVISIONING_SESSION_COOKIE_NAME,
-)
 from app.security.grant_types import PROVISIONING_GRANT_TYPES
 
 pytestmark = [pytest.mark.ci_tier('fast')]
@@ -353,68 +345,6 @@ def test_an_unapproved_association_refuses_without_writing(
     assert refusal == "account_approval_missing"
     assert not runtime_configuration_file(data_directory).exists()
     assert store.authorized_account_bindings() == ()
-
-
-def test_the_composed_provisioning_surface_finalizes_and_then_reports_restart(
-    data_directory: Path, monkeypatch
-) -> None:
-    """The surface packaged boot builds reaches durable finalization itself."""
-
-    monkeypatch.setenv(
-        packaged_entry.PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, HANDOFF_TOKEN
-    )
-    monkeypatch.setenv(
-        packaged_entry.PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, EXTENSION_ID
-    )
-    store = SQLiteAuthenticationStore(_prepared(data_directory) / DATABASE_FILENAME)
-    seed_verified_installation(store)
-
-    application = packaged_entry.select_brain_application(data_directory)
-    client = TestClient(application, base_url=PROVISIONING_ORIGIN)
-    handoff = client.post(
-        "/api/v1/provisioning/handoff",
-        headers={"Authorization": "Provisioning " + HANDOFF_TOKEN},
-    )
-    redeemed = client.get(
-        f"/provisioning/handoff?code={handoff.json()['handoff_code']}",
-        follow_redirects=False,
-    )
-    cookie = {
-        "Cookie": (
-            f"{PROVISIONING_SESSION_COOKIE_NAME}="
-            f"{redeemed.cookies[PROVISIONING_SESSION_COOKIE_NAME]}"
-        )
-    }
-    token = client.get("/provisioning", headers=cookie).text.split(
-        'data-provisioning-csrf="'
-    )[1].split('"')[0]
-
-    assert client.get(PROVISIONING_STATUS_PATH, headers=cookie).json() == {
-        "state": "provisioning_ready",
-        "stage": "registration_required",
-        "association_request_id": None,
-        "creator_account_id": None,
-    }
-
-    finalized = client.post(
-        PROVISIONING_FINALIZE_PATH,
-        json={
-            "association_request_id": ASSOCIATION_REQUEST_ID,
-            "detected_creator_account_id": ACCOUNT_ID,
-            "reported_platform_creator_id": None,
-        },
-        headers={**cookie, "Origin": PROVISIONING_ORIGIN, PROVISIONING_CSRF_HEADER: token},
-    )
-
-    assert finalized.status_code == 200
-    assert finalized.json() == {"state": "configured_restart"}
-    assert runtime_configuration_file(data_directory).exists()
-    assert [
-        binding.creator_account_id for binding in store.authorized_account_bindings()
-    ] == [ACCOUNT_ID]
-    assert client.get(PROVISIONING_STATUS_PATH, headers=cookie).json() == {
-        "state": "configured_restart"
-    }
 
 
 def _prepared(data_directory: Path) -> Path:

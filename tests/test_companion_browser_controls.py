@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
-pytestmark = [pytest.mark.ci_tier('fast')]
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -20,14 +21,17 @@ from app.protocol import BRAIN_TO_BRIDGE_ADAPTER
 from app.security.runtime_policy import AuthContext, AuthorizationEpoch, RuntimePolicy
 from app.transport.companion_records import CompanionRecordError
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 ACCOUNT = "creator-1"
 ORIGIN = "http://bridge.localhost:17871"
 REPORT = {
-    "schema": "ofca-browser-surface/v1",
+    "schema": "ofca-browser-surface/v2",
     "capture": "paused",
     "site_access": "granted",
     "history_permission": "missing",
     "legal_review_required": False,
+    "history_error_code": None,
 }
 
 
@@ -61,10 +65,12 @@ def link(channel, *, authenticated=True, pairing_id=b"p" * 32):
 @pytest.mark.parametrize(
     "mutation",
     [
-        {"schema": "ofca-browser-surface/v2"},
+        {"schema": "ofca-browser-surface/v1"},
         {"capture": "on"},
         {"site_access": "unknown"},
         {"history_permission": True},
+        {"history_error_code": "internal-private-reason"},
+        {"history_error_code": {"private": "value"}},
         {"legal_review_required": "false"},
         {"extra": 1},
     ],
@@ -173,3 +179,139 @@ def test_capture_controls_are_creator_only_and_report_unreachable_browsers(monke
         )
     assert refused.status_code == 403
     assert len(sent) == 2
+
+
+def task_payload():
+    return {"creator_account_id": ACCOUNT, "task": {"task_id": str(uuid4()), "admission_generation": str(uuid4()),
+        "expires_at": time.time() + 60}, "ceremony": {"ceremony_id": "synthetic-ceremony", "attempt_id": "synthetic-attempt"}}
+
+
+def task_report(value, *, notification=None):
+    return {"task_id": value["task"]["task_id"], "admission_generation": value["task"]["admission_generation"],
+        "state": "opening" if notification is None else "checking", "notification": notification}
+
+
+@pytest.mark.asyncio
+async def test_focused_browser_dispatch_pins_one_session_and_only_correlates_results():
+    first, other = link(Channel()), link(Channel(), pairing_id=b"q" * 32)
+    await first.report(REPORT)
+    value, received, gates = task_payload(), [], []
+
+    async def receive(result):
+        received.append(result)
+
+    pending = asyncio.create_task(transport_manager.send_browser_task(ACCOUNT, first.token, value,
+        authorize=lambda: gates.append(True), receive=receive))
+    await asyncio.sleep(0)
+    assert gates == [True]
+    assert first.channel.sent[-1] == {"type": "session.control", "id": value["task"]["task_id"], "action": "browser.task", "payload": value}
+    await other.report(REPORT)
+    assert transport_manager.browser_task_target(ACCOUNT) is None, "Multiple pins require an explicit browser choice"
+    await other.task_report(task_report(value))
+    assert not received and not pending.done()
+    await first.task_report(task_report(value))
+    assert await pending == "dispatched"
+    note = {**value["ceremony"], "notification": "changed"}
+    await first.task_report(task_report(value, notification=note))
+    assert received[-1]["notification"] == note
+    assert set(received[-1]) == {"task_id", "admission_generation", "state", "notification"}
+    await first.close()
+    await other.close()
+
+
+@pytest.mark.asyncio
+async def test_browser_dispatch_refuses_stale_reports_and_unknown_actions():
+    session = link(Channel())
+    await session.report(REPORT)
+    value, received = task_payload(), []
+
+    async def receive(result):
+        received.append(result)
+
+    pending = asyncio.create_task(transport_manager.send_browser_task(ACCOUNT, session.token, value, authorize=lambda: None, receive=receive))
+    await asyncio.sleep(0)
+    await session.task_report(task_report(value) | {"admission_generation": str(uuid4())})
+    assert not received
+    for invalid in [task_report(value) | {"completed": True}, task_report(value) | {"state": "complete"},
+                    task_report(value) | {"state": []},
+                    task_report(value, notification={**value["ceremony"], "notification": []}),
+                    task_report(value, notification={**value["ceremony"], "notification": "changed", "license": "never-accepted"}),
+                    task_report(value, notification={**value["ceremony"], "attempt_id": "wrong", "notification": "changed"})]:
+        with pytest.raises(ValueError):
+            await session.task_report(invalid)
+    value["task"]["expires_at"] = time.time() - 1
+    await session.task_report(task_report(value))
+    assert not received
+    with pytest.raises(ValueError):
+        await transport_manager.send_browser_navigation(ACCOUNT, session.token, "https://example.test")
+    await session.close()
+    assert await pending == "unconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_browser_reports_require_current_account_authority_and_dispatch_rechecks_operator():
+    session = link(Channel())
+    await session.report(REPORT)
+    value = task_payload()
+
+    def refused():
+        raise ValueError("operator changed")
+
+    async def receive(_value):
+        pytest.fail("A refused operation must not receive an outcome")
+
+    result = await transport_manager.send_browser_task(ACCOUNT, session.token, value, authorize=refused, receive=receive)
+    assert result == "unconfirmed" and not session.channel.sent
+    session.channel.identity = None
+    with pytest.raises(CompanionRecordError):
+        await session.task_report(task_report(value))
+    await session.close()
+
+
+def test_browser_navigation_uses_operator_csrf_and_closed_destinations(monkeypatch):
+    calls = []
+
+    async def navigate(account, target, destination):
+        calls.append((account, target, destination))
+        return True
+
+    monkeypatch.setattr(transport_manager, "browser_task_target", lambda account: 17)
+    monkeypatch.setattr(transport_manager, "send_browser_navigation", navigate)
+    client, headers = _app(monkeypatch, "operator")
+    with client:
+        assert client.post("/api/v1/companion/browser/open", json={"action": "history"}, headers=headers).status_code == 202
+        assert client.post("/api/v1/companion/browser/open", json={"action": "https://example.test"}, headers=headers).status_code == 400
+        assert client.post("/api/v1/companion/browser/open", json={"action": "history", "creator": "other"}, headers=headers).status_code == 400
+        assert client.post("/api/v1/companion/browser/open", json={"action": "history"}, headers={"Origin": ORIGIN}).status_code == 403
+    assert calls == [(ACCOUNT, 17, "history")]
+
+
+@pytest.mark.asyncio
+async def test_repeated_delivery_fences_the_old_waiter_and_disconnect_clears_the_bounded_session():
+    session = link(Channel())
+    await session.report(REPORT)
+    value = task_payload()
+
+    async def receive(_value):
+        pass
+
+    def dispatch(payload):
+        return asyncio.create_task(transport_manager.send_browser_task(ACCOUNT, session.token, payload,
+            authorize=lambda: None, receive=receive))
+
+    first = dispatch(value)
+    await asyncio.sleep(0)
+    replacement = {**value, "task": {**value["task"], "admission_generation": str(uuid4())}}
+    second = dispatch(replacement)
+    await asyncio.sleep(0)
+    assert await first == "unconfirmed"
+    await session.task_report(task_report(value))
+    assert not second.done()
+    await session.task_report(task_report(replacement))
+    assert await second == "dispatched"
+    pending = [dispatch(task_payload()) for _ in range(8)]
+    await asyncio.sleep(0)
+    assert await pending[-1] == "unconfirmed", "Only eight fixed-lifetime records may occupy the session"
+    await session.close()
+    assert await asyncio.gather(*pending) == ["unconfirmed"] * 8
+    assert transport_manager.browser_task_target(ACCOUNT) is None

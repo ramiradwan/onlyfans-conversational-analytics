@@ -1,3 +1,5 @@
+import { publishActivation } from './desktop-decision-fixtures.mjs';
+
 export const FIXED_NOW = '2026-06-30T12:05:00.000Z';
 export const MODES = ['light', 'dark'];
 export const VIEWPORTS = [
@@ -72,11 +74,11 @@ return [
       await assertCentered(frame, page.getByRole('main'));
     },
   })),
-  { workspace: 'passkey', state: 'resting', ready: heading('Protect access to your messages') },
+  { workspace: 'passkey', state: 'resting', ready: heading('Sign in on this computer') },
   {
     workspace: 'passkey', state: 'cancelled',
     act: (page) => page.getByRole('button', { name: 'Sign in with passkey' }).click(),
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in was cancelled or timed out.' }),
+    ready: (page) => page.getByRole('alert').filter({ hasText: 'Sign-in did not finish.' }),
   },
   {
     workspace: 'analytics', state: 'model', variant: 'date-popover', viewports: ['desktop', 'narrow'],
@@ -113,36 +115,45 @@ return [
     ready: (page) => page.getByRole('dialog', { name: 'Status details' }),
   },
   {
-    workspace: 'settings', state: 'fresh', variant: 'activation-dialog', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Turn on full analytics' }).click(),
-    ready: (page) => page.getByRole('dialog', { name: 'Turn on full analytics' }).getByRole('link', { name: 'Open secure setup' }),
+    workspace: 'settings', state: 'fresh', variant: 'activation-review', viewports: ['narrow'], modes: ['light', 'dark'],
+    act: page => publishActivation(page, 'review'),
+    ready: page => page.getByRole('button', { name: 'Activate for free' }),
   },
   {
-    workspace: 'settings', state: 'fresh', variant: 'activation-return', viewports: ['narrow'], modes: ['light'],
+    workspace: 'settings', state: 'fresh', variant: 'activation-waiting', viewports: ['narrow'], modes: ['light', 'dark'],
     act: async (page) => {
-      await page.getByRole('button', { name: 'Turn on full analytics' }).click();
-      await page.getByRole('link', { name: 'Open secure setup' }).dispatchEvent('click');
+      await publishActivation(page, 'waiting');
+      await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
     },
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Secure setup opened.' }),
+    ready: page => page.getByText('Finish signing in in Chrome.', { exact: true }),
+    assert: async (page) => {
+      if (await page.getByRole('button', { name: 'Activate for free' }).count()) throw new Error('Authentication must precede consent');
+      if ((await page.evaluate(() => window.__workspaceFixture.desktopActions())).length) throw new Error('Returning from Chrome must not submit a decision');
+    },
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'activation-error', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
-      await page.getByRole('button', { name: 'Turn on full analytics' }).click();
-      await page.getByRole('textbox', { name: 'Activation code' }).fill('invalid');
-      await page.getByRole('button', { name: 'Activate', exact: true }).click();
+      await publishActivation(page, 'review');
+      await page.evaluate(() => window.__workspaceFixture.desktopActionError('reply_lost'));
+      await page.getByRole('button', { name: 'Activate for free' }).click();
     },
-    ready: (page) => page.getByRole('alert').filter({ hasText: 'Enter the full activation code and try again.' }),
+    ready: page => page.getByRole('alert').filter({ hasText: 'Activation could not be confirmed.' }),
+  },
+  {
+    workspace: 'settings', state: 'fresh', variant: 'activation-provider-selection', viewports: ['narrow'], modes: ['light', 'dark'],
+    act: page => publishActivation(page, 'selection'),
+    ready: page => page.getByRole('group', { name: 'Sign-in options' }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'pairing-comparison', viewports: ['narrow'], modes: ['light'],
-    act: (page) => page.getByRole('button', { name: 'Connect extension' }).click(),
+    act: (page) => page.getByRole('button', { name: 'Pair manually in another Chrome profile' }).click(),
     ready: (page) => page.getByText('Check the code', { exact: true }),
   },
   {
     workspace: 'settings', state: 'fresh', variant: 'history-consent', viewports: ['narrow'], modes: ['light'],
     act: async (page) => {
-      await page.getByRole('button', { name: 'Connect extension' }).click();
+      await page.getByRole('button', { name: 'Pair manually in another Chrome profile' }).click();
       await page.getByText('Check the code', { exact: true }).waitFor({ state: 'visible' });
       await page.getByRole('checkbox', { name: 'The codes match' }).check();
       await page.getByRole('button', { name: 'Confirm connection' }).click();

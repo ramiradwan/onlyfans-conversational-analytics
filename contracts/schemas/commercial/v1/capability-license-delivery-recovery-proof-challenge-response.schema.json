@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-delivery-recovery-proof-challenge-response.schema.json",
+  "title": "CapabilityLicense delivery recovery proof-challenge-response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "purpose",
+    "proof_challenge_id",
+    "challenge",
+    "audience",
+    "request_digest",
+    "issued_at",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-delivery-recovery-proof:v1"
+    },
+    "purpose": {
+      "enum": [
+        "capability-license-delivery-read",
+        "capability-license-delivery-recover"
+      ]
+    },
+    "proof_challenge_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "challenge": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "audience": {
+      "const": "urn:bridge-clean:commercial-control-plane:capability-license-delivery-recovery"
+    },
+    "request_digest": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "issued_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

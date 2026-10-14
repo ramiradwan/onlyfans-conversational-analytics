@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import json
+import runpy
 import os
 import sys
 from pathlib import Path, PurePosixPath
 
+from PyInstaller.config import CONF
 from PyInstaller.building.api import COLLECT, EXE, PYZ  # type: ignore[import-not-found]
 from PyInstaller.building.build_main import Analysis  # type: ignore[import-not-found]
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, copy_metadata  # type: ignore[import-not-found]
@@ -136,12 +138,17 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data)
 
+_BRANDING = runpy.run_path(str(_PROJECT_ROOT / "packaging" / "windows_branding.py"))
+_VERSION_RESOURCE = _BRANDING["version_resource"](_PROJECT_ROOT / "app" / "core" / "config.py")
+
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
     name="Brain",
+    version=_VERSION_RESOURCE,
+    icon=str(_PROJECT_ROOT / "packaging" / "windows" / "conversation-analytics.ico"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

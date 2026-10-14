@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "window-frame",
+  "description": "Operate the main window from its packaged shell or admitted local document.",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "local": true,
+  "remote": { "urls": [
+    "http://bridge.localhost:17871/",
+    "http://bridge.localhost:17871/inbox",
+    "http://bridge.localhost:17871/analytics",
+    "http://bridge.localhost:17871/graph-explorer",
+    "http://bridge.localhost:17871/settings",
+    "http://bridge.localhost:17871/onboarding",
+    "http://bridge.localhost:17871/onboarding/*",
+    "http://bridge.localhost:17871/provisioning",
+    "http://bridge.localhost:17871/provisioning/*",
+    "http://bridge.localhost:17871/api/v1/session/handoff"
+  ] },
+  "permissions": ["allow-desktop-window"]
+}

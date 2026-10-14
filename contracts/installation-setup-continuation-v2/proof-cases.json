@@ -1,0 +1,1026 @@
+[
+  {
+    "canonical_request": "{\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "prepare-valid",
+    "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+    "operation": "installation-continuation-prepare",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d56320000000020dcab9c97c81bfc77f708748c5607ed548bda521cfa00abd99eb8d3283a1e105000000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a7072657061726500000020f4ddaa9272130b79b59f008583c5f37cf161b4a517cc10dcf1268ed6f56e58bc00000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d7072657061726500000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "f4ddaa9272130b79b59f008583c5f37cf161b4a517cc10dcf1268ed6f56e58bc",
+    "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"continuation_id\":null,\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "read-valid",
+    "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+    "operation": "installation-continuation-read",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d563200000000209ef9fd02f98500d7ea19d7da5f01c33629d8f2e2a0cf64b68ba287b40e7cec0000000004504f53540000002e2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a72656164000000206aac71ec43217fab810bdffc02f8e3a31511f3b7b4f391a1cc0ab909d08595bc0000001e696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d7265616400000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": null,
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "6aac71ec43217fab810bdffc02f8e3a31511f3b7b4f391a1cc0ab909d08595bc",
+    "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "read-known-valid",
+    "challenge": "kZmxRRzQ9yLggWaEEBSd8wAV7Wk8ZJtA3bgd6j7OnaM",
+    "operation": "installation-continuation-read",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d563200000000209199b1451cd0f722e081668410149df30015ed693c649b40ddb81dea3ece9da300000004504f53540000002e2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a7265616400000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af120000001e696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d7265616400000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "LctbaMp3XLg6H1HA416b5w1C14o_P5Z1wD5LM6oQgFtYRIyXIoNTZzKTxUC4p1E88bMCp440qpLwocjf7AOtiA",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"cursor\":null,\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "stream-valid",
+    "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+    "operation": "installation-continuation-stream",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d563200000000205c8c29c2359b7e29632569e3230e019f119c00e2c3fe21fe7bb8d10999beaa8700000004504f5354000000302f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a73747265616d00000020b06780761a29b07d7e635038feb33d20a33f19a429b6be4934f2bcb98e04205400000020696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d73747265616d00000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "cursor": null,
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "b06780761a29b07d7e635038feb33d20a33f19a429b6be4934f2bcb98e042054",
+    "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"cursor\":{\"epoch\":\"0199b234-5678-7000-8000-000000000003\",\"revision\":4},\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "stream-cursor-valid",
+    "challenge": "aPURvm4nXo_tXN5-0e5xs6_QdjLla1R3DyqvPSNvpgE",
+    "operation": "installation-continuation-stream",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002068f511be6e275e8fed5cde7ed1ee71b3afd07632e56b54770f2aaf3d236fa60100000004504f5354000000302f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a73747265616d00000020358b2e25c94cc6545caaf8b120101767062572763c4a1ab62bd6c4d5b164866c00000020696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d73747265616d00000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "cursor": {
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "revision": 4
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "358b2e25c94cc6545caaf8b120101767062572763c4a1ab62bd6c4d5b164866c",
+    "signature": "QnYfTB3cvYQmUxKrGUBdUn7ZhwzpQlGfWjILvgOXZQxOyYojWpfO_Y_4n2sGFoGQ4o6PO5b7PbdaHNxbOs9m5A",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "binding-valid",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-scope-organization_id",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixturechanged",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-scope-installation_id",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixturechanged",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-scope-installation_key_id",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODwchanged",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-scope-source_onboarding_transaction_id",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixturechanged"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-scope-creator_account_id",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixturechanged",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-scope-association_request_id",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001changed",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-operation_id",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000003",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-continuation_id",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000003",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"cursor\":{\"epoch\":\"0199b234-5678-7000-8000-000000000003\",\"revision\":4},\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-cursor",
+    "challenge": "aPURvm4nXo_tXN5-0e5xs6_QdjLla1R3DyqvPSNvpgE",
+    "operation": "installation-continuation-stream",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002068f511be6e275e8fed5cde7ed1ee71b3afd07632e56b54770f2aaf3d236fa60100000004504f5354000000302f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a73747265616d00000020358b2e25c94cc6545caaf8b120101767062572763c4a1ab62bd6c4d5b164866c00000020696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d73747265616d00000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "cursor": {
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "revision": 5
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "358b2e25c94cc6545caaf8b120101767062572763c4a1ab62bd6c4d5b164866c",
+    "signature": "QnYfTB3cvYQmUxKrGUBdUn7ZhwzpQlGfWjILvgOXZQxOyYojWpfO_Y_4n2sGFoGQ4o6PO5b7PbdaHNxbOs9m5A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "foreign-key",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "qLQRjBVaZq6fF5Ml6vKlYkgLfj4_Q36LpSWwkw5n9dY",
+      "y": "T6byLNfz3q8Va3chOaPc0p9c_fJDW6O2sibfh3HVOiI"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "off-curve-key",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "y": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "extra-jwk-member",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kid": "unexpected",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "padded-coordinate",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "AB2ncUTZtv6qp2PLAqP0fgeLUPm3DlQsQROWGOFcM8yY",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "wrong-purpose",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-read",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "short-signature",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "zero-signature",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "high-s",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKucse7NFX2_UtXFgEzIe99A9cYOa3TT2pUC188Ez3OiCw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "padded-signature",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg=",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "short-challenge",
+    "challenge": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "padded-challenge",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI=",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "changed-digest",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "wrong-domain",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "LLQxD7ViFmCP3erdK14-ljRS7MNCSoVj2q6oBRALeHRUIgeaXRe8JyCs5N46dVVQqJsMpGuyfJkI8iNVPCP7Og",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "wrong-path",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a6368616e67656400000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "7KLNEG6jRK6shcmoCFHpMYHcoxir90muvH1thHmYpqBXUOww3NGWHKS45p8ZJZfIte-S2JOnuUvZF2ugBWDmEA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "wrong-method",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e920000000447455420000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "9d3dp8TxzMDpM2LdFOcy6TFaIrrHOQWI8TCSv2eOeiRXlmSZSOUP4YlbszPyv0UPJsTchMLRt9o_Tu2UQQP8Kg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "wrong-audience",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e2d6f74686572",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "TFYFg2j-imMWoWB5jcQD2d0K73JqEcwMCixidgvr36c3by8RUipQdlarHdyU1GAMoWdKrZxurT1jH5oKOvsZyg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "wrong-length-prefix",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000001f84106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "aCnvbvQgL7Nwu7H2cS_svQ5Xwy85DpFDoPuAFy414OF6Hr9XMCEG785CayJVx1lThA1ZNQzUmOttSXNBmnh9Xw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v1\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "old-profile-with-v2-signature",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020e72357aecb73bf5f8b5c4ef8aede74b7bda00951d57e31ac7f45f78eb198547500000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v1",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "e72357aecb73bf5f8b5c4ef8aede74b7bda00951d57e31ac7f45f78eb1985475",
+    "signature": "jYqL8c3_V0dwk2MN3x8L5jHjLH7sR3iWPS9FLo2qGnofXuJ_lfH8UHrf0S-uyjjyFkQeEv_b0NFw8r3kHlTEew",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "old-domain-with-valid-signature",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5631000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "x_leTnbXmt5e1hCxqnRSIm7TSMF1mfb5mpE6aKNBYW8deij-BGyyPCxpYOoaBbpto4kN8NzWySS03rn0KvbuJw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"continuation_id\":\"0199b234-5678-7000-8000-000000000002\",\"operation_id\":\"0199b234-5678-7000-8000-000000000001\",\"profile\":\"urn:bridge-clean:installation-setup-continuation:v2\",\"scope\":{\"association_request_id\":\"0199b234-5678-7000-8000-000000000001\",\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.AAECAwQFBgcICQoLDA0ODw\",\"organization_id\":\"org-fixture\",\"source_onboarding_transaction_id\":\"source-fixture\"}}",
+    "case_id": "old-route-with-valid-signature",
+    "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+    "operation": "installation-continuation-binding",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e5354414c4c4154494f4e2d53455455502d434f4e54494e554154494f4e2d50524f4f462d5632000000002084106fcfd130851e88997c3a11a91d683894167d268f069ebf14b2bb32840e9200000004504f5354000000312f76312f6f6e626f617264696e672f696e7374616c6c6174696f6e2d636f6e74696e756174696f6e733a62696e64696e6700000020ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af1200000021696e7374616c6c6174696f6e2d636f6e74696e756174696f6e2d62696e64696e6700000020aeb963a1f20c5c15af14c92b9004dfafba36f41d505888862d87b7df5d136c4a0000004975726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e7374616c6c6174696f6e2d73657475702d636f6e74696e756174696f6e",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "HadxRNm2_qqnY8sCo_R-B4tQ-bcOVCxBE5YY4VwzzJg",
+      "y": "lXhHXKqsKHtesNYzAnyhxZcYQR-a3Gk-bcdNZNn_DQ4"
+    },
+    "request": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "scope": {
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "organization_id": "org-fixture",
+        "source_onboarding_transaction_id": "source-fixture"
+      }
+    },
+    "request_digest": "ca927e8e308958ce9c991fa9b007a23f9e665a1f20d83d2bfb9a7561f378af12",
+    "signature": "V6l5hfod29Z8BExn6MzgzIcoptVsTuwYx7BS-35psAdx3VnBvta2jlRDK-nXpjELZSvSVDP_kPQoo6d4LI5ftA",
+    "valid": false
+  }
+]

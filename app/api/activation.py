@@ -1,4 +1,4 @@
-"""HTTP adapter for the runtime activation gate."""
+"""Local installation trust gate; commercial licensing is checked separately."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from app.security.activation_gate import runtime_is_activated
 
 
 def require_activated_runtime() -> None:
-    """Refuse a runtime route while the activation conditions are unmet."""
+    """Require the configured installation, independently of its Full license."""
 
     if not runtime_is_activated():
         raise HTTPException(

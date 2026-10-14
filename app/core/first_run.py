@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -13,6 +14,7 @@ from typing import Literal
 from dotenv import dotenv_values
 
 from app.core.runtime_paths import runtime_configuration_file, runtime_data_directory
+from app.persistence.private_files import apply_private_file_security, reject_path_aliases, sync_directory
 
 
 _RESERVED_PREFIX = "replace-with-"
@@ -59,7 +61,7 @@ def initialize_production_configuration(
         raise ValueError("extension_id must be an exact Chrome extension ID")
 
     target_directory = runtime_data_directory(data_directory)
-    target = runtime_configuration_file(target_directory)
+    target = reject_path_aliases(runtime_configuration_file(target_directory))
     expected = _nonsecret_configuration(bindings, extension_id, target_directory)
     if target.exists():
         _require_matching_existing_configuration(target, expected)
@@ -76,20 +78,24 @@ def initialize_production_configuration(
         for key, value in values.items()
     ).encode("utf-8")
 
-    try:
-        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        _require_matching_existing_configuration(target, expected)
-        return FirstRunResult(target_directory, target, False)
-
+    descriptor, name = tempfile.mkstemp(prefix=".runtime-", suffix=".pending", dir=target_directory)
+    temporary = Path(name)
     try:
         with os.fdopen(descriptor, "wb") as output:
+            apply_private_file_security(temporary)
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
-    except BaseException:
-        target.unlink(missing_ok=True)
-        raise
+        # A same-directory hard link publishes the complete flushed inode with
+        # create-only semantics. Neither a race nor a crash can replace a winner.
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            _require_matching_existing_configuration(target, expected)
+            return FirstRunResult(target_directory, target, False)
+        sync_directory(target_directory)
+    finally:
+        temporary.unlink(missing_ok=True)
 
     return FirstRunResult(target_directory, target, True)
 
@@ -122,6 +128,7 @@ def _require_matching_existing_configuration(
     target: Path,
     expected: dict[str, str],
 ) -> None:
+    apply_private_file_security(target)
     existing = dotenv_values(target, interpolate=False)
     mismatches = [key for key, value in expected.items() if existing.get(key) != value]
     bootstrap = existing.get("LOCAL_SESSION_BOOTSTRAP_TOKEN") or ""

@@ -2,13 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
 
-from app.provisioning.app import create_provisioning_app
 from app.provisioning.binding_acquisition import acquire_creator_account_binding
-from app.provisioning.session import PROVISIONING_ORIGIN, PROVISIONING_SESSION_COOKIE_NAME
 from app.security.hosted_grants import GrantVerificationRefused
-from provisioning_markup import PageMarkup
 
 import pytest
 
@@ -41,68 +37,6 @@ class Finalize:
     def __call__(self, **arguments):
         del arguments
         return "membership_refresh_unavailable"
-
-
-def _application(hosted_onboarding_url: str = ""):
-    return create_provisioning_app(
-        claim_submission=Claim(),
-        creator_association_initiation=Association(),
-        creator_binding_acquisition=Binding(),
-        completion_ready=lambda: False,
-        finalize_action=Finalize(),
-        extension_id=EXTENSION_ID,
-        hosted_onboarding_url=hosted_onboarding_url,
-        launcher_handoff_token=HANDOFF_TOKEN,
-    )
-
-
-def _shell(application) -> str:
-    client = TestClient(application, base_url=PROVISIONING_ORIGIN)
-    handoff = client.post(
-        "/api/v1/provisioning/handoff",
-        headers={"Authorization": "Provisioning " + HANDOFF_TOKEN},
-    )
-    code = handoff.json()["handoff_code"]
-    redeemed = client.get(f"/provisioning/handoff?code={code}", follow_redirects=False)
-    cookie = {
-        "Cookie": (
-            f"{PROVISIONING_SESSION_COOKIE_NAME}="
-            f"{redeemed.cookies[PROVISIONING_SESSION_COOKIE_NAME]}"
-        )
-    }
-    response = client.get("/provisioning", headers=cookie)
-    assert response.status_code == 200
-    return response.text
-
-
-def test_creator_approval_continuation_uses_only_the_release_owned_hosted_entry() -> None:
-    page = _shell(_application(HOSTED_URL))
-    marker = page.split('id="continue-creator-approval"', 1)[1].split("</a>", 1)[0]
-
-    assert f'href="{HOSTED_URL}"' in marker
-    assert 'target="_blank"' in marker
-    assert 'rel="noopener noreferrer"' in marker
-    assert "hidden" not in marker
-    assert "association_request_id" not in marker
-    assert "creator_account_id" not in marker
-    assert "installation_id" not in marker
-    assert "organization_id" not in marker
-    assert "token=" not in marker
-    markup = PageMarkup(page)
-    assert markup.has_visible_guidance("continue-creator-approval")
-    assert markup.is_visible_step_text("binding-step-description", "binding-step")
-
-
-def test_creator_approval_continuation_fails_safe_when_hosted_entry_is_absent() -> None:
-    page = _shell(_application())
-    marker = page.split('id="continue-creator-approval"', 1)[1].split("</a>", 1)[0]
-
-    assert 'href=""' in marker
-    assert "hidden" in marker
-    markup = PageMarkup(page)
-    assert markup.is_visible_step_text("creator-approval-unavailable", "binding-step")
-    assert markup.elements["creator-approval-return-help"].hidden
-    assert "example.invalid" not in page
 
 
 class _MismatchStore:

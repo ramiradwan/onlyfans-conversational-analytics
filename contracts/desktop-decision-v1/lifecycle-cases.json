@@ -1,0 +1,776 @@
+[
+  {
+    "action": "connect-account",
+    "case_id": "read-never-authenticates-or-consents",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "awaiting-authentication",
+        "awaiting-authentication"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "same-read-stable-no-sliding-lease",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "confirmation:1:1500",
+        "confirmation:1:1500"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "read",
+        "now": 1400
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "read-original-expiry",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "confirmation:1:1500",
+        "unavailable"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "read",
+        "now": 1500
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "lost-submit-recovered-no-reconsent",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "confirmation:1:1500",
+        "reply-lost",
+        "accepted"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "submit",
+        "now": 1010,
+        "reply_lost": true
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "unknown-submit-does-not-submit",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "confirmation:1:1500",
+        "confirmation:1:1500"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "accepted-retry-exact-once",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": true,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "accepted",
+        "accepted",
+        "committed",
+        "accepted"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "owner-commit",
+        "now": 1100
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "accepted-changed-meaning-conflicts",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "accepted",
+        "decision_conflict"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "submit",
+        "now": 1010,
+        "revision": 2
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "other-ceremony-rebinds-source",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "confirmation:1:1500",
+        "source-rebound",
+        "decision_conflict"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "rebind-source",
+        "now": 1002
+      },
+      {
+        "kind": "submit",
+        "now": 1010,
+        "revision": 1
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "read-current-display-needs-new-explicit-click",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "source-rebound",
+        "confirmation:2:1500",
+        "accepted"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "rebind-source",
+        "now": 1002
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "submit",
+        "now": 1010,
+        "revision": 2
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "session-revoked-before-submit",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "confirmation:1:1500",
+        "logged-out",
+        "authentication_required"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "logout",
+        "now": 1002
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "cancel-before-submit",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "retired",
+        "expired",
+        "unavailable"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "cancel",
+        "now": 1050
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "accepted-worker-after-cancel",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": true,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "accepted",
+        "retired",
+        "committed",
+        "accepted",
+        "accepted"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "cancel",
+        "now": 1050
+      },
+      {
+        "kind": "owner-commit",
+        "now": 1100
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "accepted-result-after-expiry",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": true,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "accepted",
+        "committed",
+        "accepted"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "owner-commit",
+        "now": 1100
+      },
+      {
+        "kind": "read",
+        "now": 2000
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "receipt-deadline-not-renewed-by-read",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "accepted",
+        "accepted",
+        "receipt-expired"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "read",
+        "now": 1320
+      },
+      {
+        "kind": "owner-commit",
+        "now": 1320
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "read-proof-cannot-submit",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "proof_invalid"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "submit",
+        "now": 1010,
+        "proof_action": "read"
+      }
+    ]
+  },
+  {
+    "action": "connect-account",
+    "case_id": "challenge-is-single-use",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "confirmation:1:1500",
+        "proof_invalid"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "challenge": "same",
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "challenge": "same",
+        "kind": "submit",
+        "now": 1010
+      }
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "authentication-is-not-acquisition",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "confirmation:1:1500"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "acquisition-does-not-issue-license-or-enable-local-mode",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": true,
+      "deadline": 1500,
+      "debits": 1,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "accepted",
+        "committed",
+        "committed",
+        "accepted"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "owner-commit",
+        "now": 1100
+      },
+      {
+        "kind": "owner-commit",
+        "now": 1100
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "connect-consent-cannot-buy-full",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": false,
+      "deadline": 1500,
+      "debits": 0,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": null,
+      "receipts": 0,
+      "responses": [
+        "authenticated",
+        "decision_conflict"
+      ],
+      "workers": 0
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "consent": "connect-account",
+        "kind": "submit",
+        "now": 1010
+      }
+    ]
+  },
+  {
+    "action": "activate-complimentary",
+    "case_id": "lost-acquisition-reply-no-double-debit",
+    "deadline": 1500,
+    "expected": {
+      "authority_renewals": 0,
+      "committed": true,
+      "deadline": 1500,
+      "debits": 1,
+      "licenses_issued": 0,
+      "local_full_ready": false,
+      "receipt_deadline": 1310,
+      "receipts": 1,
+      "responses": [
+        "authenticated",
+        "reply-lost",
+        "committed",
+        "accepted",
+        "accepted",
+        "committed"
+      ],
+      "workers": 1
+    },
+    "steps": [
+      {
+        "kind": "authenticate",
+        "now": 1000
+      },
+      {
+        "kind": "submit",
+        "now": 1010,
+        "reply_lost": true
+      },
+      {
+        "kind": "owner-commit",
+        "now": 1100
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "kind": "submit",
+        "now": 1010
+      },
+      {
+        "kind": "owner-commit",
+        "now": 1100
+      }
+    ]
+  }
+]

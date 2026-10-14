@@ -60,7 +60,9 @@ async function grantHistoryPermission(context, popup, worker) {
     await expect.poll(hasPermission, { timeout: 1_500 }).toBe(true);
     grantedWithoutPrompt = true;
   } catch {}
-  if (!grantedWithoutPrompt) await acceptNativeHostPermissionPrompt(context);
+  if (!grantedWithoutPrompt) await acceptNativeHostPermissionPrompt(context, {
+    requestKind: 'history', readPermission: hasPermission,
+  });
   await expect.poll(hasPermission, {
     timeout: 12_000,
     message: 'History permission was not granted through the extension UI.',
@@ -118,6 +120,15 @@ for (const enabled of [true, false]) {
       context = await launchExtensionBrowser(path.join(root, 'profile'), directory);
       const worker = await extensionWorker(context);
       const id = extensionId(worker);
+      // Full can open its inactive helper immediately. Every platform document
+      // must already have the synthetic network and signer binding available.
+      // Discover the worker first so the fixture permits this extension's assets.
+      const platform = new SyntheticPlatform();
+      const old = new Date(Date.now() - 3_600_000).toISOString();
+      platform.seedCatchup('101', 'initial101', old);
+      platform.seedCatchup('102', 'initial102', old);
+      await platform.install(context);
+      await context.exposeBinding('syntheticCatchupRead', (source, request, category) => platform.readCatchupPage(request, category));
       const auth = path.join(root, 'auth.sqlite3');
       brain = new BrainProcess({ authDatabasePath: auth, canonicalDatabasePath: path.join(root, 'canonical.sqlite3'),
         projectionDatabasePath: path.join(root, 'projections.sqlite3'), extensionId: id,
@@ -134,12 +145,6 @@ for (const enabled of [true, false]) {
       const historyPopup = await openPopup(context, id, []);
       await grantHistoryPermission(context, historyPopup, worker);
       await historyPopup.close();
-      const platform = new SyntheticPlatform();
-      const old = new Date(Date.now() - 3_600_000).toISOString();
-      platform.seedCatchup('101', 'initial101', old);
-      platform.seedCatchup('102', 'initial102', old);
-      await platform.install(context);
-      await context.exposeBinding('syntheticCatchupRead', (source, request, category) => platform.readCatchupPage(request, category));
       let lastSummary = null;
       const summary = async () => (lastSummary = await readBrainSummary(context, { catchup: true }));
       const poll = (read, expected, timeout = 180_000, checkpoint = null) => withCatchupDiagnostics(

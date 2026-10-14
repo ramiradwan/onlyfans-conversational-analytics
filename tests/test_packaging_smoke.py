@@ -21,6 +21,8 @@ from uuid import uuid4
 
 import pytest
 
+from packaging_fixture import configured_release_source
+
 from app import packaged_entry
 
 import exclusive_resource
@@ -41,6 +43,12 @@ LEGAL_BINDINGS_FIXTURE = (
     ROOT / "extension" / "tests" / "fixtures" / "legal-instrument-bindings.synthetic.json"
 )
 SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _isolated_release_source(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest):
+    with configured_release_source(request.module, tmp_path_factory.mktemp("release-source")):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -341,24 +349,28 @@ dist = Path(arguments[arguments.index('--distpath') + 1])
 stage = dist / 'Brain'
 (stage / '_internal').mkdir(parents=True)
 shutil.copyfile(Path({str(listener_executable)!r}) if {listener_executable is not None!r} else Path(os.environ['ComSpec']), stage / 'Brain.exe')
+shutil.copyfile(stage / 'Brain.exe', root / 'desktop/src-tauri/target/x86_64-pc-windows-msvc/release/Bridge.exe')
 for relative in (
     'app/templates',
+    'app/onboarding',
     'app/static/dist',
     'app/persistence/sql',
     'app/persistence/auth_sql',
     'app/persistence/projection_sql',
     'app/analytics/sql',
     'contracts',
+    'shared/onboarding',
+    'shared/desktop-onboarding',
+    'shared/browser-tasks',
 ):
     shutil.copytree(root / relative, stage / '_internal' / relative)
 provisioning = stage / '_internal' / 'app' / 'provisioning'
 provisioning.mkdir()
-for name in (
-    'provisioning.html',
-    'creator-platform-data-risk-disclosure.html',
-    'provisioning.js',
-):
+for name in ('creator-platform-data-risk-disclosure.html',):
     shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
+core = stage / '_internal' / 'app' / 'core'
+core.mkdir()
+shutil.copyfile(root / 'app' / 'core' / 'customer-release.json', core / 'customer-release.json')
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -748,7 +760,7 @@ def test_harness_launches_the_executable_its_real_installer_placed(
 
     mutated_script = tmp_path / "run-fixed-external-launcher.ps1"
     original = SMOKE_SCRIPT.read_text(encoding="utf-8")
-    derivation = "$launcherPath = Join-Path -Path $Layout.InstallationPrefix -ChildPath 'Brain.exe'"
+    derivation = "$launcherPath = Join-Path -Path $Layout.InstallationPrefix -ChildPath 'Bridge.exe'"
     mutation = "$launcherPath = [Environment]::GetEnvironmentVariable('ComSpec')"
     assert derivation in original
     mutated_script.write_text(original.replace(derivation, mutation, 1), encoding="utf-8")
@@ -1567,7 +1579,8 @@ _PLATFORM_CAPABILITY_OUTCOMES = frozenset(
 
 
 def _compile_installer(
-    tmp_path: Path, script_text: str, *, version: str, payload: Path | None = None
+    tmp_path: Path, script_text: str, *, version: str, payload: Path | None = None,
+    webview_prerequisite: str | None = None,
 ) -> Path:
     """Compile the real installer script, or a mutation of it, over a stand-in payload.
 
@@ -1581,6 +1594,10 @@ def _compile_installer(
     staging = tmp_path / f"stage-{version}"
     staging.mkdir(parents=True)
     shutil.copyfile(payload or os.environ["ComSpec"], staging / "Brain.exe")
+    shutil.copyfile(payload or os.environ["ComSpec"], staging / "Bridge.exe")
+    shutil.copyfile(ROOT / "packaging/windows/ensure-webview2.ps1", staging / "ensure-webview2.ps1")
+    if webview_prerequisite is not None:
+        (staging / "ensure-webview2.ps1").write_text(webview_prerequisite, encoding="utf-8")
     script = tmp_path / f"brain-{version}.iss"
     script.write_text(script_text, encoding="utf-8")
     output = tmp_path / f"compiled-{version}"
@@ -1627,6 +1644,46 @@ def _install_silently(installer: Path, prefix: Path, *arguments: str) -> int:
 def _recorded_platform_capability(prefix: Path) -> str | None:
     marker = prefix / "platform-capability.txt"
     return marker.read_text(encoding="utf-8").strip() if marker.is_file() else None
+
+
+def test_failed_webview_prerequisite_does_not_install_or_open_a_window(tmp_path: Path) -> None:
+    source = INSTALLER_SCRIPT.read_text(encoding="utf-8")
+    detection = "  if SharedWebView2Available() then\n    exit;"
+    assert detection in source
+    # Force the absent-runtime branch and return a failed prerequisite receipt.
+    # The real silent Inno flow must remain hidden and leave no application.
+    installer = _compile_installer(tmp_path, source.replace(detection, "", 1), version="1.0.0-webview",
+        webview_prerequisite="param([string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n")
+    prefix = tmp_path / "failed-prerequisite"
+    with visible_windows.recording_windows(lambda window: visible_windows.is_inno_setup_image(window.process_image)) as observed:
+        assert _install_silently(installer, prefix) != 0
+    assert not (prefix / "Bridge.exe").exists()
+    assert not (prefix / "unins000.exe").exists()
+    assert not [window for window in observed if window.steals_focus()]
+
+
+@pytest.mark.parametrize("runtime_available", [True, False])
+def test_delayed_complete_webview_receipt_is_accepted_without_a_window(tmp_path: Path, runtime_available: bool) -> None:
+    source = INSTALLER_SCRIPT.read_text(encoding="utf-8")
+    detection = "  if SharedWebView2Available() then\n    exit;"
+    assert detection in source
+    # A reader must tolerate an incomplete receipt. The real runtime recheck
+    # remains authoritative even after the helper reports success.
+    runtime_recheck = "    and SharedWebView2Available() then"
+    assert runtime_recheck in source
+    source = source.replace(detection, "", 1).replace(runtime_recheck, f"    and {str(runtime_available)} then", 1)
+    installer = _compile_installer(tmp_path, source, version="1.0.0-webview-delayed",
+        webview_prerequisite="param([string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '')\n"
+        "Start-Sleep -Milliseconds 1500\n[IO.File]::WriteAllText($ResultPath, '0')\nexit 0\n")
+    prefix = tmp_path / "successful-prerequisite"
+    try:
+        with visible_windows.recording_windows(lambda window: visible_windows.is_inno_setup_image(window.process_image)) as observed:
+            assert (_install_silently(installer, prefix) == 0) is runtime_available
+        assert (prefix / "Bridge.exe").is_file() is runtime_available
+        assert not [window for window in observed if window.steals_focus()]
+    finally:
+        if (prefix / "unins000.exe").is_file():
+            assert _run_silently(prefix / "unins000.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") == 0
 
 
 class _NCryptKeyName(ctypes.Structure):
@@ -1819,7 +1876,7 @@ def test_uninstall_closes_the_running_application_when_asked(tmp_path: Path) -> 
     )
     prefix = tmp_path / "installation"
     assert _install_silently(installer, prefix) == 0
-    running = subprocess.Popen([str(prefix / "Brain.exe")])
+    running = subprocess.Popen([str(prefix / "Bridge.exe")])
     try:
         assert _wait_for_running_application_mutex(True), "fixture never published it"
 
@@ -1857,7 +1914,7 @@ def test_uninstall_still_refuses_a_running_application_without_the_switch(
     prefix = tmp_path / "installation"
     assert _install_silently(installer, prefix) == 0
     installed = _installed_entry_count(prefix)
-    running = subprocess.Popen([str(prefix / "Brain.exe")])
+    running = subprocess.Popen([str(prefix / "Bridge.exe")])
     try:
         assert _wait_for_running_application_mutex(True), "fixture never published it"
 

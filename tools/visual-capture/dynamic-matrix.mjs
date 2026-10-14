@@ -1,12 +1,12 @@
 import { SURFACE_STATES } from '../../extension/qualification/surface-states.mjs';
 
-export const DYNAMIC_VIEWS = ['home', 'analytics', 'inbox', 'settings', 'passkey', 'graph', 'popup', 'setup', 'options', 'provisioning', 'production-boot'];
+export const DYNAMIC_VIEWS = ['home', 'analytics', 'inbox', 'settings', 'passkey', 'graph', 'popup', 'setup', 'options', 'production-boot'];
 export function dynamicCases(only = DYNAMIC_VIEWS, focused = false) {
   return only.flatMap(view => {
     if (!DYNAMIC_VIEWS.includes(view)) throw new Error('Unknown transition view');
     const widths = view === 'popup' ? [320, 390] : view === 'inbox' ? [390, 820, 1440]
       : ['passkey', 'production-boot'].includes(view) ? [390, 1366, 1440]
-        : ['setup', 'provisioning'].includes(view) ? [390, 480, 1440] : [390, 1440];
+        : view === 'setup' ? [390, 480, 1440] : [390, 1440];
     return widths.flatMap(width => ['light', 'dark'].flatMap(mode => [1, 1.25].flatMap(fontScale => ['reduce', 'no-preference']
       .filter(motion => !focused || (width === widths[0] && mode === 'light' && fontScale === 1 && motion === 'reduce'))
       .map(motion => ({ view, width, mode, fontScale, motion })))));
@@ -30,17 +30,7 @@ export function dynamicSequence(view, width) {
     for (const value of [null, 0, Number.MAX_SAFE_INTEGER]) add(`preview-counts:${value ?? 'null'}`);
     return steps;
   }
-  if (view === 'production-boot') return ['delayed-renderer-and-fonts', 'request-error:Sign in with passkey', 'request-error:Set up a passkey'];
-  if (view === 'provisioning') {
-    for (const flag of ['malformed', 'expired', 'unavailable', 'identityUnavailable']) add(`controller:${flag}`, `controller:${flag}:recovery`);
-    for (const stage of ['needs_terms', 'needs_full', 'needs_site_access', 'needs_account', 'ready_to_pair', 'paired']) add(`extension:${stage}`);
-    add('extension:missing', 'invalid-code', 'valid-code', 'claim:pending', 'claim:confirmed');
-    for (const identity of ['absent', 'changed', 'present']) add(`identity:${identity}`);
-    add('account:confirm', 'recovery:open', 'recovery:close');
-    for (const reason of ['size', 'encoding', 'profile', 'schema', 'device', 'consumed', 'binding_acquisition_unavailable', 'hosted_origin_unavailable', 'hosted_unavailable', 'installation_key_unavailable', 'membership_reference_unavailable', 'candidate_resolution_conflict', 'grant_verification_refused', 'claim_already_consumed', 'claim_refused', 'incomplete_grant_set', 'membership_refresh_unavailable', 'unknown']) add(`approval:refusal:${reason}`);
-    add('approval:pending', 'finalization:pending', 'finalization:completed', 'finalization:response-lost-reconciled');
-    return steps;
-  }
+  if (view === 'production-boot') return ['delayed-renderer-and-fonts', 'request-error:Sign in with passkey', 'request-error:Create passkey', 'session-status-unavailable'];
   add('loading');
   if (view === 'passkey') {
     for (const action of ['Sign in with passkey', 'Set up a passkey']) for (const outcome of ['NotAllowedError', 'AbortError', 'Error', 'success']) add(`${action}:${outcome}:pending`, `${action}:${outcome}`);
@@ -58,14 +48,14 @@ export function dynamicSequence(view, width) {
   for (const state of ['fresh', 'syncing', 'populated', 'fresh', 'populated']) add(`snapshot:${state}`);
   // The initial settings requests follow the mounted section order. The later
   // response-order matrix still exercises all 24 permutations independently.
-  const pending = view === 'home' ? ['activation.readiness'] : view === 'inbox' ? ['message.getPage'] : ['pairing.pins', 'activation.readiness', 'history.get', 'vault.get'];
+  const pending = view === 'home' ? ['onboarding.readiness'] : view === 'inbox' ? ['message.getPage'] : ['pairing.pins', 'history.get', 'vault.get', 'onboarding.readiness'];
   for (const key of pending) add(`response:${key}`);
   for (const state of ['reconnecting', 'disconnected', 'connected', 'error', 'connected']) add(`bridge:${state}`, `grace:${state}:2999`, `grace:${state}:3000`);
   if (view === 'inbox') add('message:pending', 'message:error');
   if (view === 'settings') {
-    const keys = ['pairing.pins', 'history.get', 'activation.readiness', 'vault.get'];
-    for (const order of permutations(keys)) for (const key of order) add(`response-order:${order.join(',')}:${key}`);
-    for (const key of keys) add(`response-error:${key}`);
+    const keys = ['pairing.pins', 'history.get', 'onboarding.readiness', 'vault.get'];
+    for (const order of permutations(keys)) for (const key of order) add(`fixture-api:response-order:${order.join(',')}:${key}`);
+    for (const key of keys) add(`fixture-api:response-error:${key}`);
     for (const capture of ['active', 'paused', 'off']) for (const access of ['granted', 'needs_approval', 'reload_required']) for (const permission of ['granted', 'missing']) for (const review of [false, true]) add(`browser:${capture}:${access}:${permission}:${review}`);
     for (const state of ['pending', 'delivered', '9999', '10000', 'authoritative', 'bridge-lost', 'bridge-lost-grace', 'bridge-return']) add(`control:${state}`);
     add('disconnect:open', 'disconnect:cancel');
@@ -89,14 +79,16 @@ export function dynamicSequence(view, width) {
     if (width < 1200) add('inbox:back');
   }
   if (view !== 'settings') return steps;
-  for (const desired of ['not_started', 'running', 'paused', 'revoked']) for (const effective of ['not_applied', desired]) add(`history:${desired}:${effective}`);
-  for (const authority of ['required', 'active', 'unavailable']) for (const admission of ['admitted', 'blocked']) add(`activation:${authority}:${admission}`);
-  for (const policy of ['disabled', 'finite', 'indefinite_until_delete']) for (const capable of [false, true]) for (const deletion of [null, 'pending', 'incomplete', 'complete']) add(`vault:${policy}:${capable}:${deletion}`);
-  add('archive:open', 'archive:invalid', 'archive:indefinite', 'archive:cancel', 'delete:open', 'delete:pending', 'delete:error', 'activation:open', 'activation:invalid', 'activation:cancel');
+  for (const state of ['not_applied', 'running']) add(`history:acknowledgement:${state}`);
+  for (const admission of ['blocked', 'admitted']) add(`activation:admission:${admission}`);
+  for (const desired of ['not_started', 'running', 'paused', 'revoked']) for (const effective of ['not_applied', desired]) add(`fixture-api:history:${desired}:${effective}`);
+  for (const authority of ['required', 'active', 'unavailable']) for (const admission of ['admitted', 'blocked']) add(`fixture-api:activation:${authority}:${admission}`);
+  for (const policy of ['disabled', 'finite', 'indefinite_until_delete']) for (const capable of [false, true]) for (const deletion of [null, 'pending', 'incomplete', 'complete']) add(`fixture-api:vault:${policy}:${capable}:${deletion}`);
+  add('archive:open', 'archive:invalid', 'archive:indefinite', 'archive:cancel', 'delete:open', 'delete:pending', 'delete:error');
+  for (const state of ['selection', 'waiting', 'review', 'uncertain', 'accepted', 'unavailable']) add('activation:' + state);
   for (const outcome of ['refusal', 'network', 'success']) for (const stage of ['open', 'pending', 'response', 'readiness']) add(`redemption:${outcome}:${stage}`);
   for (const outcome of ['failure', 'success']) { add(`export:${outcome}:pending`, `export:${outcome}:response`); for (const stage of ['open', 'pending', 'response']) add(`deletion:${outcome}:${stage}`); }
-  for (const stage of ['unavailable', 'needs_terms', 'paused', 'needs_full', 'needs_site_access', 'needs_account', 'ready_to_pair', 'pairing', 'paired']) add(`port:${stage}`);
-  add('pairing:open', 'pairing:pending', 'pairing:299999', 'pairing:300000');
-  for (const outcome of ['declined', 'cancelled', 'confirmed', 'refused']) add(`pairing:${outcome}:start`, `pairing:${outcome}:comparison`, `pairing:${outcome}:${['confirmed', 'refused'].includes(outcome) ? 'extension' : 'action'}`, `pairing:${outcome}:result`);
+  add('pairing:open', 'pairing:pending', 'pairing:before-expiry', 'pairing:expired');
+  for (const outcome of ['declined', 'cancelled', 'confirmed', 'refused']) add(`pairing:${outcome}:start`, `pairing:${outcome}:comparison`, `pairing:${outcome}:${['confirmed', 'refused'].includes(outcome) ? 'confirmation' : 'action'}`, `pairing:${outcome}:result`);
   return steps;
 }

@@ -1,4 +1,4 @@
-# Phase 2 workspace feasibility
+# Packaged workspace feasibility
 
 `workspace-feasibility.mjs` bundles the real `runtime/onboarding-workspace.mjs`
 coordinator with an explicit fixture adapter into a Manifest V3 extension. It

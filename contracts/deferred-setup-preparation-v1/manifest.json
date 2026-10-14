@@ -1,0 +1,46 @@
+{
+  "case_count": 147,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "819e8accc0a9cb080e37fcaa5d5e9e316e82a34123b873901d982046fd05c0f9",
+      "size": 18479
+    },
+    {
+      "path": "classification-cases.json",
+      "sha256": "8bd2d59cd47459649e405aea966f34d10f0bc18f04a3e3146d7f03b8a96e59f3",
+      "size": 14951
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "69d28825986d32759d322223047d7cabe6deeee7a3ad513e5acb3f168dbf4e30",
+      "size": 94821
+    },
+    {
+      "path": "scheduling-cases.json",
+      "sha256": "0f0abd63145d38918f1988faeea3a87c198a98503b9d132d10af7e2a955ee2a7",
+      "size": 1248
+    }
+  ],
+  "generator": "tools/generate_deferred_preparation_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0036-deferred-setup-milestone-preparation.md",
+  "inputs": [
+    {
+      "path": "catalog/deferred-setup-preparation-policy-v1.json",
+      "sha256": "069dee2373b9afe33c41a927f94f64f89c1cd1498a5500ee5b67cdc6f8834ade"
+    },
+    {
+      "path": "docs/adr/0036-deferred-setup-milestone-preparation.md",
+      "sha256": "fb577eb3e359a38d3caf7d038a1cedb7c3b7e13f679eb04e3860fe7442e61273"
+    },
+    {
+      "path": "tools/generate_deferred_preparation_vectors.py",
+      "sha256": "d9c1aaecbc41a64dad869e63f4fdb0e454a6712bd4343e53e38b01544f95c3bc"
+    }
+  ],
+  "policy": "urn:bridge-clean:onboarding-admission-policy:deferred-setup-preparation-v1",
+  "profile": "urn:bridge-clean:deferred-setup-preparation-vectors:v1",
+  "test_only": true,
+  "wire_profiles_unchanged": true
+}

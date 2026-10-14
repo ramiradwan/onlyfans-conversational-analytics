@@ -1,0 +1,66 @@
+{
+  "profile": "urn:bridge-clean:complimentary-onboarding-activation:v1",
+  "governing_adr": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+  "customer_session_max_seconds": 1800,
+  "action_receipt_max_seconds": 300,
+  "request_max_bytes": 2048,
+  "response_max_bytes": 4096,
+  "oversize_status": 413,
+  "oversize_reason": "invalid",
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "session_on_wire": false,
+  "eligibility": "server-qualified-exclusive-unconsumed-starter-grant",
+  "pilot_credit_cost": {
+    "minimum": 1,
+    "maximum": 1000000
+  },
+  "payment_required": false,
+  "caller_price_or_target": false,
+  "prepare_creates_authority": false,
+  "read_creates_authority": false,
+  "confirmation": "one-explicit-commercial-acceptance",
+  "atomic_commit": [
+    "current-session-and-authority",
+    "exact-pilot-eligibility",
+    "exact-terms-and-target",
+    "exchange",
+    "initial-redemption-authorization",
+    "both-idempotent-results",
+    "intent-consumption",
+    "audit"
+  ],
+  "lost_result": "same-operation-noncreating-read-no-automatic-mutation",
+  "response_authority": "unchanged-opaque-redemption-continuation",
+  "paid_exchange_policy": "unchanged",
+  "delegation_policy": "unchanged",
+  "reissue_policy": "unchanged",
+  "refusal_status": {
+    "invalid": 400,
+    "authentication_required": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "confirmation_required": 409,
+    "expired": 410,
+    "not_eligible": 403,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "messages": {
+    "prepare-request": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+    "prepare-response": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+    "confirm-request": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+    "confirm-response": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+    "read-request": "schemas/complimentary-activation/v1/read-request.schema.json",
+    "read-response": "schemas/complimentary-activation/v1/read-response.schema.json",
+    "prepared": "schemas/complimentary-activation/v1/prepared.schema.json",
+    "committed": "schemas/complimentary-activation/v1/committed.schema.json",
+    "error": "schemas/complimentary-activation/v1/error.schema.json"
+  },
+  "retention": {
+    "working": "commercial-exchange-working-state",
+    "audit": "security-audit",
+    "committed": "commercial-authority-durable",
+    "request_response_logging": false
+  }
+}

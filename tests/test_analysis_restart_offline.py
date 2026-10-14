@@ -28,6 +28,7 @@ from app.security.capability_license_verifier import (
 )
 from app.security.grant_types import ACCOUNT_AUTHORITY_GRANT_TYPES
 from app.security.runtime_policy import AuthContext
+from app.security.runtime_policy import RuntimeAuthorizationDenied
 
 import pytest
 
@@ -194,3 +195,29 @@ def test_restart_offline_reconstructs_analysis_policy_from_durable_authority(
     pipeline = LicensedAnalyticsPipeline(_UnusedSource())
     assert pipeline.build_candidate(ACCOUNT) == "candidate-built"
     assert calls == [ACCOUNT]
+
+
+def test_unrelated_session_change_revalidates_existing_analysis_admission(tmp_path):
+    auth_path = tmp_path / "auth.sqlite3"
+    _seed_durable_authority(auth_path)
+    store = SQLiteAuthenticationStore(auth_path)
+    from app.security.analysis_authorization import build_current_analysis_policy
+
+    clear_analysis_policies()
+    try:
+        admitted = build_current_analysis_policy(store, AuthContext(PRINCIPAL, ACCOUNT, "agent"))
+        store.close_companion_session("unrelated-session")
+        assert not store.runtime_policy_is_current(admitted)
+        refreshed = require_cached_analysis_run(store, ACCOUNT)
+        assert refreshed.authorization_epoch != admitted.authorization_epoch
+        assert refreshed.identity_authority == admitted.identity_authority
+        assert refreshed.commercial_authority == admitted.commercial_authority
+        assert store.runtime_policy_is_current(refreshed)
+
+        store.revoke_authorized_account_binding(ACCOUNT)
+        with pytest.raises(RuntimeAuthorizationDenied):
+            require_cached_analysis_run(store, ACCOUNT)
+        with pytest.raises(RuntimeAuthorizationDenied, match="admission is required"):
+            require_cached_analysis_run(store, ACCOUNT)
+    finally:
+        clear_analysis_policies()

@@ -47,7 +47,7 @@ const messageApi: MessageApi = {
 afterEach(() => cleanup());
 
 describe('OperatorInboxView setup state', () => {
-  it('keeps recent conversations visible and explains how to include older messages when history is off', () => {
+  it('keeps recent conversations visible without assuming why history has not started', () => {
     const store = createBridgeTransportStore();
     store.bindAccount(ACCOUNT_ID);
     store.applySnapshot({
@@ -148,10 +148,9 @@ describe('OperatorInboxView setup state', () => {
     );
 
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Message history is off');
-    expect(alert.textContent).toContain(
-      'Recent conversations are shown. Turn on message history in Settings to include older messages.',
-    );
+    expect(alert.textContent).toContain('History not started');
+    expect(alert.textContent).toContain('Recent conversations are shown.');
+    expect(alert.textContent).not.toMatch(/is off|Turn on|Settings|will/iu);
     expect(
       within(screen.getByRole('list', { name: 'Conversation list' }))
         .getByRole('button', { name: /Conversation with Recent Fan/ }),

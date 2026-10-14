@@ -41,12 +41,27 @@ export function openSurface(surface, section = '') {
 export function createSurfaceClient(onChange, onError) {
   const model = {
     status: null, legal: null, pairing: { state: 'unpaired', comparison_code: null, owns_attempt: false, desktop_attempt: false, desktop_control: false },
-    desktopRuntimeReachable: false, desktopLinked: false, analysisReadiness: unknownReadiness(),
+    desktopRuntimeReachable: false, desktopLinked: false, connectionRecovery: 'idle',
+    analysisReadiness: unknownReadiness(),
     config: { dashboard_url: `${LOCAL_SERVICE_ORIGIN}/`, history_settings_url: `${LOCAL_SERVICE_ORIGIN}/settings`,
       desktop_app_download_url: customerReleaseConfig.desktop_app_download_url },
   };
   let port = null, stopped = false, refreshPromise = null, readinessTimer = null;
   let reconnectTimer = null, readinessPending = false;
+  let reconnectAttempts = 0, wakeAt = 0;
+  const reconnectDelays = [200, 500, 1000];
+  function reconnect() {
+    if (stopped || reconnectTimer !== null) return;
+    if (reconnectAttempts >= reconnectDelays.length) {
+      model.connectionRecovery = 'exhausted';
+      emit(); return;
+    }
+    model.connectionRecovery = 'retrying';
+    emit();
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null; connectPort(); void refresh();
+    }, reconnectDelays[reconnectAttempts++]);
+  }
   let pendingCommand = null;
   const emit = () => { if (!stopped) onChange(model); };
   function resetReadiness() {
@@ -62,16 +77,21 @@ export function createSurfaceClient(onChange, onError) {
       model.analysisReadiness = { commercial_authority: 'unavailable', analysis_admission: 'blocked' };
       // A replacement port cannot accept a late result from the timed-out request.
       const expired = port; port = null; expired?.disconnect(); readinessPending = false;
-      emit(); reconnectTimer = setTimeout(connectPort, 1000);
+      emit(); reconnect();
     }, 12000);
     post('readiness');
   }
   function connectPort() {
     if (stopped || port) return;
-    const connected = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
+    let connected;
+    try { connected = chrome.runtime.connect({ name: 'ofca.companion.pairing' }); }
+    catch { reconnect(); return; }
     port = connected;
     connected.onMessage.addListener((value) => {
       if (stopped || port !== connected) return;
+      if (value?.type !== 'pairing_command_result') {
+        reconnectAttempts = 0; model.connectionRecovery = 'idle';
+      }
       if (value?.type === 'pairing_command_result') {
         if (pendingCommand?.port === connected && value.command === pendingCommand.command) {
           const waiting = pendingCommand; pendingCommand = null; clearTimeout(waiting.timer);
@@ -105,11 +125,11 @@ export function createSurfaceClient(onChange, onError) {
       port = null; resetReadiness(); cancelPendingCommand();
       model.pairing = { state: 'unavailable', comparison_code: null, owns_attempt: false, desktop_attempt: false, desktop_control: false };
       model.desktopRuntimeReachable = false;
-      emit(); reconnectTimer = setTimeout(() => { connectPort(); void refresh(); }, 1000);
+      reconnect();
     });
   }
   function post(type) {
-    if (!port) throw new NoticeError('The extension is reconnecting. Try again.');
+    if (!port) throw new NoticeError('The extension is not connected.');
     port.postMessage({ type });
   }
   function command(type) {
@@ -119,7 +139,7 @@ export function createSurfaceClient(onChange, onError) {
       waiting.timer = setTimeout(() => {
         if (pendingCommand === waiting) pendingCommand = null;
         waiting.port.disconnect();
-        reject(new NoticeError('The connection change could not be confirmed. Check its status before trying again.'));
+        reject(new NoticeError('The connection change could not be confirmed.'));
       }, 12000);
       pendingCommand = waiting;
       try { post(type); } catch (error) { clearTimeout(waiting.timer); pendingCommand = null; reject(error); }
@@ -139,10 +159,10 @@ export function createSurfaceClient(onChange, onError) {
         || status.delivery?.transport_state !== 'authenticated') resetReadiness();
       model.status = status; model.legal = legal;
       model.desktopLinked = await desktopLinked();
-      // An open desktop page proves the desktop app is running; otherwise probe
-      // once for this refresh. Refreshes are event-driven, never on a timer.
+      // A page or port is not evidence that Brain is running. Only the
+      // authenticated companion state can confirm readiness.
       model.desktopRuntimeReachable = isFullFamilyStatus(status)
-        ? model.desktopLinked || await probeDesktopRuntime() : false;
+        && status.brain_reachable === true && status.delivery?.transport_state === 'authenticated';
       if (!model.desktopRuntimeReachable) resetReadiness();
       if (port && (status.consent.mode === 'full'
         || (status.consent.mode === 'paused' && status.consent.resume_mode === 'full'))) post('status');
@@ -158,8 +178,25 @@ export function createSurfaceClient(onChange, onError) {
     if (!refreshPromise) refreshPromise = readCurrent().finally(() => { refreshPromise = null; });
     return refreshPromise;
   }
-  async function sync() { await refreshPromise; return refresh(); }
+  async function sync() {
+    await refreshPromise;
+    if (model.connectionRecovery === 'exhausted' && !port) {
+      reconnectAttempts = 0;
+      model.connectionRecovery = 'retrying';
+      emit();
+      connectPort();
+    }
+    return refresh();
+  }
   const visible = () => { if (document.visibilityState === 'visible') void refresh(); };
+  const wake = () => {
+    if (document.visibilityState !== 'visible' || Date.now() - wakeAt < 1000) return;
+    wakeAt = Date.now();
+    if (!port && reconnectTimer === null) {
+      reconnectAttempts = 0; model.connectionRecovery = 'retrying'; emit(); connectPort();
+    }
+    visible();
+  };
   const changed = (changes, area) => {
     if (area === 'local' || (area === 'session' && Object.hasOwn(changes, DESKTOP_LINK_STORAGE_KEY))) visible();
   };
@@ -180,15 +217,15 @@ export function createSurfaceClient(onChange, onError) {
     } catch { /* Keep the pinned same-computer destinations. */ }
     connectPort(); await refresh();
     if (stopped) return;
-    document.addEventListener('visibilitychange', visible);
-    window.addEventListener('focus', visible);
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
     chrome.storage.onChanged.addListener(changed);
     window.addEventListener('pagehide', stop, { once: true });
   }
   function stop() {
     stopped = true; clearTimeout(reconnectTimer); clearTimeout(readinessTimer);
     port?.disconnect(); port = null; cancelPendingCommand();
-    document.removeEventListener('visibilitychange', visible); window.removeEventListener('focus', visible);
+    document.removeEventListener('visibilitychange', wake); window.removeEventListener('focus', wake);
     chrome.storage.onChanged.removeListener(changed);
   }
   return { model, start, stop, refresh, sync, post, command };

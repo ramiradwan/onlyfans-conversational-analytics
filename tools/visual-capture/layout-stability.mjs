@@ -35,7 +35,7 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'narrow', width: 390, height: 844 },
 ];
-/** A laptop window too short to fit the passkey error below the card without moving the card. */
+/** A short laptop window that must keep passkey recovery reachable by scrolling. */
 const SHORT_VIEWPORT = { name: 'short', width: 1366, height: 600 };
 const COLOR_CASES = [
   { name: 'no saved mode, light system', colorScheme: 'light', savedMode: null },
@@ -70,7 +70,7 @@ function observe(keySelector) {
     .map((face) => ({ family: face.family.replace(/"/g, ''), range: face.unicodeRange, status: face.status }))
     .filter((face) => /^(Inter|Space Grotesk) Variable$/.test(face.family) && face.range.startsWith('U+0-FF,'))
     .map(({ family, status }) => ({ family, status }));
-  window.__stability = { shifts: [], firstText: null };
+  window.__stability = { shifts: [], firstText: null, fontWaitObserved: false };
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
       window.__stability.shifts.push({
@@ -86,15 +86,15 @@ function observe(keySelector) {
       });
     }
   }).observe({ type: 'layout-shift', buffered: true });
-  const watcher = new MutationObserver(() => {
-    if (!document.getElementById('root')?.firstElementChild) return;
-    watcher.disconnect();
-    // The second callback runs after the first frame that laid out the app's text.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      window.__stability.firstText = { at: Math.round(performance.now()), faces: brandFaces() };
-    }));
-  });
-  watcher.observe(document, { childList: true, subtree: true });
+  const firstTaskFrame = () => {
+    const task = document.querySelector('[data-visual="passkey-card"]');
+    if (!task) { requestAnimationFrame(firstTaskFrame); return; }
+    const fontState = task.closest('[data-passkey-font]')?.dataset.passkeyFont;
+    if (fontState === 'loading') window.__stability.fontWaitObserved = true;
+    if (fontState === 'loading' || getComputedStyle(task).visibility !== 'visible') { requestAnimationFrame(firstTaskFrame); return; }
+    window.__stability.firstText = { at: Math.round(performance.now()), faces: brandFaces(), fontState };
+  };
+  requestAnimationFrame(firstTaskFrame);
 }
 
 /** Page init script: preloads the given font files as soon as the document has a head. */
@@ -138,20 +138,6 @@ async function brandFontUrls(context, base) {
   } finally {
     await page.close();
   }
-}
-
-/** Space between the passkey card and the end of the main area's content box. */
-function roomBelowCard() {
-  const main = document.querySelector('main');
-  const card = document.querySelector('[data-visual="passkey-card"]');
-  const end = main.getBoundingClientRect().bottom - Number.parseFloat(getComputedStyle(main).paddingBottom);
-  return end - card.getBoundingClientRect().bottom;
-}
-
-/** Height the passkey error takes below the card, including its top margin. */
-function errorHeight() {
-  const alert = document.querySelector('[role="alert"]');
-  return alert.getBoundingClientRect().height + Number.parseFloat(getComputedStyle(alert).marginTop);
 }
 
 async function settle(page) {
@@ -200,7 +186,7 @@ async function renderProductionIndex() {
   return readFile(file, 'utf8');
 }
 
-async function openBoot(browser, indexHtml, { viewport, colorScheme = 'light', savedMode = null, holdScripts = false, fontDelay = 0 }) {
+async function openBoot(browser, indexHtml, { viewport, colorScheme = 'light', savedMode = null, holdScripts = false, fontDelay = 0, fontFailure = false }) {
   const context = await browser.newContext({ viewport, colorScheme, deviceScaleFactor: 1, locale: 'en-US', reducedMotion: 'reduce' });
   const page = await context.newPage();
   let release = () => {};
@@ -213,6 +199,7 @@ async function openBoot(browser, indexHtml, { viewport, colorScheme = 'light', s
     }
     const file = join(dist, decodeURIComponent(pathname.slice('/static/dist/'.length)));
     if (held && file.endsWith('.js')) await held;
+    if (fontFailure && file.endsWith('.woff2')) return route.fulfill({ status: 404 });
     if (fontDelay && file.endsWith('.woff2')) await new Promise((wait) => setTimeout(wait, fontDelay));
     const body = await readFile(file).catch(() => null);
     if (!body) return route.fulfill({ status: 404 });
@@ -251,21 +238,23 @@ async function measureBoot(browser) {
     }
   }
   for (const viewport of VIEWPORTS) {
-    for (const fontDelay of [0, SLOW_FONT_MS]) {
-      const scenario = `boot, passkey, ${viewport.name}${fontDelay ? `, fonts delayed ${fontDelay} ms` : ''}`;
-      const { context, page } = await openBoot(browser, indexHtml, { viewport, fontDelay });
+    for (const { fontDelay = 0, fontFailure = false } of [{}, { fontDelay: SLOW_FONT_MS }, { fontFailure: true }, { fontDelay: 6500 }]) {
+      const scenario = `boot, passkey, ${viewport.name}${fontFailure ? ', fonts unavailable' : fontDelay ? `, fonts delayed ${fontDelay} ms` : ''}`;
+      const { context, page } = await openBoot(browser, indexHtml, { viewport, fontDelay, fontFailure });
       try {
         await page.goto(`${ORIGIN}/`);
         await page.waitForFunction(() => window.__stability.firstText);
         await settle(page);
-        const { shifts, firstText } = await page.evaluate(() => window.__stability);
+        const { shifts, firstText, fontWaitObserved } = await page.evaluate(() => window.__stability);
         const loading = firstText.faces.filter((face) => face.status === 'loading');
-        if (fontDelay && loading.length === 0) {
-          throw new Error('text painted with web fonts already loaded, so the fallback faces were not exercised');
+        const fallback = fontFailure || fontDelay > 5000;
+        if (firstText.fontState !== (fallback ? 'fallback' : 'ready')) throw new Error('The first visible task used the wrong font state');
+        if (fontDelay && !fontWaitObserved) throw new Error('The delayed font did not exercise the hidden task wait');
+        if (!fallback && loading.length) throw new Error('The task appeared before its bundled typography loaded');
+        if (fallback && !await page.locator('[data-passkey-font="fallback"] h1').evaluate(node => getComputedStyle(node).fontFamily.includes('Arial'))) {
+          throw new Error('Failed or late fonts did not retain pinned fallback typography');
         }
-        if (!fontDelay) {
-          record(scenario, 'web fonts loading at first text paint', loading.length, loading.length ? 'warn' : 'pass', loading.length ? { loading } : undefined);
-        }
+        record(scenario, 'first visible task font state', firstText.fontState, 'pass');
         recordShifts(scenario, shifts, fontDelay ? FONT_SWAP_SHIFT : LAYOUT_SHIFT);
       } catch (error) {
         record(scenario, 'error', error.message.split('\n')[0], 'fail');
@@ -313,14 +302,16 @@ async function measureHarness(browser) {
       try {
         page = await open(SCREENS.find((screen) => screen.workspace === 'passkey' && screen.state === 'resting'));
         await page.evaluate(() => { window.__stability.shifts = []; });
-        const room = await page.evaluate(roomBelowCard);
         // The error arrives after the system passkey prompt closes, so the click is dispatched
         // without user input and any resulting shift counts.
         await page.getByRole('button', { name: 'Sign in with passkey' }).evaluate((button) => button.click());
         await page.getByRole('alert').waitFor({ state: 'visible' });
         await settle(page);
-        if (viewport === SHORT_VIEWPORT && await page.evaluate(errorHeight) <= room) {
-          throw new Error('the error fit below the card, so the short window did not exercise it');
+        if (viewport === SHORT_VIEWPORT) {
+          const alert = page.getByRole('alert');
+          await alert.scrollIntoViewIfNeeded();
+          const bounds = await alert.boundingBox();
+          if (!bounds || bounds.y < 0 || bounds.y + bounds.height > viewport.height) throw new Error('Passkey recovery is unreachable in the short window');
         }
         recordShifts(scenario, await page.evaluate(() => window.__stability.shifts));
       } catch (error) {

@@ -1,10 +1,15 @@
 import { openCreatorAccount } from './ui/actions.mjs';
 import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
 import { registerDesktopPort } from './runtime/desktop-port.mjs';
-import { probeDesktopRuntime } from './runtime/customer-journey.mjs';
-import { applyControl, createSurfaceReporter } from './runtime/browser-surface.mjs';
+import { createBrowserTaskOwner } from './runtime/browser-task-owner.mjs';
+import { createBrowserAuth } from './runtime/browser-auth.mjs';
+import { createPairedBrowserTasks } from './runtime/paired-browser-tasks.mjs';
+import { onboardingHostedOrigin } from './runtime/onboarding-release-config.mjs';
+import { registerOnboardingWorkspace } from './runtime/onboarding-entry.mjs';
+import { registerSetupTransfer } from './runtime/setup-transfer.mjs';
+import { applyControl, openBrowserControl, createSurfaceReporter } from './runtime/browser-surface.mjs';
 import { createReadOnlyAgentRuntime } from './transport/read-only-agent-runtime.mjs';
-import { createChromeBrowserSigningProvider } from 'local-authenticated-read-connector/browser-signing';
+import { createObserverSigningProvider } from './runtime/observer-signer.mjs';
 import { ReadOnlyAgentWebSocketClient } from './transport/read-only-agent-websocket.mjs';
 import { createCompanionClient } from './runtime/companion-client.mjs';
 import { createProvisioningCompanionGuard } from './runtime/provisioning-companion-guard.mjs';
@@ -34,7 +39,9 @@ export const companionClient = createCompanionClient({
   accountDatabaseName,
   allowsFull: () => consentController?.state.mode === 'full',
   allowsControl: () => consentController?.state.mode === 'paused' && consentController.state.resume_mode === 'full',
-  onControl: (action) => applyControl(consentController, action),
+  onControl: (action) => action.startsWith('browser.open.')
+    ? openBrowserControl(action, { openSurface, openCreatorAccount }) : applyControl(consentController, action),
+  onBrowserTask: (payload, controls) => pairedBrowserTasks.run(payload, controls),
   detectedAccountId: () => provisioningIdentityBridge.currentAccountId(),
 });
 export const chromeAdapter = companionClient.adapter;
@@ -45,6 +52,7 @@ export const agentRuntime = createReadOnlyAgentRuntime({
   chromeAdapter,
   chromeApi: chrome,
   configHttpFactory: () => companionClient.configAdapter,
+  onHistoryStateChanged: () => surfaceReporter.changed(),
   catchupRpc: (...args) => companionClient.configAdapter.catchupRpc(...args),
   captureState: () => consentController.captureState(),
   transportFactory: (options) => new ReadOnlyAgentWebSocketClient({
@@ -55,7 +63,7 @@ export const agentRuntime = createReadOnlyAgentRuntime({
     onIngestAcknowledged: (...values) => { options.onIngestAcknowledged?.(...values); signalDeliveryProgress(); },
     onIngestRejected: (...values) => { options.onIngestRejected?.(...values); signalDeliveryProgress(); },
   }),
-  signerFactory: (options) => createChromeBrowserSigningProvider(options),
+  signerFactory: (options) => createObserverSigningProvider(options, { observer: consentController.observer }),
   onStartupError: () => {
     lastStartupErrorCode = 'startup_failed';
     console.error('[Conversation Analytics] local Agent startup failed; a later consented wake will retry');
@@ -66,18 +74,10 @@ export const controlQueue = new SerialExecutor();
 
 let consentController = null;
 export const provisioningIdentityBridge = createProvisioningIdentityBridge({
-  allowedOrigins: [LOCAL_SERVICE_ORIGIN],
   currentConsent: () => consentController?.state,
   ensureReady: () => consentController.initialize(),
   allowsIdentity: () => consentController?.state.mode === 'full'
     && ['identity', 'full'].includes(consentController.phase),
-  allowsExternalIdentity: async () => {
-    if (consentController?.state.mode !== 'full' || consentController.phase !== 'identity') return false;
-    // External queries already hold the identity queue. Full UI status also
-    // reads that queue, so admission must inspect only the persisted pairing.
-    const paired = await companionClient.hasSavedPairing();
-    return !paired && consentController.state.mode === 'full' && consentController.phase === 'identity';
-  },
 });
 export const provisioningCompanionGuard = createProvisioningCompanionGuard({
   chromeApi: chrome,
@@ -248,7 +248,10 @@ companionClient.registerPopup({
 companionClient.onRevoked(() => consentController.reconcile());
 void consentController.initialize().catch(() => undefined);
 
-const openSurface = createSurfaceOpener(chrome);
+export const onboarding = registerOnboardingWorkspace({ chromeApi: chrome, consentController, identityBridge: provisioningIdentityBridge });
+export const setupTransfer = registerSetupTransfer({ chromeApi: chrome, workspace: onboarding.workspace, identityBridge: provisioningIdentityBridge });
+const openLegacySurface = createSurfaceOpener(chrome);
+const openSurface = (request) => request.surface === 'setup' ? onboarding.open(request) : openLegacySurface(request);
 registerSurfaceNavigation(chrome, openSurface);
 
 // The same change events feed open pages, the desktop port, and the browser
@@ -260,9 +263,11 @@ const surfaceReporter = createSurfaceReporter({
   readState: async () => ({
     consent: await consentController.status(),
     legal: await legalActivationController.status(),
+    historyErrorCode: agentRuntime.history?.historyErrorCode?.() ?? null,
   }),
 });
 const signalSurfaces = () => { companionClient.notifySurfaces(); surfaceReporter.changed(); };
+consentController.subscribe(signalSurfaces);
 chrome.storage.onChanged.addListener((_changes, area) => { if (area === 'local') surfaceReporter.changed(); });
 void consentController.initialize().then(() => surfaceReporter.changed(), () => undefined);
 chrome.permissions?.onAdded?.addListener(signalSurfaces);
@@ -277,21 +282,19 @@ chrome.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
 });
 provisioningIdentityBridge.onAccountChange(signalSurfaces);
 
+export const browserAuth = createBrowserAuth({ chromeApi: chrome, hostedOrigin: onboardingHostedOrigin });
+export const browserTaskOwner = createBrowserTaskOwner({ chromeApi: chrome, onboarding, consentController,
+  legalActivationController, identityBridge: provisioningIdentityBridge, openCreatorAccount, authentication: browserAuth });
+export const pairedBrowserTasks = createPairedBrowserTasks({ owner: browserTaskOwner, authentication: browserAuth });
 export const desktopPort = registerDesktopPort({
   chromeApi: chrome,
+  authentication: browserAuth,
   companion: companionClient,
-  readState: async () => ({
-    consent: await consentController.status(),
-    legal: await legalActivationController.status(),
-    pairing: await companionClient.status(),
-  }),
-  // Each step opens the one extension page that owns it. Site access and the
-  // history permission need a click there because Chrome requires the gesture.
-  openStep: (step, { anchorTab }) => step === 'creator' ? openCreatorAccount() : openSurface(['setup', 'access'].includes(step)
-    ? { surface: 'setup', section: 'desktop', presentation: 'window', anchorTab }
-    : { surface: 'options', section: step === 'history' ? 'history' : 'connection', presentation: 'window', anchorTab }),
+  owner: browserTaskOwner,
   onPaired: () => consentController.reconcile(),
   changeSources: [
+    changed => consentController.subscribe(changed),
+    changed => provisioningIdentityBridge.onAccountChange(changed),
     (changed) => {
       const listener = (_changes, area) => { if (area === 'local') changed(); };
       chrome.storage.onChanged.addListener(listener);
@@ -305,13 +308,3 @@ export const desktopPort = registerDesktopPort({
   ],
 });
 desktopPort.register();
-
-// Installed after the desktop app: open setup on the desktop-guided path. It
-// still asks for every choice; it only skips the Preview-first framing.
-chrome.runtime.onInstalled?.addListener(({ reason } = {}) => {
-  if (reason !== 'install') return;
-  void probeDesktopRuntime().then((present) => {
-    if (present) return openSurface({ surface: 'setup', section: 'desktop' });
-    return undefined;
-  }).catch(() => undefined);
-});

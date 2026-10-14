@@ -213,7 +213,8 @@ describe('OperatorInboxView summary and REST-page integration', () => {
 
     renderInbox(store, apiFor({}));
 
-    expect(screen.getByText('No conversations yet')).toBeTruthy();
+    expect(screen.getByText('No conversations to show')).toBeTruthy();
+    expect(screen.queryByText(/read model|New chats will appear/iu)).toBeNull();
     expect(screen.getByText('Select a conversation')).toBeTruthy();
   });
 
@@ -371,7 +372,13 @@ describe('OperatorInboxView summary and REST-page integration', () => {
 });
 
 describe('OperatorInboxView projection reason presentation', () => {
-  it('replaces the raw projection_missing reason code with friendly text', () => {
+  it.each([
+    'projection_missing',
+    'projection_activation_pending',
+    'projection_lag',
+    'projection_degraded',
+    'projection_exploded_unexpectedly',
+  ])('states availability without inventing active work for %s', (reason) => {
     const store = createBridgeTransportStore();
     store.bindAccount(ACCOUNT_ID);
     store.applySnapshot({
@@ -381,35 +388,161 @@ describe('OperatorInboxView projection reason presentation', () => {
         canonical_revision: 7,
         projected_revision: 0,
         projected_at: null,
-        reason: 'projection_missing',
+        reason,
       },
     });
 
     renderInbox(store, apiFor({}));
 
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Getting your conversations ready');
-    expect(alert.textContent).not.toContain('projection_missing');
+    expect(alert.textContent).toBe('Conversations unavailable');
+    expect(alert.textContent).not.toContain(reason);
+    expect(screen.queryByRole('button', { name: /Check|Retry|Connect/iu })).toBeNull();
   });
 
-  it('falls back to a generic message for an unrecognized projection reason code', () => {
+  it('does not promise a completion time or automatic recovery for a cold read', () => {
     const store = createBridgeTransportStore();
     store.bindAccount(ACCOUNT_ID);
-    store.applySnapshot({
-      ...snapshot([]),
-      projection: {
-        status: 'unavailable',
-        canonical_revision: 7,
-        projected_revision: 0,
-        projected_at: null,
-        reason: 'projection_exploded_unexpectedly',
-      },
+    const messageApi = apiFor({});
+    store.beginResync();
+
+    renderInbox(store, messageApi);
+
+    expect(screen.getByRole('alert').textContent).toBe('Refreshing conversations');
+    act(() => store.markDisconnected());
+    expect(screen.getByRole('alert').textContent).toBe('Conversations unavailable');
+    expect(messageApi.getPage).not.toHaveBeenCalled();
+  });
+
+  it('retains the loaded conversation through refresh and connected degradation without assuming a reconnect', async () => {
+    const preview = message('retained-preview', 'Retained preview', AS_OF);
+    const store = createBridgeTransportStore();
+    store.bindAccount(ACCOUNT_ID);
+    store.setConnection('connected');
+    store.applySnapshot(snapshot([
+      conversation('retained', 'Retained Fan', AS_OF, preview),
+    ]));
+    const messageApi = apiFor({
+      retained: page('retained', [message('retained-body', 'Retained message', AS_OF)]),
     });
+    renderInbox(store, messageApi);
+    expect(await screen.findByText('Retained message')).toBeTruthy();
 
-    renderInbox(store, apiFor({}));
+    act(() => store.beginResync());
+    const refreshing = screen.getByRole('alert');
+    expect(refreshing.textContent).toContain('Refreshing conversations');
+    expect(refreshing.textContent).toContain('Showing your last conversations.');
+    expect(screen.getByText('Retained message')).toBeTruthy();
 
+    act(() => {
+      store.markDisconnected();
+      store.setConnection('connected');
+    });
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).not.toContain('projection_exploded_unexpectedly');
-    expect(alert.textContent).toContain('This needs attention');
+    expect(alert.textContent).toContain('Updates unavailable');
+    expect(alert.textContent).toContain('Showing your last conversations.');
+    expect(alert.textContent).not.toMatch(/reconnecting|paused|until|will/iu);
+    expect(screen.getByText('Retained message')).toBeTruthy();
+    expect(messageApi.getPage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['pending', 'degraded'] as const)(
+    'does not claim retained conversations for an empty %s projection',
+    (status) => {
+      const store = createBridgeTransportStore();
+      store.bindAccount(ACCOUNT_ID);
+      const ready = snapshot([]);
+      store.applySnapshot({
+        ...ready,
+        coverage: { ...ready.coverage, status: 'complete', phase: 'complete' },
+        projection: { ...ready.projection, status, projected_revision: 6, reason: 'projection_lag' },
+      });
+      renderInbox(store, apiFor({}));
+
+      expect(screen.getByRole('alert').textContent).toBe(
+        'Updates unavailable',
+      );
+      expect(screen.getByText('No conversations to show')).toBeTruthy();
+    },
+  );
+
+  it.each(['pending', 'degraded'] as const)(
+    'describes the actual retained conversation for a %s projection without claiming an update is running',
+    async (status) => {
+      const store = createBridgeTransportStore();
+      store.bindAccount(ACCOUNT_ID);
+      const preview = message('pending-preview', 'Pending preview', AS_OF);
+      const ready = snapshot([conversation('pending', 'Pending Fan', AS_OF, preview)]);
+      ready.coverage = {
+        ...ready.coverage, status: 'complete', phase: 'complete', complete_conversations: 1,
+        complete_as_of: AS_OF, reason: null,
+      };
+      store.applySnapshot(ready);
+      const messageApi = apiFor({
+        pending: page('pending', [message('pending-body', 'Retained conversation body', AS_OF)]),
+      });
+      renderInbox(store, messageApi);
+      expect(await screen.findByText('Retained conversation body')).toBeTruthy();
+
+      act(() => store.applySnapshot({
+        ...ready,
+        projection: { ...ready.projection, status, canonical_revision: 8, reason: 'projection_lag' },
+      }));
+      const alert = screen.getByRole('alert');
+      expect(alert.textContent).toContain('Updates unavailable');
+      expect(alert.textContent).toContain('Showing your last conversations.');
+      expect(alert.textContent).not.toMatch(/being added|updating|will/iu);
+      expect(screen.getByText('Retained conversation body')).toBeTruthy();
+      expect(messageApi.getPage).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not claim retained conversations during refresh or degradation of an empty snapshot', () => {
+    const store = createBridgeTransportStore();
+    store.bindAccount(ACCOUNT_ID);
+    store.applySnapshot(snapshot([]));
+    const messageApi = apiFor({});
+    renderInbox(store, messageApi);
+
+    act(() => store.beginResync());
+    expect(screen.getByRole('alert').textContent).toBe('Refreshing conversations');
+    expect(screen.getByText('No conversations to show')).toBeTruthy();
+    act(() => {
+      store.markDisconnected();
+      store.setConnection('connected');
+    });
+    expect(screen.getByRole('alert').textContent).toBe('Updates unavailable');
+    expect(screen.getByText('No conversations to show')).toBeTruthy();
+    expect(messageApi.getPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('OperatorInboxView confirmed history phase', () => {
+  it.each([
+    ['blocked', 'configuration_not_applied', 'History incomplete', false],
+    ['not_started', 'configuration_not_applied', 'History not started', false],
+    ['paused', 'consent_revoked', 'Message history is off', false],
+    ['not_started', 'consent_revoked', 'Message history is off', false],
+    ['paused', 'history_sync_paused', 'History paused', true],
+  ] as const)('describes %s / %s without an ineligible resume instruction', async (phase, reason, title, canResume) => {
+    const store = createBridgeTransportStore();
+    store.bindAccount(ACCOUNT_ID);
+    const preview = message('history-preview', 'History preview', AS_OF);
+    const ready = snapshot([conversation('history', 'History Fan', AS_OF, preview)]);
+    store.applySnapshot({
+      ...ready,
+      coverage: { ...ready.coverage, phase, reason },
+    });
+    const messageApi = apiFor({
+      history: page('history', [message('history-body', 'Available recent message', AS_OF)]),
+    });
+    renderInbox(store, messageApi);
+
+    expect(await screen.findByText('Available recent message')).toBeTruthy();
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(title);
+    expect(alert.textContent).not.toMatch(/still syncing|Turn on|will/iu);
+    expect(alert.textContent?.includes('Resume history sync in Settings.')).toBe(canResume);
+    expect(messageApi.getPage).toHaveBeenCalledTimes(1);
   });
 });

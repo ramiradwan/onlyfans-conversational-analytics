@@ -12,7 +12,7 @@ test('normal customer activation surfaces do not expose commercial protocol fiel
   const surfaces = await Promise.all([
     readFile(path.join(EXTENSION, 'popup.html'), 'utf8'),
     readFile(path.join(EXTENSION, 'runtime/customer-journey.mjs'), 'utf8'),
-    readFile(path.join(PRODUCT, 'app/provisioning/provisioning.html'), 'utf8'),
+    readFile(path.join(PRODUCT, 'frontend/onboarding/index.html'), 'utf8'),
     readFile(path.join(PRODUCT, 'frontend/src/views/SettingsWithVaultView.tsx'), 'utf8'),
   ]);
 

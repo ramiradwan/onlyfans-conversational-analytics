@@ -25,11 +25,18 @@ from app.security.capability_license_composition import (
     CapabilityLicenseLocalDelivery,
     durable_capability_license_delivery,
 )
-from app.security.capability_license_delivery import CapabilityLicenseTransport
+from app.security.capability_license_delivery import (
+    CapabilityLicenseDeliveryRefused, CapabilityLicenseTransport, decode_activation_package, decode_reissue_package,
+)
 from app.security.capability_license_delivery_journal import (
     SQLiteCapabilityLicenseDeliveryJournal,
 )
 from app.security.capability_license_transport import CapabilityLicenseHTTPTransport
+from app.security.capability_license_redemption_journal import (
+    PendingRedemption,
+    RedemptionJournalError,
+    SQLiteRedemptionJournal,
+)
 from app.security.grant_types import ACTIVATION_GRANT_TYPES
 from app.security.hosted_grants import InstallationProofAuthority, TransportResponse
 from app.security.installation_key import (
@@ -82,7 +89,13 @@ CapabilityLicenseOpaqueRedemptionResult: TypeAlias = (
 
 
 class CapabilityLicenseOpaqueRedemption(Protocol):
-    def redeem(self, *, continuation: str) -> CapabilityLicenseOpaqueRedemptionResult: ...
+    def redeem(self, *, continuation: str,
+               expected_scope: tuple[str, str, str, str] | None = None) -> CapabilityLicenseOpaqueRedemptionResult: ...
+
+    def prepare_activation(self, *, activation_operation_id: str, binding: dict[str, str]) -> bool: ...
+
+    def resume_activation(self, *, activation_operation_id: str, binding: dict[str, str],
+                          initial_redemption: dict[str, str] | None = None) -> CapabilityLicenseOpaqueRedemptionResult: ...
 
 
 class CapabilityLicenseRedemptionError(RuntimeError):
@@ -119,9 +132,11 @@ class CapabilityLicenseRedemptionClient:
         self,
         transport: CapabilityLicenseTransport,
         installation_key: InstallationProofAuthority,
+        journal: SQLiteRedemptionJournal,
     ) -> None:
         self._transport = transport
         self._installation_key = installation_key
+        self._journal = journal
 
     def redeem(
         self,
@@ -133,28 +148,23 @@ class CapabilityLicenseRedemptionClient:
     ) -> ProtectedDelivery:
         if _CONTINUATION.fullmatch(continuation) is None:
             raise CapabilityLicenseRedemptionRefused("redemption_invalid")
-        unavailable: CapabilityLicenseRedemptionUnavailable | None = None
-        for _attempt in range(2):
-            try:
-                return self._redeem_once(
-                    continuation,
-                    organization_id=organization_id,
-                    installation_id=installation_id,
-                    key=key,
-                )
-            except CapabilityLicenseRedemptionUnavailable as error:
-                unavailable = error
-        assert unavailable is not None
-        raise unavailable
+        scope = {"organization_id": organization_id, "installation_id": installation_id,
+            "installation_key_id": key.installation_key_id, "installation_key_jkt": key.installation_key_jkt}
+        pending = self._journal.pending(continuation, scope)
+        if pending is None:
+            pending = self._prepare(continuation, organization_id=organization_id,
+                installation_id=installation_id, key=key, scope=scope)
+        return self._replay(pending)
 
-    def _redeem_once(
+    def _prepare(
         self,
         continuation: str,
         *,
         organization_id: str,
         installation_id: str,
         key: InstallationKeyReference,
-    ) -> ProtectedDelivery:
+        scope: dict[str, str],
+    ) -> PendingRedemption:
         challenge_response = self._request(
             _PROOF_PATH,
             {
@@ -217,23 +227,28 @@ class CapabilityLicenseRedemptionClient:
                 key=key,
             ),
         }
-        idempotency_headers = {"Idempotency-Key": str(uuid4())}
-        response: TransportResponse | None = None
-        for attempt in range(2):
-            try:
-                response = self._request(
-                    _REDEMPTION_PATH,
-                    body,
-                    headers=idempotency_headers,
-                )
-                break
-            except CapabilityLicenseRedemptionUnavailable:
-                if attempt == 1:
-                    raise
+        return self._journal.prepare(continuation, scope, body, str(uuid4()))
+
+    def _replay(self, pending: PendingRedemption) -> ProtectedDelivery:
+        if pending.terminal_result is not None:
+            raise CapabilityLicenseRedemptionRefused(pending.terminal_result)
+        response = pending.response
+        if response is None:
+            for attempt in range(2):
+                try:
+                    response = self._request(_REDEMPTION_PATH, pending.request,
+                        headers={"Idempotency-Key": pending.idempotency_key})
+                    break
+                except CapabilityLicenseRedemptionUnavailable:
+                    if attempt == 1:
+                        raise
         assert response is not None
         if _retryable(response.status_code):
             raise CapabilityLicenseRedemptionUnavailable("redemption result unavailable")
         if response.status_code not in {200, 201}:
+            terminal = self._journal.refuse(pending, response)
+            if terminal is not None:
+                raise CapabilityLicenseRedemptionRefused(terminal)
             self._raise_refusal(response)
         document = _response_object(response)
         expected = {
@@ -247,7 +262,7 @@ class CapabilityLicenseRedemptionClient:
         if (
             set(document) != expected
             or document.get("profile") != _REDEMPTION_PROFILE
-            or document.get("redemption_id") != challenge["redemption_id"]
+            or document.get("redemption_id") != pending.request["request"]["redemption_id"]
             or document.get("result") not in {"accepted", "already_completed"}
             or document.get("authorization_state") != "delivery_available"
             or not isinstance(delivery, dict)
@@ -264,6 +279,7 @@ class CapabilityLicenseRedemptionClient:
         operation = delivery["operation"]
         hosted_result = document["result"]
         assert isinstance(operation, str) and isinstance(hosted_result, str)
+        self._journal.complete(pending, response)
         return ProtectedDelivery(
             redemption_id=str(document["redemption_id"]),
             hosted_result=hosted_result,  # type: ignore[arg-type]
@@ -393,7 +409,51 @@ def durable_capability_license_opaque_redemption(
     """Build the thin opaque redemption action over the existing delivery authority."""
 
     class _Action:
-        def redeem(self, *, continuation: str) -> CapabilityLicenseOpaqueRedemptionResult:
+        def _activation_context(self, binding):
+            store = open_store()
+            if not isinstance(store, SQLiteAuthenticationStore):
+                raise RedemptionJournalError("Durable activation store is unavailable")
+            proof = proof_authority_factory(store)
+            key = proof.ensure_ready()
+            if (_current_local_coordinates(store, key=key, instant=now()) != (
+                    binding["organization_id"], binding["installation_id"])
+                    or (key.installation_key_id, key.installation_key_jkt) != (
+                        binding["installation_key_id"], binding["installation_key_jkt"])):
+                raise RedemptionJournalError("Current installation does not match the accepted activation")
+            return store, proof
+
+        def prepare_activation(self, *, activation_operation_id, binding):
+            from app.security.activation_delivery_recovery import ActivationDeliveryJournal
+            try:
+                store, _ = self._activation_context(binding)
+                ActivationDeliveryJournal(store.database, hosted_origin).reserve(activation_operation_id, binding)
+                return True
+            except (RedemptionJournalError, InstallationKeyError, ValueError):
+                return False
+
+        def resume_activation(self, *, activation_operation_id, binding, initial_redemption=None):
+            from app.security.activation_delivery_recovery import ActivationDeliveryJournal, ActivationDeliveryRecovery
+            from app.security.delivery_recovery_contract import DeliveryRecoveryClient
+            try:
+                store, proof = self._activation_context(binding)
+                journal = ActivationDeliveryJournal(store.database, hosted_origin)
+                # A missing original record is not reconstructed after commercial acceptance.
+                journal.require(activation_operation_id, binding)
+                transport = transport_factory(hosted_origin, SQLiteCapabilityLicenseDeliveryJournal(store.database, hosted_origin))
+            except InstallationKeyError:
+                return "installation_key_unavailable"
+            except (RedemptionJournalError, ValueError):
+                return "durable_store_unavailable"
+            try:
+                return ActivationDeliveryRecovery(journal, DeliveryRecoveryClient(transport, proof),
+                    self, now=now).resume(activation_operation_id, binding, initial_redemption)
+            finally:
+                close = getattr(transport, "close", None)
+                if callable(close):
+                    close()
+
+        def redeem(self, *, continuation: str,
+                   expected_scope: tuple[str, str, str, str] | None = None) -> CapabilityLicenseOpaqueRedemptionResult:
             if _CONTINUATION.fullmatch(continuation) is None:
                 return "redemption_invalid"
             store = open_store()
@@ -408,7 +468,11 @@ def durable_capability_license_opaque_redemption(
             if coordinates is None:
                 return "local_installation_authority_unavailable"
             organization_id, installation_id = coordinates
-            journal = SQLiteCapabilityLicenseDeliveryJournal(store.database)
+            if expected_scope is not None and expected_scope != (
+                    organization_id, installation_id, key.installation_key_id, key.installation_key_jkt):
+                return "redemption_mismatch"
+            journal = SQLiteCapabilityLicenseDeliveryJournal(store.database, hosted_origin)
+            redemption_journal = SQLiteRedemptionJournal(store.database, hosted_origin)
             try:
                 transport = transport_factory(hosted_origin, journal)
             except ValueError:
@@ -417,6 +481,7 @@ def durable_capability_license_opaque_redemption(
                 protected = CapabilityLicenseRedemptionClient(
                     transport,
                     proof_authority,
+                    redemption_journal,
                 ).redeem(
                     continuation,
                     organization_id=organization_id,
@@ -429,6 +494,8 @@ def durable_capability_license_opaque_redemption(
                 return "installation_key_unavailable"
             except CapabilityLicenseRedemptionUnavailable:
                 return "hosted_unavailable"
+            except RedemptionJournalError:
+                return "durable_store_unavailable"
             finally:
                 close = getattr(transport, "close", None)
                 if callable(close):
@@ -437,6 +504,25 @@ def durable_capability_license_opaque_redemption(
             # Protected package and seat coordinates remain inside Brain and are
             # immediately delegated to the existing verify-before-persist,
             # crash-safe CapabilityLicense delivery authority.
+            if expected_scope is not None:
+                current_key = store.installation_key_reference()
+                if current_key != key or _current_local_coordinates(store, key=key, instant=now()) != coordinates:
+                    return "redemption_mismatch"
+            try:
+                package = (decode_activation_package(protected.package) if protected.operation == "activation"
+                    else decode_reissue_package(protected.package))
+                delivery_installation = package.installation_id if protected.operation == "activation" else package.replacement_installation_id
+                if (package.organization_id, delivery_installation) != coordinates:
+                    return "redemption_mismatch"
+                redemption_journal.bind_delivery(continuation, {"organization_id": organization_id,
+                    "installation_id": installation_id, "installation_key_id": key.installation_key_id,
+                    "installation_key_jkt": key.installation_key_jkt},
+                    "activate" if protected.operation == "activation" else "finalize",
+                    package.exchange_id if protected.operation == "activation" else package.reissue_authorization_id)
+            except CapabilityLicenseDeliveryRefused as refusal:
+                return refusal.result
+            except RedemptionJournalError:
+                return "durable_store_unavailable"
             delivery = delivery_factory(open_store, hosted_origin)
             if protected.operation == "activation":
                 return delivery.activate(

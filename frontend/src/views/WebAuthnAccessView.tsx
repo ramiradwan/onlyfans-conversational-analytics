@@ -1,27 +1,14 @@
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
-import { Box, Button, Link, Paper, Stack, Typography } from '@mui/material';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { StatusLine } from '../components/ui/ReservedRegion';
+import { EnrollmentOutcomeError, LoginOutcomeError, WebAuthnStatusError, webauthnApi, type WebAuthnApi } from '../../shared-setup/webauthn';
+import { OnboardingPasskeyTask } from '../components/OnboardingPasskeyTask';
 
-import { BRAND_INSET, BrandMark } from '../layouts/BrandMark';
-import { webauthnApi, type WebAuthnApi } from '../services/webauthnApi';
-import { componentTokens, effectTokens } from '../theme';
-import { surfaceArrival } from '../theme/presentationMotion';
-
-/** Browser ceremony outcomes where the person closed the prompt or let it time out. */
-const CANCELLED_CEREMONIES = new Set(['NotAllowedError', 'AbortError']);
-
-function failureMessage(cause: unknown, enroll: boolean): string {
-  const name = typeof cause === 'object' && cause !== null && 'name' in cause ? cause.name : null;
-  if (typeof name === 'string' && CANCELLED_CEREMONIES.has(name)) {
-    return enroll
-      ? 'Passkey setup was cancelled or timed out. Try again.'
-      : 'Sign-in was cancelled or timed out. Try again.';
-  }
+function failureMessage(enroll: boolean): string {
+  // NotAllowedError does not uniquely establish cancellation, expiry or why
+  // the browser refused a ceremony. State only the observed incomplete step.
   return enroll
-    ? "Couldn't set up a passkey. If you already have one for this app, use the same browser profile and sign in."
-    : "Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit.";
+    ? 'Passkey setup could not be confirmed.'
+    : 'Sign-in did not finish.';
 }
 
 interface WebAuthnAccessViewProps {
@@ -35,114 +22,71 @@ export function WebAuthnAccessView({
 }: WebAuthnAccessViewProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [enrolled, setEnrolled] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(Boolean(api.state));
+  const [checkAttempt, setCheckAttempt] = useState(0);
+  const statusRetries = useRef(0);
+  const ceremony = useRef<AbortController | null>(null);
+  const authenticated = useRef(onAuthenticated);
+  authenticated.current = onAuthenticated;
+  useEffect(() => {
+    if (!api.state) return;
+    const controller = new AbortController();
+    let mounted = true;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const retryStatus = () => {
+      if (statusRetries.current < 2) retry = setTimeout(() => { statusRetries.current += 1; setCheckAttempt(value => value + 1); }, 1000 * 2 ** statusRetries.current);
+    };
+    const timeout = setTimeout(() => {
+      controller.abort();
+      if (mounted) { setChecking(false); setError('The local service did not answer the passkey status request.'); retryStatus(); }
+    }, 8000);
+    setChecking(true); setEnrolled(null); setError(null);
+    void api.state(controller.signal).then((state) => {
+      if (controller.signal.aborted) return;
+      statusRetries.current = 0;
+      setEnrolled(state.enrolled);
+      if (state.authenticated) authenticated.current();
+    }).catch((cause: unknown) => {
+      if (controller.signal.aborted) return;
+      const kind = cause instanceof WebAuthnStatusError ? cause.kind : 'unavailable';
+      setError(kind === 'network' ? 'The local service could not be reached to check passkey setup.'
+        : kind === 'session' ? 'The passkey status request needs a current app session.'
+          : kind === 'forbidden' ? 'The local service refused access to passkey status.'
+            : kind === 'invalid' ? 'The local service returned an invalid passkey status.'
+              : 'The local service could not check passkey setup.');
+      if (kind === 'network' || kind === 'unavailable') retryStatus();
+    }).finally(() => {
+      clearTimeout(timeout);
+      if (!controller.signal.aborted) setChecking(false);
+    });
+    return () => { mounted = false; controller.abort(); clearTimeout(timeout); if (retry !== null) clearTimeout(retry); };
+  }, [api, checkAttempt]);
+  useEffect(() => () => { ceremony.current?.abort(); ceremony.current = null; }, [api]);
 
   const authenticate = async (enroll: boolean) => {
-    if (busy) return;
+    if (busy || checking || ceremony.current || api.state && enrolled === null) return;
+    const controller = new AbortController();
+    ceremony.current = controller;
     setBusy(true);
     setError(null);
-    let enrolling = enroll;
     try {
-      if (enroll) await api.enroll();
-      enrolling = false;
-      await api.login();
-      onAuthenticated();
+      if (enroll) await api.enroll(controller.signal);
+      else await api.login(controller.signal);
+      if (!controller.signal.aborted) authenticated.current();
     } catch (cause) {
-      setError(failureMessage(cause, enrolling));
+      if (controller.signal.aborted) return;
+      if (cause instanceof EnrollmentOutcomeError) setEnrolled(cause.enrolled);
+      setError(cause instanceof EnrollmentOutcomeError && cause.enrolled
+        ? 'Passkey created. Sign in to continue.'
+        : cause instanceof LoginOutcomeError && cause.stage === 'begin'
+          ? 'Sign-in could not start. Try again.' : failureMessage(enroll));
     } finally {
-      setBusy(false);
+      if (ceremony.current === controller) ceremony.current = null;
+      if (!controller.signal.aborted) setBusy(false);
     }
   };
 
-  return (
-    <Box sx={{ color: 'text.primary', display: 'flex', flexDirection: 'column', minHeight: '100dvh', minWidth: 0, width: '100%' }}>
-      <Box component="header" sx={{
-        alignItems: 'center', display: { xs: 'none', sm: 'flex' }, flexShrink: 0,
-        height: componentTokens.shell.headerHeight,
-        pl: `${BRAND_INSET}px`, pr: 2,
-      }}>
-        <BrandMark />
-      </Box>
-      {/* Feedback renders in its own row beneath the card, so the card keeps its position. */}
-      <Box
-        component="main"
-        data-journey-state="desktop.passkey_sign_in"
-        sx={{
-          display: 'grid', flex: 1, gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr) auto minmax(0, 1fr)', justifyItems: 'center',
-          px: { xs: 2, sm: 4 }, pt: { xs: 2, sm: 0 },
-          pb: { xs: 2, sm: `${componentTokens.shell.headerHeight}px` },
-        }}
-      >
-        <Paper
-          data-visual="passkey-card"
-          data-reserved-region="passkey-card"
-          sx={(theme) => ({
-            gridRow: 2,
-            maxWidth: 520,
-            minWidth: 0,
-            p: { xs: 4, sm: 5 },
-            width: '100%',
-            ...theme.effects.cardBorder(theme),
-            ...surfaceArrival(),
-            transform: 'none !important',
-            ...theme.effects.ambientGlow(theme),
-          })}
-        >
-          <Stack data-region-content spacing={3} sx={{ alignItems: { sm: 'center' }, textAlign: { sm: 'center' } }}>
-            <Box aria-hidden="true" data-visual="passkey-lock" sx={{
-              alignItems: 'center', display: 'flex', justifyContent: 'center',
-              width: componentTokens.Passkey.tileSize, height: componentTokens.Passkey.tileSize,
-              borderRadius: `${componentTokens.Passkey.tileRadius}px`,
-              bgcolor: 'surface.trust.fill', color: 'surface.trust.ink',
-              border: '1px solid', borderColor: 'surface.trust.border',
-            }}>
-              <LockOutlinedIcon sx={{ fontSize: componentTokens.Passkey.iconSize }} />
-            </Box>
-            <Box>
-              <Typography component="h1" variant="passkeyTitle">Protect access to your messages</Typography>
-              <Typography sx={{ color: 'text.secondary', mt: 1 }}>
-                Use a passkey to unlock synced message history in this app. You can use your fingerprint,
-                face, or device PIN.
-              </Typography>
-            </Box>
-<Typography variant="body2" sx={{ color: 'text.secondary' }}>Use the browser profile where you set up this app, and choose the passkey you created for it.</Typography>
-            <Button disabled={busy} onClick={() => void authenticate(false)} size="large" variant="contained" sx={{ alignSelf: { xs: 'flex-start', sm: 'center' } }}>
-              Sign in with passkey
-            </Button>
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              First time on this computer?{' '}
-              <Link component="button" type="button" disabled={busy} onClick={() => void authenticate(true)}
-                sx={(theme) => ({
-                  font: 'inherit', verticalAlign: 'baseline',
-                  '&:disabled': { color: theme.vars.palette.text.disabled, cursor: 'default', textDecoration: 'none' },
-                  '&:focus-visible': {
-                    outline: `${effectTokens.focus.width} solid ${theme.vars.palette.primary.main}`,
-                    outlineOffset: effectTokens.focus.offset,
-                  },
-                })}
-              >
-                Set up a passkey
-              </Link>
-            </Typography>
-            <Box
-              component="footer"
-              data-visual="passkey-brand"
-              sx={(theme) => ({
-                borderTop: `${effectTokens.borders.thin} solid ${theme.vars.palette.divider}`,
-                display: { sm: 'none' }, pt: 3,
-                '& [data-visual="brand-tile"] + *': { display: 'block' },
-                '& > .MuiStack-root': { flexWrap: 'wrap', gap: 1.25 },
-                '& .MuiTypography-noWrap': { overflow: 'visible', whiteSpace: 'normal', minWidth: 'min-content', marginLeft: '0 !important', flex: '1 1 min-content' },
-              })}
-            >
-              <BrandMark />
-            </Box>
-          </Stack>
-        </Paper>
-        {/* Keep the card centered; recovery can extend below this row into page scrolling. */}
-        <Box sx={{ alignSelf: 'start', gridRow: 3, height: 0, minHeight: 0, maxWidth: 520, width: '100%', mt: 2 }}>
-          <StatusLine essential id="passkey-feedback" size={{ xs: componentTokens.Passkey.feedback.narrow, sm: componentTokens.Passkey.feedback.wide }} text={error} tone="error" />
-        </Box>
-      </Box>
-    </Box>
-  );
+  return <OnboardingPasskeyTask statusUnavailable={Boolean(api.state) && enrolled === null && !checking}
+    recheck={() => { statusRetries.current = 0; setCheckAttempt((value) => value + 1); }} busy={busy} checking={checking} enrolled={enrolled} error={error} authenticate={authenticate} />;
 }

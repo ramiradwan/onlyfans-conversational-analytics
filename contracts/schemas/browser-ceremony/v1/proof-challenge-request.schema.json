@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony/v1/proof-challenge-request.schema.json",
+  "title": "Browser ceremony proof-challenge-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "target"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:browser-ceremony-proof:v1"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "browser-ceremony-prepare"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/prepareRequest"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "browser-ceremony-read"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/readRequest"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "browser-ceremony-recover"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/recoverRequest"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "browser-ceremony-cancel"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/cancelRequest"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

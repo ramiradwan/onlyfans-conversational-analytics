@@ -70,6 +70,19 @@ function harness(mode = 'full', confirmed = true) {
   };
 }
 
+test('current identity response carries bounded display labels and never reuses them for another account', async () => {
+  const h = harness('identity');
+  await h.respond('/api2/v2/users/me', { id: 'creator-one', name: '  Synthetic Creator  ', username: 'synthetic_handle' });
+  const latest = () => h.posts.filter(post => post.type === 'ofca.provisioning.identity.update').at(-1).authenticated_profile;
+  assert.deepEqual(latest(), { creator_account_id: 'creator-one', display_name: 'Synthetic Creator', username: 'synthetic_handle' });
+  h.control('refresh_identity');
+  assert.equal(latest().display_name, 'Synthetic Creator');
+  await h.respond('/api2/v2/init', { user: { id: 'creator-two', name: 'bad\nlabel', username: 'x'.repeat(129) } });
+  assert.deepEqual(latest(), { creator_account_id: 'creator-two' });
+  await h.respond('/api2/v2/users/me', { id: 'creator-three', name: '\u202eevil', username: ' next_handle ' });
+  assert.deepEqual(latest(), { creator_account_id: 'creator-three', username: 'next_handle' });
+});
+
 const ownEcho = Object.freeze({
   id: 'message-own-1', text: 'Synthetic own reply', createdAt: '2030-01-01T00:00:30Z',
   toUser: { id: 'fan-a' }, responseType: 'message',

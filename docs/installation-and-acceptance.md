@@ -16,7 +16,7 @@ Use a Windows guest with:
 
 Restore the guest to a product-free checkpoint before each run. The command below uses the built-in Windows PowerShell host. The automated smoke tests also drive the same script with `pwsh.exe`; the harness does not reject PowerShell 7 by version.
 
-A TPM-backed installation key is required for a separate full provisioning run, but the current smoke harness does not exercise claim consumption and does not verify TPM readiness.
+A TPM-backed installation key is required for a separate complete setup run. The harness records the installer's hardware-key probe, but does not enroll the installation with the Provider.
 
 ## Run the harness
 
@@ -30,7 +30,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 `
   -PublishedSha256 '<published SHA-256>'
 ```
 
-The harness installs into an isolated temporary location, starts the installed `Brain.exe`, redirects runtime data to its temporary root, stops the launcher-owned process family, waits for port `17871` to be released, and uninstalls before it exits.
+The harness installs into an isolated temporary location, starts the installed `Bridge.exe`, redirects runtime data to its temporary root, stops the desktop-owned process family, waits for port `17871` to be released, and uninstalls before it exits. Bridge owns the internal Brain process.
 
 It writes `packaging-smoke-transcript.json` in the working directory unless `-TranscriptPath` specifies another path.
 
@@ -67,15 +67,17 @@ The transcript records non-secret evidence for these local steps:
 
 The harness then records these steps as `blocked` by design:
 
-- installation-key readiness, because the provisioning surface exposes no public non-secret readiness signal before claim consumption;
-- launcher-to-browser provisioning handoff, because the harness does not extract or manufacture the launcher secret;
-- installation-claim submission, because claim material is accepted only through the browser UI;
-- hosted claim consumption, because it requires the browser-submitted claim and a reachable hosted provisioning plane.
+- installation-key enrollment, because it requires the authenticated setup ceremony;
+- native-to-browser handoff, because the harness does not drive the admitted desktop and Chrome surfaces;
+- hosted sign-in, because it requires the installed browser task and a compatible Provider;
+- enrollment completion, because it requires account approval and verified device-bound enrollment.
 
-The harness never accepts claim material on its command line or writes claim material to its transcript.
+The harness never extracts session credentials, setup codes or enrollment material into its transcript.
 
 ## Full provisioning acceptance
 
 `run.ps1` tears down the temporary installation immediately after recording the blocked boundary, so the browser and hosted provisioning sequence cannot be completed inside the current harness run.
 
-To exercise installation claim consumption, creator-account association, finalization, WebAuthn enrollment, Agent pairing, and account-bound Agent connection, perform a separate normal installation and follow [Install on Windows](install-windows.md). That sequence is currently a manual acceptance activity rather than a completed `run.ps1` automation path.
+To exercise installation enrollment, account association, passkeys, pairing and the account-bound extension connection, perform a separate normal installation and follow [Install on Windows](install-windows.md). Use the same installer and extension build. Verify both installation orders, Preview, Google and Microsoft sign-in, required approvals, optional Full activation, pause, restart, cancellation, wrong-profile handling and offline local access. Record transitions and customer actions as well as the terminal screen; keep identities, messages, cookies and codes out of evidence intended for sharing.
+
+An unavailable or older Provider leaves the sign-in and approval checks incomplete. Local packaging checks and mocked HTTP tests cannot substitute for that installed-product qualification.

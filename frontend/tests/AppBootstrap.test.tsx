@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const transport = vi.hoisted(() => ({
@@ -13,6 +13,13 @@ vi.mock('../src/services/websocketService', () => ({
 vi.mock('../src/routing/AppRouter', () => ({
   AppRouter: () => <main>Application routes</main>,
 }));
+
+vi.mock('../shared-setup/webauthn', async () => {
+  const actual = await vi.importActual<typeof import('../shared-setup/webauthn')>('../shared-setup/webauthn');
+  return { ...actual, webauthnApi: { ...actual.webauthnApi,
+    state: vi.fn(async () => ({ enrolled: true, authenticated: false })),
+  } };
+});
 
 import { App } from '../src/App';
 import { useUserStore } from '../src/store/userStore';
@@ -89,7 +96,7 @@ describe('signed Bridge role bootstrap', () => {
     render(<App />);
 
     await waitFor(() => expect(useUserStore.getState().role).toBeNull());
-    expect(document.querySelector('h1')?.textContent).toBe('Protect access to your messages');
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Sign in on this computer' })).toBeTruthy());
     expect(document.body.textContent).not.toContain('Application routes');
     expect(transport.connect).not.toHaveBeenCalled();
   });

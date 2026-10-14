@@ -3,9 +3,6 @@ import { authorizationScope, LEGAL_INSTRUMENT_NAMES, validateLegalInstrumentBind
 import { legalReleaseBindings } from './legal-release-bindings.mjs';
 
 export { authorizationScope } from './legal-instruments.mjs';
-// Obsolete storage is retained only for migration/deletion; it is never authority.
-export const LEGAL_AUTHORIZATION_STORAGE_KEY = 'ofca_legal_authorization_v1';
-export const LEGAL_AUTHORIZATION_SCHEMA = 'ofca-legal-authorization/v1';
 
 export function modeRecordAuthorizes(record, mode, bindings) {
   try {

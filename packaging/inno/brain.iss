@@ -1,4 +1,4 @@
-; Per-user Windows installer for the frozen Brain distribution.
+; One per-user installer for Bridge and the complete frozen Brain distribution.
 ; The build script supplies all variable values from the staged release artifact.
 
 #ifndef StagingRoot
@@ -11,9 +11,10 @@
   #error AppVersion must be supplied by packaging/build-windows.ps1
 #endif
 
-#define AppName "OnlyFans Conversational Analytics"
-#define AppExecutable "Brain.exe"
-; Must match RUNNING_APPLICATION_MUTEX_NAME in app/packaged_entry.py.
+#define AppName "Conversation Analytics"
+#define InstallDirectoryName "OnlyFans Conversational Analytics"
+#define AppExecutable "Bridge.exe"
+; Must match the native host and RUNNING_APPLICATION_MUTEX_NAME.
 #define AppMutexName "OnlyFansConversationalAnalyticsBrain"
 #define InstallerName "OnlyFans-Conversational-Analytics-Setup-" + AppVersion + "-x64"
 
@@ -22,11 +23,9 @@
 AppId={{a860574e-ff86-4305-be8f-93b5c91cde44}
 AppName={#AppName}
 AppVersion={#AppVersion}
-; Both process modes publish this mutex. Without it the uninstaller cannot
-; delete a running Brain.exe, and removes the rest of the installation and
-; itself around it, leaving an executable no uninstaller can reach.
+; The native host holds this mutex across backend restarts.
 AppMutex={#AppMutexName}
-DefaultDirName={localappdata}\Programs\{#AppName}
+DefaultDirName={localappdata}\Programs\{#InstallDirectoryName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -36,12 +35,30 @@ OutputBaseFilename={#InstallerName}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+#ifdef AppIconFile
+SetupIconFile={#AppIconFile}
+#endif
+UninstallDisplayIcon={app}\{#AppExecutable}
+VersionInfoDescription={#AppName} installer
+VersionInfoProductName={#AppName}
 
 [Files]
 Source: "{#StagingRoot}\*"; DestDir: "{app}"; Excludes: "Agent,Agent\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StagingRoot}\ensure-webview2.ps1"; Flags: dontcopy
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExecutable}"
+
+[Run]
+Filename: "{app}\{#AppExecutable}"; Description: "Open {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: ""; ValueData: "URL:{#AppName}"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\ofca"; ValueType: string; ValueName: "FriendlyTypeName"; ValueData: "{#AppName}"
+Root: HKCU; Subkey: "Software\Classes\ofca\Application"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#AppName}"
+Root: HKCU; Subkey: "Software\Classes\ofca\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExecutable}"",0"
+Root: HKCU; Subkey: "Software\Classes\ofca\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExecutable}"" --open-workspace ""%1"""
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -290,17 +307,71 @@ begin
     end;
 end;
 
+function SharedWebView2Available(): Boolean;
+var
+  VersionText: String;
+  Version: Int64;
+  Key: String;
+begin
+  Key := 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+  Result := (RegQueryStringValue(HKLM32, Key, 'pv', VersionText)
+    and StrToVersion(VersionText, Version) and (Version > 0))
+    or (RegQueryStringValue(HKCU64, Key, 'pv', VersionText)
+    and StrToVersion(VersionText, Version) and (Version > 0));
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ExitCode, Waited: Integer;
+  ResultPath: String;
+  ResultText: AnsiString;
+  WaitMode: TExecWait;
+begin
+  Result := '';
+  if SharedWebView2Available() then
+    exit;
+  ExtractTemporaryFile('ensure-webview2.ps1');
+  WizardForm.StatusLabel.Caption := 'Checking the shared Microsoft WebView2 Runtime...';
+  ResultPath := ExpandConstant('{tmp}\webview2-result.txt');
+  DeleteFile(ResultPath);
+  Result := 'Microsoft WebView2 Runtime could not be installed. Check your internet connection, then retry setup.';
+  // Interactive Exec pumps window messages while waiting. Silent setup avoids
+  // its focus-taking wait window and reads a completed prerequisite receipt.
+  WaitMode := ewWaitUntilTerminated;
+  if WizardSilent() then
+    WaitMode := ewNoWait;
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'
+    + ExpandConstant('{tmp}\ensure-webview2.ps1') + '" -ResultPath "'
+    + ResultPath + '"', '', SW_HIDE, WaitMode, ExitCode) then
+    exit;
+  if WizardSilent() then
+  begin
+    Waited := 0;
+    while Waited < 330000 do
+    begin
+      if LoadStringFromFile(ResultPath, ResultText)
+        and ((ResultText = '0') or (ResultText = '1')) then
+        break;
+      Sleep(250);
+      Waited := Waited + 250;
+    end;
+  end;
+  if LoadStringFromFile(ResultPath, ResultText) and (ResultText = '0')
+    and SharedWebView2Available() then
+    Result := '';
+end;
+
 function CloseRunningApplication(): Boolean;
 var
   ExitCode, Waited: Integer;
   Command: String;
 begin
-  // Brain.exe is a common image name and the installation is per-user, so the
-  // running process is matched on its full path rather than on its name.
-  Command := '-NoProfile -NonInteractive -Command "Get-Process -Name Brain'
+  // Closing the exact host closes its Job Object and therefore its own Brain.
+  Command := '-NoProfile -NonInteractive -Command "Get-Process -Name Bridge'
     + ' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq '''
     + ExpandConstant('{app}\{#AppExecutable}') + ''' } | Stop-Process -Force"';
-  if not Exec('powershell.exe', Command, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Command, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
   begin
     Result := False;
     exit;
@@ -337,7 +408,7 @@ begin
   end;
   if not CloseRunningApplication() then
   begin
-    MsgBox('{#AppName} could not be closed, so nothing has been removed.'
+    MsgBox('{#AppName} could not be closed.'
       + #13#10#13#10 + 'End the {#AppExecutable} process from Task Manager, then'
       + ' run the uninstaller again.', mbError, MB_OK);
     Result := False;

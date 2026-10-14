@@ -165,6 +165,34 @@ test('a silent document fails without a legacy-mode retry or reload', async () =
 });
 
 for (const [mode, createRuntime] of [['full', createAgentRuntime], ['read-only', createReadOnlyAgentRuntime]]) {
+  test(`${mode} runtime replaces its storage owner when the same creator moves to another installation`, async () => {
+    let installationId = 'brain-one';
+    const partitions = [], transports = [];
+    const runtime = createRuntime({
+      extensionVersion: '2.0.3', chromeApi: {},
+      chromeAdapter: { onWake: () => () => {}, loadAgentInstallationId: async () => 'agent-one',
+        loadBrainBinding: async () => ({ creatorAccountId: 'creator-one', installationId, authTicket: 'fixture-ticket' }) },
+      ingestionStorageFactory(options) { partitions.push(options); return new InMemoryIngestionStorage(); },
+      outboxFactory: () => ({ initialize: async () => ({ agent_stream_id: 'fixture-stream',
+        acknowledged_source_seq: 0, applied_config_revision: null, account_epoch: 1 }) }),
+      configHttpFactory: () => ({}), configActivatorFactory: () => ({}),
+      configClientFactory: () => ({ initialize: async () => {}, activeDocument: null }),
+      transportFactory() { const transport = { stopped: false, start() {}, ensureConnected() {},
+        stop() { this.stopped = true; } }; transports.push(transport); return transport; },
+    });
+    try {
+      await runtime.start();
+      await runtime.wake();
+      assert.equal(partitions.length, 1);
+      installationId = 'brain-two';
+      await runtime.wake();
+      assert.equal(partitions.length, 2);
+      assert.equal(transports[0].stopped, true);
+      assert.deepEqual(partitions.map(value => value.installationId), ['brain-one', 'brain-two']);
+      assert.ok(partitions.every(value => value.creatorAccountId === 'creator-one'));
+    } finally { await runtime.suspend(); }
+  });
+
   test(`${mode} runtime explicitly observes the existing document without reloading`, async () => {
     const fixture = createSignerReleaseFixture({ observeExisting: true });
     const modes = [];

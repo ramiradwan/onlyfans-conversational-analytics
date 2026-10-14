@@ -13,6 +13,10 @@ from typing import Literal, Mapping, Protocol
 from uuid import uuid4
 
 from app.persistence.auth import InstallationKeyReference, VerifiedCapabilityLicenseReference
+from app.security.capability_license_delivery_journal import (
+    CapabilityLicenseDeliveryCompleted,
+    SQLiteCapabilityLicenseDeliveryJournal,
+)
 from app.security.capability_license_verifier import (
     CapabilityLicenseAuthorityService,
     CapabilityLicenseVerificationContext,
@@ -128,10 +132,12 @@ class CapabilityLicenseDeliveryClient:
         transport: CapabilityLicenseTransport,
         installation_key: InstallationProofAuthority,
         authority: CapabilityLicenseAuthorityService,
+        journal: SQLiteCapabilityLicenseDeliveryJournal,
     ) -> None:
         self._transport = transport
         self._installation_key = installation_key
         self._authority = authority
+        self._journal = journal
 
     def activate(
         self,
@@ -148,34 +154,15 @@ class CapabilityLicenseDeliveryClient:
         )
         key = self._installation_key.ensure_ready()
         self._require_key_binding(key, context)
-        challenge = self._proof_challenge(
-            path=package.proof_challenge_path,
-            purpose="capability-license-activate",
-            organization_id=package.organization_id,
-            authority_reference_id=package.exchange_id,
-            installation_id=package.installation_id,
-        )
         request: dict[str, object] = {
             "profile": _ACTIVATION_PROFILE,
             "exchange_id": package.exchange_id,
             "organization_id": package.organization_id,
             "installation_id": package.installation_id,
         }
-        response = self._request(
-            package.activation_path,
-            {
-                "request": request,
-                "proof": self._proof(
-                    challenge=challenge,
-                    request_body=request,
-                    path=package.activation_path,
-                    purpose="capability-license-activate",
-                    organization_id=package.organization_id,
-                    installation_id=package.installation_id,
-                    key=key,
-                ),
-            },
-        )
+        response = self._commit("activate", package.exchange_id, package.activation_path,
+            package.proof_challenge_path, "capability-license-activate", request, key,
+            package.organization_id, package.installation_id)
         if _retryable(response.status_code):
             raise CapabilityLicenseDeliveryUnavailable("Activation result is unavailable")
         if response.status_code != 201:
@@ -232,13 +219,6 @@ class CapabilityLicenseDeliveryClient:
         )
         key = self._installation_key.ensure_ready()
         self._require_key_binding(key, context)
-        challenge = self._proof_challenge(
-            path=package.proof_challenge_path,
-            purpose="capability-license-reissue",
-            organization_id=package.organization_id,
-            authority_reference_id=package.reissue_authorization_id,
-            installation_id=package.replacement_installation_id,
-        )
         request: dict[str, object] = {
             "profile": _REISSUE_PROFILE,
             "reissue_authorization_id": package.reissue_authorization_id,
@@ -248,21 +228,9 @@ class CapabilityLicenseDeliveryClient:
             "replacement_installation_id": package.replacement_installation_id,
             "reissue_reason": package.reissue_reason,
         }
-        response = self._request(
-            package.finalization_path,
-            {
-                "request": request,
-                "proof": self._proof(
-                    challenge=challenge,
-                    request_body=request,
-                    path=package.finalization_path,
-                    purpose="capability-license-reissue",
-                    organization_id=package.organization_id,
-                    installation_id=package.replacement_installation_id,
-                    key=key,
-                ),
-            },
-        )
+        response = self._commit("finalize", package.reissue_authorization_id, package.finalization_path,
+            package.proof_challenge_path, "capability-license-reissue", request, key,
+            package.organization_id, package.replacement_installation_id)
         if _retryable(response.status_code):
             raise CapabilityLicenseDeliveryUnavailable("Reissue finalization is unavailable")
         if response.status_code != 201:
@@ -287,6 +255,28 @@ class CapabilityLicenseDeliveryClient:
                 "Reissue response and signed CapabilityLicense disagree"
             )
         return self._authority.persist(reference)
+
+    def _commit(self, operation, reference, path, challenge_path, purpose, request, key,
+                organization_id, installation_id) -> TransportResponse:
+        pending = self._journal.pending(operation, reference)
+        if pending is None:
+            challenge = self._proof_challenge(path=challenge_path, purpose=purpose,
+                organization_id=organization_id, authority_reference_id=reference,
+                installation_id=installation_id)
+            body = {"request": request, "proof": self._proof(challenge=challenge, request_body=request,
+                path=path, purpose=purpose, organization_id=organization_id,
+                installation_id=installation_id, key=key)}
+            pending = self._journal.prepare(operation, reference, path, str(uuid4()), body)
+        if (pending.endpoint != path or pending.request_body.get("request") != request
+                or pending.request_body.get("proof", {}).get("key_id") != key.installation_key_id):
+            raise CapabilityLicenseDeliveryRefused("package_binding_mismatch")
+        response = self._request(path, pending.request_body, idempotency_key=pending.idempotency_key)
+        if response.status_code == 201:
+            token = _response_object(response).get("capability_license")
+            if not isinstance(token, str):
+                raise CapabilityLicenseDeliveryUnavailable("CapabilityLicense response is invalid")
+            self._journal.bind_committed_response(pending, token)
+        return response
 
     def _proof_challenge(
         self,
@@ -373,10 +363,10 @@ class CapabilityLicenseDeliveryClient:
             "signature": _b64u(proof.signature),
         }
 
-    def _request(self, path: str, body: Mapping[str, object]) -> TransportResponse:
+    def _request(self, path: str, body: Mapping[str, object], *, idempotency_key: str | None = None) -> TransportResponse:
         idempotency_headers = (
-            {"Idempotency-Key": str(uuid4())}
-            if path.endswith((":activate", ":finalize"))
+            {"Idempotency-Key": idempotency_key}
+            if idempotency_key is not None
             else None
         )
         attempts = 2 if idempotency_headers is not None else 1
@@ -394,6 +384,8 @@ class CapabilityLicenseDeliveryClient:
                         json_body=body,
                         headers=idempotency_headers,
                     )
+            except CapabilityLicenseDeliveryCompleted:
+                raise
             except Exception as error:
                 if attempt + 1 < attempts:
                     continue

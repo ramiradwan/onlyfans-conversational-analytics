@@ -221,8 +221,6 @@ class CatchupLedger:
         return {} if row is None else dict(row)
 
     def _paused(self, c, r, now):
-        if not r["supported"] or not self.policy.catchup_enabled:
-            return "extension_outdated"
         config = self._configuration(c, r["creator_account_id"])
         desired = config.get("desired_state")
         if desired == "paused":
@@ -231,12 +229,16 @@ class CatchupLedger:
             return "consent_needed"
         if not self._live(r, now):
             return "extension_offline"
-        if r["report_reason"] in PAUSED:
-            return PAUSED[r["report_reason"]]
+        if not r["supported"] or not self.policy.catchup_enabled:
+            return "extension_outdated"
         if (config.get("effective_state") != "running"
             or config.get("required_config_revision") != config.get("effective_config_revision")
             or config.get("settings_revision") != config.get("effective_settings_revision")):
             return "applying_settings"
+        if (r["last_report_at"] is not None
+            and (now - instant(r["last_report_at"])).total_seconds() <= self.policy.capture_report_max_age_seconds
+            and r["report_reason"] in PAUSED):
+            return PAUSED[r["report_reason"]]
         return None
 
     def begin(self, account, value, *, now, required_config_revision=None):

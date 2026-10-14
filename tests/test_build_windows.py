@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from packaging_fixture import configured_release_source
+
 import inno_setup_compiler
 import visible_windows
 from app.core.config import Settings
@@ -86,6 +88,12 @@ _STORE_AUDIT = """\
 """
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _isolated_release_source(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest):
+    with configured_release_source(request.module, tmp_path_factory.mktemp("release-source")):
+        yield
+
+
 @pytest.fixture(autouse=True)
 def _no_installer_window() -> Iterator[None]:
     """Fail a test whose installer or uninstaller puts a window on the desktop.
@@ -136,23 +144,25 @@ stage = dist / 'Brain'
 (stage / 'Brain.exe').write_bytes(b'frozen-brain')
 for relative in (
     'app/templates',
+    'app/onboarding',
     'app/static/dist',
     'app/persistence/sql',
     'app/persistence/auth_sql',
     'app/persistence/projection_sql',
     'app/analytics/sql',
     'contracts',
+    'shared/onboarding',
+    'shared/desktop-onboarding',
+    'shared/browser-tasks',
 ):
     source = root / relative
     shutil.copytree(source, stage / '_internal' / relative)
 provisioning = stage / '_internal' / 'app' / 'provisioning'
 provisioning.mkdir()
-for name in (
-    'provisioning.html',
-    'creator-platform-data-risk-disclosure.html',
-    'provisioning.js',
-):
-    shutil.copyfile(root / 'app' / 'provisioning' / name, provisioning / name)
+shutil.copyfile(root / 'app' / 'provisioning' / 'creator-platform-data-risk-disclosure.html', provisioning / 'creator-platform-data-risk-disclosure.html')
+core = stage / '_internal' / 'app' / 'core'
+core.mkdir()
+shutil.copyfile(root / 'app' / 'core' / 'customer-release.json', core / 'customer-release.json')
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -542,14 +552,15 @@ def test_app_id_upgrade_survives_a_product_rename_and_fails_without_it(
         encoding="utf-8"
     )
     app_id_directive = "AppId={{a860574e-ff86-4305-be8f-93b5c91cde44}"
-    original_name = '#define AppName "OnlyFans Conversational Analytics"'
+    original_name = '#define AppName "Conversation Analytics"'
+    assert original_script.count(original_name) == 1
     renamed_name = '#define AppName "OnlyFans Conversational Analytics Renamed Test"'
     first_prefix = tmp_path / "installed-current"
     second_prefix = tmp_path / "installed-renamed"
     renamed_script = tmp_path / "brain-renamed.iss"
     renamed_script.write_text(
         original_script.replace(original_name, renamed_name, 1).replace(
-            "DefaultDirName={localappdata}\\Programs\\{#AppName}",
+            "DefaultDirName={localappdata}\\Programs\\{#InstallDirectoryName}",
             f"DefaultDirName={second_prefix}",
             1,
         ),
@@ -581,7 +592,7 @@ def test_app_id_upgrade_survives_a_product_rename_and_fails_without_it(
     without_app_id_renamed_script = tmp_path / "brain-renamed-without-app-id.iss"
     without_app_id_renamed_script.write_text(
         without_app_id.replace(original_name, renamed_name, 1).replace(
-            "DefaultDirName={localappdata}\\Programs\\{#AppName}",
+            "DefaultDirName={localappdata}\\Programs\\{#InstallDirectoryName}",
             f"DefaultDirName={second_prefix}",
             1,
         ),
@@ -786,6 +797,21 @@ def test_published_digest_records_the_real_installer_bytes(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows release assembly is Windows-only")
+def test_package_measurements_separate_compressed_payload_and_shared_runtime(released_build: Path) -> None:
+    report = json.loads((released_build.parent / "package-measurements.json").read_text(encoding="utf-8-sig"))
+    installer = _published_installer(released_build)
+    assert report["installer"]["unsigned_bytes"] == installer.stat().st_size
+    assert report["installer"]["unsigned_sha256"] == hashlib.sha256(installer.read_bytes()).hexdigest()
+    staged = released_build.parent / "dist" / "Brain"
+    installed_files = [p for p in staged.rglob("*") if p.is_file() and p.relative_to(staged).parts[0] != "Agent"]
+    assert report["installed_payload"]["logical_bytes"] == sum(p.stat().st_size for p in installed_files)
+    assert report["installed_payload"]["file_count"] == len(installed_files)
+    assert report["webview2"]["additional_download_bytes_when_present"] == 0
+    assert report["webview2"]["additional_download_bytes_when_missing"] is None
+    assert report["webview2"]["bootstrapper_bundled"] is False
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows release assembly is Windows-only")
 def test_shipped_digest_files_list_only_installed_files(
     released_build: Path, tmp_path: Path
 ) -> None:
@@ -872,6 +898,7 @@ def _audit_store_candidate(artifact: Path) -> subprocess.CompletedProcess[str]:
             str(EXTENSION_ROOT / "build.mjs"),
             "--audit-package",
             f"--artifact={artifact}",
+            f"--customer-release-config={ROOT / 'app/core/customer-release.json'}",
             f"--packaged-signing-rule={SIGNING_RULE_FIXTURE}",
             f"--legal-release-bindings={LEGAL_BINDINGS_FIXTURE}",
         ],

@@ -30,10 +30,11 @@ export function createReadOnlyAgentRuntime(options = {}) {
   const signerFactory = options.signerFactory ?? null;
   const resolveBinding = (context = {}) => (
     options.creatorAccountId && options.authTicket
-      ? { creatorAccountId: options.creatorAccountId, authTicket: options.authTicket, storageKey: options.storageKey }
+      ? { creatorAccountId: options.creatorAccountId, installationId: options.installationId,
+          authTicket: options.authTicket, storageKey: options.storageKey }
       : chromeAdapter.loadBrainBinding(context)
   );
-  const bindingFingerprint = (binding) => binding.creatorAccountId;
+  const bindingFingerprint = (binding) => JSON.stringify([binding.installationId, binding.creatorAccountId]);
   return new AgentRuntime({
     registerWakeListeners: (listener) => chromeAdapter.onWake(listener),
     onStartupError: options.onStartupError,
@@ -57,7 +58,8 @@ export function createReadOnlyAgentRuntime(options = {}) {
         ? await chromeAdapter.loadAgentInstallationId()
         : (await chromeAdapter.loadAgentIdentity()).agentInstallationId;
       signal.throwIfAborted();
-      const rawStorage = ingestionStorageFactory({ creatorAccountId, encryptionKey: binding.storageKey });
+      const rawStorage = ingestionStorageFactory({ creatorAccountId, installationId: binding.installationId,
+        encryptionKey: binding.storageKey });
       const accountStorage = createLifecycleStorage(rawStorage, signal);
       const durableOutbox = outboxFactory({ storage: accountStorage, creatorAccountId });
       const ingestionState = await durableOutbox.initialize();
@@ -102,6 +104,7 @@ export function createReadOnlyAgentRuntime(options = {}) {
           outbox: durableOutbox,
           signer: lazySigner,
           configuration: () => configuration.activeDocument,
+          onStateChanged: options.onHistoryStateChanged,
           session: () => transport?.session == null ? null : { ...transport.session, applied_config_revision: identity.appliedConfigRevision },
         });
       }
@@ -109,6 +112,7 @@ export function createReadOnlyAgentRuntime(options = {}) {
         history = coordinateAcquisition(history, new CatchupCoordinator({
           outbox: durableOutbox, signer: history.signer,
           configuration: () => configuration.activeDocument,
+          onStateChanged: options.onHistoryStateChanged,
           session: () => transport?.session == null ? null : { ...transport.session,
             agent_installation_id: agentInstallationId, applied_config_revision: identity.appliedConfigRevision },
           rpc: options.catchupRpc, captureState: options.captureState, workerInstanceId,

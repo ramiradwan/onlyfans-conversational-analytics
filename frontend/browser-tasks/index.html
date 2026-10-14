@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Browser task · Conversation Analytics</title>
+  </head>
+  <body>
+    <header class="setup-header"><span class="setup-brand">Conversation Analytics</span></header>
+    <main class="setup-main" data-journey-state="browser.loading">
+      <section class="setup-card" aria-labelledby="task-title">
+        <p class="setup-eyebrow">Chrome browser task</p>
+        <h1 id="task-title" tabindex="-1">Browser access</h1>
+        <p id="task-status" role="status" aria-live="polite">Reading the current task…</p>
+        <div class="setup-actions">
+          <button id="pairing-replace" type="button" aria-describedby="task-status" hidden>Replace saved connection</button>
+          <button id="extension-open" type="button" aria-describedby="task-status" hidden>Open extension</button>
+          <button id="authentication-open" type="button" aria-describedby="task-status" hidden>Continue sign-in</button>
+          <a id="authentication-browser" class="button" rel="noopener noreferrer" target="_blank" hidden>Continue in Chrome</a>
+          <a id="extension-install" class="button" rel="noreferrer" target="_blank" hidden>Get the extension</a>
+          <button id="task-retry" class="secondary" type="button" aria-describedby="task-status" hidden>Retry</button>
+          <a id="desktop-return" class="button secondary" hidden>Return to desktop</a>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

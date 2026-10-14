@@ -1,0 +1,162 @@
+[
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "exact-callback",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": true
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "http",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "wrong-extension",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "suffix-host",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org.evil.invalid/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "userinfo",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://user@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "port",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org:443/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "wrong-path",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/other?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "trailing-path",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete/?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "fragment",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed#x",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "unknown-field",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed&token=refused",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "duplicate-field",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "wrong-attempt",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "wrong-ceremony",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000003&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "success-is-not-notification",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=success",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "encoded-path",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/%63omplete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "encoded-query",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?%63eremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "reordered-query",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&ceremony_id=0199b234-5678-7000-8000-000000000002&notification=changed",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "credentials",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=changed&redemption=clr1.AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "valid": false
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "retired",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=retired",
+    "valid": true
+  },
+  {
+    "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+    "case_id": "unavailable",
+    "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+    "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete",
+    "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete?ceremony_id=0199b234-5678-7000-8000-000000000002&attempt_id=Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA&notification=unavailable",
+    "valid": true
+  }
+]

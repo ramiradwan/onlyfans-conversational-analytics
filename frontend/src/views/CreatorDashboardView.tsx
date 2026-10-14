@@ -5,18 +5,21 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { useEffect, useId, useState, useSyncExternalStore } from 'react';
+import { useId, useState, useSyncExternalStore } from 'react';
 
+import { CommercialActivationControls } from '../components/CommercialActivationControls';
 import { DashboardOverview, type OverviewProgress } from '../components/dashboard/DashboardOverview';
 import { RecentConversations } from '../components/dashboard/RecentConversations';
+import { OnboardingEmptyActivity } from '../components/OnboardingEmptyActivity';
 import { SetupPrompt } from '../components/SetupPrompt';
-import { LoadingFrame, ReservedNotice, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
+import { LoadingFrame, ReservedRegion, StatusLine } from '../components/ui/ReservedRegion';
 import { usePermissions } from '../hooks/usePermissions';
 import type { AnalyticsMetric, HistoricalCoverage } from '../protocol';
 import {
   capabilityLicenseApi,
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
+import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import {
   bridgeTransportStore,
   type BridgeTransportState,
@@ -45,7 +48,6 @@ const LOCAL_DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 });
 const LOCAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-const READINESS_WAIT_MS = 3000;
 
 
 type CreatorDashboardState = Omit<
@@ -88,9 +90,13 @@ interface CreatorDashboardStore {
 interface CreatorDashboardViewProps {
   store?: CreatorDashboardStore;
   activationApi?: CapabilityLicenseApi;
+  onboardingApi?: DesktopOnboardingApi;
 }
 
-function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): StatusMessage | null {
+function getIssue(
+  state: ReturnType<CreatorDashboardStore['getState']>,
+  hasDisplayedNumbers: boolean,
+): StatusMessage | null {
   if (state.protocolError !== null) {
     return {
       detail: protocolErrorText(state.protocolError),
@@ -100,10 +106,7 @@ function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): StatusM
   }
   if (state.readModelState === 'resyncing') {
     return {
-      detail:
-        state.viewRevision === null
-          ? 'Your numbers will appear in a moment.'
-          : 'Showing your last numbers until the refresh finishes.',
+      detail: hasDisplayedNumbers ? 'Showing your last numbers.' : '',
       severity: 'info',
       title: 'Refreshing your numbers',
     };
@@ -111,14 +114,14 @@ function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): StatusM
   if (state.readModelState === 'degraded' && state.connection === 'connected') {
     return state.viewRevision === null
       ? {
-          detail: 'Your numbers will appear once the connection is back.',
+          detail: '',
           severity: 'warning',
           title: 'Numbers unavailable',
         }
       : {
-          detail: 'Showing your last numbers while reconnecting.',
+          detail: hasDisplayedNumbers ? 'Showing your last numbers.' : '',
           severity: 'warning',
-          title: 'Updates paused',
+          title: 'Updates unavailable',
         };
   }
   if (
@@ -126,42 +129,49 @@ function getIssue(state: ReturnType<CreatorDashboardStore['getState']>): StatusM
     (state.connection === 'disconnected' || state.connection === 'error')
   ) {
     return {
-      detail: 'Your numbers will appear once the connection is back.',
+      detail: '',
       severity: 'error',
-      title: 'Numbers unavailable',
+      title: 'Dashboard connection interrupted',
     };
   }
+  const waitingForFirstMessages = state.projection.canonical_revision === 0 && !hasDisplayedNumbers;
+  if (state.system?.readiness === 'unavailable' && waitingForFirstMessages) return {
+    title: 'Waiting for messages', detail: 'Counts appear when messages reach this app.', severity: 'info',
+  };
   if (state.system?.readiness === 'unavailable') {
     return {
       detail: humanizeProjectionReason(
         state.projection.reason,
-        "Your numbers can't be shown right now.",
+        '',
       ),
       severity: 'error',
       title: 'Numbers unavailable',
     };
   }
   if (state.viewRevision === null) return null;
+  if (state.projection.status === 'unavailable' && waitingForFirstMessages) return {
+    title: 'Waiting for messages', detail: 'Counts appear when messages reach this app.', severity: 'info',
+  };
   if (state.projection.status === 'unavailable') {
     return {
-      detail: "Your numbers can't be shown right now. Messages keep syncing in the meantime.",
+      detail: '',
       severity: 'error',
       title: 'Numbers unavailable',
     };
   }
   if (state.projection.status === 'pending') {
     return {
-      detail: 'Counts appear as soon as they are ready.',
+      detail: '',
       severity: 'info',
-      title: 'Preparing your numbers',
+      title: 'Waiting for numbers',
     };
   }
   if (setupIncomplete(state.coverage)) return null;
   if (state.coverage.phase === 'blocked') {
     return {
-      detail: humanizeCoverageReason(state.coverage.reason, 'Message history sync stopped.'),
+      detail: humanizeCoverageReason(state.coverage.reason, ''),
       severity: 'warning',
-      title: 'Message history needs attention',
+      title: 'History incomplete',
     };
   }
   return null;
@@ -301,36 +311,15 @@ function NumbersBasis({
 export default function CreatorDashboardView({
   store = bridgeTransportStore,
   activationApi = capabilityLicenseApi,
+  onboardingApi = desktopOnboardingApi,
 }: CreatorDashboardViewProps) {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
   const { canViewInbox } = usePermissions();
-  const scope = String(state.creatorAccountId) + ':' + String(state.session?.connection_id);
-  const [setup, setSetup] = useState<{ scope: string; value: boolean | null | undefined }>({ scope, value: undefined });
-  const fullAnalyticsReady = setup.scope === scope ? setup.value : undefined;
+  const desktop = useSyncExternalStore(onboardingApi.subscribe, onboardingApi.getState, onboardingApi.getState);
+  const analysis = selectAnalysisReadiness(desktop, state.creatorAccountId);
+  const fullAnalyticsReady = analysis.checking ? undefined : analysis.value === null ? null
+    : analysis.value.commercial_authority === 'active' && analysis.value.analysis_admission === 'admitted';
   const hasSnapshot = state.viewRevision !== null;
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let pending = true;
-    const settle = (next: boolean | null) => {
-      if (!pending) return;
-      pending = false;
-      setSetup({ scope, value: next });
-    };
-    const timeout = window.setTimeout(() => {
-      settle(null);
-      controller.abort();
-    }, READINESS_WAIT_MS);
-    void activationApi.readiness(controller.signal).then(
-      (next) => settle(next.commercial_authority === 'active' && next.analysis_admission === 'admitted'),
-      () => settle(null),
-    ).finally(() => window.clearTimeout(timeout));
-    return () => {
-      pending = false;
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [activationApi, scope]);
 
   const readiness: DataReadiness = {
     coverage: state.coverage,
@@ -340,7 +329,6 @@ export default function CreatorDashboardView({
       state.agent as BridgeTransportState['agent'],
     ),
   };
-  const issue = getIssue(state);
   const analytics = state.analytics;
   const metrics = [
     analytics?.total_conversations,
@@ -350,18 +338,36 @@ export default function CreatorDashboardView({
   ];
   const format = (metric: AnalyticsMetric | null | undefined) =>
     formatAdditiveMetric(metric, readiness, (value) => Number(value) > 9_999_999 ? '10M+' : NUMBER_FORMAT.format(value)).replace(/\+\+$/, '+');
+  const issue = getIssue(state, hasSnapshot && metrics.some((metric) => format(metric) !== '—'));
   const showSetup = hasSnapshot && fullAnalyticsReady !== undefined
-    && (extensionConnection(state.agent) !== 'connected' || fullAnalyticsReady === false);
+    && (extensionConnection(state.agent) !== 'connected' || fullAnalyticsReady !== true);
 
   const evidence = summarizeMetricEvidence(metrics);
   const progress = hasSnapshot ? historyProgress(state.coverage) : null;
+  const emptyOnboarding = hasSnapshot
+    && state.conversations.length === 0 && issue === null && fullAnalyticsReady === true
+    && state.connection === 'connected' && metrics.every((metric) => metric?.value === 0 && metric.basis === 'complete');
+  if (emptyOnboarding) return (
+    <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pb: 3 }}>
+      <Stack spacing={3} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
+        <Typography component="h1" variant="h4">Dashboard</Typography>
+        <OnboardingEmptyActivity browser={(state.agent as BridgeTransportState['agent'])?.browser ?? null}
+          connection={extensionConnection(state.agent)} desktopConnected={state.connection === 'connected'} />
+      </Stack>
+    </Box>
+  );
 
   return (
     <Box data-scroll-container sx={{ flex: 1, minHeight: 0, overflowY: 'auto', scrollbarGutter: 'stable', pb: 3 }}>
       <Stack spacing={2.5} sx={{ maxWidth: componentTokens.shell.dashboardMaxWidth, mx: 'auto', width: '100%' }}>
-        <Typography component="h1" variant="h4">Dashboard</Typography>
-        <ReservedNotice id="dashboard-notice" notice={issue ? { title: issue.title, body: issue.detail, severity: issue.severity } : fullAnalyticsReady === null ? { title: 'Setup status is unavailable.', body: '', severity: 'warning' } : null} />
-        <StatusLine id="dashboard-setup-status" text={fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
+        <Box>
+          <Typography component="h1" variant="h4">Dashboard</Typography>
+          <Box role={issue ? 'alert' : undefined} sx={{ mt: 1 }}>
+            <StatusLine id="dashboard-notice" summary={issue?.title} text={issue
+              ? [issue.title, issue.detail].filter(Boolean).join('. ')
+              : fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
+          </Box>
+        </Box>
         <ReservedRegion id="dashboard-overview" size={{ xs: 450, sm: 300 }}>
           <Box data-region-content><DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} /></Box>
           {!hasSnapshot && <Box sx={{ position: 'absolute', inset: 0 }}><LoadingFrame label="Loading dashboard…" /></Box>}
@@ -372,9 +378,12 @@ export default function CreatorDashboardView({
         <ReservedRegion id="dashboard-recent" size={{ xs: 440, sm: 360 }} regionRole="scroll">
           {hasSnapshot ? <Box data-region-content><RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} /></Box> : <LoadingFrame label="Loading dashboard…" />}
         </ReservedRegion>
-        <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">
+        <ReservedRegion id="dashboard-setup" size={extensionConnection(state.agent) === 'connected'
+          ? { xs: 352, sm: 240 } : { xs: 720, sm: 600 }} regionRole="scroll">
           {showSetup && <Box data-region-content>
-            <SetupPrompt extensionConnected={extensionConnection(state.agent) === 'connected'} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" />
+            {extensionConnection(state.agent) === 'connected'
+              ? <CommercialActivationControls api={activationApi} onboarding={onboardingApi} creatorAccountId={state.creatorAccountId} />
+              : <SetupPrompt extensionConnected={false} fullAnalyticsReady={fullAnalyticsReady === true} title="Finish setup" />}
           </Box>}
         </ReservedRegion>
       </Stack>

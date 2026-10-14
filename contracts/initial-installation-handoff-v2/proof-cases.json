@@ -1,0 +1,722 @@
+[
+  {
+    "case_id": "prepare-valid",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-prepare",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002c2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a707265706172650000002083cedbc87c2bb79810663f5eba3ed830694061c84c56ed7aa3f76193ea10b79800000017696e697469616c2d68616e646f66662d7072657061726500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "destination": {
+        "device": {
+          "display_name": "Computer",
+          "platform": "windows",
+          "product_version": "1.0.0"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key": {
+          "alg": "ES256",
+          "jwk": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+            "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+          },
+          "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2"
+    },
+    "signature": "3gFr3LoIFhGV_3tK6QgysFeDDyJ2ftvyJAJxLSBoDuxNuJEHosoiif5ZIwDysxMrGPRb2cZkvUtMuGvhiEJRPQ",
+    "valid": true
+  },
+  {
+    "case_id": "wait-valid",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f5354000000292f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a77616974000000202004ce84785fb0941cf15727416da21ce7ac4ef31ad4ca247346f570f8a9cc9000000014696e697469616c2d68616e646f66662d7761697400000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    },
+    "signature": "-WmkGx7WGdNCX4EERsnK5eL5EZoGUzICqBAixpfNfQg28Fjoi7IoyycM5GB6F9U-Q1tYBt9DwFbZQ7vFYoCqdA",
+    "valid": true
+  },
+  {
+    "case_id": "complete-valid",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": true
+  },
+  {
+    "case_id": "receipt-valid",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-receipt",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002c2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a726563656970740000002095b5a1124df37f2a49a15766e48d5d02fdaec5752cda9240a615a8356c8b6ba600000017696e697469616c2d68616e646f66662d7265636569707400000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "installation_id": "installation-fixture",
+      "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2"
+    },
+    "signature": "TIs-aiy71PpS1faYOg9w7sno_WKrWUnaOC_A-yotKsYmBhqOeRzDvi-tXix_rw4Cv8T5uTWK7feQDRd4BpMJhg",
+    "valid": true
+  },
+  {
+    "case_id": "changed-request",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "different-creator",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "foreign-key",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "_iZP0hl32GouXtJyai-Tuav4gQNVlBF5XAVLyMhvmFw",
+      "y": "aURK-8zyrZsHb74MaisKAOatnjYUpCcaj39WyjqwJ4w"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "off-curve-key",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "y": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-purpose",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-wait",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "malformed-signature",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "valid": false
+  },
+  {
+    "case_id": "high-s",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvymAuJHtz2jk1zYYAMao14Rqd5YhE4UXcKfAJMixD__XDg",
+    "valid": false
+  },
+  {
+    "case_id": "noncanonical-challenge",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "short-challenge",
+    "challenge": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-domain",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4f4e424f415244494e472d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "c_0rEo1tu_dzNiS3c5sinBIhy67X5Pi9H6ISHVAZEsMd4km8PmZGjlY-kLq8G1Cuu_33cH7IatchkXiUQ_R4eQ",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-path",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a7265706c616365640000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "vyI3vS73goCuJGVJpAw_uwFOzoSTnNHmcrGYO0RjVQRO9gR6Yqzr6td0alSehzX3LEGR1uQjfAYx8rHcL7hdAA",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-method",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004474554200000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "3lDvcyokpT2_7KFTdvuTj7_VB5eM1ugtadUdgCvf548G9t3XzibfROHYdMEj8UgaD5ociJBzsgn0ghnXGNbpWA",
+    "valid": false
+  },
+  {
+    "case_id": "wrong-audience",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a616e6f746865722d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "5n1wzxiYChU2tihyXONlt5XBcAgut_M9J-wbw_fYHB1SlmjYZLFM2isSc8C113W3fnz4BZAwQZTw7t6kV9wdHg",
+    "valid": false
+  },
+  {
+    "case_id": "changed-auth-revision",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 2,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "changed-action-digest",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "0000000000000000000000000000000000000000000000000000000000000000",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "extra-public-jwk-member",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kid": "unexpected",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "VmPfmkEGP_ySZ2Ax7wR27qW81cLWwhUWyyQ-6c2xvyl_R24RMJcbKcnn_zlXKHuVRVDZmiIALd0zlQIR7GNOQw",
+    "valid": false
+  },
+  {
+    "case_id": "valid-signature-padded-coordinate",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-prepare",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002c2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a707265706172650000002083c3f61924780d8f1ed94c53bfc17c7b4a6bbb6b264e48916c1700eba399dd0900000017696e697469616c2d68616e646f66662d7072657061726500000020266ad07ba43eb4a29a6eefe8c105dfc1dcacd8d03cd47e47a8ab4c70e69f4e470000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "AIH1UrrztBHfjSZVrB4PAW9wsQGn3H_B41q9yN71u4bl",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "destination": {
+        "device": {
+          "display_name": "Computer",
+          "platform": "windows",
+          "product_version": "1.0.0"
+        },
+        "installation_id": "installation-fixture",
+        "installation_key": {
+          "alg": "ES256",
+          "jwk": {
+            "crv": "P-256",
+            "kty": "EC",
+            "x": "AIH1UrrztBHfjSZVrB4PAW9wsQGn3H_B41q9yN71u4bl",
+            "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+          },
+          "kid": "ik1.AAECAwQFBgcICQoLDA0ODw"
+        }
+      },
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2"
+    },
+    "signature": "u_Hx0YgTs2F4ncuPBx4LRFEGCFIcEwI4Q5ihgSyxgW5wPww2271P9qYXUB6MG77rPZuayWbBaxtVFne5xo0zqw",
+    "valid": false
+  },
+  {
+    "case_id": "old-profile-with-v2-signature",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002073c94820911c4d63d2c6752a32f49271bf29927da6913c18b62a36a996aa3c7900000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v1",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "yqhXXYQCHaX4vR7bBQnWdU1t9CeRUcgV8m52ErtynF0ImjXtoB_pUeeHyoTG_LJrNgO_m2ZcMm8kcczP_GoJgg",
+    "valid": false
+  },
+  {
+    "case_id": "old-domain-with-valid-signature",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56310000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76322f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "uwPVcZSVAO8xeeEFLeY3plp5ROpeH9rgUEM-DVGIGzh9-hk2YuemsWR833nsYmx8BL8KtiEzLzR4dgq5pZ5Vfg",
+    "valid": false
+  },
+  {
+    "case_id": "old-route-with-valid-signature",
+    "challenge": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+    "operation": "initial-handoff-complete",
+    "proof_bytes_hex": "4252494447452d434c45414e2d494e495449414c2d494e5354414c4c4154494f4e2d48414e444f46462d50524f4f462d56320000000020202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000004504f53540000002d2f76312f6f6e626f617264696e672f696e7374616c6c6174696f6e2d68616e646f6666733a636f6d706c6574650000002054ef5ae22712ddbe15ec57d2f3e4f52fd1ea9ad6eb8d030604a964eef54a655200000018696e697469616c2d68616e646f66662d636f6d706c65746500000020cd4169833584f8bcb3a757504fc7034e4703215c8775824c7e5c9feec9232b4c0000004675726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a696e697469616c2d696e7374616c6c6174696f6e2d68616e646f6666",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "gfVSuvO0Ed-NJlWsHg8Bb3CxAafcf8HjWr3I3vW7huU",
+      "y": "HBjDNcSsbdJlkYoyXHoI00putzNRECBvUgFaaO5seDY"
+    },
+    "request": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:initial-installation-handoff:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "scope": {
+        "action_digests": {
+          "approve-creator-association": "02936b300c893a51e8466b9f039683cac818debe3dab63b40f056e475cf981d1",
+          "issue-installation-claim": "f8a381efabc71cfd9b6f56f7a3ba9996188b54791ea6841d912856cdced4c8ba"
+        },
+        "association_request_id": "0199b234-5678-7000-8000-000000000001",
+        "authorization_revision": 1,
+        "installation_id": "installation-fixture",
+        "installation_key_jkt": "zUFpgzWE-Lyzp1dQT8cDTkcDIVyHdYJMflyf7skjK0w",
+        "intended_creator_id": "creator-fixture",
+        "onboarding_transaction_id": "transaction-fixture",
+        "organization_id": "org-fixture"
+      }
+    },
+    "signature": "LLO2dbhhMD9Tvg6ZadeFyhTtwblYgA54qdrulPgfAWw64bFIhGyjb9aUQWSahOUEWGySMYYNSNID6v-qYlhP0g",
+    "valid": false
+  }
+]

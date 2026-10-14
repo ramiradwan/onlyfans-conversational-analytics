@@ -352,6 +352,19 @@ export const theme = createTheme({
     },
     MuiCssBaseline: {
       styleOverrides: {
+        '*': {
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'var(--bridge-palette-divider) transparent',
+          '&::-webkit-scrollbar': { width: 10, height: 10 },
+          '&::-webkit-scrollbar-track': { background: 'transparent' },
+          '&::-webkit-scrollbar-thumb': { backgroundColor: 'var(--bridge-palette-divider)', borderRadius: 999,
+            border: '2px solid transparent', backgroundClip: 'padding-box' },
+          '&::-webkit-scrollbar-thumb:hover': { backgroundColor: 'var(--bridge-palette-text-secondary)' },
+        },
+        '@media (forced-colors: active)': {
+          '*': { scrollbarColor: 'auto', scrollbarWidth: 'auto',
+            '&::-webkit-scrollbar-thumb': { backgroundColor: 'ButtonText' } },
+        },
         '@media (prefers-reduced-motion: reduce)': {
           '*, *::before, *::after': {
             animationDuration: '0.01ms !important',

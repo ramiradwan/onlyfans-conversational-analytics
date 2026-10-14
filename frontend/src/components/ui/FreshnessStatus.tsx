@@ -3,7 +3,8 @@ import { Box, Button, ButtonBase, Popover, Stack, Typography } from '@mui/materi
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
 import type { CatchupFreshness } from '../../protocol';
-import { defaultExtensionPort } from '../../services/extensionPort';
+import { browserControlApi } from '../../services/browserControlApi';
+import { desktopOnboardingApi, type DesktopOnboardingApi } from '../../services/desktopOnboarding';
 import type { BridgeConnectionState } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
 import { connectionGrace, connectionNote } from '../../utils/connectionGrace';
@@ -13,10 +14,12 @@ const tokens = componentTokens.FreshnessStatus;
 const breathe = keyframes({ from: { opacity: 0.45 }, to: { opacity: 1 } });
 const fade = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
 
-export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new Date(), timeZone = viewerTimeZone(), override }: {
+export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new Date(), timeZone = viewerTimeZone(), override, onboarding = desktopOnboardingApi }: {
   freshness: CatchupFreshness | null | undefined; bridge: BridgeConnectionState; snapshotUsable: boolean;
   now?: Date; timeZone?: string; override?: FreshnessPresentation;
+  onboarding?: DesktopOnboardingApi;
 }) {
+  useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
   const current = override ?? presentFreshness({ freshness, bridge, snapshotUsable, now, timeZone });
   const [held, setHeld] = useState<{ value: FreshnessPresentation; since: number }>(() => ({ value: current, since: performance.now() }));
   const latest = useRef(current);
@@ -37,22 +40,19 @@ export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new D
   const id = useId();
   const phase = useSyncExternalStore(connectionGrace.subscribe, connectionGrace.getSnapshot);
   const note = connectionNote(phase);
-  const [navigation, setNavigation] = useState<'creator' | 'setup' | null>(null);
-  useEffect(() => {
-    if (navigation === null) return;
-    const port = defaultExtensionPort();
-    let finished = false;
-    const openWhenConnected = () => {
-      const status = port.getState().status;
-      if (finished || status === 'connecting') return;
-      finished = true;
-      if (status === 'connected') port.open(navigation);
-      setNavigation(null);
-    };
-    const unsubscribe = port.subscribe(openWhenConnected);
-    openWhenConnected();
-    return unsubscribe;
-  }, [navigation]);
+  const [navigationError, setNavigationError] = useState(false);
+  const navigation = useRef<AbortController | null>(null);
+  useEffect(() => () => navigation.current?.abort(), []);
+  const open = async (destination: 'creator' | 'setup') => {
+    navigation.current?.abort();
+    const controller = new AbortController(); navigation.current = controller;
+    setNavigationError(false);
+    try {
+      if (destination === 'setup') { await onboarding.begin('browser.access'); return; }
+      const result = await browserControlApi.open(destination, controller.signal);
+      if (!controller.signal.aborted) setNavigationError(result === 'unreachable');
+    } catch { if (!controller.signal.aborted) setNavigationError(true); }
+  };
   const rows = snapshotUsable ? freshnessRows(freshness, now, timeZone) : [];
   const color = shown.icon === 'ring-active' ? 'brand.main' : ({ settled: 'success.main', checking: 'brand.main', unknown: 'text.disabled', attention: 'warning.main', user: 'text.secondary', error: 'error.main' })[shown.tone];
   return <>
@@ -71,9 +71,10 @@ export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new D
       slotProps={{ paper: { role: 'dialog', 'aria-label': 'Status details', sx: { width: tokens.detailInlineSize, maxWidth: 'calc(100vw - 32px)' } } }}>
       <Stack spacing={1.5} sx={{ p: 2 }}>
         <Box><Typography variant="subtitle2">{current.title}</Typography><Typography variant="body2">{current.sentence}</Typography></Box>
+        {navigationError && <Typography data-journey-state="desktop.browser_action_unavailable" role="alert" variant="body2">The browser action could not be opened. Open Chrome and try again.</Typography>}
         <Box component="dl" sx={{ display: 'grid', gap: 1, m: 0 }}>{[...(note ? [{ label: 'Connection', value: note }] : []), ...rows].slice(0, 3).map((row) => <Box key={row.label}><Typography component="dt" variant="caption">{row.label}</Typography><Typography component="dd" variant="body2" sx={{ m: 0, fontVariantNumeric: 'tabular-nums' }}>{row.value}</Typography></Box>)}</Box>
         {current.action && <Button size="small" variant="outlined" component={current.action.destination === 'settings' ? 'a' : 'button'} href={current.action.destination === 'settings' ? '/settings#browser-extension' : undefined}
-          onClick={() => { const destination = current.action?.destination; if (destination === 'reload') window.location.reload(); else if (destination === 'creator' || destination === 'setup') setNavigation(destination); setAnchor(null); }} sx={{ alignSelf: 'flex-start' }}>{current.action.label}</Button>}
+          onClick={() => { const destination = current.action?.destination; if (destination === 'reload') window.location.reload(); else if (destination === 'creator' || destination === 'setup') void open(destination); }} sx={{ alignSelf: 'flex-start' }}>{current.action.label}</Button>}
       </Stack>
     </Popover>
   </>;

@@ -4,6 +4,10 @@
 
 ## System components
 
+[ADR 0050](adr/0050-desktop-onboarding-and-browser-tasks.md) assigns the native host under `desktop/` to `brain-runtime-bootstrap`, the coordinator under `app/onboarding/` to `provisioning-surface`, and the desktop/browser-task schemas under `shared/` to `protocol-core`. Separately built setup, browser-task and shared-setup frontend entries belong to `bridge-orchestration`; only browser-task entries may import Chrome adapters. These declarations govern the implementation of that decision and do not attest installed qualification.
+
+The shared onboarding construction, authentication-task handlers and typed source lifecycle remain within those modules. [ADR 0054](adr/0054-consolidate-onboarding-coordination.md) preserves their separate runtime authority and transport admission boundaries.
+
 The repository contains three runtime components and supporting release controls:
 
 - **Brain (`app/`)**: Local Python backend running on the creator's machine. It hosts the local HTTP and WebSocket endpoints, authenticates sessions, coordinates first-run provisioning, commits canonical conversation state to SQLite, and runs derived analytics. There is no standalone `brain/` directory.

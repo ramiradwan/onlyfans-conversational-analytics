@@ -1,4 +1,5 @@
 import { CAPTURE_LIMITS, fitsUtf8 } from './limits.mjs';
+import { validProfileLabels } from './profile-labels.mjs';
 
 export const CAPTURE_MESSAGE_TYPE = 'ofca.capture.observation';
 export const CAPTURE_PROTOCOL_VERSION = '2';
@@ -162,6 +163,8 @@ export function isProvisioningIdentityEnvelope(value) {
   ) return false;
   if (value.authenticated_profile === null) return true;
   return isRecord(value.authenticated_profile)
-    && hasExactKeys(value.authenticated_profile, ['creator_account_id'])
+    && hasExactKeys(value.authenticated_profile, ['creator_account_id',
+      ...['display_name', 'username'].filter(field => Object.hasOwn(value.authenticated_profile, field))])
+    && validProfileLabels(value.authenticated_profile)
     && isIdentifier(value.authenticated_profile.creator_account_id);
 }

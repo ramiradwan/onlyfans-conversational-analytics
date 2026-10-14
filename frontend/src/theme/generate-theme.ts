@@ -285,7 +285,7 @@ function declarationBlock(selector: string, declarations: Array<[string, string]
  * Emits the CSS custom properties consumed by surfaces that cannot import the React
  * theme (extension popup, desktop provisioning page).
  */
-export function generateStaticTokensCss(tokensJsonSource: string): string {
+export function generateStaticTokensCss(tokensJsonSource: string, explicitScheme = false): string {
   const resolved = resolveTokens(tokensJsonSource);
   const tier1 = getObject(resolved, 'tier1');
   const typography = getObject(tier1, 'brandTypography');
@@ -338,8 +338,9 @@ export function generateStaticTokensCss(tokensJsonSource: string): string {
   return (
     '/* Generated from frontend/src/theme/tokens.json; run npm run sync:static-tokens in frontend. */\n' +
     declarationBlock(':root', [...shared, ...colorDeclarations(getObject(colorSchemes, 'light')), ...intentDeclarations(getObject(intents, 'light'))], '') +
+    (explicitScheme ? '\n' + declarationBlock(':root[data-color-scheme="dark"]', [...colorDeclarations(getObject(colorSchemes, 'dark')), ...intentDeclarations(getObject(intents, 'dark'))], '') : '') +
     '\n@media (prefers-color-scheme: dark) {\n' +
-    declarationBlock(':root', [...colorDeclarations(getObject(colorSchemes, 'dark')), ...intentDeclarations(getObject(intents, 'dark'))], '  ') +
+    declarationBlock(explicitScheme ? ':root:not([data-color-scheme="light"])' : ':root', [...colorDeclarations(getObject(colorSchemes, 'dark')), ...intentDeclarations(getObject(intents, 'dark'))], '  ') +
     '\n}\n'
   ).replace(/\r\n/g, '\n');
 }
@@ -382,7 +383,7 @@ export function replaceStaticTokenBlock(consumerSource: string, css: string, mar
   return source.slice(0, start) + blockStart + '\n' + body + '\n' + indent + source.slice(end);
 }
 
-export const staticTokenConsumers = ['extension/popup.css', 'app/provisioning/provisioning.html'];
+export const staticTokenConsumers = ['extension/popup.css'];
 export const firstPaintConsumers = ['app/templates/index.html', 'frontend/index.html'];
 const repositoryRoot = path.resolve(themeDirectory, '..', '..', '..');
 
@@ -404,8 +405,11 @@ function main(): void {
   writeIfChanged(generatedPath, generateThemeSource(tokensSource));
   const css = generateStaticTokensCss(tokensSource);
   writeIfChanged(staticTokensPath, css);
+  writeIfChanged(path.join(themeDirectory, 'generated', 'desktop-tokens.css'), generateStaticTokensCss(tokensSource, true));
   const fonts = generateStaticFontsCss(repositoryRoot);
   writeIfChanged(path.join(themeDirectory, 'generated', 'static-fonts.css'), fonts);
+  const workspace = fs.readFileSync(path.join(themeDirectory, 'onboarding.css'), 'utf8');
+  writeIfChanged(path.join(themeDirectory, 'generated', 'hosted-onboarding.css'), css + '\n' + fonts + '\n' + workspace);
   console.log('Theme generated deterministically from tokens.json');
   const reportIndex = process.argv.indexOf('--color-report');
   if (reportIndex >= 0) {
@@ -415,6 +419,10 @@ function main(): void {
     writeIfChanged(output, generateColorReport(tokensSource));
   }
   if (process.argv.includes('--static-surfaces')) {
+    for (const consumer of ['extension/setup.css']) {
+      const consumerPath = path.join(repositoryRoot, consumer);
+      writeIfChanged(consumerPath, replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), workspace, 'onboarding-layout'));
+    }
     for (const consumer of staticTokenConsumers) {
       const consumerPath = path.join(repositoryRoot, consumer);
       const updated = replaceStaticTokenBlock(
@@ -422,7 +430,7 @@ function main(): void {
       );
       if (writeIfChanged(consumerPath, updated)) console.log('Updated design tokens in ' + consumer);
     }
-    for (const [consumer, count] of [['extension/popup.html', 2], ['extension/setup.html', 2], ['extension/options.html', 2], ['app/provisioning/provisioning.html', 1]] as const) {
+    for (const [consumer, count] of [['extension/popup.html', 2], ['extension/setup.html', 2], ['extension/options.html', 2]] as const) {
       const consumerPath = path.join(repositoryRoot, consumer);
       writeIfChanged(consumerPath, replaceStaticFontPreloads(fs.readFileSync(consumerPath, 'utf8'), fonts, count));
     }

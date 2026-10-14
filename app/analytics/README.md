@@ -16,6 +16,10 @@ For each creator account, the analytics pipeline:
 
 Readers use the active projection. Missing, building, and failed projections remain explicit states. Read handlers do not build a projection inline; recovery may be scheduled separately when projection storage is unavailable.
 
+The licensed pipeline revalidates its admitted account policy before constructing a candidate. An unrelated session change can advance the global authorization epoch without revoking analysis. In that case it recomposes current identity and commercial authority for the same installation and key.
+
+Missing admission, revoked account bindings, changed scope and invalid capability remain denied. Reconciliation never creates commercial authority.
+
 ## Data boundaries
 
 - Canonical conversation data remains the source of truth.

@@ -2,7 +2,14 @@ export function inspectFrames(frames) {
   const baseline = new Map();
   const overlays = new Set();
   const issues = new Set();
+  const taskTransitions = [];
+  let previous;
   for (const frame of frames) {
+    if (previous && typeof frame.task === 'string' && typeof previous.task === 'string' && frame.task !== previous.task) {
+      baseline.clear();
+      overlays.clear();
+      taskTransitions.push([previous.at, frame.paintThrough ?? frame.at]);
+    }
     for (const issue of frame.errors ?? []) issues.add(issue);
     const present = new Set();
     for (const region of frame.regions) {
@@ -17,28 +24,49 @@ export function inspectFrames(frames) {
       if (overlays.has(id)) baseline.delete(id);
       else issues.add(`${id}: removed`);
     }
-    if (frame.shifts?.some((entry) => entry.value > 0)) issues.add('layout shift after first paint');
+    if (frame.shifts?.some((entry) => entry.value > 0 && !taskTransitions.some(([start, end]) => entry.at >= start && entry.at <= end))) issues.add('layout shift after first paint');
+    previous = frame;
   }
   return [...issues];
 }
 
-export function observeRegions({ requiredRegions = [] } = {}) {
-  const state = { frames: [], startedAt: null, firstPaint: null, shifts: [], signature: '', errors: [] };
+export function observeRegions({ requiredRegions = [], taskTransitions = false, nativeTimeline = false } = {}) {
+  // Keep the browser clock and rendering scheduler before Playwright replaces
+  // them. Event.timeStamp is replaced by its clock too; it is not a fallback.
+  const nativeNow = performance.now.bind(performance);
+  const nativeFrame = requestAnimationFrame.bind(window);
+  const nativeCancelFrame = cancelAnimationFrame.bind(window);
+  const nativeTask = setTimeout.bind(window);
+  const capturedAt = nativeNow();
+  const clockVerified = [performance.now, requestAnimationFrame, setTimeout]
+    .every(method => Function.prototype.toString.call(method).includes('[native code]'));
+  const state = { frames: [], startedAt: null, firstPaint: null, shifts: [], rawShifts: [], signature: '', errors: [],
+    nativeTimeline: nativeTimeline ? { basis: 'pre-clock-performance/v1', capturedAt, timeOrigin: performance.timeOrigin,
+      clockVerified, endAt: null, completed: false } : null };
   window.__regionWatcher = state;
+  if (nativeTimeline && !clockVerified) state.errors.push('Native observer clock was not captured before clock mocking');
   const anchors = new Map();
   if (!PerformanceObserver.supportedEntryTypes.includes('layout-shift')) state.errors.push('Layout shift observer unavailable');
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) if (entry.name === 'first-paint') state.firstPaint = entry.startTime;
   }).observe({ type: 'paint', buffered: true });
-  new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) state.shifts.push({ at: entry.startTime, value: entry.value, hadRecentInput: entry.hadRecentInput,
+  const recordShifts = entries => {
+    for (const entry of entries) {
+      const record = { sequence: state.rawShifts.length + 1, at: entry.startTime, deliveredAt: nativeNow(), value: entry.value, hadRecentInput: entry.hadRecentInput,
       sources: (entry.sources ?? []).map(({ node, previousRect, currentRect }) => ({ tag: node?.nodeName, region: node?.closest?.('[data-reserved-region]')?.dataset.reservedRegion ?? null,
-        from: [previousRect.x, previousRect.y, previousRect.width, previousRect.height], to: [currentRect.x, currentRect.y, currentRect.width, currentRect.height] })) });
-  }).observe({ type: 'layout-shift', buffered: true });
+        from: [previousRect.x, previousRect.y, previousRect.width, previousRect.height], to: [currentRect.x, currentRect.y, currentRect.width, currentRect.height] })) };
+      state.rawShifts.push(record);
+      state.shifts.push(record);
+    }
+  };
+  const shiftObserver = new PerformanceObserver(list => recordShifts(list.getEntries()));
+  shiftObserver.observe({ type: 'layout-shift', buffered: true });
   const visible = (node) => {
     const css = getComputedStyle(node);
     const screenReaderOnly = css.position === 'absolute' && css.width === '1px' && css.height === '1px' && (css.clip !== 'auto' || css.clipPath !== 'none');
-    return node.getClientRects().length && css.visibility !== 'hidden' && !screenReaderOnly;
+    let transparent = false;
+    for (let parent = node; parent; parent = parent.parentElement) transparent ||= getComputedStyle(parent).opacity === '0';
+    return node.getClientRects().length && css.visibility !== 'hidden' && !screenReaderOnly && !transparent;
   };
   const beyond = (rect, outer) => rect.left < outer.left - 0.01 || rect.right > outer.right + 0.01 || rect.top < outer.top - 0.01 || rect.bottom > outer.bottom + 0.01;
   function paintedBox(element) {
@@ -165,27 +193,67 @@ export function observeRegions({ requiredRegions = [] } = {}) {
     for (const [node, id] of anchors) {
       if (node.isConnected && visible(node)) regions.push({ id, rect: layoutPosition(node, node.getBoundingClientRect()), overflow: false });
     }
-    const surface = [...document.querySelectorAll('main, #root > *, [data-reserved-region]')].some(visible);
+    const surface = [...document.querySelectorAll('main, #root > *, [data-reserved-region]')].some(node => !node.matches('[data-surface-loading]') && visible(node));
     if (surface || state.startedAt !== null) {
       if (state.startedAt === null) {
         state.startedAt = performance.now();
         for (const id of requiredRegions) if (!ids.has(id)) state.errors.push(`${id}: missing on first surface frame`);
       }
-      const signature = JSON.stringify(regions);
+      const task = taskTransitions === 'provisioning'
+        ? document.querySelector('.provisioning-stage')?.dataset.complete === 'true' ? 'finalization-complete'
+          : document.querySelector('.provisioning-stage .step[aria-current="step"]')?.dataset.step ?? null
+        : taskTransitions ? document.querySelector('main[data-presentation-ready="true"]')?.dataset.requirement ?? null : null;
+      const signature = JSON.stringify({ task, regions });
       if (signature !== state.signature || state.shifts.length) {
-        state.frames.push({ at: performance.now(), regions, shifts: state.shifts.splice(0), errors: [...state.errors] });
+        state.frames.push({ at: performance.now(), nativeAt: nativeNow(), task, regions, shifts: state.shifts.splice(0), errors: [...state.errors] });
         state.signature = signature;
       }
     }
   }
-  let frameStarted = false;
-  const tick = () => { frameStarted = true; sample(); requestAnimationFrame(tick); };
-  new MutationObserver(() => { if (frameStarted) sample(); }).observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
-  document.fonts?.addEventListener('loadingdone', sample);
-  requestAnimationFrame(tick);
+  let stopped = false, frameHandle;
+  const scheduleFrame = nativeTimeline ? nativeFrame : callback => requestAnimationFrame(callback);
+  const tick = () => {
+    if (stopped) return;
+    const previousFrame = state.frames.at(-1);
+    if (previousFrame && previousFrame.paintThrough === undefined) {
+      previousFrame.paintThrough = performance.now();
+      previousFrame.nativePaintThrough = nativeNow();
+    }
+    sample();
+    frameHandle = scheduleFrame(tick);
+  };
+  frameHandle = scheduleFrame(tick);
+  const requireNativeClock = () => {
+    if (!nativeTimeline || !clockVerified || stopped) throw new Error('Native observation timeline is unavailable or closed');
+  };
+  const settleNative = async () => {
+    requireNativeClock();
+    // A task after native rendering lets layout-shift records become available.
+    // takeRecords also retains entries not yet delivered to the callback.
+    await new Promise(resolve => nativeFrame(() => nativeFrame(() => nativeTask(resolve, 0))));
+    recordShifts(shiftObserver.takeRecords());
+  };
+  window.__regionWatchControl = {
+    boundary() {
+      requireNativeClock();
+      return { at: performance.now(), nativeAt: nativeNow(), frame: state.frames.length, boxes: state.frames.at(-1)?.regions };
+    },
+    settle: settleNative,
+    async finish() {
+      await settleNative();
+      sample();
+      state.nativeTimeline.endAt = nativeNow();
+      state.nativeTimeline.completed = true;
+      stopped = true;
+      nativeCancelFrame(frameHandle);
+      shiftObserver.disconnect();
+    },
+  };
 }
 
 export async function installWatcher(page, options = {}) { await page.addInitScript(observeRegions, options); }
+export async function nativeBoundary(page) { return page.evaluate(() => window.__regionWatchControl.boundary()); }
+export async function settleNativeWatcher(page) { await page.evaluate(() => window.__regionWatchControl.settle()); }
 
 export async function auditScrolling(page) {
   const count = await page.evaluate(() => {
@@ -210,11 +278,14 @@ export async function auditScrolling(page) {
 }
 
 export async function readWatcher(page) {
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.evaluate(() => window.__regionWatcher?.nativeTimeline
+    ? window.__regionWatcher.nativeTimeline.completed ? undefined : window.__regionWatchControl.finish()
+    : new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const state = await page.evaluate(() => window.__regionWatcher);
   if (!state) throw new Error('Region observer missing');
   const frames = state.frames;
-  return { firstPaint: state.firstPaint, firstSurfaceFrame: state.startedAt, frames, samples: frames.length, regions: [...new Set(frames.flatMap((frame) => frame.regions.map((region) => region.id)))], failures: [...new Set([...state.errors, ...inspectFrames(frames)])] };
+  return { firstPaint: state.firstPaint, firstSurfaceFrame: state.startedAt, frames, rawShifts: state.rawShifts, nativeTimeline: state.nativeTimeline,
+    samples: frames.length, regions: [...new Set(frames.flatMap((frame) => frame.regions.map((region) => region.id)))], failures: [...new Set([...state.errors, ...inspectFrames(frames)])] };
 }
 
 export async function assertWatcher(page) {

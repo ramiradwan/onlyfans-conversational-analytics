@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/desktop-decision/v1/read-request.schema.json",
+  "title": "Desktop decision read-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "definitions.schema.json#/$defs/readRequest"
+    },
+    "proof": {
+      "$ref": "definitions.schema.json#/$defs/proof"
+    }
+  }
+}

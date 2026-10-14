@@ -117,7 +117,7 @@ test('three Full worker starts and surface signals reserve only one attempt each
     const h = harness({ chromeApi, now: () => time, scheduler });
     chromeApi = h.chrome;
     await Promise.all([h.client.adapter.loadBrainBinding(), h.client.adapter.loadBrainBinding(), h.client.ensureControl()]);
-    h.client.reportSurface({ schema: 'ofca-browser-surface/v1', capture: 'active' });
+    h.client.reportSurface({ schema: 'ofca-browser-surface/v2', capture: 'active' });
     await h.client.ensureControl();
     assert.equal(h.stats.networks, 1);
     assert.equal(h.chrome.storage.local.values.companion_recovery_v1.attempts, worker);
@@ -153,9 +153,14 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
   let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures;
   const pairingStore = {
     async identity() { return { privateKey: key }; }, async status() { return { paired }; },
+    async savedPairing() { return paired ? 'fixture-pin' : null; },
     async begin() { return { requestId: 'request-one', deadline: Math.floor(Date.now() / 1000) + 300, request: vector.request }; },
     async acceptOffer() { return { confirm: vector.confirm, comparisonCode: vector.expected.comparison_code }; },
-    async cancel() { stats.cancel++; }, async forget() { paired = false; stats.forget++; }, close() { stats.closedStores++; },
+    async cancel() { stats.cancel++; }, async forget({ expectedToken, signal, assertCurrent } = {}) {
+      signal?.throwIfAborted(); assertCurrent?.();
+      if (expectedToken !== undefined && (expectedToken !== 'fixture-pin' || !paired)) throw Error('pairing_changed');
+      paired = false; stats.forget++;
+    }, close() { stats.closedStores++; },
   };
   const client = createCompanionClient({ chromeApi: chrome, allowsFull: () => enabled, detectedAccountId: async () => account,
     now, scheduler, random: () => 0.5,
@@ -353,11 +358,11 @@ test('current Agent proof, storage unseal, configuration and rotation use only t
 test('an active Full session reports pending browser state on its authenticated channel', async () => {
   const h = harness();
   const surface = {
-    schema: 'ofca-browser-surface/v1',
+    schema: 'ofca-browser-surface/v2',
     capture: 'active',
     site_access: 'granted',
     history_permission: 'granted',
-    legal_review_required: false,
+    legal_review_required: false, history_error_code: null,
   };
   h.client.reportSurface(surface);
   await h.client.adapter.loadBrainBinding();
@@ -373,8 +378,8 @@ test('an active Full session reports pending browser state on its authenticated 
 test('an unchanged browser surface retries after a refused report', async () => {
   const h = harness({ surfaceFailures: 1 });
   const surface = {
-    schema: 'ofca-browser-surface/v1', capture: 'active', site_access: 'granted',
-    history_permission: 'granted', legal_review_required: false,
+    schema: 'ofca-browser-surface/v2', capture: 'active', site_access: 'granted',
+    history_permission: 'granted', legal_review_required: false, history_error_code: null,
   };
   h.client.reportSurface(surface);
   await h.client.adapter.loadBrainBinding();
@@ -404,6 +409,41 @@ test('explicit confirmed pairing is not blocked by automatic reconnect cooldown'
   assert.equal((await h.client.status()).state, 'paired');
   assert.equal(h.client.connected, true);
   assert.equal(h.stats.networks, 2);
+  h.client.invalidate();
+});
+
+test('desktop replacement closes the saved channel and completes a fresh confirmed pairing', async () => {
+  const h = harness({ enforcePairing: true });
+  let authorized = 0, completed = 0;
+  await h.client.adapter.loadBrainBinding();
+  const owner = { desktop: true }, replacement = await h.client.savedPairing();
+  const pairing = h.client.pairFor(owner, { replacement,
+    authorize: async () => { authorized++; }, onPaired: async () => { completed++; } });
+  for (let i = 0; i < 20 && (await h.client.status()).state !== 'compare'; i++) await tick();
+  assert.equal((await h.client.status()).state, 'compare');
+  assert.equal(h.channels[0].closed, true);
+  assert.equal(h.stats.forget, 1);
+  assert.equal(authorized, 2);
+  h.pairingResult();
+  assert.equal(await pairing, true);
+  assert.equal(completed, 1);
+  assert.equal(h.stats.networks, 2);
+  assert.equal(h.client.connected, true);
+  h.client.invalidate();
+});
+
+test('desktop pairing cannot replace a pin without its scoped replacement authorization', async () => {
+  const h = harness(), owner = { desktop: true };
+  await h.client.adapter.loadBrainBinding();
+  await assert.rejects(h.client.pairFor(owner));
+  await assert.rejects(h.client.pairFor(owner, { replacement: 'changed-pin' }));
+  await assert.rejects(h.client.pairFor(owner, { replacement: 'fixture-pin',
+    authorize: async () => { throw Error('task_expired'); } }));
+  await assert.rejects(h.client.pairFor(owner, { replacement: 'fixture-pin',
+    assertCurrent: () => { throw Error('task_expired_during_transaction'); } }));
+  assert.equal(h.stats.forget, 0);
+  assert.equal(h.channels[0].closed, false);
+  assert.equal(h.client.connected, true);
   h.client.invalidate();
 });
 test('each reconnect reconstructs authority with a new proof instead of durable credentials', async () => {

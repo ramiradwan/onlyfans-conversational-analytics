@@ -32,27 +32,27 @@ const creator = { label: 'Open OnlyFans', destination: 'creator' as const };
 const extension = { label: 'Open extension', destination: 'setup' as const };
 const paused: Record<string, FreshnessPresentation> = {
   user_paused: { label: 'Paused by you', title: 'Paused by you', sentence: 'New messages are not collected until you resume.', icon: 'pause', tone: 'user', action: settings },
-  consent_needed: { label: 'Paused · consent needed', title: 'Consent needed', sentence: 'Review the updated terms in the extension to resume.', icon: 'dot', tone: 'attention', action: extension },
-  extension_offline: { label: 'Paused · browser offline', title: 'Browser offline', sentence: 'Keep your browser open while the extension reconnects.', icon: 'dot', tone: 'attention' },
+  consent_needed: { label: 'Collection consent needed', title: 'Consent needed', sentence: 'Review the updated terms to resume collection.', icon: 'dot', tone: 'attention', action: extension },
+  extension_offline: { label: 'Extension not connected', title: 'Extension not connected', sentence: 'The app has no current connection to the browser extension.', icon: 'dot', tone: 'attention' },
   no_onlyfans_tab: { label: 'Paused · open OnlyFans', title: 'No OnlyFans tab', sentence: 'Open your creator account in the browser to resume.', icon: 'dot', tone: 'attention', action: creator },
   onlyfans_sleeping: { label: 'Paused · OnlyFans sleeping', title: 'OnlyFans tab is sleeping', sentence: 'Your browser paused the tab. Open it to resume.', icon: 'dot', tone: 'attention', action: creator },
   account_changed: { label: 'Paused · account changed', title: 'Account changed', sentence: 'The OnlyFans tab is signed in to a different account.', icon: 'dot', tone: 'attention', action: { ...settings, label: 'Review in Settings' } },
-  applying_settings: { label: 'Paused · applying settings', title: 'Applying settings', sentence: 'The extension is applying your latest settings.', icon: 'dot', tone: 'attention' },
-  capture_off: { label: 'Paused · history off', title: 'Collection is off', sentence: 'New messages are off in the browser extension.', icon: 'pause', tone: 'user', action: settings },
-  extension_outdated: { label: 'Paused · extension outdated', title: 'Extension outdated', sentence: 'Update the browser extension to resume.', icon: 'dot', tone: 'attention', action: extension },
+  applying_settings: { label: 'Applying collection settings', title: 'Applying settings', sentence: 'The extension is applying your latest settings.', icon: 'dot', tone: 'attention' },
+  capture_off: { label: 'Collection off', title: 'Collection is off', sentence: 'New messages are off in the browser extension.', icon: 'pause', tone: 'user', action: settings },
+  extension_outdated: { label: 'Message checks unavailable', title: 'Message checks unavailable', sentence: 'The extension has not reported support for automatic message checks.', icon: 'dot', tone: 'attention' },
 };
-const unknown: FreshnessPresentation = { label: 'Messages not checked', title: 'Messages not checked', sentence: 'The first check starts when the extension is connected.', icon: 'ring', tone: 'unknown' };
+const unknown: FreshnessPresentation = { label: 'History not verified', title: 'History not verified', sentence: 'A complete history check has not been confirmed.', icon: 'ring', tone: 'unknown' };
 const behind: Record<string, string> = {
   awaiting_check: 'A check is scheduled and starts automatically.',
   daily_cap: 'Today’s checks are used up. The next check runs tomorrow.',
   check_incomplete: 'The last check didn’t finish. It retries automatically.',
-  not_observing: 'Reload your OnlyFans tab so new messages can arrive.',
+  not_observing: 'The extension is not currently observing new messages.',
 };
 
 export function presentFreshness({ freshness, bridge, snapshotUsable, now, timeZone }: FreshnessInput): FreshnessPresentation {
   if (['disconnected', 'reconnecting', 'error'].includes(bridge)) return {
-    label: 'Paused · Brain offline', title: 'Desktop app offline', sentence: 'The dashboard lost its connection to the desktop app on this computer.',
-    icon: 'dot', tone: 'attention', action: { label: 'Reload page', destination: 'reload' },
+    label: 'Status connection interrupted', title: 'Status connection interrupted', sentence: 'The dashboard is reconnecting to the local service.',
+    icon: 'dot', tone: 'attention',
   };
   if (bridge !== 'connected' || !snapshotUsable || !freshness) return unknown;
   if (freshness.status === 'paused') return paused[freshness.reason ?? ''] ?? {

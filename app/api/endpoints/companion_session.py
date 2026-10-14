@@ -120,6 +120,7 @@ class SessionRPC:
         "agent.challenge", "agent.authenticate", "capture.state.report",
         "history.check.begin", "agent.analysis.readiness", "agent.config.get",
         "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report",
+        "agent.browser-task.report",
     })
 
     def __init__(self, authority, pin):
@@ -281,8 +282,9 @@ _SURFACE_FIELDS = (
     "site_access",
     "history_permission",
     "legal_review_required",
+    "history_error_code",
 )
-SURFACE_SCHEMA = "ofca-browser-surface/v1"
+SURFACE_SCHEMA = "ofca-browser-surface/v2"
 
 
 def browser_surface(params) -> dict:
@@ -294,6 +296,8 @@ def browser_surface(params) -> dict:
         or params["site_access"] not in {"granted", "needs_approval", "reload_required"}
         or params["history_permission"] not in {"granted", "missing"}
         or type(params["legal_review_required"]) is not bool
+        or (params["history_error_code"] is not None and (type(params["history_error_code"]) is not str
+            or params["history_error_code"] not in {"identity_required", "unsupported_revision", "history_unavailable"}))
     ):
         raise CompanionRecordError()
     return {key: params[key] for key in _SURFACE_FIELDS if key != "schema"}
@@ -308,6 +312,18 @@ class BrowserSessionLink:
         self.token = None
 
     async def report(self, params):
+        await self.authorized()
+        surface = browser_surface(params)
+        if self.token is None:
+            self.token = self.manager.register_browser_session(
+                self.pin.creator_account_id,
+                encode_pairing_id(self.pin.pairing_id),
+                self.channel.send,
+            )
+        await self.manager.record_browser_surface(self.pin.creator_account_id, self.token, surface)
+        return {}
+
+    async def authorized(self):
         # Only an authenticated Agent identity for this pin may report or be controlled.
         if self.rpc.auth_ticket is None:
             raise CompanionRecordError()
@@ -320,16 +336,12 @@ class BrowserSessionLink:
             or identity.creator_account_id != self.pin.creator_account_id
         ):
             raise CompanionRecordError()
-        surface = browser_surface(params)
+
+    async def task_report(self, params):
+        await self.authorized()
         if self.token is None:
-            self.token = self.manager.register_browser_session(
-                self.pin.creator_account_id,
-                encode_pairing_id(self.pin.pairing_id),
-                self.channel.send,
-            )
-        await self.manager.record_browser_surface(
-            self.pin.creator_account_id, self.token, surface
-        )
+            raise CompanionRecordError()
+        await self.manager.report_browser_task(self.pin.creator_account_id, self.token, params)
         return {}
 
     async def close(self):
@@ -380,6 +392,8 @@ async def _serve(channel, pin):
                 async with asyncio.timeout(10):
                     if value["method"] == "agent.surface.report":
                         result = await browser.report(value["params"])
+                    elif value["method"] == "agent.browser-task.report":
+                        result = await browser.task_report(value["params"])
                     else:
                         result = await asyncio.to_thread(
                             rpc.call, value["method"], value["params"]

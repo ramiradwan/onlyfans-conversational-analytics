@@ -75,14 +75,17 @@ const STORE_SPECS = Object.freeze({
   }),
 });
 
-export async function accountDatabaseName(creatorAccountId, cryptoApi = globalThis.crypto) {
+export async function accountDatabaseName(creatorAccountId, installationId, cryptoApi = globalThis.crypto) {
   if (typeof creatorAccountId !== 'string' || creatorAccountId.length === 0) {
     throw new Error('creatorAccountId is required for account-partitioned IndexedDB');
+  }
+  if (typeof installationId !== 'string' || installationId.length === 0) {
+    throw new Error('Authenticated Brain installation is required for account-partitioned IndexedDB');
   }
   if (!cryptoApi?.subtle) throw new Error('Web Crypto is required for account partitioning');
   const digest = await cryptoApi.subtle.digest(
     'SHA-256',
-    new TextEncoder().encode(creatorAccountId),
+    new TextEncoder().encode(JSON.stringify([installationId, creatorAccountId])),
   );
   const hash = [...new Uint8Array(digest)]
     .map((value) => value.toString(16).padStart(2, '0'))
@@ -296,6 +299,7 @@ function createRawReadOnlyIndexedDbIngestionStorage(
   indexedDb = globalThis.indexedDB,
   {
     creatorAccountId,
+    installationId,
     databaseName = null,
     cryptoApi = globalThis.crypto,
     keyRangeFactory = globalThis.IDBKeyRange,
@@ -309,7 +313,7 @@ function createRawReadOnlyIndexedDbIngestionStorage(
     lowerBound: (value, open = false) => ({ __fake_lower_bound: value, __fake_open: open }),
   };
   const resolvedName = databaseName === null
-    ? accountDatabaseName(creatorAccountId, cryptoApi)
+    ? accountDatabaseName(creatorAccountId, installationId, cryptoApi)
     : Promise.resolve(databaseName);
 
   return Object.freeze({

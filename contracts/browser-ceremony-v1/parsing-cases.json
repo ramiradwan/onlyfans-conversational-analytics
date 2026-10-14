@@ -1,0 +1,79 @@
+[
+  {
+    "canonical_hex": "7b226f7065726174696f6e5f6964223a2261222c2270726f66696c65223a2262227d",
+    "case_id": "ordered",
+    "document": "{\"operation_id\":\"a\",\"profile\":\"b\"}",
+    "limit": 8192,
+    "valid": true
+  },
+  {
+    "canonical_hex": "7b226f7065726174696f6e5f6964223a2261222c2270726f66696c65223a2262227d",
+    "case_id": "reordered",
+    "document": "{\"profile\":\"b\",\"operation_id\":\"a\"}",
+    "limit": 8192,
+    "valid": true
+  },
+  {
+    "canonical_hex": "7b2276616c7565223a22c3a9227d",
+    "case_id": "unicode",
+    "document": "{\"value\":\"é\"}",
+    "limit": 8192,
+    "valid": true
+  },
+  {
+    "canonical_hex": "7b2276616c7565223a393030373139393235343734303939317d",
+    "case_id": "max-integer",
+    "document": "{\"value\":9007199254740991}",
+    "limit": 8192,
+    "valid": true
+  },
+  {
+    "case_id": "duplicate",
+    "document": "{\"operation_id\":\"a\",\"operation_id\":\"b\"}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "nested-duplicate",
+    "document": "{\"binding\":{\"source\":{\"kind\":\"initial\",\"kind\":\"registered\"}}}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "nonfinite",
+    "document": "{\"value\":NaN}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "unsafe-integer",
+    "document": "{\"value\":9007199254740992}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "fraction",
+    "document": "{\"value\":1.5}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "case_id": "invalid-unicode",
+    "document": "{\"value\":\"\\ud800\"}",
+    "limit": 8192,
+    "valid": false
+  },
+  {
+    "canonical_hex": "22c3a922",
+    "case_id": "byte-boundary",
+    "document": "\"é\"",
+    "limit": 4,
+    "valid": true
+  },
+  {
+    "case_id": "byte-oversize",
+    "document": "\"é\"",
+    "limit": 3,
+    "valid": false
+  }
+]

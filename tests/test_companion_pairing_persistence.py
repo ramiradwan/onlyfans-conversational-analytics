@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-import shutil
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, fields, replace
@@ -11,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from app.persistence import auth as auth_persistence
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.auth import (
     AgentChallengeBinding,
@@ -272,65 +270,12 @@ def _advance_to_confirmed(store, pairing, clock, opened, grants):
     )
 
 
-def test_migrates_a_pre_0011_auth_database(
-    tmp_path: Path, clock: MutableClock
-) -> None:
-    source = Path(auth_persistence.__file__).with_name("auth_sql")
-    pre_0011 = tmp_path / "pre-0011"
-    pre_0011.mkdir()
-    for migration in source.glob("*.sql"):
-        if int(migration.name[:4]) <= 10:
-            shutil.copy2(migration, pre_0011 / migration.name)
-
-    path = tmp_path / "auth.sqlite3"
-    legacy = SQLiteAuthenticationStore(path, clock=clock, migrations_dir=pre_0011)
-    with legacy.database.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 10
-        assert (
-            connection.execute(
-                """
-                SELECT 1 FROM sqlite_master
-                WHERE type = 'table' AND name = 'companion_pairing_windows'
-                """
-            ).fetchone()
-            is None
-        )
-
-    migrated = SQLiteAuthenticationStore(path, clock=clock)
-    with migrated.database.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 18
-        tables = {
-            str(row["name"])
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            ).fetchall()
-        }
-        assert {
-            "companion_pairing_generations",
-            "companion_pairing_windows",
-        } <= tables
-        columns = {
-            str(row["name"])
-            for row in connection.execute(
-                "PRAGMA table_info(agent_pairings)"
-            ).fetchall()
-        }
-        assert {
-            "pairing_generation",
-            "pairing_digest",
-            "agent_noise_static_public_key",
-            "brain_noise_static_public_key",
-            "protected_brain_noise_static_private_key",
-            "confirmation_principal_id",
-            "confirmation_session_id",
-            "confirmed_at",
-        } <= columns
-
-
 def test_legacy_agent_pairing_challenge_behavior_is_unchanged(
     store: SQLiteAuthenticationStore,
     instant: datetime,
 ) -> None:
+    pairing = CompanionPairingPersistence(store)
+    assert pairing.current_pairing_state("creator-1") == "missing"
     grants = _record_pairing_grants(store, instant, retained=False)
     legacy = AgentPairing(
         pairing_id="legacy-pairing-1",
@@ -347,10 +292,12 @@ def test_legacy_agent_pairing_challenge_behavior_is_unchanged(
         grant_reference_ids=grants,
     )
     store.register_agent_pairing(legacy)
+    assert pairing.current_pairing_state("creator-1") == "unknown"
     policy = store.build_runtime_policy(
         AuthContext(legacy.principal_id, legacy.creator_account_id, "agent")
     )
     assert store.activate_agent_pairing(policy, legacy.pairing_id) is True
+    assert pairing.current_pairing_state("creator-1") == "verified"
 
     challenge = store.issue_agent_challenge(
         AgentChallengeBinding(

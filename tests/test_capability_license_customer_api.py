@@ -5,7 +5,6 @@ from fastapi import HTTPException
 
 from app.api.endpoints.capability_license import (
     CapabilityLicenseDeliveryResponse,
-    CapabilityLicenseReadinessResponse,
     CapabilityLicenseRedemptionResponse,
     _redemption_response,
     _result_response,
@@ -84,19 +83,10 @@ def test_internal_delivery_response_contract_is_unchanged() -> None:
     }
 
 
-def test_customer_readiness_contract_is_closed_and_contains_no_authority_coordinates() -> None:
-    result = CapabilityLicenseReadinessResponse(
-        commercial_authority="active",
-        analysis_admission="blocked",
-    )
-
-    assert result.model_dump() == {
-        "schema": "ofca-analysis-readiness/v1",
-        "commercial_authority": "active",
-        "analysis_admission": "blocked",
-    }
-    assert set(CapabilityLicenseReadinessResponse.model_fields) == {
-        "schema",
-        "commercial_authority",
-        "analysis_admission",
-    }
+def test_customer_readiness_contains_no_authority_coordinates() -> None:
+    from app.onboarding.readiness import DesktopAnalysisReadiness
+    from app.security.analysis_authorization import AnalysisReadiness
+    result = DesktopAnalysisReadiness("current", "creator-account", AnalysisReadiness("active", "blocked")).projection()
+    assert result == {"availability": "current", "creator_account_id": "creator-account", "value": {
+        "schema": "ofca-analysis-readiness/v1", "commercial_authority": "active", "analysis_admission": "blocked"}}
+    assert set(result["value"]) == {"schema", "commercial_authority", "analysis_admission"}

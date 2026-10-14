@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import APIRouter, Depends, FastAPI
-from starlette.routing import BaseRoute, Mount, Router, WebSocketRoute
+from starlette.routing import BaseRoute, Mount, Router
 from fastapi.testclient import TestClient
 
 import app.main as main_module
@@ -50,12 +50,6 @@ UNGATED_SURFACES: dict[str, str] = {
     "GET,HEAD /docs": "FastAPI's own documentation shell; serves no account-scoped state",
     "GET,HEAD /docs/oauth2-redirect": "FastAPI's own documentation shell",
     "GET,HEAD /redoc": "FastAPI's own documentation shell; serves no account-scoped state",
-    "POST /api/v1/session/bootstrap": (
-        "bounded loopback provisioning: establishes the local session an "
-        "installation needs before it can activate"
-    ),
-    "POST /api/v1/session/handoff": "bounded loopback provisioning; see session bootstrap",
-    "GET /api/v1/session/handoff": "bounded loopback provisioning; see session bootstrap",
     "GET /": "SPA shell; the client that reports an unactivated runtime to the operator",
     "GET /{frontend_path:path}": "SPA shell refresh of the same document as GET /",
     "WEBSOCKET /ws/agent": (
@@ -65,6 +59,7 @@ UNGATED_SURFACES: dict[str, str] = {
     "WEBSOCKET /ws/agent/pairing": "activation is enforced by the companion socket origin gate",
     "GET /api/v1/companion/pins": "activation is enforced in the bounded Bridge policy adapter",
     "POST /api/v1/companion/browser/capture": "activation is enforced in the bounded Bridge policy adapter",
+    "POST /api/v1/companion/browser/open": "the authenticated companion opens a scoped browser task before optional activation",
     "GET /api/v1/companion/pairings/{pairing_id}": "activation is enforced in the bounded Bridge policy adapter",
     "POST /api/v1/companion/pairings": "activation is enforced in the bounded Bridge policy adapter",
     "POST /api/v1/companion/pairings/{pairing_id}/cancel": "activation is enforced in the bounded Bridge policy adapter",

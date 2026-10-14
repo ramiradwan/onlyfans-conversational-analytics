@@ -9,27 +9,12 @@ from pathlib import Path
 from typing import Mapping
 
 import pytest
-from fastapi.testclient import TestClient
 
 import app.security.capability_license_transport as capability_transport
-from app.packaged_entry import (
-    PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE,
-    PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE,
-    select_brain_application,
-)
 from app.persistence.auth import (
     InstallationKeyReference,
     SQLiteAuthenticationStore,
     VerifiedGrantReference,
-)
-from app.provisioning.app import (
-    PROVISIONING_CAPABILITY_LICENSE_ACTIVATE_PATH,
-    PROVISIONING_CAPABILITY_LICENSE_REISSUE_PATH,
-)
-from app.provisioning.session import (
-    PROVISIONING_CSRF_HEADER,
-    PROVISIONING_ORIGIN,
-    PROVISIONING_SESSION_COOKIE_NAME,
 )
 from app.security.capability_license_composition import (
     CapabilityLicenseDeliveryReceipt,
@@ -38,6 +23,8 @@ from app.security.capability_license_composition import (
 from app.security.capability_license_delivery_journal import (
     SQLiteCapabilityLicenseDeliveryJournal,
 )
+from app.security.capability_license_redemption import durable_capability_license_opaque_redemption
+from app.security.capability_license_redemption_journal import RedemptionJournalError, SQLiteRedemptionJournal
 from app.security.capability_license_verifier import (
     CapabilityLicenseVerifier,
     FixtureCapabilityLicenseTrustProvider,
@@ -287,7 +274,7 @@ def test_shipping_delivery_action_recovers_committed_activation_after_restart(
     with pytest.raises(SystemExit, match="server commit"):
         first_action.activate(package=package, seat_id=seat_id)
 
-    first_pending = SQLiteCapabilityLicenseDeliveryJournal(first_store.database).pending(
+    first_pending = SQLiteCapabilityLicenseDeliveryJournal(first_store.database, "https://control.example").pending(
         "activate", EXCHANGE_ID
     )
     assert first_pending is not None
@@ -309,13 +296,150 @@ def test_shipping_delivery_action_recovers_committed_activation_after_restart(
 
     assert isinstance(result, CapabilityLicenseDeliveryReceipt)
     assert server.issue_count == 1
+    assert server.challenge_count == 1
     assert len(server.commit_observed) == 2
     assert server.commit_observed[0][0] == server.commit_observed[1][0]
     assert server.commit_observed[0][1] == server.commit_observed[1][1]
-    assert SQLiteCapabilityLicenseDeliveryJournal(restarted_store.database).pending(
+    assert SQLiteCapabilityLicenseDeliveryJournal(restarted_store.database, "https://control.example").pending(
         "activate", EXCHANGE_ID
     ) is None
     assert restarted_store.verified_capability_license(result.reference_id) is not None
+
+
+@pytest.mark.parametrize("outcome", ["complete", "missing_reference", "invalid_signature", "wrong_seat",
+    "metadata_mismatch", "digest_mismatch", "pending_issuance", "complete_before_prepare"])
+def test_completed_manual_redemption_reverifies_locally_without_new_issuance(tmp_path, monkeypatch, outcome):
+    context = json.loads((VECTORS / "accepted/verification-context.json").read_text("utf-8"))
+    token = (VECTORS / "accepted/token.jws").read_text("ascii").strip()
+    payload = json.loads((VECTORS / "accepted/payload.json").read_text("utf-8"))
+    auth_path = tmp_path / "auth.sqlite3"
+    origin = "https://control.example"
+    continuation = "clr1." + "A" * 43
+    package = _activation_package(context)
+    seat_id = str(context["expected_subject"]).split(":seat:", 1)[1].split(":capability:", 1)[0]
+    key = _key(context)
+    store = SQLiteAuthenticationStore(auth_path, clock=lambda: NOW)
+    _seed_activation_grants(store, context)
+    scope = {"organization_id": context["expected_organization_id"],
+        "installation_id": context["expected_installation_id"],
+        "installation_key_id": key.installation_key_id, "installation_key_jkt": key.installation_key_jkt}
+    redemption = SQLiteRedemptionJournal(store.database, origin)
+    pending = redemption.prepare(continuation, scope, {"request": {
+        "profile": "urn:bridge-clean:capability-license-redemption:v1", "continuation": continuation,
+        "redemption_id": EXCHANGE_ID, "organization_id": scope["organization_id"],
+        "installation_id": scope["installation_id"]}, "proof": {}}, "original-redemption-key")
+    redemption.complete(pending, _json_response(201, {
+        "profile": "urn:bridge-clean:capability-license-redemption:v1", "redemption_id": EXCHANGE_ID,
+        "result": "accepted", "authorization_state": "delivery_available",
+        "delivery": {"operation": "activation", "package": package, "seat_id": seat_id}}))
+    redemption.bind_delivery(continuation, scope, "activate", EXCHANGE_ID)
+    server = _CommitThenLoseResponse(context=context, token=token, payload=payload)
+    server.lose_first_response = False
+    monkeypatch.setattr(capability_transport, "_RawCapabilityLicenseHTTPTransport",
+        lambda base_url, *, timeout_seconds=10.0: server)
+
+    def delivery(open_store, hosted_origin):
+        return durable_capability_license_delivery(open_store, hosted_origin=hosted_origin,
+            proof_authority_factory=lambda store: _ProofAuthority(key),
+            verifier_factory=lambda: CapabilityLicenseVerifier(FixtureCapabilityLicenseTrustProvider()),
+            now=lambda: NOW)
+
+    raced_receipts = []
+    if outcome == "complete_before_prepare":
+        original_request = server.request
+        completion_started = False
+
+        def complete_during_challenge(method, path, **kwargs):
+            nonlocal completion_started
+            response = original_request(method, path, **kwargs)
+            if path.endswith("/capability-license-proof-challenges") and not completion_started:
+                completion_started = True
+                raced_receipts.append(delivery(lambda: store, origin).activate(package=package, seat_id=seat_id))
+            return response
+
+        monkeypatch.setattr(server, "request", complete_during_challenge)
+    first = delivery(lambda: store, origin).activate(package=package, seat_id=seat_id)
+    assert isinstance(first, CapabilityLicenseDeliveryReceipt)
+    if outcome == "complete_before_prepare":
+        assert raced_receipts == [first]
+    with store.database.read() as connection:
+        assert connection.execute("SELECT completed_reference_id FROM capability_license_redemption_journal").fetchone()[0] == first.reference_id
+    if outcome == "complete":
+        protected_delivery = {"operation": "activation", "package": package, "seat_id": seat_id}
+        completed = redemption.completed_delivery("activate", EXCHANGE_ID, scope, protected_delivery)
+        assert completed == (first.reference_id, hashlib.sha256(token.encode("ascii")).hexdigest())
+        for field in scope:
+            with pytest.raises(RedemptionJournalError):
+                redemption.completed_delivery("activate", EXCHANGE_ID, {**scope, field: "different"}, protected_delivery)
+        for field in protected_delivery:
+            with pytest.raises(RedemptionJournalError):
+                redemption.completed_delivery("activate", EXCHANGE_ID, scope, {**protected_delivery, field: "different"})
+        assert redemption.completed_delivery("finalize", EXCHANGE_ID, scope, protected_delivery) is None
+        assert redemption.completed_delivery("activate", "different", scope, protected_delivery) is None
+        assert SQLiteRedemptionJournal(store.database, "https://another.example").completed_delivery(
+            "activate", EXCHANGE_ID, scope, protected_delivery) is None
+    if outcome in {"missing_reference", "invalid_signature", "metadata_mismatch"}:
+        with store.database.transaction() as connection:
+            if outcome == "missing_reference":
+                connection.execute("DELETE FROM capability_license_references")
+            elif outcome == "invalid_signature":
+                connection.execute("UPDATE capability_license_references SET compact_jws=?", (token + "x",))
+            else:
+                connection.execute("UPDATE capability_license_references SET object_digest=?", ("0" * 64,))
+    elif outcome == "digest_mismatch":
+        original_completed = SQLiteRedemptionJournal.completed_delivery
+
+        def wrong_digest(self, *args):
+            completed = original_completed(self, *args)
+            assert completed is not None
+            return completed[0], "0" * 64
+
+        monkeypatch.setattr(SQLiteRedemptionJournal, "completed_delivery", wrong_digest)
+    elif outcome == "pending_issuance":
+        original_key, original_body = server.commit_observed[0]
+        # Counterexample state: a completed opaque result is not evidence about an unbound issuance.
+        encoded = json.dumps(original_body, sort_keys=True, separators=(",", ":"))
+        with store.database.transaction() as connection:
+            connection.execute("INSERT INTO capability_license_pending_deliveries "
+                "(operation_type,authority_reference_id,endpoint,idempotency_key,request_body,request_digest,created_at,provider_origin) "
+                "VALUES ('activate',?,?,?,?,?,?,?)", (EXCHANGE_ID,
+                    f"/v1/capability-license-exchanges/{EXCHANGE_ID}:activate", original_key, encoded,
+                    hashlib.sha256(encoded.encode()).hexdigest(), NOW.isoformat(), origin + "/"))
+
+    reopened = SQLiteAuthenticationStore(auth_path, clock=lambda: NOW)
+    unexpected_calls = []
+
+    def no_network(*args, **kwargs):
+        unexpected_calls.append(True)
+        raise AssertionError("Completed delivery must not start new hosted work")
+
+    class NoNetwork:
+        request = staticmethod(no_network)
+
+    # A pending original issuance still takes precedence and reuses its exact request.
+    if outcome != "pending_issuance":
+        monkeypatch.setattr(server, "request", no_network)
+    epoch = reopened.build_runtime_policy().authorization_epoch
+    if outcome == "wrong_seat":
+        result = delivery(lambda: reopened, origin).activate(package=package, seat_id="different-seat")
+    else:
+        action = durable_capability_license_opaque_redemption(lambda: reopened, hosted_origin=origin,
+            proof_authority_factory=lambda store: _ProofAuthority(key),
+            transport_factory=lambda *_: NoNetwork(),
+            delivery_factory=delivery, now=lambda: NOW)
+        result = action.redeem(continuation=continuation)
+    if outcome in {"complete", "pending_issuance", "complete_before_prepare"}:
+        assert result == first
+    elif outcome == "wrong_seat":
+        assert result == "durable_store_unavailable"
+    else:
+        assert result == "capability_license_verification_refused"
+    assert not unexpected_calls
+    assert server.challenge_count == (2 if outcome == "complete_before_prepare" else 1)
+    assert server.issue_count == 1
+    assert len(server.commit_observed) == (2 if outcome == "pending_issuance" else 1)
+    assert SQLiteCapabilityLicenseDeliveryJournal(reopened.database, origin).pending("activate", EXCHANGE_ID) is None
+    assert reopened.build_runtime_policy().authorization_epoch == epoch
 
 
 class _RecordingDelivery:
@@ -329,74 +453,6 @@ class _RecordingDelivery:
     def finalize_reissue(self, *, package: str, seat_id: str):
         self.calls.append(("reissue", package, seat_id))
         return CapabilityLicenseDeliveryReceipt("caplic.ref2", "license-2", "issuance-2")
-
-
-def _provisioning_session(application) -> tuple[TestClient, dict[str, str], str]:
-    client = TestClient(application, base_url=PROVISIONING_ORIGIN)
-    handoff = client.post(
-        "/api/v1/provisioning/handoff",
-        headers={"Authorization": "Provisioning " + HANDOFF_TOKEN},
-    )
-    redeemed = client.get(
-        f"/provisioning/handoff?code={handoff.json()['handoff_code']}",
-        follow_redirects=False,
-    )
-    cookie = {
-        "Cookie": (
-            f"{PROVISIONING_SESSION_COOKIE_NAME}="
-            f"{redeemed.cookies[PROVISIONING_SESSION_COOKIE_NAME]}"
-        )
-    }
-    shell = client.get("/provisioning", headers=cookie)
-    csrf = shell.text.split('data-provisioning-csrf="')[1].split('"')[0]
-    return client, cookie, csrf
-
-
-def test_packaged_entry_exposes_activation_and_reissue_delivery_actions(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    import app.security.capability_license_composition as composition
-
-    recorder = _RecordingDelivery()
-    monkeypatch.setattr(
-        composition,
-        "durable_capability_license_delivery",
-        lambda open_store, *, hosted_origin: recorder,
-    )
-    monkeypatch.setenv(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, HANDOFF_TOKEN)
-    monkeypatch.setenv(
-        PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE,
-        "https://control.example",
-    )
-
-    application = select_brain_application(tmp_path)
-    client, cookie, csrf = _provisioning_session(application)
-    headers = {
-        **cookie,
-        "Origin": PROVISIONING_ORIGIN,
-        PROVISIONING_CSRF_HEADER: csrf,
-    }
-
-    activation = client.post(
-        PROVISIONING_CAPABILITY_LICENSE_ACTIVATE_PATH,
-        json={"package": "activation-package", "seat_id": "seat.analysis.001"},
-        headers=headers,
-    )
-    reissue = client.post(
-        PROVISIONING_CAPABILITY_LICENSE_REISSUE_PATH,
-        json={"package": "reissue-package", "seat_id": "seat.analysis.001"},
-        headers=headers,
-    )
-
-    assert activation.status_code == 200
-    assert activation.json()["state"] == "capability_license_active"
-    assert reissue.status_code == 200
-    assert reissue.json()["state"] == "capability_license_active"
-    assert recorder.calls == [
-        ("activate", "activation-package", "seat.analysis.001"),
-        ("reissue", "reissue-package", "seat.analysis.001"),
-    ]
 
 
 def test_normal_runtime_registers_capability_license_delivery_routes() -> None:

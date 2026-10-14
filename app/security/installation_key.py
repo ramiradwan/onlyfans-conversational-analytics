@@ -364,6 +364,29 @@ class InstallationKeyAuthority:
             self._store.activate_installation_key(reference)
         return reference
 
+    def reopen_existing(self) -> InstallationKeyReference:
+        """Verify the activated key without reserving, creating or activating one."""
+        reference = self._store.installation_key_reference()
+        if reference is None:
+            raise InstallationKeyUnavailable("The installation key is not active")
+        reservation = InstallationKeyReservation(
+            reference.provider_name, reference.provider_key_name,
+            reference.algorithm, reference.created_at,
+        )
+        self._require_reservation_policy(reservation)
+        info = self._provider.key_info(reference.provider_key_name)
+        if info is None:
+            raise InstallationKeyUnavailable(
+                "The persisted installation key is no longer available"
+            )
+        _require_provider_key_policy(info)
+        if _installation_key_reference(reservation, info, reference.activated_at) != reference:
+            raise InstallationKeyPolicyError(
+                "The persisted installation key does not match its durable reference"
+            )
+        self._prove_usable(reference)
+        return reference
+
     def sign_challenge(self, challenge: bytes) -> InstallationProof:
         if not isinstance(challenge, bytes):
             raise TypeError("Installation proof challenge must be bytes")

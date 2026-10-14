@@ -19,18 +19,17 @@ for (const surface of ['popup', 'setup', 'options']) {
   });
 }
 
-test('the setup code is a single line and the four panes share one fixed stage', async () => {
-  const html = await readFile(new URL('../../app/provisioning/provisioning.html', import.meta.url), 'utf8');
+test('native recovery needs no package input and keeps setup-code receiving separate', async () => {
+  const html = await readFile(new URL('../../frontend/onboarding/index.html', import.meta.url), 'utf8');
   const dom = new JSDOM(html);
   try {
     const document = dom.window.document;
-    assert.equal(document.querySelector('#claim-package').tagName, 'INPUT');
-    assert.equal(document.querySelectorAll('[data-reserved-region="provisioning-stage"] .step').length, 4);
-    assert.equal(document.querySelector('details'), null);
-    const styles = [...document.querySelectorAll('style')].map((style) => style.textContent).join('\n');
-    assert.match(styles, /stage-enter 200ms/);
-    assert.match(styles, /stage-breathe 320ms/);
-    assert.match(styles, /opacity 320ms/);
-    assert.match(styles, /prefers-reduced-motion: reduce[\s\S]*animation:none/);
+    assert.equal(document.querySelectorAll('[data-step]').length, 3);
+    assert.equal(document.querySelector('#recovery-package'), null);
+    assert.equal(document.querySelector('textarea'), null);
+    assert.equal(document.querySelector('#task-status').getAttribute('role'), 'status');
+    assert.equal(document.querySelector('#task-action').getAttribute('aria-describedby'), 'task-description task-status');
+    assert.equal(document.querySelector('#setup-code-open').textContent, 'I have a setup code');
+    assert.equal(document.querySelector('#setup-code-open').hidden, true);
   } finally { dom.window.close(); }
 });

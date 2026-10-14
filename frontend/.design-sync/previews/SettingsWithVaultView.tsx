@@ -2,6 +2,7 @@ import {
   Box,
   SettingsWithVaultView,
   seedPreviewShellStore,
+  createPreviewDesktopOnboardingApi,
 } from 'onlyfans-analytics-frontend';
 
 import type { CapabilityLicenseApi } from '../../src/services/capabilityLicenseApi';
@@ -165,13 +166,9 @@ const mockPairingApi: CompanionPairingApi = {
 };
 
 const mockActivationApi: CapabilityLicenseApi = {
-  readiness: async () => ({
-    schema: 'ofca-analysis-readiness/v1',
-    commercial_authority: 'required',
-    analysis_admission: 'blocked',
-  }),
   redeem: async () => ({ state: 'checking' }),
 };
+const mockOnboardingApi = createPreviewDesktopOnboardingApi(false);
 
 export function CompositeSettings() {
   seedPreviewShellStore();
@@ -181,6 +178,7 @@ export function CompositeSettings() {
         historyApi={mockHistoryApi}
         pairingApi={mockPairingApi}
         activationApi={mockActivationApi}
+        onboardingApi={mockOnboardingApi}
         vaultApi={mockVaultApi}
       />
     </Box>

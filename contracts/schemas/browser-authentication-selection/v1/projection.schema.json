@@ -1,0 +1,320 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-authentication-selection/v1/projection.schema.json",
+  "title": "Browser authentication selection projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "ceremony_id",
+    "binding_digest",
+    "state",
+    "expires_at",
+    "choices",
+    "actions",
+    "authentication_attempt"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:browser-authentication-selection:v1"
+    },
+    "operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "ceremony_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "binding_digest": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "state": {
+      "enum": [
+        "selection-required",
+        "reauthentication-required",
+        "selected",
+        "admitted",
+        "retired",
+        "expired",
+        "unavailable"
+      ]
+    },
+    "expires_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "choices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "google",
+        "microsoft-personal",
+        "default"
+      ],
+      "properties": {
+        "google": {
+          "type": "boolean"
+        },
+        "microsoft-personal": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": "boolean"
+        }
+      }
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "select",
+        "cancel",
+        "open_browser",
+        "switch_account"
+      ],
+      "properties": {
+        "select": {
+          "type": "boolean"
+        },
+        "cancel": {
+          "type": "boolean"
+        },
+        "open_browser": {
+          "type": "boolean"
+        },
+        "switch_account": {
+          "type": "boolean"
+        }
+      }
+    },
+    "authentication_attempt": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authentication_attempt_id",
+            "provider",
+            "mode"
+          ],
+          "properties": {
+            "authentication_attempt_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "provider": {
+              "enum": [
+                "google",
+                "microsoft-personal",
+                "default"
+              ]
+            },
+            "mode": {
+              "enum": [
+                "sign-in",
+                "switch-account"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "selection-required"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authentication_attempt": {
+            "type": "null"
+          },
+          "actions": {
+            "properties": {
+              "cancel": {
+                "const": false
+              },
+              "open_browser": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "selected"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authentication_attempt": {
+            "not": {
+              "type": "null"
+            }
+          },
+          "actions": {
+            "properties": {
+              "select": {
+                "const": false
+              },
+              "switch_account": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "admitted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actions": {
+            "properties": {
+              "cancel": {
+                "const": false
+              },
+              "select": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "retired"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authentication_attempt": {
+            "not": {
+              "type": "null"
+            }
+          },
+          "actions": {
+            "properties": {
+              "cancel": {
+                "const": false
+              },
+              "open_browser": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "expired"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actions": {
+            "properties": {
+              "cancel": {
+                "const": false
+              },
+              "open_browser": {
+                "const": false
+              },
+              "select": {
+                "const": false
+              },
+              "switch_account": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "unavailable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authentication_attempt": {
+            "type": "null"
+          },
+          "actions": {
+            "properties": {
+              "cancel": {
+                "const": false
+              },
+              "open_browser": {
+                "const": false
+              },
+              "select": {
+                "const": false
+              },
+              "switch_account": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "reauthentication-required"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "authentication_attempt": {
+            "not": {
+              "type": "null"
+            }
+          },
+          "actions": {
+            "properties": {
+              "cancel": {
+                "const": false
+              },
+              "open_browser": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

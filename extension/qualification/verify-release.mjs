@@ -60,15 +60,16 @@ async function run(executable, args, { cwd = EXTENSION_ROOT, env = process.env, 
 }
 
 async function main() {
+  const customerRelease = argumentValue('--customer-release-config');
   const signingRule = argumentValue('--packaged-signing-rule');
   const legalBindings = argumentValue('--legal-release-bindings');
   const privacyPolicyUrl = argumentValue('--privacy-policy-url');
   const minimumChromium = argumentValue('--chromium-min');
   const currentChromium = argumentValue('--chromium-current');
   const acceptancePath = argumentValue('--acceptance-evidence');
-  if (!signingRule || !legalBindings || !privacyPolicyUrl || !minimumChromium || !currentChromium) {
+  if (!customerRelease || !signingRule || !legalBindings || !privacyPolicyUrl || !minimumChromium || !currentChromium) {
     throw new Error(
-      'verify:release requires packaged signing rule, Legal release bindings, privacy policy URL, minimum Chrome 132 Chromium, and current Chromium',
+      'verify:release requires customer release configuration, packaged signing rule, Legal release bindings, privacy policy URL, minimum Chrome 132 Chromium, and current Chromium',
     );
   }
   const npmCli = process.env.npm_execpath;
@@ -80,6 +81,7 @@ async function main() {
   const buildArgs = [
     path.join(EXTENSION_ROOT, 'build.mjs'),
     '--package',
+    `--customer-release-config=${path.resolve(customerRelease)}`,
     `--outdir=${buildDir}`,
     `--packaged-signing-rule=${path.resolve(signingRule)}`,
     `--legal-release-bindings=${path.resolve(legalBindings)}`,
@@ -103,6 +105,7 @@ async function main() {
     await run(process.execPath, [
       path.join(EXTENSION_ROOT, 'build.mjs'),
       '--audit-package',
+      `--customer-release-config=${path.resolve(customerRelease)}`,
       `--artifact=${artifact}`,
       `--packaged-signing-rule=${path.resolve(signingRule)}`,
       `--legal-release-bindings=${path.resolve(legalBindings)}`,

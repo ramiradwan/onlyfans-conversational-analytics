@@ -1,0 +1,98 @@
+{
+  "profile": "urn:bridge-clean:browser-ceremony:v1",
+  "governing_adr": "docs/adr/0029-operation-bound-browser-ceremonies.md",
+  "proof_profile": "urn:bridge-clean:browser-ceremony-proof:v1",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "ceremony_ttl_seconds": 1800,
+  "deadline": "min(source-original-deadline,created-at-plus-1800)-never-renewed",
+  "source_profiles": [
+    "urn:bridge-clean:initial-installation-handoff:v2",
+    "urn:bridge-clean:installation-setup-continuation:v2"
+  ],
+  "purposes": [
+    "connect-account",
+    "activate-complimentary"
+  ],
+  "binding": "immutable-entire-binding-and-original-operation-id",
+  "source_digest": "SHA-256(RFC8785(original-source-prepare-inner-request-excluding-proof-envelope))",
+  "binding_digest": "SHA-256(RFC8785(binding))",
+  "expected_customer": "opaque-provider-actor-if-known-never-browser-session-or-provider-subject",
+  "entry_reference": "256-bit-nonauthorizing-scope-locator",
+  "navigation_authority": false,
+  "browser_entry_path": "/onboarding/browser-ceremonies/{entry_reference}",
+  "extension_return": {
+    "origin": "https://{deployment-allowlisted-extension-id}.chromiumapp.org",
+    "path": "/browser-ceremony/v1/complete",
+    "query": [
+      "ceremony_id",
+      "attempt_id",
+      "notification"
+    ],
+    "fragment": false,
+    "authority": false,
+    "client_return_uri": false
+  },
+  "customer_session_profile": "ADR-0028-current-revocable-fixed-session",
+  "browser_mutations": "exact-origin-csrf-current-permission-and-single-use-action-receipt",
+  "prepare": "existing-source-only-no-domain-mutation",
+  "read": "noncreating-exact-operation-lookup-id-required-once-known",
+  "recover": "noncreating-exact-known-ceremony-existing-domain-result-only",
+  "cancel": "retire-browser-presentation-atomically-never-cancel-or-undo-domain-operation",
+  "lost_prepare": "fresh-proof-read-original-operation-no-automatic-reprepare",
+  "result_delivery": {
+    "initial": "existing-handoff-v2-receipt-only-normal-complete-and-bootstrap-recovery-own-grants",
+    "registered": "existing-continuation-binding-ready-no-grant-issuance",
+    "activation": "already-committed-exact-operation-installation-key-bound-clr1-original-lifetime-only",
+    "expired_redemption": "committed-truth-without-continuation-no-mint-no-renew",
+    "local_readiness": false
+  },
+  "read_after_presentation_retirement": "same-proof-exact-domain-reconciliation-within-existing-result-authority",
+  "retention": {
+    "contexts": "onboarding-working-state-delete-at-fixed-expiry-within-90-day-abandonment-ceiling",
+    "challenges": "expire-at-most-60-seconds-retain-consumption-through-original-deadline",
+    "notifications": "delete-at-original-ceremony-expiry",
+    "unresolved_operations": "existing-domain-reconciliation-retention-until-definitive-outcome",
+    "committed_commerce": "commercial-authority-durable-in-owning-domain",
+    "creator_approval": "creator-approval-history",
+    "minimal_audit": "security-audit-400-days",
+    "proof_bodies_or_tokens_in_audit": false
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "operation_conflict": 409,
+    "authorization_denied": 403,
+    "expired": 410,
+    "not_ready": 409,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "messages": {
+    "definitions": "schemas/browser-ceremony/v1/definitions.schema.json",
+    "prepare-request": "schemas/browser-ceremony/v1/prepare-request.schema.json",
+    "prepare-response": "schemas/browser-ceremony/v1/prepare-response.schema.json",
+    "read-request": "schemas/browser-ceremony/v1/read-request.schema.json",
+    "read-response": "schemas/browser-ceremony/v1/read-response.schema.json",
+    "recover-request": "schemas/browser-ceremony/v1/recover-request.schema.json",
+    "recover-response": "schemas/browser-ceremony/v1/recover-response.schema.json",
+    "cancel-request": "schemas/browser-ceremony/v1/cancel-request.schema.json",
+    "cancel-response": "schemas/browser-ceremony/v1/cancel-response.schema.json",
+    "snapshot": "schemas/browser-ceremony/v1/snapshot.schema.json",
+    "notification": "schemas/browser-ceremony/v1/notification.schema.json",
+    "error": "schemas/browser-ceremony/v1/error.schema.json"
+  },
+  "validation_order": [
+    "body-size-utf8-duplicate-json-closed-schema",
+    "infrastructure-availability",
+    "single-use-challenge-current-exact-key-and-proof",
+    "immutable-source-operation-scope-digest",
+    "expected-actor-and-allowlisted-completion",
+    "original-context-and-result-deadlines"
+  ],
+  "result_type_binding": "initial-receipt-only-for-initial-connect; binding-ready-only-for-registered-connect; clr1-only-for-exact-registered-activation",
+  "response_cache_control": "no-store",
+  "entry_recovery": "read-and-recover-return-original-entry-reference-and-server-derived-completion-only-while-presentation-active-and-live; no-reissue-no-renewal"
+}

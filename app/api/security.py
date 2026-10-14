@@ -70,7 +70,12 @@ def webauthn_session_token(identity: AuthContext, session_value: str) -> str:
 
 def _allows_anonymous_reauthentication(request: Request) -> bool:
     path = request.url.path
-    return path == "/" or path.startswith("/api/v1/webauthn/")
+    # Desktop reads have their own role/generation admission. An expired or
+    # foreign operator cookie must not hide the local sign-in projection.
+    # Commands still require the current authenticated operator and CSRF.
+    return (path == "/" or path.startswith("/api/v1/webauthn/")
+        or request.method == "GET" and path in {
+            "/api/v1/desktop/setup", "/api/v1/desktop/setup/events"})
 
 
 def _invalid_session_policy(request: Request, detail: str) -> RuntimePolicy:
@@ -163,6 +168,10 @@ def csrf_token(policy: RuntimePolicy, *, issued_at: int | None = None) -> str:
 
 def verify_csrf_token(policy: RuntimePolicy, token: str | None) -> None:
     if policy.identity is None:
+        raise HTTPException(status_code=403, detail="CSRF token does not match the session")
+    if token is not None and len(token) == 43 and "." not in token:
+        if SQLiteAuthenticationStore(settings.auth_database_path).bridge_session_csrf_is_current(policy, token):
+            return
         raise HTTPException(status_code=403, detail="CSRF token does not match the session")
     try:
         verify_csrf_document(policy, token)

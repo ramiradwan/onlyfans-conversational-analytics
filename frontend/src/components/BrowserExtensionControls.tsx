@@ -1,6 +1,6 @@
 import PauseCircleOutlinedIcon from '@mui/icons-material/PauseCircleOutlined';
 import PlayCircleOutlinedIcon from '@mui/icons-material/PlayCircleOutlined';
-import { Box, Button, Stack, Typography } from '@mui/material';
+import { Box, Button, Stack } from '@mui/material';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { SettingRow } from './ui';
@@ -10,8 +10,9 @@ import {
   BrowserControlApiError,
   type BrowserControlApi,
   type CaptureAction,
+  type BrowserDestination,
 } from '../services/browserControlApi';
-import type { ExtensionPort, ExtensionStep } from '../services/extensionPort';
+import { desktopOnboardingApi, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { ExtensionConnection } from '../utils/statusCopy';
 import { StatusLine } from './ui/ReservedRegion';
 
@@ -26,19 +27,21 @@ type Notice = 'unreachable' | 'failed' | 'no_response' | null;
  * changes it locally. Permission prompts open the extension's own page, because
  * the browser requires the click there.
  */
-export function BrowserExtensionControls({ api, browser, canManage, connection, port }: {
+export function BrowserExtensionControls({ api, browser, canManage, connection, onboarding = desktopOnboardingApi, onFeedback }: {
   api: BrowserControlApi;
   browser: BrowserSurfacePayload | null;
   canManage: boolean;
   /** The link state; its issue text already explains an unreachable extension. */
   connection: ExtensionConnection;
-  port: ExtensionPort;
+  onboarding?: DesktopOnboardingApi;
+  /** Settings combines its control, pairing and connection-list feedback. */
+  onFeedback?: (text: string | null) => void;
 }) {
-  const extension = useSyncExternalStore(port.subscribe, port.getState, port.getState);
+  useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
   const [pending, setPending] = useState<CaptureAction | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const operation = useRef<AbortController | null>(null);
-  const sameBrowser = extension.status === 'connected';
+  const connected = connection === 'connected';
 
   useEffect(() => () => operation.current?.abort(), []);
 
@@ -82,22 +85,38 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
     }
   };
 
-  const openInExtension = (step: ExtensionStep, label: string) => (sameBrowser && canManage ? (
-    <Button onClick={() => port.open(step)} size="small" variant="outlined">{label}</Button>
+  const open = async (destination: BrowserDestination) => {
+    operation.current?.abort();
+    const controller = new AbortController(); operation.current = controller;
+    setNotice(null);
+    try {
+      if (destination === 'setup' || destination === 'access') {
+        await onboarding.begin('browser.access');
+        return;
+      }
+      const result = await api.open(destination, controller.signal);
+      if (!controller.signal.aborted && result === 'unreachable') setNotice('unreachable');
+    } catch { if (!controller.signal.aborted) setNotice('failed'); }
+  };
+  const openInExtension = (step: BrowserDestination, label: string) => (connected && canManage ? (
+    <Button onClick={() => void open(step)} size="small" variant="outlined">{label}</Button>
   ) : undefined);
 
-  const feedback = <Box>
-<StatusLine essential id="browser-feedback" tone="error" text={browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now. Open your browser and try again.'
-            : notice === 'no_response' ? "The browser extension didn't confirm the change. Check it in your browser."
-              : "The change couldn't be sent. Try again."} />
-  </Box>;
+  const feedbackText = browser === null || notice === null ? null : notice === 'unreachable' ? 'The browser extension is not connected right now.'
+            : notice === 'no_response' ? "The browser extension didn't confirm the change. Try again."
+              : 'The change was not confirmed.';
+  useEffect(() => { onFeedback?.(feedbackText); }, [feedbackText, onFeedback]);
+  useEffect(() => () => onFeedback?.(null), [onFeedback]);
+  const feedback = onFeedback ? null : <StatusLine id="browser-feedback" tone="error" text={feedbackText} />;
+  // Keep room for two description lines and the action through pushed changes.
+  // The enclosing section owns one shared feedback region.
+  const row = { minHeight: { xs: '6.5rem', sm: '4rem' }, alignItems: { xs: 'flex-start', sm: 'flex-start' }, '& > .MuiBox-root:last-of-type:not(:first-of-type)': { width: { sm: 200 }, '& button': { minHeight: 40 } } };
+  const emptyAction = <Box aria-hidden sx={{ height: 40 }} />;
   if (browser === null) {
-    return <Stack sx={{ minHeight: 'inherit', display: 'grid', gridTemplateRows: '1fr auto' }}>
-      <Box>
-      {connection === 'connected' && <Typography data-browser-controls="waiting" variant="body2" sx={{ color: 'text.secondary' }}>
-        Waiting for the browser extension to report its settings.
-      </Typography>}
-      </Box>
+    return <Stack spacing={1.5} useFlexGap sx={{ minWidth: 0 }} data-browser-controls="waiting">
+      <SettingRow sx={row} title="New messages" description={connection === 'connected'
+        ? 'Waiting for extension settings.' : 'The browser extension is not connected.'} action={emptyAction} />
+      <SettingRow sx={row} title="Site access" description="Site access hasn't been checked." action={emptyAction} />
       {feedback}
     </Stack>;
   }
@@ -105,7 +124,6 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const paused = browser.capture === 'paused';
   const captureAction: CaptureAction | null = browser.capture === 'active' ? 'pause' : paused ? 'resume' : null;
   const resumeNeedsReview = paused && browser.legal_review_required;
-  const needsBrowserAction = browser.site_access !== 'granted' || resumeNeedsReview;
 
   const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
     <Button
@@ -119,37 +137,25 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
         : captureAction === 'pause' ? 'Pause collecting' : 'Resume collecting'}
     </Button>
   ) : resumeNeedsReview ? openInExtension('setup', 'Review terms') : undefined;
-  const row = { minHeight: { xs: '8rem', sm: '4rem' }, justifyContent: 'flex-start',
-    '& > .MuiBox-root:first-of-type': { minHeight: 64, flex: { sm: 1 } },
-    '& > .MuiBox-root:last-of-type:not(:first-of-type)': { minHeight: 40, width: 200, flex: 'none', '& button': { width: 200, minHeight: 40, justifyContent: 'flex-start' } } };
 
   return (
-    <Stack data-browser-controls="available" data-journey-state="desktop.browser_controls" spacing={1.5} useFlexGap sx={{ minHeight: 'inherit', display: 'grid', gridTemplateRows: { xs: 'repeat(3,minmax(8rem,auto)) minmax(2.5rem,1fr) auto', sm: 'repeat(3,minmax(4rem,auto)) minmax(2.5rem,1fr) auto' } }}>
+    <Stack data-browser-controls="available" data-journey-state="desktop.browser_controls" spacing={1.5} useFlexGap sx={{ minWidth: 0 }}>
       <SettingRow
         sx={row}
         title="New messages"
-        description={browser.capture === 'active' ? 'Collecting in the browser.'
-          : resumeNeedsReview ? 'Paused. Review the updated terms in the extension to resume.'
+        description={browser.capture === 'active' ? 'New message collection is enabled.'
+          : resumeNeedsReview ? 'Paused. Terms need review.'
             : paused ? 'Paused. Nothing new is collected.' : 'Off in the browser.'}
-        action={captureButton}
+        action={captureButton ?? emptyAction}
       />
       <SettingRow
         sx={row}
         title="Site access"
         description={browser.site_access === 'granted' ? 'Allowed for OnlyFans.'
-          : browser.site_access === 'reload_required' ? 'Reload your OnlyFans tabs to apply it.'
+          : browser.site_access === 'reload_required' ? 'Site access needs attention.'
             : 'Needs your approval.'}
-        action={browser.site_access === 'granted' ? undefined : openInExtension('access', 'Allow in extension')}
+        action={(browser.site_access === 'granted' ? undefined : openInExtension('access', browser.site_access === 'reload_required' ? 'Open extension' : 'Allow in extension')) ?? emptyAction}
       />
-      <SettingRow
-        sx={row}
-        title="Message history access (optional)"
-        description={browser.history_permission === 'granted' ? 'Allowed.' : 'Allow this if you want to add older conversations.'}
-        action={browser.history_permission === 'granted' ? undefined : openInExtension('history', 'Allow in extension')}
-      />
-        <Typography variant="body2" sx={{ minHeight: '2.5rem', color: 'text.secondary', visibility: needsBrowserAction && !sameBrowser ? 'visible' : 'hidden' }}>
-          Change these in the browser where the extension is installed.
-        </Typography>
       {feedback}
     </Stack>
   );

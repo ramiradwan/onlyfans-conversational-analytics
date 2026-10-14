@@ -40,7 +40,7 @@ import {
   type BridgeTransportState,
 } from '../store/transportStore';
 import { effectTokens } from '../theme';
-import { coverageProgressLabel, humanizeProjectionReason } from '../utils/dataReadiness';
+import { humanizeProjectionReason } from '../utils/dataReadiness';
 import {
   extensionConnection,
   protocolErrorText,
@@ -104,10 +104,7 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMess
   }
   if (state.readModelState === 'resyncing') {
     return {
-      detail:
-        state.viewRevision === null
-          ? 'Your conversations will appear in a moment.'
-          : 'Showing your last conversations until the refresh finishes.',
+      detail: state.conversations.length === 0 ? '' : 'Showing your last conversations.',
       severity: 'info',
       title: 'Refreshing conversations',
     };
@@ -115,14 +112,14 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMess
   if (state.readModelState === 'degraded' && state.connection === 'connected') {
     return state.viewRevision === null
       ? {
-          detail: 'Your conversations will appear once the connection is back.',
+          detail: '',
           severity: 'warning',
           title: 'Conversations unavailable',
         }
       : {
-          detail: 'Showing your last conversations while reconnecting.',
+          detail: state.conversations.length === 0 ? '' : 'Showing your last conversations.',
           severity: 'warning',
-          title: 'Updates paused',
+          title: 'Updates unavailable',
         };
   }
   if (
@@ -130,17 +127,14 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMess
     (state.connection === 'disconnected' || state.connection === 'error')
   ) {
     return {
-      detail: 'Your conversations will appear once the connection is back.',
+      detail: '',
       severity: 'error',
       title: 'Conversations unavailable',
     };
   }
   if (state.system?.readiness === 'unavailable' || state.projection.status === 'unavailable') {
     return {
-      detail: humanizeProjectionReason(
-        state.projection.reason,
-        "Your conversations can't be shown right now.",
-      ),
+      detail: humanizeProjectionReason(state.projection.reason, ''),
       severity: 'error',
       title: 'Conversations unavailable',
     };
@@ -150,19 +144,27 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMess
     return state.conversations.length === 0
       ? null
       : {
-          detail: 'Recent conversations are shown. Turn on message history in Settings to include older messages.',
+          detail: 'Recent conversations are shown.',
           severity: 'info',
-          title: 'Message history is off',
+          title: state.coverage.reason === 'consent_revoked'
+            ? 'Message history is off'
+            : 'History not started',
         };
   }
   if (state.coverage.status !== 'complete') {
     return {
       detail:
-        state.coverage.phase === 'paused'
-          ? 'Only messages synced so far are shown. You can resume history sync in Settings.'
-          : `${coverageProgressLabel(state.coverage)}. Older messages may not be here yet.`,
+        state.coverage.phase === 'paused' && state.coverage.reason === 'history_sync_paused'
+          ? 'Older messages may be missing. Resume history sync in Settings.'
+          : 'Older messages may be missing.',
       severity: 'info',
-      title: state.coverage.phase === 'paused' ? 'History paused' : 'History still syncing',
+      title: state.coverage.reason === 'consent_revoked'
+        ? 'Message history is off'
+        : state.coverage.phase === 'paused'
+          ? 'History paused'
+          : state.coverage.phase === 'not_started'
+            ? 'History not started'
+            : 'History incomplete',
     };
   }
   if (
@@ -170,9 +172,9 @@ function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMess
     state.projection.projected_revision < state.projection.canonical_revision
   ) {
     return {
-      detail: 'Your latest messages are being added.',
+      detail: state.conversations.length === 0 ? '' : 'Showing your last conversations.',
       severity: 'info',
-      title: 'Updating conversations',
+      title: 'Updates unavailable',
     };
   }
   return null;

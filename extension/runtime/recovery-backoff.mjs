@@ -1,4 +1,5 @@
 export const CONNECTION_RECOVERY_KEY = 'companion_recovery_v1';
+export const CONNECTION_RECONCILE_ALARM = 'ofca-agent-reconcile';
 const SCHEMA = 'ofca-connection-recovery/v1';
 export const CONNECTION_STABLE_MS = 10_000;
 export const CONNECTION_COOLDOWN_MS = 300_000;

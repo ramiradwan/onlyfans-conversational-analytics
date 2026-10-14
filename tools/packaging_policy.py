@@ -350,6 +350,13 @@ def _check_frontend_closure(
         return
     entries = {key: value for key, value in manifest.items() if isinstance(key, str) and isinstance(value, Mapping)}
     entry_keys = [key for key, value in entries.items() if value.get("isEntry") is True]
+    required_entries = frontend.get("required_entries", [])
+    if not isinstance(required_entries, list) or not all(isinstance(value, str) for value in required_entries):
+        findings.append(PackagingFinding("policy_invalid", "frontend.required_entries", "entry names must be a list of strings"))
+        return
+    for required in required_entries:
+        if required not in entry_keys:
+            findings.append(PackagingFinding("frontend_entry_missing", str(required), "required frontend entry is absent"))
     if not entry_keys:
         findings.append(PackagingFinding("frontend_entry_missing", manifest_path.relative_to(root).as_posix(), "manifest has no entry"))
         return

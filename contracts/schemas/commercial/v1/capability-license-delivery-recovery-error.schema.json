@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json",
+  "title": "CapabilityLicense delivery recovery error v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "reason"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+        },
+        "reason": {
+          "enum": [
+            "invalid",
+            "proof_invalid",
+            "authority_unavailable",
+            "generation_conflict",
+            "generation_superseded",
+            "invalid_generation",
+            "delivery_completed",
+            "temporarily_unavailable"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "reason",
+        "retry_at"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+        },
+        "reason": {
+          "const": "rate_limited"
+        },
+        "retry_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  ]
+}

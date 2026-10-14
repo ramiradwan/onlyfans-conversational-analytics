@@ -191,22 +191,16 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
           assert.equal(await cardLocator.locator('.MuiButton-contained').count(), 1);
           assert(await cardLocator.getByRole('button', { name: 'Sign in with passkey', exact: true }).evaluate(n => n.classList.contains('MuiButton-contained')));
           near(brand.width, 32, 'passkey brand width'); near(brand.height, 32, 'passkey brand height');
-          near(card.y + card.height / 2, viewport.height / 2, 'passkey vertical center', 1);
-          let header = null;
-          if (viewport.width === 1440) {
-            header = await appearance(banner);
-            assert.equal(await cardLocator.locator('[data-visual="brand-tile"]').filter({ visible: true }).count(), 0);
-            near(brand.x, homeBrand.x, 'passkey/home brand left'); near(brand.y, homeBrand.y, 'passkey/home brand top');
-          } else {
-            assert.equal(await banner.count(), 0, 'narrow passkey keeps its brand in the card');
-            const footer = cardLocator.locator('[data-visual="passkey-brand"]');
-            assert(await footer.locator('[data-visual="brand-tile"]').isVisible(), 'narrow passkey footer brand');
-            assert(await footer.getByText('Conversation Analytics', { exact: true }).isVisible(), 'narrow passkey footer name');
-          }
+          const header = await appearance(banner);
+          assert.equal(await cardLocator.locator('[data-visual="brand-tile"]').filter({ visible: true }).count(), 0);
+          assert(header.y + header.height <= card.y, 'The workspace header must precede the passkey task');
+          assert(brand.x >= header.x && brand.y >= header.y && brand.x + brand.width <= header.x + header.width && brand.y + brand.height <= header.y + header.height, 'The brand must fit the persistent header');
+          const main = await appearance(page.getByRole('main'));
+          assert(card.x >= main.x && card.x + card.width <= main.x + main.width, 'The task must fit the workspace card');
           const tile = await appearance(page.locator('[data-visual="passkey-lock"]'));
-          near(tile.width, 56, 'lock tile'); near(tile.height, 56, 'lock tile'); assert.equal(tile.radius, '18px');
+          near(tile.width, 48, 'lock tile'); near(tile.height, 48, 'lock tile'); assert.equal(tile.radius, '12px');
           const heading = await appearance(page.getByRole('heading', { level: 1 }));
-          near(heading.fontSize, 26, 'passkey title'); assert(heading.font.includes('Space Grotesk'));
+          near(heading.fontSize, 24, 'passkey title'); assert(heading.font.includes('Inter'));
           const setup = cardLocator.getByRole('button', { name: 'Set up a passkey', exact: true });
           for (let index = 0; index < 4 && !await setup.evaluate(n => document.activeElement === n); index++) {
             await page.keyboard.press('Tab');
@@ -229,11 +223,12 @@ export async function captureReviewChecks(browser, base, outDir, recorder = null
           resting.forEach((box, index) => { near(failed[index].x, box.x, `passkey error shift x ${index}`); near(failed[index].y, box.y, `passkey error shift y ${index}`); });
           const feedbackBox = await appearance(feedback), summaryStyle = await appearance(summary);
           near(feedbackBox.width, card.width, 'passkey feedback width');
-          const feedbackSize = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8')).tier3.Passkey.feedback;
+          const feedbackSize = JSON.parse(await readFile(new URL('../../frontend/src/theme/tokens.json', import.meta.url), 'utf8')).tier3.reserved.essentialStatusLine;
           near(feedbackBox.height, viewport.width < 600 ? feedbackSize.narrow : feedbackSize.wide, 'passkey feedback height');
-          assert(feedbackBox.y >= card.y + card.height && feedbackBox.y + feedbackBox.height <= viewport.height, 'passkey feedback sits below the card, in view');
+          assert(feedbackBox.y >= card.y && feedbackBox.y + feedbackBox.height <= card.y + card.height, 'Passkey feedback must remain inside its task');
+          assert(feedbackBox.y + feedbackBox.height <= viewport.height, 'Passkey feedback must fit the ordinary window');
           assert(contrastAgainst(summaryStyle.ink, summaryStyle.canvas) >= 4.5, 'passkey error text contrast');
-          assert.equal(await summary.innerText(), 'Sign-in was cancelled or timed out. Try again.');
+          assert.equal(await summary.innerText(), 'Sign-in did not finish.');
           await screenshot(page, `passkey-error-${mode}-${viewport.width}.png`);
           passkeyLayouts.push({ viewport, header, brand, homeBrand, card, tile, heading, feedbackBox, summaryStyle });
         }

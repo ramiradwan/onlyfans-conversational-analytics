@@ -28,9 +28,9 @@ it('does not claim current messages from passive freshness', () => {
     liveFreshness: { ...state.liveFreshness, status: 'current' as const },
     agent: { status: 'connected', required_config_revision: 'a', applied_config_revision: 'a', required_history_settings_revision: 1, applied_history_settings_revision: 1, degraded_reason: null } as typeof state.agent,
   };
-  expect(getStatusPresentation(current).label).toBe('Messages not checked');
+  expect(getStatusPresentation(current).label).toBe('History not verified');
   vi.spyOn(bridgeTransportStore, 'getState').mockReturnValue(current);
   const view = render(<ThemeProvider theme={theme}><AppAppBar onDrawerToggle={() => {}} /></ThemeProvider>);
-  expect(view.getAllByRole('button', { name: 'Status: Messages not checked. Show details' })).toHaveLength(2);
+  expect(view.getAllByRole('button', { name: 'Status: History not verified. Show details' })).toHaveLength(2);
   expect(view.queryAllByRole('button', { name: 'Status: Up to date. Show details' })).toHaveLength(0);
 });

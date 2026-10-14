@@ -45,7 +45,7 @@ export async function startHarness() {
   const port = await freePort();
   const vite = spawn(
     process.execPath,
-    [join(frontend, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    [join(frontend, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort', '--base', '/'],
     { cwd: frontend, env: { ...process.env, BROWSER: 'none' }, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let log = '';

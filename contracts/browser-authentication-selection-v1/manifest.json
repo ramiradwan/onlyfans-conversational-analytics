@@ -1,0 +1,143 @@
+{
+  "case_count": 2787,
+  "files": [
+    {
+      "path": "admission-generation-cases.json",
+      "sha256": "555216aadf827811eb0bf93a7528a0d221144204bb40b1dd188a2f581e695905",
+      "size": 7704
+    },
+    {
+      "path": "authentication-cases.json",
+      "sha256": "c7636fa5be760d12cd7b22c7a41afe08acf74373a4306a75831a1f367f673447",
+      "size": 40014
+    },
+    {
+      "path": "parsing-cases.json",
+      "sha256": "70dfb268d44daba92a43dce7a851b6b42aed8f857df546ed06b5070841ae9d2d",
+      "size": 1562
+    },
+    {
+      "path": "projection-cases.json",
+      "sha256": "db54ba4224336bfd2183fe13a7763583fb82762447e965e5b6db2c8578fe369e",
+      "size": 37684
+    },
+    {
+      "path": "proof-admission-cases.json",
+      "sha256": "59224247fb080dc1e2279fe4eb13f8b323340b28cb8c03521e1cf4b8818f2c04",
+      "size": 24303
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "3be0bf7d85306b5c0a8875830dff46451db9999891cd985cb4242574047afd3d",
+      "size": 202874
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "43e8ffae98eecd9be03760a1c63d688ebe52b52f0490bd22732244484bf25523",
+      "size": 4355521
+    }
+  ],
+  "generator": "tools/generate_authentication_selection_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0031-bound-authentication-attempts-and-current-admission.md",
+  "inputs": [
+    {
+      "path": "catalog/authentication-selection-admission-policy.json",
+      "sha256": "1de0add47fe202d1caa7d2dedc75bc4e5264572dd5a31f2980a9c3b8a3c00de5"
+    },
+    {
+      "path": "docs/adr/0031-bound-authentication-attempts-and-current-admission.md",
+      "sha256": "5022b84b8cdda712e6000a8c9ff56f434b0c90f2bfccd30ac8621d0268d68114"
+    },
+    {
+      "path": "docs/browser-authentication-selection-v1.md",
+      "sha256": "e08bb74fd11f7c5d97e4339278b763ff9c95fd30e061c698c55fec977b37b95d"
+    },
+    {
+      "path": "openapi/browser-authentication-selection-v1.openapi.yaml",
+      "sha256": "82d0afffa6826cf2974d962a33f9abcb3bc91296a587f432530b2a367f54bce2"
+    },
+    {
+      "path": "profiles/browser-authentication-selection-proof/v1/profile.json",
+      "sha256": "84b5c2417bbb3f7af61156f8d582e323acf3f5c45b9e342f1e152cd1d41fffcf"
+    },
+    {
+      "path": "profiles/browser-authentication-selection/v1/profile.json",
+      "sha256": "deef130cc60754453e472710b1d1c8304850c4bb0dd36905b494e7292ecb5383"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/cancel-request.schema.json",
+      "sha256": "49771b842e1a8ec2bd454c6dd735df314b6ab9ec4b47236cc90471c078e04413"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/cancel-response.schema.json",
+      "sha256": "cf667112b26a21b3aeaf36481d86717d5497092c41c8b306b883d6e9f9328a0e"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/definitions.schema.json",
+      "sha256": "ab3690efc71f1539159822dd8ad0f4ba2f5c3aa82a689aa6be87be0fa9b46beb"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/error.schema.json",
+      "sha256": "d54284e5c7582182356804861dfa97d9ce273e943f1365af57dc01657551dbf9"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/projection.schema.json",
+      "sha256": "18651438264f3d84cd73089ec7dec9707da0cb9aeb8d2bd9075583bc6be9d4ec"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/proof-challenge-request.schema.json",
+      "sha256": "bc7ab2ec4145b7d5ccbd6f097559b4a0a64b883956c97478f5b06ec7d242c4b3"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/proof-challenge-response.schema.json",
+      "sha256": "7c071472499355d2309c068703dab731cc80dd102bc7fe614f5e2cf2f9378d97"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/read-request.schema.json",
+      "sha256": "2c2e9df9439d97a5f96514cccd70ec49dedb3138f9e6d2ff161ca8c594657181"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/read-response.schema.json",
+      "sha256": "8558230c19ba840c082de65d0ccc1bf0bd0e4ca191cc35ad57a3baf9af594a00"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/select-request.schema.json",
+      "sha256": "3c6885230509f4794217c19f2e5232351b475f1ae03dda0c9207a9fcf36b9b10"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/select-response.schema.json",
+      "sha256": "74c1aa57880c05e13b2c75ecec77d674205041d6e7c58f14c9fdc60e9c13fbe3"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/switch-request.schema.json",
+      "sha256": "919be43d232c29335b8d0ccbc6ae779f9a1378ea2bf2796fb480d2d8320a5686"
+    },
+    {
+      "path": "schemas/browser-authentication-selection/v1/switch-response.schema.json",
+      "sha256": "ba2b892521bccae61770c10581928867fc58307042b1b5b62259857b592d1429"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/definitions.schema.json",
+      "sha256": "8b7e4636fcea8ac170379fd5b77e2dcb3c59537e789dee35fd580e6b39c9964a"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "test-vectors/desktop-decision-v1/parsing-cases.json",
+      "sha256": "70dfb268d44daba92a43dce7a851b6b42aed8f857df546ed06b5070841ae9d2d"
+    },
+    {
+      "path": "test-vectors/desktop-decision-v1/proof-cases.json",
+      "sha256": "0f4c8090ed28deea03cce4aa240f5aeafa4f2b365cd8eb90e04eba27168fee1e"
+    },
+    {
+      "path": "tools/generate_authentication_selection_vectors.py",
+      "sha256": "98fc01309522267f2b443b31089a084f683d0934d2b011b99076425b7d7fa9d9"
+    }
+  ],
+  "profile": "urn:bridge-clean:browser-authentication-selection-vectors:v1",
+  "test_only": true
+}

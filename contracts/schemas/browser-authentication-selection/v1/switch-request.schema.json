@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-authentication-selection/v1/switch-request.schema.json",
+  "title": "Browser authentication selection switch-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "definitions.schema.json#/$defs/switchRequest"
+    },
+    "proof": {
+      "$ref": "definitions.schema.json#/$defs/proof"
+    }
+  }
+}

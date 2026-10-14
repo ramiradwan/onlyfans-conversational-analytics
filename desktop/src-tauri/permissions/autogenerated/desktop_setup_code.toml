@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-setup-code"
+description = "Enables the desktop_setup_code command without any pre-configured scope."
+commands.allow = ["desktop_setup_code"]
+
+[[permission]]
+identifier = "deny-desktop-setup-code"
+description = "Denies the desktop_setup_code command without any pre-configured scope."
+commands.deny = ["desktop_setup_code"]
