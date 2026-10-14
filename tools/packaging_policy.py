@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -32,6 +34,9 @@ def load_runtime_policy(path: Path | str = DEFAULT_POLICY_PATH) -> dict[str, Any
 def verify_runtime_files(
     staging_root: Path | str,
     policy: Mapping[str, Any] | None = None,
+    *,
+    target: str = "staging",
+    adapters: tuple[str, ...] = ("inno",),
 ) -> tuple[PackagingFinding, ...]:
     """Return all policy findings for ``staging_root``; never raise for bad input."""
 
@@ -39,11 +44,59 @@ def verify_runtime_files(
     findings: list[PackagingFinding] = []
     try:
         effective_policy = dict(load_runtime_policy() if policy is None else policy)
-    except (OSError, UnicodeError, json.JSONDecodeError, TypeError) as error:
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as error:
         return (PackagingFinding("policy_invalid", "runtime-files.json", str(error)),)
 
     if not root.is_dir():
         return (PackagingFinding("staging_root_missing", str(root), "staging root is not a directory"),)
+
+    if effective_policy.get("schema_version") not in (1, 2):
+        return (PackagingFinding("policy_invalid", "schema_version", "unsupported runtime policy"),)
+    for field in ("required_files", "required_directories"):
+        if not isinstance(effective_policy.get(field), list) or not all(
+            isinstance(path, str) and path for path in effective_policy[field]
+        ):
+            return (PackagingFinding("policy_invalid", field, "required paths must be declared"),)
+    if effective_policy.get("schema_version") == 2 and (
+        not isinstance(effective_policy.get("staging_only_directories"), list)
+        or not all(isinstance(path, str) and path for path in effective_policy["staging_only_directories"])
+        or not isinstance(effective_policy.get("package_payloads"), dict)
+    ):
+        return (PackagingFinding("policy_invalid", "package_payloads", "invalid staging and adapter classification"),)
+    if target == "staging" and (not adapters or len(adapters) > 2 or any(adapter not in {"inno", "msix"} for adapter in adapters)):
+        return (PackagingFinding("policy_invalid", "package_payloads", "unknown staged adapter selection"),)
+    if target == "staging" and effective_policy.get("schema_version") == 2:
+        try:
+            resources = [resource for adapter in adapters
+                         for resource in payload_declaration(adapter, effective_policy)["adapter_resources"]]
+        except ValueError as error:
+            return (PackagingFinding("policy_invalid", "package_payloads", str(error)),)
+        effective_policy["required_files"] = [*effective_policy["required_files"], *resources]
+        effective_policy["required_directories"] = [*effective_policy["required_directories"],
+                                                   *effective_policy["staging_only_directories"]]
+    elif target != "staging":
+        try:
+            declaration = payload_declaration(target, effective_policy)
+        except ValueError as error:
+            return (PackagingFinding("policy_invalid", "package_payloads", str(error)),)
+        effective_policy["required_files"] = [
+            path for path in effective_policy["required_files"]
+            if not _excluded_from_payload(path, declaration)
+        ] + declaration["generated_files"] + declaration["adapter_resources"]
+        effective_policy["required_directories"] = [
+            path for path in effective_policy["required_directories"]
+            if not _excluded_from_payload(path, declaration)
+        ]
+
+    try:
+        for candidate in _nonfollowing_tree(root):
+            if _is_reparse_point(candidate):
+                findings.append(PackagingFinding("path_alias_forbidden", str(candidate.relative_to(root)),
+                                                 "runtime files must not use links or reparse points"))
+    except OSError as error:
+        findings.append(PackagingFinding("runtime_inspection_failed", str(root), str(error)))
+    if findings:
+        return tuple(findings)
 
     _check_required_paths(root, effective_policy, findings)
     _check_forbidden_paths(root, effective_policy, findings)
@@ -51,8 +104,78 @@ def verify_runtime_files(
     _check_sql_catalogs(root, effective_policy, findings)
     _check_contracts(root, effective_policy, findings)
     _check_frontend_closure(root, effective_policy, findings)
-    _check_agent_artifact(root, effective_policy, findings)
+    if target == "staging":
+        _check_agent_artifact(root, effective_policy, findings)
+    elif "signing_parameters" in effective_policy.get("agent_artifact", {}).get("release_declarations", []):
+        _check_publication_resources(root, findings)
+    if target != "staging":
+        for relative in (path.relative_to(root).as_posix() for path in root.rglob("*")):
+            if _excluded_from_payload(relative, declaration) and relative not in declaration["generated_files"]:
+                findings.append(PackagingFinding("build_input_installed", relative, "file belongs outside this installed payload"))
     return tuple(findings)
+
+
+def _is_reparse_point(path: Path) -> bool:
+    information = path.lstat()
+    return stat.S_ISLNK(information.st_mode) or bool(
+        getattr(information, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
+
+
+def _nonfollowing_tree(root: Path):
+    pending = [root]
+    while pending:
+        path = pending.pop()
+        yield path
+        if path.is_dir() and not _is_reparse_point(path):
+            with os.scandir(path) as entries:
+                pending.extend(Path(entry.path) for entry in entries)
+
+
+def payload_declaration(target: str, policy: Mapping[str, Any] | None = None) -> dict[str, list[str]]:
+    """Return an explicit installed closure; staging qualification stays mandatory."""
+    effective = load_runtime_policy() if policy is None else policy
+    if effective.get("schema_version") != 2 or target not in {"inno", "msix"}:
+        raise ValueError("an installed target requires runtime policy v2 and an explicit adapter")
+    payloads = effective.get("package_payloads")
+    if not isinstance(payloads, dict):
+        raise ValueError("invalid package payload mapping")
+    declaration = payloads.get(target)
+    fields = {"excluded_directories", "excluded_files", "generated_files", "adapter_resources"}
+    if not isinstance(declaration, dict) or set(declaration) != fields:
+        raise ValueError("invalid package payload declaration")
+    for paths in (*declaration.values(), effective.get("staging_only_directories")):
+        if not isinstance(paths, list) or not all(
+            isinstance(path, str) and path not in {"", "."} and "\\" not in path and ":" not in path
+            and not PurePosixPath(path).is_absolute() and ".." not in PurePosixPath(path).parts
+            for path in paths
+        ):
+            raise ValueError("invalid package payload path")
+    return {**declaration, "excluded_directories": [*effective.get("staging_only_directories", []),
+                                                    *declaration["excluded_directories"]]}
+
+
+def _excluded_from_payload(relative: str, declaration: Mapping[str, list[str]]) -> bool:
+    normalized = relative.casefold()
+    return normalized in {path.casefold() for path in declaration["excluded_files"]} or any(
+        normalized == path.casefold() or normalized.startswith(path.casefold() + "/")
+        for path in declaration["excluded_directories"]
+    )
+
+
+def installed_runtime_files(staging_root: Path | str, target: str,
+                            policy: Mapping[str, Any] | None = None) -> tuple[str, ...]:
+    """Select files only after the complete staged runtime passes its existing gates."""
+    findings = verify_runtime_files(staging_root, policy, adapters=(target,))
+    if findings:
+        raise ValueError("staged runtime rejected: " + ", ".join(finding.code for finding in findings))
+    declaration = payload_declaration(target, policy)
+    root = Path(staging_root)
+    paths = tuple(sorted(path.relative_to(root).as_posix() for path in root.rglob("*")
+                         if path.is_file() and not _excluded_from_payload(path.relative_to(root).as_posix(), declaration)))
+    if len({path.casefold() for path in paths}) != len(paths):
+        raise ValueError("installed paths contain case aliases")
+    return paths
 
 
 def _check_required_paths(

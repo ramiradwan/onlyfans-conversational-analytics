@@ -28,6 +28,8 @@ Arguments after `--` pass through to pytest. For example, `python tools/test_bac
 
 Windows contract execution requires Windows and the fixed SQLCipher runtime. A Linux collection that skips a Windows-native test does not reproduce that test. Required hosted and packaged-runtime evidence still comes from their respective workflows.
 
+The MSIX producer contract also requires the Windows SDK `10.0.26100.0` tools and UAP v17 schema. Install the SDK before running `tests/test_msix_packaging.py` or the Windows platform/full regression lanes. A missing SDK on Windows fails qualification instead of skipping it. See [MSIX packaging](../packaging/msix/README.md) for isolated profiles and the remaining installed-system gates.
+
 Other local checks:
 
 ```powershell

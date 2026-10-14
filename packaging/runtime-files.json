@@ -1,9 +1,23 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "staging_only_directories": ["Agent"],
+  "package_payloads": {
+    "inno": {
+      "excluded_directories": [],
+      "excluded_files": [],
+      "generated_files": [],
+      "adapter_resources": ["ensure-webview2.ps1"]
+    },
+    "msix": {
+      "excluded_directories": [],
+      "excluded_files": ["ensure-webview2.ps1", "sha256sums.txt"],
+      "generated_files": ["desktop-release.json", "sha256sums.txt"],
+      "adapter_resources": []
+    }
+  },
   "required_files": [
     "Brain.exe",
     "Bridge.exe",
-    "ensure-webview2.ps1",
     "_internal/app/templates/index.html",
     "_internal/app/static/dist/onboarding/index.html",
     "_internal/app/static/dist/browser-tasks/index.html",
@@ -28,8 +42,7 @@
   "required_directories": [
     "_internal/app/static",
     "_internal/app/static/dist",
-    "_internal/contracts",
-    "Agent"
+    "_internal/contracts"
   ],
   "frontend": {
     "dist_path": "_internal/app/static/dist",
@@ -165,6 +178,16 @@
     ]
   },
   "forbidden_paths": [
+    ".git",
+    "**/.git",
+    "*.sqlite3",
+    "**/*.sqlite3",
+    "*.pfx",
+    "**/*.pfx",
+    "*.p12",
+    "**/*.p12",
+    "*.cer",
+    "**/*.cer",
     "brain-fixture.exe",
     "**/brain-fixture.exe",
     "msedgewebview2.exe",
@@ -195,6 +218,10 @@
     "_internal/app/provisioning/native-tokens.css"
   ],
   "forbidden_material": [
+    {
+      "name": "private_key",
+      "pattern": "-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----"
+    },
     {
       "name": "installation_claim",
       "pattern": "(?i)\\binstallation[_-]?claim(?:[_-]?package)?[\\\"']?\\s*[:=]\\s*(?:[\\\"'][^\\\"']{16,}[\\\"']|[A-Za-z0-9_-]{16,})",

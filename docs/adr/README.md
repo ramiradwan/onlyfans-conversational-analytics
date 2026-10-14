@@ -8,6 +8,10 @@ Start from [the ADR template](template.md). Use the next number after the highes
 
 ## Accepted
 
+- [ADR 0056: Package the complete desktop runtime for Windows managed updates](0056-msix-packaging-and-managed-updates.md)
+
+- [ADR 0055: Deliver independently verified signing parameters](0055-verified-signing-parameter-delivery.md)
+
 - [ADR 0054: Consolidate onboarding coordination](0054-consolidate-onboarding-coordination.md)
 
 - [ADR 0053: Observe deferred activation offer preparation](0053-observe-deferred-activation-offer-preparation.md)

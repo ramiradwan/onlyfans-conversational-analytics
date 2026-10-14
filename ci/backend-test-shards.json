@@ -274,6 +274,7 @@
     "tests/test_onboarding_enrollment_runtime.py": 2,
     "tests/test_onboarding_owner_effects.py": 3,
     "tests/test_packaged_runtime.py": 3,
+    "tests/test_msix_packaging.py": 3,
     "tests/test_packaging_build_mode.py": 3,
     "tests/test_packaging_smoke.py": 1,
     "tests/test_persisted_membership_handoff.py": 2,
@@ -347,6 +348,10 @@
   },
   "windows_contracts": {
     "platform": [
+      {
+        "selector": "tests/test_msix_packaging.py",
+        "reason": "MSIX profiles, target-specific closure and real pinned Windows SDK semantic packing must qualify on Windows."
+      },
       {
         "selector": "tests/test_activation_gate.py",
         "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."

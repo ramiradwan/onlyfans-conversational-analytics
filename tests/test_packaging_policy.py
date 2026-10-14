@@ -260,6 +260,7 @@ def test_forbidden_development_configuration_examples_are_reported_from_multiple
     [
         ("installation_claim", "installation_claim=claim-package-with-secret"),
         ("claim_secret", "claim_secret=secret-value"),
+        ("private_key", "-----BEGIN PRIVATE KEY-----\nreviewed-synthetic-non-key-sentinel\n-----END PRIVATE KEY-----"),
         ("bearer_or_session_token", "Authorization: Bearer opaque-token-value-123"),
         ("bearer_or_session_token", "session_token=session-token-value-123"),
         ("generated_runtime_secret", "runtime_secret=generated-value"),
@@ -531,6 +532,7 @@ def test_per_user_material_declarations_cover_every_required_category() -> None:
         "bearer_or_session_token",
         "generated_runtime_secret",
         "user_profile_path",
+        "private_key",
     }, "the per-user-material policy must name every prohibited category"
 
 
@@ -545,7 +547,7 @@ def test_reviewed_material_admissions_pin_only_the_public_handoff_digest_fixture
     assert set(admissions["installation_claim"]) == set(HANDOFF_SYNTHETIC_FILES)
     manifest = json.loads((ROOT / "contracts/manifest.json").read_text(encoding="utf-8"))
     pinned_files = {entry["path"]: entry["sha256"] for entry in manifest["files"]}
-    matcher = re.compile(declarations[0]["pattern"])
+    matcher = re.compile(next(declaration["pattern"] for declaration in declarations if declaration["name"] == "installation_claim"))
     for relative, digest in admissions["installation_claim"].items():
         source = ROOT / relative.removeprefix("_internal/")
         payload = source.read_bytes()
