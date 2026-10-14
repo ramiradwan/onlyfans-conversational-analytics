@@ -9,6 +9,7 @@ Examples:
   python tools/test_backend.py list windows-full-regression --shard 1 --validate
   python tools/test_backend.py windows-full-regression --shard 2
   python tools/test_backend.py update-windows-manifest --inventory raw/report.json
+  python tools/test_backend.py validate-windows-manifest --inventory raw/report.json
 
 Use the repository's Python environment and build the frontend before full
 collection, just as for bare ``python -m pytest``. Arguments after ``--`` go
@@ -45,7 +46,7 @@ ALIASES = {"backend-fast": "fast", "analytics-integration": "integration",
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    result.add_argument("command", nargs="?", help="Lane name, list, update-manifest, or update-windows-manifest")
+    result.add_argument("command", nargs="?", help="Lane name, list, update-manifest, update-windows-manifest, or validate-windows-manifest")
     result.add_argument("list_lane", nargs="?", help="Lane to inspect after list (default: all)")
     result.add_argument("--lane", choices=(*LANES, *ALIASES), help="Alternative to the positional lane name")
     result.add_argument("--list", dest="list_only", action="store_true", help="Collect and print the selected lane without executing tests")
@@ -298,6 +299,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(values[:split])
     extra = values[split + 1:] if split < len(values) else []
     try:
+        if args.command == "validate-windows-manifest":
+            if (extra or args.lane or args.list_lane or args.shard or args.profile or args.validate
+                    or args.list_only or args.rebalance or args.timings or args.dry_run or not args.inventory):
+                raise SelectionError("validate-windows-manifest requires --inventory <raw-unsharded-Windows-report.json>; optional --windows-manifest")
+            inventory = windows_shards.read_inventory(args.inventory)
+            partition = windows_shards.load_manifest(ROOT, args.windows_manifest)
+            windows_shards.validate_inventory(inventory["collected"], partition, complete=True)
+            print(f"Validated full Windows inventory: {len(partition['files'])} files, "
+                  f"{len(inventory['selected'])} default tests, two exhaustive shards")
+            return 0
         if args.command == "update-windows-manifest":
             if extra or args.lane or args.list_lane or args.shard or args.profile or args.validate or args.list_only or not args.inventory:
                 raise SelectionError("update-windows-manifest requires --inventory <raw-unsharded-report.json>; optional --timings, --rebalance, --windows-manifest and --dry-run")

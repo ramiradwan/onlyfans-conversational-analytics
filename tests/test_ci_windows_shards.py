@@ -217,3 +217,48 @@ def test_checked_in_manifest_is_measured_and_separate_from_tier_partition():
     assert len(checked["assignment_basis"]["source"]["report_sha256"]) == 64
     assert "tests/test_ci_windows_shards.py" in checked["files"]
     assert set(checked["files"].values()) == {1,2}
+
+
+def test_validate_manifest_uses_complete_raw_windows_report_without_taxonomy(tmp_path, monkeypatch, capsys):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Inventory validation must remain independent of tier metadata")
+    monkeypatch.setattr(runner, "load_manifest", forbidden)
+    report = write_json(tmp_path / "report.json", dict(inventory(), collect_only=True, reports=[]))
+    partition = write_json(tmp_path / "windows.json", manifest())
+    assert runner.main(["validate-windows-manifest", "--inventory", str(report),
+                        "--windows-manifest", str(partition)]) == 0
+    assert "2 files, 2 default tests" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("fault", ["unassigned", "absent", "non_windows", "partial", "narrowed", "failed"])
+def test_validate_manifest_refuses_stale_or_incomplete_raw_reference(tmp_path, fault, capsys):
+    report = inventory()
+    partition = manifest()
+    if fault == "unassigned": partition["files"].pop("test_one.py")
+    elif fault == "absent": partition["files"]["test_absent.py"] = 1
+    elif fault == "non_windows": report["platform"] = "Linux"
+    elif fault == "partial": report["partial"] = True
+    elif fault == "narrowed": report["selection"]["targets"] = ["test_one.py"]
+    else: report["exit_code"] = 1
+    # Preserve both owner values so the collection comparison finds the drift.
+    if fault == "unassigned": partition["files"]["test_third.py"] = 1
+    report_path = write_json(tmp_path / "report.json", report)
+    manifest_path = write_json(tmp_path / "windows.json", partition)
+    assert runner.main(["validate-windows-manifest", "--inventory", str(report_path),
+                        "--windows-manifest", str(manifest_path)]) == 2
+    assert "Backend CI selection error" in capsys.readouterr().err
+
+
+def test_pr_windows_inventory_validation_runs_after_raw_collection_before_execution():
+    import yaml
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    job = workflow["jobs"]["windows-platform-contract"]
+    steps = job["steps"]
+    names = [step.get("name") for step in steps]
+    check = names.index("Validate exhaustive Windows shard inventory")
+    assert "if" not in job and "if" not in steps[check]
+    assert names.index("Collect independent legacy Windows selection") < check < names.index("Test Windows platform contract")
+    assert steps[check]["run"] == (
+        "python tools/test_backend.py validate-windows-manifest "
+        "--inventory artifacts/ci-tests/legacy-windows-reference/report.json"
+    )

@@ -90,7 +90,8 @@ def read_inventory(path: Path, *, execution: bool = False) -> dict[str, Any]:
     report = json.loads(raw, object_pairs_hook=_unique_pairs)
     if (not isinstance(report, dict) or report.get("schema") != "ci-test-report/v1" or report.get("complete") is not True
             or type(report.get("exit_code")) is not int or report["exit_code"] != 0
-            or type(report.get("collect_only")) is not bool or type(report.get("partial")) is not bool
+            or type(report.get("collect_only")) is not bool or report.get("partial") is not False
+            or report.get("platform") != "Windows"
             or report.get("collection_errors") != [] or report.get("profile") != "" or report.get("selection_profile") != ""):
         raise WindowsShardError("Inventory requires a complete successful unprofiled CI report")
     selection = report.get("selection", {})
