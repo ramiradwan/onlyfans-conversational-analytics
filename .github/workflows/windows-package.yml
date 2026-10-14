@@ -11,6 +11,15 @@ on:
         description: Full 40-character commit revision of the Product tree to build
         required: true
         type: string
+      desktop_target:
+        description: Desktop artifact route; Store output remains an unsigned submission candidate
+        required: true
+        default: inno
+        type: choice
+        options:
+          - inno
+          - msix-direct
+          - msix-store
       legal_repository_revision:
         description: Full 40-character Legal revision the bindings are approved at
         required: true
@@ -27,6 +36,10 @@ on:
         description: Expected canonical SHA-256 of that document, bare lowercase 64-hex
         required: true
         type: string
+
+env:
+  DESKTOP_RELEASE_TARGET: ${{ inputs.desktop_target || 'inno' }}
+  PRODUCT_REVISION: ${{ inputs.product_revision }}
 
 jobs:
   build:
@@ -220,6 +233,19 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
+      # The common Inno first-run and frozen runtime checks above qualify the
+      # complete stage. Pack that exact stage before acquiring signing identity.
+      # This is construction qualification, not installed MSIX/update evidence.
+      - name: Pack and seal the selected MSIX release handoff
+        if: inputs.desktop_target == 'msix-direct' || inputs.desktop_target == 'msix-store'
+        shell: pwsh
+        run: >
+          .\packaging\stage-msix-release.ps1
+          -Target "$env:DESKTOP_RELEASE_TARGET"
+          -BuildRoot "$env:RUNNER_TEMP\windows-package"
+          -BuildPython .\.build-venv\Scripts\python.exe
+          -ProductRevision "$env:PRODUCT_REVISION"
+
       # The release candidate's native dependency evidence travels separately
       # from the installer because signing later rewrites only the installer.
       - name: Retain fixed SQLCipher wheel and provenance
@@ -245,7 +271,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-package-unsigned-${{ github.ref_name }}
-          path: ${{ runner.temp }}\windows-package\installer\
+          path: ${{ runner.temp }}\windows-package\${{ (inputs.desktop_target == 'msix-direct' || inputs.desktop_target == 'msix-store') && 'msix-release' || 'installer' }}\
+          if-no-files-found: error
 
       # Staged Legal bindings stay outside the workspace, uploads and caches.
       # Public publication trust/origin ship as revision-bound runtime resources.
@@ -269,7 +296,7 @@ jobs:
     # The federated credential is scoped to a job, not to a step, so this job
     # installs no dependency, compiles nothing, checks out no build tooling,
     # and pins every action it runs to a commit.
-    name: Sign and publish the package
+    name: Sign and verify the selected package
     needs: build
     runs-on: windows-2022
     environment: release
@@ -286,6 +313,16 @@ jobs:
           ref: ${{ inputs.product_revision }}
           sparse-checkout: |
             packaging/verify-signatures.ps1
+            packaging/verify-desktop-release.ps1
+            packaging/assert-desktop-release-inputs.ps1
+            packaging/verify-msix.ps1
+            packaging/msix/release-artifacts.psm1
+            packaging/msix/ReadPackageIdentity.cs
+            packaging/msix/AppxManifest.xml.in
+            packaging/msix/direct-delivery.json
+            packaging/msix/store-reservation.json
+            packaging/msix/profiles/production-direct.json
+            packaging/msix/profiles/production-store.json
             packaging/write-digests.ps1
           sparse-checkout-cone-mode: false
           persist-credentials: false
@@ -296,7 +333,19 @@ jobs:
           name: windows-package-unsigned-${{ github.ref_name }}
           path: ${{ github.workspace }}\release
 
+      - name: Validate the immutable signing inputs
+        shell: pwsh
+        env:
+          MSIX_DIRECT_PUBLISHER: ${{ vars.MSIX_DIRECT_PUBLISHER }}
+          MSIX_DIRECT_EXPECTED_FAMILY: ${{ vars.MSIX_DIRECT_EXPECTED_FAMILY }}
+          MSIX_DIRECT_APPINSTALLER_URI: ${{ vars.MSIX_DIRECT_APPINSTALLER_URI }}
+          DESKTOP_R2_BUCKET: ${{ vars.DESKTOP_R2_BUCKET }}
+          DESKTOP_R2_ENDPOINT: ${{ vars.DESKTOP_R2_ENDPOINT }}
+          DESKTOP_UPDATES_BASE_URL: ${{ vars.DESKTOP_UPDATES_BASE_URL }}
+        run: .\packaging\assert-desktop-release-inputs.ps1 -Target "$env:DESKTOP_RELEASE_TARGET" -Directory "$env:RELEASE_DIRECTORY" -ProductRevision "$env:PRODUCT_REVISION"
+
       - name: Acquire a federated Azure token
+        if: inputs.desktop_target != 'msix-store'
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: 630068e3-b320-40bb-acd0-3d8f1d70d545
@@ -307,14 +356,15 @@ jobs:
       # is what keeps a released signature verifying after it expires. The
       # timestamp authority is declared here rather than left to an action
       # default, and the verification step rejects an untimestamped signature.
-      - name: Sign the installer
+      - name: Sign the exact selected desktop package
+        if: inputs.desktop_target != 'msix-store'
         uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           endpoint: https://swn.codesigning.azure.net/
           signing-account-name: Dipsy
           certificate-profile-name: simple-legal-doc-signer
           files-folder: ${{ github.workspace }}\release
-          files-folder-filter: exe
+          files-folder-filter: ${{ inputs.desktop_target == 'msix-direct' && 'msix' || 'exe' }}
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
@@ -322,7 +372,14 @@ jobs:
       - name: Verify signatures
         id: verify-signatures
         shell: pwsh
-        run: .\packaging\verify-signatures.ps1 -Path "$env:RELEASE_DIRECTORY"
+        env:
+          MSIX_DIRECT_PUBLISHER: ${{ vars.MSIX_DIRECT_PUBLISHER }}
+          MSIX_DIRECT_EXPECTED_FAMILY: ${{ vars.MSIX_DIRECT_EXPECTED_FAMILY }}
+          MSIX_DIRECT_APPINSTALLER_URI: ${{ vars.MSIX_DIRECT_APPINSTALLER_URI }}
+          DESKTOP_R2_BUCKET: ${{ vars.DESKTOP_R2_BUCKET }}
+          DESKTOP_R2_ENDPOINT: ${{ vars.DESKTOP_R2_ENDPOINT }}
+          DESKTOP_UPDATES_BASE_URL: ${{ vars.DESKTOP_UPDATES_BASE_URL }}
+        run: .\packaging\verify-desktop-release.ps1 -Target "$env:DESKTOP_RELEASE_TARGET" -Directory "$env:RELEASE_DIRECTORY" -ProductRevision "$env:PRODUCT_REVISION"
 
       - name: Digest the published artifacts
         shell: pwsh

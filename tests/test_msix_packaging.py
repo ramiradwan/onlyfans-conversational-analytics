@@ -107,6 +107,201 @@ def test_deployment_counter_rolls_forward_without_changing_application_major():
     assert profile()["application_version"] == "0.7.5"
 
 
+def _release_handoff(tmp_path, target="msix-direct"):
+    """Synthetic bytes exercise handoff admission, never signature qualification."""
+    directory = tmp_path / "release"
+    directory.mkdir()
+    route = "direct" if target == "msix-direct" else "store"
+    selected = msix.load_profile(ROOT / f"packaging/msix/profiles/production-{route}.json", production=True)
+    version = msix.package_version(selected["release_sequence"])
+    package_file = f"ConversationAnalytics_{version}_x64.msix"
+    (directory / package_file).write_bytes(b"deliberately not a signed MSIX")
+    agent_file = "ConversationAnalytics-Agent-2.0.3-chrome.zip"
+    (directory / agent_file).write_bytes(b"synthetic linked Agent bytes")
+    source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True).strip()
+    (directory / "desktop.profile.json").write_bytes(msix.canonical_json(selected))
+    profile_hash = msix.sha256(directory / "desktop.profile.json")
+    (directory / "desktop.inventory.json").write_bytes(msix.canonical_json({
+        "schema": "ofca-msix-inventory/v1", "profile_sha256": profile_hash,
+        "runtime_release": {"source_commit": source}, "identity": selected["identity"],
+        "application_version": selected["application_version"], "package_version": version,
+    }))
+    unsigned_hash = msix.sha256(directory / package_file)
+    (directory / "desktop.build.json").write_bytes(msix.canonical_json({
+        "producer_source": {"base_commit": source, "dirty": False},
+        "verification": {"package_sha256": unsigned_hash},
+    }))
+    direct = msix.read_json(ROOT / "packaging/msix/direct-delivery.json")
+    template_hash = delivery_hash = None
+    family = msix.read_json(ROOT / "packaging/msix/store-reservation.json")["package_family_name"]
+    if route == "direct":
+        uri = direct["hosting"]["public_origin"] + direct["hosting"]["base_path"] + "packages/" + "0" * 64 + "/" + package_file
+        (directory / "desktop.appinstaller-template.xml").write_bytes(msix.render_appinstaller(selected, uri))
+        template_hash = msix.sha256(directory / "desktop.appinstaller-template.xml")
+        delivery_hash = msix.sha256(ROOT / "packaging/msix/direct-delivery.json")
+        family = direct["expected_package_family"]
+    record = {
+        "schema": "ofca-msix-release-inputs/v1", "target": target, "source_commit": source,
+        "source_tree": tree, "package_file": package_file, "package_version": version,
+        "application_version": selected["application_version"], "profile_sha256": profile_hash,
+        "inventory_sha256": msix.sha256(directory / "desktop.inventory.json"),
+        "build_sha256": msix.sha256(directory / "desktop.build.json"), "unsigned_package_sha256": unsigned_hash,
+        "agent_file": agent_file, "agent_sha256": msix.sha256(directory / agent_file),
+        "expected_family": family, "direct_delivery_sha256": delivery_hash,
+        "appinstaller_template_sha256": template_hash,
+    }
+    (directory / "desktop.release-inputs.json").write_bytes(msix.canonical_json(record))
+    environment = dict(os.environ, **{
+        "MSIX_DIRECT_PUBLISHER": direct["signing"]["subject"],
+        "MSIX_DIRECT_EXPECTED_FAMILY": direct["expected_package_family"],
+        "MSIX_DIRECT_APPINSTALLER_URI": direct["hosting"]["app_installer_uri"],
+        "DESKTOP_R2_BUCKET": direct["hosting"]["bucket"], "DESKTOP_R2_ENDPOINT": direct["hosting"]["s3_endpoint"],
+        "DESKTOP_UPDATES_BASE_URL": direct["hosting"]["public_origin"] + direct["hosting"]["base_path"],
+    })
+    return directory, record, environment
+
+
+def _check_release_handoff(directory, environment, target="msix-direct", script="assert-desktop-release-inputs.ps1"):
+    return subprocess.run(["pwsh", "-NoProfile", "-File", str(ROOT / "packaging" / script),
+        "-Target", target, "-Directory", str(directory), "-ProductRevision",
+        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()],
+        env=environment, capture_output=True, text=True, check=False)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows SDK release handoff and signature verification")
+@pytest.mark.parametrize("target", ["msix-direct", "msix-store"])
+def test_release_handoff_does_not_substitute_for_package_verification(tmp_path, target):
+    directory, _, environment = _release_handoff(tmp_path, target)
+    admitted = _check_release_handoff(directory, environment, target)
+    assert admitted.returncode == 0, admitted.stdout + admitted.stderr
+    if target == "msix-direct":
+        snapshot = msix.read_json(directory / "desktop.resolved-direct-inputs.json")
+        assert snapshot["schema"] == "ofca-direct-release-environment/v1"
+        assert snapshot["values"] == {name: environment[name] for name in snapshot["values"]}
+    verified = _check_release_handoff(directory, environment, target, "verify-desktop-release.ps1")
+    assert verified.returncode != 0
+    assert not (directory / "desktop.artifact-release.json").exists()
+    assert not (directory / "ConversationAnalytics.appinstaller").exists()
+
+
+def test_release_verification_refuses_changed_resolved_input_evidence(tmp_path):
+    if os.name != "nt":
+        pytest.skip("Windows PowerShell release verification")
+    directory, _, environment = _release_handoff(tmp_path)
+    admitted = _check_release_handoff(directory, environment)
+    assert admitted.returncode == 0, admitted.stdout + admitted.stderr
+    path = directory / "desktop.resolved-direct-inputs.json"
+    snapshot = msix.read_json(path)
+    snapshot["values"]["MSIX_DIRECT_PUBLISHER"] = "CN=Another Publisher"
+    path.write_bytes(msix.canonical_json(snapshot))
+    refused = _check_release_handoff(directory, environment, script="verify-desktop-release.ps1")
+    assert refused.returncode != 0 and "Resolved release environment changed" in refused.stderr
+    assert not (directory / "desktop.verification.json").exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows SDK runtime PE verification")
+@pytest.mark.parametrize("failure", ["source", "pe"])
+def test_release_stage_refuses_before_packing_an_unqualified_runtime(tmp_path, failure):
+    build = tmp_path / "build"
+    runtime = build / "dist/Brain"
+    runtime.mkdir(parents=True)
+    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    (runtime / "release-manifest.json").write_bytes(msix.canonical_json({
+        "source_commit": "3" * 40 if failure == "source" else revision,
+    }))
+    for name in ("Brain.exe", "Bridge.exe"):
+        (runtime / name).write_bytes(b"not a runtime PE")
+    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(ROOT / "packaging/stage-msix-release.ps1"),
+        "-Target", "msix-direct", "-BuildRoot", str(build), "-BuildPython", sys.executable,
+        "-ProductRevision", revision], capture_output=True, text=True, check=False)
+    assert result.returncode != 0
+    assert not (build / "msix").exists() and not (build / "msix-release").exists()
+    if failure == "source":
+        assert "Runtime source differs" in result.stderr
+    else:
+        assert "embedded application manifest" in result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell release handoff")
+@pytest.mark.parametrize("filename", ["desktop.profile.json", "desktop.inventory.json", "desktop.build.json",
+    "ConversationAnalytics-Agent-2.0.3-chrome.zip", "desktop.appinstaller-template.xml", "package"])
+def test_release_handoff_refuses_changed_sealed_bytes(tmp_path, filename):
+    directory, record, environment = _release_handoff(tmp_path)
+    selected = record["package_file"] if filename == "package" else filename
+    with (directory / selected).open("ab") as output:
+        output.write(b"changed")
+    result = _check_release_handoff(directory, environment)
+    assert result.returncode != 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell release environment verification")
+@pytest.mark.parametrize("variable", ["MSIX_DIRECT_PUBLISHER", "MSIX_DIRECT_EXPECTED_FAMILY",
+    "MSIX_DIRECT_APPINSTALLER_URI", "DESKTOP_R2_BUCKET", "DESKTOP_R2_ENDPOINT", "DESKTOP_UPDATES_BASE_URL"])
+def test_release_handoff_refuses_environment_drift(tmp_path, variable):
+    directory, _, environment = _release_handoff(tmp_path)
+    environment[variable] += "/changed"
+    result = _check_release_handoff(directory, environment)
+    assert result.returncode != 0 and "Release environment input disagrees" in result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell release authority verification")
+@pytest.mark.parametrize("change", ["family", "source", "tree", "version", "dirty", "profile", "profile_case", "extra", "duplicate",
+    "downgrade", "template_identity", "self_redirect", "template_dtd"])
+def test_release_handoff_refuses_substituted_release_authority(tmp_path, change):
+    directory, record, environment = _release_handoff(tmp_path)
+    if change == "family":
+        record["expected_family"] = "Another.Family"
+    elif change == "source":
+        record["source_commit"] = "3" * 40
+    elif change == "tree":
+        record["source_tree"] = "2" * 40
+    elif change == "version":
+        record["application_version"] = "0.7.4"
+    elif change == "dirty":
+        path = directory / "desktop.build.json"
+        document = msix.read_json(path)
+        document["producer_source"]["dirty"] = True
+        path.write_bytes(msix.canonical_json(document))
+        record["build_sha256"] = msix.sha256(path)
+    elif change == "profile":
+        path = directory / "desktop.profile.json"
+        document = msix.read_json(path)
+        document["identity"]["publisher"] += ", O=Changed"
+        path.write_bytes(msix.canonical_json(document))
+        record["profile_sha256"] = msix.sha256(path)
+    elif change == "profile_case":
+        path = directory / "desktop.profile.json"
+        document = msix.read_json(path)
+        document["Identity"] = document.pop("identity")
+        path.write_bytes(msix.canonical_json(document))
+        record["profile_sha256"] = msix.sha256(path)
+    elif change == "extra":
+        (directory / "unrelated.msix").write_bytes(b"not the declared package")
+    elif change in {"downgrade", "template_identity", "self_redirect", "template_dtd"}:
+        path = directory / "desktop.appinstaller-template.xml"
+        document = path.read_bytes()
+        if change == "downgrade":
+            document = document.replace(b'<AutomaticBackgroundTask', b'<ForceUpdateFromAnyVersion>true</ForceUpdateFromAnyVersion><AutomaticBackgroundTask')
+        elif change == "template_identity":
+            document = document.replace(b'Name="Dipsy.OnlyFansConversationalAnalytics"', b'Name="Another.Name"')
+        elif change == "self_redirect":
+            document = document.replace(b'Uri="https://updates.dipsy.fi/desktop/v1/windows', b'Uri="https://redirect.example/windows')
+        else:
+            document = document.replace(b'<AppInstaller ', b'<!DOCTYPE AppInstaller [<!ENTITY injected "x">]><AppInstaller ')
+        path.write_bytes(document)
+        record["appinstaller_template_sha256"] = msix.sha256(path)
+    else:
+        path = directory / "desktop.release-inputs.json"
+        path.write_bytes(msix.canonical_json(record).replace(b'{', b'{"target":"msix-store",', 1))
+        result = _check_release_handoff(directory, environment)
+        assert result.returncode != 0 and "Duplicate release JSON" in result.stderr
+        return
+    (directory / "desktop.release-inputs.json").write_bytes(msix.canonical_json(record))
+    result = _check_release_handoff(directory, environment)
+    assert result.returncode != 0, result.stdout + result.stderr
+
+
 def test_manifest_escapes_identity_and_preserves_protocol_and_storage_policy():
     value = profile()
     value["identity"]["publisher"] += ", O=A & B"

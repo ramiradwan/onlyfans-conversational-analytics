@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check build-windows.ps1, build-msix.ps1, verify-msix.ps1, tools/msix_packaging.py, runtime-files.json and tests/test_msix_packaging.py before changing commands or qualification claims. -->
+<!-- CODE-VERIFY: Check build-windows.ps1, build-msix.ps1, stage-msix-release.ps1, assert-desktop-release-inputs.ps1, verify-desktop-release.ps1, verify-msix.ps1, msix/release-artifacts.psm1, tools/msix_packaging.py, runtime-files.json and the release/producer tests before changing commands or qualification claims. -->
 
 # MSIX packaging
 
@@ -94,7 +94,15 @@ These inputs resolve the Store reservation gate. They do not authorize submissio
 
 `build-msix.ps1 -PackageUri <immutable HTTPS .msix URL>` emits a direct descriptor. Its exact self-URI comes from the profile; the package URI must share that approved HTTPS origin. Store profiles cannot emit or register a direct feed. The descriptor uses a six-hour launch-check interval, background checking, no routine prompt, no activation block and no unrestricted downgrade. Windows documents a separate eight-hour background cadence; policy and offline state can prevent checks. [App Installer update settings](https://learn.microsoft.com/en-us/windows/msix/app-installer/update-settings)
 
-The deployed route has infrastructure serving evidence; the production bucket remains empty and the stable descriptor returns an uncached 404. Publication remains closed pending installed qualification and release approval. Upload immutable signed bytes first, verify served bytes, then promote the no-store descriptor. Each release must check exact self-URI/no redirects, MIME types, GET/HEAD lengths, byte ranges/resume, no transparent compression/transformation, TLS and 404-cache behavior. Do not infer installed delivery from the serving checks. The existing release workflow now runs the supplied Worker tests; its MSIX sign/verify/upload/promotion path remains unfinished.
+The deployed route has infrastructure serving evidence; the production bucket remains empty and the stable descriptor returns an uncached 404. Publication remains closed pending installed qualification and release approval. Upload immutable signed bytes first, verify served bytes, then promote the no-store descriptor. Each release must check exact self-URI/no redirects, MIME types, GET/HEAD lengths, byte ranges/resume, no transparent compression/transformation, TLS and 404-cache behavior. Do not infer installed delivery from the serving checks. The existing release workflow runs the supplied Worker tests and now selects explicit Inno, direct-MSIX or Store-MSIX artifact routes. Its R2 upload, served-byte verification and approved promotion steps remain unfinished.
+
+### Protected workflow artifact routes
+
+`windows-package.yml` retains its immutable tag, exact Product/Legal coordinates, release environment, pinned actions and Inno default. `desktop_target` chooses `inno`, `msix-direct` or `msix-store`; it cannot supply identity, URLs or version overrides. The build job qualifies the common complete runtime through the existing Inno first-run and frozen native checks, then `stage-msix-release.ps1` packs that stage for the selected MSIX profile. The Inno check is common-runtime evidence, not installed MSIX qualification.
+
+The MSIX handoff contains one package, one linked Agent artifact, sealed profile/inventory/build records and exact source commit/tree. Direct delivery also freezes its approved nonsecret inputs and an App Installer template. Signing validates those bytes and the release environment before Azure login. Only the exact direct MSIX is signed and timestamped; Store candidates skip signing and retain their unsigned-submission scope.
+
+`verify-desktop-release.ps1` dispatches to the existing Inno verifier or strict MSIX verifier. Direct output records the final signed hash before substituting its immutable package URI into the closed template. The descriptor permits neither unrestricted downgrade nor arbitrary update settings. Final verification, version/identity evidence and linked artifact hashes remain outside package contents. None of these scripts rebuilds or changes inner package files in the signing job. Hosted signing and the final Product signature have not been executed by the local source checks; artifact collection is not R2 publication or Store submission.
 
 ## External-review disposition and installed gates
 

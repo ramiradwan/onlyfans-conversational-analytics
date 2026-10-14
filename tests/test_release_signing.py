@@ -38,7 +38,7 @@ TIMESTAMP_READ = "$null -ne $signature.TimeStamperCertificate"
 SIGNING_ACTION = "azure/trusted-signing-action"
 PUBLISH_ACTION = "actions/upload-artifact"
 VERIFICATION_STEP_ID = "verify-signatures"
-VERIFICATION_COMMAND = ".\\packaging\\verify-signatures.ps1"
+VERIFICATION_COMMAND = ".\\packaging\\verify-desktop-release.ps1"
 COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 
 # The signing job holds the federated credential, so what may run inside it is
@@ -53,7 +53,7 @@ SIGNING_JOB_ACTIONS = frozenset(
     }
 )
 SIGNING_JOB_COMMANDS = frozenset(
-    {VERIFICATION_COMMAND, ".\\packaging\\write-digests.ps1"}
+    {VERIFICATION_COMMAND, ".\\packaging\\write-digests.ps1", ".\\packaging\\assert-desktop-release-inputs.ps1"}
 )
 
 # The build job is identified by the release build it runs, and its first-run
@@ -434,6 +434,69 @@ def _assert_publication_is_downstream_of_verification(
         "the publishing step must be conditional on the verification step, "
         f"not {condition!r}"
     )
+
+
+def _assert_msix_build_and_sign_boundaries(workflow):
+    triggers = workflow.get("on", workflow.get(True))
+    target = triggers["workflow_dispatch"]["inputs"]["desktop_target"]
+    assert target["default"] == "inno" and target["options"] == ["inno", "msix-direct", "msix-store"]
+    build = _steps(_build_job(workflow))
+    pack = [index for index, step in enumerate(build) if ".\\packaging\\stage-msix-release.ps1" in str(step.get("run", ""))]
+    assert len(pack) == 1, "MSIX must be packed once by the build owner"
+    assert _first_run_gate_index(build) < pack[0], "MSIX packing must follow common first-run qualification"
+    native = [index for index, step in enumerate(build) if "--companion-runtime-report" in str(step.get("run", ""))]
+    assert len(native) == 1 and native[0] < pack[0], "MSIX packing must follow native runtime qualification"
+    uploads = [index for index, step in enumerate(build)
+               if _action_path(step) == PUBLISH_ACTION and step["with"]["name"] == _unsigned_package_artifact_name(workflow)]
+    assert len(uploads) == 1 and pack[0] < uploads[0], "Signing must consume the sealed MSIX handoff"
+    assert "msix-release" in build[uploads[0]]["with"]["path"]
+    sign = _steps(_signing_job(workflow))
+    inputs = [index for index, step in enumerate(sign) if ".\\packaging\\assert-desktop-release-inputs.ps1" in str(step.get("run", ""))]
+    assert len(inputs) == 1, "Signing inputs need a pre-credential check"
+    login = next(index for index, step in enumerate(sign) if _action_path(step) == "azure/login")
+    signer = next(index for index, step in enumerate(sign) if _action_path(step) == SIGNING_ACTION)
+    verified = next(index for index, step in enumerate(sign) if step.get("id") == VERIFICATION_STEP_ID)
+    assert inputs[0] < login < signer < verified, "Validate immutable inputs before Azure and verify the signed output"
+    assert sign[login]["if"] == sign[signer]["if"] == "inputs.desktop_target != 'msix-store'", "Store candidate must remain unsigned"
+    assert sign[signer]["with"]["files-folder-filter"] == "${{ inputs.desktop_target == 'msix-direct' && 'msix' || 'exe' }}", "Direct signing must include MSIX"
+    for index in (inputs[0], verified):
+        command = sign[index]["run"]
+        assert '-Target "$env:DESKTOP_RELEASE_TARGET"' in command
+        assert '-ProductRevision "$env:PRODUCT_REVISION"' in command
+        for name in ("MSIX_DIRECT_PUBLISHER", "MSIX_DIRECT_EXPECTED_FAMILY", "MSIX_DIRECT_APPINSTALLER_URI",
+                     "DESKTOP_R2_BUCKET", "DESKTOP_R2_ENDPOINT", "DESKTOP_UPDATES_BASE_URL"):
+            assert sign[index]["env"][name] == "${{ vars." + name + " }}", "Resolved environment inputs must agree with the approved profile"
+    sparse = next(step["with"]["sparse-checkout"] for step in sign if _action_path(step) == "actions/checkout")
+    assert "packaging/verify-msix.ps1" in sparse and "packaging/msix/release-artifacts.psm1" in sparse
+    assert "build-msix.ps1" not in sparse and "stage-msix-release.ps1" not in sparse
+
+
+def test_msix_workflow_preserves_build_sign_and_channel_boundaries():
+    workflow = _workflow_document()
+    _assert_msix_build_and_sign_boundaries(workflow)
+    changed = deepcopy(workflow)
+    steps = _steps(_build_job(changed))
+    pack = next(step for step in steps if ".\\packaging\\stage-msix-release.ps1" in str(step.get("run", "")))
+    _build_job(changed)["steps"].remove(pack)
+    with pytest.raises(AssertionError, match="packed once"):
+        _assert_msix_build_and_sign_boundaries(changed)
+    changed = deepcopy(workflow)
+    steps = _build_job(changed)["steps"]
+    pack = next(step for step in steps if ".\\packaging\\stage-msix-release.ps1" in str(step.get("run", "")))
+    steps.remove(pack)
+    steps.insert(0, pack)
+    with pytest.raises(AssertionError, match="follow common first-run"):
+        _assert_msix_build_and_sign_boundaries(changed)
+    changed = deepcopy(workflow)
+    signer = next(step for step in _steps(_signing_job(changed)) if _action_path(step) == SIGNING_ACTION)
+    signer["with"]["files-folder-filter"] = "exe"
+    with pytest.raises(AssertionError, match="include MSIX"):
+        _assert_msix_build_and_sign_boundaries(changed)
+    changed = deepcopy(workflow)
+    signer = next(step for step in _steps(_signing_job(changed)) if _action_path(step) == SIGNING_ACTION)
+    signer["if"] = "success()"
+    with pytest.raises(AssertionError, match="remain unsigned"):
+        _assert_msix_build_and_sign_boundaries(changed)
 
 
 def test_only_the_signing_job_holds_the_federated_token() -> None:
