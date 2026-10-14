@@ -5,6 +5,7 @@
 mod admission;
 #[cfg(windows)]
 mod browser;
+mod deployment;
 #[cfg(windows)]
 mod frame;
 #[cfg(windows)]
@@ -79,10 +80,19 @@ fn main() {
             frame::desktop_window
         ])
         .setup(move |app| {
+            let executable = std::env::current_exe()?;
+            let image = executable
+                .parent()
+                .ok_or("invalid_installation")?
+                .join("Brain.exe");
+            let data = policy::data_directory(&image).map_err(std::io::Error::other)?;
             let navigation = setup.clone();
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("Conversation Analytics")
+                    .data_directory(
+                        policy::webview_directory(&data).map_err(std::io::Error::other)?,
+                    )
                     .inner_size(1180.0, 800.0)
                     .min_inner_size(640.0, 480.0)
                     .decorations(false)

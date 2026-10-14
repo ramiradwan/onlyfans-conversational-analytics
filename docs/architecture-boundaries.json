@@ -532,6 +532,7 @@
         "app/launcher.py",
         "app/packaged_entry.py",
         "app/core/**",
+        "shared/desktop-release/**",
         "app/models/**",
         "app/utils/**",
         "app/__init__.py",

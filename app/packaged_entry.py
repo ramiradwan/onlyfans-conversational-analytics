@@ -34,11 +34,16 @@ def hold_running_application_mutex() -> bool:
     import ctypes
     from ctypes import wintypes
 
-    create_mutex = ctypes.windll.kernel32.CreateMutexW
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_mutex = kernel.CreateMutexW
     create_mutex.argtypes = (wintypes.LPCVOID, wintypes.BOOL, wintypes.LPCWSTR)
     create_mutex.restype = wintypes.HANDLE
     handle = create_mutex(None, False, RUNNING_APPLICATION_MUTEX_NAME)
     if not handle:
+        return False
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS: older binaries publish this too.
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel.CloseHandle(handle)
         return False
     _running_application_mutex = handle
     return True
@@ -99,35 +104,37 @@ def select_brain_application(
 
 def run_brain() -> int:
     """Run exactly one fixed-origin ASGI worker for the selected boot mode."""
-    import uvicorn
+    import threading
+    from app.core.process_lifetime import parent_lifetime
+    from app.core.startup_maintenance import acquire_runtime_ownership
 
-    if runtime_configuration_file().exists():
-        application = select_brain_application()
+    stopped = threading.Event()
+    server: uvicorn.Server | None = None
+
+    def request_exit() -> None:
+        stopped.set()
+        if server is not None:
+            server.should_exit = True
+    # Observe the parent before root inspection or a migrating constructor.
+    with parent_lifetime(request_exit):
+        if stopped.is_set():
+            return 1
+        state = acquire_runtime_ownership()
+        if stopped.is_set():
+            return 1
+        import uvicorn
+        application = select_brain_application(provisioning_completion_exit=request_exit)
+        if stopped.is_set():
+            return 1
         configuration = uvicorn.Config(
             application, host="127.0.0.1", port=17871, workers=1, access_log=False,
             ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
         )
-        from app.core.process_lifetime import parent_lifetime
         server = uvicorn.Server(configuration)
-        with parent_lifetime(lambda: setattr(server, "should_exit", True)):
-            server.run()
-        return 0
-    server: uvicorn.Server | None = None
-
-    def request_exit() -> None:
-        if server is not None:
+        if stopped.is_set():
             server.should_exit = True
-
-    application = select_brain_application(provisioning_completion_exit=request_exit)
-    configuration = uvicorn.Config(
-        application, host="127.0.0.1", port=17871, workers=1, access_log=False,
-        ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
-    )
-    server = uvicorn.Server(configuration)
-    from app.core.process_lifetime import parent_lifetime
-    with parent_lifetime(request_exit):
         server.run()
-    return 75 if application.state.completion_requested else 0
+    return 75 if state.mode != "configured" and application.state.completion_requested else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -154,8 +161,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(report_path).write_text(rendered_report + "\n", encoding="utf-8")
         print(rendered_report)
         return 0
-    hold_running_application_mutex()
+    published = hold_running_application_mutex()
     if arguments == ("--brain",):
+        if sys.platform == "win32" and not published:
+            return 78
         return run_brain()
     raise SystemExit("Open Conversation Analytics using Bridge.exe. Brain.exe is an internal service.")
 

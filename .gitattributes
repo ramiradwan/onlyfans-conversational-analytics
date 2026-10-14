@@ -20,6 +20,11 @@ tests/fixtures/engineering-attestation-v1-ed25519.json text eol=lf
 # Vendored Legal evidence JSON is integrity-checked as exact source bytes.
 shared/legal/*.json text eol=lf
 
+# Desktop profile digests and cross-language agreement fixtures bind exact bytes.
+packaging/msix/*.json text eol=lf
+packaging/msix/profiles/*.json text eol=lf
+shared/desktop-release/*.json text eol=lf
+
 # Onboarding fixtures and their qualification source hashes are byte-stable.
 shared/onboarding/** text eol=lf
 extension/runtime/onboarding-workspace.mjs text eol=lf

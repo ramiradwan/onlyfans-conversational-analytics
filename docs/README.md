@@ -22,6 +22,7 @@ Use these pages to find the instructions or reference material for a specific ta
 - [Run product qualification](qualification.md)
 - [Run Windows acceptance](installation-and-acceptance.md)
 - [Diagnose desktop setup return](operations/native-setup-return.md)
+- [Desktop startup storage](operations/desktop-startup-storage.md)
 
 ## Understand the system
 

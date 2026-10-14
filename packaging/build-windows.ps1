@@ -187,6 +187,10 @@ if ($LASTEXITCODE -ne 0) {
 if ($ReleaseMode) {
     $LegalReleaseBindings = Resolve-ReleaseInput -Value $LegalReleaseBindings -Name "LegalReleaseBindings"
     $PrivacyPolicyUrl = Resolve-ReleaseUrl -Value $PrivacyPolicyUrl -Name "PrivacyPolicyUrl"
+} elseif ($LegalReleaseBindings) {
+    # The extension validator runs in extension/, including development mode.
+    # Bind an explicitly supplied fixture/input before changing directories.
+    $LegalReleaseBindings = Resolve-ReleaseInput -Value $LegalReleaseBindings -Name "LegalReleaseBindings"
 }
 
 & $BuildPython -c "import struct, sys; sys.exit(0 if struct.calcsize('P') == 8 else 1)"

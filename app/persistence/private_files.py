@@ -288,7 +288,8 @@ def _windows_acl_is_owner_only(path: Path, *, handle=None) -> bool:
 
 
 
-def private_file_identity(path: str | Path, *, missing_ok: bool = False) -> tuple[int, int] | None:
+def private_file_identity(path: str | Path, *, missing_ok: bool = False,
+                          repair_permissions: bool = True) -> tuple[int, int] | None:
     """Observe current owner-only permissions and identity on the same open file.
 
     Each call opens the path anew. No handle or authorization result is cached.
@@ -302,6 +303,8 @@ def private_file_identity(path: str | Path, *, missing_ok: bool = False) -> tupl
                 return None
             identity, private = first
             if not private:
+                if not repair_permissions:
+                    raise OSError('private DACL verification failed; read-only inspection cannot repair it')
                 # Keep the established repair path; re-open and independently
                 # verify both security and identity afterward. Replacement or a
                 # failed repair cannot inherit the first observation.
@@ -321,7 +324,8 @@ def private_file_identity(path: str | Path, *, missing_ok: bool = False) -> tupl
             metadata = os.fstat(handle)
             if not stat.S_ISREG(metadata.st_mode):
                 raise OSError('private file must be a regular file')
-            os.fchmod(handle, 0o600)
+            if repair_permissions:
+                os.fchmod(handle, 0o600)
             metadata = os.fstat(handle)
             if stat.S_IMODE(metadata.st_mode) != 0o600:
                 raise OSError('owner-only mode verification failed')

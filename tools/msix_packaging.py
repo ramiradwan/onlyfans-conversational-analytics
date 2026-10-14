@@ -422,7 +422,7 @@ def render_appinstaller(profile: dict, package_uri: str) -> bytes:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("validate-profile", "prepare", "seal", "verify", "verify-unpacked", "appinstaller"))
+    parser.add_argument("operation", choices=("validate-profile", "prepare", "seal", "verify", "verify-unpacked", "appinstaller", "desktop-descriptor"))
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--stage", type=Path)
     parser.add_argument("--working", type=Path)
@@ -438,6 +438,11 @@ def main() -> int:
         if options.operation == "validate-profile":
             profile = load_profile(options.profile, production=options.production)
             result = {"package_version": package_version(profile["release_sequence"]), "identity": profile["identity"]}
+        elif options.operation == "desktop-descriptor":
+            if options.output is None:
+                raise ValueError("desktop-descriptor requires an output file")
+            options.output.write_bytes(canonical_json(desktop_descriptor(load_profile(options.profile, production=options.production), sha256(options.profile))))
+            result = {"desktop_descriptor": str(options.output)}
         elif options.operation == "prepare":
             if options.stage is None or options.working is None:
                 raise ValueError("prepare requires stage and working directories")

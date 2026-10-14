@@ -83,6 +83,59 @@ pub fn current_sid() -> Result<Vec<u8>> {
     unsafe { process_sid(GetCurrentProcess()) }
 }
 
+pub fn package_identity() -> Result<Option<crate::deployment::PackageIdentity>> {
+    use windows_sys::Win32::Storage::Packaging::Appx::{GetCurrentPackageId, PACKAGE_ID};
+    unsafe {
+        let mut size = 0u32;
+        let status = GetCurrentPackageId(&mut size, null_mut());
+        if status == APPMODEL_ERROR_NO_PACKAGE {
+            return Ok(None);
+        }
+        if status != ERROR_INSUFFICIENT_BUFFER
+            || !(std::mem::size_of::<PACKAGE_ID>() as u32..=65536).contains(&size)
+        {
+            return Err("package_identity_unavailable");
+        }
+        let mut buffer = vec![0usize; (size as usize).div_ceil(size_of::<usize>())];
+        if GetCurrentPackageId(&mut size, buffer.as_mut_ptr().cast()) != ERROR_SUCCESS {
+            return Err("package_identity_unavailable");
+        }
+        let start = buffer.as_ptr() as usize;
+        let end = start + size as usize;
+        let read = |pointer: *const u16| -> Result<String> {
+            let address = pointer as usize;
+            if address < start || address >= end || address % 2 != 0 {
+                return Err("package_identity_unavailable");
+            }
+            let characters = std::slice::from_raw_parts(pointer, (end - address) / 2);
+            let length = characters
+                .iter()
+                .position(|value| *value == 0)
+                .ok_or("package_identity_unavailable")?;
+            String::from_utf16(&characters[..length]).map_err(|_| "package_identity_unavailable")
+        };
+        let identity = std::ptr::read_unaligned(buffer.as_ptr().cast::<PACKAGE_ID>());
+        let version = identity.version.Anonymous.Version;
+        Ok(Some(crate::deployment::PackageIdentity {
+            name: read(identity.name)?,
+            publisher: read(identity.publisher)?,
+            version: format!(
+                "{}.{}.{}.{}",
+                version >> 48,
+                (version >> 32) & 65535,
+                (version >> 16) & 65535,
+                version & 65535
+            ),
+            architecture: if identity.processorArchitecture == 9 {
+                "x64"
+            } else {
+                "unsupported"
+            }
+            .into(),
+        }))
+    }
+}
+
 fn process_image(process: HANDLE) -> Result<PathBuf> {
     let mut path = vec![0u16; 32768];
     let mut size = path.len() as u32;
@@ -453,6 +506,10 @@ impl Drop for Brain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn source_checkout_process_has_no_os_package_identity() {
+        assert_eq!(package_identity().unwrap(), None);
+    }
     #[test]
     fn native_owner_inspection_finds_real_ipv4_and_ipv6_listeners() {
         // A serial, fixed-port test exercises the OS table decoder and owner identity.

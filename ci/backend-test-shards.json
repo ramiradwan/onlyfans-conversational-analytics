@@ -220,6 +220,7 @@
     "tests/test_creator_vault_retention.py": 4,
     "tests/test_desktop_activation.py": 2,
     "tests/test_desktop_setup_transfer.py": 4,
+    "tests/test_startup_maintenance.py": 3,
     "tests/test_dominant_append_reuse.py": 3,
     "tests/test_durable_ingestion.py": 2,
     "tests/test_encoded_conversation_graph.py": 4,
@@ -348,6 +349,8 @@
   },
   "windows_contracts": {
     "platform": [
+      {"selector": "tests/test_desktop_release.py", "reason": "Windows package identity and native/backend descriptor agreement must preserve isolated data roots."},
+      {"selector": "tests/test_startup_maintenance.py", "reason": "Actual process-held root ownership, read-only DPAPI inspection and pre-constructor refusal require Windows qualification."},
       {
         "selector": "tests/test_msix_packaging.py",
         "reason": "MSIX profiles, target-specific closure and real pinned Windows SDK semantic packing must qualify on Windows."
