@@ -434,6 +434,7 @@ def _assert_packaged_runtime_serves_provisioning_surface(
 
         for path, content_type in (
             ("/onboarding/entry", "text/html"),
+            ("/onboarding/entry.css", "text/css"),
             ("/onboarding/entry.js", "text/javascript"),
         ):
             status, headers, content = _raw_request("GET", path, headers=browser_headers)

@@ -32,6 +32,7 @@
     "NATIVE_SNOW_NOTICES.txt",
     "release-manifest.json",
     "_internal/app/onboarding/entry.html",
+    "_internal/app/onboarding/entry.css",
     "_internal/app/onboarding/entry.js",
     "_internal/shared/desktop-onboarding/schema-v2.json",
     "_internal/shared/browser-tasks/schema.json",

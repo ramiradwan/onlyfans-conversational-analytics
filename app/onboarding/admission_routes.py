@@ -125,7 +125,12 @@ def admission_router(admissions: ScopedAdmissions, *, launcher_token: str) -> AP
         if request.url.query:
             raise HTTPException(400, "Entry credentials belong in the private link fragment")
         return HTMLResponse((ASSETS / "entry.html").read_text(encoding="utf-8"), headers=HEADERS | {
-            "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"})
+            "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"})
+
+    @router.get("/onboarding/entry.css", include_in_schema=False)
+    def landing_stylesheet(request: Request):
+        _host(request)
+        return Response((ASSETS / "entry.css").read_text(encoding="utf-8"), media_type="text/css", headers=HEADERS)
 
     @router.get("/onboarding/entry.js", include_in_schema=False)
     def landing_script(request: Request):
