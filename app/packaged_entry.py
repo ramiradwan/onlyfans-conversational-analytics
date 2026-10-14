@@ -100,6 +100,20 @@ def select_brain_application(
     return application
 
 
+def supervised_server(configuration, application):
+    """End presentation responses before Uvicorn drains owned application work."""
+    import uvicorn
+
+    class OwnedServer(uvicorn.Server):
+        async def shutdown(self, sockets=None):
+            coordinator = getattr(application.state, "desktop_coordinator", None)
+            if coordinator is not None:
+                coordinator.begin_shutdown()
+            await super().shutdown(sockets=sockets)
+
+    return OwnedServer(configuration)
+
+
 def run_brain() -> int:
     """Run exactly one fixed-origin ASGI worker for the selected boot mode."""
     import threading
@@ -155,7 +169,7 @@ def run_brain() -> int:
             observed_application, host="127.0.0.1", port=17871, workers=1, access_log=False, lifespan="on",
             ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
         )
-        server = uvicorn.Server(configuration)
+        server = supervised_server(configuration, application)
         if stopped.is_set():
             server.should_exit = True
         server.run()

@@ -188,6 +188,7 @@
     "tests/test_auth_store.py": 1,
     "tests/test_batched_graph_retirement.py": 3,
     "tests/test_batched_page_retirement.py": 2,
+    "tests/test_bootstrap_status.py": 3,
     "tests/test_bound_enrichment_prefix.py": 3,
     "tests/test_bounded_publication.py": 4,
     "tests/test_build_extension_identity.py": 3,
@@ -220,10 +221,7 @@
     "tests/test_creator_vault_retention.py": 4,
     "tests/test_desktop_activation.py": 2,
     "tests/test_desktop_setup_transfer.py": 4,
-    "tests/test_startup_maintenance.py": 3,
-    "tests/test_upgrade_lifecycle.py": 3,
-    "tests/test_upgrade_checkpoint.py": 3,
-    "tests/test_bootstrap_status.py": 3,
+    "tests/test_desktop_shutdown.py": 1,
     "tests/test_dominant_append_reuse.py": 3,
     "tests/test_durable_ingestion.py": 2,
     "tests/test_encoded_conversation_graph.py": 4,
@@ -275,10 +273,10 @@
     "tests/test_membership_insert_plan.py": 2,
     "tests/test_membership_proof_falsifiers.py": 2,
     "tests/test_membership_validation_bounds.py": 2,
+    "tests/test_msix_packaging.py": 3,
     "tests/test_onboarding_enrollment_runtime.py": 2,
     "tests/test_onboarding_owner_effects.py": 3,
     "tests/test_packaged_runtime.py": 3,
-    "tests/test_msix_packaging.py": 3,
     "tests/test_packaging_build_mode.py": 3,
     "tests/test_packaging_smoke.py": 1,
     "tests/test_persisted_membership_handoff.py": 2,
@@ -334,6 +332,7 @@
     "tests/test_sqlite_graph_store.py": 2,
     "tests/test_sqlite_projection_store.py": 4,
     "tests/test_stale_reference_revision.py": 3,
+    "tests/test_startup_maintenance.py": 3,
     "tests/test_streamed_conversation_pending.py": 2,
     "tests/test_targeted_visibility_benchmark.py": 3,
     "tests/test_tied_insertion_admission.py": 3,
@@ -342,7 +341,9 @@
     "tests/test_tied_insertion_safety.py": 2,
     "tests/test_tied_insertion_scheduler.py": 2,
     "tests/test_transport_auth_v2.py": 3,
+    "tests/test_upgrade_checkpoint.py": 3,
     "tests/test_upgrade_corrective.py": 4,
+    "tests/test_upgrade_lifecycle.py": 3,
     "tests/test_upstream_retention_authority.py": 3,
     "tests/test_ux_journey.py": 2,
     "tests/test_validation_receipts.py": 2,
@@ -353,12 +354,30 @@
   },
   "windows_contracts": {
     "platform": [
-      {"selector": "tests/test_desktop_release.py", "reason": "Windows package identity and native/backend descriptor agreement must preserve isolated data roots."},
-      {"selector": "tests/test_startup_maintenance.py", "reason": "Actual process-held root ownership, read-only DPAPI inspection and pre-constructor refusal require Windows qualification."},
-      {"selector": "tests/test_upgrade_lifecycle.py", "reason": "Keyed admission must see committed SQLCipher WAL, refuse incompatible state and complete pending schemas before constructors."},
-      {"selector": "tests/test_upgrade_checkpoint.py", "reason": "Encrypted transition checkpoints and killed-process forward resume must qualify on the fixed Windows runtime."},
-      {"selector": "tests/test_upgrade_corrective.py", "reason": "Corrective-release intent adoption must preserve encrypted state, unchanged catalog history and delivery identity across process interruption."},
-      {"selector": "tests/test_bootstrap_status.py", "reason": "Inherited child status and parent EOF must cancel pre-listener SQL on Windows without forced process cleanup."},
+      {
+        "selector": "tests/test_desktop_release.py",
+        "reason": "Windows package identity and native/backend descriptor agreement must preserve isolated data roots."
+      },
+      {
+        "selector": "tests/test_startup_maintenance.py",
+        "reason": "Actual process-held root ownership, read-only DPAPI inspection and pre-constructor refusal require Windows qualification."
+      },
+      {
+        "selector": "tests/test_upgrade_lifecycle.py",
+        "reason": "Keyed admission must see committed SQLCipher WAL, refuse incompatible state and complete pending schemas before constructors."
+      },
+      {
+        "selector": "tests/test_upgrade_checkpoint.py",
+        "reason": "Encrypted transition checkpoints and killed-process forward resume must qualify on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_upgrade_corrective.py",
+        "reason": "Corrective-release intent adoption must preserve encrypted state, unchanged catalog history and delivery identity across process interruption."
+      },
+      {
+        "selector": "tests/test_bootstrap_status.py",
+        "reason": "Inherited child status and parent EOF must cancel pre-listener SQL on Windows without forced process cleanup."
+      },
       {
         "selector": "tests/test_msix_packaging.py",
         "reason": "MSIX profiles, target-specific closure and real pinned Windows SDK semantic packing must qualify on Windows."
@@ -446,6 +465,10 @@
       {
         "selector": "tests/test_desktop_coordinator_routes.py",
         "reason": "Desktop command admission and event delivery use the Windows encrypted journal and scoped sessions."
+      },
+      {
+        "selector": "tests/test_desktop_shutdown.py",
+        "reason": "Real HTTP presentation streams finish before owned lifecycle work drains under Windows native supervision."
       },
       {
         "selector": "tests/test_desktop_runtime_owner.py",

@@ -428,8 +428,17 @@ class DesktopOnboardingCoordinator:
             await asyncio.gather(*(asyncio.shield(task) for task in tuple(self._workers.values())), return_exceptions=True)
 
     async def stop(self):
-        self._closed = True
+        self.begin_shutdown()
         if self._watcher is not None:
             self._watcher.cancel()
             await asyncio.gather(self._watcher, return_exceptions=True)
         await self.drain()
+
+    def begin_shutdown(self):
+        """Close presentation admission before transport waits for responses.
+
+        Accepted owner work remains tracked until stop() drains it. This flag
+        only refuses new commands/reconciliation and ends presentation streams.
+        """
+        self._closed = True
+        events.publish()
