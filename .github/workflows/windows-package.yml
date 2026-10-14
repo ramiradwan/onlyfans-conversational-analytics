@@ -21,6 +21,11 @@ on:
           - msix-direct
           - msix-store
           - r2-credential-check
+      publish_direct:
+        description: Request approved direct MSIX upload and descriptor promotion
+        required: false
+        type: boolean
+        default: false
       legal_repository_revision:
         description: Full 40-character Legal revision the bindings are approved at
         required: true
@@ -45,6 +50,8 @@ env:
 jobs:
   build:
     if: inputs.desktop_target != 'r2-credential-check'
+    outputs:
+      publisher_runtime_sha256: ${{ steps.publisher-runtime.outputs.sha256 }}
     name: Build the unsigned package
     runs-on: windows-2022
     permissions:
@@ -294,6 +301,29 @@ jobs:
             Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
           }
 
+      # The publisher's locked dependencies are qualified outside any release
+      # credentials. Publication downloads this exact source-bound archive.
+      - name: Freeze the qualified direct publisher runtime
+        id: publisher-runtime
+        if: inputs.desktop_target == 'msix-direct'
+        shell: pwsh
+        run: |
+          npm prune --omit=dev --ignore-scripts --no-audit --no-fund --prefix tools/desktop-delivery
+          if ($LASTEXITCODE -ne 0) { throw 'Publisher dependency closure failed' }
+          $archive = Join-Path $env:RUNNER_TEMP 'desktop-publisher-runtime.zip'
+          Compress-Archive -Path tools/desktop-delivery/publisher.mjs,tools/desktop-delivery/package.json,tools/desktop-delivery/package-lock.json,tools/desktop-delivery/node_modules -DestinationPath $archive
+          $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "sha256=$digest" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Retain the qualified direct publisher runtime
+        if: inputs.desktop_target == 'msix-direct'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-publisher-runtime-${{ env.PRODUCT_REVISION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/desktop-publisher-runtime.zip
+          if-no-files-found: error
+          retention-days: 7
+
   sign:
     if: inputs.desktop_target != 'r2-credential-check'
     # The federated credential is scoped to a job, not to a step, so this job
@@ -394,6 +424,99 @@ jobs:
         with:
           name: windows-package-${{ github.ref_name }}
           path: ${{ github.workspace }}\release\
+
+  publish-direct:
+    name: Upload and promote the approved direct release
+    timeout-minutes: 20
+    if: inputs.desktop_target == 'msix-direct' && inputs.publish_direct == true
+    needs: [build, sign]
+    runs-on: windows-2022
+    environment: release
+    permissions:
+      contents: read
+    env:
+      RELEASE_DIRECTORY: ${{ github.workspace }}/release
+    steps:
+      - name: Check out the exact publication verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.product_revision }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            packaging/assert-direct-publication.ps1
+            packaging/verify-msix.ps1
+            packaging/msix/release-artifacts.psm1
+            packaging/msix/ReadPackageIdentity.cs
+            packaging/msix/AppxManifest.xml.in
+            packaging/msix/direct-delivery.json
+            packaging/msix/profiles/production-direct.json
+            tools/desktop-delivery/publisher.mjs
+            tools/desktop-delivery/package.json
+            tools/desktop-delivery/package-lock.json
+      - name: Download the verified final release
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-package-${{ github.ref_name }}
+          path: ${{ github.workspace }}/release
+      - name: Download the qualified publisher runtime
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: desktop-publisher-runtime-${{ env.PRODUCT_REVISION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/publisher-archive
+      - name: Verify the source-bound publisher archive
+        shell: pwsh
+        env:
+          PUBLISHER_RUNTIME_SHA256: ${{ needs.build.outputs.publisher_runtime_sha256 }}
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'publisher-archive/desktop-publisher-runtime.zip'
+          if ($env:PUBLISHER_RUNTIME_SHA256 -cnotmatch '^[0-9a-f]{64}$' -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:PUBLISHER_RUNTIME_SHA256) { throw 'Qualified publisher archive changed' }
+          $runtime = Join-Path $env:RUNNER_TEMP 'desktop-publisher-runtime'
+          if (Test-Path -LiteralPath $runtime) { throw 'Publisher runtime requires a fresh directory' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $runtime
+          foreach ($name in @('publisher.mjs','package.json','package-lock.json')) {
+            if ((Get-FileHash -LiteralPath (Join-Path $runtime $name) -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath "tools/desktop-delivery/$name" -Algorithm SHA256).Hash) { throw 'Publisher runtime differs from approved source' }
+          }
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Independently admit final direct publication bytes
+        shell: pwsh
+        env:
+          MSIX_DIRECT_PUBLISHER: ${{ vars.MSIX_DIRECT_PUBLISHER }}
+          MSIX_DIRECT_EXPECTED_FAMILY: ${{ vars.MSIX_DIRECT_EXPECTED_FAMILY }}
+          MSIX_DIRECT_APPINSTALLER_URI: ${{ vars.MSIX_DIRECT_APPINSTALLER_URI }}
+          DESKTOP_R2_BUCKET: ${{ vars.DESKTOP_R2_BUCKET }}
+          DESKTOP_R2_ENDPOINT: ${{ vars.DESKTOP_R2_ENDPOINT }}
+          DESKTOP_UPDATES_BASE_URL: ${{ vars.DESKTOP_UPDATES_BASE_URL }}
+        run: .\packaging\assert-direct-publication.ps1 -Directory "$env:RELEASE_DIRECTORY" -ProductRevision "$env:PRODUCT_REVISION" -FreshVerificationPath "$env:RUNNER_TEMP/publication-verification.json" -AdmissionPath "$env:RUNNER_TEMP/publication-admission.json"
+      - name: Upload immutable package, verify served bytes and promote the descriptor
+        shell: pwsh
+        env:
+          DIRECT_PUBLICATION_REQUESTED: ${{ inputs.publish_direct }}
+          MSIX_DIRECT_PUBLISHER: ${{ vars.MSIX_DIRECT_PUBLISHER }}
+          MSIX_DIRECT_EXPECTED_FAMILY: ${{ vars.MSIX_DIRECT_EXPECTED_FAMILY }}
+          MSIX_DIRECT_APPINSTALLER_URI: ${{ vars.MSIX_DIRECT_APPINSTALLER_URI }}
+          DESKTOP_R2_BUCKET: ${{ vars.DESKTOP_R2_BUCKET }}
+          DESKTOP_R2_ENDPOINT: ${{ vars.DESKTOP_R2_ENDPOINT }}
+          DESKTOP_UPDATES_BASE_URL: ${{ vars.DESKTOP_UPDATES_BASE_URL }}
+          DESKTOP_R2_ACCESS_KEY_ID: ${{ secrets.DESKTOP_R2_ACCESS_KEY_ID }}
+          DESKTOP_R2_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_R2_SECRET_ACCESS_KEY }}
+        run: |
+          node "$env:RUNNER_TEMP/desktop-publisher-runtime/publisher.mjs" "$env:RELEASE_DIRECTORY" "$env:RUNNER_TEMP/publication-admission.json" "$env:RUNNER_TEMP/publication-verification.json" packaging/msix/direct-delivery.json "$env:RUNNER_TEMP/desktop-publication-receipt.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Direct publication failed' }
+      - name: Retain direct publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-publication-${{ env.PRODUCT_REVISION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/publication-verification.json
+            ${{ runner.temp }}/publication-admission.json
+            ${{ runner.temp }}/desktop-publication-receipt.json
+          if-no-files-found: warn
+          retention-days: 30
 
   prepare-credential-check:
     name: Qualify the non-publishing R2 check

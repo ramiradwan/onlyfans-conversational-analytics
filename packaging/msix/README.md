@@ -104,6 +104,8 @@ The MSIX handoff contains one package, one linked Agent artifact, sealed profile
 
 `verify-desktop-release.ps1` dispatches to the existing Inno verifier or strict MSIX verifier. Direct output records the final signed hash before substituting its immutable package URI into the closed template. The descriptor permits neither unrestricted downgrade nor arbitrary update settings. Final verification, version/identity evidence and linked artifact hashes remain outside package contents. None of these scripts rebuilds or changes inner package files in the signing job. Hosted signing and the final Product signature have not been executed by the local source checks; artifact collection is not R2 publication or Store submission.
 
+The separate protected direct publication job requires `publish_direct`, which defaults to false, and successful build/sign jobs. It independently verifies final MSIX bytes before receiving upload secrets. The [direct delivery client](../../tools/desktop-delivery/README.md#signing-and-publication-boundary) defines source-bound tooling, immutable upload, exact served-byte verification and conditional descriptor promotion. Its local tests do not establish live Product publication or authorize requesting that job. Installed compatibility evidence and customer release approval remain required.
+
 ## External-review disposition and installed gates
 
 These are release obligations, not claims that the producer has fixed the runtime:

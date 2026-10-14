@@ -76,6 +76,51 @@ BUILD_ENVIRONMENT_INTERPRETER = ".build-venv\\Scripts\\python.exe"
 POWERSHELL = shutil.which("pwsh") or shutil.which("powershell.exe") or "powershell.exe"
 
 
+def _assert_direct_publication_is_protected(workflow):
+    inputs = workflow[True]["workflow_dispatch"]["inputs"]
+    assert inputs["publish_direct"] == {"description": "Request approved direct MSIX upload and descriptor promotion",
+        "required": False, "type": "boolean", "default": False}
+    job = workflow["jobs"]["publish-direct"]
+    assert job["if"] == "inputs.desktop_target == 'msix-direct' && inputs.publish_direct == true"
+    assert job["needs"] == ["build", "sign"]
+    assert job["environment"] == "release" and job["permissions"] == {"contents": "read"}
+    steps = job["steps"]
+    admission = next(i for i, step in enumerate(steps) if step["name"] == "Independently admit final direct publication bytes")
+    upload = next(i for i, step in enumerate(steps) if "publisher.mjs\"" in step.get("run", ""))
+    assert admission < upload
+    assert "assert-direct-publication.ps1" in steps[admission]["run"]
+    assert steps[upload]["env"]["DIRECT_PUBLICATION_REQUESTED"] == "${{ inputs.publish_direct }}"
+    for index, step in enumerate(steps):
+        command = step.get("run", "")
+        assert "npm " not in command and "cargo " not in command and "build-windows" not in command
+        for secret in ("DESKTOP_R2_ACCESS_KEY_ID", "DESKTOP_R2_SECRET_ACCESS_KEY"):
+            if secret in step.get("env", {}):
+                assert index == upload
+                assert step["env"][secret] == "${{ secrets." + secret + " }}"
+
+
+@pytest.mark.parametrize("mutation", ["default-on", "unguarded", "no-sign", "unprotected", "credential-leak", "no-admission"])
+def test_direct_publication_cannot_bypass_approval_signing_or_independent_admission(mutation):
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    _assert_direct_publication_is_protected(workflow)
+    broken = deepcopy(workflow)
+    job = broken["jobs"]["publish-direct"]
+    if mutation == "default-on":
+        broken[True]["workflow_dispatch"]["inputs"]["publish_direct"]["default"] = True
+    elif mutation == "unguarded":
+        job["if"] = "inputs.desktop_target == 'msix-direct'"
+    elif mutation == "no-sign":
+        job["needs"].remove("sign")
+    elif mutation == "unprotected":
+        del job["environment"]
+    elif mutation == "credential-leak":
+        job["steps"][0]["env"] = {"DESKTOP_R2_ACCESS_KEY_ID": "${{ secrets.DESKTOP_R2_ACCESS_KEY_ID }}"}
+    else:
+        next(step for step in job["steps"] if step["name"] == "Independently admit final direct publication bytes")["run"] = "echo bypass"
+    with pytest.raises((AssertionError, KeyError)):
+        _assert_direct_publication_is_protected(broken)
+
+
 def _run_verifier(
     path: Path | None, *, script: Path = VERIFY_SCRIPT
 ) -> subprocess.CompletedProcess[str]:

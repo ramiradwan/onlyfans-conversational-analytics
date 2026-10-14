@@ -200,6 +200,42 @@ def test_release_verification_refuses_changed_resolved_input_evidence(tmp_path):
     assert not (directory / "desktop.verification.json").exists()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Independent Windows MSIX publication verification")
+@pytest.mark.parametrize("mutation", ["forged-receipt", "descriptor-policy", "final-hash", "store-scope"])
+def test_direct_publication_requires_the_actual_signature_not_claimed_receipts(tmp_path, mutation):
+    directory, candidate, environment = _release_handoff(tmp_path)
+    assert _check_release_handoff(directory, environment).returncode == 0
+    package_hash = msix.sha256(directory / candidate["package_file"])
+    selected = msix.load_profile(ROOT / "packaging/msix/profiles/production-direct.json", production=True)
+    delivery = msix.read_json(ROOT / "packaging/msix/direct-delivery.json")
+    package_uri = delivery["hosting"]["public_origin"] + delivery["hosting"]["base_path"] + "packages/" + package_hash + "/" + candidate["package_file"]
+    descriptor = msix.render_appinstaller(selected, package_uri)
+    if mutation == "descriptor-policy":
+        descriptor = descriptor.replace(b'ShowPrompt="false"', b'ShowPrompt="true"')
+    (directory / "ConversationAnalytics.appinstaller").write_bytes(descriptor)
+    (directory / "desktop.verification.json").write_bytes(msix.canonical_json({"signature": "trusted-timestamped"}))
+    final = {key: candidate[key] for key in ("source_commit", "source_tree", "target", "application_version", "package_version",
+        "package_file", "profile_sha256", "inventory_sha256", "build_sha256", "expected_family", "agent_file", "agent_sha256")}
+    final.update(schema="ofca-desktop-artifact-release/v1", package_sha256=package_hash,
+        signature_scope="trusted-timestamped", verification_sha256=msix.sha256(directory / "desktop.verification.json"),
+        resolved_direct_inputs_sha256=msix.sha256(directory / "desktop.resolved-direct-inputs.json"), descriptor_sha256=msix.sha256(directory / "ConversationAnalytics.appinstaller"))
+    if mutation == "final-hash":
+        final["package_sha256"] = "0" * 64
+    if mutation == "store-scope":
+        final["signature_scope"] = "unsigned-store-submission"
+    (directory / "desktop.artifact-release.json").write_bytes(msix.canonical_json(final))
+    verification, admission = tmp_path / "fresh-verification.json", tmp_path / "publication-admission.json"
+    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(ROOT / "packaging/assert-direct-publication.ps1"),
+        "-Directory", str(directory), "-ProductRevision", candidate["source_commit"],
+        "-FreshVerificationPath", str(verification), "-AdmissionPath", str(admission)],
+        env=environment, capture_output=True, text=True, check=False)
+    assert result.returncode != 0
+    assert not admission.exists() and not verification.exists()
+    assert not Path(str(verification) + ".descriptor.xml").exists()
+    if mutation == "forged-receipt":
+        assert "verify-msix: rejected" in result.stdout  # Real verifier was reached.
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows SDK runtime PE verification")
 @pytest.mark.parametrize("failure", ["source", "pe"])
 def test_release_stage_refuses_before_packing_an_unqualified_runtime(tmp_path, failure):

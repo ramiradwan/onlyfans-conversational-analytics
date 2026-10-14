@@ -1,6 +1,6 @@
 # Direct desktop delivery
 
-This directory owns only the HTTP download adapter. Windows App Installer owns direct MSIX replacement. Brain owns startup, migration and recovery. The existing signing-parameter Worker, keys and bucket are independent.
+This directory owns the HTTP download adapter and its protected release-upload client. Windows App Installer owns direct MSIX replacement. Brain owns startup, migration and recovery. The existing signing-parameter Worker, keys and bucket are independent.
 
 ## Provisioned inputs
 
@@ -57,7 +57,13 @@ The existing `release` GitHub environment holds bucket-scoped `DESKTOP_R2_ACCESS
 
 Use the EU S3 endpoint recorded in the inputs, not the non-jurisdictional endpoint. The uploader is scoped to the production desktop bucket and cannot access the signing-parameter or qualification buckets. It has no Worker/DNS/Legal administration. Its current provisioning token expires on 14 October 2027; rotate it before expiry without changing the public origin, package family or signing subject. Credentials are stored only as encrypted GitHub secrets, not in this repository or the app.
 
-The MSIX release owner still needs to integrate the producer, signed-artifact verifier and upload/promotion steps into the protected release workflow. Build/pack before acquiring signing credentials; sign the exact output with a timestamp; run `packaging/verify-msix.ps1` with the expected family and exact subject; compute the final hash after signing. Upload immutable bytes before the descriptor. Never overwrite a hash-addressed object with different bytes. Promote the descriptor only after verifying the served package and retaining the release approval and compatibility evidence. Preserve rollback/corrective-release rules; do not enable unrestricted downgrade.
+The protected release workflow has a separate direct upload/promotion job. Its `publish_direct` option defaults to false. A request requires the direct target, successful build/sign jobs and the existing `release` environment. Installed compatibility evidence and customer publication approval are still required before requesting that job. Implementation tests do not authorize it.
+
+The build job qualifies this directory's tests and freezes the locked SDK runtime before credentials are available. The upload job checks its archive hash and source files, then runs `packaging/assert-direct-publication.ps1`. That script reuses `verify-msix.ps1` to independently verify the final signature, timestamp, exact Publisher, family and payload inventory. It binds the closed descriptor, final signed hash, frozen environment and source/tree to a fresh admission receipt outside the immutable payload.
+
+`publisher.mjs` permits only the approved production bucket, endpoint and two desktop object paths. Package writes use atomic `If-None-Match: *`; reuse requires matching bytes, not metadata alone. HTTPS verification checks the full hash, MIME type, length, range bytes, exact URL and no transformation before any descriptor write. Promotion uses the previously observed ETag, or an absent-object condition for the first release. Concurrent replacement, a lower deployment version or different bytes at the same version refuse. A rerun may reuse identical bytes. Re-signing a published version requires a new deployment sequence; application and licensed-major versions remain separate.
+
+Publication evidence records intent before writes and each completed phase. The client never lists or deletes objects, restores a previous feed, redeploys a Worker, or accesses qualification/signing-parameter storage. A failure can leave an unreferenced immutable package; it does not justify removing shared release bytes. No live Product upload/promotion has been executed by the local tests.
 
 This task does not change the tag restrictions or approval mechanisms of the release environment. It does not authorize Store submission, direct release, Inno retirement, or a channel transition. Original-key, standard-user, prerequisite, graceful servicing and installed A-to-B gates remain owned by the existing MSIX implementation.
 

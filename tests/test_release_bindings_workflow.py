@@ -248,7 +248,8 @@ def _assert_every_coordinate_is_required_and_defaulted_nowhere(
     workflow: dict[str, Any],
 ) -> None:
     inputs = _triggers(workflow)["workflow_dispatch"]["inputs"]
-    assert sorted(inputs) == sorted([*REQUIRED_INPUTS, "desktop_target"]), sorted(inputs)
+    assert sorted(inputs) == sorted([*REQUIRED_INPUTS, "desktop_target", "publish_direct"]), sorted(inputs)
+    assert inputs["publish_direct"]["type"] == "boolean" and inputs["publish_direct"]["default"] is False
     # The artifact-route choice is not a release coordinate. It cannot provide
     # defaults for the exact Product/Legal revisions, path or digest below.
     for name in REQUIRED_INPUTS:

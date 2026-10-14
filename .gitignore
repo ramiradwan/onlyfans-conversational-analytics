@@ -102,6 +102,7 @@ tools/desktop-credential-check/node_modules/
 # ------------------------
 logs/*
 npm-debug.log*
+.wrangler/
 yarn-debug.log*
 yarn-error.log*
 
