@@ -11,14 +11,18 @@ pytestmark = [pytest.mark.ci_tier('fast')]
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_provisioning_resume_browser_module() -> None:
-    """Keep restart/resume controller coverage in the ordinary CI test matrix."""
+@pytest.mark.parametrize(
+    "module",
+    ["app/provisioning/setup-transfer.test.mjs", "shared/onboarding/json.test.mjs"],
+)
+def test_explicit_recovery_browser_module(module: str) -> None:
+    """Keep explicit transfer/parser coverage in the ordinary CI test matrix."""
 
     subprocess.run(
         [
             "node",
             "--test",
-            str(ROOT / "app" / "provisioning" / "provisioning-resume.test.mjs"),
+            str(ROOT / module),
         ],
         cwd=ROOT,
         check=True,

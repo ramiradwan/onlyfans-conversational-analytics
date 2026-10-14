@@ -61,9 +61,9 @@ export function ReservedNotice({ id, notice, essential = false }: { id: string; 
   const alertStyle = { height: '100%', p: '12px', '& .MuiAlert-message': { p: 0, minWidth: 0 }, '& p': { lineHeight: '1.25rem', overflowWrap: 'anywhere' } };
   const copy = <><Typography variant="subtitle2" component="p" sx={essential ? { minHeight: { xs: '2.5rem', sm: '1.25rem' } } : undefined}>{notice?.title}</Typography><Typography variant="body2">{notice?.body}</Typography></>;
   if (essential) return <Box data-reserved-region={id} sx={{ minHeight: { xs: `${sizes.essentialNotice.narrow / 16}rem`, sm: `${sizes.essentialNotice.wide / 16}rem` }, minWidth: 0 }}>
-    <Alert data-region-content severity={notice?.severity ?? 'info'} sx={{ ...alertStyle, height: 'auto', visibility: notice ? 'visible' : 'hidden' }}>
+    {notice && <Alert data-region-content severity={notice.severity} sx={{ ...alertStyle, height: 'auto' }}>
       {copy}{notice?.details && <Typography variant="body2">{notice.details}</Typography>}
-    </Alert>
+    </Alert>}
   </Box>;
   return <ReservedRegion id={id} size={{ xs: sizes.notice.narrow, sm: sizes.notice.wide }}>
     <Box ref={probe} aria-hidden sx={probeStyle}><Alert role="presentation" severity={notice?.severity ?? 'info'} sx={alertStyle}><Typography variant="subtitle2" component="p" data-fit-text={notice?.title} /><Typography variant="body2" data-fit-text={notice?.body} /></Alert></Box>
@@ -76,7 +76,7 @@ export function ReservedNotice({ id, notice, essential = false }: { id: string; 
   </ReservedRegion>;
 }
 
-export function StatusLine({ id, text, tone = 'secondary', essential = false, size }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size }) {
+export function StatusLine({ id, text, tone = 'secondary', essential = false, size, summary }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size; summary?: string }) {
   const [expandedText, setExpandedText] = useState<string | null>(null);
   const open = text !== null && expandedText === text;
   if (expandedText !== null && expandedText !== text) setExpandedText(null);
@@ -90,8 +90,8 @@ export function StatusLine({ id, text, tone = 'secondary', essential = false, si
   </Box>;
   return <><ReservedRegion id={id} size={{ xs: sizes.statusLine.narrow, sm: sizes.statusLine.wide }}>
     <Box ref={probe} aria-hidden sx={probeStyle}><Typography variant="body2" data-fit-text={text} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere' }} /></Box>
-    <Box data-region-content sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', visibility: text ? 'visible' : 'hidden' }}>
-      <Typography variant="body2" role={tone === 'error' && !details ? 'alert' : 'status'} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>{details ? 'Details available' : text || '\u00a0'}</Typography>
+    <Box data-region-content sx={{ display: 'flex', columnGap: 1, rowGap: 0, flexWrap: 'wrap', alignItems: 'flex-start', visibility: text ? 'visible' : 'hidden' }}>
+      <Typography variant="body2" role={tone === 'error' && !details ? 'alert' : 'status'} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>{details ? summary ?? 'Details available' : text || '\u00a0'}</Typography>
       {details && <Button onClick={() => setExpandedText(text)} size="small" sx={{ p: 0, minWidth: 0, lineHeight: '1.25rem', flex: 'none' }}>Show details</Button>}
     </Box>
   </ReservedRegion><Dialog open={open} onClose={() => setExpandedText(null)}><DialogTitle>Details</DialogTitle><DialogContent sx={detailStyle}><Typography role={tone === 'error' ? 'alert' : undefined}>{text}</Typography></DialogContent><Button onClick={() => setExpandedText(null)}>Close</Button></Dialog></>;

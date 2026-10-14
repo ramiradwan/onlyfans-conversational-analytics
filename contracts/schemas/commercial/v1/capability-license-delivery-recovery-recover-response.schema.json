@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-delivery-recovery-recover-response.schema.json",
+  "title": "CapabilityLicense delivery recovery recover-response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "activation_operation_id",
+    "binding",
+    "delivery_generation",
+    "authorized_at",
+    "redemption"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "activation_operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "binding": {
+      "$ref": "capability-license-delivery-recovery-definitions.schema.json#/$defs/binding"
+    },
+    "delivery_generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "authorized_at": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "redemption": {
+      "$ref": "capability-license-delivery-recovery-definitions.schema.json#/$defs/redemption"
+    }
+  }
+}

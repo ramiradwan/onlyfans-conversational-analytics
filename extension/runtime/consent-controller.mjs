@@ -1,6 +1,8 @@
+import { DocumentObserverCoordinator, OBSERVER_STATE_TYPE, OBSERVER_REOPEN_TYPE } from './document-observer.mjs';
 import { allowsUiMessage } from './ui-surfaces.mjs';
 import { OperationScope, SerialExecutor } from './operation-scope.mjs';
 import { DELETE_INTENT_KEY, deletionIntent } from './deletion-state.mjs';
+import { CONNECTION_RECONCILE_ALARM } from './recovery-backoff.mjs';
 import { LOCAL_SERVICE_PATTERN, LOCAL_SERVICE_HEALTH } from '../transport/local-service-endpoints.mjs';
 import {
   PAGE_CONTROL_MESSAGE_TYPE,
@@ -11,6 +13,7 @@ import {
 } from '../capture/envelopes.mjs';
 
 export const CONSENT_STORAGE_KEY = 'ofca_consent_v1';
+export const ACTIVE_ACCOUNT_PARTITION_KEY = 'active_account_partition_v5';
 export const CONSENT_POLICY_REVISION = '1';
 export const UI_STATUS_MESSAGE_TYPE = 'ofca.ui.status';
 export const UI_TRANSITION_MESSAGE_TYPE = 'ofca.ui.transition';
@@ -46,14 +49,6 @@ function validatedState(value) {
     || (value.resume_mode !== null && !ACTIVE_CONSENT_MODES.has(value.resume_mode))
     || (value.updated_at !== null && !Number.isFinite(Date.parse(value.updated_at)))
     || typeof value.policy_revision !== 'string') return defaultConsentState();
-  if (value.schema === 'ofca-consent/v1' && Object.keys(value).length === 5) {
-    return {
-      ...defaultConsentState(),
-      mode: ACTIVE_CONSENT_MODES.has(value.mode) ? 'paused' : value.mode,
-      resume_mode: ACTIVE_CONSENT_MODES.has(value.mode) ? value.mode : value.resume_mode,
-      updated_at: value.updated_at,
-    };
-  }
   if (value.schema !== 'ofca-consent/v2' || Object.keys(value).length !== 7
     || !UUID.test(value.consent_epoch)
     || (value.authorization_event_id !== null && !UUID.test(value.authorization_event_id))) {
@@ -179,6 +174,8 @@ export class ConsentController {
     this.scheduler = scheduler;
     this.bindingRetryTimer = null;
     this.bindingRetryDelay = 500;
+    this.bindingRetryAttempt = 0;
+    this.bindingAlarmPending = null;
     this.fetchImpl = fetchImpl;
     this.now = now;
     this.captureScope = captureScope;
@@ -199,10 +196,13 @@ export class ConsentController {
     this.captureNotificationLastReportAt = null;
     this.captureNotificationTimer = null;
     this.captureNotificationPending = false;
+    this.changeListeners = new Set();
+    this.observer = new DocumentObserverCoordinator({ chromeApi, scheduler, changed: () => this.changed() });
     this.messageListener = this.#onMessage.bind(this);
     this.storageListener = this.#onStorageChanged.bind(this);
     this.permissionListener = () => { void this.reconcile().catch(() => undefined); };
     this.alarmListener = (alarm) => {
+      if (alarm?.name === CONNECTION_RECONCILE_ALARM) this.#requestBindingRetry();
       if (alarm?.name === PREVIEW_PRUNE_ALARM_NAME) {
         void this.runLegalOperation(async ({ assertCurrent }) => {
           assertCurrent();
@@ -215,6 +215,7 @@ export class ConsentController {
   register() {
     if (this.registered) return;
     this.provisioningIdentityBridge.register();
+    this.observer.start();
     this.chromeApi.runtime.onMessage.addListener(this.messageListener);
     this.chromeApi.storage.onChanged?.addListener(this.storageListener);
     this.chromeApi.permissions.onRemoved?.addListener(this.permissionListener);
@@ -228,6 +229,13 @@ export class ConsentController {
       periodInMinutes: 24 * 60,
     });
     alarm?.catch?.(() => undefined);
+    // Startup can remain in identity mode longer than the connection cooldown.
+    // Register the runtime's existing alarm before authenticated startup succeeds.
+    const recoveryAlarm = this.chromeApi.alarms?.create?.(CONNECTION_RECONCILE_ALARM, {
+      delayInMinutes: 1,
+      periodInMinutes: 1,
+    });
+    recoveryAlarm?.catch?.(() => undefined);
     this.registered = true;
   }
 
@@ -242,10 +250,12 @@ export class ConsentController {
     if (this.bindingRetryTimer !== null) this.scheduler.clearTimeout(this.bindingRetryTimer);
     this.bindingRetryTimer = null;
     this.bindingRetryDelay = 500;
+    this.bindingRetryAttempt = 0;
     this.adapter.invalidate?.();
     this.controlAbort.abort(Object.assign(new Error(code), { code }));
     this.controlAbort = new AbortController();
     this.captureScope.close(code);
+    this.observer.invalidate();
     // Stop published senders and cancel startup at the call boundary, before queue admission.
     const stopping = this.#suspendRuntime();
     void stopping.catch(() => undefined);
@@ -301,63 +311,43 @@ export class ConsentController {
     })));
   }
 
+  subscribe(listener) { this.changeListeners.add(listener); return () => this.changeListeners.delete(listener); }
+
+  changed() { for (const listener of this.changeListeners) listener(); }
+
   allowsFullCapture() {
     return this.captureScope.isOpen && this.phase === 'full' && this.state.mode === 'full';
   }
 
   async captureState() {
-    const tabs = await this.chromeApi.tabs.query({ url: [ONLYFANS_ORIGIN_PATTERN] }).catch(() => []);
+    const { tabs, drops, drop_sources } = this.observer.snapshot();
     const counts = { armed: 0, frozen: 0, discarded: 0 };
     let socket = false;
-    let reload = false;
     this.reportDrops ??= { expired: 0, rejected: 0 };
     this.reportDocuments ??= new Map();
-    const activeDocuments = new Set(tabs.map(tab => tab.id));
+    const activeDocuments = new Set(tabs.map((tab) => tab.id));
     for (const tab of tabs) {
       if (tab.discarded) { counts.discarded++; continue; }
-      if (tab.frozen !== false) { counts.frozen++; continue; }
-      let timer;
-      try {
-        const [status, drops] = await Promise.race([
-          Promise.all([
-            this.chromeApi.tabs.sendMessage(tab.id, { type: PAGE_CONTROL_MESSAGE_TYPE,
-              version: PAGE_CONTROL_VERSION, action: 'status' }, { frameId: 0 }),
-            this.chromeApi.tabs.sendMessage(tab.id, { type: 'ofca.capture.queue.status' }, { frameId: 0 }).catch(() => null),
-          ]),
-          new Promise(resolve => { timer = this.scheduler.setTimeout(() => resolve([null, null]), 1000); }),
-        ]);
-        if (status?.active === true && status.mode === 'full') counts.armed++;
-        else reload = true;
-        socket ||= status?.active === true && status.forwarding === true && status.ws2_socket_open === true;
-        if (typeof drops?.document === 'string' && drops.document.length < 128
-          && Number.isSafeInteger(drops.expired) && drops.expired >= 0
-          && Number.isSafeInteger(drops.rejected) && drops.rejected >= 0) {
-          const saved = this.reportDocuments.get(tab.id);
-          const previous = saved?.document === drops.document ? saved : { expired: 0, rejected: 0 };
-          for (const key of ['expired', 'rejected']) this.reportDrops[key] += Math.max(0, drops[key] - previous[key]);
-          this.reportDocuments.set(tab.id, drops);
-        }
-      } catch { reload = true; }
-      finally { if (timer !== undefined) this.scheduler.clearTimeout(timer); }
+      if (tab.frozen === true) { counts.frozen++; continue; }
+      if (tab.status?.active === true && tab.status.mode === 'full') counts.armed++;
+      socket ||= tab.status?.active === true && tab.status.forwarding === true && tab.status.ws2_socket_open === true;
     }
-    for (const key of this.reportDocuments.keys()) if (!activeDocuments.has(key)) this.reportDocuments.delete(key);
     const reason = this.state.mode === 'paused' ? 'paused'
       : this.state.mode === 'off' ? 'capture_off'
       : this.state.mode !== 'full' ? 'consent_needed'
-      : this.phase === 'identity' ? 'account_mismatch'
+      : this.phase === 'identity' ? 'hook_not_armed'
       : this.phase !== 'full' ? 'storage_locked'
       : this.runtime.configuration?.activeDocument?.history_acquisition?.enabled === false ? 'paused'
       : tabs.length === 0 ? 'no_onlyfans_tab'
       : counts.discarded === tabs.length ? 'tab_discarded'
       : counts.frozen + counts.discarded === tabs.length ? 'tab_frozen'
-      : reload && counts.armed === 0 ? 'reload_required'
       : counts.armed === 0 ? 'hook_not_armed'
       : !this.captureScope.isOpen ? 'paused'
       : !socket ? 'page_socket_closed' : 'ok';
     return { observing: reason === 'ok', reason, tabs: counts, page_socket_open: socket,
       runnable: !['paused', 'capture_off', 'consent_needed', 'account_mismatch', 'storage_locked',
-        'no_onlyfans_tab', 'tab_discarded', 'tab_frozen'].includes(reason), drops: { ...this.reportDrops },
-      drop_tabs: [...activeDocuments], drop_sources: Object.fromEntries(this.reportDocuments) };
+        'no_onlyfans_tab', 'tab_discarded', 'tab_frozen'].includes(reason), drops,
+      drop_tabs: [...activeDocuments], drop_sources };
   }
 
   async #hasOnlyFansPermission() {
@@ -426,90 +416,24 @@ export class ConsentController {
     }));
   }
 
-  async #reloadTabs(tabs) {
-    await Promise.all(tabs.map(async (tab) => {
-      if (!Number.isInteger(tab.id)) return;
-      let timer;
-      try {
-        // Edge may freeze a background document before acknowledging reload.
-        // The user requested it once; never retry it or hold the shared setup
-        // queue until that tab is brought to the foreground.
-        await Promise.race([
-          this.chromeApi.tabs.reload(tab.id),
-          new Promise((resolve) => { timer = this.scheduler.setTimeout(resolve, 2_000); }),
-        ]);
-      } catch (_error) {
-        // A tab closed during the transition needs no further action.
-      } finally {
-        if (timer !== undefined) this.scheduler.clearTimeout(timer);
-      }
-    }));
-  }
-
   async #syncContentScripts(mode) {
-    if (this.state.mode === 'paused' && this.state.resume_mode === 'full'
-      && await this.#hasOnlyFansPermission()) mode = 'full';
+    if (this.state.mode === 'paused' && ACTIVE_CONSENT_MODES.has(this.state.resume_mode)
+      && await this.#hasOnlyFansPermission()) mode = this.state.resume_mode;
     const desired = contentScriptsFor(mode);
     this.scriptMode = mode;
-    const allRegistered = await this.chromeApi.scripting.getRegisteredContentScripts();
-    const owned = allRegistered.filter((entry) => entry.id.startsWith('ofca-'));
-    // A transient companion refusal must not stop the live document bridge:
-    // that bridge is how a restarted worker can re-observe account identity.
-    // Capture admission stays closed until authenticated Full startup succeeds.
-    if (mode === 'identity' && this.state.mode === 'full' && !this.documentReset
-      && sameScripts(owned, contentScriptsFor('full'))) {
-      let paired = false;
-      try { paired = await this.hasSavedPairing(); } catch { /* No confirmed pairing. */ }
-      if (paired || this.identityRefreshPending) {
-        this.scriptMode = 'full';
-        if (this.identityRefreshPending) {
-          await this.#controlTabs(await this.#onlyFansTabs(), 'resume');
-          this.identityRefreshPending = false;
-        }
-        return;
-      }
+    const registered = await this.chromeApi.scripting.getRegisteredContentScripts();
+    const owned = registered.filter((entry) => entry.id.startsWith('ofca-'));
+    if (!mode) await this.observer.configure(null);
+    if (!sameScripts(owned, desired)) {
+      if (owned.length) await this.chromeApi.scripting.unregisterContentScripts({ ids: owned.map((entry) => entry.id) });
+      if (desired.length) await this.chromeApi.scripting.registerContentScripts(desired);
     }
-    const definitionsChanged = !sameScripts(owned, desired);
-    if (!definitionsChanged && !this.documentReset) {
-      if (mode === 'full') {
-        await this.#controlTabs(await this.#onlyFansTabs(), this.state.mode === 'paused' ? 'pause' : 'resume');
-      }
-      this.identityRefreshPending = false;
-      return;
-    }
-
-    const tabs = await this.#onlyFansTabs();
-    await this.#stopTabs(tabs);
-    if (definitionsChanged && owned.length > 0) {
-      await this.chromeApi.scripting.unregisterContentScripts({
-        ids: owned.map((entry) => entry.id),
-      });
-    }
-    if (definitionsChanged && desired.length > 0) {
-      await this.chromeApi.scripting.registerContentScripts(desired);
-    }
+    // Register future documents before attaching to existing ones or opening the
+    // single inactive helper. Definitions changing never requires navigation.
+    if (this.documentReset) await this.#controlTabs(await this.#onlyFansTabs(), 'reset_identity');
+    if (mode) await this.observer.configure(mode, this.state.mode === 'paused');
     this.documentReset = false;
-  }
-
-  async #tabNeedsReload(tab) {
-    if (!Number.isInteger(tab.id) || this.scriptMode === null) return false;
-    let timer;
-    try {
-      const status = await Promise.race([
-        this.chromeApi.tabs.sendMessage(tab.id, {
-          type: PAGE_CONTROL_MESSAGE_TYPE, version: PAGE_CONTROL_VERSION, action: 'status',
-        }, { frameId: 0 }),
-        new Promise((resolve) => { timer = this.scheduler.setTimeout(() => resolve(null), 1_000); }),
-      ]);
-      return !status || Object.keys(status).length !== 4
-        || status.mode !== this.scriptMode || status.active !== true
-        || typeof status.ws2_socket_open !== 'boolean'
-        || status.forwarding !== (this.state.mode !== 'paused');
-    } catch {
-      return true;
-    } finally {
-      if (timer !== undefined) this.scheduler.clearTimeout(timer);
-    }
+    this.identityRefreshPending = false;
   }
 
   async #suspendRuntime() {
@@ -580,32 +504,58 @@ export class ConsentController {
     if (['preview', 'full'].includes(this.phase)) this.captureScope.reopen();
     void this.runtime.history?.wake?.('observing')?.catch(() => undefined);
     await this.#scheduleBindingRetry(generation);
+    this.changed();
   }
 
   async #scheduleBindingRetry(generation) {
     if (generation !== this.controlGeneration || this.phase !== 'identity'
-      || this.state.mode !== 'full' || this.bindingRetryTimer !== null) return;
+      || this.state.mode !== 'full' || this.bindingRetryTimer !== null || this.bindingRetryAttempt >= 9) return;
     let paired = false;
     try { paired = await this.hasSavedPairing(); } catch { /* No confirmed pairing. */ }
     // A storage event or consent transition may invalidate us during the status read.
     if (!paired || generation !== this.controlGeneration) return;
+    this.bindingRetryAttempt += 1;
     const delay = this.bindingRetryDelay;
     this.bindingRetryDelay = Math.min(delay * 2, 30_000);
     this.bindingRetryTimer = this.scheduler.setTimeout(() => {
       if (generation !== this.controlGeneration) return;
       this.bindingRetryTimer = null;
-      return this.controlQueue.run(async () => {
-        if (generation !== this.controlGeneration) return;
-        await this.#refreshTabIdentity(generation);
-        if (generation !== this.controlGeneration) return;
-        // Keep identity capture available while Brain is offline. Do not invalidate
-        // the companion connection that this probe is trying to establish.
-        const bound = await this.#hasBrainBinding();
-        if (generation !== this.controlGeneration) return;
-        if (bound) await this.#reconcileLocked(generation);
-        else await this.#scheduleBindingRetry(generation);
-      }).catch(() => undefined);
+      return this.controlQueue.run(() => this.#retryBinding(generation)).catch(() => undefined);
     }, delay);
+  }
+
+  #canRetryBinding(generation) {
+    return this.loaded && !this.deletionPending && generation === this.controlGeneration
+      && this.phase === 'identity' && this.state.mode === 'full';
+  }
+
+  #requestBindingRetry() {
+    const generation = this.controlGeneration;
+    if (!this.#canRetryBinding(generation) || this.bindingRetryTimer !== null
+      || this.bindingAlarmPending !== null) return;
+    const retry = this.controlQueue.run(async () => {
+      if (this.bindingRetryTimer === null) await this.#retryBinding(generation);
+    });
+    this.bindingAlarmPending = retry;
+    const settled = () => {
+      if (this.bindingAlarmPending === retry) this.bindingAlarmPending = null;
+    };
+    void retry.then(settled, settled);
+  }
+
+  async #retryBinding(generation) {
+    if (!this.#canRetryBinding(generation)) return;
+    let paired = false;
+    try { paired = await this.hasSavedPairing(); } catch { /* No confirmed pairing. */ }
+    if (!paired || !this.#canRetryBinding(generation) || !await this.#hasOnlyFansPermission()) return;
+    await this.#refreshTabIdentity(generation);
+    if (!this.#canRetryBinding(generation)) return;
+    // The companion owns its persisted connection budget. Probing never clears it
+    // or invalidates the connection being established.
+    const bound = await this.#hasBrainBinding();
+    if (!this.#canRetryBinding(generation)) return;
+    if (bound) await this.#reconcileLocked(generation);
+    else await this.#scheduleBindingRetry(generation);
   }
 
   async #refreshTabIdentity(generation) {
@@ -627,7 +577,7 @@ export class ConsentController {
           new Promise((resolve) => { timer = this.scheduler.setTimeout(resolve, 2_000); }),
         ]);
       } catch (_error) {
-        // A missing bridge requires the existing explicit reload action.
+        // Attachment is reconciled by the observer owner; a timeout is not a diagnosis.
       } finally {
         if (timer !== undefined) this.scheduler.clearTimeout(timer);
       }
@@ -686,10 +636,10 @@ export class ConsentController {
     }
 
     if (ACTIVE_CONSENT_MODES.has(nextMode) && !await this.#hasOnlyFansPermission()) {
-      throw new Error('OnlyFans access must be granted from the popup');
+      throw new Error('OnlyFans access must be granted from setup');
     }
     if (nextMode === 'full' && !await this.#hasLocalAnalyticsPermission()) {
-      throw new Error('Local analytics service access must be granted from the popup');
+      throw new Error('Local analytics service access must be granted from setup');
     }
     this.#assertGeneration(generation);
     this.captureScope.close('consent_transition');
@@ -713,7 +663,9 @@ export class ConsentController {
     if (epochChanged) {
       const fullFamily = (state) => state.mode === 'full'
         || (state.mode === 'paused' && state.resume_mode === 'full');
-      this.documentReset ||= !(fullFamily(currentState) && fullFamily(this.state));
+      // Mode changes retain a compatible observer; only an actual account
+      // replacement resets document ownership.
+
       this.identityRefreshPending = !this.documentReset && nextMode === 'full';
       await this.provisioningIdentityBridge.clearContexts?.();
     }
@@ -761,6 +713,7 @@ export class ConsentController {
     const attempt = async (stage, work) => {
       try { await work(); } catch { failures.push(stage); }
     };
+    await attempt('observer_reset', () => this.observer.resetForDeletion());
     await attempt('phase_stop', () => this.#applyPhase('off'));
     await attempt('runtime_suspend', () => this.#suspendRuntime());
     await attempt('context_clear', () => this.provisioningIdentityBridge.clearContexts?.());
@@ -804,12 +757,12 @@ export class ConsentController {
   }
 
   async #statusLocked() {
-    const [preview, onlyFansPermission, localServicePermission, historyPermission, onlyFansTabs] = await Promise.all([
+    const { tabs: onlyFansTabs, attached, helper } = this.observer.snapshot();
+    const [preview, onlyFansPermission, localServicePermission, historyPermission] = await Promise.all([
       this.previewMetrics.summary(),
       this.#hasOnlyFansPermission(),
       this.#hasLocalAnalyticsPermission(),
       this.#hasHistoryPermission(),
-      this.#onlyFansTabs(),
     ]);
     const brainReachable = localServicePermission ? await this.#brainReachable() : false;
     const runtime = this.runtimeSummary() ?? {};
@@ -817,7 +770,8 @@ export class ConsentController {
       schema: 'ofca-popup-status/v1',
       consent: structuredClone(this.state),
       phase: this.phase,
-      reload_required: (await Promise.all(onlyFansTabs.map((tab) => this.#tabNeedsReload(tab)))).some(Boolean),
+      reload_required: false,
+      observer: { attachment: attached ? 'ready' : this.scriptMode ? 'checking' : 'blocked', helper },
       onlyfans_permission: onlyFansPermission,
       local_service_permission: localServicePermission,
       history_permission: historyPermission,
@@ -851,7 +805,14 @@ export class ConsentController {
   }
 
   #onStorageChanged(changes, areaName) {
-    if (areaName === 'session' && Object.hasOwn(changes, 'active_account_partition_v5')) {
+    if (areaName === 'session' && Object.hasOwn(changes, ACTIVE_ACCOUNT_PARTITION_KEY)) {
+      const partition = changes[ACTIVE_ACCOUNT_PARTITION_KEY];
+      // Publishing the first unsealed partition completes the current binding;
+      // it is not an account replacement. Resetting document identity here
+      // would lose the observation that authorized this same-browser pairing.
+      if (partition && typeof partition === 'object' && !Array.isArray(partition)
+        && typeof partition.newValue === 'string' && partition.newValue.length > 0
+        && (partition.oldValue === undefined || partition.oldValue === partition.newValue)) return;
       this.documentReset = true;
       void this.reconcile().catch(() => undefined);
     }
@@ -886,9 +847,14 @@ export class ConsentController {
   }
 
   #onMessage(message, sender, sendResponse) {
+    if (message?.type === OBSERVER_STATE_TYPE) {
+      sendResponse({ ok: this.observer.observe(message, sender) });
+      return false;
+    }
     if (message?.type === 'ofca.capture.state.changed'
       || message?.type === 'ofca.capture.queue.changed') {
       if (Object.keys(message).length !== 1 || !trustedContentSender(sender, this.chromeApi)) return false;
+      if (Number.isInteger(sender.tab?.id)) void this.observer.refreshDrops(sender.tab.id);
       this.#requestCaptureStateNotificationReport();
       return false;
     }
@@ -900,17 +866,18 @@ export class ConsentController {
       }), () => sendResponse({ ok: false }));
       return true;
     }
-    if (message?.type === PREVIEW_MESSAGE_TYPE) {
+    if (message?.type === 'ofca.preview.delivery') {
       if (!trustedContentSender(sender, this.chromeApi)) return false;
       const generation = this.controlGeneration;
       void this.initialize().then(async () => {
         this.#assertGeneration(generation);
-        if (!['preview', 'full'].includes(this.phase) || !isPreviewEnvelope(message)) {
+        if (!['preview', 'full'].includes(this.phase) || Object.keys(message).length !== 3
+          || message.consent_epoch !== this.state.consent_epoch || !isPreviewEnvelope(message.envelope)) {
           sendResponse({ ok: false });
           return;
         }
         await this.captureScope.run(({ assertCurrent }) => this.previewMetrics.record(
-          message.observation, { assertCurrent },
+          message.envelope.observation, { assertCurrent },
         ));
         sendResponse({ ok: true });
       }).catch(() => sendResponse({ ok: false }));
@@ -918,16 +885,14 @@ export class ConsentController {
     }
 
     if (!allowsUiMessage(sender, message, this.chromeApi)) return false;
-    if (message?.type === UI_RELOAD_TABS_MESSAGE_TYPE && Object.keys(message).length === 1) {
-      void this.runLegalOperation(async ({ assertCurrent, status }) => {
-        assertCurrent();
-        if (SCRIPT_MODES.includes(this.scriptMode)) {
-          await this.#reloadTabs(await this.#onlyFansTabs());
-        }
-        return status();
-      }).then(
+    if (message?.type === UI_RELOAD_TABS_MESSAGE_TYPE) {
+      sendResponse({ ok: false, code: 'reload_unsupported' });
+      return false;
+    }
+    if (message?.type === OBSERVER_REOPEN_TYPE && Object.keys(message).length === 1) {
+      void this.observer.reopen().then(() => this.status()).then(
         (status) => sendResponse({ ok: true, status }),
-        () => sendResponse({ ok: false, code: 'reload_failed' }),
+        () => sendResponse({ ok: false, code: 'attachment_unavailable' }),
       );
       return true;
     }

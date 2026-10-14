@@ -111,7 +111,7 @@ describe('Bridge architecture boundaries and acyclic kernel enforcement', () => 
   it('proves fixture modules are excluded from normal Vitest discovery and TypeScript build inputs', () => {
     // Verify Vitest test include glob strictly matches tests/ and excludes test-fixtures/
     const vitestConfigText = fs.readFileSync(path.join(FRONTEND_ROOT, 'vitest.config.ts'), 'utf-8');
-    expect(vitestConfigText).toContain("include: ['tests/**/*.test.{ts,tsx}']");
+    expect(vitestConfigText).toContain("include: ['tests/**/*.test.{js,ts,tsx}']");
     expect(vitestConfigText).not.toContain('test-fixtures');
 
     // Verify tsconfig.json includes only src and tooling configs, not test-fixtures/

@@ -6,11 +6,14 @@ import json
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import Depends, FastAPI
+from starlette.requests import Request
 from fastapi.testclient import TestClient
 
 from app.api.activation import require_activated_runtime
@@ -41,6 +44,27 @@ from app.security.webauthn import (
 )
 
 pytestmark = [pytest.mark.ci_tier('fast')]
+
+
+@pytest.mark.parametrize("path,method,allowed", [
+    ("/api/v1/desktop/setup", "GET", True),
+    ("/api/v1/desktop/setup/events", "GET", True),
+    ("/api/v1/desktop/setup/commands", "POST", False),
+    ("/api/v1/desktop/setup/operations/one/reconcile", "POST", False),
+    ("/api/v1/desktop/setup/operations/one", "GET", False),
+    ("/api/v1/desktop/setup", "POST", False),
+])
+def test_stale_operator_cookie_allows_only_read_only_native_sign_in_projection(monkeypatch, store, path, method, allowed):
+    from fastapi import HTTPException
+    monkeypatch.setattr(api_security, "build_runtime_policy", store.build_runtime_policy)
+    request = Request({"type": "http", "method": method, "path": path,
+        "headers": [(b"cookie", (settings.bridge_session_cookie_name + "=stale-other-installation").encode())]})
+    if allowed:
+        assert api_security.get_runtime_policy(request).identity is None
+    else:
+        with pytest.raises(HTTPException) as error:
+            api_security.get_runtime_policy(request)
+        assert error.value.status_code == 401
 
 
 INSTANT = datetime(2026, 8, 13, 9, 0, tzinfo=timezone.utc)
@@ -145,6 +169,94 @@ def _service(store: SQLiteAuthenticationStore) -> WebAuthnService:
     )
 
 
+@pytest.fixture
+def label_store(tmp_path):
+    from test_continuation_selection import NOW, add_candidate, enroll, finalize_fixture
+
+    store = SQLiteAuthenticationStore(tmp_path / "labels.sqlite3", clock=lambda: NOW)
+    enroll(store)
+    add_candidate(store, approved=True)
+    finalize_fixture(store)
+    return store
+
+
+def _completed_label(store, *, display_name="Creator Example", binding_changes=None,
+                     scope_changes=None, malformed=False):
+    from test_desktop_browser_tasks import observation
+
+    generation, journey, operation = (str(uuid4()) for _ in range(3))
+    browser = observation(SimpleNamespace(task_id=str(uuid4()), journey_id=journey, generation=generation))
+    browser.update(creator_account_id="creator-1", creator_display_name=display_name, creator_username="creator_example")
+    scope = {"creator_account_id": "creator-1", "association_request_id": "request-1", "browser": browser,
+             **(scope_changes or {})}
+    key = store.installation_key_reference()
+    binding = {"intended_creator_id": "creator-1", "installation_id": "installation-1",
+               "installation_key_id": key.installation_key_id, "installation_key_jkt": key.installation_key_jkt,
+               "organization_id": "organization-1", **(binding_changes or {})}
+    # Display metadata fixture only; registration authority is independently supplied.
+    with store.database.transaction() as connection:
+        connection.execute("INSERT INTO desktop_setup_journeys (journey_id,created_at) VALUES (?,?)", (journey, 1))
+        connection.execute("INSERT INTO desktop_setup_operations "
+            "(operation_id,journey_id,action,request_digest,generation,scope_digest,source_revision,"
+            "owner_scope_json,state,reason,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (operation, journey, "account.connect", "a" * 64, generation, "b" * 64, 1,
+             "{" if malformed else json.dumps(scope), "completed", "account_connected", 1, 2))
+        connection.execute("INSERT INTO desktop_browser_ceremonies "
+            "(operation_id,hosted_operation_id,binding_json) VALUES (?,?,?)",
+            (operation, str(uuid4()), json.dumps(binding)))
+
+
+@pytest.mark.parametrize("binding_changes,scope_changes", [
+    ({"intended_creator_id": "other"}, {}), ({"installation_id": "other"}, {}),
+    ({"installation_key_id": "other"}, {}), ({"installation_key_jkt": "other"}, {}),
+    ({"organization_id": "other"}, {}), ({}, {"creator_account_id": "other"}),
+    ({}, {"association_request_id": "other"}),
+])
+def test_passkey_label_ignores_completed_operation_in_foreign_scope(label_store, binding_changes, scope_changes):
+    from app.onboarding.browser_tasks import saved_creator_label
+
+    _completed_label(label_store, binding_changes=binding_changes, scope_changes=scope_changes)
+    assert saved_creator_label(label_store, "creator-1") is None
+
+
+def test_passkey_label_requires_unique_current_unrevoked_creator(label_store):
+    from app.onboarding.browser_tasks import saved_creator_label
+
+    _completed_label(label_store)
+    _completed_label(label_store, malformed=True)
+    assert saved_creator_label(label_store, "creator-1")["display_name"] == "Creator Example"
+    assert saved_creator_label(label_store, "other") is None
+    _completed_label(label_store, display_name="Conflicting label")
+    assert saved_creator_label(label_store, "creator-1") is None
+
+
+def test_passkey_label_is_not_exposed_after_binding_revocation(label_store):
+    from app.onboarding.browser_tasks import saved_creator_label
+
+    _completed_label(label_store)
+    label_store.revoke_authorized_account_binding("creator-1")
+    assert saved_creator_label(label_store, "creator-1") is None
+
+
+def test_registration_uses_verified_display_name_without_changing_stable_identity(label_store, monkeypatch):
+    from app.security.webauthn import configured_webauthn_service
+    from test_continuation_selection import NOW
+
+    _completed_label(label_store)
+    monkeypatch.setattr(settings, "bridge_origin", ORIGIN)
+    authority = RegistrationAuthority(
+        principal_id=PRINCIPAL_ID, external_issuer=ISSUER, external_subject=SUBJECT,
+        installation_id="installation-1", creator_account_id="creator-1", grant_reference_ids=("fixture-authority",),
+    )
+    baseline = configured_webauthn_service(label_store, clock=lambda: NOW).begin_registration(authority)
+    labeled = webauthn_endpoints.webauthn_service(label_store).begin_registration(authority)
+    assert labeled["user"]["displayName"] == "Conversation Analytics — Creator Example"
+    assert labeled["user"]["id"] == baseline["user"]["id"]
+    assert labeled["user"]["name"] == "Creator Example"
+    assert labeled["rp"]["id"] == baseline["rp"]["id"] == RP_ID
+    assert labeled["authenticatorSelection"] == baseline["authenticatorSelection"]
+
+
 def _application(
     *,
     policy: RuntimePolicy | Callable[[], RuntimePolicy] | None = None,
@@ -184,7 +296,7 @@ class _RefusingPort:
 
 class _AuthorizedRegistrationPort:
     def registration_authority(
-        self, policy: RuntimePolicy
+        self, policy: RuntimePolicy, *, connection=None
     ) -> WebAuthnAuthorityDecision:
         return WebAuthnAuthorityDecision(
             WebAuthnAuthorityResult.AUTHORIZED,
@@ -193,6 +305,8 @@ class _AuthorizedRegistrationPort:
                 external_issuer=ISSUER,
                 external_subject=SUBJECT,
                 installation_id=INSTALLATION_ID,
+                creator_account_id=ACCOUNT_ID,
+                grant_reference_ids=("installation_grant-http", "membership_snapshot-http", "creator_account_binding-http"),
             ),
         )
 
@@ -312,12 +426,21 @@ def test_login_finish_without_a_prior_session_mints_grant_authority_session(
                 "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}"
             },
         )
+        session_state = client.get("/api/v1/webauthn/session-state", headers={
+            "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}", "Sec-Fetch-Site": "same-origin"})
+        assert session_state.status_code == 200
+        assert session_state.json()["enrolled"] is True and session_state.json()["authenticated"] is True
+        assert set(session_state.json()) == {"enrolled", "authenticated", "csrf_token"}
+        assert session_state.headers["cache-control"] == "no-store"
+        denied_state = client.get("/api/v1/webauthn/session-state", headers={
+            "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}", "Sec-Fetch-Site": "cross-site"})
+        assert denied_state.status_code == 403 and "csrf_token" not in denied_state.json()
         reauthentication = client.post(
             "/api/v1/webauthn/login/begin",
             headers={
                 "Cookie": f"{settings.bridge_session_cookie_name}={session_cookie}",
                 "Origin": ORIGIN,
-                "X-CSRF-Token": finished.json()["csrf_token"],
+                "X-CSRF-Token": session_state.json()["csrf_token"],
             },
         )
         with store.database.read() as connection:
@@ -420,13 +543,18 @@ def test_registration_routes_complete_one_http_ceremony(
         finished = client.post(
             "/api/v1/webauthn/registration/finish",
             json=_registration_payload(private_key, begun.json()["challenge"]),
-            headers=headers,
+            headers={**headers, "Cookie": "__Host-first_enrollment=" + begun.cookies["__Host-first_enrollment"]},
         )
 
     assert begun.status_code == 200
     assert begun.headers["cache-control"] == "no-store"
     assert finished.status_code == 200
-    assert finished.json() == {"status": "registered"}
+    assert finished.json()["status"] == "registered"
+    assert finished.json()["profile"] == "local-first-enrollment-result.v1"
+    assert len(finished.json()["csrf_token"]) == 43
+    assert settings.bridge_session_cookie_name in finished.cookies
+    with store.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM bridge_sessions").fetchone()[0] == 1
     assert store.webauthn_credential(CREDENTIAL_ID, principal_id=PRINCIPAL_ID)
 
 
@@ -717,7 +845,8 @@ def test_second_registration_is_refused_and_original_passkey_still_signs_in(
         pending = client.post("/api/v1/webauthn/registration/begin", headers=headers)
         assert first.status_code == pending.status_code == 200
         assert "excludeCredentials" not in first.json()
-        finished = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+        finished = client.post("/api/v1/webauthn/registration/finish",
+            headers={**headers, "Cookie": "__Host-first_enrollment=" + first.cookies["__Host-first_enrollment"]},
             json=_registration_payload(private_key, first.json()["challenge"]))
         assert finished.status_code == 200
         for route, body in [
@@ -750,10 +879,12 @@ def test_registration_finish_maps_atomic_duplicate_refusal_to_generic_400(
     with TestClient(application, base_url=ORIGIN) as client:
         pending = [client.post("/api/v1/webauthn/registration/begin", headers=headers) for _ in range(2)]
         assert all(response.status_code == 200 for response in pending)
-        first = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+        first = client.post("/api/v1/webauthn/registration/finish",
+            headers={**headers, "Cookie": "__Host-first_enrollment=" + pending[0].cookies["__Host-first_enrollment"]},
             json=_registration_payload(ec.generate_private_key(ec.SECP256R1()), pending[0].json()["challenge"]))
         assert first.status_code == 200
-        second = client.post("/api/v1/webauthn/registration/finish", headers=headers,
+        second = client.post("/api/v1/webauthn/registration/finish",
+            headers={**headers, "Cookie": "__Host-first_enrollment=" + pending[1].cookies["__Host-first_enrollment"]},
             json=_registration_payload(ec.generate_private_key(ec.SECP256R1()), pending[1].json()["challenge"], credential_bytes=b"second-synthetic-credential"))
         assert second.status_code == 400
         assert second.json() == {"detail": "WebAuthn ceremony could not be completed"}

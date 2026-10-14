@@ -1,0 +1,3182 @@
+[
+  {
+    "case_id": "same-binding-plain-retry",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "idempotent",
+        "idempotent"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "bare-admit",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 7,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "bare-admit",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 7,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "plain-admission-cannot-replace-session",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "bare-admit",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "plain-admission-cannot-replace-generation",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "bare-admit",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 8,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "protected-post-current-session-resume",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "idempotent"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "bare-admit",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "qualified-one-use-callback-resume",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "callback",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "post-new-admission-allows-current-protected-use",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "authorized",
+        "refused"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "use-admission",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "use-admission",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 7,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "callback-new-admission-allows-current-protected-use",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "authorized",
+        "refused"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "callback",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "use-admission",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "use-admission",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 7,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "post-exact-retry-reconciles",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "idempotent"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "callback-exact-retry-reconciles",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "idempotent"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "callback",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "callback",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "read-cannot-upgrade",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "observed",
+        "idempotent"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "read",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "bare-admit",
+        "now": 1100,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 7,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "get-cannot-upgrade",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "GET",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-refuses-origin",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": false,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-refuses-csrf",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": false,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-refuses-current_owner",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": false,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-refuses-key_active",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": false,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-refuses-scope_current",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": false,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-refuses-actor",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "other",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-refuses-scope",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "other",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-fences-expected_admission_generation",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "conflict"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 0,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "resume-fences-expected_workflow_revision",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "conflict"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 0,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "callback-correlation-required",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": false,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "callback",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "callback-already-consumed",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": false,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "callback",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "callback-replay-new-operation",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "refused"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "callback",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 2,
+        "expected_workflow_revision": 3,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "callback",
+        "now": 1100,
+        "operation": "resume-b",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "stale-competing-resume",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "conflict"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-b",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "same-operation-changed-meaning",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "conflict"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-c",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "old-receipt-retired",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "receipt-retired",
+        "receipt-retired"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "use-receipt",
+        "now": 1100,
+        "receipt": "receipt-old",
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 7,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "use-receipt",
+        "now": 1100,
+        "receipt": "receipt-old",
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "retiring-admission-keeps-prior-session-valid",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted",
+        "receipt-retired"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "use-receipt",
+        "now": 1100,
+        "receipt": "receipt-old",
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 7,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "rollback-keeps-original-admission-and-receipt",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "unavailable",
+        "receipt-current"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "rollback": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      },
+      {
+        "actor": "owner",
+        "current_owner": true,
+        "key_active": true,
+        "kind": "use-receipt",
+        "now": 1100,
+        "receipt": "receipt-old",
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2700,
+          "generation": 7,
+          "id": "session-a",
+          "present": true,
+          "revoked": false,
+          "verified_at": 900
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "logout-wins-new-admission",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "after_lock": {
+          "session": {
+            "expires_at": 2800,
+            "generation": 8,
+            "id": "session-b",
+            "present": true,
+            "revoked": true,
+            "verified_at": 1000
+          }
+        },
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "session-expiry-after-lock",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "after_lock": {
+          "session": {
+            "expires_at": 1100,
+            "generation": 8,
+            "id": "session-b",
+            "present": true,
+            "revoked": false,
+            "verified_at": 1000
+          }
+        },
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "session-generation-changed-after-lock",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "after_lock": {
+          "session": {
+            "expires_at": 2800,
+            "generation": 9,
+            "id": "session-b",
+            "present": true,
+            "revoked": false,
+            "verified_at": 1000
+          }
+        },
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "permission-withdrawn-after-lock",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "after_lock": {
+          "current_owner": false
+        },
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "scope-changed-after-lock",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "after_lock": {
+          "scope_current": false
+        },
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "workflow-expired-after-lock",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "expired"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "after_lock": {
+          "now": 1600
+        },
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "original-deadline-cannot-extend",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "expires": 3400,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "v1-workflow-cannot-upgrade",
+    "expected": {
+      "active_generation": 1,
+      "admissions": 1,
+      "expires": 1600,
+      "journal_commits": 0,
+      "original_admission_unchanged": true,
+      "results": [
+        "refused"
+      ],
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "whole_session_revocations": 0,
+      "workflow_revision": 2
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 2700,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "legacy-v1",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "expired-old-session-current-new-session",
+    "expected": {
+      "active_generation": 2,
+      "admissions": 2,
+      "expires": 1600,
+      "journal_commits": 1,
+      "original_admission_unchanged": true,
+      "results": [
+        "readmitted"
+      ],
+      "retired_admissions": [
+        1
+      ],
+      "retired_receipts": [
+        "receipt-old"
+      ],
+      "whole_session_revocations": 0,
+      "workflow_revision": 3
+    },
+    "initial": {
+      "actor": "owner",
+      "admission_generation": 1,
+      "admissions": [
+        {
+          "generation": 1,
+          "session": {
+            "expires_at": 1100,
+            "generation": 7,
+            "id": "session-a",
+            "present": true,
+            "revoked": false,
+            "verified_at": 900
+          }
+        }
+      ],
+      "expires": 1600,
+      "journal_commits": 0,
+      "operation_results": {},
+      "pending_receipts": {
+        "receipt-old": 1
+      },
+      "policy": "current-session-v2",
+      "retired_admissions": [],
+      "retired_receipts": [],
+      "scope": "exact-target",
+      "used_callbacks": [],
+      "workflow_revision": 2
+    },
+    "steps": [
+      {
+        "actor": "owner",
+        "callback_correlated": true,
+        "callback_id": "callback-a",
+        "callback_unused": true,
+        "csrf": true,
+        "current_owner": true,
+        "expected_admission_generation": 1,
+        "expected_workflow_revision": 2,
+        "key_active": true,
+        "kind": "readmit",
+        "method": "POST",
+        "mode": "post",
+        "now": 1100,
+        "operation": "resume-a",
+        "origin": true,
+        "scope": "exact-target",
+        "scope_current": true,
+        "session": {
+          "expires_at": 2800,
+          "generation": 8,
+          "id": "session-b",
+          "present": true,
+          "revoked": false,
+          "verified_at": 1000
+        }
+      }
+    ]
+  }
+]

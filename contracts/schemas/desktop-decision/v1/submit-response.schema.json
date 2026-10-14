@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/desktop-decision/v1/submit-response.schema.json",
+  "title": "Desktop decision submit-response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "ceremony_id",
+    "binding_digest",
+    "state"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:desktop-decision:v1"
+    },
+    "operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "ceremony_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "binding_digest": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "state": {
+      "const": "accepted"
+    }
+  }
+}

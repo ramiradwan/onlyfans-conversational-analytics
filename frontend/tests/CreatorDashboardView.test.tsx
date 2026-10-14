@@ -11,11 +11,12 @@ import type {
   ProjectionState,
   StateSnapshotPayload,
 } from '../src/protocol';
-import type { CapabilityLicenseApi, CapabilityLicenseReadiness } from '../src/services/capabilityLicenseApi';
+
 import { createBridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
 import CreatorDashboardView from '../src/views/CreatorDashboardView';
+import { desktopFixture } from './desktopOnboardingFixture';
 
 const ACCOUNT_ID = 'creator-account';
 const AS_OF = '2026-07-19T12:00:00Z';
@@ -148,47 +149,24 @@ function readyStore(payload = snapshot()) {
   return store;
 }
 
-function readinessApi(
-  ready: boolean | null,
-  readiness?: CapabilityLicenseApi['readiness'],
-): CapabilityLicenseApi {
-  return {
-    readiness: vi.fn(readiness ?? (async () => {
-      if (ready === null) throw new Error('Readiness unavailable.');
-      return {
-        schema: 'ofca-analysis-readiness/v1' as const,
-        commercial_authority: ready ? 'active' as const : 'required' as const,
-        analysis_admission: ready ? 'admitted' as const : 'blocked' as const,
-      };
-    })),
-    redeem: vi.fn(async () => {
-      throw new Error('not used');
-    }),
-  };
+function readinessSource(ready: boolean | null) {
+  const fixture = desktopFixture(false);
+  if (ready === null) fixture.publish({ snapshot: null });
+  else fixture.readiness({ schema: 'ofca-analysis-readiness/v1',
+    commercial_authority: ready ? 'active' : 'required', analysis_admission: ready ? 'admitted' : 'blocked' }, ACCOUNT_ID);
+  return fixture;
 }
 
-function mountDashboard(
-  store: ReturnType<typeof createBridgeTransportStore>,
-  activationApi: CapabilityLicenseApi,
-) {
-  return render(
-    <ThemeProvider theme={theme} defaultMode="light">
-      <MemoryRouter>
-        <CreatorDashboardView activationApi={activationApi} store={store} />
-      </MemoryRouter>
-    </ThemeProvider>,
-  );
+function mountDashboard(store: ReturnType<typeof createBridgeTransportStore>, source: ReturnType<typeof desktopFixture>) {
+  return render(<ThemeProvider theme={theme} defaultMode="light"><MemoryRouter>
+    <CreatorDashboardView activationApi={{ redeem: vi.fn(async () => ({ state: 'checking' as const })) }}
+      store={store} onboardingApi={source.api} />
+  </MemoryRouter></ThemeProvider>);
 }
 
-/** Mounts the dashboard and lets the readiness request settle. */
-async function renderDashboard(
-  store: ReturnType<typeof createBridgeTransportStore>,
-  activationApi = readinessApi(true),
-) {
-  const view = mountDashboard(store, activationApi);
-  await act(async () => {
-    await vi.mocked(activationApi.readiness).mock.results.at(-1)?.value.catch(() => undefined);
-  });
+async function renderDashboard(store: ReturnType<typeof createBridgeTransportStore>, source = readinessSource(true)) {
+  const view = mountDashboard(store, source);
+  await act(async () => undefined);
   return view;
 }
 
@@ -211,16 +189,44 @@ beforeEach(() => useUserStore.getState().actions.setUserRole('creator-ceo'));
 afterEach(() => {
   cleanup();
   useUserStore.getState().actions.setUserRole(null);
+  window.location.hash = '';
 });
 
 describe('CreatorDashboardView', () => {
+  it('uses the reference empty card for confirmed zero activity, then renders arriving data', async () => {
+    window.location.hash = '#journey=11111111-1111-4111-8111-111111111111';
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    await renderDashboard(store);
+    expect(screen.getByRole('heading', { name: 'No new activity yet' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
+    expect(screen.getByText('Not checked', { exact: true })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Review' }).getAttribute('href')).toBe('/settings#message-history');
+    await act(async () => { store.applySnapshot(snapshot({ viewRevision: 2 })); });
+    expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
+    expectStat('Messages', '19');
+  });
+  it('does not treat unavailable counts as an empty received snapshot', async () => {
+    window.location.hash = '#journey=11111111-1111-4111-8111-111111111111';
+    await renderDashboard(readyStore({ ...snapshot({ analyticsView: analytics([null, null, null, null]) }), conversations: [] }));
+    expect(screen.queryByRole('heading', { name: 'No new activity yet' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
+  });
+  it('shows a paused browser without a ready claim in the empty journey', async () => {
+    window.location.hash = '#journey=11111111-1111-4111-8111-111111111111';
+    const store = readyStore({ ...snapshot({ analyticsView: analytics([0, 0, 0, 0]) }), conversations: [] });
+    store.setAgent({ ...store.getState().agent!, browser: { capture: 'paused', site_access: 'granted',
+      history_permission: 'missing', legal_review_required: false, reported_at: AS_OF } });
+    await renderDashboard(store);
+    expect(screen.getByText('Paused', { exact: true })).toBeTruthy();
+    expect(screen.queryByText("You're all set")).toBeNull();
+  });
   it('shows the saved chat count after history completes', async () => {
     await renderDashboard(readyStore());
     expect(overview().getByText('History saved for 1 chats')).toBeTruthy();
     expect(overview().queryByRole('progressbar')).toBeNull();
   });
   it('shows available metrics while setup readiness remains unknown', () => {
-    const api = readinessApi(null, () => new Promise(() => {}));
+    const api = readinessSource(null);
     mountDashboard(readyStore(), api);
     expectStat('Messages', '19');
     expect(screen.getByText('Checking setup…')).toBeTruthy();
@@ -325,7 +331,7 @@ describe('CreatorDashboardView', () => {
     expect(screen.queryByRole('link', { name: 'Open inbox' })).toBeNull();
   });
 
-  it('requires activation without making optional history a setup step', async () => {
+  it('offers optional Full analytics alongside the accessible dashboard', async () => {
     const store = readyStore(
       snapshot({
         analyticsView: analytics([0, 0, 0, 0], 'synced_subset'),
@@ -340,18 +346,11 @@ describe('CreatorDashboardView', () => {
       }),
     );
 
-    await renderDashboard(store, readinessApi(false));
+    await renderDashboard(store, readinessSource(false));
 
-    const prompt = within(screen.getByRole('region', { name: 'Finish setup' }));
-    expect(prompt.getByText('1 of 2 complete')).toBeTruthy();
-    expect(prompt.getByText('Connect the browser extension').textContent).toContain('(done)');
-    expect(prompt.queryByText('Turn on message history')).toBeNull();
-    expect(prompt.getByText('Turn on Full analytics').textContent).not.toContain('(done)');
-    const current = prompt.getAllByRole('listitem').filter((item) => item.getAttribute('aria-current') === 'step');
-    expect(current.map((item) => item.textContent)).toEqual(['2Turn on Full analyticsUse an activation code to turn on Full analytics on this computer.']);
-    expect(prompt.getByRole('link', { name: 'Continue setup' }).getAttribute('href')).toBe(
-      '/settings#full-analytics',
-    );
+    expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
+    expect(screen.queryByText('Turn on message history')).toBeNull();
     expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Recent conversations' })).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
@@ -363,7 +362,7 @@ describe('CreatorDashboardView', () => {
       coverage: { ...COMPLETE_COVERAGE, status: 'partial', phase: 'not_started',
         discovered_conversations: null, complete_conversations: 0, complete_as_of: null },
     }));
-    await renderDashboard(store, readinessApi(true));
+    await renderDashboard(store, readinessSource(true));
     expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
     expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
   });
@@ -402,9 +401,16 @@ describe('CreatorDashboardView', () => {
     expectSplit('Sent', '9');
   });
 
-  it('withholds counts when the projection is unavailable', async () => {
+  it('withholds unavailable counts without claiming that blocked history is syncing', async () => {
     const store = readyStore(
       snapshot({
+        coverage: {
+          ...COMPLETE_COVERAGE,
+          status: 'partial',
+          phase: 'blocked',
+          complete_as_of: null,
+          reason: 'consent_revoked',
+        },
         projection: {
           ...CURRENT_PROJECTION,
           status: 'unavailable',
@@ -420,6 +426,25 @@ describe('CreatorDashboardView', () => {
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain('Numbers unavailable');
     expect(alert.textContent).not.toContain('projection_generation_failed');
+    expect(alert.textContent).not.toMatch(/keep syncing|in the meantime|will appear/iu);
+  });
+
+  it('reports missing counts through resync and disconnect without a recovery promise', async () => {
+    const store = createBridgeTransportStore();
+    store.bindAccount(ACCOUNT_ID);
+    store.setConnection('connected');
+    store.beginResync();
+    await renderDashboard(store);
+
+    expect(screen.getByRole('alert').textContent).toContain('Refreshing your numbers');
+    expect(store.getState().viewRevision).toBeNull();
+    expect(within(overview().getByRole('group', { name: 'Messages' })).queryByText('19')).toBeNull();
+    expect(screen.getByRole('alert').textContent).not.toMatch(/will appear|in a moment/iu);
+
+    act(() => store.markDisconnected());
+    expect(screen.getByRole('alert').textContent).toContain('Dashboard connection interrupted');
+    expect(store.getState().viewRevision).toBeNull();
+    expect(screen.getByRole('alert').textContent).not.toMatch(/will appear|once the connection/iu);
   });
 
   it('keeps the last counts through resync and disconnect', async () => {
@@ -434,7 +459,38 @@ describe('CreatorDashboardView', () => {
     act(() => store.markDisconnected());
     expect(screen.queryByRole('alert')).toBeNull();
     expectStat('Messages', '19');
+
+    act(() => store.setConnection('connected'));
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Updates unavailable');
+    expect(alert.textContent).toContain('Showing your last numbers.');
+    expect(alert.textContent).not.toMatch(/reconnecting|paused|until/iu);
+    expectStat('Messages', '19');
   });
+
+  it.each(['pending', 'degraded', 'unavailable', 'empty'] as const)(
+    'does not claim last numbers are displayed when %s metrics render as unknown',
+    async (caseName) => {
+      const store = readyStore(snapshot({
+        analyticsView: caseName === 'empty' ? analytics([null, null, null, null]) : undefined,
+        projection: caseName === 'empty' ? CURRENT_PROJECTION : {
+          ...CURRENT_PROJECTION, status: caseName, reason: 'projection_lag',
+        },
+      }));
+      await renderDashboard(store);
+      expectStat('Messages', '—');
+
+      act(() => store.beginResync());
+      expect(screen.getByRole('alert').textContent).toBe('Refreshing your numbers');
+      expectStat('Messages', '—');
+      act(() => {
+        store.markDisconnected();
+        store.setConnection('connected');
+      });
+      expect(screen.getByRole('alert').textContent).toBe('Updates unavailable');
+      expectStat('Messages', '—');
+    },
+  );
 
   it('replaces a raw coverage reason code with friendly text when history sync is blocked', async () => {
     const store = readyStore(
@@ -456,7 +512,7 @@ describe('CreatorDashboardView', () => {
     expect(alert.textContent).not.toContain('consent_revoked');
   });
 
-  it('falls back to a generic message for an unrecognized coverage reason code', async () => {
+  it('states the blocked history outcome without inventing a remedy for an unknown reason', async () => {
     const store = readyStore(
       snapshot({
         coverage: {
@@ -473,60 +529,54 @@ describe('CreatorDashboardView', () => {
 
     const alert = screen.getByRole('alert');
     expect(alert.textContent).not.toContain('agent_reported_a_new_code');
-    expect(alert.textContent).toContain('This needs attention');
+    expect(alert.textContent).toBe('History incomplete');
+    expect(alert.textContent).not.toMatch(/needs attention|stopped|Settings|Resume|will/iu);
   });
 
-  it('renders the setup prompt and the overview together once readiness settles', async () => {
-    let resolve!: (readiness: CapabilityLicenseReadiness) => void;
-    const api = readinessApi(null, () => new Promise((settle) => { resolve = settle; }));
-    mountDashboard(readyStore(), api);
-
+  it('renders the setup prompt and overview together when the shared owner view arrives', async () => {
+    const source = readinessSource(null);
+    mountDashboard(readyStore(), source);
     expect(screen.getByText('Checking setup…')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
-
-    await act(async () => resolve({
-      schema: 'ofca-analysis-readiness/v1',
-      commercial_authority: 'required',
-      analysis_admission: 'blocked',
-    }));
-
-    const prompt = screen.getByRole('region', { name: 'Finish setup' });
+    const current = readinessSource(false).api.getState();
+    await act(async () => source.publish(current));
+    const prompt = screen.getByRole('heading', { name: 'Full analytics' });
     const overview = screen.getByRole('region', { name: 'Overview' });
     expect(overview.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText('Loading dashboard…')).toBeNull();
     expectStat('Messages', '19');
   });
 
-  it('checks readiness again on remount while keeping the snapshot', async () => {
-    const store = readyStore();
-    const api = readinessApi(false);
-    const first = await renderDashboard(store, api);
-    first.unmount();
-
-    mountDashboard(store, api);
-    expect(screen.getByText('Checking setup…')).toBeTruthy();
-    await act(async () => undefined);
-    expect(screen.getByRole('region', { name: 'Finish setup' })).toBeTruthy();
+  it('uses the shared current readiness on remount while keeping saved metrics', async () => {
+    const store = readyStore(), source = readinessSource(false);
+    const first = await renderDashboard(store, source); first.unmount();
+    mountDashboard(store, source);
+    expect(screen.queryByText('Checking setup…')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
     expectStat('Messages', '19');
+    expect(source.api.begin).not.toHaveBeenCalled();
   });
 
-  it('stops waiting for readiness after the time limit', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    try {
-      const api = readinessApi(null, () => new Promise(() => undefined));
-      mountDashboard(readyStore(), api);
-      expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
+  it('retains saved metrics through readiness interruption and owner recovery without replay', async () => {
+    const source = readinessSource(true);
+    mountDashboard(readyStore(), source);
+    await act(async () => source.publish({ connected: false, error: 'service_unavailable' }));
+    expectStat('Messages', '19');
+    expect(screen.queryByText('Checking setup…')).toBeNull();
+    await act(async () => source.publish({ connected: true, error: null }));
+    expect(screen.queryByRole('heading', { name: 'Full analytics' })).toBeNull();
+    expectStat('Messages', '19');
+    expect(source.api.begin).not.toHaveBeenCalled();
+  });
 
-      act(() => vi.advanceTimersByTime(3000));
-
-      expect(screen.getByRole('region', { name: 'Overview' })).toBeTruthy();
-      expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
-      expect(screen.getByText('Setup status is unavailable.')).toBeTruthy();
-      expect(screen.getByText('Setup status is unavailable.').closest('[role="alert"]')).not.toBeNull();
-      expect(vi.mocked(api.readiness).mock.calls[0]?.[0]?.aborted).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
+  it('cannot use delayed readiness for another creator', async () => {
+    const source = readinessSource(true);
+    source.readiness({ schema: 'ofca-analysis-readiness/v1', commercial_authority: 'active', analysis_admission: 'admitted' }, 'another-creator');
+    mountDashboard(readyStore(), source);
+    expect(screen.getByRole('heading', { name: 'Full analytics' })).toBeTruthy();
+    expectStat('Messages', '19');
+    expect(screen.queryByText('On')).toBeNull();
+    expect(source.api.begin).not.toHaveBeenCalled();
   });
 });

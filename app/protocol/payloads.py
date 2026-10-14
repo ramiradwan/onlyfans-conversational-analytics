@@ -268,6 +268,8 @@ class BrowserSurfacePayload(StrictModel):
     history_permission: Literal["granted", "missing"]
     legal_review_required: bool
     reported_at: Timestamp
+    history_error_code: Literal["identity_required", "unsupported_revision", "history_unavailable"] | None = Field(
+        default=None, exclude_if=lambda value: value is None)
 
 
 class AgentStatePayload(StrictModel):

@@ -1,0 +1,141 @@
+{
+  "case_count": 480,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "2ce18ac1f4ed27f8ff9bcb467be823050334ac771c728caf5748617902da8c0d",
+      "size": 59299
+    },
+    {
+      "path": "cursor-cases.json",
+      "sha256": "33a1bdb00eae53c3fe1f764c2ae42f03f609dfd05624e4924ff0a231032852d4",
+      "size": 34141
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "b7424d9d53c0953ad5c6b89295391cd5384a0a3f3a8e0a4bfe41bbd297a73bcf",
+      "size": 276164
+    },
+    {
+      "path": "parsing-cases.json",
+      "sha256": "e40f03e4712c8b9857d28b75ebe82d53578b7449a6e6f87caff8df0fb39d7d15",
+      "size": 29065
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "c2012dbb13e38d390b2df75c45c0a2a3eaf2871d0161fe282a5cec60730f141c",
+      "size": 83644
+    },
+    {
+      "path": "readmission-cases.json",
+      "sha256": "cf0c24c5973134d0bf816d8d77f91d7b940637b5430608af5db0934e3c1e2a67",
+      "size": 78748
+    },
+    {
+      "path": "recovery-cases.json",
+      "sha256": "5d98c04c6b38b6d5cf1074dcc7e48982c4ace0b8bc9eac5bc7c402d08a8b361b",
+      "size": 1775
+    },
+    {
+      "path": "response-cases.json",
+      "sha256": "bef88e8b3903e547a804e991102ea545110b8d9b1f7a87cb27bec12bbff2a7f7",
+      "size": 4308
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "8fe9fc09429b1b430b49c40d3f4d6695a08b8482bfea99459ad9bbfc98cd3fe2",
+      "size": 127407
+    }
+  ],
+  "generator": "tools/generate_installation_continuation_v2_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+  "inputs": [
+    {
+      "path": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+      "sha256": "339efe58facf60a5f3b67fde0fb517464b1a96e11a021795f85a35c16bbce8df"
+    },
+    {
+      "path": "docs/installation-setup-continuation-v2.md",
+      "sha256": "d43ac40c45c3b8828b5288d8d9f12a210e3f533fa4ed1e5a08c3bd43d63e7f85"
+    },
+    {
+      "path": "openapi/installation-setup-continuation-v2.openapi.yaml",
+      "sha256": "dabd61ee39561580fad6d0eb1e6370c8fac5ce963900d960f29104416817dcf4"
+    },
+    {
+      "path": "profiles/installation-setup-continuation-proof-v2/profile.json",
+      "sha256": "1b6cafe276895d336c68afd59215c9fd01dbadc0789e19cba3135710c1677f83"
+    },
+    {
+      "path": "profiles/installation-setup-continuation-v2/profile.json",
+      "sha256": "ad93ee2e9daf92e4d1eb0266cc9fbefe1de9dec9939d0cadefa012aa44fd3759"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/binding-request.schema.json",
+      "sha256": "0345f9a81772a75fce972631a9c93c2469388db8c57fe6459e454793c6d53744"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/binding-response.schema.json",
+      "sha256": "9037ea47dfdb6a43986f2488a5c2d1b0f201cd9b174e8d5987b76c01d4f09398"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/definitions.schema.json",
+      "sha256": "677c6178f57641f738e4228298e0da11460a7fd3395a558b96fa9258a2e7d9f1"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/error.schema.json",
+      "sha256": "1577e4d585675578055bef0e7e27a67e108bb85eb64b9ecc55ba91f4a3d613a7"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/event.schema.json",
+      "sha256": "e13d5a1082d0c8bb0386b8fb372f8691b206c375682dedbe2ac2fb05abce7f16"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/prepare-request.schema.json",
+      "sha256": "29a5653f52918660c451edb01daee68ff7eb7ba017ba52a1b5eb84067abb9079"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/prepare-response.schema.json",
+      "sha256": "6edfbc8cd149ad55f1a5f8bf65f6a7060d12149c1ffe67d41ef9dd5ec9207b50"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/proof-challenge-request.schema.json",
+      "sha256": "b1a8a2b2d4e9035f95b138487ba152f639a52ce1704f9358fb62630c977e2b48"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/proof-challenge-response.schema.json",
+      "sha256": "0f83bfb27690e893b88f46638cebdd8cbe5ef33899eddf4c4a35e545ad1d56d0"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/read-request.schema.json",
+      "sha256": "6a83424c94ecfd726a941d5581365c9e9d01fa83a0a6054f122e8988539ad5f8"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/read-response.schema.json",
+      "sha256": "a2c02f141ff64c4453580fea785d64268ed08ed0f5b8817b509aecb62528b0a5"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/snapshot.schema.json",
+      "sha256": "70f21623d6ea24a8830ba7f0f1ac1f10e64c5d563102af9f691ab08305fd17bd"
+    },
+    {
+      "path": "schemas/installation-continuation/v2/stream-request.schema.json",
+      "sha256": "1347593f5e4d263ef829d1fb098517678116d355d5cd7650c5ca7e7609cb7099"
+    },
+    {
+      "path": "tools/generate_installation_continuation_v2_vectors.py",
+      "sha256": "dfc3e30360cf901950e6a2241dc831a4f4b52f34454dabf5f5656ba2accba611"
+    },
+    {
+      "path": "tools/generate_session_admission_cases.py",
+      "sha256": "ef4dfe4a53d18050a5da15c1ef2c84f6d6adba15e83cb75676d9505beac6806b"
+    }
+  ],
+  "profile": "urn:bridge-clean:installation-setup-continuation-vectors:v2",
+  "test_only": true
+}

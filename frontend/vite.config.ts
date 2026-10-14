@@ -3,12 +3,17 @@ import react from '@vitejs/plugin-react-swc';
 import { aliasEntries } from './scripts/aliases.config.js';
 import { fileURLToPath } from 'url';
 import path, { resolve } from 'path';
+import { assertSetupIsolation, assertBrowserTaskIsolation, assertReceivingIsolation, assertDashboardIsolation } from './scripts/setup-isolation.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
   plugins: [
+    { name: 'desktop-setup-isolation', generateBundle(_options, bundle) {
+      assertSetupIsolation(bundle); assertBrowserTaskIsolation(bundle);
+      assertReceivingIsolation(bundle); assertDashboardIsolation(bundle);
+    } },
     react({
       jsxImportSource: '@emotion/react',
       plugins: [
@@ -19,13 +24,13 @@ export default defineConfig({
   resolve: {
     alias: aliasEntries
   },
-  base: process.env.VITE_BASE_PATH || './',
+  base: process.env.VITE_BASE_PATH || '/static/dist/',
   build: {
     outDir: resolve(__dirname, '../app/static/dist'),
     emptyOutDir: true,
     manifest: 'manifest.json',
     rollupOptions: {
-      input: resolve(__dirname, 'index.html'),
+      input: { dashboard: resolve(__dirname, 'index.html'), onboarding: resolve(__dirname, 'onboarding/index.html'), browserTask: resolve(__dirname, 'browser-tasks/index.html'), receiving: resolve(__dirname, 'setup-code/index.html') },
       output: {
         codeSplitting: {
           groups: [

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony/v1/cancel-request.schema.json",
+  "title": "Browser ceremony cancel-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "definitions.schema.json#/$defs/cancelRequest"
+    },
+    "proof": {
+      "$ref": "definitions.schema.json#/$defs/proof"
+    }
+  }
+}

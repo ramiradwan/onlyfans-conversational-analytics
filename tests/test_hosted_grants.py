@@ -5,9 +5,9 @@ import gzip
 import hashlib
 import json
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -1462,6 +1462,226 @@ def _respond_with_replacement(transport, bundle: SignedBundle, grant_type: str, 
         return request(method, path, json_body=json_body)
 
     transport.request = respond
+
+
+class RefreshClock:
+    def __init__(self, now=_INSTANT):
+        self.now = now
+        self.elapsed = 0.0
+        self.waits = []
+
+    def wait(self, seconds):
+        self.waits.append(seconds)
+        self.now += timedelta(seconds=seconds)
+        self.elapsed += seconds
+
+
+def _refresh_clock(client, store, clock):
+    client._clock = store._clock = lambda: clock.now
+    client._monotonic = lambda: clock.elapsed
+    client._wait = clock.wait
+
+
+@pytest.mark.parametrize("grant_type", [
+    "installation_grant", "membership_snapshot", "creator_account_binding", "license_entitlement",
+])
+@pytest.mark.parametrize("skew_seconds", [0.6, 60.0])
+def test_verified_refresh_waits_for_signed_validity_without_another_hosted_request(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim,
+    device: DeviceMetadata, grant_type: str, skew_seconds: float, monkeypatch,
+):
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    if grant_type == "creator_account_binding":
+        association = _association(request_id="0198a1b2-c3d4-7800-8000-000000000014")
+        client.request_creator_association(association)
+        store.record_verified_grants((client.acquire_creator_account_binding(
+            association, membership_reference_id=consumed.grant_reference_ids[1]
+        ),))
+    before = store.verified_grants()
+    current = next(grant for grant in before if grant.grant_type == grant_type)
+    issued_at = int(_INSTANT.timestamp()) + (1 if skew_seconds < 1 else 60)
+    valid_from = datetime.fromtimestamp(issued_at, timezone.utc)
+    clock = RefreshClock(valid_from - timedelta(seconds=skew_seconds))
+    _refresh_clock(client, store, clock)
+    _respond_with_replacement(transport, bundle, grant_type, issued_at=issued_at)
+    requests = []
+    request = transport.request
+
+    def observed_request(method, path, *, json_body):
+        requests.append(path)
+        return request(method, path, json_body=json_body)
+
+    transport.request = observed_request
+    original_replace = store.replace_verified_grant
+    committed_at = []
+
+    def current_replacement(*args, **kwargs):
+        assert clock.now >= valid_from
+        committed_at.append(clock.now)
+        return original_replace(*args, **kwargs)
+
+    monkeypatch.setattr(store, "replace_verified_grant", current_replacement)
+    original_wait = clock.wait
+
+    def waiting(seconds):
+        if not clock.waits:
+            assert store.verified_grants() == before
+        original_wait(seconds)
+
+    client._wait = waiting
+    result = client.refresh_reference(current.reference_id)
+
+    assert result.state == "updated"
+    assert result.policy is None
+    assert committed_at == [valid_from]
+    assert clock.elapsed == pytest.approx(skew_seconds)
+    assert all(0 < seconds <= 0.1 for seconds in clock.waits)
+    assert store.verified_grant(result.grant_reference_ids[0]).valid_from == valid_from
+    refresh_path = {
+        "installation_grant": "/v1/grants/installation:refresh",
+        "membership_snapshot": "/v1/grants/membership:refresh",
+        "creator_account_binding": "/v1/grants/creator-binding:refresh",
+        "license_entitlement": "/v1/grants/license:refresh",
+    }[grant_type]
+    assert requests == [f"/v1/installations/{_INSTALLATION_ID}/proof-challenges", refresh_path]
+
+
+def test_refresh_rejects_replacement_beyond_not_before_tolerance_without_waiting(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim, device: DeviceMetadata,
+):
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    before = store.verified_grants()
+    clock = RefreshClock()
+    _refresh_clock(client, store, clock)
+    _respond_with_replacement(
+        transport, bundle, "membership_snapshot", issued_at=int(_INSTANT.timestamp()) + 61
+    )
+
+    result = client.refresh_reference(consumed.grant_reference_ids[1])
+
+    assert result.state == "unknown"
+    assert clock.waits == []
+    assert store.verified_grants() == before
+
+
+@pytest.mark.parametrize("clock_change", ["stalled", "backwards"])
+def test_replacement_wait_has_a_monotonic_bound_when_local_clock_does_not_advance(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim,
+    device: DeviceMetadata, clock_change: str,
+):
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    before = store.verified_grants()
+    clock = RefreshClock()
+    _refresh_clock(client, store, clock)
+    _respond_with_replacement(
+        transport, bundle, "membership_snapshot", issued_at=int(_INSTANT.timestamp()) + 1
+    )
+
+    def wait(seconds):
+        clock.waits.append(seconds)
+        clock.elapsed += seconds
+        if clock_change == "backwards":
+            clock.now -= timedelta(seconds=seconds)
+
+    client._wait = wait
+    result = client.refresh_reference(consumed.grant_reference_ids[1])
+
+    assert result.state == "unknown"
+    assert clock.elapsed == pytest.approx(60.0)
+    assert store.verified_grants() == before
+
+
+@pytest.mark.parametrize("cancel", ["shutdown", "deadline"])
+def test_replacement_wait_preserves_refresh_shutdown_and_lease_fences(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim,
+    device: DeviceMetadata, cancel: str,
+):
+    from app.security.grant_refresh import GrantRefreshLifecycle
+
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    before = store.verified_grants()
+    clock = RefreshClock()
+    _refresh_clock(client, store, clock)
+    _respond_with_replacement(
+        transport, bundle, "membership_snapshot", issued_at=int(_INSTANT.timestamp()) + 1
+    )
+    renewal = GrantRefreshLifecycle(
+        lambda: store, lambda _: client, clock=lambda: clock.now, monotonic=lambda: clock.elapsed
+    )
+    lease = renewal.lease()
+
+    def wait(seconds):
+        clock.wait(seconds)
+        if cancel == "shutdown":
+            renewal.close()
+        else:
+            clock.elapsed = 25.0
+
+    client._wait = wait
+    result = client.refresh_reference(
+        consumed.grant_reference_ids[1], commit_guard=lambda: renewal.guard(lease)
+    )
+
+    assert result.state == "unknown"
+    assert len(clock.waits) == 1
+    assert store.verified_grants() == before
+    renewal.close()
+
+
+@pytest.mark.parametrize("changed", [
+    "reference-revoked", "installation-revoked", "prior-expired", "reference-replaced",
+])
+def test_replacement_wait_cannot_restore_revoked_expired_or_replaced_prior_authority(
+    tmp_path: Path, bundle: SignedBundle, claim: InstallationClaim,
+    device: DeviceMetadata, changed: str,
+):
+    from app.persistence.auth import AuthenticationStateError, RevocationKey, RevocationScopeType
+
+    client, store, transport, _ = _client(tmp_path, bundle, claim)
+    consumed = client.consume_claim(claim, device)
+    current_id = consumed.grant_reference_ids[1]
+    current = store.verified_grant(current_id)
+    clock = RefreshClock()
+    _refresh_clock(client, store, clock)
+    _respond_with_replacement(
+        transport, bundle, "membership_snapshot", issued_at=int(_INSTANT.timestamp()) + 1
+    )
+
+    def wait(seconds):
+        clock.wait(seconds)
+        if len(clock.waits) != 1:
+            return
+        if changed == "prior-expired":
+            clock.now = current.expires_at
+        elif changed == "reference-replaced":
+            store.replace_verified_grant(current_id, replace(
+                current, reference_id="concurrent-refresh",
+                grant_identifier="0198a1b2-c3d4-7100-8000-000000000097",
+                grant_digest=hashlib.sha256(b"concurrent-refresh").hexdigest(),
+            ), expected=current)
+        else:
+            key = (
+                RevocationKey(RevocationScopeType.VERIFIED_GRANT, current_id)
+                if changed == "reference-revoked"
+                else RevocationKey(RevocationScopeType.INSTALLATION, _INSTALLATION_ID)
+            )
+            store.revoke(key)
+
+    client._wait = wait
+    with pytest.raises(AuthenticationStateError):
+        client.refresh_reference(current_id)
+
+    assert store.verified_grant(current_id).grant_identifier == current.grant_identifier
+    assert not any(
+        grant.grant_identifier == "0198a1b2-c3d4-7100-8000-000000000098"
+        for grant in store.verified_grants()
+    )
+    if changed == "reference-replaced":
+        assert store.verified_grant("concurrent-refresh") in store.verified_grants()
 
 
 @pytest.mark.parametrize(("grant_type", "changes"), [

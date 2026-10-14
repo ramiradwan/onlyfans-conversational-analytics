@@ -883,11 +883,12 @@ def test_unknown_method_keeps_same_channel(route, forward_logs):
 
 def test_surface_report_reaches_session_dispatch(route):
     report = {
-        "schema": "ofca-browser-surface/v1",
+        "schema": "ofca-browser-surface/v2",
         "capture": "active",
         "site_access": "granted",
         "history_permission": "granted",
         "legal_review_required": False,
+        "history_error_code": None,
     }
     with _client(route) as client, client.websocket_connect(
         "/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}

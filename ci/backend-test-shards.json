@@ -206,6 +206,7 @@
     "tests/test_companion_pairing_persistence.py": 1,
     "tests/test_config_identity_sqlite_migration.py": 2,
     "tests/test_content_write_order.py": 1,
+    "tests/test_continuation_finalization.py": 3,
     "tests/test_continuous_analytics.py": 3,
     "tests/test_continuous_recovery.py": 4,
     "tests/test_conversation_fragment_storage.py": 2,
@@ -217,6 +218,8 @@
     "tests/test_creator_vault_deletion_operations.py": 3,
     "tests/test_creator_vault_export.py": 1,
     "tests/test_creator_vault_retention.py": 4,
+    "tests/test_desktop_activation.py": 2,
+    "tests/test_desktop_setup_transfer.py": 4,
     "tests/test_dominant_append_reuse.py": 3,
     "tests/test_durable_ingestion.py": 2,
     "tests/test_encoded_conversation_graph.py": 4,
@@ -251,7 +254,10 @@
     "tests/test_incremental_conversation_integrity.py": 1,
     "tests/test_incremental_enrichment_units.py": 3,
     "tests/test_incremental_graph_units.py": 4,
+    "tests/test_initial_handoff_expiry.py": 3,
+    "tests/test_initial_handoff_read.py": 1,
     "tests/test_insights_snapshot_retention.py": 1,
+    "tests/test_installation_continuation_owner.py": 3,
     "tests/test_integrity_cost_contract.py": 3,
     "tests/test_integrity_fallback_modes.py": 3,
     "tests/test_integrity_ready_handoff.py": 1,
@@ -265,6 +271,8 @@
     "tests/test_membership_insert_plan.py": 2,
     "tests/test_membership_proof_falsifiers.py": 2,
     "tests/test_membership_validation_bounds.py": 2,
+    "tests/test_onboarding_enrollment_runtime.py": 2,
+    "tests/test_onboarding_owner_effects.py": 3,
     "tests/test_packaged_runtime.py": 3,
     "tests/test_packaging_build_mode.py": 3,
     "tests/test_packaging_smoke.py": 1,
@@ -291,7 +299,9 @@
     "tests/test_question_route_guards.py": 2,
     "tests/test_readiness_identity.py": 3,
     "tests/test_recovered_update_reuse.py": 3,
+    "tests/test_redemption_journal_workspace.py": 1,
     "tests/test_reference_sql_component.py": 1,
+    "tests/test_registered_continuation_context.py": 1,
     "tests/test_removed_graph_endpoints.py": 1,
     "tests/test_reply_source_selection.py": 3,
     "tests/test_retention_ci_regressions.py": 1,
@@ -301,6 +311,7 @@
     "tests/test_retention_phase_b_evidence_workflow.py": 1,
     "tests/test_retention_phase_b_supplement_workflow.py": 1,
     "tests/test_retention_restore_authority.py": 3,
+    "tests/test_runtime_activation_entry.py": 4,
     "tests/test_selected_graph_content.py": 4,
     "tests/test_selected_graph_reader.py": 3,
     "tests/test_shared_conversation_pages.py": 4,
@@ -373,6 +384,62 @@
         "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
       },
       {
+        "selector": "tests/test_desktop_admission.py",
+        "reason": "Desktop presentation and browser-task fences persist in the Windows encrypted authentication database."
+      },
+      {
+        "selector": "tests/test_desktop_packaging.py",
+        "reason": "Native desktop packaging must include the complete frozen backend and shared Windows runtime."
+      },
+      {
+        "selector": "tests/test_desktop_activation.py",
+        "reason": "Accepted activation scope and exact result recovery persist on Windows across presentation expiry and restart."
+      },
+      {
+        "selector": "tests/test_desktop_authentication.py",
+        "reason": "Provider choices, attempt binding and response-loss recovery persist in the Windows encrypted authentication journal."
+      },
+      {
+        "selector": "tests/test_desktop_decisions.py",
+        "reason": "Native account and activation decisions preserve exact scope, consent and idempotency through the Windows encrypted writer."
+      },
+      {
+        "selector": "tests/test_redemption_journal_workspace.py",
+        "reason": "Saved workspace recovery must retain unresolved redemption authority and reconcile terminal refusals on Windows."
+      },
+      {
+        "selector": "tests/test_desktop_browser_routes.py",
+        "reason": "Role-separated browser requests use the Windows encrypted admission and ceremony journals."
+      },
+      {
+        "selector": "tests/test_desktop_companion_tasks.py",
+        "reason": "Paired dispatch must preserve exact desktop, operator, task and operation admission in the Windows encrypted database."
+      },
+      {
+        "selector": "tests/test_desktop_browser_tasks.py",
+        "reason": "Browser observations, generations and expiry use the Windows encrypted authentication database."
+      },
+      {
+        "selector": "tests/test_desktop_ceremonies.py",
+        "reason": "Exact ceremony operation recovery and retention must survive native Windows database reopening."
+      },
+      {
+        "selector": "tests/test_desktop_coordinator.py",
+        "reason": "Durable command acceptance, uncertainty and restart recovery use the Windows encrypted writer."
+      },
+      {
+        "selector": "tests/test_desktop_coordinator_routes.py",
+        "reason": "Desktop command admission and event delivery use the Windows encrypted journal and scoped sessions."
+      },
+      {
+        "selector": "tests/test_desktop_runtime_owner.py",
+        "reason": "Configured restart and operator authority must reconcile the same accepted work on Windows."
+      },
+      {
+        "selector": "tests/test_desktop_pairing.py",
+        "reason": "Native pairing reservation, independent comparison, current operator admission and lost-response recovery use the encrypted Windows writer."
+      },
+      {
         "selector": "tests/test_engineering_attestation.py::test_zip_reader_rejects_unsafe_duplicate_encrypted_and_symlink_entries",
         "reason": "ZIP platform metadata changes the parameter bytes and collected node IDs; retain the Windows archive-validation cases as explicit Windows obligations."
       },
@@ -390,10 +457,6 @@
       },
       {
         "selector": "tests/test_installation_key.py",
-        "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
-      },
-      {
-        "selector": "tests/test_launcher.py",
         "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."
       },
       {

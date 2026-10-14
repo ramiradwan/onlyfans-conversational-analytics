@@ -1,0 +1,46 @@
+{
+  "policy": "urn:bridge-clean:onboarding-admission-policy:authentication-selection-v1",
+  "governing_adr": "docs/adr/0031-bound-authentication-attempts-and-current-admission.md",
+  "supersedes": "catalog/desktop-onboarding-admission-policy.json",
+  "desktop_decision_profiles": [
+    "urn:bridge-clean:desktop-decision:v1",
+    "urn:bridge-clean:desktop-decision-proof:v1"
+  ],
+  "authentication_correlation_profiles": [
+    "urn:bridge-clean:browser-ceremony:v1",
+    "urn:bridge-clean:browser-ceremony-proof:v1"
+  ],
+  "browser_consent_actions": [],
+  "retained_domain_profiles": [
+    "urn:bridge-clean:initial-installation-handoff:v2",
+    "urn:bridge-clean:initial-installation-handoff-proof:v2",
+    "urn:bridge-clean:installation-setup-continuation:v2",
+    "urn:bridge-clean:installation-setup-continuation-proof:v2",
+    "urn:bridge-clean:complimentary-onboarding-activation:v1"
+  ],
+  "retired_admission_profiles": [
+    "urn:bridge-clean:initial-installation-handoff:v1",
+    "urn:bridge-clean:initial-installation-handoff-proof:v1",
+    "urn:bridge-clean:installation-setup-continuation:v1",
+    "urn:bridge-clean:installation-setup-continuation-proof:v1"
+  ],
+  "legacy_adapters_required": false,
+  "archived_verification_material_authorizes_service": false,
+  "unchanged_independent_authorities": [
+    "claim",
+    "grant",
+    "creator-account-binding",
+    "bootstrap-recovery",
+    "capability-license",
+    "redemption",
+    "companion-pairing"
+  ],
+  "scope": "desktop-onboarding-browser-ceremonies",
+  "authentication_selection_profiles": [
+    "urn:bridge-clean:browser-authentication-selection:v1",
+    "urn:bridge-clean:browser-authentication-selection-proof:v1"
+  ],
+  "new_oidc_dispatch_requires_selected_child": true,
+  "admitted_browser_reentry": "exact-current-live-admission-original-activation-preparation-absent-only-no-login-no-existing-quote-replacement-no-renewal",
+  "ordinary_sso_allowed": true
+}

@@ -1,0 +1,110 @@
+{
+  "case_count": 733,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "b6a0ab0035afdafc8ed39427842c79130c209e4c0119f0814196505e42bfa6d2",
+      "size": 15040
+    },
+    {
+      "path": "journal-cases.json",
+      "sha256": "17998bf078118b36064bc5b128a5776acf66c459c99cc1f2c4ed79241ce3b77c",
+      "size": 6026
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "6192798e00a712f78822558bd64a7bb33d3fac099dc7da96b42d5f5540403bbe",
+      "size": 34137
+    },
+    {
+      "path": "parsing-cases.json",
+      "sha256": "bfd95816ef1f963775a4d0fa38c11a5c8336fbf7e65ca385c50a8e6c46a62985",
+      "size": 22358
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "2b955c6df6db33fbe664d5630c6797707b2768a6810e02df60cb57c70974b188",
+      "size": 72067
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "6a7d7a9d5fa20332dcbc380d13eb0e33bbe89471578aaf6cdc5c9b05488d1481",
+      "size": 464127
+    }
+  ],
+  "generator": "tools/generate_delivery_recovery_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0034-recover-committed-activation-delivery.md",
+  "inputs": [
+    {
+      "path": "catalog/delivery-recovery-admission-policy.json",
+      "sha256": "e94f11c3bc39117d02c36153025d04fc7e14df9922affe48297906c0ddaa6ffe"
+    },
+    {
+      "path": "docs/adr/0034-recover-committed-activation-delivery.md",
+      "sha256": "4f48aee0fc67446e1c2f965e76c1cdcde56673d11bfd9e6c40f8b51c7aca11b0"
+    },
+    {
+      "path": "docs/capability-license-delivery-recovery-v1.md",
+      "sha256": "29f209582bf63d2c893b6dbfe4a7a57c6c22e5d34f04f413f3dbf68ae22b37b9"
+    },
+    {
+      "path": "openapi/capability-license-delivery-recovery-v1.openapi.yaml",
+      "sha256": "53266e8acc8488b7fa4698217cae0617d730d555e803cfae6f8150c6daa50336"
+    },
+    {
+      "path": "profiles/capability-license-delivery-recovery-proof/v1/profile.json",
+      "sha256": "7393dd1e0a2bb5c635f660538c3c14e8d136f3fec459e173bd5a37edde14486b"
+    },
+    {
+      "path": "profiles/capability-license-delivery-recovery/v1/profile.json",
+      "sha256": "bd9c7bf507ab793a305ba71301280a8b79fe06bdde35cd22612174da0c182a91"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-delivery-recovery-definitions.schema.json",
+      "sha256": "3c35203c01e3b79c5cee4af0f50887e3f24d68153807b80e77ff06bd92134254"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json",
+      "sha256": "6744c6a7d897f685f3ebb775b2365115083f03d8f07bcd2e2a4851bb308d6ccb"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-delivery-recovery-proof-challenge-request.schema.json",
+      "sha256": "25ea8490c28c5dc9697646ec1e2ca558e425938126368b454edb933914d52990"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-delivery-recovery-proof-challenge-response.schema.json",
+      "sha256": "0b1e5289d6968773a1f14ec55472301f431c9b2d180577d273bda0392887d5e0"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-delivery-recovery-read-request.schema.json",
+      "sha256": "c67fda6cb2dad335f621f8bad016d435c8f9e08ba09a4fa14de239e571422105"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-delivery-recovery-read-response.schema.json",
+      "sha256": "6cf1b77f6ad83640823cca613258b99997da1a0e0369658ac7704ad23fc692e1"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-delivery-recovery-recover-request.schema.json",
+      "sha256": "a921619ca15957a5e41245a892c065c458987305cd2de65f87a0d44fd9a1f7bd"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-delivery-recovery-recover-response.schema.json",
+      "sha256": "87b1a18bbdebe47ea90657bbfc316fd801f1042a7b91ce502a42fe4e236f5f14"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-continuation.schema.json",
+      "sha256": "c59babc00cc55a2bf382813daccc9251e67a1d26eb2cf3746eb88e58706df671"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "tools/generate_delivery_recovery_vectors.py",
+      "sha256": "cf4905f21cb79e0ef751b33a764e9e017a1b100fa7da6bfddf197a96621f87ea"
+    }
+  ],
+  "profile": "urn:bridge-clean:capability-license-delivery-recovery-vectors:v1",
+  "test_only": true
+}

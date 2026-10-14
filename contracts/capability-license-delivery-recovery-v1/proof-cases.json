@@ -1,0 +1,871 @@
+[
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":null,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "read-None",
+    "challenge": "mPwe4NJgx_M_TBxPkY8-PIgV4G0ETpc5u9mgcYLk3DE",
+    "operation": "capability-license-delivery-read",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d5631000000002098fc1ee0d260c7f33f4c1c4f918f3e3c8815e06d044e9739bbd9a07182e4dc3100000004504f53540000002f2f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a72656164000000202a5d764070f814ebb8d7a7ca168d5231513d0435bac4bb7b944bb3a56fada2d0000000206361706162696c6974792d6c6963656e73652d64656c69766572792d7265616400000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": null,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "2a5d764070f814ebb8d7a7ca168d5231513d0435bac4bb7b944bb3a56fada2d0",
+    "signature": "IPvqZQwpzikeAM9mobUffTI8IdOFCp0kPzlOIVNKcsU608Qnr5ybIYFeLvhEc7M0HtuJXf7zb35UnS2O0AtZ5Q",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":0,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "read-0",
+    "challenge": "U8XhfFgLSenJO3ZuCGT05Aa_aSEEQrgHX4_9XoELRzg",
+    "operation": "capability-license-delivery-read",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d5631000000002053c5e17c580b49e9c93b766e0864f4e406bf69210442b8075f8ffd5e810b473800000004504f53540000002f2f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265616400000020069eb0666dbbd04a2b482bdf16596bd0aff82de542093a27f6ebb08a7e0f6d98000000206361706162696c6974792d6c6963656e73652d64656c69766572792d7265616400000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 0,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "069eb0666dbbd04a2b482bdf16596bd0aff82de542093a27f6ebb08a7e0f6d98",
+    "signature": "83PkXZMxPkFvx37sEIkKf9LNvKzqg4SUetSloDt4lvgIsn_bFEVGCzuoU4Ec2BgKhtQAi8yLBmgqjzLbM_T3Qg",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":9007199254740991,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "read-9007199254740991",
+    "challenge": "C3NUgKJmd8DQvuRTfc4E26F2xInxM4oWyFscBp_fYG4",
+    "operation": "capability-license-delivery-read",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000200b735480a26677c0d0bee4537dce04dba176c489f1338a16c85b1c069fdf606e00000004504f53540000002f2f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a72656164000000206be85a7e4932416b51bc7ce11f05bde430321f0824a57dfa639c939e6b6b61ba000000206361706162696c6974792d6c6963656e73652d64656c69766572792d7265616400000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 9007199254740991,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "6be85a7e4932416b51bc7ce11f05bde430321f0824a57dfa639c939e6b6b61ba",
+    "signature": "bdFN10-v7OmTMUSFNMNomNilCnb0vNgksVWVlc6P-dElLbMKdXrAKraOygqtOftPmdtOlUqsNQBju16kmar1yw",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "recover-1",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":9007199254740991,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "recover-9007199254740991",
+    "challenge": "tohnlxcC6pXSTlSiKlUVAXYVS2M5kjH5_6pSYPMhnpI",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d56310000000020b68867971702ea95d24e54a22a55150176154b63399231f9ffaa5260f3219e9200000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000206be85a7e4932416b51bc7ce11f05bde430321f0824a57dfa639c939e6b6b61ba000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 9007199254740991,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "6be85a7e4932416b51bc7ce11f05bde430321f0824a57dfa639c939e6b6b61ba",
+    "signature": "XR9tQrMVZvluFo9Czx73r0kZ0aL_5N3c9V067Sd6pBoMsHWXsqa3rR-v6XlH6OkNsbYc07JJWE0lycepk0sGiw",
+    "valid": true
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "redemption-domain",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d524544454d5054494f4e2d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "MXHx4R8Fbk2xtCYaPVG_i2lDueO7wcHb2K2c4st9TLdS-v8EVclzhIOT9Sqpe2ltM3idu5f2d74GIeP0AmPFpA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "activation-domain",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d41435449564154494f4e2d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "WD-uH10wUoFCLO4OiZQ5HjDwruwzeXoWE5s5UshFsSANXV7ZP_T2Lkkmo4DGJAoKpMOSmX_U7M4ZtPrunLO9ZQ",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "ceremony-domain",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d42524f575345522d434552454d4f4e592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "iX0aQnNa8C3uXWm02_l5ktAf_yNe6rQBqsLdXP8d-xRrMyM94muw0pZvDxV4zg75HG0Z9Zf9uIl6gtNufa7nuQ",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "decision-domain",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4445534b544f502d4445434953494f4e2d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "WcGs2Ip3Q2uFUTcDAHH6QWvnQz1xe7ag67_NTvRVsMJzxkyYDU47zMik-3qxhXwGtNqJi0WejbQOaJF1i2rW9Q",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "missing-NUL",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d5631000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "Lf5uDSpSsOjbmGLcvEZntO6WFsr_wdwcSlwUBZ8pgcZHSU3sUhZtZcIYyzmqvgIDakdGPFOMtM3opIXZUMDazg",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "wrong-route",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a646966666572656e74000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "U2h_dYtFtIyGH8zvxoE5KGTaZ_epOaE4GMoRSACUeLV0J1_NyZg5ZqmhpTFGlwr4U_i5PiwZnYcuq_0_aznelQ",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "wrong-method",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a0000000447455420000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "VH-zHZTelIo_J9nIHgDS2Vgr5TGzRjpyy93oyO1RMa4qMuhjZJceda3asndEjqPihVSquN1EJSdirVFsZRmIPw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "wrong-audience",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a6f74686572",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "6I69YAeh3u7amNMtZhHF3JV4PPFlVNggB8QaoAGM8vpgMgnfDYctVccbxyv6L3Xk9S3B229zlqedS-2sZ9zSZw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "bad-length",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d5631000000001f3b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "I7U6mgHOo7t9t8HXkVkE0njjZ1ckHTib0x6ertffYU4zWL66bpa3RZOKTlR7gJjeLMsM92KmkmLzckOfBWYQEw",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "tampered-activation_operation_id",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "changed",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "tampered-delivery_generation",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 2,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "tampered-organization_id",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "changed"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "tampered-installation_id",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "changed",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "tampered-installation_key_id",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "changed",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "tampered-installation_key_jkt",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "changed",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "tampered-creator_account_id",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "changed",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "high-s",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQjR2FUYF0SqBMCo0W08LtKt2o7b_K9UgkmdOz8L57dyYQ",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "zero-r",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAuJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "short-signature",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "padded-signature",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A=",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "padded-challenge",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo=",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "foreign-key",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "uTqu7xKUuI7KPq5336LlpR9d7LSKoh18uay7209ZGGw",
+      "y": "-p2JHc9eofQKdko0ZrEggFaphUQ-Le2sdZncuWUICF0"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "off-curve",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "y": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "extra-jwk",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kid": "extra",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "wrong-purpose",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-read",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "8b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  },
+  {
+    "canonical_request": "{\"activation_operation_id\":\"019a00b0-0000-7000-8000-000000000034\",\"binding\":{\"creator_account_id\":\"creator-fixture\",\"installation_id\":\"installation-fixture\",\"installation_key_id\":\"ik1.jiizqqGbM6AZAq89abRRWA\",\"installation_key_jkt\":\"jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs\",\"organization_id\":\"org-fixture\"},\"delivery_generation\":1,\"profile\":\"urn:bridge-clean:capability-license-delivery-recovery:v1\"}",
+    "case_id": "changed-digest",
+    "challenge": "O0V6Qyx4pqMew0TmkgMdKGG5SrR8806v7rN8SM1Dypo",
+    "operation": "capability-license-delivery-recover",
+    "proof_bytes_hex": "4252494447452d434c45414e2d4341504142494c4954592d4c4943454e53452d44454c49564552592d5245434f564552592d50524f4f462d563100000000203b457a432c78a6a31ec344e692031d2861b94ab47cf34eafeeb37c48cd43ca9a00000004504f5354000000322f76312f6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f7665726965733a7265636f766572000000208b3d56599394c7f2ff3850bb30e1412fb9f659035a3d3dbf85b627a05844e770000000236361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657200000014696e7374616c6c6174696f6e2d666978747572650000000b6f72672d666978747572650000001a696b312e6a69697a717147624d36415a417138396162525257410000004e75726e3a6272696467652d636c65616e3a636f6d6d65726369616c2d636f6e74726f6c2d706c616e653a6361706162696c6974792d6c6963656e73652d64656c69766572792d7265636f76657279",
+    "public_key": {
+      "crv": "P-256",
+      "kty": "EC",
+      "x": "W8NxakL7vtoKCYcmlqQj8_isBaZlw-vxADjqvtBtPGM",
+      "y": "aC5oGQGN3fZGroaTqcTf_3PpFB_4Sy0b-Y7upsC5-ck"
+    },
+    "request": {
+      "activation_operation_id": "019a00b0-0000-7000-8000-000000000034",
+      "binding": {
+        "creator_account_id": "creator-fixture",
+        "installation_id": "installation-fixture",
+        "installation_key_id": "ik1.jiizqqGbM6AZAq89abRRWA",
+        "installation_key_jkt": "jiizqqGbM6AZAq89abRRWOhd603CFN9yFIzTml5-Dxs",
+        "organization_id": "org-fixture"
+      },
+      "delivery_generation": 1,
+      "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+    },
+    "request_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "signature": "tWYEa0a4-jenx1vVq97HkFbk3fVLfI9A0Q36kHtGCQguJ6rm6LtV_D9XLpLD0S1R4lgesPfDHDtWfou3FKuy8A",
+    "valid": false
+  }
+]

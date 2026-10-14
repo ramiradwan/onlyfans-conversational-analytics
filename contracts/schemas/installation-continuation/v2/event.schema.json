@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/installation-continuation/v2/event.schema.json",
+  "title": "Installation setup continuation event v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "kind",
+    "snapshot"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:installation-setup-continuation:v2"
+    },
+    "kind": {
+      "enum": [
+        "snapshot",
+        "committed"
+      ]
+    },
+    "snapshot": {
+      "$ref": "snapshot.schema.json"
+    }
+  }
+}

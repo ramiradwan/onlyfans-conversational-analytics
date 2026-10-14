@@ -1,0 +1,86 @@
+{
+  "case_count": 281,
+  "files": [
+    {
+      "path": "policy-cases.json",
+      "sha256": "1369b5bef4550ed4e20dbabda22ebe8e9bc0da5bac21c043742566853f42aa4e",
+      "size": 183554
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "bda584d5103d147568e3c8645b98b7891320f070e4bf99a865e5ba36683efcc8",
+      "size": 92434
+    }
+  ],
+  "generator": "tools/generate_complimentary_activation_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+  "inputs": [
+    {
+      "path": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+      "sha256": "339efe58facf60a5f3b67fde0fb517464b1a96e11a021795f85a35c16bbce8df"
+    },
+    {
+      "path": "docs/complimentary-onboarding-activation-v1.md",
+      "sha256": "3895e554f52c145085473c2049a85bc92559447088e948cd260d232f1c86413e"
+    },
+    {
+      "path": "openapi/complimentary-onboarding-activation-v1.openapi.yaml",
+      "sha256": "a3c96196426971ff91ff61be477eae5db03f59130d2fff357353af021aab2b5f"
+    },
+    {
+      "path": "profiles/complimentary-onboarding-activation/v1/profile.json",
+      "sha256": "b6d27ee6a1c8fa7566f55c98a1ed7651bd020c0bb1732ca5756c211c5a3dc0a3"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-continuation.schema.json",
+      "sha256": "c59babc00cc55a2bf382813daccc9251e67a1d26eb2cf3746eb88e58706df671"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/committed.schema.json",
+      "sha256": "607f7263bedf1981e479655e40330ea9ec4a1684e8c3724a8de5a82ff9c40ba5"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/confirm-request.schema.json",
+      "sha256": "e62a195328bbb5beeae098a5be721d089249e389100cef1064bcd292c7b356bd"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/confirm-response.schema.json",
+      "sha256": "c8e967cf00c2d572c1206d88b575823f4dee0aa6385e80a9ff9b4c044abba016"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/error.schema.json",
+      "sha256": "718a50017aefde19323a884109df69a61507e77f4b54010e9469f651aa51281a"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/prepare-request.schema.json",
+      "sha256": "1b4e8541768ed35eca7e31ea01400012b74b63b7b8f6b9414eebf11116ef1591"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/prepare-response.schema.json",
+      "sha256": "81108f18261d5552584a091b4944373656cfb219081e9c4bd34d835c9e640d74"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/prepared.schema.json",
+      "sha256": "8ebe6d25af3b059bc8605b80b752d4c6efb179e4621996a55116e0ee373b4d8d"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/read-request.schema.json",
+      "sha256": "37f212a715df064d872f2f23366f230ad5f82db850dbda6fab0f72742eb2aea6"
+    },
+    {
+      "path": "schemas/complimentary-activation/v1/read-response.schema.json",
+      "sha256": "797d84fcade24c4c0bffe9a907d0ccefefe0e7bee7455250d572e0492f379d04"
+    },
+    {
+      "path": "tools/generate_complimentary_activation_vectors.py",
+      "sha256": "4a3d8318c9dee22e409f420de7f1a548382e56e0946e06956b5b671d5c173bbb"
+    }
+  ],
+  "profile": "urn:bridge-clean:complimentary-onboarding-activation-vectors:v1",
+  "test_only": true
+}

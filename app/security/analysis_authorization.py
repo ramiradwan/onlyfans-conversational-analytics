@@ -359,10 +359,19 @@ def require_cached_analysis_run(
     if identity is None or identity.creator_account_id != creator_account_id:
         clear_analysis_policy(creator_account_id)
         raise _denied("Current analysis admission does not match the account")
-    if not store.runtime_policy_is_current(policy):
-        clear_analysis_policy(creator_account_id)
-        raise _denied("Current analysis admission is stale")
     try:
+        if not store.runtime_policy_is_current(policy):
+            refreshed = _compose_current_analysis_policy(store, identity)
+            original_scope, current_scope = policy.identity_authority, refreshed.identity_authority
+            fields = ("organization_id", "installation_id", "installation_key_id", "installation_key_jkt")
+            if original_scope is None or current_scope is None or any(
+                getattr(original_scope, field) != getattr(current_scope, field) for field in fields
+            ):
+                raise _denied("Current analysis admission scope changed")
+            # The global epoch also advances for unrelated session changes.
+            # Recompose the admitted scope from current authority before work.
+            policy = refreshed
+            _cache_analysis_policy(policy)
         require_current_analysis_run(policy)
     except RuntimeAuthorizationDenied:
         clear_analysis_policy(creator_account_id)

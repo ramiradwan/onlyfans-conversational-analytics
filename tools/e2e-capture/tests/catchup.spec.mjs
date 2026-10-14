@@ -4,7 +4,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import { BrainProcess } from '../lib/brain.mjs';
-import { establishBrowserWebAuthnSession, readBrainSummary, requestAgentPairingTicket,
+import { establishBrowserWebAuthnSession, readBrainSummary, pairCompanionForCapture,
   readServedRuntimeConfig } from '../lib/brain-probe.mjs';
 import {
   ONLYFANS_ORIGIN_PATTERN,
@@ -13,7 +13,7 @@ import {
   openManageExtension,
   openPopup,
 } from '../lib/consent-ui.mjs';
-import { bindAgentFromBridgePage, extensionId, extensionWorker, launchExtensionBrowser,
+import { extensionId, extensionWorker, launchExtensionBrowser,
   terminateExtensionWorker } from '../lib/extension-browser.mjs';
 import { EXTENSION_DIST, assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 import { installCatchupShim, readCatchupMessageIds, withCatchupDiagnostics } from '../lib/catchup-diagnostics.mjs';
@@ -46,9 +46,8 @@ async function grantHistoryPermission(context, popup, worker) {
   if (granted) return;
 
   const options = await openManageExtension(popup);
-  await expect(options.getByRole('button', { name: 'Allow message history' })).toBeVisible();
-  const settingsPage = context.waitForEvent('page');
-  await options.getByRole('button', { name: 'Allow message history' }).click();
+  await expect(options.getByRole('button', { name: 'Allow browser access' })).toBeVisible();
+  await options.getByRole('button', { name: 'Allow browser access' }).click();
   const hasPermission = () => worker.evaluate(async (origin) => chrome.permissions.contains({
     permissions: ['webRequest'],
     origins: [origin],
@@ -60,13 +59,13 @@ async function grantHistoryPermission(context, popup, worker) {
     await expect.poll(hasPermission, { timeout: 1_500 }).toBe(true);
     grantedWithoutPrompt = true;
   } catch {}
-  if (!grantedWithoutPrompt) await acceptNativeHostPermissionPrompt(context);
+  if (!grantedWithoutPrompt) await acceptNativeHostPermissionPrompt(context, {
+    requestKind: 'history', readPermission: hasPermission,
+  });
   await expect.poll(hasPermission, {
     timeout: 12_000,
     message: 'History permission was not granted through the extension UI.',
   }).toBe(true);
-  const opened = await settingsPage;
-  if (opened !== popup && opened !== options) await opened.close().catch(() => undefined);
   await options.close().catch(() => undefined);
 }
 
@@ -118,6 +117,15 @@ for (const enabled of [true, false]) {
       context = await launchExtensionBrowser(path.join(root, 'profile'), directory);
       const worker = await extensionWorker(context);
       const id = extensionId(worker);
+      // Full can open its inactive helper immediately. Every platform document
+      // must already have the synthetic network and signer binding available.
+      // Discover the worker first so the fixture permits this extension's assets.
+      const platform = new SyntheticPlatform();
+      const old = new Date(Date.now() - 3_600_000).toISOString();
+      platform.seedCatchup('101', 'initial101', old);
+      platform.seedCatchup('102', 'initial102', old);
+      await platform.install(context);
+      await context.exposeBinding('syntheticCatchupRead', (source, request, category) => platform.readCatchupPage(request, category));
       const auth = path.join(root, 'auth.sqlite3');
       brain = new BrainProcess({ authDatabasePath: auth, canonicalDatabasePath: path.join(root, 'canonical.sqlite3'),
         projectionDatabasePath: path.join(root, 'projections.sqlite3'), extensionId: id,
@@ -128,18 +136,10 @@ for (const enabled of [true, false]) {
       for (const page of context.pages()) if (page.url().startsWith('chrome-extension://')) await page.close();
       const bridge = context.pages()[0] ?? await context.newPage();
       await establishBrowserWebAuthnSession(bridge, auth);
-      const pairing = await requestAgentPairingTicket(context);
-      await bindAgentFromBridgePage(bridge, { extensionId: id, creatorAccountId: pairing.creatorAccountId,
-        authTicket: pairing.pairingTicket, storageBootstrap: pairing.storageBootstrap });
+      await pairCompanionForCapture(context);
       const historyPopup = await openPopup(context, id, []);
       await grantHistoryPermission(context, historyPopup, worker);
       await historyPopup.close();
-      const platform = new SyntheticPlatform();
-      const old = new Date(Date.now() - 3_600_000).toISOString();
-      platform.seedCatchup('101', 'initial101', old);
-      platform.seedCatchup('102', 'initial102', old);
-      await platform.install(context);
-      await context.exposeBinding('syntheticCatchupRead', (source, request, category) => platform.readCatchupPage(request, category));
       let lastSummary = null;
       const summary = async () => (lastSummary = await readBrainSummary(context, { catchup: true }));
       const poll = (read, expected, timeout = 180_000, checkpoint = null) => withCatchupDiagnostics(

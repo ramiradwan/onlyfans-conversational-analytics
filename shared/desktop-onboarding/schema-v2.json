@@ -1,0 +1,824 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ofca:desktop-onboarding:v2",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reason": {
+      "enum": [
+        "none",
+        "operation_unconfirmed",
+        "authority_unavailable",
+        "browser_unavailable",
+        "account_mismatch",
+        "operation_expired",
+        "operation_refused",
+        "activation_unavailable"
+      ]
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "action",
+        "state",
+        "reason"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "action": {
+          "enum": [
+            "browser.access",
+            "account.connect",
+            "setup.finalize",
+            "browser.pair",
+            "activation.review",
+            "account.confirm",
+            "activation.confirm",
+            "auth.select",
+            "auth.cancel",
+            "auth.switch"
+          ]
+        },
+        "state": {
+          "enum": [
+            "accepted",
+            "waiting",
+            "outcome_unknown",
+            "completed",
+            "refused"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "kind",
+        "journey_id",
+        "operation_id",
+        "expected",
+        "action"
+      ],
+      "properties": {
+        "profile": {
+          "const": "desktop-onboarding.v1"
+        },
+        "kind": {
+          "const": "command"
+        },
+        "journey_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            }
+          ]
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "expected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "generation",
+            "revision",
+            "scope_digest"
+          ],
+          "properties": {
+            "generation": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "scope_digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "action": {
+          "enum": [
+            "browser.access",
+            "account.connect",
+            "setup.finalize",
+            "browser.pair",
+            "activation.review",
+            "account.confirm",
+            "activation.confirm",
+            "auth.select",
+            "auth.cancel",
+            "auth.switch"
+          ]
+        },
+        "provider": {
+          "enum": [
+            "google",
+            "microsoft-personal",
+            "default"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "enum": [
+                  "auth.select",
+                  "auth.switch"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "provider"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "not": {
+                  "enum": [
+                    "account.connect",
+                    "auth.select",
+                    "auth.switch"
+                  ]
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "provider"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "kind",
+        "journey_id",
+        "generation",
+        "revision",
+        "expires_at",
+        "scope_digest",
+        "next_task",
+        "facts",
+        "local_ready",
+        "full_ready",
+        "pending_operations",
+        "allowed_actions",
+        "reason",
+        "analysis_readiness"
+      ],
+      "properties": {
+        "profile": {
+          "const": "desktop-onboarding.v2"
+        },
+        "kind": {
+          "const": "snapshot"
+        },
+        "journey_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            }
+          ]
+        },
+        "generation": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expires_at": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "scope_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "next_task": {
+          "enum": [
+            "browser-access",
+            "account-connection",
+            "finish-setup",
+            "complete"
+          ]
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "browser_access",
+            "installation",
+            "account",
+            "configuration",
+            "enrollment",
+            "pairing",
+            "activation",
+            "analysis"
+          ],
+          "properties": {
+            "browser_access": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified",
+                "paused"
+              ]
+            },
+            "installation": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "account": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "configuration": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "enrollment": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "pairing": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "activation": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            },
+            "analysis": {
+              "enum": [
+                "unknown",
+                "missing",
+                "verified"
+              ]
+            }
+          }
+        },
+        "local_ready": {
+          "type": "boolean"
+        },
+        "full_ready": {
+          "type": "boolean"
+        },
+        "pending_operations": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        },
+        "allowed_actions": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "browser.access",
+              "account.connect",
+              "setup.finalize",
+              "browser.pair",
+              "activation.review",
+              "account.confirm",
+              "activation.confirm",
+              "auth.select",
+              "auth.cancel",
+              "auth.switch"
+            ]
+          }
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "operation_unconfirmed",
+            "authority_unavailable",
+            "browser_unavailable",
+            "account_mismatch",
+            "operation_expired",
+            "operation_refused",
+            "activation_unavailable"
+          ]
+        },
+        "decision": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "expires_at",
+                "creator_id",
+                "computer_name",
+                "operation_id"
+              ],
+              "properties": {
+                "action": {
+                  "const": "connect-account"
+                },
+                "expires_at": {
+                  "type": "string",
+                  "minLength": 24,
+                  "maxLength": 24,
+                  "pattern": "^(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+                },
+                "creator_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+                },
+                "computer_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "operation_id": {
+                  "$ref": "#/$defs/uuid"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "expires_at",
+                "offer",
+                "operation_id"
+              ],
+              "properties": {
+                "action": {
+                  "const": "activate-complimentary"
+                },
+                "expires_at": {
+                  "type": "string",
+                  "minLength": 24,
+                  "maxLength": 24,
+                  "pattern": "^(?:(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29|[0-9]{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12][0-9]|3[01])|(?:0[469]|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8])))T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+                },
+                "offer": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "offer_version_id",
+                    "description",
+                    "funding",
+                    "pilot_credit_cost",
+                    "capability",
+                    "licensed_major_version",
+                    "compatible_artifact_family",
+                    "update_rights",
+                    "fallback_major_versions"
+                  ],
+                  "properties": {
+                    "offer_version_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "funding": {
+                      "const": "complimentary-pilot"
+                    },
+                    "pilot_credit_cost": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000000
+                    },
+                    "capability": {
+                      "const": "analysis-run"
+                    },
+                    "licensed_major_version": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2147483647
+                    },
+                    "compatible_artifact_family": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+                    },
+                    "update_rights": {
+                      "type": "boolean"
+                    },
+                    "fallback_major_versions": {
+                      "type": "array",
+                      "maxItems": 128,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2147483647
+                      }
+                    }
+                  }
+                },
+                "operation_id": {
+                  "$ref": "#/$defs/uuid"
+                }
+              }
+            }
+          ]
+        },
+        "decision_status": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "operation_id",
+                "state"
+              ],
+              "properties": {
+                "operation_id": {
+                  "$ref": "#/$defs/uuid"
+                },
+                "state": {
+                  "enum": [
+                    "awaiting-authentication",
+                    "confirmation-required",
+                    "accepted",
+                    "unavailable"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "authentication": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "operation_id",
+                "browser_operation_id",
+                "state",
+                "choices",
+                "actions",
+                "authentication_attempt"
+              ],
+              "properties": {
+                "operation_id": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/$defs/uuid"
+                    }
+                  ]
+                },
+                "browser_operation_id": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/$defs/uuid"
+                    }
+                  ]
+                },
+                "state": {
+                  "enum": [
+                    "selection-required",
+                    "reauthentication-required",
+                    "selected",
+                    "admitted",
+                    "retired",
+                    "expired",
+                    "unavailable"
+                  ]
+                },
+                "choices": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "google",
+                    "microsoft-personal",
+                    "default"
+                  ],
+                  "properties": {
+                    "google": {
+                      "type": "boolean"
+                    },
+                    "microsoft-personal": {
+                      "type": "boolean"
+                    },
+                    "default": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "actions": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "select",
+                    "cancel",
+                    "open_browser",
+                    "switch_account"
+                  ],
+                  "properties": {
+                    "select": {
+                      "type": "boolean"
+                    },
+                    "cancel": {
+                      "type": "boolean"
+                    },
+                    "open_browser": {
+                      "type": "boolean"
+                    },
+                    "switch_account": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "authentication_attempt": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "authentication_attempt_id",
+                        "provider",
+                        "mode"
+                      ],
+                      "properties": {
+                        "authentication_attempt_id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                        },
+                        "provider": {
+                          "enum": [
+                            "google",
+                            "microsoft-personal",
+                            "default"
+                          ]
+                        },
+                        "mode": {
+                          "enum": [
+                            "sign-in",
+                            "switch-account"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "creator_label": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "creator_id",
+                "display_name",
+                "username"
+              ],
+              "properties": {
+                "creator_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "username": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            }
+          ]
+        },
+        "continuation_available": {
+          "type": "boolean"
+        },
+        "analysis_readiness": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "availability",
+                "creator_account_id",
+                "value"
+              ],
+              "properties": {
+                "availability": {
+                  "const": "current"
+                },
+                "creator_account_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+                },
+                "value": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "schema",
+                    "commercial_authority",
+                    "analysis_admission"
+                  ],
+                  "properties": {
+                    "schema": {
+                      "const": "ofca-analysis-readiness/v1"
+                    },
+                    "commercial_authority": {
+                      "enum": [
+                        "required",
+                        "active",
+                        "unavailable"
+                      ]
+                    },
+                    "analysis_admission": {
+                      "enum": [
+                        "blocked",
+                        "admitted"
+                      ]
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "analysis_admission": {
+                            "const": "admitted"
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "commercial_authority": {
+                            "const": "active"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "availability",
+                "creator_account_id",
+                "value"
+              ],
+              "properties": {
+                "availability": {
+                  "const": "unknown"
+                },
+                "creator_account_id": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "availability",
+                "creator_account_id",
+                "value"
+              ],
+              "properties": {
+                "availability": {
+                  "const": "unauthorized"
+                },
+                "creator_account_id": {
+                  "type": "null"
+                },
+                "value": {
+                  "type": "null"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

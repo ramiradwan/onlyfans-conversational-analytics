@@ -1,20 +1,22 @@
 // The extension's own state as reported to Brain over an authenticated
 // companion session (ADR 0045). It names no account, count, or identifier.
-export const BROWSER_SURFACE_SCHEMA = 'ofca-browser-surface/v1';
+export const BROWSER_SURFACE_SCHEMA = 'ofca-browser-surface/v2';
 
-export function browserSurface({ consent, legal }) {
+export function browserSurface({ consent, legal, historyErrorCode = null }) {
   const mode = consent?.consent?.mode;
   const capture = mode === 'full' ? 'active'
     : mode === 'paused' && consent.consent.resume_mode === 'full' ? 'paused' : 'off';
   const siteAccess = consent?.phase === 'permission_required' || consent?.onlyfans_permission === false
     ? 'needs_approval'
-    : consent?.reload_required === true ? 'reload_required' : 'granted';
+    : 'granted';
   return {
     schema: BROWSER_SURFACE_SCHEMA,
     capture,
     site_access: siteAccess,
     history_permission: consent?.history_permission === true ? 'granted' : 'missing',
     legal_review_required: legal?.requires_reauthorization === true,
+    history_error_code: ['identity_required', 'unsupported_revision', 'history_unavailable'].includes(historyErrorCode)
+      ? historyErrorCode : null,
   };
 }
 
@@ -27,6 +29,16 @@ export function applyControl(consentController, action) {
     return consentController.state?.mode === 'paused' ? consentController.setMode('resume') : undefined;
   }
   return undefined;
+}
+
+/** Fixed browser destinations only; the page owns any permission prompt. */
+export function openBrowserControl(action, { openSurface, openCreatorAccount }) {
+  if (action === 'browser.open.creator') return openCreatorAccount();
+  if (action === 'browser.open.history') return openSurface({ surface: 'options', section: 'history', presentation: 'window' });
+  if (action === 'browser.open.setup' || action === 'browser.open.access') {
+    return openSurface({ surface: 'setup', section: 'full', presentation: 'window' });
+  }
+  throw Error('browser_action_unavailable');
 }
 
 // Recompute on change events only. Coalesces bursts into one read.

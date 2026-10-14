@@ -1,0 +1,226 @@
+openapi: 3.1.0
+info:
+  title: Native decisions over existing browser admission
+  version: 1.0.0
+paths:
+  /v1/onboarding/desktop-decision-proof-challenges:
+    post:
+      operationId: issueDesktopDecisionProofChallenge
+      summary: Issue a uniform nonauthorizing desktop-decision challenge
+      x-contract-profile: urn:bridge-clean:desktop-decision-proof:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: No customer admission or proof required to issue a uniform
+        nonauthorizing challenge; later operation verifies the exact installation
+        key and request.
+      x-idempotency: Each challenge is one-use and expires within 60 seconds; creating
+        a challenge creates no admission, display lease or consent.
+      x-rate-limit: bounded per source/key and ingress without existence disclosure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/desktop-decision/v1/proof-challenge-request.schema.json
+      responses:
+        '200':
+          description: Uniform 32-byte challenge, exact canonical request digest and
+            original challenge expiry.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/proof-challenge-response.schema.json
+        '400':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '413':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '429':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '503':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+  /v1/onboarding/desktop-decisions:read:
+    post:
+      operationId: readDesktopDecision
+      summary: Read one exact existing authenticated decision without renewing authority
+      x-contract-profile: urn:bridge-clean:desktop-decision:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: Exact installation-key read proof; current Provider-held customer
+        admission is required for display eligibility, but never created by read.
+        Original accepted-result recovery retains exact source/key proof.
+      x-idempotency: Noncreating nonrenewing projection; same admission and display
+        produces the same reference.
+      x-rate-limit: bounded per source/key and ingress without existence disclosure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/desktop-decision/v1/read-request.schema.json
+      responses:
+        '200':
+          description: Closed nonauthorizing display or existing owner acceptance;
+            no local readiness claim
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/read-response.schema.json
+        '400':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '401':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '403':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '409':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '410':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '413':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '429':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '503':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+  /v1/onboarding/desktop-decisions:submit:
+    post:
+      operationId: submitDesktopDecision
+      summary: Submit exact explicit desktop consent to the existing source owner
+      x-contract-profile: urn:bridge-clean:desktop-decision:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: Exact installation-key submit proof plus independent current
+        Provider-held customer admission and owner permission for new consent. An
+        exact original accepted result may be reconciled without renewed admission.
+      x-idempotency: one existing action; ambiguous result reconciles by fresh proof
+        read; never automatic resubmit
+      x-rate-limit: bounded per source/key and ingress without existence disclosure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/desktop-decision/v1/submit-request.schema.json
+      responses:
+        '200':
+          description: Original source-owner action accepted; enrollment commitment,
+            license issuance and local readiness are not implied.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/submit-response.schema.json
+        '400':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '401':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '403':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '409':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '410':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '413':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '429':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json
+        '503':
+          description: Closed refusal; unknown and foreign scopes do not disclose
+            existence
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/desktop-decision/v1/error.schema.json

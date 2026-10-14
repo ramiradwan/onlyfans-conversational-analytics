@@ -1,0 +1,48 @@
+{
+  "profile": "urn:bridge-clean:initial-installation-handoff-proof:v2",
+  "governing_adr": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+  "domain": "BRIDGE-CLEAN-INITIAL-INSTALLATION-HANDOFF-PROOF-V2\u0000",
+  "algorithm": "ES256",
+  "signature_encoding": "ieee-p1363-low-s",
+  "audience": "urn:bridge-clean:commercial-control-plane:initial-installation-handoff",
+  "canonical_request": "RFC8785(request)",
+  "request_digest": "SHA-256",
+  "field_encoding": "uint32be-length-prefixed",
+  "fields": [
+    "challenge-raw32",
+    "method-utf8",
+    "path-utf8",
+    "request-digest-raw32",
+    "purpose-utf8",
+    "RFC7638-key-thumbprint-raw32",
+    "audience-utf8"
+  ],
+  "challenge_ttl_seconds": 60,
+  "challenge_single_use": true,
+  "purposes": {
+    "initial-handoff-prepare": {
+      "method": "POST",
+      "path": "/v2/onboarding/installation-handoffs:prepare"
+    },
+    "initial-handoff-wait": {
+      "method": "POST",
+      "path": "/v2/onboarding/installation-handoffs:wait"
+    },
+    "initial-handoff-complete": {
+      "method": "POST",
+      "path": "/v2/onboarding/installation-handoffs:complete"
+    },
+    "initial-handoff-receipt": {
+      "method": "POST",
+      "path": "/v2/onboarding/installation-handoffs:receipt"
+    }
+  },
+  "prepare_authority": "key-possession-only",
+  "complete_challenge_admission": "exact-server-held-authorized-scope-and-revision",
+  "cross_domain_detection": "forbidden",
+  "receipt_admission": "active-registered-key-exact-original-operation-and-current-authority",
+  "messages": {
+    "proof-challenge-request": "schemas/initial-handoff/v2/proof-challenge-request.schema.json",
+    "proof-challenge-response": "schemas/initial-handoff/v2/proof-challenge-response.schema.json"
+  }
+}

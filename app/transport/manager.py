@@ -9,7 +9,7 @@ import hmac
 import json
 import secrets
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from pathlib import Path
@@ -121,7 +121,8 @@ class BridgeBinding:
     view_revision: int | None = None
 
 
-BROWSER_CONTROL_ACTIONS = frozenset({"capture.pause", "capture.resume", "companion.revoked"})
+BROWSER_CONTROL_ACTIONS = frozenset({"capture.pause", "capture.resume", "companion.revoked",
+    "browser.open.setup", "browser.open.access", "browser.open.history", "browser.open.creator"})
 
 
 @dataclass(slots=True)
@@ -131,6 +132,7 @@ class BrowserSession:
     pairing_id: str
     send: Callable[[dict[str, Any]], Awaitable[None]]
     surface: dict[str, Any] | None = None
+    tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -257,90 +259,6 @@ class InMemoryTransportManager:
                 "Development stub authentication requires a local development exposure"
 
             )
-
-    def consume_launcher_bootstrap(
-        self,
-        ticket: str,
-    ) -> bool:
-        """Atomically consume a local-launch credential by hash."""
-        ticket_hash = hashlib.sha256(ticket.encode("utf-8")).hexdigest()
-        with self.canonical_database.transaction() as connection:
-            inserted = connection.execute(
-                """INSERT OR IGNORE INTO launcher_bootstrap_consumptions(
-                       ticket_hash,principal_id,creator_account_id,consumed_at
-                   ) VALUES (?,?,?,?)""",
-                (
-                    ticket_hash,
-                    "",
-                    "",
-                    utc_now().isoformat(),
-                ),
-            )
-            return inserted.rowcount == 1
-
-    def issue_launcher_handoff(
-        self,
-        ticket: str,
-        *,
-        ttl_seconds: int,
-        now: datetime | None = None,
-    ) -> str | None:
-        """Consume a launcher credential and create one bounded handoff code."""
-        if ttl_seconds <= 0:
-            raise ValueError("launcher handoff TTL must be positive")
-        issued_at = now or utc_now()
-        expires_at = issued_at + timedelta(seconds=ttl_seconds)
-        ticket_hash = hashlib.sha256(ticket.encode("utf-8")).hexdigest()
-        handoff_code = secrets.token_urlsafe(32)
-        code_hash = hashlib.sha256(handoff_code.encode("utf-8")).hexdigest()
-        with self.canonical_database.transaction() as connection:
-            inserted = connection.execute(
-                """INSERT OR IGNORE INTO launcher_bootstrap_consumptions(
-                       ticket_hash,principal_id,creator_account_id,consumed_at
-                   ) VALUES (?,?,?,?)""",
-                (
-                    ticket_hash,
-                    "",
-                    "",
-                    issued_at.isoformat(),
-                ),
-            )
-            if inserted.rowcount != 1:
-                return None
-            connection.execute(
-                """INSERT INTO launcher_session_handoffs(
-                       code_hash,principal_id,creator_account_id,issued_at,expires_at
-                   ) VALUES (?,?,?,?,?)""",
-                (
-                    code_hash,
-                    "",
-                    "",
-                    issued_at.isoformat(),
-                    expires_at.isoformat(),
-                ),
-            )
-        return handoff_code
-
-    def redeem_launcher_handoff(
-        self,
-        code: str,
-        *,
-        now: datetime | None = None,
-    ) -> bool:
-        """Atomically consume one unexpired handoff code."""
-        code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
-        redeemed_at = (now or utc_now()).isoformat()
-        with self.canonical_database.transaction() as connection:
-            consumed = connection.execute(
-                """DELETE FROM launcher_session_handoffs
-                   WHERE code_hash=?
-                      AND expires_at>?""",
-                (
-                    code_hash,
-                    redeemed_at,
-                ),
-            )
-            return consumed.rowcount == 1
 
     @staticmethod
     def _ticket_key(ticket: str) -> str:
@@ -678,7 +596,7 @@ class InMemoryTransportManager:
             except Exception:
                 pass
         if self._sweeper_task is None or self._sweeper_task.done():
-            self._sweeper_task = asyncio.create_task(self._sweep(), name="phase2-transport-expiry")
+            self._sweeper_task = asyncio.create_task(self._sweep(), name="agent-transport-expiry")
         pending_accounts = await asyncio.to_thread(self.projection.pending_accounts)
         for account_id in pending_accounts:
             self.schedule_projection(account_id)
@@ -716,6 +634,12 @@ class InMemoryTransportManager:
         self._agent_pairing_grants.clear()
         self._agent_config_grants.clear()
         self._companion_revisions.clear()
+        for sessions in self._browser_sessions.values():
+            for session in sessions.values():
+                for entry in session.tasks.values():
+                    entry["expiry"].cancel()
+                    if not entry["ack"].done() and not entry["ack"].get_loop().is_closed():
+                        entry["ack"].set_result("unconfirmed")
         self._browser_sessions.clear()
         for task in self._companion_tasks:
             if not task.done() and not task.get_loop().is_closed():
@@ -1508,8 +1432,13 @@ class InMemoryTransportManager:
 
     async def unregister_browser_session(self, account_id: str, token: int) -> None:
         sessions = self._browser_sessions.get(account_id)
-        if not sessions or sessions.pop(token, None) is None:
+        removed = None if not sessions else sessions.pop(token, None)
+        if removed is None:
             return
+        for task in removed.tasks.values():
+            task["expiry"].cancel()
+            if not task["ack"].done():
+                task["ack"].set_result("unconfirmed")
         if not sessions:
             self._browser_sessions.pop(account_id, None)
         await self.broadcast_agent_state(account_id)
@@ -1546,6 +1475,98 @@ class InMemoryTransportManager:
             except Exception:
                 continue
         return delivered
+
+    def browser_task_target(self, account_id: str) -> int | None:
+        """A focused task needs one unambiguous authenticated reporting pin."""
+        sessions = [(token, session) for token, session in self._browser_sessions.get(account_id, {}).items()
+                    if session.surface is not None]
+        if len({session.pairing_id for _, session in sessions}) != 1:
+            return None
+        return sessions[-1][0]
+
+    async def send_browser_task(self, account_id, token, payload, *, authorize, receive):
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if session is None or session.surface is None:
+            return "unreachable"
+        now = utc_now().timestamp()
+        for identifier, entry in list(session.tasks.items()):
+            if entry["payload"]["task"]["expires_at"] <= now:
+                entry["expiry"].cancel()
+                if not entry["ack"].done():
+                    entry["ack"].set_result("unconfirmed")
+                del session.tasks[identifier]
+        identifier = payload["task"]["task_id"]
+        if payload["task"]["expires_at"] <= now:
+            return "unconfirmed"
+        if identifier not in session.tasks and len(session.tasks) >= 8:
+            return "unconfirmed"
+        try:
+            authorize()
+        except Exception:
+            return "unconfirmed"
+        previous = session.tasks.get(identifier)
+        if previous is not None:
+            previous["expiry"].cancel()
+            if not previous["ack"].done():
+                previous["ack"].set_result("unconfirmed")
+        loop = asyncio.get_running_loop()
+        ack = loop.create_future()
+
+        def expire():
+            entry = session.tasks.get(identifier)
+            if entry is not None and entry["ack"] is ack:
+                del session.tasks[identifier]
+                if not ack.done():
+                    ack.set_result("unconfirmed")
+        # This bounded in-memory record contains only a task entry and correlation.
+        # It cannot survive/reopen a session or establish the Provider's outcome.
+        expiry = loop.call_later(payload["task"]["expires_at"] - now, expire)
+        session.tasks[identifier] = {"payload": payload, "receive": receive, "ack": ack, "expiry": expiry}
+        try:
+            await session.send({"type": "session.control", "id": identifier, "action": "browser.task", "payload": payload})
+            return await asyncio.wait_for(asyncio.shield(ack), 5)
+        except Exception:
+            return "unconfirmed"
+
+    async def send_browser_navigation(self, account_id, token, destination):
+        if destination not in {"setup", "access", "history", "creator"}:
+            raise ValueError("Unknown browser destination")
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        if session is None or session.surface is None:
+            return False
+        try:
+            await session.send({"type": "session.control", "id": str(uuid4()), "action": "browser.open." + destination})
+            return True
+        except Exception:
+            return False
+
+    async def report_browser_task(self, account_id, token, value):
+        if (not isinstance(value, dict) or set(value) != {"task_id", "admission_generation", "state", "notification"}
+                or not isinstance(value["state"], str) or value["state"] not in {"opening", "checking", "closed"}
+                or not isinstance(value["task_id"], str) or not isinstance(value["admission_generation"], str)):
+            raise ValueError("Invalid browser task report")
+        session = self._browser_sessions.get(account_id, {}).get(token)
+        entry = None if session is None else session.tasks.get(value["task_id"])
+        if entry is None:
+            return  # A closed or expired delivery cannot settle anything.
+        payload = entry["payload"]
+        if (payload["task"]["admission_generation"] != value["admission_generation"]
+                or payload["task"]["expires_at"] <= utc_now().timestamp()):
+            return
+        notification = value["notification"]
+        if value["state"] in {"opening", "closed"}:
+            valid = notification is None
+        else:
+            valid = (isinstance(notification, dict) and set(notification) == {"ceremony_id", "attempt_id", "notification"}
+                and notification["ceremony_id"] == payload["ceremony"]["ceremony_id"]
+                and notification["attempt_id"] == payload["ceremony"]["attempt_id"]
+                and isinstance(notification["notification"], str)
+                and notification["notification"] in {"changed", "retired", "unavailable"})
+        if not valid:
+            raise ValueError("Invalid browser task report")
+        await entry["receive"](value)
+        if not entry["ack"].done():
+            entry["ack"].set_result("unconfirmed" if notification is not None and notification["notification"] != "changed" else "dispatched")
 
     def companion_state_payload(self, account_id: str) -> dict[str, Any]:
         """Return the current companion change notice for one bound account."""

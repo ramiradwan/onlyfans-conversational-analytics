@@ -175,7 +175,9 @@
         "extension/protocol/**",
         "frontend/src/protocol/**",
         "shared/fixtures/protocol/**",
-        "shared/onboarding/**"
+        "shared/onboarding/**",
+        "shared/desktop-onboarding/**",
+        "shared/browser-tasks/**"
       ],
       "role": "Cross-runtime protocol and local onboarding schema definitions, golden fixtures, validation, and non-authorizing reference projections.",
       "authority": "authoritative",
@@ -200,6 +202,7 @@
         "extension/popup.*",
         "extension/setup.*",
         "extension/options.*",
+        "extension/signing-helper.html",
         "extension/ui/**",
         "extension/preview/**",
         "extension/activation/**",
@@ -337,6 +340,10 @@
         "app/persistence/migrations.py",
         "app/persistence/deletion_operations.py",
         "app/persistence/auth.py",
+        "app/persistence/onboarding.py",
+        "app/persistence/continuation_selection.py",
+        "app/persistence/installation_continuation.py",
+        "app/persistence/saved_workspace.py",
         "app/persistence/companion_pairing.py",
         "app/persistence/private_files.py",
         "app/persistence/sqlite_api.py",
@@ -429,7 +436,8 @@
     {
       "id": "provisioning-surface",
       "path_patterns": [
-        "app/provisioning/**"
+        "app/provisioning/**",
+        "app/onboarding/**"
       ],
       "role": "Isolated first-run onboarding web surface, claim submission, creator association, and configuration handoff.",
       "authority": "authoritative",
@@ -516,6 +524,7 @@
     {
       "id": "brain-runtime-bootstrap",
       "path_patterns": [
+        "desktop/**",
         "app/main.py",
         "app/bootstrap.py",
         "app/launcher.py",
@@ -735,6 +744,10 @@
     {
       "id": "bridge-orchestration",
       "path_patterns": [
+        "frontend/onboarding/**",
+        "frontend/browser-tasks/**",
+        "frontend/setup-code/**",
+        "frontend/shared-setup/**",
         "frontend/src/store/**",
         "frontend/src/services/**",
         "frontend/src/analytics/**",
@@ -1647,6 +1660,8 @@
       {
         "invariant": "provisioning-trust",
         "path_patterns": [
+          "desktop/**",
+          "app/onboarding/**",
           "app/provisioning/**",
           "app/security/**",
           "app/api/endpoints/webauthn.py"
@@ -1655,6 +1670,7 @@
       {
         "invariant": "release-integrity",
         "path_patterns": [
+          "desktop/**",
           "packaging/**",
           "attestation/**",
           "tools/packaged-signing-rule/**",

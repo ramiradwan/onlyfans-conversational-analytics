@@ -1,0 +1,400 @@
+openapi: 3.1.0
+info:
+  title: Operation-bound browser ceremonies
+  version: 1.0.0
+paths:
+  /v1/onboarding/browser-ceremony-proof-challenges:
+    post:
+      operationId: issueBrowserCeremonyProofChallenge
+      summary: Issue an unauthorizing operation-bound challenge
+      x-contract-profile: urn:bridge-clean:browser-ceremony-proof:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: uniform challenge; possession is not authority
+      x-idempotency: proof replay refuses; fresh-proof exact operation retries reconcile
+        original result without renewal
+      x-rate-limit: bounded per source/key and ingress; 429 does not disclose existence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/browser-ceremony/v1/proof-challenge-request.schema.json
+      responses:
+        '200':
+          description: Exact closed response; no authority from navigation or notifications.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/proof-challenge-response.schema.json
+        '400':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '401':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '409':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '403':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '410':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '429':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '503':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '413':
+          description: Reject oversized body before parsing.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+  /v1/onboarding/browser-ceremonies:prepare:
+    post:
+      operationId: prepareBrowserCeremony
+      summary: Prepare an exact browser ceremony
+      x-contract-profile: urn:bridge-clean:browser-ceremony:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: single-use exact source installation-key browser-ceremony-proof:v1
+      x-idempotency: proof replay refuses; fresh-proof exact operation retries reconcile
+        original result without renewal
+      x-rate-limit: bounded per source/key and ingress; 429 does not disclose existence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/browser-ceremony/v1/prepare-request.schema.json
+      responses:
+        '200':
+          description: Exact closed response; no authority from navigation or notifications.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/prepare-response.schema.json
+        '400':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '401':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '409':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '403':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '410':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '429':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '503':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '413':
+          description: Reject oversized body before parsing.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+  /v1/onboarding/browser-ceremonies:read:
+    post:
+      operationId: readBrowserCeremony
+      summary: Read an exact browser ceremony
+      x-contract-profile: urn:bridge-clean:browser-ceremony:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: single-use exact source installation-key browser-ceremony-proof:v1
+      x-idempotency: proof replay refuses; fresh-proof exact operation retries reconcile
+        original result without renewal
+      x-rate-limit: bounded per source/key and ingress; 429 does not disclose existence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/browser-ceremony/v1/read-request.schema.json
+      responses:
+        '200':
+          description: Exact closed response; no authority from navigation or notifications.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/read-response.schema.json
+        '400':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '401':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '409':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '403':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '410':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '429':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '503':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '413':
+          description: Reject oversized body before parsing.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+  /v1/onboarding/browser-ceremonies:recover:
+    post:
+      operationId: recoverBrowserCeremony
+      summary: Recover an exact browser ceremony
+      x-contract-profile: urn:bridge-clean:browser-ceremony:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: single-use exact source installation-key browser-ceremony-proof:v1
+      x-idempotency: proof replay refuses; fresh-proof exact operation retries reconcile
+        original result without renewal
+      x-rate-limit: bounded per source/key and ingress; 429 does not disclose existence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/browser-ceremony/v1/recover-request.schema.json
+      responses:
+        '200':
+          description: Exact closed response; no authority from navigation or notifications.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/recover-response.schema.json
+        '400':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '401':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '409':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '403':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '410':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '429':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '503':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '413':
+          description: Reject oversized body before parsing.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+  /v1/onboarding/browser-ceremonies:cancel:
+    post:
+      operationId: cancelBrowserCeremony
+      summary: Cancel an exact browser ceremony
+      x-contract-profile: urn:bridge-clean:browser-ceremony:v1
+      x-max-request-bytes: 8192
+      x-max-response-bytes: 16384
+      x-authentication: single-use exact source installation-key browser-ceremony-proof:v1
+      x-idempotency: proof replay refuses; fresh-proof exact operation retries reconcile
+        original result without renewal
+      x-rate-limit: bounded per source/key and ingress; 429 does not disclose existence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/browser-ceremony/v1/cancel-request.schema.json
+      responses:
+        '200':
+          description: Exact closed response; no authority from navigation or notifications.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/cancel-response.schema.json
+        '400':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '401':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '409':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '403':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '410':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '429':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '503':
+          description: Closed refusal; unknown and foreign operations disclose no
+            source existence.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json
+        '413':
+          description: Reject oversized body before parsing.
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/browser-ceremony/v1/error.schema.json

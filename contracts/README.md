@@ -38,3 +38,25 @@ closed schemas, independent key-proof verification, exact authorization digests,
 single enrollment and lost-response recovery. Its preparation and receipt objects
 do not establish local access or commercial activation. Runtime adoption remains
 separate from this contract pin.
+
+The installation setup continuation family is pinned separately for recovery of
+an enrolled installation. Its contract and proof profiles preserve existing keys
+and creator bindings. Snapshot verification checks the complete family and its
+raw manifest digest; application behavior requires its own conformance tests.
+
+Current-session onboarding includes initial handoff v2, installation setup
+continuation v2 and complimentary activation v1. Each has a separate pinned
+vector family. The corresponding v1 contracts remain as immutable verification
+archives, without compatibility routes or adapters.
+
+Desktop browser ceremonies add their own operation/result schemas, domain-separated
+installation-key proof and complete vector family. The published
+`catalog/onboarding-admission-policy.json` retires the initial handoff v1 and setup
+continuation v1 admission/proof profiles. `supported_profiles` in the consumer pin
+names verified artifacts; it does not authorize retired admission behavior.
+Independent claim, grant, binding and license authorities are unchanged. Runtime
+ceremony behavior requires separate implementation and conformance tests.
+
+The delivery-recovery family pins the independent installation-key proof, generation-bound commands and complete conformance vectors for an already committed activation. Recovery retains the original exchange, key and creator; it supplies no new commercial consent, credit, seat or signing authority. Runtime adoption and durable journal reconciliation require separate implementation and qualification.
+
+The deferred setup preparation policy and supplemental lifecycle vectors describe Provider-owned continuation of an already accepted preparation. They add no wire profile or proof purpose. Brain observes the original review through existing reads and still requires explicit confirmation of a validated offer, as governed by [ADR 0053](../docs/adr/0053-observe-deferred-activation-offer-preparation.md).

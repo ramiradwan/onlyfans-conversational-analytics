@@ -1,0 +1,3291 @@
+[
+  {
+    "case_id": "prepare-request-valid",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-request-unknown-field",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-request-missing-request",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      }
+    }
+  },
+  {
+    "case_id": "prepare-request-missing-proof",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-request-valid",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-request-unknown-field",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-request-missing-request",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      }
+    }
+  },
+  {
+    "case_id": "read-request-missing-proof",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-known-request-valid",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "kZmxRRzQ9yLggWaEEBSd8wAV7Wk8ZJtA3bgd6j7OnaM",
+        "signature": "LctbaMp3XLg6H1HA416b5w1C14o_P5Z1wD5LM6oQgFtYRIyXIoNTZzKTxUC4p1E88bMCp440qpLwocjf7AOtiA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-known-request-unknown-field",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "proof": {
+        "challenge": "kZmxRRzQ9yLggWaEEBSd8wAV7Wk8ZJtA3bgd6j7OnaM",
+        "signature": "LctbaMp3XLg6H1HA416b5w1C14o_P5Z1wD5LM6oQgFtYRIyXIoNTZzKTxUC4p1E88bMCp440qpLwocjf7AOtiA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-known-request-missing-request",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "kZmxRRzQ9yLggWaEEBSd8wAV7Wk8ZJtA3bgd6j7OnaM",
+        "signature": "LctbaMp3XLg6H1HA416b5w1C14o_P5Z1wD5LM6oQgFtYRIyXIoNTZzKTxUC4p1E88bMCp440qpLwocjf7AOtiA"
+      }
+    }
+  },
+  {
+    "case_id": "read-known-request-missing-proof",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-request-valid",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-request-unknown-field",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-request-missing-request",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      }
+    }
+  },
+  {
+    "case_id": "stream-request-missing-proof",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-cursor-request-valid",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "aPURvm4nXo_tXN5-0e5xs6_QdjLla1R3DyqvPSNvpgE",
+        "signature": "QnYfTB3cvYQmUxKrGUBdUn7ZhwzpQlGfWjILvgOXZQxOyYojWpfO_Y_4n2sGFoGQ4o6PO5b7PbdaHNxbOs9m5A"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": {
+          "epoch": "0199b234-5678-7000-8000-000000000003",
+          "revision": 4
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-cursor-request-unknown-field",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "proof": {
+        "challenge": "aPURvm4nXo_tXN5-0e5xs6_QdjLla1R3DyqvPSNvpgE",
+        "signature": "QnYfTB3cvYQmUxKrGUBdUn7ZhwzpQlGfWjILvgOXZQxOyYojWpfO_Y_4n2sGFoGQ4o6PO5b7PbdaHNxbOs9m5A"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": {
+          "epoch": "0199b234-5678-7000-8000-000000000003",
+          "revision": 4
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-cursor-request-missing-request",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "aPURvm4nXo_tXN5-0e5xs6_QdjLla1R3DyqvPSNvpgE",
+        "signature": "QnYfTB3cvYQmUxKrGUBdUn7ZhwzpQlGfWjILvgOXZQxOyYojWpfO_Y_4n2sGFoGQ4o6PO5b7PbdaHNxbOs9m5A"
+      }
+    }
+  },
+  {
+    "case_id": "stream-cursor-request-missing-proof",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": {
+          "epoch": "0199b234-5678-7000-8000-000000000003",
+          "revision": 4
+        },
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-request-valid",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": true,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-request-unknown-field",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-request-missing-request",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      }
+    }
+  },
+  {
+    "case_id": "binding-request-missing-proof",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-valid",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-request.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+      "target": {
+        "operation": "installation-continuation-prepare",
+        "request": {
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+          "scope": {
+            "association_request_id": "0199b234-5678-7000-8000-000000000001",
+            "creator_account_id": "creator-fixture",
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "organization_id": "org-fixture",
+            "source_onboarding_transaction_id": "source-fixture"
+          }
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-unknown-field",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+      "target": {
+        "operation": "installation-continuation-prepare",
+        "request": {
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+          "scope": {
+            "association_request_id": "0199b234-5678-7000-8000-000000000001",
+            "creator_account_id": "creator-fixture",
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "organization_id": "org-fixture",
+            "source_onboarding_transaction_id": "source-fixture"
+          }
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-missing-profile",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "target": {
+        "operation": "installation-continuation-prepare",
+        "request": {
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+          "scope": {
+            "association_request_id": "0199b234-5678-7000-8000-000000000001",
+            "creator_account_id": "creator-fixture",
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "organization_id": "org-fixture",
+            "source_onboarding_transaction_id": "source-fixture"
+          }
+        }
+      }
+    }
+  },
+  {
+    "case_id": "proof-challenge-request-missing-target",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-valid",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-response.schema.json",
+    "valid": true,
+    "value": {
+      "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+      "expires_at": "2026-10-09T12:01:00.000Z",
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+      "request_digest": "f4ddaa9272130b79b59f008583c5f37cf161b4a517cc10dcf1268ed6f56e58bc"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-unknown-field",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+      "expires_at": "2026-10-09T12:01:00.000Z",
+      "metadata": {},
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+      "request_digest": "f4ddaa9272130b79b59f008583c5f37cf161b4a517cc10dcf1268ed6f56e58bc"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-profile",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+      "expires_at": "2026-10-09T12:01:00.000Z",
+      "request_digest": "f4ddaa9272130b79b59f008583c5f37cf161b4a517cc10dcf1268ed6f56e58bc"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-challenge",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-09T12:01:00.000Z",
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+      "request_digest": "f4ddaa9272130b79b59f008583c5f37cf161b4a517cc10dcf1268ed6f56e58bc"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-request_digest",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+      "expires_at": "2026-10-09T12:01:00.000Z",
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2"
+    }
+  },
+  {
+    "case_id": "proof-challenge-response-missing-expires_at",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-response.schema.json",
+    "valid": false,
+    "value": {
+      "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+      "request_digest": "f4ddaa9272130b79b59f008583c5f37cf161b4a517cc10dcf1268ed6f56e58bc"
+    }
+  },
+  {
+    "case_id": "prepare-response-valid",
+    "schema": "schemas/installation-continuation/v2/prepare-response.schema.json",
+    "valid": true,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    }
+  },
+  {
+    "case_id": "prepare-response-unknown-field",
+    "schema": "schemas/installation-continuation/v2/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "metadata": {},
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-profile",
+    "schema": "schemas/installation-continuation/v2/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-operation_id",
+    "schema": "schemas/installation-continuation/v2/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-continuation_id",
+    "schema": "schemas/installation-continuation/v2/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-reference",
+    "schema": "schemas/installation-continuation/v2/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2"
+    }
+  },
+  {
+    "case_id": "prepare-response-missing-expires_at",
+    "schema": "schemas/installation-continuation/v2/prepare-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+    }
+  },
+  {
+    "case_id": "read-response-valid",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": true,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "read-response-unknown-field",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "metadata": {},
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "read-response-missing-profile",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "read-response-missing-operation_id",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "read-response-missing-continuation_id",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "read-response-missing-reference",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "read-response-missing-expires_at",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "read-response-missing-result",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "read-response-missing-snapshot",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found"
+    }
+  },
+  {
+    "case_id": "snapshot-valid",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": true,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-unknown-field",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "metadata": {},
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-missing-continuation_id",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-missing-epoch",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-missing-revision",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-missing-committed_at",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-missing-expires_at",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-missing-state",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1
+    }
+  },
+  {
+    "case_id": "event-valid",
+    "schema": "schemas/installation-continuation/v2/event.schema.json",
+    "valid": true,
+    "value": {
+      "kind": "snapshot",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "event-unknown-field",
+    "schema": "schemas/installation-continuation/v2/event.schema.json",
+    "valid": false,
+    "value": {
+      "kind": "snapshot",
+      "metadata": {},
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "event-missing-profile",
+    "schema": "schemas/installation-continuation/v2/event.schema.json",
+    "valid": false,
+    "value": {
+      "kind": "snapshot",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "event-missing-kind",
+    "schema": "schemas/installation-continuation/v2/event.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "event-missing-snapshot",
+    "schema": "schemas/installation-continuation/v2/event.schema.json",
+    "valid": false,
+    "value": {
+      "kind": "snapshot",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2"
+    }
+  },
+  {
+    "case_id": "binding-response-valid",
+    "schema": "schemas/installation-continuation/v2/binding-response.schema.json",
+    "valid": true,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2"
+    }
+  },
+  {
+    "case_id": "binding-response-unknown-field",
+    "schema": "schemas/installation-continuation/v2/binding-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "metadata": {},
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2"
+    }
+  },
+  {
+    "case_id": "binding-response-missing-profile",
+    "schema": "schemas/installation-continuation/v2/binding-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  },
+  {
+    "case_id": "binding-response-missing-continuation_id",
+    "schema": "schemas/installation-continuation/v2/binding-response.schema.json",
+    "valid": false,
+    "value": {
+      "grant": "e30.e30.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2"
+    }
+  },
+  {
+    "case_id": "binding-response-missing-grant",
+    "schema": "schemas/installation-continuation/v2/binding-response.schema.json",
+    "valid": false,
+    "value": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2"
+    }
+  },
+  {
+    "case_id": "error-valid",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "proof_invalid"
+    }
+  },
+  {
+    "case_id": "error-unknown-field",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": false,
+    "value": {
+      "metadata": {},
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "proof_invalid"
+    }
+  },
+  {
+    "case_id": "error-missing-profile",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": false,
+    "value": {
+      "reason": "proof_invalid"
+    }
+  },
+  {
+    "case_id": "error-missing-reason",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2"
+    }
+  },
+  {
+    "case_id": "read-expired",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "result": "expired"
+    }
+  },
+  {
+    "case_id": "read-expired-reference",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "expired"
+    }
+  },
+  {
+    "case_id": "read-unavailable",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": true,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "result": "unavailable"
+    }
+  },
+  {
+    "case_id": "read-unavailable-reference",
+    "schema": "schemas/installation-continuation/v2/read-response.schema.json",
+    "valid": false,
+    "value": {
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "unavailable"
+    }
+  },
+  {
+    "case_id": "state-awaiting-approval",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": true,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-approval"
+    }
+  },
+  {
+    "case_id": "state-approved",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": true,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "approved"
+    }
+  },
+  {
+    "case_id": "state-authentication-required",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": true,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "authentication-required"
+    }
+  },
+  {
+    "case_id": "state-expired",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": true,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "expired"
+    }
+  },
+  {
+    "case_id": "state-revoked",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": true,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "revoked"
+    }
+  },
+  {
+    "case_id": "refusal-invalid",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "invalid"
+    }
+  },
+  {
+    "case_id": "refusal-scope_conflict",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "scope_conflict"
+    }
+  },
+  {
+    "case_id": "refusal-authorization_denied",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "authorization_denied"
+    }
+  },
+  {
+    "case_id": "refusal-expired",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "expired"
+    }
+  },
+  {
+    "case_id": "refusal-not_ready",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "not_ready"
+    }
+  },
+  {
+    "case_id": "refusal-rate_limited",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "rate_limited"
+    }
+  },
+  {
+    "case_id": "refusal-temporarily_unavailable",
+    "schema": "schemas/installation-continuation/v2/error.schema.json",
+    "valid": true,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reason": "temporarily_unavailable"
+    }
+  },
+  {
+    "case_id": "invalid-snapshot-revision--1",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": -1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "invalid-snapshot-revision-9007199254740992",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 9007199254740992,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "invalid-snapshot-revision-1.5",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1.5,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "invalid-snapshot-epoch-0199b234-5678-4000-8000-000000000001",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-4000-8000-000000000001",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "invalid-snapshot-committed_at-2026-10-09T12:00:00Z",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "invalid-snapshot-expires_at-2026-10-09T12:30:00.000+00:00",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000+00:00",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "invalid-snapshot-state-analysis-ready",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "analysis-ready"
+    }
+  },
+  {
+    "case_id": "prepare-privacy-display_name",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "display_name": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-cookie",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "cookie": "forbidden",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-local_state",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "local_state": "forbidden",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-capture_count",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "capture_count": "forbidden",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-diagnostic",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "diagnostic": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-access_token",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "access_token": "forbidden",
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-grant",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "grant": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-url",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture",
+          "url": "forbidden"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-key",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "key": "forbidden",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-creator_presentation",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "creator_presentation": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-privacy-fan_content",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "fan_content": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-missing-scope-organization_id",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-missing-scope-installation_id",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-missing-scope-installation_key_id",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-missing-scope-source_onboarding_transaction_id",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-missing-scope-creator_account_id",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-missing-scope-association_request_id",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "prepare-independent-key-id",
+    "schema": "schemas/installation-continuation/v2/prepare-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "3Kucl8gb_Hf3CHSMVgftVIvaUhz6AKvZnrjTKDoeEFA",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "BWvABoGr7J_k4D8iF0oiy3kpm1OQpqRVBJ8n6cZkwnNKwlZ1GCuFYAgChhyvwUn1Z3c42Z1jU3bukCowoQpboQ"
+      },
+      "request": {
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-display_name",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "display_name": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-cookie",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "cookie": "forbidden",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-local_state",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "local_state": "forbidden",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-capture_count",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "capture_count": "forbidden",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-diagnostic",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "diagnostic": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-access_token",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "access_token": "forbidden",
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-grant",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "grant": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-url",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture",
+          "url": "forbidden"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-key",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "key": "forbidden",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-creator_presentation",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "creator_presentation": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-privacy-fan_content",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "fan_content": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-missing-scope-organization_id",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-missing-scope-installation_id",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-missing-scope-installation_key_id",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-missing-scope-source_onboarding_transaction_id",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-missing-scope-creator_account_id",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-missing-scope-association_request_id",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "read-independent-key-id",
+    "schema": "schemas/installation-continuation/v2/read-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "nvn9AvmFANfqGdfaXwHDNinY8uKgz2S2i6KHtA587AA",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "gqVOetTMVwzuhWTdhp3qhwhhKd9B0K7rqomuID1iE4EZGcdufeqMfFeeleIhOHrpwFGfv6IHCYE46Ak4pFhyfg"
+      },
+      "request": {
+        "continuation_id": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-display_name",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "display_name": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-cookie",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "cookie": "forbidden",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-local_state",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "local_state": "forbidden",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-capture_count",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "capture_count": "forbidden",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-diagnostic",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "diagnostic": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-access_token",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "access_token": "forbidden",
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-grant",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "grant": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-url",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture",
+          "url": "forbidden"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-key",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "key": "forbidden",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-creator_presentation",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "creator_presentation": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-privacy-fan_content",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "fan_content": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-missing-scope-organization_id",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-missing-scope-installation_id",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-missing-scope-installation_key_id",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-missing-scope-source_onboarding_transaction_id",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-missing-scope-creator_account_id",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-missing-scope-association_request_id",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "stream-independent-key-id",
+    "schema": "schemas/installation-continuation/v2/stream-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "XIwpwjWbfiljJWnjIw4BnxGcAOLD_iH-e7jRCZm-qoc",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "McrkQ_O2jMkDW0eqMnqC9zo8IZCbIkodXq-oVSFaxuNzrU4rHHt1v8Z2eRZ6eTSNAi9D8tkHtJfnPTmfMOlmAA"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "cursor": null,
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-display_name",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "display_name": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-cookie",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "cookie": "forbidden",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-local_state",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "local_state": "forbidden",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-capture_count",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "capture_count": "forbidden",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-diagnostic",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "diagnostic": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-access_token",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "access_token": "forbidden",
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-grant",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "grant": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-url",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture",
+          "url": "forbidden"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-key",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "key": "forbidden",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-creator_presentation",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "creator_presentation": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-privacy-fan_content",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "fan_content": "forbidden",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-missing-scope-organization_id",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-missing-scope-installation_id",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-missing-scope-installation_key_id",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-missing-scope-source_onboarding_transaction_id",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-missing-scope-creator_account_id",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-missing-scope-association_request_id",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "binding-independent-key-id",
+    "schema": "schemas/installation-continuation/v2/binding-request.schema.json",
+    "valid": false,
+    "value": {
+      "proof": {
+        "challenge": "hBBvz9EwhR6ImXw6EakdaDiUFn0mjwaevxSyuzKEDpI",
+        "key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+        "signature": "SFDli-KI1QTGoohuuKdo1tJxlUCFpUQHgcVCO163sKtjThEx6oJArio6f7M3hCC-xyDsQjJDw-_w4fu-LO-DRg"
+      },
+      "request": {
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "operation_id": "0199b234-5678-7000-8000-000000000001",
+        "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+        "scope": {
+          "association_request_id": "0199b234-5678-7000-8000-000000000001",
+          "creator_account_id": "creator-fixture",
+          "installation_id": "installation-fixture",
+          "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+          "organization_id": "org-fixture",
+          "source_onboarding_transaction_id": "source-fixture"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "snapshot-privacy-local_state",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "local_state": "forbidden",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-privacy-capture_count",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "capture_count": "forbidden",
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-privacy-actor",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "actor": "forbidden",
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-privacy-diagnostic",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "diagnostic": "forbidden",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-privacy-cookie",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "cookie": "forbidden",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "snapshot-privacy-grant",
+    "schema": "schemas/installation-continuation/v2/snapshot.schema.json",
+    "valid": false,
+    "value": {
+      "committed_at": "2026-10-09T12:00:00.000Z",
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "epoch": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "grant": "forbidden",
+      "revision": 1,
+      "state": "awaiting-owner"
+    }
+  },
+  {
+    "case_id": "wrong-operation",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+      "target": {
+        "operation": "initial-handoff-prepare",
+        "request": {
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+          "scope": {
+            "association_request_id": "0199b234-5678-7000-8000-000000000001",
+            "creator_account_id": "creator-fixture",
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "organization_id": "org-fixture",
+            "source_onboarding_transaction_id": "source-fixture"
+          }
+        }
+      }
+    }
+  },
+  {
+    "case_id": "operation-shape-mismatch",
+    "schema": "schemas/installation-continuation/v2/proof-challenge-request.schema.json",
+    "valid": false,
+    "value": {
+      "profile": "urn:bridge-clean:installation-setup-continuation-proof:v2",
+      "target": {
+        "operation": "installation-continuation-binding",
+        "request": {
+          "operation_id": "0199b234-5678-7000-8000-000000000001",
+          "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+          "scope": {
+            "association_request_id": "0199b234-5678-7000-8000-000000000001",
+            "creator_account_id": "creator-fixture",
+            "installation_id": "installation-fixture",
+            "installation_key_id": "ik1.AAECAwQFBgcICQoLDA0ODw",
+            "organization_id": "org-fixture",
+            "source_onboarding_transaction_id": "source-fixture"
+          }
+        }
+      }
+    }
+  }
+]

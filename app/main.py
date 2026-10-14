@@ -1,6 +1,7 @@
 """FastAPI application for ingestion, analytics, Agent, and Bridge traffic."""
 
 import logging
+import os
 from functools import lru_cache
 
 from fastapi import FastAPI
@@ -211,6 +212,11 @@ app.include_router(creator_vault.router)
 app.include_router(companion_pairing.router)
 app.include_router(capability_license.router)
 
+if os.environ.get("LOCAL_PROVISIONING_HANDOFF_TOKEN") is not None:
+    from app.api.endpoints.desktop_onboarding import configure_desktop_setup
+
+    configure_desktop_setup(app, launcher_token=os.environ["LOCAL_PROVISIONING_HANDOFF_TOKEN"], grant_refresh=lambda: _grant_refresh)
+
 # -------------------------------------------------
 # Startup & Shutdown events — manage Broadcast lifecycle
 # -------------------------------------------------
@@ -222,6 +228,8 @@ async def startup_event():
     await broadcast.connect()
     await transport_manager.start()
     start_grant_refresh()
+    if hasattr(app.state, "desktop_coordinator"):
+        app.state.desktop_coordinator.start()
     # Use resources created for this application lifecycle.
     configure_analytics_runtime()
     # Recover every canonical account's analytics projection in the
@@ -231,6 +239,8 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     global _grant_refresh
+    if hasattr(app.state, "desktop_coordinator"):
+        await app.state.desktop_setup_core.close()
     if _grant_refresh is not None:
         await _grant_refresh.stop()
         _grant_refresh = None

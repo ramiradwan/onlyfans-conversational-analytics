@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/desktop-decision/v1/proof-challenge-request.schema.json",
+  "title": "Desktop decision proof-challenge-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "target"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:desktop-decision-proof:v1"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "desktop-decision-read"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/readRequest"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "desktop-decision-submit"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/submitRequest"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

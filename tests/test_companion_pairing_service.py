@@ -60,6 +60,8 @@ def local(tmp_path, contract, grant_references):
         grant_digest=hashlib.sha256(b"membership fixture").hexdigest(),
         compact_jws=None,
         allowed_creator_account_ids=(binding.creator_account_id,),
+        membership_id="membership-fixture",
+        membership_roles=("creator_operator",),
     )
     license = replace(
         installation,

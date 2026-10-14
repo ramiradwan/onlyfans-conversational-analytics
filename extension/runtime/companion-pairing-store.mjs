@@ -375,15 +375,20 @@ async function openPairingStoreImpl({
   }
 
   /** Forget the companion: pin and pending state go, the high-water stays. */
-  async function forget() {
-    invalidate();
+  const replacementToken = (state) => state.pin ? JSON.stringify([state.epoch, state.pin.pairingId]) : null;
+  async function savedPairing() { return replacementToken(await read()); }
+  async function forget({ expectedToken, signal, assertCurrent } = {}) {
     await transaction("readwrite", (state) => {
+      assertCurrent?.();
+      requirePairing(expectedToken === undefined || expectedToken !== null && replacementToken(state) === expectedToken,
+        "pairing_state_refused");
+      invalidate();
       requirePairing(Number.isSafeInteger(state.epoch + 1));
       state.epoch++;
       state.pending = null;
       state.pin = null;
       return { state, result: null };
-    });
+    }, signal);
   }
 
   async function status() {
@@ -404,6 +409,7 @@ async function openPairingStoreImpl({
     commit: payloadFree(commit),
     cancel: payloadFree(cancel),
     forget: payloadFree(forget),
+    savedPairing: payloadFree(savedPairing),
     status: payloadFree(status),
     onInvalidate(close) {
       listeners.add(close);

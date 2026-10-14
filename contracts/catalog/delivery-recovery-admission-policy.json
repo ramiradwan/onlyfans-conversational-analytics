@@ -1,0 +1,16 @@
+{
+  "profile": "urn:bridge-clean:delivery-recovery-admission-policy:v1",
+  "governing_adr": "docs/adr/0034-recover-committed-activation-delivery.md",
+  "admitted_recovery_profile": "urn:bridge-clean:capability-license-delivery-recovery:v1",
+  "admitted_proof_profile": "urn:bridge-clean:capability-license-delivery-recovery-proof:v1",
+  "registered_key_only": true,
+  "exact_original_key_and_creator": true,
+  "all_same_exchange_paths_join_generation_fence": true,
+  "new_consent_exchange_debit_seat_or_issuance": false,
+  "legacy_runtime_support": false,
+  "current_read_creates_authority": false,
+  "future_read": "not-issued",
+  "completed_read_precedes_future_and_past": true,
+  "original_redemption_and_issuance_journal_reconciliation_required": true,
+  "missing_journal_authorizes_new_delivery": false
+}

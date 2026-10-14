@@ -88,6 +88,9 @@ jobs:
           export OFCA_CHROMIUM="$(node -p 'require("./tools/visual-capture/node_modules/playwright").chromium.executablePath()')"
           npm run test:browser:surfaces --prefix extension
 
+      - name: Build production frontend for boot contracts
+        run: npm run build --prefix frontend
+
       - name: Test visual capture contracts
         run: node --test tools/visual-capture/*.test.mjs
 

@@ -1,6 +1,7 @@
 import { Box, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
+import type { DesktopState } from '../onboarding/client.js';
 import type {
   AgentStatePayload,
   BridgeSessionPayload,
@@ -11,6 +12,7 @@ import type {
   SystemStatePayload,
 } from '../src/protocol';
 import type { CapabilityLicenseApi } from '../src/services/capabilityLicenseApi';
+import type { DesktopOnboardingApi } from '../src/services/desktopOnboarding';
 import { setAnalyticsStoryState } from '../src/store/analyticsStore';
 import {
   bridgeTransportStore,
@@ -329,16 +331,22 @@ export function createPreviewBridgeStore(): BridgeTransportStore {
 
 export const createPreviewInboxStore = createPreviewBridgeStore;
 
-/** Fixed Full analytics readiness for previews; makes no network calls. */
-export function createPreviewActivationApi(ready = true): CapabilityLicenseApi {
-  return {
-    readiness: async () => ({
-      schema: 'ofca-analysis-readiness/v1',
-      commercial_authority: ready ? 'active' : 'required',
-      analysis_admission: ready ? 'admitted' : 'blocked',
-    }),
-    redeem: async () => ({ state: 'checking' }),
-  };
+/** Fixed owner snapshot for previews; makes no network calls. */
+export function createPreviewDesktopOnboardingApi(ready = true): DesktopOnboardingApi {
+  const state: DesktopState = { connected: true, pending: null, error: null, snapshot: {
+    journey_id: '11111111-1111-4111-8111-111111111111', generation: '22222222-2222-4222-8222-222222222222',
+    revision: 0, facts: {}, local_ready: true, full_ready: ready, next_task: 'complete',
+    pending_operations: [], allowed_actions: ready ? [] : ['activation.review', 'browser.pair'],
+    analysis_readiness: { availability: 'current', creator_account_id: previewCreatorAccountId, value: {
+      schema: 'ofca-analysis-readiness/v1', commercial_authority: ready ? 'active' : 'required',
+      analysis_admission: ready ? 'admitted' : 'blocked' } },
+  } };
+  return { getState: () => state, subscribe: () => previewNoop,
+    begin: async () => {}, reconcile: async () => {}, openBrowser: async () => {} };
+}
+
+export function createPreviewActivationApi(): CapabilityLicenseApi {
+  return { redeem: async () => ({ state: 'checking' }) };
 }
 
 let previewShellSeeded = false;

@@ -309,3 +309,30 @@ def test_customer_readiness_does_not_create_analysis_admission() -> None:
             require_cached_analysis_run(store, IDENTITY.creator_account_id)  # type: ignore[arg-type]
     finally:
         clear_analysis_policies()
+
+
+@pytest.mark.parametrize("field", [
+    "organization_id", "installation_id", "installation_key_id", "installation_key_jkt",
+])
+def test_stale_admission_cannot_move_to_another_verified_scope(monkeypatch, field):
+    from app.security import analysis_authorization as authorization
+
+    clear_analysis_policies()
+    store = _Store([_row("caplic.unique")])
+    try:
+        admitted = build_current_analysis_policy(store, IDENTITY)
+        replacement = replace(
+            admitted,
+            identity_authority=replace(admitted.identity_authority, **{field: "other-scope"}),
+            commercial_authority=replace(admitted.commercial_authority, **{field: "other-scope"}),
+        )
+        monkeypatch.setattr(store, "runtime_policy_is_current", lambda policy: policy is replacement)
+        # The authority composer may establish another valid installation or key;
+        # that does not transfer an existing analysis admission to it.
+        monkeypatch.setattr(authorization, "_compose_current_analysis_policy", lambda *_: replacement)
+        with pytest.raises(RuntimeAuthorizationDenied, match="scope changed"):
+            require_cached_analysis_run(store, IDENTITY.creator_account_id)
+        with pytest.raises(RuntimeAuthorizationDenied, match="admission is required"):
+            require_cached_analysis_run(store, IDENTITY.creator_account_id)
+    finally:
+        clear_analysis_policies()

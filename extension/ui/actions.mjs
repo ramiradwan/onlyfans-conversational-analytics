@@ -7,7 +7,7 @@ export async function requestAnalyticsAccess(mode) {
   const origins = requiredOriginsForMode(mode);
   if (!origins.length) throw new NoticeError('Choose an analytics mode in setup first.');
   const granted = await chrome.permissions.request({ origins });
-  if (!granted) throw new NoticeError('Site access was not allowed, so nothing was turned on.');
+  if (!granted) throw new NoticeError('Site access was not allowed.');
 }
 export async function chooseMode(mode) {
   await requestAnalyticsAccess(mode);
@@ -24,13 +24,23 @@ export async function restoreAccess(model) {
   await requestAnalyticsAccess(model.status?.consent.mode);
   return send({ type: UI_TRANSITION_MESSAGE_TYPE, mode: model.status.consent.mode });
 }
-export async function allowHistory(model) {
+export async function allowHistory() {
   const granted = await chrome.permissions.request({ permissions: ['webRequest'], origins: [ONLYFANS_ORIGIN_PATTERN] });
-  if (!granted) throw new NoticeError('Message history access was not allowed. New-message analytics is unchanged.');
-  return chrome.tabs.create({ url: model.config.history_settings_url });
+  if (!granted) throw new NoticeError('Message history access was not allowed.');
 }
 
-export async function openCreatorAccount(chromeApi = globalThis.chrome) {
+const creatorOpens = new WeakMap();
+export function openCreatorAccount(chromeApi = globalThis.chrome) {
+  // All callers in one worker share a single query/create operation.
+  if (creatorOpens.has(chromeApi)) return creatorOpens.get(chromeApi);
+  const opening = focusOrOpenCreatorAccount(chromeApi).finally(() => {
+    if (creatorOpens.get(chromeApi) === opening) creatorOpens.delete(chromeApi);
+  });
+  creatorOpens.set(chromeApi, opening);
+  return opening;
+}
+
+async function focusOrOpenCreatorAccount(chromeApi) {
   let tabs;
   try { tabs = await chromeApi.tabs.query({ url: [ONLYFANS_ORIGIN_PATTERN] }); } catch { return; }
   const tab = tabs.find((candidate) => candidate.active === true) ?? tabs[0];

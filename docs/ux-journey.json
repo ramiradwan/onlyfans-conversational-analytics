@@ -1,27 +1,17 @@
 {
   "schema_version": "1.0.0",
-  "description": "Customer-observable journey states, the code that renders each state, and the tests that exercise it. State ids, anchors, and evidence names are engineering identifiers and test titles, not interface copy. Validated by tools/validate_ux_journey.py.",
+  "description": "Customer-visible journey states with executable presentation anchors and evidence. Desktop setup uses the Brain coordinator; browser and hosted tasks retain their domain authorities. Full analytics activation is optional after local setup. Browser tasks return automatically to their native journey, while unknown authentication and operation outcomes remain subject to authoritative reconciliation. Permission return uses an explicit 90-second creator/presentation intent and the native foreground guard; it cannot grant authority.",
   "surfaces": {
-    "extension.popup": {
-      "implementation": [
-        "extension/popup.html",
-        "extension/popup.js",
-        "extension/runtime/customer-journey.mjs",
-        "extension/ui/presentation.mjs",
-        "extension/ui/surface-client.mjs",
-        "extension/ui/dom.mjs",
-        "extension/runtime/ui-surfaces.mjs"
-      ]
-    },
     "desktop.setup": {
       "implementation": [
-        "app/provisioning/provisioning.html",
-        "app/provisioning/provisioning.js"
+        "frontend/onboarding/index.html",
+        "frontend/onboarding/view.js"
       ]
     },
     "desktop.app": {
       "implementation": [
         "frontend/src/views/WebAuthnAccessView.tsx",
+        "frontend/src/components/OnboardingPasskeyTask.tsx",
         "frontend/src/components/SetupPrompt.tsx",
         "frontend/src/components/CompanionPairingControls.tsx",
         "frontend/src/views/SettingsView.tsx",
@@ -30,7 +20,11 @@
         "frontend/src/components/CreatorVaultControls.tsx",
         "frontend/src/components/analytics/ConversationQuestions.tsx",
         "frontend/src/components/analytics/QuestionSourceDialog.tsx",
-        "frontend/src/components/BrowserExtensionControls.tsx"
+        "frontend/src/components/BrowserExtensionControls.tsx",
+        "frontend/src/components/ui/FreshnessStatus.tsx",
+        "frontend/src/services/desktopWindow.ts",
+        "desktop/src-tauri/src/frame.rs",
+        "desktop/src-tauri/src/windows.rs"
       ]
     },
     "extension.setup": {
@@ -41,7 +35,9 @@
         "extension/ui/presentation.mjs",
         "extension/ui/surface-client.mjs",
         "extension/ui/dom.mjs",
-        "extension/runtime/ui-surfaces.mjs"
+        "extension/runtime/ui-surfaces.mjs",
+        "extension/runtime/onboarding-workspace.mjs",
+        "extension/ui/setup-transfer.mjs"
       ]
     },
     "extension.options": {
@@ -52,14 +48,30 @@
         "extension/ui/presentation.mjs",
         "extension/ui/surface-client.mjs",
         "extension/ui/dom.mjs",
-        "extension/runtime/ui-surfaces.mjs"
+        "extension/runtime/ui-surfaces.mjs",
+        "extension/ui/handoff.mjs"
+      ]
+    },
+    "browser.task": {
+      "implementation": [
+        "frontend/browser-tasks/index.html",
+        "frontend/browser-tasks/view.js",
+        "frontend/browser-tasks/client.js",
+        "frontend/browser-tasks/extension.js"
+      ]
+    },
+    "extension.popup": {
+      "implementation": [
+        "extension/popup.js",
+        "extension/ui/presentation.mjs",
+        "extension/runtime/customer-journey.mjs"
       ]
     }
   },
   "journeys": [
     {
       "id": "extension-preview",
-      "entry_state": "extension.software_activation",
+      "entry_state": "extension.start_choice",
       "success_state": "extension.preview_available"
     },
     {
@@ -76,9 +88,66 @@
       "id": "conversation-questions",
       "entry_state": "questions.controls",
       "success_state": "questions.source"
+    },
+    {
+      "id": "native-desktop-setup",
+      "entry_state": "desktop.setup_loading",
+      "success_state": "desktop.setup_complete"
+    },
+    {
+      "id": "browser-access-task",
+      "entry_state": "browser.loading",
+      "success_state": "browser.reported"
+    },
+    {
+      "id": "browser-authentication-notification",
+      "entry_state": "browser.auth_idle",
+      "success_state": "browser.auth_checking"
+    },
+    {
+      "id": "extension-full-status",
+      "entry_state": "extension.desktop_app_needed",
+      "success_state": "extension.full_ready"
+    },
+    {
+      "id": "explicit-setup-transfer",
+      "entry_state": "extension.setup_code_entry",
+      "success_state": "extension.browser_access_ready"
     }
   ],
   "states": [
+    {
+      "id": "extension.start_choice",
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"start-choice\""
+      },
+      "transitions": [
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "start-preview"
+        },
+        {
+          "to": "extension.full_handoff",
+          "by": "user",
+          "action": "start-full"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "browser",
+          "file": "extension/qualification/surface-interactions.spec.mjs",
+          "name": "loading setup never records approvals or requests browser access"
+        },
+        {
+          "kind": "visual",
+          "file": "extension/qualification/surface-states.mjs",
+          "name": "start_choice"
+        }
+      ]
+    },
     {
       "id": "extension.software_activation",
       "surface": "extension.setup",
@@ -91,18 +160,23 @@
           "to": "extension.mode_choice",
           "by": "user",
           "action": "activate-software"
+        },
+        {
+          "to": "extension.start_choice",
+          "by": "user",
+          "action": "start-back"
         }
       ],
       "evidence": [
         {
           "kind": "unit",
           "file": "extension/tests/legal-activation-ui.test.mjs",
-          "name": "Activate Software is separate from mode choice and no UI calls it consent"
+          "name": "combined mode review retains separate software activation and consent commands"
         },
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/legal-activation.spec.mjs",
-          "name": "Terms → risk → Activate Software → Preview"
+          "name": "Terms \u2192 risk \u2192 Activate Software \u2192 Preview"
         }
       ]
     },
@@ -120,17 +194,12 @@
           "action": "enable-preview"
         },
         {
-          "to": "extension.desktop_app_needed",
+          "to": "extension.browser_access_ready",
           "by": "user",
           "action": "enable-full"
         },
         {
           "to": "extension.setup_incomplete",
-          "by": "user",
-          "action": "enable-full"
-        },
-        {
-          "to": "extension.pairing_required",
           "by": "user",
           "action": "enable-full"
         },
@@ -165,7 +234,7 @@
     },
     {
       "id": "extension.analytics_off",
-      "surface": "extension.popup",
+      "surface": "extension.setup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "ANALYTICS_OFF: 'analytics_off'"
@@ -192,14 +261,14 @@
     },
     {
       "id": "extension.preview_available",
-      "surface": "extension.popup",
+      "surface": "extension.setup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "PREVIEW_AVAILABLE: 'preview_available'"
       },
       "transitions": [
         {
-          "to": "extension.mode_choice",
+          "to": "extension.full_handoff",
           "by": "user",
           "action": "review_full"
         },
@@ -229,7 +298,7 @@
     },
     {
       "id": "extension.paused",
-      "surface": "extension.popup",
+      "surface": "extension.setup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "PAUSED: 'paused'"
@@ -255,7 +324,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/standalone-preview.spec.mjs",
-          "name": "pause unregisters capture and subsequent reads do not increase metrics"
+          "name": "pause stops forwarding in the same document and subsequent reads do not increase metrics"
         },
         {
           "kind": "visual",
@@ -271,21 +340,20 @@
     },
     {
       "id": "extension.desktop_app_needed",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "DESKTOP_APP_NEEDED: 'desktop_app_needed'"
       },
       "transitions": [
         {
-          "to": "desktop.setup_registration",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "install_desktop"
+          "action": "journey-primary"
         },
         {
           "to": "extension.pairing_required",
-          "by": "user",
-          "action": "retry_full"
+          "by": "system"
         }
       ],
       "evidence": [
@@ -293,11 +361,6 @@
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
           "name": "first Full attempt explains that the desktop app is required"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "desktop_app_needed"
         }
       ]
     },
@@ -330,16 +393,20 @@
     },
     {
       "id": "extension.pairing_required",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "PAIRING_REQUIRED: 'pairing_required'"
       },
       "transitions": [
         {
-          "to": "extension.pairing_in_progress",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "pair"
+          "action": "journey-primary"
+        },
+        {
+          "to": "extension.pairing_in_progress",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -347,31 +414,21 @@
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
           "name": "running desktop app advances an unpaired user to pairing"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "pairing_required"
         }
       ]
     },
     {
       "id": "extension.pairing_in_progress",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "PAIRING_IN_PROGRESS: 'pairing_in_progress'"
       },
       "transitions": [
         {
-          "to": "extension.pairing_required",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "cancel_pairing"
-        },
-        {
-          "to": "extension.pairing_required",
-          "by": "user",
-          "action": "close-setup-tab"
+          "action": "journey-primary"
         },
         {
           "to": "extension.pairing_not_ready",
@@ -401,41 +458,25 @@
           "kind": "unit",
           "file": "frontend/tests/CompanionPairingControls.test.tsx",
           "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint"
-        },
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "focus changes and closing an observing popup preserve pairing; closing setup cancels it"
-        },
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "a confirmed connection stays in setup and readiness comes from the desktop result"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "pairing_compare"
         }
       ]
     },
     {
       "id": "extension.pairing_not_ready",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "PAIRING_NOT_READY: 'pairing_not_ready'"
       },
       "transitions": [
         {
-          "to": "desktop.extension_pairing",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "open_desktop_settings"
+          "action": "journey-primary"
         },
         {
-          "to": "extension.pairing_in_progress",
-          "by": "user",
-          "action": "pair"
+          "to": "extension.pairing_required",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -448,31 +489,25 @@
           "kind": "unit",
           "file": "extension/tests/companion-client.test.mjs",
           "name": "a refusal before any offer reports that the desktop app is not ready for pairing"
-        },
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "pairing starts only on explicit setup action and recovers from the desktop not being ready"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "pairing_not_ready"
         }
       ]
     },
     {
       "id": "extension.pairing_failed",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "PAIRING_FAILED: 'pairing_failed'"
       },
       "transitions": [
         {
-          "to": "extension.pairing_in_progress",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "pair"
+          "action": "journey-primary"
+        },
+        {
+          "to": "extension.pairing_required",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -485,30 +520,25 @@
           "kind": "unit",
           "file": "extension/tests/companion-client.test.mjs",
           "name": "a refusal before any offer reports that the desktop app is not ready for pairing"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "pairing_failed"
         }
       ]
     },
     {
       "id": "extension.full_unavailable",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "FULL_UNAVAILABLE: 'full_unavailable'"
       },
       "transitions": [
         {
-          "to": "extension.activation_checking",
-          "by": "system"
+          "to": "extension.full_handoff",
+          "by": "user",
+          "action": "journey-primary"
         },
         {
           "to": "extension.activation_checking",
-          "by": "user",
-          "action": "retry_full"
+          "by": "system"
         }
       ],
       "evidence": [
@@ -521,39 +551,43 @@
     },
     {
       "id": "extension.desktop_app_unavailable",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "DESKTOP_APP_UNAVAILABLE: 'desktop_app_unavailable'"
       },
       "transitions": [
         {
-          "to": "extension.full_unavailable",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "retry_full"
+          "action": "journey-primary"
+        },
+        {
+          "to": "extension.full_unavailable",
+          "by": "system"
         }
       ],
       "evidence": [
         {
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
-          "name": "returning paired user gets a stopped-app recovery state"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "desktop_app_unavailable"
+          "name": "returning paired user gets an unconfirmed connection without assuming the app stopped"
         }
       ]
     },
     {
       "id": "extension.activation_checking",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "ACTIVATION_CHECKING: 'activation_checking'"
       },
       "transitions": [
+        {
+          "to": "extension.full_handoff",
+          "by": "user",
+          "action": "journey-primary"
+        },
         {
           "to": "extension.activation_required",
           "by": "system"
@@ -576,58 +610,51 @@
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
           "name": "authenticated local transport alone enters activation checking, never Full-ready"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "activation_checking"
         }
       ]
     },
     {
       "id": "extension.activation_required",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "ACTIVATION_REQUIRED: 'activation_required'"
       },
       "transitions": [
         {
-          "to": "desktop.full_analytics_activation",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "open_dashboard"
+          "action": "journey-primary"
         },
         {
           "to": "extension.activation_checking",
-          "by": "user",
-          "action": "retry_readiness"
+          "by": "system"
         }
       ],
       "evidence": [
         {
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
-          "name": "commercial activation required routes the customer to desktop activation without protocol fields"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "activation_required"
+          "name": "optional Full analytics setup keeps desktop access available without protocol fields"
         }
       ]
     },
     {
       "id": "extension.activation_unavailable",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "ACTIVATION_UNAVAILABLE: 'activation_unavailable'"
       },
       "transitions": [
         {
-          "to": "extension.activation_checking",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "retry_readiness"
+          "action": "journey-primary"
+        },
+        {
+          "to": "extension.activation_checking",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -635,26 +662,25 @@
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
           "name": "commercial authority failure is distinct and recoverable"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "activation_unavailable"
         }
       ]
     },
     {
       "id": "extension.analysis_blocked",
-      "surface": "extension.setup",
+      "surface": "extension.popup",
       "anchor": {
         "file": "extension/runtime/customer-journey.mjs",
         "text": "ACTIVATION_ACTIVE: 'activation_active'"
       },
       "transitions": [
         {
-          "to": "extension.activation_checking",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "retry_readiness"
+          "action": "journey-primary"
+        },
+        {
+          "to": "extension.activation_checking",
+          "by": "system"
         }
       ],
       "evidence": [
@@ -662,11 +688,6 @@
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
           "name": "commercial authority alone renders activation active but not Full-ready"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "activation_active"
         }
       ]
     },
@@ -679,18 +700,13 @@
       },
       "transitions": [
         {
-          "to": "desktop.numbers_ready",
+          "to": "extension.full_handoff",
           "by": "user",
-          "action": "open_dashboard"
+          "action": "journey-primary"
         },
         {
           "to": "extension.desktop_app_unavailable",
           "by": "system"
-        },
-        {
-          "to": "extension.options",
-          "by": "user",
-          "action": "open-manage"
         }
       ],
       "evidence": [
@@ -698,114 +714,6 @@
           "kind": "unit",
           "file": "extension/tests/customer-journey.test.mjs",
           "name": "Full is ready only after secure delivery, commercial authority, and analysis admission"
-        },
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "connection details open in Options and repeated entry reuses that tab"
-        },
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/popup-lifecycle.spec.mjs",
-          "name": "a confirmed connection stays in setup and readiness comes from the desktop result"
-        },
-        {
-          "kind": "visual",
-          "file": "extension/qualification/surface-states.mjs",
-          "name": "full_ready"
-        }
-      ]
-    },
-    {
-      "id": "desktop.setup_registration",
-      "surface": "desktop.setup",
-      "anchor": {
-        "file": "app/provisioning/provisioning.js",
-        "text": "'registration_required'"
-      },
-      "transitions": [
-        {
-          "to": "desktop.setup_creator_confirmation",
-          "by": "user",
-          "action": "claim-submit"
-        }
-      ],
-      "evidence": [
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs",
-          "name": "the pasted claim package registers the installation"
-        }
-      ]
-    },
-    {
-      "id": "desktop.setup_creator_confirmation",
-      "surface": "desktop.setup",
-      "anchor": {
-        "file": "app/provisioning/provisioning.js",
-        "text": "'creator_confirmation_required'"
-      },
-      "transitions": [
-        {
-          "to": "desktop.setup_creator_approval",
-          "by": "user",
-          "action": "confirm-identity"
-        }
-      ],
-      "evidence": [
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs",
-          "name": "the detected creator account is confirmed and approved"
-        }
-      ]
-    },
-    {
-      "id": "desktop.setup_creator_approval",
-      "surface": "desktop.setup",
-      "anchor": {
-        "file": "app/provisioning/provisioning.js",
-        "text": "'creator_approval_pending'"
-      },
-      "transitions": [
-        {
-          "to": "desktop.setup_finalization",
-          "by": "user",
-          "action": "acquire-association"
-        }
-      ],
-      "evidence": [
-        {
-          "kind": "unit",
-          "file": "app/provisioning/provisioning.test.mjs",
-          "name": "approval pending and hosted outage have distinct recovery copy"
-        },
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs",
-          "name": "the detected creator account is confirmed and approved"
-        }
-      ]
-    },
-    {
-      "id": "desktop.setup_finalization",
-      "surface": "desktop.setup",
-      "anchor": {
-        "file": "app/provisioning/provisioning.js",
-        "text": "'finalization_ready'"
-      },
-      "transitions": [
-        {
-          "to": "extension.pairing_required",
-          "by": "user",
-          "action": "finalize-provisioning"
-        }
-      ],
-      "evidence": [
-        {
-          "kind": "browser",
-          "file": "tools/e2e-capture/tests/provisioning-registration.spec.mjs",
-          "name": "finalization writes runtime configuration"
         }
       ]
     },
@@ -813,7 +721,7 @@
       "id": "desktop.passkey_sign_in",
       "surface": "desktop.app",
       "anchor": {
-        "file": "frontend/src/views/WebAuthnAccessView.tsx",
+        "file": "frontend/src/components/OnboardingPasskeyTask.tsx",
         "text": "data-journey-state=\"desktop.passkey_sign_in\""
       },
       "transitions": [
@@ -878,7 +786,7 @@
         {
           "kind": "unit",
           "file": "frontend/tests/CreatorDashboardView.test.tsx",
-          "name": "requires activation without making optional history a setup step"
+          "name": "offers optional Full analytics alongside the accessible dashboard"
         },
         {
           "kind": "unit",
@@ -907,16 +815,15 @@
       "transitions": [
         {
           "to": "desktop.full_analytics_activation",
+          "by": "system"
+        },
+        {
+          "to": "desktop.full_analytics_activation",
           "by": "user",
           "action": "confirm-connection"
         },
         {
           "to": "desktop.full_analytics_activation",
-          "by": "user",
-          "action": "connect-extension"
-        },
-        {
-          "to": "desktop.extension_handoff",
           "by": "user",
           "action": "connect-extension"
         },
@@ -928,54 +835,33 @@
       "evidence": [
         {
           "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "renders the three local setup tasks and optional activation from one projection"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/capture.spec.mjs",
+          "name": "real MV3 capture proves exact ordering, durable replay, and alarm recovery"
+        },
+        {
+          "kind": "unit",
           "file": "frontend/tests/CompanionPairingControls.test.tsx",
           "name": "requires explicit code comparison before versioned confirmation without exposing the identity thumbprint"
-        },
-        {
-          "kind": "unit",
-          "file": "frontend/tests/CompanionPairingControls.test.tsx",
-          "name": "pairs with one click: Brain opens first, then the extension, and Brain checks the reported code"
-        },
-        {
-          "kind": "unit",
-          "file": "frontend/tests/CompanionPairingControls.test.tsx",
-          "name": "falls back to comparing codes by eye when no extension answers in this browser"
         },
         {
           "kind": "visual",
           "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "pairing-comparison"
-        }
-      ]
-    },
-    {
-      "id": "desktop.extension_handoff",
-      "surface": "desktop.app",
-      "anchor": {
-        "file": "frontend/src/components/CompanionPairingControls.tsx",
-        "text": "data-journey-state=\"desktop.extension_handoff\""
-      },
-      "transitions": [
-        {
-          "to": "extension.software_activation",
-          "by": "user",
-          "action": "show-extension-window"
         },
-        {
-          "to": "desktop.extension_pairing",
-          "by": "system"
-        }
-      ],
-      "evidence": [
         {
           "kind": "unit",
           "file": "frontend/tests/CompanionPairingControls.test.tsx",
-          "name": "opens the extension window for unfinished steps and continues as soon as they are done"
+          "name": "requests pairing only after a click and follows the coordinator pending operation"
         },
         {
           "kind": "unit",
-          "file": "extension/tests/desktop-port.test.mjs",
-          "name": "the stage follows the extension-owned prerequisites in order"
+          "file": "frontend/tests/CompanionPairingControls.test.tsx",
+          "name": "preserves an unresolved manual confirmation when its view unmounts"
         }
       ]
     },
@@ -1001,6 +887,11 @@
           "to": "extension.software_activation",
           "by": "user",
           "action": "review"
+        },
+        {
+          "to": "desktop.browser_action_unavailable",
+          "by": "user",
+          "action": "open-browser-task"
         }
       ],
       "evidence": [
@@ -1023,6 +914,16 @@
           "kind": "unit",
           "file": "tests/test_companion_browser_controls.py",
           "name": "test_capture_controls_are_creator_only_and_report_unreachable_browsers"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "keeps the review in the paused row and gives controls distinct names from history sync"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/BrowserExtensionControls.test.tsx",
+          "name": "retains the compact facts rows while the connection is missing without offering stale controls"
         }
       ]
     },
@@ -1038,6 +939,11 @@
           "to": "desktop.history_syncing",
           "by": "user",
           "action": "turn-on-message-history"
+        },
+        {
+          "to": "extension.history_permission",
+          "by": "user",
+          "action": "allow-browser-history"
         }
       ],
       "evidence": [
@@ -1050,6 +956,31 @@
           "kind": "visual",
           "file": "tools/visual-capture/screen-matrix.mjs",
           "name": "history-consent"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "requests browser permission inside the consent flow and waits for committed permission"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "reads a conflicting change automatically without replaying consent"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "focuses once after a requested, confirmed grant, never from mounting or duplicate pushes"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "native history permission return"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "single-flights duplicate clicks while the browser request is unresolved"
         }
       ]
     },
@@ -1125,26 +1056,84 @@
       },
       "transitions": [
         {
-          "to": "extension.activation_checking",
-          "by": "user",
-          "action": "activate"
+          "to": "desktop.numbers_ready",
+          "by": "system"
+        },
+        {
+          "to": "extension.full_ready",
+          "by": "system"
         }
       ],
       "evidence": [
         {
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
-          "name": "exposes the customer action when canonical readiness requires activation"
+          "name": "opens account-specific activation directly without an extra code-entry step"
         },
         {
           "kind": "unit",
           "file": "frontend/tests/CommercialActivationControls.test.tsx",
-          "name": "keeps a failed redemption recoverable and re-reads canonical readiness"
+          "name": "never equates accepted activation with canonical Full readiness"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "keeps an uncertain confirmation explicit across passive revisions"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "offers configured providers and sends the selected provider only after a click"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "keeps optional activation code entry collapsed and validates an explicit paste"
         },
         {
           "kind": "visual",
           "file": "tools/visual-capture/screen-matrix.mjs",
-          "name": "activation-dialog"
+          "name": "activation-review"
+        },
+        {
+          "kind": "visual",
+          "file": "tools/visual-capture/screen-matrix.mjs",
+          "name": "activation-provider-selection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "keeps offer review in a modal and closing it does not accept or reopen it on passive updates"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "receives late owner readiness without polling or replacing accepted work"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "chooses another account explicitly without authorizing activation"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/CommercialActivationControls.test.tsx",
+          "name": "waits for Chrome without redundant launch or cancellation controls"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_activation.py",
+          "name": "test_coordinator_keeps_unavailable_activation_and_observes_same_operation_readiness"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_activation.py",
+          "name": "test_unavailable_activation_after_original_deadline_is_unknown_and_still_readable"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_activation.py",
+          "name": "test_accepted_activation_delivery_recovers_after_presentation_expiry"
         }
       ]
     },
@@ -1333,6 +1322,1181 @@
           "kind": "unit",
           "file": "frontend/tests/ConversationQuestions.test.tsx",
           "name": "shows unavailable questions without old results"
+        }
+      ]
+    },
+    {
+      "id": "extension.setup_code_entry",
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"setup-transfer-entry\""
+      },
+      "transitions": [
+        {
+          "to": "extension.software_activation",
+          "by": "user",
+          "action": "setup-transfer-back"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "extension/tests/setup-transfer-ui.test.mjs",
+          "name": "code validation stays on the receiving screen and preserves input on an unknown response"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/setup-transfer-ui.test.mjs",
+          "name": "receiving entry uses the same tab and a body, never a code or key in a URL"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_loading",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/index.html",
+        "text": "data-journey-state=\"desktop.setup_loading\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_browser_access",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_finish",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_complete",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_unavailable",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows loading while waiting for the authoritative first snapshot"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_admission.py",
+          "name": "test_native_refresh_replaces_expired_presentation_without_extending_accepted_task"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_admission.py",
+          "name": "test_native_refresh_cannot_retarget_or_displace_a_newer_pending_owner"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_browser_access",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/view.js",
+        "text": "'setup_browser_access'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_unavailable",
+          "by": "system"
+        },
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "task-action"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "renders the three local setup tasks and optional activation from one projection"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_account_connection",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/view.js",
+        "text": "'setup_account_connection'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_finish",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_unavailable",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "renders the three local setup tasks and optional activation from one projection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows account and computer inline with a separate explicit connection action"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "distinguishes browser sign-in from accepted work without declaring local readiness"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "requires the current authentication projection before offering account sign-in or browser retry"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "does not ask the user to check status during automatic account recovery"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows the accepted operation failure instead of an indefinite waiting message"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_exact_initial_terminal_read_allows_explicit_same_desktop_continuation"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_unconfirmed_initial_read_never_settles_or_replaces_original_source"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_terminal_initial_read_stops_only_the_idle_original_wait"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_desktop_browser_tasks.py",
+          "name": "test_expired_initial_completion_uses_its_original_recovery_without_a_new_command"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_initial_handoff_expiry.py",
+          "name": "test_delayed_terminal_read_cannot_erase_completed_initial_evidence"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_initial_handoff_expiry.py",
+          "name": "test_desktop_recovery_preserves_original_operation_without_browser_authority"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_registered_continuation_context.py",
+          "name": "test_provider_terminal_source_can_continue_before_local_presentation_expiry"
+        },
+        {
+          "kind": "unit",
+          "file": "tests/test_registered_continuation_context.py",
+          "name": "test_native_account_command_resumes_only_the_explicit_classified_source"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_finish",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/view.js",
+        "text": "'setup_finish'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_complete",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_unavailable",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_local_access",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "renders the three local setup tasks and optional activation from one projection"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_complete",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/view.js",
+        "text": "'setup_complete'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.numbers_ready",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "renders the three local setup tasks and optional activation from one projection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-continuation.test.js",
+          "name": "opens the dashboard once after verified setup and local authentication"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "does not ask for a status check or dashboard action after local setup completes"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_unavailable",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/view.js",
+        "text": "'setup_unavailable'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "shows factual unavailable status and disables stale actions"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "re-admits an expired native presentation and reads its exact pending operation without replay"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "reconnects after a local service interruption without resending commands or opening Chrome"
+        }
+      ]
+    },
+    {
+      "id": "browser.loading",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/index.html",
+        "text": "data-journey-state=\"browser.loading\""
+      },
+      "transitions": [
+        {
+          "to": "browser.unavailable",
+          "by": "system"
+        },
+        {
+          "to": "browser.profile_mismatch",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_expired",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_changed",
+          "by": "system"
+        },
+        {
+          "to": "browser.service_unavailable",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_consent",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_permission",
+          "by": "system"
+        },
+        {
+          "to": "browser.needs_account",
+          "by": "system"
+        },
+        {
+          "to": "browser.ready",
+          "by": "system"
+        },
+        {
+          "to": "browser.paused",
+          "by": "system"
+        },
+        {
+          "to": "browser.reported",
+          "by": "system"
+        },
+        {
+          "to": "browser.account_mismatch",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_idle",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_opening",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_checking",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_unconfirmed",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_access_required",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_connecting",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_access_required",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_saved",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.unavailable",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'unavailable'"
+      },
+      "transitions": [
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "task-retry"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.profile_mismatch",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'profile_mismatch'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_browser_access",
+          "by": "user",
+          "action": "desktop-return"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.task_expired",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'task_expired'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_browser_access",
+          "by": "user",
+          "action": "desktop-return"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.task_changed",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'task_changed'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_browser_access",
+          "by": "user",
+          "action": "desktop-return"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.service_unavailable",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'service_unavailable'"
+      },
+      "transitions": [
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "task-retry"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.needs_consent",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'needs_consent'"
+      },
+      "transitions": [
+        {
+          "to": "browser.reported",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.needs_permission",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'needs_permission'"
+      },
+      "transitions": [
+        {
+          "to": "browser.reported",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.needs_account",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'needs_account'"
+      },
+      "transitions": [
+        {
+          "to": "browser.reported",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.ready",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'ready'"
+      },
+      "transitions": [
+        {
+          "to": "browser.reported",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.paused",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'paused'"
+      },
+      "transitions": [
+        {
+          "to": "browser.reported",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.reported",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'reported'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "native browser return ownership"
+        }
+      ]
+    },
+    {
+      "id": "browser.account_mismatch",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'account_mismatch'"
+      },
+      "transitions": [
+        {
+          "to": "browser.loading",
+          "by": "user",
+          "action": "task-retry"
+        },
+        {
+          "to": "desktop.setup_browser_access",
+          "by": "user",
+          "action": "desktop-return"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders task status and recovery without a second setup wizard"
+        }
+      ]
+    },
+    {
+      "id": "browser.auth_idle",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'auth_idle'"
+      },
+      "transitions": [
+        {
+          "to": "browser.auth_opening",
+          "by": "user",
+          "action": "authentication-open"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_opening",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders focused authentication and ordinary Chrome recovery without declaring success"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "continues a native sign-in choice once, only after exact idle and a fresh bound payload"
+        }
+      ]
+    },
+    {
+      "id": "browser.auth_opening",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'auth_opening'"
+      },
+      "transitions": [
+        {
+          "to": "browser.auth_checking",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_unconfirmed",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders focused authentication and ordinary Chrome recovery without declaring success"
+        }
+      ]
+    },
+    {
+      "id": "browser.auth_checking",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'auth_checking'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.auth_closed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders focused authentication and ordinary Chrome recovery without declaring success"
+        }
+      ]
+    },
+    {
+      "id": "browser.auth_closed",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'auth_closed'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "user",
+          "action": "desktop-return"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders acknowledged window closure without claiming domain completion"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "reports window closure once through its scoped port without claiming Provider cancellation"
+        }
+      ]
+    },
+    {
+      "id": "browser.auth_unconfirmed",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'auth_unconfirmed'"
+      },
+      "transitions": [
+        {
+          "to": "browser.auth_opening",
+          "by": "user",
+          "action": "authentication-open"
+        },
+        {
+          "to": "desktop.setup_account_connection",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders focused authentication and ordinary Chrome recovery without declaring success"
+        }
+      ]
+    },
+    {
+      "id": "browser.auth_access_required",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'auth_access_required'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_browser_access",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders focused authentication and ordinary Chrome recovery without declaring success"
+        }
+      ]
+    },
+    {
+      "id": "desktop.browser_action_unavailable",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/ui/FreshnessStatus.tsx",
+        "text": "data-journey-state=\"desktop.browser_action_unavailable\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.browser_controls",
+          "by": "user",
+          "action": "retry"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/freshnessNavigation.test.tsx",
+          "name": "keeps a failed browser action visible with a next step"
+        }
+      ]
+    },
+    {
+      "id": "desktop.setup_local_access",
+      "surface": "desktop.setup",
+      "anchor": {
+        "file": "frontend/onboarding/index.html",
+        "text": "data-journey-state=\"desktop.setup_local_access\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_finish",
+          "by": "user",
+          "action": "local-authenticate"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "requires explicit local authentication before pairing or opening the dashboard"
+        }
+      ]
+    },
+    {
+      "id": "browser.pairing_connecting",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'pairing_connecting'"
+      },
+      "transitions": [
+        {
+          "to": "browser.pairing_checking",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_unconfirmed",
+          "by": "system"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        },
+        {
+          "to": "browser.pairing_saved",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders pairing status without showing either comparison code or declaring completion"
+        }
+      ]
+    },
+    {
+      "id": "browser.pairing_checking",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'pairing_checking'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_finish",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders pairing status without showing either comparison code or declaring completion"
+        }
+      ]
+    },
+    {
+      "id": "browser.pairing_unconfirmed",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'pairing_unconfirmed'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_finish",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders pairing status without showing either comparison code or declaring completion"
+        }
+      ]
+    },
+    {
+      "id": "browser.pairing_access_required",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'pairing_access_required'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_browser_access",
+          "by": "user",
+          "action": "desktop-return"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "renders pairing status without showing either comparison code or declaring completion"
+        }
+      ]
+    },
+    {
+      "id": "extension.full_handoff",
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "data-journey-state=\"extension.full_handoff\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "open-desktop"
+        },
+        {
+          "to": "extension.start_choice",
+          "by": "user",
+          "action": "desktop-back"
+        },
+        {
+          "to": "extension.software_activation",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "extension/tests/setup-full-review.test.mjs",
+          "name": "Preview-to-Full intent survives reload and keeps Preview running until an admitted task requests consent"
+        }
+      ]
+    },
+    {
+      "id": "extension.browser_access_ready",
+      "surface": "extension.setup",
+      "anchor": {
+        "file": "extension/setup.html",
+        "text": "id=\"journey-card\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "open_desktop"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "extension/tests/browser-task-entry.test.mjs",
+          "name": "only the current scoped access task survives read and fixed expiry"
+        }
+      ]
+    },
+    {
+      "id": "browser.pairing_saved",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'pairing_saved'"
+      },
+      "transitions": [
+        {
+          "to": "browser.pairing_connecting",
+          "by": "user",
+          "action": "pairing-replace"
+        },
+        {
+          "to": "browser.task_completed",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "replaces a saved pairing only after explicit action and current admission"
+        }
+      ]
+    },
+    {
+      "id": "browser.task_completed",
+      "surface": "browser.task",
+      "anchor": {
+        "file": "frontend/browser-tasks/view.js",
+        "text": "'task_completed'"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "system"
+        },
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "desktop-return"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/browser-tasks.test.js",
+          "name": "reads completed domain status before blaming a dropped extension connection"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/desktop-setup.test.js",
+          "name": "native browser return ownership"
+        }
+      ]
+    },
+    {
+      "id": "extension.history_permission",
+      "surface": "extension.options",
+      "anchor": {
+        "file": "extension/options.html",
+        "text": "id=\"history-title\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.message_history",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "requests browser permission inside the consent flow and waits for committed permission"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/permission-handoff.test.mjs",
+          "name": "permission completion closes only the exact recorded compact window"
+        },
+        {
+          "kind": "unit",
+          "file": "extension/tests/ui-surfaces.test.mjs",
+          "name": "history handoff updates its owned popup scope without claiming a customer tab"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "native history permission return"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/SettingsView.test.tsx",
+          "name": "single-flights duplicate clicks while the browser request is unresolved"
         }
       ]
     }

@@ -40,7 +40,7 @@ from typing import Any
 
 import pytest
 
-from app.provisioning.app import _DISCLOSURE_ASSET
+_DISCLOSURE_ASSET = Path(__file__).resolve().parents[1] / "app/provisioning/creator-platform-data-risk-disclosure.html"
 
 pytestmark = [pytest.mark.ci_tier('fast')]
 

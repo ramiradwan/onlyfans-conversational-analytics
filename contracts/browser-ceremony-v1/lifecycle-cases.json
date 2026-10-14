@@ -1,0 +1,772 @@
+[
+  {
+    "case_id": "read-noncreating",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 0,
+      "responses": [
+        "unavailable"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "exact-prepare-retry-fixed-deadline",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "prepared:2000"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "prepare",
+        "now": 1500
+      }
+    ]
+  },
+  {
+    "case_id": "changed-prepare-conflicts",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "operation_conflict"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "prepare",
+        "meaning": "changed",
+        "now": 1000
+      }
+    ]
+  },
+  {
+    "case_id": "lost-prepare-recovered",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "entry_reads": [
+        {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+          "completion": {
+            "mode": "extension-auth-flow",
+            "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+          },
+          "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "expires_at": 2000,
+          "operation_id": "0199b234-5678-7000-8000-000000000001"
+        }
+      ],
+      "preparations": 1,
+      "responses": [
+        "reply-lost",
+        "active:pending:no-result:2000"
+      ]
+    },
+    "inspect_entries": true,
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000,
+        "reply_lost": true
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "wrong-known-ceremony-unavailable",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "unavailable"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "ceremony_matches": false,
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "wrong-read-scope-unavailable",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "unavailable"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "meaning": "changed",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "no-read-renewal",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "entry_reads": [
+        {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+          "completion": {
+            "mode": "extension-auth-flow",
+            "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+          },
+          "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "expires_at": 2000,
+          "operation_id": "0199b234-5678-7000-8000-000000000001"
+        },
+        null
+      ],
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "active:pending:no-result:2000",
+        "expired:pending:no-result:2000"
+      ]
+    },
+    "inspect_entries": true,
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "read",
+        "now": 1900
+      },
+      {
+        "kind": "read",
+        "now": 2000
+      }
+    ]
+  },
+  {
+    "case_id": "cancel-keeps-pending-truth",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "entry_reads": [
+        null
+      ],
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "retired:pending:no-result:2000",
+        "retired:pending:no-result:2000"
+      ]
+    },
+    "inspect_entries": true,
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "cancel",
+        "now": 1002
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "commit-before-cancel",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "domain-committed",
+        "retired:committed:clr1-original:2000"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "domain-commit",
+        "now": 1001
+      },
+      {
+        "kind": "cancel",
+        "now": 1002
+      }
+    ]
+  },
+  {
+    "case_id": "accepted-worker-commits-after-cancel",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "retired:pending:no-result:2000",
+        "domain-committed",
+        "retired:committed:clr1-original:2000"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "cancel",
+        "now": 1002
+      },
+      {
+        "kind": "domain-commit",
+        "now": 1001
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "lost-committed-response",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "reply-lost",
+        "active:committed:clr1-original:2000"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "domain-commit",
+        "now": 1001,
+        "reply_lost": true
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "result-original-expiry",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "domain-committed",
+        "active:committed:clr1-original:2000",
+        "active:committed:no-result:2000"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "domain-commit",
+        "now": 1001
+      },
+      {
+        "kind": "read",
+        "now": 1599
+      },
+      {
+        "kind": "read",
+        "now": 1600
+      }
+    ]
+  },
+  {
+    "case_id": "proof-scope-cannot-fetch-other-result",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "domain-committed",
+        "unavailable"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "domain-commit",
+        "now": 1001
+      },
+      {
+        "kind": "read",
+        "now": 1001,
+        "result_scope_matches": false
+      }
+    ]
+  },
+  {
+    "case_id": "recovery-no-result-mint",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "entry_reads": [
+        {
+          "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+          "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+          "completion": {
+            "mode": "extension-auth-flow",
+            "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+          },
+          "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+          "expires_at": 2000,
+          "operation_id": "0199b234-5678-7000-8000-000000000001"
+        }
+      ],
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "active:pending:no-result:2000"
+      ]
+    },
+    "inspect_entries": true,
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "recover",
+        "now": 1500
+      }
+    ]
+  },
+  {
+    "case_id": "read-after-expiry-preserves-commit",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "domain-committed",
+        "expired:committed:no-result:2000"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "domain-commit",
+        "now": 1001
+      },
+      {
+        "kind": "read",
+        "now": 2000
+      }
+    ]
+  },
+  {
+    "case_id": "cleanup-preserves-domain-authority",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "domain-committed",
+        "context-deleted-domain-retained",
+        "unavailable"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "domain-commit",
+        "now": 1001
+      },
+      {
+        "kind": "cleanup",
+        "now": 2000
+      },
+      {
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "expired-prepare-never-renews",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "expired"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "prepare",
+        "now": 2000
+      }
+    ]
+  },
+  {
+    "case_id": "cancel-unknown-is-noncreating",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 0,
+      "responses": [
+        "unavailable"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "cancel",
+        "now": 1002
+      }
+    ]
+  },
+  {
+    "case_id": "cancel-exact-retry",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "retired:pending:no-result:2000",
+        "retired:pending:no-result:2000"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "kind": "cancel",
+        "now": 1002
+      },
+      {
+        "kind": "cancel",
+        "now": 1002
+      }
+    ]
+  },
+  {
+    "case_id": "fresh-proof-required-after-used-challenge",
+    "expected": {
+      "authority_renewals": 0,
+      "domain_mutations": 0,
+      "preparations": 1,
+      "responses": [
+        "prepared:2000",
+        "proof_invalid"
+      ]
+    },
+    "original_entry": {
+      "attempt_id": "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "completion": {
+        "mode": "extension-auth-flow",
+        "return_uri": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/browser-ceremony/v1/complete"
+      },
+      "entry_reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "operation_id": "0199b234-5678-7000-8000-000000000001"
+    },
+    "source_expires": 2000,
+    "steps": [
+      {
+        "challenge": "challenge-a",
+        "kind": "prepare",
+        "now": 1000
+      },
+      {
+        "challenge": "challenge-a",
+        "kind": "read",
+        "now": 1001
+      }
+    ]
+  }
+]

@@ -1,0 +1,83 @@
+{
+  "profile": "urn:bridge-clean:browser-authentication-selection:v1",
+  "governing_adr": "docs/adr/0031-bound-authentication-attempts-and-current-admission.md",
+  "proof_profile": "urn:bridge-clean:browser-authentication-selection-proof:v1",
+  "ceremony_profile": "urn:bridge-clean:browser-ceremony:v1",
+  "request_max_bytes": 8192,
+  "response_max_bytes": 16384,
+  "duplicate_json_members": "reject",
+  "unknown_json_members": "reject",
+  "providers": [
+    "google",
+    "microsoft-personal",
+    "default"
+  ],
+  "provider_domain_hint": {
+    "google": "Google",
+    "microsoft-personal": "login.live.com",
+    "default": null
+  },
+  "mapping_owner": "Provider-only-closed-mapping-no-client-domain-hint-or-URL-parameters",
+  "choices_availability": "closed-Provider-configuration-projection-no-tenant-discovery-from-unknown-sources",
+  "binding": "entire-original-ceremony-binding-and-operation-plus-exact-child-attempt",
+  "child_attempt_id": "caller-generated-UUIDv7-persist-before-outbound-request",
+  "max_child_attempts_per_ceremony": 32,
+  "deadline": "original-minimum-source-and-ceremony-expiry-no-attempt-read-select-switch-or-cancel-renewal",
+  "read": "noncreating-exact-child-or-null-current-selection-projection",
+  "select": "write-once-ordinary-sign-in-choice-exact-predecessor-CAS",
+  "switch": "separate-explicit-nonauthorizing-switch-child-preserve-old-admission-until-exact-callback-success",
+  "switch_prompt": "select_account",
+  "ordinary_sign_in_prompt": "none-unless-separate-existing-sensitive-policy-requires-fresh-authentication",
+  "cancel": "exact-child-idempotent-retirement-admitted-truth-wins-no-domain-rollback",
+  "successor": "current-retired-predecessor-or-reauthentication-required-current-admitted-predecessor-or-explicit-switch",
+  "reauthentication": "current-read-only-when-historical-admission-no-longer-exact-live-preserve-factual-exact-child-result",
+  "same_attempt_changed_meaning": "attempt_conflict",
+  "lost_reply": "fresh-proof-read-exact-original-child-no-replacement-or-automatic-browser-dispatch",
+  "dispatch": "new-OIDC-dispatch-requires-exact-active-selected-child-admitted-reentry-only-under-narrow-preparation-recovery-rule",
+  "callback_fences": [
+    "exact-active-child-before-code-exchange",
+    "exact-active-child-before-final-admission",
+    "same-original-source-and-key",
+    "actual-source-admission-generation-and-expected-actor",
+    "existing-state-nonce-confidential-fixed-endpoint-exchange-and-browser-CSRF"
+  ],
+  "admission_authority": "unchanged-independent-Provider-verified-OIDC-never-key-or-choice",
+  "identity": "immutable-expected-customer-no-email-merge-no-display-name-prefill",
+  "customer_credentials_on_desktop": false,
+  "callbacks": "unchanged-fixed-chromiumapp-correlation-only",
+  "retention": {
+    "attempts": "onboarding-working-state-original-expiry-90-day-abandonment-ceiling",
+    "challenges": "60-second-original-expiry-and-replay-tombstones",
+    "audit": "400-days-minimal-no-tokens-codes-or-complete-bodies",
+    "accepted_work": "existing-owning-domain-until-definitive-outcome"
+  },
+  "refusal_status": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authentication_required": 401,
+    "authorization_denied": 403,
+    "operation_conflict": 409,
+    "attempt_conflict": 409,
+    "provider_unavailable": 409,
+    "attempt_limit": 409,
+    "expired": 410,
+    "not_ready": 409,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  },
+  "messages": {
+    "definitions": "schemas/browser-authentication-selection/v1/definitions.schema.json",
+    "projection": "schemas/browser-authentication-selection/v1/projection.schema.json",
+    "read-request": "schemas/browser-authentication-selection/v1/read-request.schema.json",
+    "read-response": "schemas/browser-authentication-selection/v1/read-response.schema.json",
+    "select-request": "schemas/browser-authentication-selection/v1/select-request.schema.json",
+    "select-response": "schemas/browser-authentication-selection/v1/select-response.schema.json",
+    "switch-request": "schemas/browser-authentication-selection/v1/switch-request.schema.json",
+    "switch-response": "schemas/browser-authentication-selection/v1/switch-response.schema.json",
+    "cancel-request": "schemas/browser-authentication-selection/v1/cancel-request.schema.json",
+    "cancel-response": "schemas/browser-authentication-selection/v1/cancel-response.schema.json",
+    "error": "schemas/browser-authentication-selection/v1/error.schema.json"
+  },
+  "legacy_adapters_required": false,
+  "admitted_browser_reentry": "exact-current-live-admission-and-original-activation-preparation-absent-only-no-login-or-replacement-quote"
+}

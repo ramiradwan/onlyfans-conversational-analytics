@@ -21,6 +21,29 @@ const variants = [
 ];
 
 for (const [name, Outbox, Coordinator] of variants) {
+  test(`${name}: unsupported bootstrap is a scoped public status and publishes no inventory`, async () => {
+    const storage = new InMemoryIngestionStorage();
+    const outbox = new Outbox({ storage, creatorAccountId: account, idFactory: id });
+    const state = await outbox.initialize();
+    let consent = 'consent-1', updates = 0;
+    const coordinator = new Coordinator({ outbox, idFactory: id, now: () => stamp, delay: async () => {},
+      onStateChanged: () => updates++,
+      configuration: () => ({ creator_account_id: account, config_revision: 'config-1', history_acquisition: {
+        enabled: true, consent_revision: consent, authorized_platform_creator_id: 'creator-platform-1',
+        recent_window_days: 30, page_size: 50, pages_per_wake: 10, request_interval_ms: 0, retry_limit: 2 } }),
+      session: () => ({ creator_account_id: account, applied_config_revision: 'config-1', account_epoch: state.account_epoch }),
+      signer: { async read() { return { operation: 'identity', success: false,
+        response: { failure_code: 'unsupported_revision' } }; } } });
+    await assert.rejects(coordinator.wake());
+    assert.equal(coordinator.historyErrorCode(), 'unsupported_revision');
+    assert.equal(updates, 1);
+    assert.equal((await outbox.historyJobs()).some(job => ['inventory', 'conversation'].includes(job.kind)), false);
+    assert.equal(outbox.identityState().entity_counts.messages, 0);
+    consent = 'consent-2';
+    assert.equal(coordinator.historyErrorCode(), null);
+    coordinator.stop();
+  });
+
   async function fixture(kind = 'inventory') {
     const storage = new InMemoryIngestionStorage();
     const make = () => new Outbox({ storage, creatorAccountId: account, idFactory: id });

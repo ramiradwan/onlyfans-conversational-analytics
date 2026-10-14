@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony/v1/snapshot.schema.json",
+  "title": "Browser ceremony snapshot v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ceremony_id",
+        "operation_id",
+        "attempt_id",
+        "binding_digest",
+        "expires_at",
+        "revision",
+        "presentation_state",
+        "domain_status"
+      ],
+      "properties": {
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "binding_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "presentation_state": {
+          "enum": [
+            "active",
+            "retired",
+            "expired"
+          ]
+        },
+        "domain_status": {
+          "enum": [
+            "awaiting-authentication",
+            "awaiting-confirmation",
+            "pending",
+            "ready",
+            "committed",
+            "unavailable",
+            "revoked"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ceremony_id",
+        "operation_id",
+        "attempt_id",
+        "binding_digest",
+        "expires_at",
+        "revision",
+        "presentation_state",
+        "domain_status",
+        "result"
+      ],
+      "properties": {
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "binding_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "presentation_state": {
+          "enum": [
+            "active",
+            "retired",
+            "expired"
+          ]
+        },
+        "domain_status": {
+          "const": "committed"
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "receipt"
+          ],
+          "properties": {
+            "kind": {
+              "const": "initial-handoff-receipt"
+            },
+            "receipt": {
+              "$ref": "../../initial-handoff/v2/receipt-response.schema.json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ceremony_id",
+        "operation_id",
+        "attempt_id",
+        "binding_digest",
+        "expires_at",
+        "revision",
+        "presentation_state",
+        "domain_status",
+        "result"
+      ],
+      "properties": {
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "binding_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "presentation_state": {
+          "enum": [
+            "active",
+            "retired",
+            "expired"
+          ]
+        },
+        "domain_status": {
+          "const": "ready"
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "continuation_id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "registered-binding-ready"
+            },
+            "continuation_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ceremony_id",
+        "operation_id",
+        "attempt_id",
+        "binding_digest",
+        "expires_at",
+        "revision",
+        "presentation_state",
+        "domain_status",
+        "result"
+      ],
+      "properties": {
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "binding_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "expires_at": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "presentation_state": {
+          "enum": [
+            "active",
+            "retired",
+            "expired"
+          ]
+        },
+        "domain_status": {
+          "const": "committed"
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "activation_operation_id",
+            "redemption"
+          ],
+          "properties": {
+            "kind": {
+              "const": "activation-redemption"
+            },
+            "activation_operation_id": {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            "redemption": {
+              "$ref": "../../commercial/v1/capability-license-redemption-continuation.schema.json"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

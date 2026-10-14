@@ -1,5 +1,5 @@
 import { assertOnlyFansTabCanRun, guardMainWorldDispatch } from './read-only-frozen-tab-guard.mjs';
-import { guardSignerRefresh } from './signer-refresh-budget.mjs';
+import { reserveSignerRecovery } from './signer-refresh-budget.mjs';
 
 const noOp = () => {};
 const SIGNER_STATE_KEY = 'signer-state';
@@ -105,10 +105,12 @@ export function createLazyAccountSigner({
       try {
         const provider = await factory({
           creatorAccountId,
-          chromeApi: guardMainWorldDispatch(guardSignerRefresh(chromeApi, {
-            storage, creatorAccountId, signal: ownerSignal,
-          }), { signal: ownerSignal }),
+          chromeApi: guardMainWorldDispatch(chromeApi, { signal: ownerSignal }),
           persistence,
+          reserveRecovery: (requestSignal) => reserveSignerRecovery({
+            storage, creatorAccountId, signal: requestSignal
+              ? AbortSignal.any([ownerSignal, requestSignal]) : ownerSignal,
+          }),
           captureMode: 'observe-only',
           expectedIdentity: requestedIdentity,
           signal: AbortSignal.any([ownerSignal, operationSignal]),

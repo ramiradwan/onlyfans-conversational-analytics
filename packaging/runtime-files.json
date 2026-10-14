@@ -2,15 +2,26 @@
   "schema_version": 1,
   "required_files": [
     "Brain.exe",
+    "Bridge.exe",
+    "ensure-webview2.ps1",
     "_internal/app/templates/index.html",
-    "_internal/app/provisioning/provisioning.html",
+    "_internal/app/static/dist/onboarding/index.html",
+    "_internal/app/static/dist/browser-tasks/index.html",
     "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
-    "_internal/app/provisioning/provisioning.js",
     "_internal/contracts/manifest.json",
+    "_internal/shared/onboarding/sse.mjs",
+    "_internal/shared/onboarding/json.mjs",
+    "_internal/shared/onboarding/projection.mjs",
+    "_internal/shared/onboarding/client.mjs",
     "_internal/contracts/consumer-pin.json",
     "THIRD_PARTY_NOTICES.md",
     "NATIVE_SNOW_NOTICES.txt",
-    "release-manifest.json"
+    "release-manifest.json",
+    "_internal/app/onboarding/entry.html",
+    "_internal/app/onboarding/entry.js",
+    "_internal/shared/desktop-onboarding/schema-v2.json",
+    "_internal/shared/browser-tasks/schema.json",
+    "_internal/app/static/dist/setup-code/index.html"
   ],
   "required_directories": [
     "_internal/app/static",
@@ -20,6 +31,12 @@
   ],
   "frontend": {
     "dist_path": "_internal/app/static/dist",
+    "required_entries": [
+      "index.html",
+      "onboarding/index.html",
+      "browser-tasks/index.html",
+      "setup-code/index.html"
+    ],
     "manifest_paths": [
       "manifest.json",
       ".vite/manifest.json"
@@ -72,7 +89,21 @@
         "0015_capability_license_authority.sql": "404689c5e258bad350210740fe2dde0c7c7dad5027b516476fb106866265a11b",
         "0016_bootstrap_recovery_v2.sql": "7abb504e996ea02a5d6a3f2f9a1f441d9f59a0f060657098e4c2f8208b070069",
         "0017_capability_license_delivery_journal.sql": "b7f7c489ed7e16c5ae6994acf27dfd3dab9bb60d3c10eb25c74835d40c26017a",
-        "0018_companion_confirmation_method.sql": "436da449ede4ae0b7827349b76f5f0797578bd56bc535ba9898d783d7908ddbe"
+        "0018_companion_confirmation_method.sql": "436da449ede4ae0b7827349b76f5f0797578bd56bc535ba9898d783d7908ddbe",
+        "0019_first_enrollment.sql": "46c1b5d89adc06e34dfdd20989c3d7748d899bdb2a68f1414134e7002b938da8",
+        "0020_onboarding_journeys.sql": "97fb16b41f563587e0a17257088087504c093eb2205266bd58c96a3c75e0c605",
+        "0021_onboarding_transfer.sql": "d142017c43f17e689cd7936253f689691ec6fbd738626e45f31e8fa6565da7f4",
+        "0022_onboarding_workspace_recovery.sql": "b8a073bc95a75d1fd83e13dbdbcd5fa8613e26adf91d1405b381013f6dfebf0c",
+        "0023_registered_continuations.sql": "92515248380d6371e093524a2cf9b62b324f0f2d29d7be6382a8c374c69a11f8",
+        "0024_onboarding_presentation_sessions.sql": "320193ba942d67a8a1c2768c454db9623382b36fdf0665a7f1deea7a9209637b",
+        "0025_runtime_activation_entries.sql": "8cd8ea66c54f46deb022259f1a5deec2fce28052fcb8984af49443cc0922e5e7",
+        "0026_desktop_browser_admission.sql": "977aefddb1d3915934b6cfe80d1a7846246ed61a4cdd6d25f8e271f726c5f854",
+        "0027_desktop_setup_operations.sql": "7aceca366c99f00de52d8b2a7c7e9513c44f45d6a0397b8b76b56a98559d7958",
+        "0028_desktop_browser_attachment.sql": "b57519fdb8c822634c3e7b87ec81d603f4c73518e308ed1971b480ea4ff4c87e",
+        "0029_desktop_pairing_operations.sql": "9976f21edff5dc6a4f556d354e1bd70e291ff07c416421ca7f48d9b6cc8b227a",
+        "0030_desktop_authentication_closure.sql": "4a6b73d306d3a54f70dbdfd23e3f8964437fdeaa01966c5e5edd884887b6a50d",
+        "0031_activation_delivery_recovery.sql": "27a963a4d5fb38a83c12b89aaf8e85331643fb18b6ecd1bc3d728361b0e2d678",
+        "0032_desktop_presentation_refresh.sql": "8c4b006eb8cd438c8a92eee68b58921a1257d845a4ea8d148d57be1d62d5f096"
       }
     },
     {
@@ -114,10 +145,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "14693de25efdd6732f3da36baaa7b2d96e034c429b1438e3192f37533c89d0b0",
-    "consumer_pin_sha256": "da6d15b48fe02317bb8d4a8deafff288447c0627298576423fe3980a7ed26758",
+    "manifest_sha256": "87edc82a4c155b4aba68581084cd1780d3908ed71ab70838b82a7e2a4387a4e6",
+    "consumer_pin_sha256": "7a058500a5d6e0dacac38941a078ca74ffb9f8644363d8ae719aff4623644db4",
     "root_file_sha256": {
-      "loader.py": "6a8cd27c029bf06836b91c4a1d794df5dda6978f775584a57d785b20cd825fbf",
+      "loader.py": "732a83c826c98b81d2e7bd1a43feedbba92409216f3ecb7a32e3690968c98708",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [
@@ -130,6 +161,10 @@
     ]
   },
   "forbidden_paths": [
+    "brain-fixture.exe",
+    "**/brain-fixture.exe",
+    "msedgewebview2.exe",
+    "**/msedgewebview2.exe",
     ".env",
     ".env.example",
     "_internal/**/runtime.env",
@@ -146,7 +181,14 @@
     "extension/**",
     "tests/**",
     "tools/**",
-    "requirements-dev.txt"
+    "requirements-dev.txt",
+    "_internal/app/provisioning/provisioning.html",
+    "_internal/app/provisioning/provisioning.js",
+    "_internal/app/provisioning/resume.js",
+    "_internal/app/provisioning/native-return.js",
+    "_internal/app/provisioning/native-workspace.mjs",
+    "_internal/app/provisioning/native-return.css",
+    "_internal/app/provisioning/native-tokens.css"
   ],
   "forbidden_material": [
     {
@@ -155,7 +197,10 @@
       "reviewed_synthetic_files": {
         "_internal/contracts/initial-installation-handoff-v1/digest-cases.json": "c425138e26b1b826931141863905eeb10af36788dd85d0b34dddc0681ce3c2ac",
         "_internal/contracts/initial-installation-handoff-v1/proof-cases.json": "11cd8d1ae0e93156d8f9bed193a8d72e0f50f5f7c7db661b9e3bd0b7a5e17613",
-        "_internal/contracts/initial-installation-handoff-v1/schema-cases.json": "837db4ed80632507b0ec97d269455681b6d15709c207f37a42bd4281b81be1bb"
+        "_internal/contracts/initial-installation-handoff-v1/schema-cases.json": "837db4ed80632507b0ec97d269455681b6d15709c207f37a42bd4281b81be1bb",
+        "_internal/contracts/initial-installation-handoff-v2/digest-cases.json": "15a71798b5a2814095a6402e633955b96516a25b6f4d70374ca9cbb5042db0bb",
+        "_internal/contracts/initial-installation-handoff-v2/proof-cases.json": "2a06115ddb72c8b6a82ca8d8bde5eb1edde511828257ae652df06455d8c60a78",
+        "_internal/contracts/initial-installation-handoff-v2/schema-cases.json": "170479fd603709952870d30a93fd922edd81b35f8b67c588b82644e64211fef0"
       }
     },
     {

@@ -1,72 +1,52 @@
-<!-- CODE-VERIFY: Verify Windows requirements, installer behavior, provisioning prerequisites and steps, extension ordering, runtime paths, launcher behavior, and uninstall behavior against source and packaging configuration before editing. -->
+<!-- CODE-VERIFY: Verify the Windows installer filename and per-user installation, extension minimum browser version, hardware-key requirement, local port, first-run setup and return behavior, data path, and uninstall preservation against manifest, installer, launcher, provisioning and frontend source before changing this guide. -->
 
 # Install on Windows
 
-OnlyFans Conversational Analytics installs per user. You do not need administrator rights, Python, Node.js, a repository checkout, or a provisioning environment variable.
+Install the desktop app and browser extension from the same published package. You do not need administrator rights or development tools.
 
 ## Requirements
 
-- 64-bit Windows that can run x64 applications.
-- A Chromium-based browser version 116 or later for the Agent extension.
-- TCP port `17871` available on the local machine.
-- A usable hardware-backed Microsoft Platform Crypto Provider for the installation signing key. Provisioning refuses software-only or unavailable installation-key providers.
+- 64-bit Windows on a computer that supports hardware-backed device keys.
+- Google Chrome version 132 or later for setup and the browser extension.
+- Port `17871` available on your computer.
 
-Production packages carry the customer-facing secure-setup URL and hosted API origin as release-owned configuration. A customer does not set `LOCAL_PROVISIONING_HOSTED_ORIGIN`. Development and test runs may still use that variable when the checked-in development release configuration is intentionally blank.
+## Download and install
 
-## Download
+1. Download the Windows installer and browser extension ZIP from the same published package. [Verify the files](verify-release.md) against the published checksums.
+2. Run `OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe`. The app installs in your Windows user account and adds **Conversation Analytics** to the Start menu.
+3. Unpack the browser extension ZIP and add the unpacked folder through your browser's extensions page. The desktop installer does not add the extension for you.
 
-Download the Windows installer and Agent extension bundle from the same published Windows package.
+The installer checks for Microsoft Edge WebView2 Runtime and installs it if needed. Chrome is the browser used for setup tasks. You can install the app or the extension first.
 
-Before installing, [verify the downloaded files](verify-release.md) against the published SHA-256 digests.
+## Set up the desktop app
 
-## Install
+1. Open **Conversation Analytics** from the installer or Start menu. Setup opens in the app.
+2. Select **Set up browser access**. In Chrome, use the profile containing the extension and your OnlyFans creator account. Review access and grant the requested site permission.
+3. Return to the app and select **Sign in**. Complete the browser sign-in and any required account or computer approval.
+4. Set up a passkey on this computer, sign in, and connect Chrome when prompted. Open the dashboard when local setup is complete.
 
-Run `OnlyFans-Conversational-Analytics-Setup-<version>-x64.exe`.
+Full analytics activation is available in Settings after local setup. It does not block opening the dashboard.
 
-The installer:
+Setup records progress automatically. Reopening the app resumes the accepted setup operation. Interrupted responses are recovered with this computer's existing device key; no recovery package is required. If you're transferring setup to another computer, choose **I have a setup code** on that destination.
 
-- installs the application under `%LOCALAPPDATA%\Programs\OnlyFans Conversational Analytics`;
-- creates a Start Menu entry named **OnlyFans Conversational Analytics**;
-- does not require administrator privileges.
+If you only want the seven-day Preview in your browser, you can enable it directly in the extension without installing the desktop app.
 
-## Add the Agent extension
+## If setup cannot continue
 
-The installer does not add the Agent to the browser. Install the Agent before first-run provisioning because the provisioning page uses it to detect the creator account.
+Follow the action shown on the current setup screen. The app reconnects after temporary local-service interruptions and checks interrupted account setup automatically.
 
-Unpack `OnlyFans-Conversational-Analytics-Agent-<extension version>-chrome.zip` and add the unpacked directory to a Chromium-based browser as an extension.
+If another application already uses port `17871`, close that application and open Conversation Analytics again.
 
-See [Agent documentation](../extension/README.md) for its behavior and security boundaries.
+If Windows cannot provide a hardware-backed device key, the desktop app cannot complete installation setup on that computer.
 
-## First run
+## Open, close and quit
 
-Open **OnlyFans Conversational Analytics** from the Start Menu. The launcher starts Brain on the local machine and opens the provisioning page in your browser.
+Closing the app window keeps the local service running in the Windows tray. Use the tray menu to reopen the app or select **Quit** to stop it.
 
-Complete the four provisioning steps:
+Completed local setup remains available while offline under the locally held authorization. Signing in to the Provider, obtaining new approvals, and activating Full analytics require an internet connection. Expired or revoked authorization can limit the available actions.
 
-1. Choose **Open secure setup**, sign in there, and obtain the setup code for this computer. Return to the desktop setup page, paste the complete code, and continue. The production handoff uses the `installation-claim-package:v2` / `installation-claim:v2` contract.
-2. Confirm the creator account detected by the Agent.
-3. Complete creator approval in secure setup, then return and choose **Check approval**.
-4. Finish configuration.
+## Local data and uninstalling
 
-After successful finalization, Brain exits provisioning mode, the launcher restarts it in runtime mode, and Bridge opens at `http://bridge.localhost:17871`.
+Your data is stored by default in `%LOCALAPPDATA%\OnlyFans Conversational Analytics`.
 
-If another process owns port `17871`, the launcher stops without terminating that process. Stop the conflicting process and start the application again.
-
-## Local data
-
-Runtime data is stored by default in `%LOCALAPPDATA%\OnlyFans Conversational Analytics`. This directory contains the local databases and runtime configuration.
-
-To use another location, set `LOCAL_ANALYTICS_DATA_DIR` to an absolute path outside the installation directory before the first run.
-
-## Uninstall
-
-Uninstall through **Settings > Apps > Installed apps**, or run `unins000.exe` from the installation directory.
-
-Uninstalling removes the application files and Start Menu entry. It leaves the runtime data directory in place so that uninstalling does not delete conversation data.
-
-During bounded desktop setup the running process publishes its launcher handoff
-credential as a current-user DPAPI-protected, owner-only file in the runtime data
-directory. Relaunch first verifies the loopback listener image and user, then
-requires the saved process ID to match before requesting a new short-lived browser
-handoff. A stale, missing, corrupt, or different-process record fails closed. Normal
-setup shutdown removes that process's credential; no browser session is extended.
+To uninstall, open **Windows Settings > Apps > Installed apps** and select **Conversation Analytics**. Removing the app leaves the local data folder in place; it does not delete your conversation data.

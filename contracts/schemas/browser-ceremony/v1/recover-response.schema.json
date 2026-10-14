@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-ceremony/v1/recover-response.schema.json",
+  "title": "Browser ceremony recover-response v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "status",
+        "snapshot",
+        "entry"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-ceremony:v1"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "status": {
+          "const": "found"
+        },
+        "snapshot": {
+          "allOf": [
+            {
+              "$ref": "snapshot.schema.json"
+            },
+            {
+              "properties": {
+                "presentation_state": {
+                  "const": "active"
+                }
+              }
+            }
+          ]
+        },
+        "entry": {
+          "$ref": "definitions.schema.json#/$defs/entry"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "status",
+        "snapshot"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-ceremony:v1"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "status": {
+          "const": "found"
+        },
+        "snapshot": {
+          "allOf": [
+            {
+              "$ref": "snapshot.schema.json"
+            },
+            {
+              "properties": {
+                "presentation_state": {
+                  "enum": [
+                    "retired",
+                    "expired"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "status"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-ceremony:v1"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "status": {
+          "const": "unavailable"
+        }
+      }
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
 import SettingsWithVaultView from '../src/views/SettingsWithVaultView';
+import { desktopFixture } from './desktopOnboardingFixture';
 
 type Section = 'pairing' | 'history' | 'activation' | 'vault';
 
@@ -56,7 +57,7 @@ const vaultStatus: CreatorVaultStatus = {
   },
 };
 
-/** Resolves every section's first request at once, except `slow`, which resolves on `release`. */
+/** Delivers each section's first owner view, except `slow`, which waits for `release`. */
 function apis(slow: Section) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -70,6 +71,7 @@ function apis(slow: Section) {
     open: vi.fn(unused),
     get: vi.fn(unused),
     change: vi.fn(unused),
+    confirmVerified: vi.fn(unused),
   };
   const historyApi: HistorySettingsApi = {
     get: vi.fn(answer('history', history)),
@@ -77,7 +79,6 @@ function apis(slow: Section) {
     revoke: vi.fn(unused),
   };
   const activationApi: CapabilityLicenseApi = {
-    readiness: vi.fn(answer('activation', readiness)),
     redeem: vi.fn(unused),
   };
   const vaultApi: CreatorVaultApi = {
@@ -85,7 +86,16 @@ function apis(slow: Section) {
     command: vi.fn(unused),
     exportDocument: vi.fn(unused),
   };
-  return { activationApi, historyApi, pairingApi, release, vaultApi };
+  const desktop = desktopFixture(false);
+  desktop.publish({ snapshot: { ...desktop.api.getState().snapshot!, allowed_actions: ['browser.pair', 'activation.review'] } });
+  desktop.readiness(readiness, 'creator-1');
+  const initialDesktop = desktop.api.getState().snapshot!;
+  if (slow === 'activation') desktop.publish({ snapshot: null });
+  const releaseSection = () => {
+    release();
+    if (slow === 'activation') desktop.publish({ snapshot: initialDesktop });
+  };
+  return { activationApi, historyApi, pairingApi, release: releaseSection, vaultApi, onboardingApi: desktop.api };
 }
 
 beforeEach(() => {
@@ -120,7 +130,7 @@ describe('SettingsWithVaultView', () => {
       expect(screen.queryByText('Loading settings…')).toBeNull();
       expect(screen.getByRole('button', { name: 'Connect extension' })).toBeTruthy();
       expect(screen.getByRole('heading', { name: 'Message history' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Turn on full analytics' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Set up Full analytics' })).toBeTruthy();
       expect(screen.getByRole('heading', { name: 'Stored messages' })).toBeTruthy();
     },
   );

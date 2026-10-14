@@ -7,6 +7,7 @@ import hmac
 import json
 import re
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
@@ -42,6 +43,15 @@ _REQUEST_FIELDS = {
 }
 _CONFIRM_FIELDS = {"type", "pairing_id", "agent_proof"}
 _FAILURE_STATES = {"declined", "cancelled", "expired", "revoked"}
+
+
+@dataclass(frozen=True)
+class PairingReservation:
+    """An internal, durable identity and fixed deadline for one opening intent."""
+
+    pairing_id: bytes
+    opened_at: datetime
+    expires_at: datetime
 
 
 class CompanionPairingError(RuntimeError):
@@ -135,7 +145,8 @@ class CompanionPairingService:
         return identity
 
     @_boundary
-    def open(self, policy: RuntimePolicy, creator_account_id: str) -> dict:
+    def open(self, policy: RuntimePolicy, creator_account_id: str, *,
+             reservation: PairingReservation | None = None, authorize=None) -> dict:
         identity = self._identity(policy)
         if creator_account_id != identity.creator_account_id:
             raise CompanionPairingError()
@@ -151,12 +162,13 @@ class CompanionPairingService:
         window = self.persistence.open_authorized_window(
             session_id=identity.session_id,
             creator_account_id=creator_account_id,
-            pairing_id=secrets.token_bytes(32),
-            opened_at=now,
-            expires_at=now + timedelta(seconds=300),
+            pairing_id=secrets.token_bytes(32) if reservation is None else reservation.pairing_id,
+            opened_at=now if reservation is None else reservation.opened_at,
+            expires_at=now + timedelta(seconds=300) if reservation is None else reservation.expires_at,
             brain_nonce=secrets.token_bytes(32),
             brain_noise_public_key=public,
             wrapped_brain_noise_private_key=protected,
+            authorize=authorize,
         )
         return self._public(window)
 
@@ -196,6 +208,8 @@ class CompanionPairingService:
         pairing_id: str,
         version: int,
         agent_comparison_code: str | None = None,
+        *,
+        authorize=None,
     ) -> dict:
         """Commit an operator confirmation.
 
@@ -226,6 +240,7 @@ class CompanionPairingService:
                     expected_version=version,
                     session_id=identity.session_id,
                     decline=True,
+                    authorize=authorize,
                 )
                 raise CompanionPairingError("pairing_proof_refused")
             method = "browser_verified"
@@ -236,6 +251,7 @@ class CompanionPairingService:
             confirmation_session_id=identity.session_id,
             confirmed_at=self._now(),
             confirmation_method=method,
+            authorize=authorize,
         )
         return self._public(pin)
 

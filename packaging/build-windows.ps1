@@ -13,8 +13,8 @@ param(
     # build output and makes the script non-destructive by default.
     [string] $OutputRoot = (Join-Path $env:TEMP ("brain-pyinstaller-" + $PID)),
 
-    # Intended for the build-gate test, where known checked-in immutable assets
-    # are staged by a PyInstaller stand-in. Normal builds always rebuild both.
+    # Intended for build-gate tests with staged frontend, extension and native
+    # fixtures. Normal builds rebuild all three before freezing Brain.
     [switch] $SkipAssetBuild,
 
     # A narrow falsifier seam. It can only inject named prohibited material
@@ -59,6 +59,7 @@ $DigestScriptPath = Join-Path $ProjectRoot "packaging\write-digests.ps1"
 $AgentBundleScriptPath = Join-Path $ProjectRoot "packaging\new-agent-bundle.ps1"
 $ExtensionRoot = Join-Path $ProjectRoot "extension"
 $ExtensionBuildScript = Join-Path $ExtensionRoot "build.mjs"
+$CustomerReleaseConfigPath = Join-Path $ProjectRoot "app\core\customer-release.json"
 
 # The Legal instrument this package serves from disk, and the bindings field
 # naming the approved rendering of it. packaging/runtime-files.json stages the
@@ -213,6 +214,8 @@ function Get-ExtensionReleaseArguments {
     if ($PrivacyPolicyUrl) {
         $arguments += "--privacy-policy-url=$PrivacyPolicyUrl"
     }
+    # Brain's spec stages this exact document. There is no Agent-only override.
+    $arguments += "--customer-release-config=$CustomerReleaseConfigPath"
     return $arguments
 }
 
@@ -338,12 +341,15 @@ function Copy-DeclaredTopLevelFiles {
 
     $policy = Get-Content -Raw -LiteralPath $RuntimePolicyPath | ConvertFrom-Json
     foreach ($relative in $policy.required_files) {
-        if ($relative -in @("Brain.exe", "release-manifest.json") -or $relative.StartsWith("_internal/")) {
+        if ($relative -in @("Brain.exe", "Bridge.exe", "release-manifest.json") -or $relative.StartsWith("_internal/")) {
             continue
         }
         $source = Join-Path $ProjectRoot $relative
         if ($relative -eq "NATIVE_SNOW_NOTICES.txt") {
             $source = Join-Path $ProjectRoot "native/companion-snow/THIRD_PARTY_NOTICES.txt"
+        }
+        if ($relative -eq 'ensure-webview2.ps1') {
+            $source = Join-Path $ProjectRoot 'packaging/windows/ensure-webview2.ps1'
         }
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "Declared top-level runtime file is absent: $source"
@@ -478,6 +484,9 @@ function Write-ReleaseManifest {
         architecture = "x64"
         extension_version = $extensionMetadata.extension_version
         extension_build_schema = $extensionMetadata.schema
+        desktop_sha256 = (Get-Sha256Digest -Path (Join-Path $StagingRoot 'Bridge.exe'))
+        desktop_cargo_lock_sha256 = (Get-Sha256Digest -Path (Join-Path $ProjectRoot 'desktop/src-tauri/Cargo.lock'))
+        webview_runtime = 'shared-evergreen'
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $StagingRoot "release-manifest.json") -Encoding utf8
 }
 
@@ -562,6 +571,39 @@ function Write-Sha256Sums {
     & $DigestScriptPath -Directory $Directory -RelativePath $RelativePaths
 }
 
+function Write-PackageMeasurements {
+    param([string] $StagingRoot, [string] $InstallerPath)
+
+    # Payload bytes are logical file lengths, not filesystem allocation or the
+    # user's data. Inno also creates its own uninstaller at installation time.
+    $paths = @(Get-InstalledRelativePath -StagingRoot $StagingRoot) + 'sha256sums.txt'
+    [long] $payloadBytes = 0
+    foreach ($relative in $paths) {
+        $payloadBytes += (Get-Item -LiteralPath (Join-Path $StagingRoot $relative)).Length
+    }
+    [ordered]@{
+        schema = 'ofca-package-measurements/v1'
+        release_manifest_sha256 = Get-Sha256Digest -Path (Join-Path $StagingRoot 'release-manifest.json')
+        installer = [ordered]@{
+            filename = [IO.Path]::GetFileName($InstallerPath)
+            unsigned_bytes = (Get-Item -LiteralPath $InstallerPath).Length
+            unsigned_sha256 = Get-Sha256Digest -Path $InstallerPath
+        }
+        installed_payload = [ordered]@{
+            logical_bytes = $payloadBytes
+            file_count = $paths.Count
+            excludes = @('Inno-generated uninstaller', 'user data', 'shared WebView2 runtime', 'separately distributed extension')
+        }
+        webview2 = [ordered]@{
+            distribution = 'shared-evergreen'
+            bootstrapper_bundled = $false
+            additional_download_bytes_when_present = 0
+            additional_download_bytes_when_missing = $null
+            missing_runtime_measurement = 'Requires installation network measurement; bootstrapper size is not total download size.'
+        }
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputRoot 'package-measurements.json') -Encoding utf8
+}
+
 function Get-AgentVersion {
     param([Parameter(Mandatory)] [string] $AgentRoot)
 
@@ -587,6 +629,10 @@ function New-DevelopmentAgentBundle {
 }
 
 if (-not $SkipAssetBuild) {
+    Invoke-RequiredCommand -FilePath 'powershell.exe' -Arguments @(
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+        (Join-Path $ProjectRoot 'packaging/build-desktop.ps1'), '-ProjectRoot', $ProjectRoot
+    )
     Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("ci", "--prefix", (Join-Path $ProjectRoot "frontend"))
     Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("run", "build", "--prefix", (Join-Path $ProjectRoot "frontend"))
     Invoke-RequiredCommand -FilePath "npm.cmd" -Arguments @("ci", "--prefix", $ExtensionRoot)
@@ -640,7 +686,17 @@ $stagingRoot = Join-Path $distPath "Brain"
 if (-not (Test-Path -LiteralPath (Join-Path $stagingRoot "Brain.exe") -PathType Leaf)) {
     throw "PyInstaller did not produce the required Brain.exe staging artifact"
 }
+$stagedCustomerRelease = Join-Path $stagingRoot "_internal\app\core\customer-release.json"
+if (-not (Test-Path -LiteralPath $stagedCustomerRelease -PathType Leaf) -or
+    (Get-Sha256Digest -Path $stagedCustomerRelease) -ne (Get-Sha256Digest -Path $CustomerReleaseConfigPath)) {
+    throw "Brain and Agent customer routing configuration must match"
+}
 Copy-DeclaredTopLevelFiles -StagingRoot $stagingRoot
+$desktopExecutable = Join-Path $ProjectRoot 'desktop/src-tauri/target/x86_64-pc-windows-msvc/release/Bridge.exe'
+if (-not (Test-Path -LiteralPath $desktopExecutable -PathType Leaf)) {
+    throw 'The native desktop artifact is absent: Bridge.exe'
+}
+Copy-Item -LiteralPath $desktopExecutable -Destination (Join-Path $stagingRoot 'Bridge.exe')
 Copy-AgentArtifact -StagingRoot $stagingRoot
 Write-ReleaseManifest -StagingRoot $stagingRoot
 
@@ -660,6 +716,7 @@ Invoke-RequiredCommand -FilePath $compiler -Arguments @(
     "/DStagingRoot=$stagingRoot",
     "/DOutputRoot=$installerOutput",
     "/DAppVersion=$version",
+    "/DAppIconFile=$(Join-Path $ProjectRoot 'packaging\windows\conversation-analytics.ico')",
     $InnoScriptPath
 )
 $installerName = "OnlyFans-Conversational-Analytics-Setup-$version-x64.exe"
@@ -667,6 +724,7 @@ $installerPath = Join-Path $installerOutput $installerName
 if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
     throw "Inno Setup did not produce the required installer: $installerPath"
 }
+Write-PackageMeasurements -StagingRoot $stagingRoot -InstallerPath $installerPath
 
 # The published artifact set: the installer, the Agent archive a user loads into
 # the browser, and a digest file computed over both after they exist.

@@ -14,11 +14,10 @@ import { BOOTSTRAP_CONFIG_REVISION, BRAIN_ORIGIN, BrainProcess } from '../lib/br
 import {
   establishBrowserWebAuthnSession,
   readBrainSummary,
-  requestAgentPairingTicket,
+  pairCompanionForCapture,
 } from '../lib/brain-probe.mjs';
 import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
 import {
-  bindAgentFromBridgePage,
   contentBridgeIsActive,
   extensionId,
   extensionOutboxProof,
@@ -216,31 +215,16 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
 
       const bindingPage = context.pages()[0] ?? await context.newPage();
       await establishBrowserWebAuthnSession(bindingPage, authDatabasePath);
-      const provisioningIdentity = await bindingPage.evaluate(async (targetExtensionId) => (
-        Promise.race([
-          chrome.runtime.sendMessage(targetExtensionId, {
-            type: 'provisioning.identity.query', version: 1,
-          }),
-          new Promise((_, reject) => setTimeout(
-            () => reject(new Error('The unpaired worker blocked the desktop identity query.')),
-            3_000,
-          )),
-        ])
-      ), actualExtensionId);
-      expect(provisioningIdentity).toEqual({
-        type: 'provisioning.identity.result',
-        version: 1,
-        authenticated_profile: null,
-      });
-      const pairing = await requestAgentPairingTicket(context);
+      // Native onboarding retired the external desktop identity query. Capture
+      // still starts without an observed platform identity; the production
+      // content bridge below must discover it before pairing and Full capture.
+      const unpairedIdentity = await worker.evaluate(async (key) => (
+        (await chrome.storage.session.get([key]))[key] ?? null
+      ), PROVISIONING_IDENTITY_STORAGE_KEY);
+      expect(unpairedIdentity?.contexts ?? []).toEqual([]);
+      const pairing = await pairCompanionForCapture(context);
       expect(pairing.creatorAccountId).toBe('dev-creator-account');
       expect(pairing.extensionId).toBe(actualExtensionId);
-      await bindAgentFromBridgePage(bindingPage, {
-        extensionId: actualExtensionId,
-        creatorAccountId: pairing.creatorAccountId,
-        authTicket: pairing.pairingTicket,
-        storageBootstrap: pairing.storageBootstrap,
-      });
 
       await expect.poll(async () => (await extensionState(worker)).capturePhase, {
         message: 'Pairing did not reconcile the capture phase to full.',
@@ -758,10 +742,11 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
     });
 
     await test.step('hard-expire a third worker and recover only from the production alarm', async () => {
-      // Persistent setup/settings pages poll the worker. Close UI observers so
+      // Persistent setup/App pages hold owner ports. Close UI observers so
       // this step measures only the production alarm's ability to wake it.
       for (const page of context.pages()) {
-        if (page.url().startsWith('chrome-extension://')) await page.close();
+        if (page.url().startsWith('chrome-extension://')
+          || new URL(page.url()).hash.startsWith('#journey=')) await page.close();
       }
       const before = await readBrainSummary(context);
       const oldWorker = worker;

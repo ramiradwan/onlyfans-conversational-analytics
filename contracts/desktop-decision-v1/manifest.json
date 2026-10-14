@@ -1,0 +1,114 @@
+{
+  "case_count": 1294,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "a91d2e623677d4415d04f1798486468e0caef3099689037272d9fb603b164028",
+      "size": 43408
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "3002e1728af8f436aef90db7f2be2e0c4c5d518855673d3c1995f4082de92330",
+      "size": 15236
+    },
+    {
+      "path": "parsing-cases.json",
+      "sha256": "70dfb268d44daba92a43dce7a851b6b42aed8f857df546ed06b5070841ae9d2d",
+      "size": 1562
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "0f4c8090ed28deea03cce4aa240f5aeafa4f2b365cd8eb90e04eba27168fee1e",
+      "size": 208810
+    },
+    {
+      "path": "reference-cases.json",
+      "sha256": "c379cb42d7cecb8e0ce093198bbd8463236414e937befc80bccc44486e2d8d06",
+      "size": 53307
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "cd5cdbd14cfb6c429ce10d6ab8dd2933f91041259b8495deacb16218b89ab1c0",
+      "size": 1825665
+    }
+  ],
+  "generator": "tools/generate_desktop_decision_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0030-native-decisions-over-browser-admission.md",
+  "inputs": [
+    {
+      "path": "catalog/desktop-onboarding-admission-policy.json",
+      "sha256": "3a25fdbc59ea471db343c64731b2c206c918c890af8f77ff3d9ef457e1c4d7d8"
+    },
+    {
+      "path": "docs/adr/0030-native-decisions-over-browser-admission.md",
+      "sha256": "b69241647d5f8c40a04cf5d5a936f301bd9aa7046ddecdbd4dd336a0429cee21"
+    },
+    {
+      "path": "docs/desktop-decision-v1.md",
+      "sha256": "1f092927cfd60a82a85fa4ee76d3d82f50984c93935b3284f1b69f28e4ea485b"
+    },
+    {
+      "path": "openapi/desktop-decision-v1.openapi.yaml",
+      "sha256": "a9ebe43d4d98596661daeb6f56bdbdb5b983511f36022bc3cbb7eea8f292ad3a"
+    },
+    {
+      "path": "profiles/desktop-decision-proof/v1/profile.json",
+      "sha256": "671b594f1d9a89f0bd2772cd25e3975b4d6a6b5e38088b9de476d8042fcf30ac"
+    },
+    {
+      "path": "profiles/desktop-decision/v1/profile.json",
+      "sha256": "e9535164b9d56a0524519349ec1ed10229af9d3da48e7d000c26f6f13f9bce6d"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/definitions.schema.json",
+      "sha256": "8b7e4636fcea8ac170379fd5b77e2dcb3c59537e789dee35fd580e6b39c9964a"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/decision.schema.json",
+      "sha256": "939382f29a80654617e3e08efb51f7cbd4499256594f6a683c5971dbec92ee5a"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/definitions.schema.json",
+      "sha256": "0879cff68f625a53e65590f31d2ea09560fcd0c4f6806b35c84476ab5739f743"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/error.schema.json",
+      "sha256": "21b92cfc3f5fb1e8a1180c3a8dd6517a59b1a074d949d5ac1559b638be6d2e36"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/proof-challenge-request.schema.json",
+      "sha256": "4b9326866112f9e597a1c2abd7ea4aa9581d1da7a385cc43d8bad00b1d934b51"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/proof-challenge-response.schema.json",
+      "sha256": "6df0339ae34c634d746e47e120b3e9f0776d357849fa24bf4054c2b915eb125a"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/read-request.schema.json",
+      "sha256": "d0f56140816a383afe9b59aea6aa69d48baecf7afc71d2aba90b3ef95037451b"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/read-response.schema.json",
+      "sha256": "6f0eb3f3a7fe78b21b9b6b23a4c9e14cf4a924eff04daac7ee45fe077bebddfa"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/submit-request.schema.json",
+      "sha256": "0230086f0194e4c338a8b9601324923de3f150d5452594e2b68845b4c38d14c7"
+    },
+    {
+      "path": "schemas/desktop-decision/v1/submit-response.schema.json",
+      "sha256": "da5b4eefb26a11fe206099f16c87c12aff356e756e239b1f69a3702494a18232"
+    },
+    {
+      "path": "tools/generate_desktop_decision_vectors.py",
+      "sha256": "022a5f3ac97d50f765517dab9ca00218d0f3b0109ebc7c515f2ee61ca774337e"
+    }
+  ],
+  "profile": "urn:bridge-clean:desktop-decision-vectors:v1",
+  "test_only": true
+}

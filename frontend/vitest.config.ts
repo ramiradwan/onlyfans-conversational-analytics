@@ -8,7 +8,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['tests/**/*.test.{ts,tsx}'],
+    include: ['tests/**/*.test.{js,ts,tsx}'],
     // Headroom above the 5s default for jsdom environment setup under parallel load.
     testTimeout: 15000,
   },

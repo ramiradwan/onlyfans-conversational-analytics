@@ -42,7 +42,6 @@ export function App() {
   const hasSessionIdentity = Boolean(
     config.CREATOR_ID && config.BRIDGE_AUTH_TICKET && userRole !== null,
   );
-
   useEffect(() => {
     const {
       BRIDGE_AUTH_TICKET,

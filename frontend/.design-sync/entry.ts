@@ -61,6 +61,7 @@ export { WebAuthnAccessView } from '../src/views/WebAuthnAccessView';
 export { createBridgeTransportStore } from '../src/store/transportStore';
 export {
   createPreviewActivationApi,
+  createPreviewDesktopOnboardingApi,
   createPreviewBridgeStore,
   createPreviewInboxStore,
   conversation as createPreviewConversation,

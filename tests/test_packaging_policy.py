@@ -33,7 +33,8 @@ SQL_CATALOGS = (
     "app/analytics/sql",
 )
 HANDOFF_SYNTHETIC_FILES = tuple(
-    f"_internal/contracts/initial-installation-handoff-v1/{name}-cases.json"
+    f"_internal/contracts/initial-installation-handoff-{version}/{name}-cases.json"
+    for version in ("v1", "v2")
     for name in ("digest", "proof", "schema")
 )
 
@@ -71,6 +72,8 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     internal = stage / "_internal"
     (stage / "Brain.exe").parent.mkdir(parents=True)
     (stage / "Brain.exe").write_bytes(b"frozen-entry")
+    (stage / "Bridge.exe").write_bytes(b"native-entry")
+    shutil.copy2(ROOT / "packaging/windows/ensure-webview2.ps1", stage / "ensure-webview2.ps1")
     (stage / "release-manifest.json").write_text("{}", encoding="utf-8")
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", stage / "THIRD_PARTY_NOTICES.md")
     shutil.copy2(
@@ -84,12 +87,17 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     shutil.copytree(ROOT / "app" / "templates", internal / "app" / "templates")
     provisioning = internal / "app" / "provisioning"
     provisioning.mkdir()
-    for name in (
-        "provisioning.html",
-        "creator-platform-data-risk-disclosure.html",
-        "provisioning.js",
-    ):
-        shutil.copy2(ROOT / "app" / "provisioning" / name, provisioning / name)
+    shutil.copy2(ROOT / "app/provisioning/creator-platform-data-risk-disclosure.html", provisioning / "creator-platform-data-risk-disclosure.html")
+    onboarding = internal / "app" / "onboarding"
+    onboarding.mkdir()
+    for name in ("entry.html", "entry.js"):
+        shutil.copy2(ROOT / "app" / "onboarding" / name, onboarding / name)
+    shared = stage / "_internal" / "shared" / "onboarding"
+    shared.mkdir(parents=True)
+    for name in ("client", "projection", "json", "sse"):
+        shutil.copy2(ROOT / "shared" / "onboarding" / (name + ".mjs"), shared / (name + ".mjs"))
+    for name in ("desktop-onboarding", "browser-tasks"):
+        shutil.copytree(ROOT / "shared" / name, internal / "shared" / name)
     shutil.copytree(ROOT / "app" / "static", internal / "app" / "static")
     shutil.copytree(ROOT / "contracts", internal / "contracts")
     for catalog in SQL_CATALOGS:
@@ -157,14 +165,15 @@ def test_missing_required_file_is_reported(tmp_path: Path) -> None:
     assert "required_file_missing" in _codes(verify_runtime_files(stage))
 
 
-def test_required_files_cover_the_provisioning_page_assets(tmp_path: Path) -> None:
+def test_required_files_cover_the_separate_setup_entries(tmp_path: Path) -> None:
     stage = _stage_runtime_tree(tmp_path)
     policy = load_runtime_policy(POLICY_PATH)
     required = set(policy["required_files"])
     assets = {
-        "_internal/app/provisioning/provisioning.html",
+        "_internal/app/static/dist/onboarding/index.html",
+        "_internal/app/static/dist/browser-tasks/index.html",
+        "_internal/app/static/dist/setup-code/index.html",
         "_internal/app/provisioning/creator-platform-data-risk-disclosure.html",
-        "_internal/app/provisioning/provisioning.js",
     }
 
     assert assets <= required
@@ -510,7 +519,7 @@ def test_per_user_material_declarations_cover_every_required_category() -> None:
     }, "the per-user-material policy must name every prohibited category"
 
 
-def test_reviewed_material_admissions_pin_only_the_three_public_digest_fixtures() -> None:
+def test_reviewed_material_admissions_pin_only_the_public_handoff_digest_fixtures() -> None:
     declarations = load_runtime_policy(POLICY_PATH)["forbidden_material"]
     admissions = {
         declaration["name"]: declaration["reviewed_synthetic_files"]

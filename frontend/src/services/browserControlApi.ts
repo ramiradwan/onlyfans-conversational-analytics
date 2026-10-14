@@ -9,9 +9,11 @@ import { z } from 'zod';
  */
 export type CaptureAction = 'pause' | 'resume';
 export type CaptureDelivery = 'delivered' | 'unreachable';
+export type BrowserDestination = 'setup' | 'access' | 'history' | 'creator';
 
 export interface BrowserControlApi {
   setCapture(action: CaptureAction, signal?: AbortSignal): Promise<CaptureDelivery>;
+  open(destination: BrowserDestination, signal?: AbortSignal): Promise<CaptureDelivery>;
 }
 
 export class BrowserControlApiError extends Error {
@@ -21,7 +23,7 @@ export class BrowserControlApiError extends Error {
   }
 }
 
-const ENDPOINT = '/api/v1/companion/browser/capture';
+const ENDPOINT = '/api/v1/companion/browser/';
 const REQUEST_DEADLINE_MS = 10_000;
 const deliveredSchema = z.strictObject({ delivered: z.number().int().positive().max(16) });
 const unreachableSchema = z.strictObject({ detail: z.literal('browser_unreachable') });
@@ -30,8 +32,7 @@ export function createBrowserControlApi({
   fetch: request = (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
   getCsrfToken = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || null,
 }: { fetch?: typeof fetch; getCsrfToken?: () => string | null } = {}): BrowserControlApi {
-  return {
-    async setCapture(action, signal) {
+  async function deliver(path: 'capture' | 'open', action: CaptureAction | BrowserDestination, signal?: AbortSignal): Promise<CaptureDelivery> {
       const csrf = getCsrfToken();
       if (!csrf) throw new BrowserControlApiError('csrf');
       const controller = new AbortController();
@@ -41,7 +42,7 @@ export function createBrowserControlApi({
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_DEADLINE_MS);
       try {
-        const response = await request(ENDPOINT, {
+        const response = await request(ENDPOINT + path, {
           method: 'POST',
           credentials: 'same-origin',
           redirect: 'error',
@@ -63,7 +64,10 @@ export function createBrowserControlApi({
         clearTimeout(timer);
         signal?.removeEventListener('abort', cancel);
       }
-    },
+  }
+  return {
+    setCapture: (action, signal) => deliver('capture', action, signal),
+    open: (destination, signal) => deliver('open', destination, signal),
   };
 }
 

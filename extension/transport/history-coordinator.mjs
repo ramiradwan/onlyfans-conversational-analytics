@@ -66,15 +66,20 @@ const LOCAL_FAILURES = new Set(['invalid_signer_page', 'cursor_repeated', 'inval
   'invalid_change', 'identity_conflict', 'tombstone_revive', 'material_conflict', 'history_job_conflict', 'evidence_conflict', 'identity_required', 'history_authorization_unbound']);
 
 // Failure codes that mean the creator must re-establish authority rather than
-// wait. Everything else terminal is reported as generally unavailable.
+// wait. Unsupported revisions have one bounded update status; other failures stay generic.
 const IDENTITY_FAILURE_CODES = new Set([
   'identity_required',
   'history_authorization_unbound',
   'account_mismatch',
 ]);
 
+function publicHistoryFailure(code) {
+  return IDENTITY_FAILURE_CODES.has(code) ? 'identity_required'
+    : code === 'unsupported_revision' ? 'unsupported_revision' : 'history_unavailable';
+}
+
 /**
- * Projects a durable history job onto the two failure states the extension can
+ * Projects a durable history job onto the bounded failure states the extension can
  * explain to the creator. Internal failure codes stay internal.
  */
 function jobFailureCode(job) {
@@ -82,7 +87,7 @@ function jobFailureCode(job) {
   const terminal = job.phase === 'failed'
     || (job.phase === 'closed' && job.boundary !== 'inventory_end');
   if (!terminal || typeof job.last_error_code !== 'string') return null;
-  return IDENTITY_FAILURE_CODES.has(job.last_error_code) ? 'identity_required' : 'history_unavailable';
+  return publicHistoryFailure(job.last_error_code);
 }
 
 /** Rediscovery reuses the bounded exponential delay a failed page already earns. */
@@ -189,6 +194,7 @@ export class HistoryAcquisitionCoordinator {
     setTimeoutImpl = (handler, delayMs) => setTimeout(handler, delayMs),
     clearTimeoutImpl = (handle) => clearTimeout(handle),
     runDeadlineMs = HISTORY_RUN_DEADLINE_MS,
+    onStateChanged = () => {},
   }) {
     if (
       !outbox?.commitPage
@@ -213,6 +219,7 @@ export class HistoryAcquisitionCoordinator {
     this.setTimeoutImpl = setTimeoutImpl;
     this.clearTimeoutImpl = clearTimeoutImpl;
     this.runDeadlineMs = runDeadlineMs;
+    this.onStateChanged = onStateChanged;
     this.leaseToken = idFactory();
     this.running = null;
     this.runController = null;
@@ -227,11 +234,19 @@ export class HistoryAcquisitionCoordinator {
     this.failureStreak = 0;
     // Projection of the newest durable inventory job, re-derived on every wake.
     this.lastFailureCode = null;
+    this.lastFailureAuthorization = null;
+    this.bootstrapFailure = null;
   }
 
-  /** Durable history health for the extension surfaces; null while healthy. */
+  /** Current bootstrap or durable job failure, without signing diagnostics. */
   historyErrorCode() {
-    return this.lastFailureCode;
+    const authorization = this.#authorization();
+    if (authorization !== null
+      && this.bootstrapFailure?.authorization === authorizationIdentity(authorization)) {
+      return this.bootstrapFailure.code;
+    }
+    return authorization !== null && this.lastFailureAuthorization === authorizationIdentity(authorization)
+      ? this.lastFailureCode : null;
   }
 
   wake() {
@@ -294,6 +309,7 @@ export class HistoryAcquisitionCoordinator {
         this.activeRunAttempt = null;
         this.activeDeadlineAt = null;
       }
+      try { this.onStateChanged(); } catch { /* Presentation cannot change acquisition outcome. */ }
     });
     return this.running;
   }
@@ -333,6 +349,7 @@ export class HistoryAcquisitionCoordinator {
     if (authorization === null) return { status: 'disabled', pages: 0 };
     const inventories = await this.#latestInventories(authorization, signal);
     this.lastFailureCode = jobFailureCode(inventories.open ?? inventories.closed);
+    this.lastFailureAuthorization = authorizationIdentity(authorization);
     let openInventory = inventories.open;
     if (openInventory === undefined) {
       const closed = inventories.closed;
@@ -340,7 +357,22 @@ export class HistoryAcquisitionCoordinator {
         closed === undefined
         || await this.#requiresNewGeneration(closed, authorization, signal)
       ) {
-        openInventory = await this.#startGeneration(authorization, signal, attempt);
+        try {
+          openInventory = await this.#startGeneration(authorization, signal, attempt);
+          this.bootstrapFailure = null;
+        } catch (error) {
+          const current = this.#authorization();
+          if (current !== null && authorizationIdentity(current) === authorizationIdentity(authorization)
+            && (!isAbort(error, signal) || isDeadlineAbort(error, signal))) {
+            const projected = publicSigningError(error);
+            const code = error instanceof SignerReadFailure ? error.code : localCode(error) ?? projected.failure_code;
+            this.bootstrapFailure = {
+              authorization: authorizationIdentity(authorization),
+              code: publicHistoryFailure(code),
+            };
+          }
+          throw error;
+        }
       } else {
         await this.allowance.historyPending(false);
         return { status: 'current', pages: 0 };

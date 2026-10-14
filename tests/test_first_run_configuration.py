@@ -153,6 +153,59 @@ def test_first_run_writes_exactly_the_declared_keys(tmp_path: Path) -> None:
     assert not written & _ACCOUNT_ENVIRONMENT_NAMES
 
 
+def test_runtime_configuration_is_invisible_until_complete_publication(tmp_path, monkeypatch):
+    from app.core import first_run
+    link = os.link
+    observations = []
+
+    def publish(source, destination):
+        assert not destination.exists()
+        values = dotenv_values(source, interpolate=False)
+        assert set(values) == _EXPECTED_CONFIGURATION_KEYS
+        assert len(values["LOCAL_SESSION_BOOTSTRAP_TOKEN"]) == 43
+        assert len(values["SECURITY_SIGNING_SECRET"]) == 43
+        observations.append(source.read_bytes())
+        return link(source, destination)
+
+    monkeypatch.setattr(first_run.os, "link", publish)
+    result = initialize_production_configuration(bindings=BINDINGS, extension_id=EXTENSION_ID, data_directory=tmp_path)
+    assert result.configuration_file.read_bytes() == observations[0]
+    assert not list(tmp_path.glob(".runtime-*.pending"))
+
+
+def test_interrupted_configuration_flush_never_selects_runtime_boot(tmp_path, monkeypatch):
+    from app.core import first_run
+
+    def interrupted(_descriptor):
+        assert not (tmp_path / "runtime.env").exists()
+        raise OSError("interrupted before publication")
+
+    monkeypatch.setattr(first_run.os, "fsync", interrupted)
+    with pytest.raises(OSError, match="interrupted"):
+        initialize_production_configuration(bindings=BINDINGS, extension_id=EXTENSION_ID, data_directory=tmp_path)
+    assert not (tmp_path / "runtime.env").exists()
+    assert not list(tmp_path.glob(".runtime-*.pending"))
+
+
+def test_concurrent_configuration_publication_preserves_the_winners_secrets(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: initialize_production_configuration(
+            bindings=BINDINGS, extension_id=EXTENSION_ID, data_directory=tmp_path), range(4)))
+    assert sum(result.created for result in results) == 1
+    original = results[0].configuration_file.read_bytes()
+    initialize_production_configuration(bindings=BINDINGS, extension_id=EXTENSION_ID, data_directory=tmp_path)
+    assert results[0].configuration_file.read_bytes() == original
+
+
+def test_malformed_existing_configuration_is_not_repaired_as_first_run(tmp_path):
+    target = tmp_path / "runtime.env"
+    target.write_text("ENVIRONMENT=production\n", encoding="utf-8")
+    with pytest.raises(FirstRunConflictError):
+        initialize_production_configuration(bindings=BINDINGS, extension_id=EXTENSION_ID, data_directory=tmp_path)
+    assert target.read_text(encoding="utf-8") == "ENVIRONMENT=production\n"
+
+
 def test_installation_identity_settings_carry_no_account() -> None:
     """No account value is addressable as installation configuration."""
 

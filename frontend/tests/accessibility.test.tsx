@@ -28,6 +28,7 @@ import SettingsView from '../src/views/SettingsView';
 import SettingsWithVaultView from '../src/views/SettingsWithVaultView';
 import { WebAuthnAccessView } from '../src/views/WebAuthnAccessView';
 import { analyticsUpdateFixture } from './analyticsFixture';
+import { desktopFixture } from './desktopOnboardingFixture';
 
 async function expectNoCriticalOrSeriousViolations(root: Element) {
   const result = await axe.run(root, {
@@ -226,25 +227,23 @@ describe('critical accessibility gates', () => {
       },
     });
 
+    const readinessDesktop = desktopFixture();
+    readinessDesktop.readiness({ schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' }, 'creator-1');
     const activationApi: CapabilityLicenseApi = {
-      readiness: vi.fn(async () => ({
-        schema: 'ofca-analysis-readiness/v1' as const,
-        commercial_authority: 'required' as const,
-        analysis_admission: 'blocked' as const,
-      })),
       redeem: vi.fn(async () => { throw new Error('not used'); }),
     };
 
     render(
       <ThemeProvider theme={theme} defaultMode="light">
         <MemoryRouter>
-          <CreatorDashboardView activationApi={activationApi} />
+          <CreatorDashboardView activationApi={activationApi} onboardingApi={readinessDesktop.api} />
         </MemoryRouter>
       </ThemeProvider>,
     );
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
-    await screen.findByRole('region', { name: 'Finish setup' });
+    await screen.findByRole('heading', { name: 'Full analytics' });
+    expect(screen.queryByRole('region', { name: 'Finish setup' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Recent conversations' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
   });
@@ -495,6 +494,8 @@ describe('critical accessibility gates', () => {
   });
 
   it('keeps SettingsWithVaultView free of serious axe findings for composite production view', async () => {
+    const desktop = desktopFixture(false);
+    desktop.publish({ snapshot: { ...desktop.api.getState().snapshot!, allowed_actions: ['browser.pair', 'activation.review'] } });
     bridgeTransportStore.bindAccount('creator-1');
     const historyApi: HistorySettingsApi = {
       get: vi.fn(async () => ({
@@ -547,17 +548,15 @@ describe('critical accessibility gates', () => {
     };
 
     const activationApi: CapabilityLicenseApi = {
-      readiness: vi.fn(async () => ({
-        schema: 'ofca-analysis-readiness/v1' as const,
-        commercial_authority: 'required' as const,
-        analysis_admission: 'blocked' as const,
-      })),
       redeem: vi.fn(async () => { throw new Error('not used'); }),
     };
+
+    desktop.readiness({ schema: 'ofca-analysis-readiness/v1', commercial_authority: 'required', analysis_admission: 'blocked' }, 'creator-1');
 
     render(
       <ThemeProvider theme={theme} defaultMode="light">
         <SettingsWithVaultView
+          onboardingApi={desktop.api}
           historyApi={historyApi}
           pairingApi={pairingApi}
           activationApi={activationApi}
@@ -570,7 +569,7 @@ describe('critical accessibility gates', () => {
     await screen.findByRole('heading', { name: 'Browser extension' });
     await screen.findByRole('button', { name: 'Connect extension' });
     await screen.findByRole('heading', { name: 'Full analytics' });
-    await screen.findByRole('button', { name: 'Turn on full analytics' });
+    await screen.findByRole('button', { name: 'Set up Full analytics' });
     await screen.findByRole('heading', { name: 'Stored messages' });
     await expectNoCriticalOrSeriousViolations(document.body);
   });
@@ -578,11 +577,11 @@ describe('critical accessibility gates', () => {
   it('keeps WebAuthnAccessView at the application gate free of serious axe findings in resting state', async () => {
     render(
       <ThemeProvider theme={theme} defaultMode="light">
-        <WebAuthnAccessView />
+        <WebAuthnAccessView api={{ state: async () => ({ enrolled: true, authenticated: false }), enroll: vi.fn(), login: vi.fn() }} />
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole('heading', { name: 'Protect access to your messages' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Sign in on this computer' })).toBeTruthy();
     await expectNoCriticalOrSeriousViolations(document.body);
   });
 });

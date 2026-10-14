@@ -5,29 +5,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserExtensionControls } from '../src/components/BrowserExtensionControls';
 import type { BrowserSurfacePayload } from '../src/protocol';
 import { createBrowserControlApi, type BrowserControlApi } from '../src/services/browserControlApi';
-import type { ExtensionPort, ExtensionPortState } from '../src/services/extensionPort';
 import { theme } from '../src/theme';
+import { desktopFixture } from './desktopOnboardingFixture';
 
 const active: BrowserSurfacePayload = {
   capture: 'active', site_access: 'granted', history_permission: 'granted',
   legal_review_required: false, reported_at: '2026-09-29T10:00:00Z',
 };
 
-function makePort(status: ExtensionPortState['status'] = 'connected') {
-  const state: ExtensionPortState = { status, stage: status === 'connected' ? 'paired' : null, attempt: null };
-  return {
-    getState: () => state,
-    subscribe: vi.fn(() => () => undefined),
-    open: vi.fn(() => true), pair: vi.fn(() => true), cancel: vi.fn(() => true), retry: vi.fn(),
-  } satisfies ExtensionPort;
-}
-
 function makeApi(result: 'delivered' | 'unreachable' = 'delivered'): BrowserControlApi {
-  return { setCapture: vi.fn(async () => result) };
+  return { setCapture: vi.fn(async () => result), open: vi.fn(async () => result) };
 }
 
 function mount(props: Partial<Parameters<typeof BrowserExtensionControls>[0]> = {}) {
-  const all = { api: makeApi(), browser: active, canManage: true, connection: 'connected' as const, port: makePort(), ...props };
+  const all = { api: makeApi(), onboarding: desktopFixture().api, browser: active, canManage: true, connection: 'connected' as const, ...props };
   const view = render(<ThemeProvider theme={theme}><BrowserExtensionControls {...all} /></ThemeProvider>);
   const rerender = (next: Partial<typeof all>) => view.rerender(
     <ThemeProvider theme={theme}><BrowserExtensionControls {...all} {...next} /></ThemeProvider>,
@@ -41,11 +32,11 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe('browser extension controls', () => {
   it('shows only pushed state and settles a pause when the extension reports it', async () => {
     const { api, rerender } = mount();
-    expect(screen.getByText('Collecting in the browser.')).toBeTruthy();
+    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
     expect(api.setCapture).toHaveBeenCalledWith('pause', expect.any(AbortSignal));
     expect(screen.getByRole('button', { name: 'Pausing…' })).toHaveProperty('disabled', true);
-    expect(screen.getByText('Collecting in the browser.')).toBeTruthy();
+    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
     rerender({ browser: { ...active, capture: 'paused' } });
     expect(screen.getByText('Paused. Nothing new is collected.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Resume collecting' })).toHaveProperty('disabled', false);
@@ -65,62 +56,75 @@ describe('browser extension controls', () => {
     mount({ api: makeApi('unreachable') });
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
     expect(screen.getByRole('alert').textContent).toContain('not connected right now');
-    expect(screen.getByText('Collecting in the browser.')).toBeTruthy();
+    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
   });
 
   it('sends resume to the extension review instead when the terms changed', () => {
-    const port = makePort();
-    const { api } = mount({ browser: { ...active, capture: 'paused', legal_review_required: true }, port });
+    const { api, onboarding } = mount({ browser: { ...active, capture: 'paused', legal_review_required: true } });
     expect(screen.queryByRole('button', { name: 'Resume collecting' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Review terms' }));
-    expect(port.open).toHaveBeenCalledWith('setup');
+    expect(onboarding.begin).toHaveBeenCalledWith('browser.access');
     expect(api.setCapture).not.toHaveBeenCalled();
   });
 
   it('opens the one extension page that owns a missing permission', () => {
-    const port = makePort();
-    mount({ browser: { ...active, site_access: 'needs_approval', history_permission: 'missing' }, port });
-    const [site, history] = screen.getAllByRole('button', { name: 'Allow in extension' });
+    const { api, onboarding } = mount({ browser: { ...active, site_access: 'needs_approval', history_permission: 'missing' } });
+    const site = screen.getByRole('button', { name: 'Allow in extension' });
     fireEvent.click(site);
-    fireEvent.click(history);
-    expect(port.open.mock.calls).toEqual([['access'], ['history']]);
+    expect(onboarding.begin).toHaveBeenCalledWith('browser.access');
+    expect(api.open).not.toHaveBeenCalled();
+    expect(screen.queryByText('Message history access (optional)')).toBeNull();
   });
 
-  it('explains where to act when the extension is in another browser', () => {
-    mount({ browser: { ...active, site_access: 'needs_approval' }, port: makePort('absent') });
+  it('explains where to act when the extension is disconnected', () => {
+    mount({ browser: { ...active, site_access: 'needs_approval' }, connection: 'offline' });
     expect(screen.queryByRole('button', { name: 'Allow in extension' })).toBeNull();
     // One caption explains where to act, instead of repeating it on every row.
-    expect(screen.getAllByText('Change these in the browser where the extension is installed.')).toHaveLength(1);
+    expect(screen.queryByText('Change these in the browser where the extension is installed.')).toBeNull();
     expect(screen.getByRole('button', { name: 'Pause collecting' })).toBeTruthy();
   });
 
   it('shows status without controls to operators', () => {
     mount({ canManage: false, browser: { ...active, site_access: 'needs_approval' } });
     expect(screen.queryAllByRole('button')).toHaveLength(0);
-    expect(screen.getByText('Collecting in the browser.')).toBeTruthy();
+    expect(screen.getByText('New message collection is enabled.')).toBeTruthy();
   });
 
   it('waits for a connected extension to report its settings', () => {
     mount({ browser: null });
-    expect(screen.getByText('Waiting for the browser extension to report its settings.')).toBeTruthy();
+    expect(screen.getByText('Waiting for extension settings.')).toBeTruthy();
+    expect(screen.getByText("Site access hasn't been checked.")).toBeTruthy();
+    expect(screen.queryByText('Waiting for browser permissions.')).toBeNull();
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
-  it('adds nothing when the connection issue above already explains the missing extension', () => {
-    const { container } = render(
+  it('retains the compact facts rows while the connection is missing without offering stale controls', () => {
+    render(
       <ThemeProvider theme={theme}>
-        <BrowserExtensionControls api={makeApi()} browser={null} canManage connection="offline" port={makePort()} />
+        <BrowserExtensionControls api={makeApi()} browser={null} canManage connection="offline" />
       </ThemeProvider>,
     );
-    expect(container.textContent?.trim()).toBe('');
+    expect(screen.getAllByRole('heading', { level: 3 }).map(node => node.textContent)).toEqual(['New messages', 'Site access']);
+    expect(screen.getByText('The browser extension is not connected.')).toBeTruthy();
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
   it('keeps the review in the paused row and gives controls distinct names from history sync', () => {
     mount({ browser: { ...active, capture: 'paused', legal_review_required: true } });
-    expect(screen.getByText('Paused. Review the updated terms in the extension to resume.')).toBeTruthy();
+    expect(screen.getByText('Paused. Terms need review.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Pause$|^Resume$/ })).toBeNull();
     expect(screen.getAllByRole('heading', { level: 3 }).map((node) => node.textContent))
-      .toEqual(['New messages', 'Site access', 'Message history access (optional)']);
+      .toEqual(['New messages', 'Site access']);
+  });
+
+  it('reports feedback to the shared browser section without a second empty reservation', async () => {
+    const onFeedback = vi.fn();
+    const { rerender } = mount({ api: makeApi('unreachable'), onFeedback });
+    expect(document.querySelector('[data-reserved-region="browser-feedback"]')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause collecting' })));
+    expect(onFeedback).toHaveBeenLastCalledWith('The browser extension is not connected right now.');
+    rerender({ browser: null });
+    expect(onFeedback).toHaveBeenLastCalledWith(null);
   });
 });
 
@@ -146,6 +150,13 @@ describe('browser control API', () => {
     await expect(reply(403, { detail: 'pairing_account_refused' })).rejects.toMatchObject({ code: 'request' });
     await expect(createBrowserControlApi({ fetch: vi.fn(), getCsrfToken: () => null }).setCapture('pause'))
       .rejects.toMatchObject({ code: 'csrf' });
+  });
+
+  it('opens fixed browser destinations through Brain without Chrome APIs', async () => {
+    const fetch = vi.fn(async () => response(202, { delivered: 1 }));
+    const api = createBrowserControlApi({ fetch, getCsrfToken: () => 'csrf' });
+    await expect(api.open('history')).resolves.toBe('delivered');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/companion/browser/open', expect.objectContaining({ body: '{"action":"history"}' }));
   });
 });
 

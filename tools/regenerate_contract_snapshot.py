@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "af7c958c218c35f74ce1370e0fca5b8ff37d6dfa"
-APPROVED_SOURCE_TREE = "d5ee1acd3ff8ba9623d1cb4d820daaec7dbbb406"
-APPROVED_SOURCE_MANIFEST_SHA256 = "a46e26b69302c573b821248415c25e80b196433e9745b6a89079f94cd0c5d93e"
+APPROVED_SOURCE_COMMIT = "8a469460413d7e6064e3246d0314fc7a3f100016"
+APPROVED_SOURCE_TREE = "aa2c8d87522a096d6568342f19f564af0cb8f685"
+APPROVED_SOURCE_MANIFEST_SHA256 = "09af171ecc876f08dd2d834e8e13380da6d30c69827dd8b4cd0dc393e74367d6"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,7 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "af8a689be9bd7e329970227ea403bb6c9218d3f4aacb1a0b237cd995e8cb6dd5",
-    "contract-manifest.json": "c9a2d20615c745508c86d79c5f6e784527a614099244511246384d3a57bd699f",
+    "contract-manifest.json": "4b9f08ee294997391a852710bbe2f0459819da00e1acf0e2ee72cd9bba8ea266"
 }
 
 EXPORT_SET = [
@@ -49,10 +48,20 @@ EXPORT_SET = [
     "capability-license-hosted-api-v1",
     "onboarding-continuity-v1",
     "initial-installation-handoff-v1",
-    SOURCE_MANIFEST_EXPORT,
+    "installation-setup-continuation-v1",
+    "initial-installation-handoff-v2",
+    "installation-setup-continuation-v2",
+    "complimentary-onboarding-activation-v1",
+    "browser-ceremony-v1",
+    "desktop-decision-v1",
+    "browser-authentication-selection-v1",
+    "capability-license-delivery-recovery-v1",
+    "deferred-setup-preparation-v1",
+    "source-contract-manifest"
 ]
 
 EXPORT_SOURCES = {
+    "installation-setup-continuation-v1": "test-vectors/installation-setup-continuation-v1",
     "initial-installation-handoff-v1": "test-vectors/initial-installation-handoff-v1",
     "onboarding-continuity-v1": "test-vectors/onboarding-continuity-v1",
     "grant-profile-v1": "test-vectors/grant-profile-v1",
@@ -67,9 +76,18 @@ EXPORT_SOURCES = {
     "installation-key-proof-v1": "test-vectors/installation-key-proof-v1",
     "bootstrap-recovery-v2": "api-vectors/bootstrap-recovery-v2",
     "capability-license-hosted-api-v1": "api-vectors/capability-license-hosted-api-v1",
+    "initial-installation-handoff-v2": "test-vectors/initial-installation-handoff-v2",
+    "installation-setup-continuation-v2": "test-vectors/installation-setup-continuation-v2",
+    "complimentary-onboarding-activation-v1": "test-vectors/complimentary-onboarding-activation-v1",
+    "browser-ceremony-v1": "test-vectors/browser-ceremony-v1",
+    "desktop-decision-v1": "test-vectors/desktop-decision-v1",
+    "browser-authentication-selection-v1": "test-vectors/browser-authentication-selection-v1",
+    "capability-license-delivery-recovery-v1": "test-vectors/capability-license-delivery-recovery-v1",
+    "deferred-setup-preparation-v1": "test-vectors/deferred-setup-preparation-v1"
 }
 
 APPROVED_EXPORT_DIGESTS = {
+    "installation-setup-continuation-v1": "63b47522da7a855e4e01b3e2bdbac7d39f9ec99af32780a64dbcc1fbc1a97b5d",
     "initial-installation-handoff-v1": "2b8522ba09c6b57629af52a312f9b424d74d9276add8b36cdbc850250df3c48b",
     "onboarding-continuity-v1": "98569965245348223b3fefa97ceb21744628090f5a37436f73bac5a7b91256ba",
     "grant-profile-v1": "5059ee95f0c847f7a33a787c80066e84359a2d4e0d2e8774637bfc387bece09b",
@@ -84,6 +102,14 @@ APPROVED_EXPORT_DIGESTS = {
     "installation-key-proof-v1": "19b9b5bfcb412086c5a03e4e6d776111420a404bba81924eeb8d0fd91bfcf799",
     "bootstrap-recovery-v2": "96d3adb571cc3f90f93748203f601dbdaf6fad95c2a7c891ecaa3ebbfcbe81d1",
     "capability-license-hosted-api-v1": "0ef82e619681e9beb7d0842a5a948171e3e5057ac81f498af38cf20d69a5731e",
+    "initial-installation-handoff-v2": "95682bf35a5133d0bc6edd778133e8c31388a8917589b69a021413f4feac9c08",
+    "installation-setup-continuation-v2": "9673deaa3c38aba0832a68e2e290720447f8c566c8f0e12f5c5875e67c29ea97",
+    "complimentary-onboarding-activation-v1": "b9eb0b9a68dec64a67ce2522b641d5eddf9ef5a86e5cc67a459a66af9fd37cba",
+    "browser-ceremony-v1": "824a953fbee1b5433402ca2f73f2f4ca3a458ba4ea038fc4c7db688c9e761c47",
+    "desktop-decision-v1": "7fa1cdd451ac4acb570c11a6e3e440ba4e00bc8481d28c4aad22d706534b7efa",
+    "browser-authentication-selection-v1": "d99a5bb63f45c95a2ef36b9398fb1c9130a8269635722499e535228c0043a29f",
+    "capability-license-delivery-recovery-v1": "b20f15cb6539b9345ac51088427176e52e6a7d7850c0976aa98a543cc4700906",
+    "deferred-setup-preparation-v1": "7c32147ecc17a04d673e06416f8d889748e128c3bc2386f19fb5870de6c33e39"
 }
 
 EXPECTED_PROGRESS_VECTOR_FILES = frozenset(
@@ -110,14 +136,20 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 829
-EXPECTED_PUBLISHED_FILE_COUNT = 99
+EXPECTED_FILE_COUNT = 1013
+EXPECTED_PUBLISHED_FILE_COUNT = 220
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
+    "urn:bridge-clean:browser-authentication-selection-proof:v1",
+    "urn:bridge-clean:browser-authentication-selection:v1",
+    "urn:bridge-clean:browser-ceremony-proof:v1",
+    "urn:bridge-clean:browser-ceremony:v1",
     "urn:bridge-clean:capability-license-activation-package:v1",
     "urn:bridge-clean:capability-license-activation-proof:v1",
     "urn:bridge-clean:capability-license-activation:v1",
+    "urn:bridge-clean:capability-license-delivery-recovery-proof:v1",
+    "urn:bridge-clean:capability-license-delivery-recovery:v1",
     "urn:bridge-clean:capability-license-exchange-quote:v1",
     "urn:bridge-clean:capability-license-exchange:v1",
     "urn:bridge-clean:capability-license-redemption-continuation:v1",
@@ -129,15 +161,24 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:capability-license:v1",
     "urn:bridge-clean:capability-permit:v1",
     "urn:bridge-clean:companion-pairing:v1",
+    "urn:bridge-clean:complimentary-onboarding-activation:v1",
     "urn:bridge-clean:creator-association:v1",
+    "urn:bridge-clean:desktop-decision-proof:v1",
+    "urn:bridge-clean:desktop-decision:v1",
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:hosted-onboarding:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v1",
+    "urn:bridge-clean:initial-installation-handoff-proof:v2",
     "urn:bridge-clean:initial-installation-handoff:v1",
+    "urn:bridge-clean:initial-installation-handoff:v2",
     "urn:bridge-clean:installation-claim-package:v1",
     "urn:bridge-clean:installation-claim-package:v2",
     "urn:bridge-clean:installation-claim:v1",
     "urn:bridge-clean:installation-claim:v2",
+    "urn:bridge-clean:installation-setup-continuation-proof:v1",
+    "urn:bridge-clean:installation-setup-continuation-proof:v2",
+    "urn:bridge-clean:installation-setup-continuation:v1",
+    "urn:bridge-clean:installation-setup-continuation:v2",
     "urn:bridge-clean:onboarding-continuation:v1",
     "urn:bridge-clean:onboarding-progress:v1",
     "urn:bridge-clean:onboarding-proof:v1",
@@ -158,12 +199,21 @@ TRUST_SETS = {
     "companion-pairing-v1": "companion-pairing-v1/trust-set.json",
 }
 CONFORMANCE_MANIFESTS = {
+    "installation-setup-continuation-v1": "installation-setup-continuation-v1/manifest.json",
     "initial-installation-handoff-v1": "initial-installation-handoff-v1/manifest.json",
     "onboarding-continuity-v1": "onboarding-continuity-v1/manifest.json",
     "capability-license-v1": "capability-license-v1/manifest.json",
     "installation-claim-package-v1": "installation-claim-package-v1/manifest.json",
     "bootstrap-recovery-v2": "bootstrap-recovery-v2/manifest.json",
     "capability-license-hosted-api-v1": "capability-license-hosted-api-v1/manifest.json",
+    "initial-installation-handoff-v2": "initial-installation-handoff-v2/manifest.json",
+    "installation-setup-continuation-v2": "installation-setup-continuation-v2/manifest.json",
+    "complimentary-onboarding-activation-v1": "complimentary-onboarding-activation-v1/manifest.json",
+    "browser-ceremony-v1": "browser-ceremony-v1/manifest.json",
+    "desktop-decision-v1": "desktop-decision-v1/manifest.json",
+    "browser-authentication-selection-v1": "browser-authentication-selection-v1/manifest.json",
+    "capability-license-delivery-recovery-v1": "capability-license-delivery-recovery-v1/manifest.json",
+    "deferred-setup-preparation-v1": "deferred-setup-preparation-v1/manifest.json"
 }
 PAIRING_PROFILE_RECORD = "companion-pairing-profile/profile.json"
 

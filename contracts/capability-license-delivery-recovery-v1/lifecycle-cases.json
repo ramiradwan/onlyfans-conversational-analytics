@@ -1,0 +1,1680 @@
+[
+  {
+    "case_id": "read-never-creates",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": false,
+      "responses": [
+        "available:0:100:r0",
+        "expired:0:100:100",
+        "not-issued:1:0",
+        "not-issued:12:0"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 12,
+        "kind": "read",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "live-next-generation-never-saved-as-success",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "generation-conflict",
+        "not-issued:1:0",
+        "accepted:1:100:700:r1"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 99
+      },
+      {
+        "generation": 1,
+        "kind": "read",
+        "now": 99
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "lost-before-commit",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "lost-before-commit",
+        "not-issued:1:0",
+        "expired:0:100:100",
+        "accepted:1:100:700:r1"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "lost-before-send",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "rollback-is-not-issued",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "rolled-back",
+        "not-issued:1:0",
+        "accepted:1:100:700:r1"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "rollback",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "lost-reply-exact-generation",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "lost-response",
+        "available:1:700:r1",
+        "accepted:1:100:700:r1"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "lose_reply": true,
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 900
+      }
+    ]
+  },
+  {
+    "case_id": "prune-does-not-resurrect",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 2,
+      "issuances": 0,
+      "new_authorizations": 2,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "accepted:2:700:1300:r2",
+        "pruned",
+        "superseded:1:2",
+        "generation-superseded",
+        "restored",
+        "generation-superseded"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 700
+      },
+      {
+        "generation": null,
+        "kind": "prune",
+        "now": 700
+      },
+      {
+        "generation": 1,
+        "kind": "read",
+        "now": 700
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 700
+      },
+      {
+        "generation": null,
+        "kind": "restore",
+        "now": 701
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 701
+      }
+    ]
+  },
+  {
+    "case_id": "future-read-concurrent-advance",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "not-issued:1:0",
+        "accepted:1:100:700:r1",
+        "available:1:700:r1",
+        "generation-conflict"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "future-commit-precedence",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": true,
+      "responses": [
+        "redemption-committed",
+        "redemption-completed",
+        "delivery-completed"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "generation": 9007199254740991,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "completion-precedes-past-read",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": true,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "redemption-committed",
+        "redemption-completed",
+        "redemption-completed",
+        "redemption-completed",
+        "accepted:1:100:700:r1"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "redeem",
+        "now": 101
+      },
+      {
+        "generation": 0,
+        "kind": "read",
+        "now": 102
+      },
+      {
+        "generation": 1,
+        "kind": "read",
+        "now": 102
+      },
+      {
+        "generation": 9,
+        "kind": "read",
+        "now": 102
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 102
+      }
+    ]
+  },
+  {
+    "case_id": "exact-redemption-replay-after-expiry",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": true,
+      "responses": [
+        "redemption-committed",
+        "redemption-replay",
+        "redemption-completed",
+        "delivery-completed"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "generation": 0,
+        "kind": "redeem-exact",
+        "now": 1000
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 1000
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 1000
+      }
+    ]
+  },
+  {
+    "case_id": "issued-result-never-sign-again",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 1,
+      "new_authorizations": 0,
+      "redemption_completed": true,
+      "responses": [
+        "redemption-committed",
+        "issuance-prepared",
+        "issuance-committed",
+        "changed",
+        "issuance-replay",
+        "changed",
+        "redemption-completed",
+        "delivery-completed"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 1
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "prepare-issuance",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "commit-issuance",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "key": false,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "issuance-exact",
+        "now": 1000
+      },
+      {
+        "generation": null,
+        "key": true,
+        "kind": "change",
+        "now": 1001
+      },
+      {
+        "generation": 9007199254740991,
+        "kind": "read",
+        "now": 1001
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 1001
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-recover-key",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": false,
+      "responses": [
+        "changed",
+        "authority-unavailable",
+        "unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": null,
+        "key": false,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-redemption-key",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "key": false,
+        "kind": "change",
+        "now": 101
+      },
+      {
+        "generation": 1,
+        "kind": "manual-redeem",
+        "now": 102
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-after-preparation-key",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": true,
+      "responses": [
+        "redemption-committed",
+        "issuance-prepared",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "prepare-issuance",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "key": false,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "commit-issuance",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-recover-creator",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": false,
+      "responses": [
+        "changed",
+        "authority-unavailable",
+        "unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "creator": false,
+        "generation": null,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-redemption-creator",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "creator": false,
+        "generation": null,
+        "kind": "change",
+        "now": 101
+      },
+      {
+        "generation": 1,
+        "kind": "manual-redeem",
+        "now": 102
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-after-preparation-creator",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": true,
+      "responses": [
+        "redemption-committed",
+        "issuance-prepared",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "prepare-issuance",
+        "now": 99
+      },
+      {
+        "creator": false,
+        "generation": null,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "commit-issuance",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-recover-permission",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": false,
+      "responses": [
+        "changed",
+        "authority-unavailable",
+        "unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": null,
+        "kind": "change",
+        "now": 100,
+        "permission": false
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-redemption-permission",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "change",
+        "now": 101,
+        "permission": false
+      },
+      {
+        "generation": 1,
+        "kind": "manual-redeem",
+        "now": 102
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-after-preparation-permission",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": true,
+      "responses": [
+        "redemption-committed",
+        "issuance-prepared",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "prepare-issuance",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "change",
+        "now": 100,
+        "permission": false
+      },
+      {
+        "generation": null,
+        "kind": "commit-issuance",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-recover-exchange",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": false,
+      "responses": [
+        "changed",
+        "authority-unavailable",
+        "unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "exchange": false,
+        "generation": null,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-redemption-exchange",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "exchange": false,
+        "generation": null,
+        "kind": "change",
+        "now": 101
+      },
+      {
+        "generation": 1,
+        "kind": "manual-redeem",
+        "now": 102
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-after-preparation-exchange",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": true,
+      "responses": [
+        "redemption-committed",
+        "issuance-prepared",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "prepare-issuance",
+        "now": 99
+      },
+      {
+        "exchange": false,
+        "generation": null,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "commit-issuance",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-recover-basis",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": false,
+      "responses": [
+        "changed",
+        "authority-unavailable",
+        "unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "basis": false,
+        "generation": null,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "read",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-before-redemption-basis",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "basis": false,
+        "generation": null,
+        "kind": "change",
+        "now": 101
+      },
+      {
+        "generation": 1,
+        "kind": "manual-redeem",
+        "now": 102
+      }
+    ]
+  },
+  {
+    "case_id": "revoked-after-preparation-basis",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": true,
+      "responses": [
+        "redemption-committed",
+        "issuance-prepared",
+        "changed",
+        "authority-unavailable"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "generation": null,
+        "kind": "prepare-issuance",
+        "now": 99
+      },
+      {
+        "basis": false,
+        "generation": null,
+        "kind": "change",
+        "now": 100
+      },
+      {
+        "generation": null,
+        "kind": "commit-issuance",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "expiry-after-lock",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "redemption-expired",
+        "accepted:1:100:700:r1"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "after_lock": 100,
+        "generation": 0,
+        "kind": "redeem",
+        "now": 99
+      },
+      {
+        "after_lock": 100,
+        "generation": 1,
+        "kind": "recover",
+        "now": 99
+      }
+    ]
+  },
+  {
+    "case_id": "late-original-redemption-fenced",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": true,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "redemption-superseded",
+        "redemption-committed",
+        "delivery-completed"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "after_lock": 100,
+        "generation": 0,
+        "kind": "manual-redeem",
+        "now": 99
+      },
+      {
+        "generation": 1,
+        "kind": "manual-redeem",
+        "now": 101
+      },
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 700
+      }
+    ]
+  },
+  {
+    "case_id": "manual-create-shares-generation",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "accepted:1:100:700:r1",
+        "generation-conflict"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "manual-recover",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "same-generation-changed-meaning",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 1,
+      "issuances": 0,
+      "new_authorizations": 1,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "generation-conflict"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "meaning": "changed",
+        "now": 101
+      }
+    ]
+  },
+  {
+    "case_id": "rolling-window-not-lifetime-budget",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 2,
+      "issuances": 0,
+      "new_authorizations": 2,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:150:r1",
+        "rate-limited:700",
+        "rate-limited:700",
+        "accepted:2:700:750:r2"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {
+      "ttl": 50
+    },
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 150
+      },
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 699
+      },
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 700
+      }
+    ]
+  },
+  {
+    "case_id": "skipping-and-overflow",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 0,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": false,
+      "responses": [
+        "invalid-generation",
+        "invalid-generation",
+        "invalid-generation"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": 9007199254740992,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": 0,
+        "kind": "recover",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "safe-integer-end-does-not-wrap",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 9007199254740991,
+      "issuances": 0,
+      "new_authorizations": 0,
+      "redemption_completed": false,
+      "responses": [
+        "expired:9007199254740991:100:100",
+        "invalid-generation"
+      ],
+      "retained_results": 0,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {
+      "generation": 9007199254740991
+    },
+    "steps": [
+      {
+        "generation": 9007199254740991,
+        "kind": "read",
+        "now": 100
+      },
+      {
+        "generation": 9007199254740992,
+        "kind": "recover",
+        "now": 100
+      }
+    ]
+  },
+  {
+    "case_id": "forty-recoveries-one-commercial-acceptance",
+    "expected": {
+      "commercial_operations": 1,
+      "debits": 1,
+      "exchanges": 1,
+      "generation": 40,
+      "issuances": 0,
+      "new_authorizations": 40,
+      "redemption_completed": false,
+      "responses": [
+        "accepted:1:100:700:r1",
+        "accepted:2:700:1300:r2",
+        "accepted:3:1300:1900:r3",
+        "accepted:4:1900:2500:r4",
+        "accepted:5:2500:3100:r5",
+        "accepted:6:3100:3700:r6",
+        "accepted:7:3700:4300:r7",
+        "accepted:8:4300:4900:r8",
+        "accepted:9:4900:5500:r9",
+        "accepted:10:5500:6100:r10",
+        "accepted:11:6100:6700:r11",
+        "accepted:12:6700:7300:r12",
+        "accepted:13:7300:7900:r13",
+        "accepted:14:7900:8500:r14",
+        "accepted:15:8500:9100:r15",
+        "accepted:16:9100:9700:r16",
+        "accepted:17:9700:10300:r17",
+        "accepted:18:10300:10900:r18",
+        "accepted:19:10900:11500:r19",
+        "accepted:20:11500:12100:r20",
+        "accepted:21:12100:12700:r21",
+        "accepted:22:12700:13300:r22",
+        "accepted:23:13300:13900:r23",
+        "accepted:24:13900:14500:r24",
+        "accepted:25:14500:15100:r25",
+        "accepted:26:15100:15700:r26",
+        "accepted:27:15700:16300:r27",
+        "accepted:28:16300:16900:r28",
+        "accepted:29:16900:17500:r29",
+        "accepted:30:17500:18100:r30",
+        "accepted:31:18100:18700:r31",
+        "accepted:32:18700:19300:r32",
+        "accepted:33:19300:19900:r33",
+        "accepted:34:19900:20500:r34",
+        "accepted:35:20500:21100:r35",
+        "accepted:36:21100:21700:r36",
+        "accepted:37:21700:22300:r37",
+        "accepted:38:22300:22900:r38",
+        "accepted:39:22900:23500:r39",
+        "accepted:40:23500:24100:r40",
+        "pruned",
+        "restored",
+        "generation-superseded"
+      ],
+      "retained_results": 1,
+      "seats": 1,
+      "signatures": 0
+    },
+    "initial": {},
+    "steps": [
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 100
+      },
+      {
+        "generation": 2,
+        "kind": "recover",
+        "now": 700
+      },
+      {
+        "generation": 3,
+        "kind": "recover",
+        "now": 1300
+      },
+      {
+        "generation": 4,
+        "kind": "recover",
+        "now": 1900
+      },
+      {
+        "generation": 5,
+        "kind": "recover",
+        "now": 2500
+      },
+      {
+        "generation": 6,
+        "kind": "recover",
+        "now": 3100
+      },
+      {
+        "generation": 7,
+        "kind": "recover",
+        "now": 3700
+      },
+      {
+        "generation": 8,
+        "kind": "recover",
+        "now": 4300
+      },
+      {
+        "generation": 9,
+        "kind": "recover",
+        "now": 4900
+      },
+      {
+        "generation": 10,
+        "kind": "recover",
+        "now": 5500
+      },
+      {
+        "generation": 11,
+        "kind": "recover",
+        "now": 6100
+      },
+      {
+        "generation": 12,
+        "kind": "recover",
+        "now": 6700
+      },
+      {
+        "generation": 13,
+        "kind": "recover",
+        "now": 7300
+      },
+      {
+        "generation": 14,
+        "kind": "recover",
+        "now": 7900
+      },
+      {
+        "generation": 15,
+        "kind": "recover",
+        "now": 8500
+      },
+      {
+        "generation": 16,
+        "kind": "recover",
+        "now": 9100
+      },
+      {
+        "generation": 17,
+        "kind": "recover",
+        "now": 9700
+      },
+      {
+        "generation": 18,
+        "kind": "recover",
+        "now": 10300
+      },
+      {
+        "generation": 19,
+        "kind": "recover",
+        "now": 10900
+      },
+      {
+        "generation": 20,
+        "kind": "recover",
+        "now": 11500
+      },
+      {
+        "generation": 21,
+        "kind": "recover",
+        "now": 12100
+      },
+      {
+        "generation": 22,
+        "kind": "recover",
+        "now": 12700
+      },
+      {
+        "generation": 23,
+        "kind": "recover",
+        "now": 13300
+      },
+      {
+        "generation": 24,
+        "kind": "recover",
+        "now": 13900
+      },
+      {
+        "generation": 25,
+        "kind": "recover",
+        "now": 14500
+      },
+      {
+        "generation": 26,
+        "kind": "recover",
+        "now": 15100
+      },
+      {
+        "generation": 27,
+        "kind": "recover",
+        "now": 15700
+      },
+      {
+        "generation": 28,
+        "kind": "recover",
+        "now": 16300
+      },
+      {
+        "generation": 29,
+        "kind": "recover",
+        "now": 16900
+      },
+      {
+        "generation": 30,
+        "kind": "recover",
+        "now": 17500
+      },
+      {
+        "generation": 31,
+        "kind": "recover",
+        "now": 18100
+      },
+      {
+        "generation": 32,
+        "kind": "recover",
+        "now": 18700
+      },
+      {
+        "generation": 33,
+        "kind": "recover",
+        "now": 19300
+      },
+      {
+        "generation": 34,
+        "kind": "recover",
+        "now": 19900
+      },
+      {
+        "generation": 35,
+        "kind": "recover",
+        "now": 20500
+      },
+      {
+        "generation": 36,
+        "kind": "recover",
+        "now": 21100
+      },
+      {
+        "generation": 37,
+        "kind": "recover",
+        "now": 21700
+      },
+      {
+        "generation": 38,
+        "kind": "recover",
+        "now": 22300
+      },
+      {
+        "generation": 39,
+        "kind": "recover",
+        "now": 22900
+      },
+      {
+        "generation": 40,
+        "kind": "recover",
+        "now": 23500
+      },
+      {
+        "generation": null,
+        "kind": "prune",
+        "now": 24100
+      },
+      {
+        "generation": null,
+        "kind": "restore",
+        "now": 24100
+      },
+      {
+        "generation": 1,
+        "kind": "recover",
+        "now": 24100
+      }
+    ]
+  }
+]

@@ -12,7 +12,8 @@ import { createScreens, FIXED_NOW } from './screen-matrix.mjs';
 
 import { runCaptureJobs } from './capture-jobs.mjs';
 import { captureStaticSurfaces } from './static-surfaces.mjs';
-import { installWatcher, readWatcher } from './shift-watcher.mjs';
+import { installWatcher, readWatcher, nativeBoundary, settleNativeWatcher } from './shift-watcher.mjs';
+import { inspectSettingsFrames, ordinarySettingsTransition } from './settings-stability.mjs';
 import { captureFreshnessTransitions } from './freshness-transitions.mjs';
 import { captureDynamicTransitions, REQUIRED_REGIONS } from './dynamic-transitions.mjs';
 
@@ -45,7 +46,7 @@ export async function startHarness() {
   const port = await freePort();
   const vite = spawn(
     process.execPath,
-    [join(frontend, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    [join(frontend, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort', '--base', '/'],
     { cwd: frontend, env: { ...process.env, BROWSER: 'none' }, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   let log = '';
@@ -211,7 +212,9 @@ export async function capture(argv = process.argv.slice(2)) {
         });
 
           const page = await context.newPage();
-          await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace] });
+          const settings = screen.workspace === 'settings';
+          const transitions = [];
+          await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[screen.workspace], nativeTimeline: settings });
           const errors = [];
           page.on('pageerror', (error) => errors.push(String(error)));
           await page.clock.setFixedTime(FIXED_NOW);
@@ -219,13 +222,41 @@ export async function capture(argv = process.argv.slice(2)) {
           try {
             await page.goto(url, { waitUntil: 'networkidle' });
             await page.evaluate(() => document.fonts.ready);
-            if (screen.act) await screen.act(page);
+            if (settings) {
+              const before = await page.evaluate(() => ({ at: 0, frame: 0,
+                nativeAt: window.__regionWatcher.nativeTimeline.capturedAt }));
+              if (screen.state === 'loading') await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
+              else for (const name of ['Browser extension', 'Full analytics', 'Message history', 'Stored messages']) {
+                await page.getByRole('heading', { name, exact: true }).waitFor({ state: 'visible', timeout: 15_000 });
+              }
+              await settleNativeWatcher(page);
+              transitions.push({ id: 'loading', before, after: await nativeBoundary(page) });
+            }
+            if (screen.act) {
+              const before = settings ? await nativeBoundary(page) : null;
+              await screen.act(page);
+              if (settings) {
+                await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
+                await settleNativeWatcher(page);
+                transitions.push({ id: ordinarySettingsTransition(screen.variant), before, after: await nativeBoundary(page) });
+              }
+            }
             await screen.ready(page).waitFor({ state: 'visible', timeout: 15_000 });
             await page.waitForLoadState('networkidle');
             await assertBrandMarkIfPresent(page);
             await assertNumericTypography(page, viewport);
             if (screen.assert) await screen.assert(page, viewport);
             const watcher = await readWatcher(page);
+            if (settings) {
+              const tail = { id: 'fixture:scroll-audit', before: transitions.at(-1).after,
+                after: { at: watcher.frames.at(-1).at, frame: watcher.frames.length, nativeAt: watcher.nativeTimeline.endAt } };
+              const geometry = inspectSettingsFrames(watcher.frames, transitions, REQUIRED_REGIONS.settings, { ...watcher, auxiliary: [tail] });
+              watcher.failures = geometry.failures;
+              watcher.transitions = transitions;
+              watcher.transitionGeometry = geometry.policies;
+              watcher.shiftAttribution = geometry.shiftAttribution;
+              watcher.auxiliary = [tail];
+            }
             await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, ...watcher }) + '\n');
             files.push(`${name}-geometry.json`);
             if (watcher.failures.length) throw new Error(watcher.failures.join('\n'));

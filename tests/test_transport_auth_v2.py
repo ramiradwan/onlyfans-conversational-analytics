@@ -7,6 +7,8 @@ from uuid import uuid4
 import pytest
 
 from app.core.config import Settings, settings
+from app.onboarding.admission import AdmissionRefused, ScopedAdmissions
+from app.persistence.auth import SQLiteAuthenticationStore
 from app.persistence.factory import create_canonical_repositories
 from app.services.agent_configuration import AgentConfigurationAuthority, InMemoryAgentConfigRepository
 from app.transport.manager import AuthenticationError, InMemoryTransportManager
@@ -164,35 +166,26 @@ def test_candidate_defaults_require_explicit_exact_launcher_bindings(
         authority.required_document("dev-creator-account")
 
 
-def test_launcher_bootstrap_consumption_survives_manager_recreation(
+def test_desktop_launcher_entry_consumption_survives_authority_recreation(
     tmp_path: Path,
 ) -> None:
-    canonical_path = tmp_path / "canonical.sqlite3"
-    projection_path = tmp_path / "projections.sqlite3"
-    first = InMemoryTransportManager(
-        create_canonical_repositories(
-            "sqlite",
-            canonical_path=canonical_path,
-            projection_path=projection_path,
-        )
-    )
-    ticket = "launcher-bootstrap-ticket-value-1234567890"
-    assert first.consume_launcher_bootstrap(
-        ticket,
-    )
-    recreated = InMemoryTransportManager(
-        create_canonical_repositories(
-            "sqlite",
-            canonical_path=canonical_path,
-            projection_path=projection_path,
-        )
-    )
-    assert not recreated.consume_launcher_bootstrap(
-        ticket,
-    )
-    with recreated.canonical_database.read() as connection:
-        stored = connection.execute(
-            "SELECT ticket_hash,principal_id,creator_account_id FROM launcher_bootstrap_consumptions"
-        ).fetchone()
-    assert ticket not in stored[0]
-    assert tuple(stored[1:]) == ("", "")
+    # Native launcher admission now belongs to the durable authentication owner.
+    # Reopen the real store as well as its authority; a fresh process must not
+    # replay an entry or inherit plaintext launcher/session credentials.
+    path = tmp_path / "auth.sqlite3"
+    first = ScopedAdmissions(SQLiteAuthenticationStore(path), stage="runtime")
+    code = first.prepare_desktop()
+    with first.authentication.database.read() as connection:
+        entries = repr([tuple(row) for row in connection.execute("SELECT * FROM desktop_admission_entries")])
+    assert code not in entries
+    session = first.consume(code, role="desktop")
+    recreated = ScopedAdmissions(SQLiteAuthenticationStore(path), stage="runtime")
+    with pytest.raises(AdmissionRefused):
+        recreated.consume(code, role="desktop")
+    assert recreated.require(session.identifier, role="desktop") == session
+    assert session.journey_id is None
+    with recreated.authentication.database.read() as connection:
+        assert connection.execute("SELECT count(*) FROM desktop_admission_entries").fetchone()[0] == 0
+        rows = [tuple(row) for row in connection.execute("SELECT * FROM desktop_admission_sessions")]
+    assert len(rows) == 1
+    assert code not in repr(rows) and session.identifier not in repr(rows)

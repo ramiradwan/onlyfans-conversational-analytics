@@ -1,0 +1,291 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Registered installation setup continuation",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://control-plane.example.invalid"
+    }
+  ],
+  "paths": {
+    "/v1/onboarding/installation-continuations:prepare": {
+      "post": {
+        "operationId": "prepareInstallationSetupContinuation",
+        "x-profile": "urn:bridge-clean:installation-setup-continuation:v1",
+        "x-request-max-bytes": 8192,
+        "x-response-max-bytes": 16384,
+        "description": "Fresh purpose-specific registered-key proof in the body. Exact scope and current authority are rechecked at admission. No browser cookie or local runtime credential.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/installation-continuation/v1/prepare-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Closed result under the exact registered continuation profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-continuation/v1/prepare-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "401": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Refusal"
+          }
+        }
+      }
+    },
+    "/v1/onboarding/installation-continuations:read": {
+      "post": {
+        "operationId": "readInstallationSetupContinuation",
+        "x-profile": "urn:bridge-clean:installation-setup-continuation:v1",
+        "x-request-max-bytes": 8192,
+        "x-response-max-bytes": 16384,
+        "description": "Fresh purpose-specific registered-key proof in the body. Exact scope and current authority are rechecked at admission. No browser cookie or local runtime credential.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/installation-continuation/v1/read-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Closed result under the exact registered continuation profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-continuation/v1/read-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "401": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Refusal"
+          }
+        }
+      }
+    },
+    "/v1/onboarding/installation-continuations:stream": {
+      "post": {
+        "operationId": "streamInstallationSetupContinuation",
+        "x-profile": "urn:bridge-clean:installation-setup-continuation:v1",
+        "x-request-max-bytes": 8192,
+        "x-response-max-bytes": 16384,
+        "description": "Fresh purpose-specific registered-key proof in the body. Exact scope and current authority are rechecked at admission. No browser cookie or local runtime credential.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/installation-continuation/v1/stream-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Complete committed projection; no local runtime authority.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "../schemas/installation-continuation/v1/event.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "401": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Refusal"
+          }
+        }
+      }
+    },
+    "/v1/onboarding/installation-continuations:binding": {
+      "post": {
+        "operationId": "acquireInstallationSetupContinuationBinding",
+        "x-profile": "urn:bridge-clean:installation-setup-continuation:v1",
+        "x-request-max-bytes": 8192,
+        "x-response-max-bytes": 16384,
+        "description": "Fresh purpose-specific registered-key proof in the body. Exact scope and current authority are rechecked at admission. No browser cookie or local runtime credential.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/installation-continuation/v1/binding-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Closed result under the exact registered continuation profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-continuation/v1/binding-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "401": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Refusal"
+          }
+        }
+      }
+    },
+    "/v1/onboarding/installation-continuation-proof-challenges": {
+      "post": {
+        "operationId": "issueInstallationSetupContinuationProofChallenge",
+        "x-profile": "urn:bridge-clean:installation-setup-continuation-proof:v1",
+        "x-request-max-bytes": 8192,
+        "x-response-max-bytes": 16384,
+        "description": "Uniform challenge only; unknown, revoked and mismatched targets disclose no existence.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/installation-continuation/v1/proof-challenge-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Closed result under the exact registered continuation profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/installation-continuation/v1/proof-challenge-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refusal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Refusal"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "Refusal": {
+        "description": "Closed nonauthorizing refusal. Oversize requests use 413 invalid; malformed bodies use 400 invalid. Other statuses follow the profile refusal map.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../schemas/installation-continuation/v1/error.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}

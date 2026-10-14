@@ -444,6 +444,7 @@ export interface BrowserSurfacePayload {
   history_permission: 'granted' | 'missing';
   legal_review_required: boolean;
   reported_at: IsoDateTime;
+  history_error_code?: 'identity_required' | 'unsupported_revision' | 'history_unavailable' | null;
 }
 
 export interface SystemStatePayload {

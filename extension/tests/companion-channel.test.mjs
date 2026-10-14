@@ -10,6 +10,7 @@ import { createFragmentReceiver, fragmentMessage } from '../transport/companion-
 import { key32 } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { vector, trustSet, fixtureMaterial, fixturePrivateJwk } from '../test-fixtures/pairing/vendored-vector.mjs';
+import { payload as browserPayload } from '../test-fixtures/browser-task.mjs';
 
 await initialize({ module_or_path: await readFile(new URL('../vendor/companion-snow/ofca_snow_wasm_bg.wasm', import.meta.url)) });
 const trust = await loadGrantTrustSet(trustSet, { allowNonProduction: true });
@@ -328,6 +329,26 @@ test('a malformed or unknown session control closes the channel', async () => {
   }
 });
 
+test('encrypted browser tasks admit only the closed task envelope and no platform command', async () => {
+  const payload = browserPayload();
+  payload.task.purpose = 'browser.authentication'; payload.creator_account_id = vector.detected_account_id;
+  payload.ceremony = { entry_url: 'https://provider.example/onboarding/browser-ceremonies/' + 'A'.repeat(43),
+    ceremony_id: '0199b234-5678-7000-8000-000000000002', attempt_id: 'A'.repeat(43),
+    completion: { mode: 'extension-auth-flow', return_uri: `https://${payload.extension_id}.chromiumapp.org/browser-ceremony/v1/complete` },
+    expires_at: new Date(Date.now() + 30000).toISOString() };
+  const good = { type: 'session.control', id: payload.task.task_id, action: 'browser.task', payload };
+  for (const control of [good, { ...good, url: 'https://example.test' }, { ...good, id: crypto.randomUUID() },
+    { ...good, action: 'platform.command' }, { ...good, payload: { ...payload, creator_account_id: null } }]) {
+    const peer = fixture(), channel = await peer.open(), controls = [];
+    channel.onControl(value => controls.push(value)); peer.application(control);
+    await waitFor(() => channel.closed || controls.length > 0);
+    assert.equal(channel.closed, control !== good);
+    assert.equal(controls.length, control === good ? 1 : 0);
+    if (control === good) assert.deepEqual(controls[0], { id: good.id, action: good.action, payload });
+    channel.close();
+  }
+});
+
 async function rotationTransport(t, Client, { localRefusal = null, rotationResult = 'success' } = {}) {
   let time = 0, refusal = localRefusal;
   t.mock.method(performance, 'now', () => time);
@@ -410,8 +431,8 @@ async function rotationTransport(t, Client, { localRefusal = null, rotationResul
     get time() { return time; }, release() { refusal = null; },
     traffic(kind) {
       for (let i = 0; i < 8; i++) {
-        if (kind === 'surface') client.reportSurface({ schema: 'ofca-browser-surface/v1', capture: 'active',
-          site_access: 'granted', history_permission: 'granted', legal_review_required: i % 2 === 0 });
+        if (kind === 'surface') client.reportSurface({ schema: 'ofca-browser-surface/v2', capture: 'active',
+          site_access: 'granted', history_permission: 'granted', legal_review_required: i % 2 === 0, history_error_code: null });
         else { const call = client.analysisReadiness(); void call.catch(() => {}); pending.push(call); }
       }
     },

@@ -1,17 +1,50 @@
 // Browser-test adapter only. This file is never included in extension artifacts.
 export function installSurfaceFixture(input) {
   const state = structuredClone(input), calls = [], ports = new Set();
+  const journey = '11111111-1111-4111-8111-111111111111';
+  const draftScope = { scope_id: '22222222-2222-4222-8222-222222222222', disclosure_bundle_id: 'a'.repeat(64) };
+  const draft = { terms_checked: false, risk_checked: false, full_checked: input.fullIntent === true };
+  const task = { journey_id: journey, expires_at: Math.floor(Date.now() / 1000) + 300 };
   const event = () => { const listeners = new Set(); return { addListener: (fn) => listeners.add(fn),
     removeListener: (fn) => listeners.delete(fn), emit: (...values) => { for (const fn of listeners) fn(...values); } }; };
+  const storageChanged = event(), sessionValues = structuredClone(input.sessionValues ?? {});
+  const session = {
+    async get(keys) {
+      if (keys == null) return structuredClone(sessionValues);
+      const defaults = typeof keys === 'object' && !Array.isArray(keys) ? keys : {};
+      const names = typeof keys === 'string' ? [keys] : Array.isArray(keys) ? keys : Object.keys(keys);
+      return Object.fromEntries(names.filter((key) => key in sessionValues || key in defaults)
+        .map((key) => [key, structuredClone(key in sessionValues ? sessionValues[key] : defaults[key])]));
+    },
+    async set(values) {
+      const changes = {};
+      for (const [key, value] of Object.entries(values)) {
+        changes[key] = { oldValue: sessionValues[key], newValue: structuredClone(value) };
+        sessionValues[key] = structuredClone(value);
+      }
+      storageChanged.emit(changes, 'session');
+    },
+    async remove(keys) {
+      const changes = {};
+      for (const key of typeof keys === 'string' ? [keys] : keys) if (key in sessionValues) {
+        changes[key] = { oldValue: sessionValues[key] }; delete sessionValues[key];
+      }
+      storageChanged.emit(changes, 'session');
+    },
+  };
   const pairState = () => ({ state: state.pairing ?? (state.paired ? 'paired' : 'unpaired'),
     comparison_code: state.pairing === 'compare' && state.surface === 'setup' ? '483217' : null,
     owns_attempt: state.surface === 'setup' && ['pairing', 'compare'].includes(state.pairing),
     desktop_control: state.desktopControl === true });
   const status = () => ({ consent: { mode: state.mode, resume_mode: state.resume ?? null, consent_epoch: 'fixture-epoch' },
+    brain_reachable: state.reachable === true,
     phase: state.phase ?? (state.mode === 'full' ? (state.paired ? 'full' : 'identity') : state.mode),
-    reload_required: state.reload === true, onlyfans_permission: state.phase !== 'permission_required', history_permission: false,
+    reload_required: state.reload === true, onlyfans_permission: state.phase !== 'permission_required' && state.permissionGranted !== false,
+    local_service_permission: state.localPermissionGranted !== false, history_permission: false,
+    observer: state.observer ?? { attachment: 'ready', helper: 'none' },
     preview: state.preview ?? { message_observations: 128, chat_observations: 24, inbound_observations: 80, outbound_observations: 48 },
-    delivery: { transport_state: state.paired ? 'authenticated' : 'disconnected', pending_entries: 0, capture_drop_counts: {} } });
+    delivery: { transport_state: state.paired ? 'authenticated' : 'disconnected', browser_tab_sleeping: state.sleeping === true,
+      pending_entries: 0, capture_drop_counts: {} } });
   const legal = () => ({ configured: state.configured !== false, consent_mode: state.mode,
     requires_reauthorization: state.reauthorization === true,
     bindings: { public_origin: 'https://legal.example.test', instruments: {
@@ -24,14 +57,30 @@ export function installSurfaceFixture(input) {
     Object.assign(state, next);
     for (const port of ports) port.onMessage.emit(pairState());
     window.chrome.storage.onChanged.emit({ fixture: { newValue: true } }, 'local');
+    if ('browserTask' in next) storageChanged.emit({ browser_task_entry_v1: { newValue: next.browserTask } }, 'session');
   } };
   window.chrome = {
     runtime: { id: 'fixture', getURL: (name) => `${location.origin}/${name}`, getManifest: () => ({ version: '2.0.3' }),
       async sendMessage(message) {
         calls.push(structuredClone(message));
         if (state.runtimeUnavailable) throw new Error('fixture_runtime_unavailable');
+        if (state.initialRequestHold === message.type) {
+          await new Promise((resolve) => { window.__releaseInitialRequest = () => {
+            delete state.initialRequestHold; delete window.__releaseInitialRequest; resolve();
+          }; });
+        }
         if (message.type === 'ofca.ui.status') return { ok: true, status: status() };
         if (message.type === 'ofca.legal-activation.status') return { ok: true, result: legal() };
+        if (message.type === 'ofca.workspace.v1') {
+          if (message.action === 'read') return { ok: true, result: { journey_id: journey, draft_scope: draftScope, draft: structuredClone(draft) } };
+          if (message.action === 'draft') { Object.assign(draft, message.draft); return { ok: true, result: {} }; }
+          if (message.action === 'browser_task') return { ok: true, result: state.browserTask ? { task, draft_scope: draftScope } : null };
+          if (message.action === 'dismiss_browser_task') { state.browserTask = false; return { ok: true, result: { dismissed: true } }; }
+          if (message.action === 'desktop_adoption') return { ok: true, result: { adopted: state.adopted === true } };
+          if (message.action === 'prepare_launch') return { ok: true, result: { journey_id: journey, app_link: `ofca://onboarding/?journey=${journey}` } };
+          throw Error('unknown_fixture_workspace_action');
+        }
+        if (message.type === 'ofca.setup-transfer.v1' && message.action === 'context') return { ok: true, result: null };
         if (message.type === 'ofca.legal-activation.accept-terms') state.terms = true;
         else if (message.type === 'ofca.legal-activation.acknowledge-risk') state.risk = true;
         else if (message.type === 'ofca.legal-activation.activate-software') { state.agreement = false; state.choice = true; }
@@ -66,7 +115,7 @@ export function installSurfaceFixture(input) {
       } },
     permissions: { request: async (request) => { calls.push({ type: 'permission', request, userGesture: navigator.userActivation.isActive }); return state.permissionGranted !== false; } },
     tabs: { create: async (value) => { calls.push({ type: 'tab', ...value }); return { id: 2 }; } },
-    storage: { onChanged: event() },
+    storage: { session, onChanged: storageChanged },
   };
   const originalFetch = window.fetch;
   window.fetch = (url, options) => String(url).endsWith('/extension-config.json')

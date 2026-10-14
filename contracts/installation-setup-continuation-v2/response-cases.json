@@ -1,0 +1,112 @@
+[
+  {
+    "case_id": "exact-found",
+    "expected": true,
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "operation_id": "0199b234-5678-7000-8000-000000000001",
+    "response": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "wrong-snapshot-context",
+    "expected": false,
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "operation_id": "0199b234-5678-7000-8000-000000000001",
+    "response": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000003",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "wrong-snapshot-expiry",
+    "expected": false,
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "operation_id": "0199b234-5678-7000-8000-000000000001",
+    "response": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:00:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "wrong-operation-result",
+    "expected": false,
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "operation_id": "0199b234-5678-7000-8000-000000000001",
+    "response": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000002",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000003",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000002",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  },
+  {
+    "case_id": "consistent-but-foreign-context",
+    "expected": false,
+    "known_id": "0199b234-5678-7000-8000-000000000002",
+    "operation_id": "0199b234-5678-7000-8000-000000000001",
+    "response": {
+      "continuation_id": "0199b234-5678-7000-8000-000000000003",
+      "expires_at": "2026-10-09T12:30:00.000Z",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "profile": "urn:bridge-clean:installation-setup-continuation:v2",
+      "reference": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "result": "found",
+      "snapshot": {
+        "committed_at": "2026-10-09T12:00:00.000Z",
+        "continuation_id": "0199b234-5678-7000-8000-000000000003",
+        "epoch": "0199b234-5678-7000-8000-000000000003",
+        "expires_at": "2026-10-09T12:30:00.000Z",
+        "revision": 1,
+        "state": "awaiting-owner"
+      }
+    }
+  }
+]

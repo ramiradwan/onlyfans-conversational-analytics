@@ -2,7 +2,7 @@ import {
   Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogContentText,
   DialogTitle, FormControlLabel, Stack, Typography,
 } from '@mui/material';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { BrowserExtensionControls } from './BrowserExtensionControls';
 import { Panel, SectionHeader, SettingRow, useRevealHold, type SectionStatus } from './ui';
@@ -15,11 +15,7 @@ import {
   type CompanionPairingApi,
   type CompanionPairingStatus,
 } from '../services/companionPairingApi';
-import {
-  defaultExtensionPort,
-  type ExtensionPort,
-  type ExtensionStage,
-} from '../services/extensionPort';
+import { desktopOnboardingApi, type DesktopOnboardingApi } from '../services/desktopOnboarding';
 import { bridgeTransportStore } from '../store/transportStore';
 import {
   extensionConnection,
@@ -31,30 +27,25 @@ const WINDOW_LIMIT_MS = 300_000;
 const terminal = (status: CompanionPairingStatus) => (
   ['confirmed', 'admitted', 'declined', 'cancelled', 'expired', 'revoked'].includes(status.state)
 );
-// Extension-side steps that must finish before this browser can pair.
-const EXTENSION_SETUP_STAGES: ReadonlySet<ExtensionStage> = new Set([
-  'needs_terms', 'paused', 'needs_full', 'needs_site_access', 'needs_account',
-]);
-const EXTENSION_STAGE_COPY: Partial<Record<ExtensionStage, string>> = {
-  needs_terms: 'Review the terms in the extension window.',
-  paused: 'Resume analytics in the extension window.',
-  needs_full: 'Turn on Full analytics in the extension window.',
-  needs_site_access: 'Allow site access in the extension window.',
-  needs_account: 'Sign in to your creator account on OnlyFans in this browser.',
-};
-
 function remainingLabel(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainder = String(seconds % 60).padStart(2, '0');
   return `${minutes}:${remainder}`;
 }
 
-function PairingAttemptControls({ api, browserApi, port, connection, creatorAccountId }: {
+interface PairingListFeedback {
+  failed: boolean;
+  busy: boolean;
+  retry: () => void;
+}
+
+function PairingAttemptControls({ api, browserApi, onboarding, connection, creatorAccountId, embedded }: {
   api: CompanionPairingApi;
   browserApi: BrowserControlApi;
-  port: ExtensionPort;
+  onboarding: DesktopOnboardingApi;
   connection: ExtensionConnection;
   creatorAccountId: string;
+  embedded: boolean;
 }) {
   const [status, setStatus] = useState<CompanionPairingStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -62,22 +53,25 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
   const [codesMatch, setCodesMatch] = useState(false);
   const [connectedCount, setConnectedCount] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
-  // Same-browser flow: the extension finishes its own steps, then pairs through the port.
-  const [waitingForExtension, setWaitingForExtension] = useState(false);
-  const [browserPairing, setBrowserPairing] = useState(false);
-  const [extensionRefused, setExtensionRefused] = useState(false);
+  const [manualRecovery, setManualRecovery] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [entryError, setEntryError] = useState<string | null>(null);
+  const [browserFeedback, setBrowserFeedback] = useState<string | null>(null);
+  const [listFeedback, setListFeedback] = useState<PairingListFeedback | null>(null);
+  const openingRef = useRef(false);
   const current = useRef<CompanionPairingStatus | null>(null);
   const deadline = useRef(0);
   const operation = useRef<AbortController | null>(null);
   const epoch = useRef(0);
-  const verifiedVersion = useRef<string | null>(null);
-  const extension = useSyncExternalStore(port.subscribe, port.getState, port.getState);
+  const confirmationInFlight = useRef(false);
+  const desktop = useSyncExternalStore(onboarding.subscribe, onboarding.getState, onboarding.getState);
+  const pendingPairing = desktop.snapshot?.pending_operations.some(value => value.action === 'browser.pair') === true;
+  const canStart = desktop.connected && (pendingPairing || desktop.snapshot?.allowed_actions.includes('browser.pair'));
   const notice = useSyncExternalStore(
     bridgeTransportStore.subscribe,
     () => bridgeTransportStore.getState().companion,
     () => bridgeTransportStore.getState().companion,
   );
-  const sameBrowser = extension.status === 'connected';
   const browser = useSyncExternalStore(
     bridgeTransportStore.subscribe,
     () => bridgeTransportStore.getState().connection === 'connected' ? bridgeTransportStore.getState().agent?.browser ?? null : null,
@@ -86,21 +80,16 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
 
   useEffect(() => () => {
     epoch.current += 1;
-    operation.current?.abort();
+    // The owner may advance before the confirmation response arrives.
+    // Neither an unresolved confirmation nor an admitted connection may be cancelled.
     const pending = current.current;
+    if (confirmationInFlight.current || pending?.state === 'confirmed' || pending?.state === 'admitted') return;
+    operation.current?.abort();
     if (pending && !terminal(pending)) {
       // Best effort only: the server deadline remains authoritative if navigation interrupts this.
       void api.change(pending.pairing_id, 'cancel', pending.version).catch(() => undefined);
     }
-    port.cancel();
-  }, [api, port]);
-
-  // An extension that was absent may have been installed or enabled since.
-  useEffect(() => {
-    const retry = () => port.retry();
-    globalThis.addEventListener?.('focus', retry);
-    return () => globalThis.removeEventListener?.('focus', retry);
-  }, [port]);
+  }, [api]);
 
   const acceptStatus = (next: CompanionPairingStatus) => {
     const previous = current.current;
@@ -119,7 +108,8 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
     setStatus(next);
   };
 
-  const run = async (action: 'open' | 'get' | CompanionPairingAction | 'verified', code?: string) => {
+  const run = async (action: 'open' | 'get' | CompanionPairingAction) => {
+    if (confirmationInFlight.current) return false;
     const previous = current.current;
     if (action !== 'open' && previous === null) return;
     if (action === 'confirm' && (!codesMatch || previous?.state !== 'awaiting_confirmation')) return;
@@ -127,6 +117,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
     const controller = new AbortController();
     operation.current = controller;
     const version = ++epoch.current;
+    if (action === 'confirm') confirmationInFlight.current = true;
     setBusy(true);
     setFailed(false);
     setCodesMatch(false);
@@ -140,9 +131,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
         ? await api.open(creatorAccountId, controller.signal)
         : action === 'get'
           ? await api.get(previous!.pairing_id, controller.signal)
-          : action === 'verified'
-            ? await api.confirmVerified(previous!.pairing_id, previous!.version, code!, controller.signal)
-            : await api.change(previous!.pairing_id, action, previous!.version, controller.signal);
+          : await api.change(previous!.pairing_id, action, previous!.version, controller.signal);
       if (controller.signal.aborted || epoch.current !== version) return false;
       deadline.current = Math.min(deadline.current, Date.parse(next.expires_at));
       acceptStatus(next);
@@ -151,39 +140,20 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       if (!controller.signal.aborted && epoch.current === version) setFailed(true);
       return false;
     } finally {
+      if (action === 'confirm') confirmationInFlight.current = false;
       if (!controller.signal.aborted && epoch.current === version) setBusy(false);
     }
   };
 
-  const startPairing = async () => {
-    setExtensionRefused(false);
-    verifiedVersion.current = null;
-    const viaBrowser = port.getState().status === 'connected';
-    setBrowserPairing(viaBrowser);
-    // Brain's window opens first, so the extension never races a closed window.
-    if (await run('open') && viaBrowser && !port.pair()) setBrowserPairing(false);
+  const connect = async () => {
+    if (openingRef.current || !canStart) return;
+    openingRef.current = true;
+    setOpening(true);
+    setEntryError(null);
+    try { await onboarding.begin('browser.pair'); }
+    catch { setEntryError('The browser connection request could not be opened.'); }
+    finally { openingRef.current = false; setOpening(false); }
   };
-
-  const connect = () => {
-    const stage = port.getState().stage;
-    if (sameBrowser && stage !== null && EXTENSION_SETUP_STAGES.has(stage)) {
-      setWaitingForExtension(true);
-      port.open('setup');
-      return;
-    }
-    void startPairing();
-  };
-
-  // The extension pushes its stage; continue as soon as its steps are done.
-  useEffect(() => {
-    if (!waitingForExtension) return;
-    if (extension.status !== 'connected') { setWaitingForExtension(false); return; }
-    if (extension.stage === 'ready_to_pair' || extension.stage === 'paired') {
-      setWaitingForExtension(false);
-      void startPairing();
-    }
-    // startPairing reads only refs and stable callbacks.
-  }, [waitingForExtension, extension.status, extension.stage]);
 
   // Brain pushes a change notice; re-read the attempt only then, never on a timer.
   useEffect(() => {
@@ -203,28 +173,6 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
     return () => controller.abort();
     // acceptStatus is recreated each render but only touches refs and setters.
   }, [api, notice]);
-
-  // Same browser: confirm with the code the extension reported. Brain compares it.
-  const extensionCode = browserPairing && extension.attempt?.state === 'compare'
-    ? extension.attempt.comparison_code : null;
-  useEffect(() => {
-    if (!status || status.state !== 'awaiting_confirmation' || extensionCode === null || busy || failed) return;
-    const key = `${status.pairing_id}:${status.version}`;
-    if (verifiedVersion.current === key) return;
-    verifiedVersion.current = key;
-    void run('verified', extensionCode);
-    // run is recreated each render but reads the current attempt from refs.
-  }, [status, extensionCode, busy, failed]);
-
-  // The extension ended its side of the attempt; end Brain's window too.
-  const extensionAttempt = browserPairing ? extension.attempt?.state ?? null : null;
-  useEffect(() => {
-    if (!extensionAttempt || !['failed', 'not_ready', 'cancelled'].includes(extensionAttempt)) return;
-    const pending = current.current;
-    if (!pending || terminal(pending)) return;
-    setExtensionRefused(true);
-    void run('cancel');
-  }, [extensionAttempt]);
 
   useEffect(() => {
     if (!status || terminal(status)) return;
@@ -247,9 +195,8 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
 
   const approved = status?.state === 'confirmed' || status?.state === 'admitted';
   const active = status !== null && !terminal(status);
-  const awaiting = active && !failed && status.state === 'awaiting_confirmation';
+  const awaiting = active && status.state === 'awaiting_confirmation';
   const connected = approved || (connectedCount !== null && connectedCount > 0);
-  const verifying = active && browserPairing && !failed;
 
   useEffect(() => {
     if (!active) {
@@ -268,7 +215,7 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
   // The chip names the most important current fact: a link problem, then what
   // the extension itself reports, then a healthy link. A running attempt reads
   // as connecting rather than as not connected.
-  const sectionStatus: SectionStatus | null = active || waitingForExtension
+  const sectionStatus: SectionStatus | null = active || pendingPairing || opening
     ? { label: 'Connecting', tone: 'info' }
     : connected
       ? connection !== 'connected'
@@ -282,65 +229,66 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
         ? null
         : { label: 'Not connected', tone: 'default' };
 
+  const attemptFeedback = approved ? connection === 'connected' ? 'Extension connected.' : 'Connection approved. Waiting for the extension.'
+      : status && terminal(status) ? status.state === 'expired' ? 'Time ran out before the connection finished. Try again.'
+          : status.state === 'revoked' ? 'This browser extension was disconnected.'
+            : status.state === 'declined' ? 'Connection declined. Try again.'
+              : 'Connection cancelled.' : connectedCount === 0 && status === null && !pendingPairing ? 'Connect the browser extension so your messages reach this app.' : null;
+  const feedback = [...new Set([
+    browserFeedback,
+    listFeedback?.failed ? "Connected extensions couldn't be checked." : null,
+    entryError,
+    failed ? "The connection couldn't be checked. Try again." : null,
+    attemptFeedback,
+  ].filter((text): text is string => text !== null))].join(' ') || null;
+  const feedbackFailed = Boolean(browserFeedback || listFeedback?.failed || failed || entryError);
+
   return (
     <Stack
       data-journey-state="desktop.extension_pairing"
-      data-pairing-active={active || waitingForExtension ? 'true' : undefined}
-      data-pairing-path={sameBrowser ? 'browser-verified' : 'operator-compared'}
-      spacing={2}
+      data-pairing-active={active || pendingPairing || opening ? 'true' : undefined}
+      data-pairing-path={active ? 'operator-compared' : 'desktop-task'}
+      spacing={1.5}
+      sx={{ containerType: 'inline-size' }}
     >
-      <SectionHeader
-        sx={{ minHeight: '4.5rem', '& > [aria-live]': { width: '8rem', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
+      {!embedded && <SectionHeader
+        sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) 8rem' }, gap: { xs: 0, sm: 2 },
+          '& > [aria-live]': { width: '100%', minHeight: '2rem', margin: '0 !important', '& .MuiChip-root': { width: '100%' }, '& .MuiChip-label': { width: '100%', textAlign: 'left' } } }}
         status={sectionStatus}
         title="Browser extension"
-      />
-      <ReservedRegion grow id="pairing-body" size={{ xs: 672, sm: 432 }} sx={{ display: 'grid' }}>
-      <Box sx={{ gridArea: '1 / 1', visibility: active || waitingForExtension ? 'hidden' : 'visible' }}><AdmittedPairings
+      />}
+      {embedded && sectionStatus && <Typography role="status">{sectionStatus.label}</Typography>}
+      <ReservedRegion grow id="pairing-body" size={{ xs: 0, sm: 0 }} sx={{ display: 'grid' }}>
+      <Box sx={{ gridArea: '1 / 1', visibility: active || pendingPairing || opening ? 'hidden' : 'visible' }}><AdmittedPairings
         api={api}
         browserApi={browserApi}
-        port={port}
         connection={connection}
         creatorAccountId={creatorAccountId}
         onCount={setConnectedCount}
+        onBrowserFeedback={setBrowserFeedback}
+        onFeedback={setListFeedback}
         refresh={`${status?.version ?? -1}:${notice?.revision ?? -1}:${notice?.changed_at ?? ''}`}
       /></Box>
-      <Stack spacing={1.5} sx={{ gridArea: '1 / 1', pointerEvents: active || waitingForExtension ? 'auto' : 'none' }}>
-      {waitingForExtension && (
-        <Stack data-journey-state="desktop.extension_handoff" spacing={0.5}>
-          <Typography role="status">
-            {(extension.stage && EXTENSION_STAGE_COPY[extension.stage]) ?? 'Finish setup in the extension window.'}
-            {' '}This continues here automatically.
-          </Typography>
-        </Stack>
-      )}
-      {verifying && (
-        <Stack spacing={0.5}>
-          <Typography role="status">Connecting the extension in this browser…</Typography>
-          {remainingSeconds !== null && (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              Keep this page open. Time left: {remainingLabel(remainingSeconds)}.
-            </Typography>
-          )}
-        </Stack>
-      )}
-      {active && !browserPairing && !awaiting && !failed && (
+      <Stack spacing={1.5} sx={{ gridArea: '1 / 1', pointerEvents: active || pendingPairing || opening ? 'auto' : 'none' }}>
+      {(pendingPairing || opening) && <Typography role="status">Connecting the browser extension…</Typography>}
+      {active && !awaiting && !failed && (
         <Stack spacing={0.5}>
           <Typography role="status">
-            Open the browser extension where it&apos;s installed, choose Continue setup, then Pair device. Keep this page open.
+            Waiting for the browser extension to connect.
           </Typography>
           {remainingSeconds !== null && (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
               Connection window expires in {remainingLabel(remainingSeconds)}.
             </Typography>
           )}
         </Stack>
       )}
-      {awaiting && !browserPairing && (
+      {awaiting && (
         <Stack spacing={1.5}>
-          <Typography component="h3" variant="subtitle1">Check the code</Typography>
+          <Typography component="h3" variant="subtitle1">{failed ? 'Confirmation paused' : 'Check the code'}</Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>Desktop code</Typography>
           <Typography
-            aria-label="Connection comparison code"
+            aria-label={failed ? undefined : 'Connection comparison code'}
             variant="h4"
             sx={(theme) => ({
               fontFamily: theme.brandTypography.fontFamilyMono,
@@ -351,21 +299,24 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
               marginBlock: theme.spacing(0.5),
             })}
           >
-            {status.comparison_code!.slice(0, 3)} {status.comparison_code!.slice(3)}
+            {failed ? '••• •••' : `${status.comparison_code!.slice(0, 3)} ${status.comparison_code!.slice(3)}`}
           </Typography>
           {remainingSeconds !== null && (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
               Code expires in {remainingLabel(remainingSeconds)}.
             </Typography>
           )}
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Compare this with the extension’s setup tab. Confirm here only if both codes match.
+          <Typography variant="body2" sx={{ color: 'text.secondary', display: 'grid' }}>
+            <Box component="span" aria-hidden={failed} sx={{ gridArea: '1 / 1', visibility: failed ? 'hidden' : 'visible' }}>
+              Compare this with the extension’s setup tab. Confirm here only if both codes match.
+            </Box>
+            {failed && <Box component="span" sx={{ gridArea: '1 / 1' }}>Try again to check this connection.</Box>}
           </Typography>
           <FormControlLabel
             control={(
               <Checkbox
                 checked={codesMatch}
-                disabled={busy}
+                disabled={busy || failed}
                 onChange={(event) => setCodesMatch(event.target.checked)}
               />
             )}
@@ -373,13 +324,13 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
           />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
             <Button
-              disabled={busy || !codesMatch}
+              disabled={busy || failed || !codesMatch}
               onClick={() => void run('confirm')}
               variant="contained"
             >
               Confirm connection
             </Button>
-            <Button color="error" disabled={busy} onClick={() => void run('decline')}>
+            <Button color="error" disabled={busy || failed} onClick={() => void run('decline')}>
               Codes don&apos;t match
             </Button>
           </Stack>
@@ -387,59 +338,58 @@ function PairingAttemptControls({ api, browserApi, port, connection, creatorAcco
       )}
       </Stack>
       </ReservedRegion>
-      <StatusLine essential id="pairing-result" tone={failed ? 'error' : 'secondary'} text={failed
-        ? "The connection couldn't be checked. Keep this page open and try again."
-        : approved ? connection === 'connected' ? 'Extension connected.' : 'Connection approved. Waiting for the extension.'
-          : status && terminal(status) ? extensionRefused ? 'The extension stopped the connection. Try again.'
-            : status.state === 'expired' ? 'Time ran out before the connection finished. Try again.'
-              : status.state === 'revoked' ? 'This browser extension was disconnected.'
-                : status.state === 'declined' ? "The codes didn't match, so nothing was connected. Try again."
-                  : 'Connection cancelled.' : connectedCount === 0 && status === null && !waitingForExtension ? 'Connect the browser extension so your messages reach this app.' : null} />
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: 'flex-start', minHeight: '3rem', '& > button': { minWidth: '12.5rem', height: '3rem', justifyContent: 'flex-start' } }} useFlexGap>
-        {!active && !waitingForExtension && (
-          <Button
-            disabled={busy}
-            onClick={connect}
-            size="medium"
-            variant={connected ? 'text' : 'contained'}
-          >
-            {connected ? 'Connect another extension' : 'Connect extension'}
-          </Button>
-        )}
-        {waitingForExtension && (
-          <Button onClick={() => port.open('setup')} variant="outlined">
-            Show extension window
-          </Button>
-        )}
+      <Box data-browser-feedback sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 18rem', columnGap: 1, minWidth: 0, alignItems: 'start',
+        '@container (max-width: 26rem)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+        '& [data-reserved-region="browser-feedback"]': { blockSize: '2.5rem' } }}>
+        <Box sx={{ minWidth: 0 }}><StatusLine id="browser-feedback" text={feedback}
+          summary={feedbackFailed ? 'Browser alert' : 'Browser status'} tone={feedbackFailed ? 'error' : 'secondary'} /></Box>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 4.5rem', columnGap: 1, minWidth: 0,
+          '@container (max-width: 26rem)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+          '& button': { minWidth: 0, maxWidth: '100%', minHeight: '2.5rem', py: 0, px: 1, lineHeight: '1.25rem', overflowWrap: 'anywhere' } }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minWidth: 0, minHeight: '2.5rem',
+          '@container (max-width: 26rem)': { flexDirection: 'column', minHeight: active || opening || entryError ? '5.5rem' : '2.5rem' },
+          '& > button': { justifyContent: 'flex-start' } }} useFlexGap>
+        {!active && canStart && <Button disabled={opening} onClick={() => void connect()}
+          variant={connected ? 'text' : 'contained'}>
+          {pendingPairing ? 'Continue connecting' : connected ? 'Connect another extension' : 'Connect extension'}
+        </Button>}
+        {!connected && !active && !pendingPairing && (!canStart || entryError) && <Button aria-label="Connection options" title="Connection options" onClick={() => setManualRecovery(true)} variant="text" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
+          Options
+        </Button>}
+        {active && <Button disabled={busy} onClick={() => void run('cancel')}>Cancel</Button>}
         {active && failed && (
           <Button disabled={busy} onClick={() => void run('get')} variant="outlined">
             Try again
           </Button>
         )}
-        {(active || waitingForExtension) && (
-          <Button
-            disabled={busy}
-            onClick={() => {
-              setWaitingForExtension(false);
-              port.cancel();
-              if (active) void run('cancel');
-            }}
-          >
-            Cancel
-          </Button>
-        )}
-      </Stack>
+        </Stack>
+        <Button aria-label="Retry checking connected extensions" size="small" color="inherit"
+          sx={{ width: '4.5rem', justifySelf: 'start', visibility: listFeedback?.failed ? 'visible' : 'hidden' }}
+          disabled={listFeedback?.busy ?? false} onClick={() => listFeedback?.retry()}>Try again</Button>
+        </Box>
+      </Box>
+      <Dialog open={manualRecovery} onClose={() => setManualRecovery(false)} aria-labelledby="pairing-options-title">
+        <DialogTitle id="pairing-options-title">Connect another Chrome profile</DialogTitle>
+        <DialogContent><DialogContentText>
+          Use code comparison when this app cannot reach the Chrome profile containing your extension.
+        </DialogContentText></DialogContent>
+        <DialogActions><Button onClick={() => setManualRecovery(false)}>Close</Button>
+          <Button disabled={busy || !desktop.connected} onClick={() => { setManualRecovery(false); setEntryError(null); void run('open'); }}>
+            Compare connection codes
+          </Button></DialogActions>
+      </Dialog>
     </Stack>
   );
 }
 
-function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId, onCount, refresh }: {
+function AdmittedPairings({ api, browserApi, connection, creatorAccountId, onCount, onBrowserFeedback, onFeedback, refresh }: {
   api: CompanionPairingApi;
   browserApi: BrowserControlApi;
-  port: ExtensionPort;
   connection: ExtensionConnection;
   creatorAccountId: string;
   onCount: (count: number | null) => void;
+  onBrowserFeedback: (text: string | null) => void;
+  onFeedback: (feedback: PairingListFeedback | null) => void;
   refresh: string;
 }) {
   const [pins, setPins] = useState<CompanionPairingStatus[]>([]);
@@ -450,6 +400,9 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
   const [checked, setChecked] = useState(false);
   const operation = useRef<AbortController | null>(null);
   const { isCreator } = usePermissions();
+  const retry = useCallback(() => setRevision((value) => value + 1), []);
+  useEffect(() => { onFeedback({ failed, busy, retry }); }, [failed, busy, retry, onFeedback]);
+  useEffect(() => () => onFeedback(null), [onFeedback]);
   const browser = useSyncExternalStore(
     bridgeTransportStore.subscribe,
     () => bridgeTransportStore.getState().connection === 'connected' ? bridgeTransportStore.getState().agent?.browser ?? null : null,
@@ -497,14 +450,14 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
   };
   return (
     <Stack spacing={0.75}>
-          <ReservedRegion grow id="browser-facts" size={{ xs: 560, sm: 340 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
+          {pins.length > 0 && <ReservedRegion grow id="browser-facts" size={{ xs: 0, sm: 0 }} sx={{ visibility: pins.length ? 'visible' : 'hidden' }}><BrowserExtensionControls
             api={browserApi}
             browser={browser}
             canManage={isCreator}
             connection={connection}
-            port={port}
-          /></ReservedRegion>
-          <Box data-reading-viewport data-region-role="scroll" sx={{ height: '3.75rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>{pins.map((pin, index) => (
+            onFeedback={onBrowserFeedback}
+          /></ReservedRegion>}
+          <Box data-reading-viewport data-region-role="scroll" sx={{ maxHeight: '8rem', overflowY: 'auto', scrollbarGutter: 'stable' }}>{pins.map((pin, index) => (
             <SettingRow
               key={pin.pairing_id}
               title={pins.length === 1 ? 'Extension linked to this app' : `Linked extension ${index + 1}`}
@@ -521,15 +474,11 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
               )}
             />
           ))}</Box>
-      <Box sx={{ height: '2.5rem', display: 'flex', gap: 1 }}>
-        <Box sx={{ flex: 1, minWidth: 0 }}><StatusLine id="pairing-links-feedback" tone="error" text={failed ? "Connected extensions couldn't be checked." : null} /></Box>
-        <Button sx={{ visibility: failed ? 'visible' : 'hidden', alignSelf: 'flex-start' }} color="inherit" disabled={busy} onClick={() => setRevision((value) => value + 1)} size="small">Try again</Button>
-      </Box>
       <Dialog open={confirming !== null} onClose={() => setConfirming(null)}>
         <DialogTitle>Disconnect the browser extension?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            New messages stop reaching this app until you connect it again. Messages already here are kept.
+            New messages stop reaching this app until you connect it again.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
@@ -548,12 +497,12 @@ function AdmittedPairings({ api, browserApi, port, connection, creatorAccountId,
 }
 
 /** Browser extension section of Settings: connection status, pairing, and disconnect. */
-export function CompanionPairingControls({ api = companionPairingApi, browserApi = browserControlApi, port }: {
+export function CompanionPairingControls({ api = companionPairingApi, browserApi = browserControlApi, onboarding = desktopOnboardingApi, embedded = false }: {
   api?: CompanionPairingApi;
   browserApi?: BrowserControlApi;
-  port?: ExtensionPort;
+  onboarding?: DesktopOnboardingApi;
+  embedded?: boolean;
 }) {
-  const extensionPort = port ?? defaultExtensionPort();
   const { canViewSettings } = usePermissions();
   const { agent, creatorAccountId, connection } = useSyncExternalStore(
     bridgeTransportStore.subscribe,
@@ -561,15 +510,20 @@ export function CompanionPairingControls({ api = companionPairingApi, browserApi
     bridgeTransportStore.getState,
   );
   return (
-    <Panel>
+    <Panel emphasis={embedded ? 'quiet' : 'secondary'} sx={embedded ? {
+      p: 0,
+      '& [data-reserved-region]': { minBlockSize: 0, minHeight: 0 },
+      '& [data-reading-viewport]': { height: 'auto' },
+    } : undefined}>
       {canViewSettings && creatorAccountId ? (
         <PairingAttemptControls
           key={creatorAccountId}
           api={api}
           browserApi={browserApi}
-          port={extensionPort}
+          onboarding={onboarding}
           connection={extensionConnection(connection === 'connected' ? agent : null)}
           creatorAccountId={creatorAccountId}
+          embedded={embedded}
         />
       ) : (
         <>

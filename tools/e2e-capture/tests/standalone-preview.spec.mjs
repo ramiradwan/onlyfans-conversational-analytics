@@ -27,6 +27,7 @@ import {
   extensionState,
   extensionWorker,
   launchExtensionBrowser,
+  observeProductTabReloads,
 } from '../lib/extension-browser.mjs';
 import { EXTENSION_DIST, assertBuiltExtension } from '../lib/paths.mjs';
 
@@ -125,7 +126,11 @@ function expectNoOptionalAccess(snapshot) {
 }
 
 function expectEmptyProvisioningIdentitySession(snapshot) {
-  expect(snapshot.session).toEqual({
+  // A browser-session helper ownership nonce is not an identity or an
+  // analytics grant. Preserve the exact empty authority assertion.
+  const { onboarding_observer_session_v2: helperSession, ...authoritySession } = snapshot.session;
+  expect(helperSession).toMatch(UUID_V4);
+  expect(authoritySession).toEqual({
     [DESKTOP_LINK_STORAGE_KEY]: 0,
     [PROVISIONING_IDENTITY_STORAGE_KEY]: {
       schema: PROVISIONING_IDENTITY_STORAGE_SCHEMA,
@@ -175,6 +180,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
     await blockLocalService(context);
 
     let worker = await extensionWorker(context);
+    let productReloads = await observeProductTabReloads(worker);
     const targetExtensionId = extensionId(worker);
     expect(targetExtensionId).toBe(buildMeta.extension_id);
     await allowExtensionResources(context, targetExtensionId);
@@ -202,6 +208,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
     });
 
     await test.step('the Legal activation flow grants only site access and enables preview capture', async () => {
+      const documentToken = await platformPage.evaluate(() => globalThis.fixtureDocumentToken);
       await configureSyntheticLegalBindings(worker, popup);
       await completePreModeLegalActions(popup);
       await enablePreviewAnalytics(context, popup, worker);
@@ -214,14 +221,12 @@ test('standalone preview survives pause, deletion, and restart without a local s
       expect(snapshot.scriptIds).toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
       expect(snapshot.state.runtimeReady).toBe(false);
       const reload = popup.getByRole('button', { name: 'Reload OnlyFans tabs', exact: true });
-      await expect(reload).toBeVisible();
-      const reloaded = platformPage.waitForEvent('domcontentloaded');
-      await reload.click();
-      await reloaded;
       await expect(reload).toBeHidden();
       await expect.poll(() => platformPage.evaluate(
         () => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode ?? null,
       )).toBe('preview');
+      expect(await platformPage.evaluate(() => globalThis.fixtureDocumentToken)).toBe(documentToken);
+      expect(await productReloads()).toEqual([]);
     });
 
     await test.step('read responses count unique activity by its source date', async () => {
@@ -267,12 +272,14 @@ test('standalone preview survives pause, deletion, and restart without a local s
       const before = (await extensionState(worker)).preview;
       localServiceTraffic.stop();
       expect(localServiceTraffic.requests).toEqual([]);
+      expect(await productReloads()).toEqual([]);
       await context.close();
       context = await launchExtensionBrowser(browserProfile);
       localServiceTraffic = observeLocalServiceRequests(context);
       await platform.install(context);
       await blockLocalService(context);
       worker = await extensionWorker(context);
+      productReloads = await observeProductTabReloads(worker);
       await allowExtensionResources(context, targetExtensionId);
       popup = await openPopup(context, targetExtensionId, pageErrors);
       await expect(popup.locator('#mode-label')).toHaveText('Preview on');
@@ -286,16 +293,18 @@ test('standalone preview survives pause, deletion, and restart without a local s
     });
 
     let pausedMetrics = null;
-    await test.step('pause unregisters capture and subsequent reads do not increase metrics', async () => {
+    await test.step('pause stops forwarding in the same document and subsequent reads do not increase metrics', async () => {
+      const documentToken = await platformPage.evaluate(() => globalThis.fixtureDocumentToken);
       await popup.getByRole('button', { name: 'Pause analytics' }).click();
       await expect(popup.locator('#mode-label')).toHaveText('Analytics paused');
       await expect.poll(async () => (await extensionState(worker)).capturePhase).toBe('paused');
       const paused = await extensionSnapshot(worker);
       pausedMetrics = paused.state.preview;
-      expect(paused.scriptIds).toEqual([]);
+      expect(paused.scriptIds).toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
       await expect.poll(() => platformPage.evaluate(
         () => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode ?? null,
-      )).toBeNull();
+      )).toBe('preview');
+      expect(await platformPage.evaluate(() => globalThis.fixtureDocumentToken)).toBe(documentToken);
 
       await platformPage.evaluate(async (paths) => {
         for (const pathValue of paths) await globalThis.fixtureRead(pathValue);
@@ -315,7 +324,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       await popup.bringToFront();
       await popup.getByRole('button', { name: 'Pause analytics' }).click();
       await expect(popup.locator('#mode-label')).toHaveText('Analytics paused');
-      expect((await extensionSnapshot(worker)).scriptIds).toEqual([]);
+      expect((await extensionSnapshot(worker)).scriptIds).toEqual(['ofca-preview-isolated', 'ofca-preview-main']);
     });
 
     await test.step('delete all clears storage, every IndexedDB database, and optional access', async () => {
@@ -339,7 +348,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
       const options = await openManageExtension(popup);
       await options.locator('#delete-local-data').click();
       await options.getByRole('dialog').getByRole('button', { name: 'Delete extension data', exact: true }).click();
-      await expect(options.locator('#feedback')).toHaveText('Extension data deleted. Desktop-stored messages are unchanged.');
+      await expect(options.locator('#feedback')).toHaveText('Extension data deleted.');
       await popup.bringToFront();
       await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
       const deleted = await extensionSnapshot(worker);
@@ -358,11 +367,13 @@ test('standalone preview survives pause, deletion, and restart without a local s
     await test.step('a browser restart remains cleared and off', async () => {
       localServiceTraffic.stop();
       expect(localServiceTraffic.requests).toEqual([]);
+      expect(await productReloads()).toEqual([]);
       await context.close();
       context = await launchExtensionBrowser(browserProfile);
       localServiceTraffic = observeLocalServiceRequests(context);
       await blockLocalService(context);
       worker = await extensionWorker(context);
+      productReloads = await observeProductTabReloads(worker);
       expect(extensionId(worker)).toBe(targetExtensionId);
       popup = await openPopup(context, targetExtensionId, pageErrors);
       await expect(popup.locator('#mode-label')).toHaveText('Analytics off');
@@ -384,6 +395,7 @@ test('standalone preview survives pause, deletion, and restart without a local s
     expect(await localServiceAcceptsConnections()).toBe(false);
     expect(localServiceTraffic.requests).toEqual([]);
     expect(await context.cookies('https://onlyfans.com/')).toEqual([]);
+    expect(await productReloads()).toEqual([]);
     expect(pageErrors).toEqual([]);
     platform.assertFailClosed();
   } finally {

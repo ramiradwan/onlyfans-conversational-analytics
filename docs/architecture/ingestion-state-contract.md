@@ -13,6 +13,14 @@ Ingestion crosses two local runtime components:
 
 In-memory sequencing in `app/transport/ingestion.py` provides a copy-on-write model used in selected unit tests. The authoritative commit point for all acknowledged source effects is `HistoryRepository`.
 
+Agent encrypted partition names hash the authenticated Brain installation ID and
+creator account ID together. The installation ID comes from the admitted Noise
+channel, matching the installation master that supplies the account encryption
+root. Re-pairing the same installation/account retains its partition; a different
+installation opens a separate partition without reading, deleting or migrating
+the prior one. Runtime binding fingerprints use the same scope, so credential
+rotation retains work while an installation change fences the previous runtime.
+
 ## 2. Ingestion state transition catalogue
 
 Catalogue classifications are `normative behavior`, `implementation detail`, `existing regression evidence`, and `measurement/calibration input`. Each entry states its input, precondition, result, mutations, retry behavior, restart behavior, and protected invariant.

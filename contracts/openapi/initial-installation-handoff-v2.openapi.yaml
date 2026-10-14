@@ -1,0 +1,313 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Initial installation-key handoff",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://control-plane.example.invalid"
+    }
+  ],
+  "paths": {
+    "/v2/onboarding/installation-handoffs:prepare": {
+      "post": {
+        "operationId": "prepareInitialInstallationHandoffV2",
+        "x-profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "description": "Purpose-specific fresh key proof; no hosted cookie or local runtime credential.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/initial-handoff/v2/prepare-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Closed handoff result. No commercial or local-access authority.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/initial-handoff/v2/prepare-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/onboarding/installation-handoffs:authorize": {
+      "post": {
+        "operationId": "authorizeInitialInstallationHandoffV2",
+        "x-profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "description": "Independent hosted session, exact origin, CSRF, current customer session and exact action receipt and current authority.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/initial-handoff/v2/authorize-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Closed handoff result. No commercial or local-access authority.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/initial-handoff/v2/authorize-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/onboarding/installation-handoffs:wait": {
+      "post": {
+        "operationId": "waitInitialInstallationHandoffV2",
+        "x-profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "description": "Purpose-specific fresh key proof; no hosted cookie or local runtime credential.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/initial-handoff/v2/wait-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Closed handoff result. No commercial or local-access authority.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "../schemas/initial-handoff/v2/wait-event.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/onboarding/installation-handoffs:complete": {
+      "post": {
+        "operationId": "completeInitialInstallationHandoffV2",
+        "x-profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "description": "Purpose-specific fresh key proof; no hosted cookie or local runtime credential.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/initial-handoff/v2/complete-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Closed handoff result. No commercial or local-access authority.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/initial-handoff/v2/complete-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/onboarding/installation-handoff-proof-challenges": {
+      "post": {
+        "operationId": "issueInitialInstallationHandoffProofChallengeV2",
+        "x-profile": "urn:bridge-clean:initial-installation-handoff-proof:v2",
+        "description": "Uniform non-authorizing challenge response. Unknown, unauthorized and mismatched targets receive unusable indistinguishable challenge records. Completion admission binds current exact authorization revision.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/initial-handoff/v2/proof-challenge-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Challenge only; no existence or authority disclosure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/initial-handoff/v2/proof-challenge-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/onboarding/installation-handoffs:receipt": {
+      "post": {
+        "operationId": "readInitialInstallationHandoffReceiptV2",
+        "x-profile": "urn:bridge-clean:initial-installation-handoff:v2",
+        "description": "Fresh registered-key proof, original committed operation and current authority; returns only durable enrollment coordinates, never a renewed initial enrollment authorization.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/initial-handoff/v2/receipt-request.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Closed handoff result. No commercial or local-access authority.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/initial-handoff/v2/receipt-response.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "Error": {
+        "description": "Closed non-authorizing refusal.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../schemas/initial-handoff/v2/error.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}

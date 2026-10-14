@@ -1,0 +1,87 @@
+{
+  "profile": "urn:bridge-clean:capability-license-delivery-recovery:v1",
+  "governing_adr": "docs/adr/0034-recover-committed-activation-delivery.md",
+  "messages": {
+    "definitions": "schemas/commercial/v1/capability-license-delivery-recovery-definitions.schema.json",
+    "read-request": "schemas/commercial/v1/capability-license-delivery-recovery-read-request.schema.json",
+    "read-response": "schemas/commercial/v1/capability-license-delivery-recovery-read-response.schema.json",
+    "recover-request": "schemas/commercial/v1/capability-license-delivery-recovery-recover-request.schema.json",
+    "recover-response": "schemas/commercial/v1/capability-license-delivery-recovery-recover-response.schema.json",
+    "error": "schemas/commercial/v1/capability-license-delivery-recovery-error.schema.json"
+  },
+  "request_max_bytes": 4096,
+  "response_max_bytes": 4096,
+  "transport": {
+    "method": "POST",
+    "query_forbidden": true,
+    "cache_control": "no-store",
+    "browser_cors": false,
+    "idempotency_header": false
+  },
+  "operations": {
+    "read": "/v1/capability-license-delivery-recoveries:read",
+    "recover": "/v1/capability-license-delivery-recoveries:recover"
+  },
+  "scope": "one-original-committed-complimentary-activation-exact-registered-key-creator-exchange-seat",
+  "original_authority_ttl_unchanged": true,
+  "new_commercial_consent": false,
+  "new_issuance_or_signer_purpose": false,
+  "generation": {
+    "initial": 0,
+    "maximum": 9007199254740991,
+    "creating_step": 1,
+    "distinct_immutable_redemption_per_generation": true,
+    "cleanup_resets_high_water": false,
+    "future_read": "not-issued-after-completion-precedence",
+    "past_generation": "noncreating-after-pruning",
+    "current_accepted_retry": "original-response-bytes-and-deadline",
+    "live_next_generation": "conflict-no-success-record"
+  },
+  "rate": {
+    "new_authorizations_per_rolling_interval": 1,
+    "interval_seconds": 600,
+    "continuation_max_ttl_seconds": 600,
+    "lifetime_limit": null,
+    "first_recovery": "after-original-expiry",
+    "retry_time": "max-current-fixed-expiry-last-recovery-creation-plus-600",
+    "refusals_spend_slot": false
+  },
+  "completion_precedence": "redemption-or-issuance-committed-before-all-read-generation-projections",
+  "retention": {
+    "basis_and_high_water": "commercial-authority-durable",
+    "current_accepted_results": 1,
+    "superseded_unredeemed": "prune-only-after-durable-higher-generation-and-no-committed-result",
+    "completed_delivery": "existing-exact-response-retention",
+    "audit_days": 400
+  },
+  "required_product_journals": [
+    "original-redemption-envelope-and-idempotency-before-send",
+    "protected-redemption-result-before-issuance",
+    "original-issuance-envelope-and-result-before-readiness"
+  ],
+  "owner_fences": [
+    "original-key-and-creator-at-authorization-redemption-preparation-and-issuance-commit",
+    "all-manual-and-automatic-paths-join-original-exchange-generation-fence",
+    "refresh-time-and-authority-after-lock-wait",
+    "no-fresh-authority-after-committed-redemption-or-issuance"
+  ],
+  "read_states": [
+    "authorization-available",
+    "authorization-expired",
+    "redemption-completed",
+    "not-issued",
+    "superseded",
+    "unavailable"
+  ],
+  "refusals": {
+    "invalid": 400,
+    "proof_invalid": 401,
+    "authority_unavailable": 403,
+    "generation_conflict": 409,
+    "generation_superseded": 409,
+    "invalid_generation": 409,
+    "delivery_completed": 409,
+    "rate_limited": 429,
+    "temporarily_unavailable": 503
+  }
+}

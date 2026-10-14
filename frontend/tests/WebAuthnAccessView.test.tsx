@@ -1,9 +1,9 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockFeedbackOverflow } from './feedbackGeometry';
 
-import type { WebAuthnApi } from '../src/services/webauthnApi';
+import { LoginOutcomeError, EnrollmentOutcomeError, WebAuthnStatusError, type WebAuthnApi } from '../shared-setup/webauthn';
 import { theme } from '../src/theme';
 import { WebAuthnAccessView } from '../src/views/WebAuthnAccessView';
 
@@ -31,7 +31,29 @@ function renderView(api: WebAuthnApi, onAuthenticated = vi.fn()) {
   };
 }
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+it('retries transient status reads within a bound without inventing enrollment', async () => {
+  vi.useFakeTimers();
+  const state = vi.fn().mockRejectedValue(new WebAuthnStatusError('network'));
+  const api = { state, enroll: vi.fn(), login: vi.fn() };
+  renderView(api);
+  for (let attempt = 0; attempt < 4; attempt++) await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+  expect(state).toHaveBeenCalledTimes(3);
+  expect(screen.getByRole('alert').textContent).toContain('local service could not be reached');
+  expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
+  expect(api.enroll).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled();
+});
+
+it('reports denied status access without retrying or treating it as absent enrollment', async () => {
+  vi.useFakeTimers();
+  const state = vi.fn().mockRejectedValue(new WebAuthnStatusError('forbidden', 403));
+  renderView({ state, enroll: vi.fn(), login: vi.fn() });
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(state).toHaveBeenCalledOnce();
+  expect(screen.getByRole('alert').textContent).toContain('refused access to passkey status');
+  expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
+});
 
 async function readFailure() {
   await waitFor(() => expect(screen.queryByRole('alert')).toBeTruthy());
@@ -41,24 +63,44 @@ async function readFailure() {
 
 describe('WebAuthn access view', () => {
 
+  it('uses the confirmed first-passkey state without an initial sign-in action', async () => {
+    const api = { state: vi.fn(async () => ({ enrolled: false, authenticated: false })), enroll: vi.fn(async () => {}), login: vi.fn(async () => {}) };
+    const view = renderView(api);
+    const create = await screen.findByRole('button', { name: 'Create passkey' });
+    expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+    fireEvent.click(create);
+    await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
+    expect(api.enroll).toHaveBeenCalledTimes(1);
+    expect(api.login).not.toHaveBeenCalled();
+    expect(api.state).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips both ceremonies when the owner confirms the existing local session', async () => {
+    const api = { state: vi.fn(async () => ({ enrolled: true, authenticated: true })), enroll: vi.fn(async () => {}), login: vi.fn(async () => {}) };
+    const view = renderView(api);
+    await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
+    expect(api.enroll).not.toHaveBeenCalled();
+    expect(api.login).not.toHaveBeenCalled();
+  });
+
   it.each([
-    [new Error('Login refused'), "Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit."],
-    [{ name: 'NotAllowedError' }, 'Sign-in was cancelled or timed out. Try again.'],
-  ])('reports the login step after enrollment succeeds', async (failure, message) => {
-    const api = { enroll: vi.fn(async () => {}), login: vi.fn(() => Promise.reject(failure)) };
+    [new Error('Finish response lost'), 'Passkey setup could not be confirmed.'],
+    [{ name: 'NotAllowedError' }, 'Passkey setup could not be confirmed.'],
+  ])('retains an unconfirmed enrollment without starting another ceremony', async (failure, message) => {
+    const api = { enroll: vi.fn(() => Promise.reject(failure)), login: vi.fn(async () => {}) };
     const view = renderView(api);
     fireEvent.click(view.enroll());
     expect((await readFailure()).textContent).toBe(message);
     expect(api.enroll).toHaveBeenCalledTimes(1);
-    expect(api.login).toHaveBeenCalledTimes(1);
+    expect(api.login).not.toHaveBeenCalled();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
-  it('has one primary sign-in action, a header outside the main landmark and a compact card brand', () => {
+  it('has one primary sign-in action and one product header outside the task landmark', () => {
     const view = renderView({ enroll: vi.fn(), login: vi.fn() });
     const main = screen.getByRole('main');
-    expect(main.querySelectorAll('[data-visual="brand-tile"]')).toHaveLength(1);
-    expect(main.querySelector('[data-visual="passkey-card"] [data-visual="passkey-brand"] [data-visual="brand-tile"]')).not.toBeNull();
+    expect(main.querySelectorAll('[data-visual="brand-tile"]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-visual="brand-tile"]')).toHaveLength(1);
     expect(screen.getByRole('banner').querySelector('[data-visual="brand-tile"]')).not.toBeNull();
     expect(main.querySelectorAll('.MuiButton-contained')).toHaveLength(1);
     expect(view.signIn().classList.contains('MuiButton-contained')).toBe(true);
@@ -67,7 +109,7 @@ describe('WebAuthn access view', () => {
     expect(screen.queryByText('Already set up on this computer?')).toBeNull();
   });
 
-  it('enrolls before signing in and reports the authenticated session', async () => {
+  it('reports the first authenticated session after one creation ceremony', async () => {
     const order: string[] = [];
     const api: WebAuthnApi = {
       enroll: vi.fn(async () => { order.push('enroll'); }),
@@ -78,7 +120,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.enroll());
 
     await waitFor(() => expect(view.onAuthenticated).toHaveBeenCalledTimes(1));
-    expect(order).toEqual(['enroll', 'login']);
+    expect(order).toEqual(['enroll']);
   });
 
   it('signs in an enrolled device without enrolling again', async () => {
@@ -102,11 +144,11 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe("Sign-in didn't finish. Use the browser profile where you set up this app, or set up a passkey if this is your first visit.");
+    expect(alert.textContent).toBe('Sign-in did not finish.');
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
-  it('tells the person a closed or timed-out prompt was cancelled', async () => {
+  it('does not infer why the browser refused a ceremony', async () => {
     const rejection = { name: 'NotAllowedError' };
     const api: WebAuthnApi = {
       enroll: vi.fn(),
@@ -117,8 +159,8 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.signIn());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe('Sign-in was cancelled or timed out. Try again.');
-    expect(alert.closest('[data-visual="passkey-card"]')).toBeNull();
+    expect(alert.textContent).toBe('Sign-in did not finish.');
+    expect(alert.closest('[data-visual="passkey-card"]')).not.toBeNull();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
 
@@ -132,7 +174,7 @@ describe('WebAuthn access view', () => {
     fireEvent.click(view.enroll());
 
     const alert = await readFailure();
-    expect(alert.textContent).toBe("Couldn't set up a passkey. If you already have one for this app, use the same browser profile and sign in.");
+    expect(alert.textContent).toBe('Passkey setup could not be confirmed.');
     expect(api.login).not.toHaveBeenCalled();
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
@@ -195,4 +237,37 @@ describe('WebAuthn access view', () => {
     expect(login).toHaveBeenCalledTimes(2);
     expect(view.onAuthenticated).not.toHaveBeenCalled();
   });
+});
+
+it('an unavailable status offers only a bounded status retry, not invented enrollment facts', async () => {
+  const state = vi.fn().mockRejectedValueOnce(Error('Unavailable')).mockResolvedValueOnce({ enrolled: true, authenticated: false });
+  const api = { state, enroll: vi.fn(), login: vi.fn() };
+  renderView(api);
+  const retry = await screen.findByRole('button', { name: 'Try again' });
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Set up a passkey' })).toBeNull();
+  fireEvent.click(retry);
+  await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect(state).toHaveBeenCalledTimes(2); expect(api.enroll).not.toHaveBeenCalled(); expect(api.login).not.toHaveBeenCalled();
+});
+it('stage-specific begin refusal does not claim the user cancelled a passkey', async () => {
+  const view = renderView({ enroll: vi.fn(), login: vi.fn(async () => { throw new LoginOutcomeError('begin'); }) });
+  fireEvent.click(view.signIn());
+  expect((await readFailure()).textContent).toBe('Sign-in could not start. Try again.');
+});
+it('an unmounted sign-in cannot navigate when its stale success resolves', async () => {
+  const pending = deferred(); let signal: AbortSignal | undefined;
+  const view = renderView({ enroll: vi.fn(), login: vi.fn((incoming?: AbortSignal) => { signal = incoming; return pending.promise; }) });
+  fireEvent.click(view.signIn()); cleanup();
+  expect(signal?.aborted).toBe(true);
+  pending.resolve(); await pending.promise;
+  expect(view.onAuthenticated).not.toHaveBeenCalled();
+});
+it('a confirmed created passkey with no session offers sign-in rather than another creation', async () => {
+  const view = renderView({ state: vi.fn(async () => ({ enrolled: false, authenticated: false })),
+    enroll: vi.fn(async () => { throw new EnrollmentOutcomeError(true); }), login: vi.fn() });
+  fireEvent.click(await screen.findByRole('button', { name: 'Create passkey' }));
+  await screen.findByRole('button', { name: 'Sign in with passkey' });
+  expect(screen.queryByRole('button', { name: 'Create passkey' })).toBeNull();
+  expect(view.onAuthenticated).not.toHaveBeenCalled();
 });

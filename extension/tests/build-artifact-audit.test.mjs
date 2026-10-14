@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -10,8 +11,23 @@ import {
   deriveExtensionId,
   signerWrapperSource,
   validateExtensionConfig,
+  validateOnboardingReleaseConfig,
   validateSigningRuleDocument,
 } from '../build.mjs';
+
+test('Agent packaging consumes the current desktop release document and closed provider choices', () => {
+  const source = JSON.parse(readFileSync(new URL('../../app/core/customer-release.json', import.meta.url), 'utf8'));
+  assert.equal(validateOnboardingReleaseConfig(source), null);
+  const configured = { ...source, hosted_onboarding_url: 'https://setup.example.test/public/onboarding/setup',
+    hosted_api_origin: 'https://setup.example.test', authentication_providers: ['google', 'microsoft-personal', 'default'] };
+  assert.equal(validateOnboardingReleaseConfig(configured, { required: true }), 'https://setup.example.test');
+  for (const authentication_providers of [undefined, null, [], ['google'], ['default', 'default'],
+    ['https://identity.example.test', 'default'], 'default', [true, 'default']]) {
+    assert.throws(() => validateOnboardingReleaseConfig({ ...configured, authentication_providers }));
+  }
+  const { authentication_providers: _providers, ...missing } = configured;
+  assert.throws(() => validateOnboardingReleaseConfig(missing));
+});
 
 const fixtureRule = validateSigningRuleDocument({
   schema: 'local-packaged-signing-rule/v1',

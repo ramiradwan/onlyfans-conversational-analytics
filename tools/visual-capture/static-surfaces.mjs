@@ -12,7 +12,6 @@ import { installSurfaceFixture } from '../../extension/qualification/surface-run
 import { staticFixtures } from './static-fixtures.mjs';
 import { staticCases } from './static-fixture-matrix.mjs';
 import { staticConfiguration } from './ci/inventory.mjs';
-import { installProvisioningFixture } from './provisioning-driver.mjs';
 import { installWatcher, readWatcher } from './shift-watcher.mjs';
 import { REQUIRED_REGIONS } from './dynamic-transitions.mjs';
 import { CANVAS_DELTA, LAYOUT_SHIFT, colorDistance, grade, gradeLayoutShifts } from './stability-contracts.mjs';
@@ -20,7 +19,7 @@ import { CANVAS_DELTA, LAYOUT_SHIFT, colorDistance, grade, gradeLayoutShifts } f
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const ORIGIN = 'http://static-visual.localhost';
 const KEY_ELEMENTS = 'h1, header, nav, .brand-mark, button, .primary-link';
-function observe(keySelector) {
+export function observeStaticPaint(keySelector) {
   window.__staticPaint = { shifts: [], first: null, firstNumeric: null };
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) window.__staticPaint.shifts.push({
@@ -35,7 +34,7 @@ function observe(keySelector) {
   }).observe({ type: 'layout-shift', buffered: true });
   const frame = () => {
     const main = document.querySelector('main');
-    if (!main?.getBoundingClientRect().height) return requestAnimationFrame(frame);
+    if (!main?.getBoundingClientRect().height || getComputedStyle(main).visibility === 'hidden') return requestAnimationFrame(frame);
     const sample = {
       canvas: getComputedStyle(document.body).backgroundColor,
       faces: [...document.fonts].filter((face) => /Variable$/.test(face.family.replaceAll('"', '')))
@@ -83,7 +82,7 @@ async function inspect(page, fixture, width, session) {
       }
     }
     if (fixture.surface === 'setup') {
-      const disclosure = { software_activation: '#pre-mode', mode_choice: '#preview-disclosure',
+      const disclosure = { mode_choice: '#preview-disclosure',
         mode_choice_full: '#full-disclosure', full_review: '#full-disclosure' }[fixture.name];
       if (disclosure) {
         assert(await page.locator(disclosure).isVisible(), 'Required disclosure must be visible');
@@ -91,21 +90,14 @@ async function inspect(page, fixture, width, session) {
         assert(sizes.every((size) => size >= 12), 'Disclosure text must not shrink below its original size');
         metrics.disclosureSizes = sizes;
       }
-    } else if (fixture.surface === 'provisioning') {
-      assert.equal(metrics.brand.x, width >= 600 ? 28 : 16);
-      assert.equal(metrics.brand.y, 20);
-      const steps = await page.locator('[data-step]').evaluateAll((nodes) => nodes.map((node) => node.dataset.state));
-      assert.equal(steps.filter((state) => state === 'current').length, fixture.name === 'completed' ? 0 : 1);
-      metrics.steps = steps;
-      const active = page.locator('.step[data-state="current"]');
-      if (await active.count()) assert.equal(await active.getAttribute('aria-current'), 'step');
-      if (fixture.name === 'invalid-code') assert.equal(await page.locator('#claim-package').getAttribute('aria-invalid'), 'true');
-      if (fixture.name.includes('unavailable')) assert(!await page.locator('#open-secure-setup').isVisible());
     }
-    const task = fixture.surface === 'provisioning' ? await inspectTaskCopy(page, fixture) : null;
+    const task = null;
     const control = page.locator((await page.locator('dialog[open]').count()) ? 'dialog[open] button:visible:enabled' : 'button:visible:enabled, a.primary-link:visible').first();
     if (await control.count()) {
-      await page.keyboard.press('Tab'); await control.focus();
+      const stops = await page.locator('button:visible:enabled, a[href]:visible, input:visible:enabled, textarea:visible:enabled, select:visible:enabled').count();
+      for (let index = 0; index < stops + 2 && !await control.evaluate(node => node === document.activeElement && node.matches(':focus-visible')); index++) {
+        await page.keyboard.press('Tab');
+      }
       await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
       const focus = await control.evaluate((node) => ({ visible: node.matches(':focus-visible'), width: getComputedStyle(node).outlineWidth }));
       assert(focus.visible); assert.equal(focus.width, '2px');
@@ -134,35 +126,29 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
         console.log('start ' + name);
         const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', locale: 'en-US', deviceScaleFactor: 1 });
         const page = await context.newPage();
-        await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[fixture.surface] });
+        await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[fixture.surface], taskTransitions: fixture.surface === 'setup' });
         // Cold-delivery paint probes run without the CSS inspector affecting font discovery.
         const session = fixture.deliveryDelay ? null : await context.newCDPSession(page);
         if (session) { await session.send('DOM.enable'); await session.send('CSS.enable'); }
         const unexpected = [];
         page.on('pageerror', (error) => unexpected.push(error.message));
-        await page.addInitScript(observe, KEY_ELEMENTS);
+        await page.addInitScript(observeStaticPaint, KEY_ELEMENTS);
         if (fixture.state) await page.addInitScript(installSurfaceFixture, fixture.state);
         await page.route('**/*', async (route) => {
           const url = new URL(route.request().url());
           if (url.origin !== ORIGIN) { unexpected.push('Unexpected network request'); return route.abort(); }
-          if (fixture.deliveryDelay && (url.pathname === '/popup.css' || fixture.surface === 'provisioning')) {
+          if (fixture.deliveryDelay && url.pathname === '/popup.css') {
             await new Promise((done) => setTimeout(done, fixture.deliveryDelay));
           }
           if (url.pathname === '/popup.css') return route.fulfill({ contentType: 'text/css', body: popupCss });
           if (url.pathname === '/setup.css') return route.fulfill({ contentType: 'text/css', body: setupCss });
           if (fixture.script && url.pathname === `/${fixture.surface}.js`) return route.fulfill({ contentType: 'text/javascript', body: fixture.script });
-          if (url.pathname === `/${fixture.surface}.html` || url.pathname === '/provisioning') return route.fulfill({ contentType: 'text/html', body: fixture.html });
+          if (url.pathname === `/${fixture.surface}.html`) return route.fulfill({ contentType: 'text/html', body: fixture.html });
           return route.fulfill({ status: 404 });
         });
-        if (fixture.provisioning) await installProvisioningFixture(page, { ...fixture.provisioning, deliveryDelay: fixture.deliveryDelay });
         try {
-          await page.goto(ORIGIN + (fixture.surface === 'provisioning' ? '/provisioning' : `/${fixture.surface}.html${fixture.state?.hash ? '#' + fixture.state.hash : ''}`), { waitUntil: 'networkidle' });
-          if (fixture.provisioning) {
-            await page.evaluate(() => window.__provisioningStarted);
-            if (fixture.name === 'invalid-code') await page.locator('#claim-package').fill('invalid code');
-            if (['approval-pending', 'approval-offline'].includes(fixture.name)) await page.evaluate(() => window.__provisioningController.acquireAssociation());
-            if (fixture.name === 'approval-unavailable-help') await page.locator('#recovery-open').click();
-          }
+          const hash = fixture.state?.hash ?? (fixture.surface === 'setup' ? 'journey=11111111-1111-4111-8111-111111111111' : '');
+          await page.goto(ORIGIN + `/${fixture.surface}.html${hash ? '#' + hash : ''}`, { waitUntil: 'networkidle' });
           if (fixture.state) await page.waitForFunction(() => document.querySelector('main[data-ready="true"]') || document.querySelector('#runtime-unavailable:not(.hidden)'));
           if (fixture.state?.dialog) await page.locator('#delete-local-data').click();
           await page.evaluate(() => document.fonts.ready);

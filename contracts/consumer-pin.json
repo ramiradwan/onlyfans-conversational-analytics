@@ -1,6 +1,11 @@
 {
-  "aggregate_bundle_sha256": "77f9f748ddbeddba1eb1af6f964397e5588b163def5e8937be4ee3049d9d90e2",
+  "aggregate_bundle_sha256": "4c4d4efa2e5dbd3b5c00296e910c3740fef19169300ac04781894db0a2da0721",
   "conformance_manifests": [
+    {
+      "export": "installation-setup-continuation-v1",
+      "path": "installation-setup-continuation-v1/manifest.json",
+      "sha256": "748c589bcdb5bad1d432f31adab1e4ce3b02f2990cad313669a0100cc2d23632"
+    },
     {
       "export": "initial-installation-handoff-v1",
       "path": "initial-installation-handoff-v1/manifest.json",
@@ -30,11 +35,51 @@
       "export": "capability-license-hosted-api-v1",
       "path": "capability-license-hosted-api-v1/manifest.json",
       "sha256": "b128955756b737ebfb58896d5fdd0b23430070817da9ab06bb970010aa125f0c"
+    },
+    {
+      "export": "initial-installation-handoff-v2",
+      "path": "initial-installation-handoff-v2/manifest.json",
+      "sha256": "3a60ed6d7653ec62820b98725a4a9449dff1a675708102b0a893a99af07dcd53"
+    },
+    {
+      "export": "installation-setup-continuation-v2",
+      "path": "installation-setup-continuation-v2/manifest.json",
+      "sha256": "8825be19fce06abf6d93f6da0d82d50ff64d04ffb24c854d901f1de214d55a7b"
+    },
+    {
+      "export": "complimentary-onboarding-activation-v1",
+      "path": "complimentary-onboarding-activation-v1/manifest.json",
+      "sha256": "876d1fcebbb93291bfeefbd696260ef311d9026725e4cf6c130729018cf571f3"
+    },
+    {
+      "export": "browser-ceremony-v1",
+      "path": "browser-ceremony-v1/manifest.json",
+      "sha256": "fdb51040649fb73596f47268bbca4488ed5bca6d37e2ccd9dc95657c3ffd8279"
+    },
+    {
+      "export": "desktop-decision-v1",
+      "path": "desktop-decision-v1/manifest.json",
+      "sha256": "54dabb1007de3caae82a9bea4556d0ee48f6e5053cba328f4f94d6c532ca77e2"
+    },
+    {
+      "export": "browser-authentication-selection-v1",
+      "path": "browser-authentication-selection-v1/manifest.json",
+      "sha256": "1ca8b47bd3f7067166ae6ba71fddc615bb3dad525d0e10f49db5fc0eef859e8c"
+    },
+    {
+      "export": "capability-license-delivery-recovery-v1",
+      "path": "capability-license-delivery-recovery-v1/manifest.json",
+      "sha256": "c086ca4cc75e589d4427150bf7f83dfa089a4c0aa3fa77bd9430c37dce685bde"
+    },
+    {
+      "export": "deferred-setup-preparation-v1",
+      "path": "deferred-setup-preparation-v1/manifest.json",
+      "sha256": "3e9885653c501b3c3f73221453f2a7c9d2b9aa81d4bf71ec6805d77c1b610a26"
     }
   ],
   "consumer_pin_version": 3,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "14693de25efdd6732f3da36baaa7b2d96e034c429b1438e3192f37533c89d0b0",
+  "contract_manifest_sha256": "87edc82a4c155b4aba68581084cd1780d3908ed71ab70838b82a7e2a4387a4e6",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -55,6 +100,15 @@
     "capability-license-hosted-api-v1",
     "onboarding-continuity-v1",
     "initial-installation-handoff-v1",
+    "installation-setup-continuation-v1",
+    "initial-installation-handoff-v2",
+    "installation-setup-continuation-v2",
+    "complimentary-onboarding-activation-v1",
+    "browser-ceremony-v1",
+    "desktop-decision-v1",
+    "browser-authentication-selection-v1",
+    "capability-license-delivery-recovery-v1",
+    "deferred-setup-preparation-v1",
     "source-contract-manifest"
   ],
   "generator_versions": [
@@ -71,17 +125,23 @@
       "version": "1.0.0"
     }
   ],
-  "source_commit": "af7c958c218c35f74ce1370e0fca5b8ff37d6dfa",
+  "source_commit": "8a469460413d7e6064e3246d0314fc7a3f100016",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "a46e26b69302c573b821248415c25e80b196433e9745b6a89079f94cd0c5d93e",
+  "source_contract_manifest_sha256": "09af171ecc876f08dd2d834e8e13380da6d30c69827dd8b4cd0dc393e74367d6",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "d5ee1acd3ff8ba9623d1cb4d820daaec7dbbb406",
+  "source_tree": "aa2c8d87522a096d6568342f19f564af0cb8f685",
   "supported_profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
+    "urn:bridge-clean:browser-authentication-selection-proof:v1",
+    "urn:bridge-clean:browser-authentication-selection:v1",
+    "urn:bridge-clean:browser-ceremony-proof:v1",
+    "urn:bridge-clean:browser-ceremony:v1",
     "urn:bridge-clean:capability-license-activation-package:v1",
     "urn:bridge-clean:capability-license-activation-proof:v1",
     "urn:bridge-clean:capability-license-activation:v1",
+    "urn:bridge-clean:capability-license-delivery-recovery-proof:v1",
+    "urn:bridge-clean:capability-license-delivery-recovery:v1",
     "urn:bridge-clean:capability-license-exchange-quote:v1",
     "urn:bridge-clean:capability-license-exchange:v1",
     "urn:bridge-clean:capability-license-redemption-continuation:v1",
@@ -93,15 +153,24 @@
     "urn:bridge-clean:capability-license:v1",
     "urn:bridge-clean:capability-permit:v1",
     "urn:bridge-clean:companion-pairing:v1",
+    "urn:bridge-clean:complimentary-onboarding-activation:v1",
     "urn:bridge-clean:creator-association:v1",
+    "urn:bridge-clean:desktop-decision-proof:v1",
+    "urn:bridge-clean:desktop-decision:v1",
     "urn:bridge-clean:grant-profile:v1",
     "urn:bridge-clean:hosted-onboarding:v1",
     "urn:bridge-clean:initial-installation-handoff-proof:v1",
+    "urn:bridge-clean:initial-installation-handoff-proof:v2",
     "urn:bridge-clean:initial-installation-handoff:v1",
+    "urn:bridge-clean:initial-installation-handoff:v2",
     "urn:bridge-clean:installation-claim-package:v1",
     "urn:bridge-clean:installation-claim-package:v2",
     "urn:bridge-clean:installation-claim:v1",
     "urn:bridge-clean:installation-claim:v2",
+    "urn:bridge-clean:installation-setup-continuation-proof:v1",
+    "urn:bridge-clean:installation-setup-continuation-proof:v2",
+    "urn:bridge-clean:installation-setup-continuation:v1",
+    "urn:bridge-clean:installation-setup-continuation:v2",
     "urn:bridge-clean:onboarding-continuation:v1",
     "urn:bridge-clean:onboarding-progress:v1",
     "urn:bridge-clean:onboarding-proof:v1",

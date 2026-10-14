@@ -68,7 +68,7 @@ async function readBuildMetadata() {
 /** Run a build script and report its exit status and combined output. */
 async function runBuildScript(script, argumentList) {
   try {
-    const { stdout, stderr } = await run(process.execPath, [script, ...argumentList], {
+    const { stdout, stderr } = await run(process.execPath, [script, `--customer-release-config=${fileURLToPath(new URL('./fixtures/customer-release.synthetic.json', import.meta.url))}`, ...argumentList], {
       cwd: EXTENSION_ROOT,
     });
     return { code: 0, output: stdout + stderr };

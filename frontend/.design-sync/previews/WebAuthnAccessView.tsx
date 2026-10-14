@@ -4,7 +4,7 @@ import {
   previewNoop,
 } from 'onlyfans-analytics-frontend';
 
-import type { WebAuthnApi } from '../../src/services/webauthnApi';
+import type { WebAuthnApi } from '../../shared-setup/webauthn';
 
 import './card.module.css';
 

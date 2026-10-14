@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Set up Conversation Analytics</title>
+  </head>
+  <body>
+    <header class="setup-header" data-desktop-drag-region>
+      <span class="setup-brand">Conversation Analytics</span>
+      <desktop-window-controls></desktop-window-controls>
+    </header>
+    <main class="setup-main" data-journey-state="desktop.setup_loading">
+      <nav aria-label="Setup progress">
+        <ol class="setup-steps">
+          <li data-step="browser-access"><span>1</span>Browser access</li>
+          <li data-step="account-connection"><span>2</span>Account connection</li>
+          <li data-step="finish-setup"><span>3</span>Finish setup</li>
+        </ol>
+      </nav>
+      <section class="setup-card" aria-labelledby="task-title">
+        <p class="setup-eyebrow" id="task-step">Desktop setup</p>
+        <h1 id="task-title" tabindex="-1">Loading setup</h1>
+        <p id="task-description">Reading local setup status…</p>
+        <div id="sign-in-options" class="provider-choices" role="group" aria-label="Sign-in options" hidden>
+          <button class="provider-button" type="button" data-provider="google" aria-describedby="task-description task-status">
+            <img src="../shared-setup/providers/google.png" alt="" width="20" height="20"><span>Continue with Google</span>
+          </button>
+          <button class="provider-button" type="button" data-provider="microsoft-personal" aria-describedby="task-description task-status">
+            <img src="../shared-setup/providers/microsoft.svg" alt="" width="20" height="20"><span>Continue with Microsoft</span>
+          </button>
+          <button class="provider-button" type="button" data-provider="default" aria-describedby="task-description task-status">Other sign-in options</button>
+        </div>
+        <dl id="decision-details" class="decision-details" hidden>
+          <div><dt>Creator account</dt><dd><span id="decision-account"></span><details hidden><summary>Account details</summary><span id="decision-account-id"></span></details></dd></div>
+          <div><dt>Computer</dt><dd id="decision-computer"></dd></div>
+        </dl>
+        <section id="local-access" aria-labelledby="local-access-title" data-journey-state="desktop.setup_local_access" hidden>
+          <h2 id="local-access-title">Access on this computer</h2>
+          <p>Use a passkey to sign in on this computer.</p>
+          <p id="local-auth-status" role="status" aria-live="polite"></p>
+          <div class="setup-actions">
+            <button id="local-authenticate" type="button" aria-describedby="local-auth-status" hidden>Set up access</button>
+            <button id="local-auth-retry" type="button" class="secondary" hidden>Try again</button>
+          </div>
+        </section>
+        <p id="task-status" role="status" aria-live="polite"></p>
+        <div class="setup-actions">
+          <button id="task-action" type="button" aria-describedby="task-description task-status" hidden></button>
+          <button id="browser-reopen" class="secondary" type="button" aria-describedby="task-status" hidden>Open Chrome</button>
+          <button id="sign-in-switch" class="secondary" type="button" aria-describedby="task-status" hidden>Choose another account</button>
+          <button id="sign-in-back" class="secondary" type="button" hidden>Back</button>
+          <button id="task-reconnect" class="secondary" type="button" aria-describedby="task-status" hidden>Retry</button>
+        </div>
+        <div class="setup-actions">
+          <button id="setup-code-open" type="button" class="secondary" hidden>I have a setup code</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

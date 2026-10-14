@@ -1,0 +1,568 @@
+[
+  {
+    "case_id": "prepare-then-authorize",
+    "expected": {
+      "authorization_revision": 1,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "authorized"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "prepare-idempotent",
+    "expected": {
+      "authorization_revision": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "prepared"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      }
+    ]
+  },
+  {
+    "case_id": "prepare-op-changed-destination",
+    "expected": {
+      "authorization_revision": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "operation_conflict"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "destination": "other",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      }
+    ]
+  },
+  {
+    "case_id": "prepare-op-changed-digest",
+    "expected": {
+      "authorization_revision": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "operation_conflict"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "destination": "destination-A",
+        "digest": "other",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      }
+    ]
+  },
+  {
+    "case_id": "prepare-invalid-proof",
+    "expected": {
+      "authorization_revision": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "proof_invalid"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": false
+      }
+    ]
+  },
+  {
+    "case_id": "authorize-without-prepare",
+    "expected": {
+      "authorization_revision": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "invalid"
+      ]
+    },
+    "steps": [
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "authorize-idempotent",
+    "expected": {
+      "authorization_revision": 1,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "authorized",
+        "authorized"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "authorize-op-changed-input",
+    "expected": {
+      "authorization_revision": 1,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "authorized",
+        "operation_conflict"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "other",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "authorize-destination-substitution",
+    "expected": {
+      "authorization_revision": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "wrong_destination"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "other",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "authorize-expired-session",
+    "expected": {
+      "authorization_revision": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "authentication_required"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1000,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "authorize-used-confirmation",
+    "expected": {
+      "authorization_revision": 0,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": false,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "reauthorize-same-destination",
+    "expected": {
+      "authorization_revision": 2,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "authorized",
+        "authorized"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-2",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "plain-authorize-cannot-replace-generation",
+    "expected": {
+      "authorization_revision": 1,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "authorized",
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      },
+      {
+        "admitted_session_generation": 8,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 8,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  },
+  {
+    "case_id": "plain-authorize-cannot-replace-session",
+    "expected": {
+      "authorization_revision": 1,
+      "creator_confirmations_consumed": 0,
+      "enrollments": 0,
+      "issue_confirmations_consumed": 0,
+      "results": [
+        "prepared",
+        "authorized",
+        "authorization_changed"
+      ]
+    },
+    "steps": [
+      {
+        "destination": "destination-A",
+        "digest": "prepare-A",
+        "kind": "prepare",
+        "operation": "prepare-1",
+        "proof_valid": true
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      },
+      {
+        "admitted_session_generation": 7,
+        "confirmation_unused": true,
+        "current_owner": true,
+        "destination": "destination-A",
+        "digest": "authorize-A",
+        "kind": "authorize",
+        "now": 1000,
+        "operation": "authorize-1",
+        "receipt_expires": 1100,
+        "session_expires": 1900,
+        "session_generation": 7,
+        "session_id": "session-other",
+        "session_present": true,
+        "session_revoked": false,
+        "session_verified_at": 100
+      }
+    ]
+  }
+]

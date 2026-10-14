@@ -46,6 +46,16 @@ describe('capability license customer API', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it('does not send activation without a request token or guess the cause', async () => {
+    const request = vi.fn();
+    const api = createCapabilityLicenseApi({
+      fetch: request as unknown as typeof fetch,
+      getCsrfToken: () => null,
+    });
+    await expect(api.redeem(CONTINUATION)).rejects.toThrow("Activation couldn't start on this page.");
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('rejects a success response that exposes protected commercial fields', async () => {
     const request = vi.fn(async () => jsonResponse({
       state: 'checking',
@@ -59,53 +69,19 @@ describe('capability license customer API', () => {
     await expect(api.redeem(CONTINUATION)).rejects.toThrow("couldn't be checked");
   });
 
-  it('accepts only the closed canonical readiness document', async () => {
-    const request = vi.fn(async () => jsonResponse({
-      schema: 'ofca-analysis-readiness/v1',
-      commercial_authority: 'active',
-      analysis_admission: 'blocked',
-    }));
-    const api = createCapabilityLicenseApi({ fetch: request as unknown as typeof fetch });
-
-    await expect(api.readiness()).resolves.toEqual({
-      schema: 'ofca-analysis-readiness/v1',
-      commercial_authority: 'active',
-      analysis_admission: 'blocked',
-    });
-    expect(request).toHaveBeenCalledWith('/api/v1/capability-license/readiness', expect.objectContaining({
-      method: 'GET',
-      cache: 'no-store',
-      credentials: 'same-origin',
-    }));
-  });
-
-  it('fails closed on impossible or extended canonical readiness', async () => {
-    const admittedWithoutAuthority = createCapabilityLicenseApi({
-      fetch: vi.fn(async () => jsonResponse({
-        schema: 'ofca-analysis-readiness/v1',
-        commercial_authority: 'required',
-        analysis_admission: 'admitted',
-      })) as unknown as typeof fetch,
-    });
-    await expect(admittedWithoutAuthority.readiness()).rejects.toThrow("couldn't be checked");
-
-    const extended = createCapabilityLicenseApi({
-      fetch: vi.fn(async () => jsonResponse({
-        schema: 'ofca-analysis-readiness/v1',
-        commercial_authority: 'active',
-        analysis_admission: 'admitted',
-        license_id: 'must-not-reach-browser',
-      })) as unknown as typeof fetch,
-    });
-    await expect(extended.readiness()).rejects.toThrow("couldn't be checked");
+  it('has only explicit redemption and no readiness fallback transport', () => {
+    const request = vi.fn();
+    const api = createCapabilityLicenseApi({ fetch: request });
+    expect(Object.keys(api)).toEqual(['redeem']);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it.each([
     [410, 'expired'],
     [404, "wasn't recognized"],
-    [403, 'Reload the page'],
-    [409, 'get a new code'],
-    [503, 'Nothing has changed'],
+    [403, 'could not be verified'],
+    [409, "couldn't be finished with this code"],
+    [503, "Activation couldn't be confirmed."],
   ])('keeps redemption failure %i customer-safe and actionable', async (status, message) => {
     const api = createCapabilityLicenseApi({
       fetch: vi.fn(async () => jsonResponse({ detail: 'internal-provider-detail' }, status)) as unknown as typeof fetch,
@@ -120,8 +96,8 @@ describe('capability license customer API', () => {
     ['redemption_expired', 409, 'This code has expired.'],
     ['redemption_conflict', 409, 'already been used'],
     ['redemption_mismatch', 403, 'different computer or account'],
-    ['installation_key_unavailable', 503, 'Restart it'],
-    ['hosted_unavailable', 503, 'Nothing has changed'],
+    ['installation_key_unavailable', 503, 'Restart the app'],
+    ['hosted_unavailable', 503, "Activation couldn't be confirmed."],
   ])('names the recovery step for the %s refusal', async (detail, status, message) => {
     const api = createCapabilityLicenseApi({
       fetch: vi.fn(async () => jsonResponse({ detail }, status)) as unknown as typeof fetch,

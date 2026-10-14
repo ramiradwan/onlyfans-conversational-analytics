@@ -70,6 +70,20 @@ def state(r):
     return r.l.state(ACCOUNT_ID, now=r.clock.now)
 
 
+def test_no_agent_admission_does_not_claim_extension_version_is_outdated(rig):
+    with rig.h.database.transaction() as connection:
+        connection.execute("DELETE FROM message_catchup WHERE creator_account_id=?", (ACCOUNT_ID,))
+    assert state(rig)["reason"] == "extension_offline"
+
+
+def test_expired_capture_reason_does_not_override_current_settings(rig):
+    rig.l.report(ACCOUNT_ID, report(START, seq=2, observing=False, reason="consent_needed"), now=START)
+    assert state(rig)["reason"] == "consent_needed"
+    rig.clock.now += timedelta(seconds=91)
+    rig.l.heartbeat(ACCOUNT_ID, now=rig.clock.now)
+    assert state(rig)["reason"] == "not_observing"
+
+
 def row(r):
     with r.h.database.read() as c:
         return dict(c.execute("SELECT * FROM message_catchup WHERE creator_account_id=?", (ACCOUNT_ID,)).fetchone())

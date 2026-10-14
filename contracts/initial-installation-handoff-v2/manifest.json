@@ -1,0 +1,134 @@
+{
+  "case_count": 188,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "c777265ffc0e05cb382b15c3461177288615eaaf3a7f263f7710e7d8342b0d8f",
+      "size": 128635
+    },
+    {
+      "path": "digest-cases.json",
+      "sha256": "15a71798b5a2814095a6402e633955b96516a25b6f4d70374ca9cbb5042db0bb",
+      "size": 8280
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "73bea63970c6ac771896b29cf6b445001b56bbfb0b5c70e70780f32da2892edf",
+      "size": 14656
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "2a06115ddb72c8b6a82ca8d8bde5eb1edde511828257ae652df06455d8c60a78",
+      "size": 44671
+    },
+    {
+      "path": "readmission-cases.json",
+      "sha256": "f0b1fb1f1b93007a761c5c8c1179041a8d632239e32101a8f81a671155fe110b",
+      "size": 78748
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "170479fd603709952870d30a93fd922edd81b35f8b67c588b82644e64211fef0",
+      "size": 37333
+    }
+  ],
+  "generator": "tools/generate_initial_handoff_v2_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+  "inputs": [
+    {
+      "path": "docs/adr/0028-authorize-onboarding-with-current-customer-sessions.md",
+      "sha256": "339efe58facf60a5f3b67fde0fb517464b1a96e11a021795f85a35c16bbce8df"
+    },
+    {
+      "path": "docs/initial-installation-handoff-v2.md",
+      "sha256": "fd7caec024191a68e5d8d00fb903e6dbff08be6fc886af505e0c5cff2896fe82"
+    },
+    {
+      "path": "openapi/initial-installation-handoff-v2.openapi.yaml",
+      "sha256": "f24b3df0b81edb824144cdff1d1141ade7529968684528c9a3645ad177779aac"
+    },
+    {
+      "path": "profiles/initial-installation-handoff-proof-v2/profile.json",
+      "sha256": "5d7c38b806373b148cd2853f0a0ef3c8b887847a981cb55f04b99e8cc327bc41"
+    },
+    {
+      "path": "profiles/initial-installation-handoff-v2/profile.json",
+      "sha256": "2a86cfd157695d598d7b5c161df010fcfa4938abe9001fd11f553f981533440a"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/authorize-request.schema.json",
+      "sha256": "4824fb99d0cd724b1bf49f3ff210bed51755268d76a71806075b9325b88ebc83"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/authorize-response.schema.json",
+      "sha256": "cad7426d8f0169f05aa29469bd3c5ce5c55076f7ab6902db51bd6595ac1f67b8"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/complete-request.schema.json",
+      "sha256": "0a6387ba144125abd130a463994bfc7e623691d81b027ff1f5a402e4845da0d0"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/complete-response.schema.json",
+      "sha256": "4c816ab00b83585603e4c4987935253b3cc6c4270028361296900454adc32c41"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/definitions.schema.json",
+      "sha256": "9dc00795b61d91a5a9f0d6134099a6efb5d1db4cb3a5bafd7f36b50bbf8e8dd1"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/error.schema.json",
+      "sha256": "e09ac8f0f3062904fac6a58e009628df39d620206edf9cafc1fc4be793ff4c16"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/prepare-request.schema.json",
+      "sha256": "26277da73af3e63e7b83316bbdc657126ab45fdc9cff5875db9ff9b9c923d558"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/prepare-response.schema.json",
+      "sha256": "caf5db627e5b2fce47b238396018e677c9f2d41d5204f691097e5e15ca35b2f0"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/proof-challenge-request.schema.json",
+      "sha256": "b0fcca17252f047ddcde96ccf12b0123a5f02a4109607adee0d985231a58cbed"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/proof-challenge-response.schema.json",
+      "sha256": "1557c13f0f316ed7c577063da377e808600e67480ec89d99c403b762a2138292"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/receipt-request.schema.json",
+      "sha256": "e5120691ff8494875628572e4e930b302950a9fcca69cc789923385be3bed87d"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/receipt-response.schema.json",
+      "sha256": "5a379355ee31d9bc6ff6c24cd239602f5a31253f2eb55329885301ee7ea03b1e"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/wait-event.schema.json",
+      "sha256": "fb149cc35b2290622fe9650935dc2f4d04b1e08e166e1f71961d6ef74f757688"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/wait-request.schema.json",
+      "sha256": "ad0029857c6475ba8c8b320ba474814d3cb5af5187dd19b0158039ecb3a1bf16"
+    },
+    {
+      "path": "schemas/provisioning/v2/installation-claim-consume-response.schema.json",
+      "sha256": "5b4c8baa69c93a3f5ed6259cd3e50e74bd664c9a2839c366a6b51144e61a7e85"
+    },
+    {
+      "path": "tools/generate_initial_handoff_v2_vectors.py",
+      "sha256": "5b1aa6baadaae3cbb7fd2036ed78ee35c910ec44f1331dc1ca4b61cdda42b658"
+    },
+    {
+      "path": "tools/generate_session_admission_cases.py",
+      "sha256": "ef4dfe4a53d18050a5da15c1ef2c84f6d6adba15e83cb75676d9505beac6806b"
+    }
+  ],
+  "profile": "urn:bridge-clean:initial-installation-handoff-vectors:v2",
+  "test_only": true
+}

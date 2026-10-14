@@ -667,6 +667,94 @@ function authorizedConfiguration(enabled = true, overrides = {}) {
   };
 }
 
+test('history bootstrap failure stays visible through retry and clears only after recovery', async (t) => {
+  for (const { name, Coordinator } of COORDINATOR_VARIANTS) {
+    for (const [failure, expected] of [
+      ['browser_unavailable', 'history_unavailable'],
+      ['account_mismatch', 'identity_required'],
+      ['private-error-marker', 'history_unavailable'],
+    ]) await t.test(`${name}: ${failure}`, async () => {
+      const durable = outbox();
+      const state = await durable.initialize();
+      let clock = 0, attempt = 0, releaseIdentity;
+      let config = authorizedConfiguration();
+      const coordinator = new Coordinator({
+        outbox: durable, idFactory: id, clock: () => clock,
+        configuration: () => config,
+        session: () => ({ creator_account_id: ACCOUNT, applied_config_revision: 'config-1', account_epoch: state.account_epoch }),
+        signer: { async read(request) {
+          if (request.operation === 'identity') {
+            if (attempt++ === 0) throw Object.assign(new Error('private-message-marker'), { code: failure });
+            await new Promise((resolve) => { releaseIdentity = resolve; });
+            return { operation: 'identity', success: true, data: { id: 'creator-platform-1' } };
+          }
+          return { operation: 'conversations', success: true,
+            data: { items: [], continuation: null, boundary: 'inventory_end' } };
+        } },
+      });
+      await assert.rejects(coordinator.wake());
+      assert.deepEqual((await durable.historyJobs()).filter((job) => job.kind === 'inventory'), []);
+      assert.equal(coordinator.historyErrorCode(), expected);
+      assert.deepEqual(await coordinator.wake(), { status: 'deferred', pages: 0 });
+      assert.equal(coordinator.historyErrorCode(), expected);
+      config = authorizedConfiguration(true, { consent_revision: 'different-consent' });
+      assert.equal(coordinator.historyErrorCode(), null, 'failure belongs to its original authorization');
+      config = authorizedConfiguration();
+      clock = 3_000;
+      const retry = coordinator.wake();
+      while (releaseIdentity === undefined) await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(coordinator.historyErrorCode(), expected, 'starting a retry is not recovery');
+      releaseIdentity();
+      await retry;
+      assert.equal(coordinator.historyErrorCode(), null);
+      assert.doesNotMatch(JSON.stringify(await durable.historyJobs()), /private-.*-marker/);
+    });
+  }
+});
+
+test('history bootstrap health distinguishes deadlines from cancelled or stale work', async (t) => {
+  for (const { name, Coordinator } of COORDINATOR_VARIANTS) {
+    for (const action of ['deadline', 'cancel', 'stop', 'consent-change', 'session-loss']) {
+      await t.test(`${name}: ${action}`, async () => {
+        const durable = outbox();
+        const state = await durable.initialize();
+        let config = authorizedConfiguration();
+        let session = { creator_account_id: ACCOUNT, applied_config_revision: 'config-1', account_epoch: state.account_epoch };
+        let resolveIdentity, rejectIdentity, expire;
+        const coordinator = new Coordinator({
+          outbox: durable, idFactory: id,
+          configuration: () => config, session: () => session,
+          setTimeoutImpl(handler) { expire = handler; return 1; },
+          clearTimeoutImpl() {},
+          signer: { read() {
+            return new Promise((resolve, reject) => { resolveIdentity = resolve; rejectIdentity = reject; });
+          } },
+        });
+        const running = coordinator.wake();
+        while (resolveIdentity === undefined) await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(coordinator.historyErrorCode(), null);
+        if (action === 'deadline') expire();
+        else if (action === 'cancel') coordinator.cancelCurrent();
+        else if (action === 'stop') coordinator.stop();
+        else {
+          if (action === 'consent-change') config = authorizedConfiguration(true, { consent_revision: 'changed-consent' });
+          else session = null;
+          rejectIdentity(Object.assign(new Error('private-message-marker'), { code: 'browser_unavailable' }));
+        }
+        await assert.rejects(running);
+        assert.equal(coordinator.historyErrorCode(), action === 'deadline' ? 'history_unavailable' : null);
+        resolveIdentity({ operation: 'identity', success: true, data: { id: 'creator-platform-1' } });
+        await new Promise((resolve) => setImmediate(resolve));
+        config = authorizedConfiguration();
+        session = { creator_account_id: ACCOUNT, applied_config_revision: 'config-1', account_epoch: state.account_epoch };
+        assert.equal(coordinator.historyErrorCode(), action === 'deadline' ? 'history_unavailable' : null);
+        assert.deepEqual((await durable.historyJobs()).filter((job) => job.kind === 'inventory'), []);
+        assert.deepEqual(await durable.entries(), []);
+      });
+    }
+  }
+});
+
 test('raw signer body, signing material, and upstream cursor never enter ingestion frames', async () => {
   const cursor = 'opaque-upstream-cursor-marker';
   const rawBody = 'raw-response-body-marker';

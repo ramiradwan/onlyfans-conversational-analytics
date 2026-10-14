@@ -59,8 +59,11 @@ def _chrome_zip(version: str = RELEASE_VERSION) -> tuple[str, bytes]:
         "minimum_chrome_version": "132",
         "optional_host_permissions": ["https://onlyfans.com/*"],
         "externally_connectable": {"matches": ["http://bridge.localhost:17871/*"]},
+        "web_accessible_resources": [
+            {"resources": ["setup.html"], "matches": ["http://bridge.localhost/*"]}
+        ],
         "content_security_policy": {
-            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871;"
+            "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871; frame-ancestors 'none';"
         },
     }
     outputs = {

@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from time import monotonic
+from time import monotonic, sleep
 from typing import Literal, Protocol
 
 import httpx
@@ -62,6 +62,8 @@ PRODUCTION_TRUST_SET = "production/grant-profile-v1/trust-set.json"
 _PROOF_DOMAIN = b"BRIDGE-CLEAN-INSTALLATION-PROOF-V1\x00"
 _MAX_RESPONSE_BYTES = 65_536
 _EXPECTED_MEDIA_TYPE = "application/json"
+_MAX_REPLACEMENT_WAIT_SECONDS = 60.0
+_REPLACEMENT_WAIT_SLICE_SECONDS = 0.1
 _UUIDV7_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
@@ -180,6 +182,8 @@ class HostedTransport(Protocol):
 
 class InstallationProofAuthority(Protocol):
     def ensure_ready(self) -> InstallationKeyReference: ...
+
+    def reopen_existing(self) -> InstallationKeyReference: ...
 
     def sign_challenge(self, challenge: bytes) -> InstallationProof: ...
 
@@ -370,11 +374,15 @@ class HostedGrantClient:
         *,
         clock: Callable[[], datetime] | None = None,
         trust_set: Mapping[str, object] | None = None,
+        monotonic: Callable[[], float] = monotonic,
+        wait: Callable[[float], object] = sleep,
     ) -> None:
         self._transport = transport
         self._installation_key = installation_key
         self._store = store
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._monotonic = monotonic
+        self._wait = wait
         self._trust_set = (
             load_pinned_trust_set(PRODUCTION_TRUST_SET)
             if trust_set is None
@@ -459,6 +467,37 @@ class HostedGrantClient:
             else self._store.build_runtime_policy_from_grants(identity, reference_ids)
         )
         return ClaimConsumption(reference_ids, policy, consumed_at)
+
+    def accept_initial_handoff_bootstrap(
+        self, document: Mapping[str, object], *, scope: Mapping[str, object]
+    ) -> ClaimConsumption:
+        """Verify a key-admitted response without constructing a bearer claim."""
+        key = self._installation_key.ensure_ready()
+        expected = {"profile", "status", "claim_id", "onboarding_transaction_id", "organization_id",
+                    "installation_id", "installation_key_id", "installation_key_jkt", "consumed_at",
+                    "grants", "bootstrap_config_version"}
+        if (set(document) != expected or document.get("profile") != CLAIM_PROFILE_V2
+                or document.get("status") != "consumed"
+                or document.get("installation_key_id") != key.installation_key_id
+                or document.get("installation_key_jkt") != key.installation_key_jkt
+                or any(document.get(name) != scope.get(name) for name in
+                       ("organization_id", "installation_id", "onboarding_transaction_id"))):
+            raise HostedGrantUnavailable("Initial enrollment bootstrap is invalid")
+        claim_id = document.get("claim_id")
+        grants = document.get("grants")
+        if (not isinstance(claim_id, str) or not _UUIDV7_RE.fullmatch(claim_id)
+                or not isinstance(grants, dict) or set(grants) != set(HOSTED_CLAIM_V2_GRANT_TYPES)
+                or not all(isinstance(value, str) for value in grants.values())
+                or not isinstance(document.get("consumed_at"), str)
+                or not _TIMESTAMP_RE.fullmatch(str(document["consumed_at"]))
+                or not isinstance(document.get("bootstrap_config_version"), str)):
+            raise HostedGrantUnavailable("Initial enrollment bootstrap is invalid")
+        consumed_at = _parse_contract_timestamp(str(document["consumed_at"]))
+        references = self._verify_bundle(grants, grant_types=HOSTED_CLAIM_V2_GRANT_TYPES,
+            organization_id=str(scope["organization_id"]), installation_id=str(scope["installation_id"]),
+            key=key, identity=None)
+        self._store.record_verified_grants(references)
+        return ClaimConsumption(tuple(reference.reference_id for reference in references), None, consumed_at)
 
     def recover_bootstrap_v2(
         self,
@@ -770,6 +809,30 @@ class HostedGrantClient:
             raise GrantVerificationRefused("creator_account_mismatch")
         return reference
 
+    def accept_continuation_binding(
+        self, token: str, association: CreatorAssociationRequest, *,
+        membership_reference_id: str,
+    ) -> VerifiedGrantReference:
+        """Verify a fresh continuation result against the saved installation.
+
+        The hosted approver need not be the original enrolling principal. The
+        local membership remains the source of that principal's identity.
+        """
+        key = self._installation_key.reopen_existing()
+        membership = self._association_membership(association, membership_reference_id, key)
+        if not isinstance(token, str):
+            raise GrantVerificationRefused("invalid_compact_jws")
+        reference = self._verified_reference(
+            token, _untrusted_payload(token), grant_type="creator_account_binding",
+            organization_id=association.organization_id,
+            installation_id=association.installation_id, key=key,
+            external_issuer=membership.issuer, external_subject=membership.subject,
+            requested_account_ids=(),
+        )
+        if reference.creator_account_id != association.creator_account_id:
+            raise GrantVerificationRefused("creator_account_mismatch")
+        return reference
+
     def refresh_grant(
         self,
         identity: AuthContext,
@@ -891,6 +954,8 @@ class HostedGrantClient:
         except (HostedGrantUnavailable, GrantVerificationRefused, ValueError, KeyError):
             return GrantRefresh("unknown", (reference_id,), None)
 
+        if denial is None and not self._wait_for_replacement(replacement, commit_guard):
+            return GrantRefresh("unknown", (reference_id,), None)
         with (nullcontext(True) if commit_guard is None else commit_guard()) as allowed:
             if allowed is not True:
                 return GrantRefresh("unknown", (reference_id,), None)
@@ -902,6 +967,31 @@ class HostedGrantClient:
                 return GrantRefresh("revoked", (), None)
             self._store.replace_verified_grant(reference_id, replacement, expected=current)
         return GrantRefresh("updated", (replacement.reference_id,), None)
+
+    def _wait_for_replacement(
+        self, replacement: VerifiedGrantReference, commit_guard: GrantCommitGuard | None
+    ) -> bool:
+        # Verification tolerates a slightly faster issuer clock. Keep the signed
+        # replacement in memory until it is current; storage and runtime checks
+        # retain their strict validity boundaries.
+        deadline = self._monotonic() + _MAX_REPLACEMENT_WAIT_SECONDS
+        while (replacement.valid_from - self._now()).total_seconds() > 0:
+            remaining = deadline - self._monotonic()
+            if remaining <= 0:
+                return False
+            with (nullcontext(True) if commit_guard is None else commit_guard()) as allowed:
+                if allowed is not True:
+                    return False
+            delay = min(
+                (replacement.valid_from - self._now()).total_seconds(),
+                remaining,
+                _REPLACEMENT_WAIT_SLICE_SECONDS,
+            )
+            if delay > 0:
+                # Do not hold the commit fence while waiting, so shutdown can
+                # invalidate the attempt before its next slice or final commit.
+                self._wait(delay)
+        return True
 
     def _verified_denial(
         self, response: TransportResponse, current: VerifiedGrantReference

@@ -1,5 +1,6 @@
 {
   "schema": "ofca-customer-release/v1",
   "hosted_onboarding_url": "",
-  "hosted_api_origin": ""
+  "hosted_api_origin": "",
+  "authentication_providers": ["default"]
 }

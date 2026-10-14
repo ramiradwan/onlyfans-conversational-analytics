@@ -117,7 +117,6 @@ export function SetupPrompt({
   const headingId = useId();
   const steps = [
     { done: extensionConnected, label: 'Connect the browser extension', reason: 'Use the browser where you sign in to OnlyFans. Add the extension if needed.' },
-    { done: fullAnalyticsReady, label: 'Turn on Full analytics', reason: 'Use an activation code to turn on Full analytics on this computer.' },
   ];
   const completed = steps.filter((step) => step.done).length;
   const currentIndex = steps.findIndex((step) => !step.done);
@@ -158,7 +157,7 @@ export function SetupPrompt({
             {title}
           </Typography>
           <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1 }}>
-            Connect your account and turn on Full analytics. Older conversations can be added later.
+            {fullAnalyticsReady ? 'Connect your browser.' : 'Connect your browser. Full analytics is optional.'}
           </Typography>
         </Box>
         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>

@@ -39,17 +39,21 @@ function event(onAdd = () => {}) {
   return {
     addListener(listener) { listeners.add(listener); onAdd(); },
     removeListener(listener) { listeners.delete(listener); },
-    emit(details) { for (const listener of [...listeners]) listener(details); },
+    emit(...details) { for (const listener of [...listeners]) listener(...details); },
     get size() { return listeners.size; },
   };
 }
 
 /** Installed signer behind the consumer's real frozen-tab proxy; only Chrome/network/storage are doubles. */
-export function createSignerReleaseFixture({ initialState = null, expectedIdentity = EXPECTED_ID, observeExisting = false } = {}) {
+export function createSignerReleaseFixture({ initialState = null, expectedIdentity = EXPECTED_ID, observeExisting = false, ownedHelpers = false } = {}) {
   let saved = structuredClone(initialState);
   let serial = 0;
   let documentId = 'synthetic-document-0';
-  const calls = { loads: 0, saves: 0, reloads: 0, reads: [], aborts: [], captures: [] };
+  const calls = { loads: 0, saves: 0, reloads: 0, reads: [], aborts: [], captures: [], created: [], removed: [], navigations: [] };
+  const helperTabs = new Map();
+  const helperDocuments = new Map();
+  const extensionId = 'a'.repeat(32);
+  const documentFor = (tabId) => helperDocuments.get(tabId) ?? documentId;
   const webRequest = Object.fromEntries(['onBeforeSendHeaders', 'onHeadersReceived', 'onCompleted', 'onErrorOccurred']
     .map((name) => [name, event(() => {
       if (name !== 'onErrorOccurred') return;
@@ -74,8 +78,8 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
       return f.response({ list: [], hasMore: false });
     },
     controlReply: () => f.response({ error: 'synthetic-signature-rejection' }, 400),
-    async observeIdentity() {
-      const details = { requestId: `native-${++serial}`, tabId: f.tab.id, frameId: 0, documentId,
+    async observeIdentity(tabId = f.tab.id) {
+      const details = { requestId: `native-${++serial}`, tabId, frameId: 0, documentId: documentFor(tabId),
         documentLifecycle: 'active', method: 'GET', url: `${ORIGIN}/api2/v2/users/me` };
       const headers = {
         accept: 'application/json', 'app-token': 'synthetic-app-token', 'x-bc': 'synthetic-browser-context',
@@ -99,9 +103,13 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
     async query(query) {
       assert.equal(this, tabs);
       assert.deepEqual(query, { url: [`${ORIGIN}/*`] });
-      return [structuredClone(f.tab)];
+      return [structuredClone(f.tab), ...[...helperTabs.values()].filter(tab => tab.url.startsWith(ORIGIN)).map(tab => structuredClone(tab))];
     },
-    async get(tabId) { assert.equal(this, tabs); assert.equal(tabId, f.tab.id); return structuredClone(f.tab); },
+    async get(tabId) {
+      assert.equal(this, tabs);
+      if (helperTabs.has(tabId)) return structuredClone(helperTabs.get(tabId));
+      assert.equal(tabId, f.tab.id); return structuredClone(f.tab);
+    },
     async reload(tabId) {
       assert.equal(this, tabs); assert.equal(tabId, f.tab.id);
       calls.reloads += 1;
@@ -113,13 +121,14 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
     async executeScript(details) {
       assert.equal(this, scripting, 'consumer Promise proxy must retain Chrome method receiver');
       await f.beforeDispatch(details);
-      const currentDocument = documentId;
+      const currentDocument = documentFor(details.target.tabId);
+      if (details.files) return [{ frameId: 0, documentId: currentDocument }];
       if (details.func.name === 'inspectSigningDocumentInPage') {
         assert.equal(details.world, 'ISOLATED');
         return [{ frameId: 0, documentId: currentDocument, result: true }];
       }
       assert.equal(details.world, 'MAIN');
-      assert.deepEqual(details.target, { tabId: f.tab.id, documentIds: [currentDocument] });
+      assert.deepEqual(details.target, { tabId: helperTabs.has(details.target.tabId) ? details.target.tabId : f.tab.id, documentIds: [currentDocument] });
       let result;
       if (details.func.name === 'inspectSafeRefreshInPage') result = structuredClone(f.safeRefresh);
       else if (details.func.name === 'abortTypedReadInPage') {
@@ -138,7 +147,50 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
       return [{ frameId: 0, documentId: currentDocument, result }];
     },
   };
-  f.chromeApi = new Proxy({ tabs, scripting, webRequest, runtime: { lastError: null } }, {
+  const runtime = { lastError: null };
+  if (ownedHelpers) {
+    Object.assign(runtime, {
+      id: extensionId,
+      getURL: (path) => `chrome-extension://${extensionId}/${path}`,
+      async getContexts({ tabIds }) {
+        return tabIds.filter(id => helperTabs.has(id)).map(id => ({ tabId: id, frameId: 0,
+          contextType: 'TAB', documentId: documentFor(id), documentUrl: helperTabs.get(id).url }));
+      },
+    });
+    Object.assign(tabs, {
+      onUpdated: event(), onRemoved: event(), onActivated: event(), onCreated: event(),
+      async create(options) {
+        calls.created.push(structuredClone(options));
+        const tab = { id: 30 + calls.created.length, status: 'complete', frozen: false, ...options };
+        helperTabs.set(tab.id, tab);
+        helperDocuments.set(tab.id, `packaged-helper-${tab.id}`);
+        tabs.onCreated.emit(structuredClone(tab));
+        return structuredClone(tab);
+      },
+      async update(id, update) {
+        if (!helperTabs.has(id)) throw new Error('Never navigate a user tab');
+        calls.navigations.push({ id, ...update });
+        const tab = helperTabs.get(id);
+        Object.assign(tab, update);
+        helperDocuments.set(id, `platform-helper-${id}`);
+        tabs.onUpdated.emit(id, { ...update, status: 'complete' }, structuredClone(tab));
+        await f.observeIdentity(id);
+        return structuredClone(tab);
+      },
+      async remove(id) {
+        if (!helperTabs.has(id)) throw new Error('Never remove a user tab');
+        calls.removed.push(id);
+        helperTabs.delete(id); helperDocuments.delete(id);
+        tabs.onRemoved.emit(id, { isWindowClosing: false });
+      },
+      async sendMessage(_id, value) {
+        if (value.action === 'status') return { mode: 'full', active: true, forwarding: true, ws2_socket_open: true };
+        return { ok: true };
+      },
+    });
+  }
+  f.helperTabs = helperTabs;
+  f.chromeApi = new Proxy({ tabs, scripting, webRequest, runtime }, {
     get(target, key) {
       if (key === 'storage') throw new Error('Custom account persistence cannot access global Chrome storage');
       return Reflect.get(target, key);

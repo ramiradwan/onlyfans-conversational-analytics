@@ -9,12 +9,12 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const ACCOUNT = vector.detected_account_id;
 const STORAGE_KEY = Buffer.alloc(32, 7).toString('base64');
 const key = await crypto.subtle.importKey('jwk', fixturePrivateJwk(vector.fixture_labels.agent_identity_key, vector.request.agent_identity_jwk), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
-const SURFACE = { schema: 'ofca-browser-surface/v1', capture: 'paused', site_access: 'granted', history_permission: 'missing', legal_review_required: false };
+const SURFACE = { schema: 'ofca-browser-surface/v2', capture: 'paused', site_access: 'granted', history_permission: 'missing', legal_review_required: false, history_error_code: null };
 
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((k) => Object.hasOwn(values, k)).map((k) => [k, values[k]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const k of keys) delete values[k]; } }; }
 
-function harness({ mode = 'paused' } = {}) {
+function harness({ mode = 'paused', onBrowserTask = null } = {}) {
   let consent = mode, paired = true, time = 1_800_000_000_000;
   const timers = new Set();
   const scheduler = {
@@ -34,6 +34,7 @@ function harness({ mode = 'paused' } = {}) {
     allowsFull: () => consent === 'full',
     allowsControl: () => consent === 'paused',
     onControl: async (action) => { controls.push(action); },
+    onBrowserTask,
     detectedAccountId: async () => ACCOUNT,
     accountDatabaseName: async (id) => `encrypted-account-${id}`,
     storeFactory: async () => pairingStore,
@@ -53,7 +54,7 @@ function harness({ mode = 'paused' } = {}) {
           if (method === 'agent.challenge') return { challenge_id: crypto.randomUUID(), challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-12T12:00:00Z' };
           if (method === 'agent.authenticate') return { creator_account_id: ACCOUNT, auth_ticket: 'ticket', storage_bootstrap: 'sealed-bootstrap' };
           if (method === 'agent.storage.unseal') return { schema: 'ofca-extension-storage-unlock/v1', creator_account_id: ACCOUNT, credential_kind: 'pairing', auth_ticket: 'ticket', storage_key_base64: STORAGE_KEY };
-          if (method === 'agent.surface.report') return {};
+          if (['agent.surface.report', 'agent.browser-task.report'].includes(method)) return {};
           throw new Error('test_method_missing');
         },
       };
@@ -82,6 +83,35 @@ test('a paused Full extension holds one authenticated control-only session', asy
   await h.client.ensureControl();
   assert.equal(h.channels[0].closed, true);
   assert.equal(h.client.controlReady(), false);
+});
+
+test('paused tasks stay on the pinned control channel and reconnect never repeats them', async () => {
+  const deliveries = [];
+  const h = harness({ onBrowserTask: async (payload, controls) => {
+    deliveries.push({ payload, controls });
+    await controls.notify({ state: 'opening', notification: null });
+  } });
+  await h.client.ensureControl();
+  const channel = h.channels[0], task = { task_id: crypto.randomUUID(), admission_generation: crypto.randomUUID() };
+  channel.control({ id: task.task_id, action: 'browser.task', payload: { creator_account_id: 'other', task } });
+  await tick();
+  assert.equal(deliveries.length, 0);
+  channel.control({ id: task.task_id, action: 'browser.task', payload: { creator_account_id: ACCOUNT, task } });
+  await tick();
+  assert.equal(deliveries.length, 1);
+  assert.deepEqual(channel.rpcCalls.at(-1), { method: 'agent.browser-task.report', params: { ...task, state: 'opening', notification: null } });
+  assert.ok(!channel.rpcCalls.some(call => call.method === 'agent.storage.unseal'));
+  channel.close(); await tick();
+  assert.equal(deliveries[0].controls.signal.aborted, true);
+  await assert.rejects(deliveries[0].controls.notify({ state: 'opening', notification: null }));
+  h.advance(1000); await tick(); await tick(); await tick();
+  assert.equal(h.channels.length, 2);
+  assert.equal(deliveries.length, 1);
+  h.setMode('off');
+  h.channels[1].control({ id: task.task_id, action: 'browser.task', payload: { creator_account_id: ACCOUNT, task } });
+  await tick();
+  assert.equal(deliveries.length, 1);
+  await h.client.ensureControl();
 });
 
 test('only paired extensions in paused Full open a control session', async () => {
@@ -152,14 +182,16 @@ test('surface pages learn when the desktop app can control this browser', async 
 test('the reported browser state is closed and identifier-free', () => {
   const base = { consent: { mode: 'full' }, phase: 'full', onlyfans_permission: true, reload_required: false, history_permission: true };
   assert.deepEqual(browserSurface({ consent: base, legal: { requires_reauthorization: false } }), {
-    schema: 'ofca-browser-surface/v1', capture: 'active', site_access: 'granted', history_permission: 'granted', legal_review_required: false,
+    schema: 'ofca-browser-surface/v2', capture: 'active', site_access: 'granted', history_permission: 'granted', legal_review_required: false, history_error_code: null,
   });
   assert.equal(browserSurface({ consent: { ...base, consent: { mode: 'paused', resume_mode: 'full' } } }).capture, 'paused');
   assert.equal(browserSurface({ consent: { ...base, consent: { mode: 'paused', resume_mode: 'preview' } } }).capture, 'off');
   assert.equal(browserSurface({ consent: { ...base, phase: 'permission_required' } }).site_access, 'needs_approval');
-  assert.equal(browserSurface({ consent: { ...base, reload_required: true } }).site_access, 'reload_required');
+  assert.equal(browserSurface({ consent: { ...base, reload_required: true } }).site_access, 'granted');
   assert.equal(browserSurface({ consent: { ...base, history_permission: false } }).history_permission, 'missing');
   assert.equal(browserSurface({ consent: base, legal: { requires_reauthorization: true } }).legal_review_required, true);
+  assert.equal(browserSurface({ consent: base, historyErrorCode: 'unsupported_revision' }).history_error_code, 'unsupported_revision');
+  assert.equal(browserSurface({ consent: base, historyErrorCode: 'raw signing header must stay private' }).history_error_code, null);
 });
 
 test('controls map only to pause and resume in the matching consent state', async () => {

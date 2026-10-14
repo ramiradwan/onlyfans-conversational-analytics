@@ -81,7 +81,7 @@ function runtimeMessage(observation) {
 test('manifest keeps OnlyFans access optional and installs no static content scripts', async () => {
   const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
   assert.equal(manifest.content_scripts, undefined);
-  assert.equal(manifest.host_permissions, undefined);
+  assert.deepEqual(manifest.host_permissions, ['http://bridge.localhost/*']);
   assert.deepEqual(manifest.optional_host_permissions, [
     'https://onlyfans.com/*',
   ]);

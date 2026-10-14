@@ -421,6 +421,33 @@ async def decline_pairing(request: Request, pairing_id: str):
 _CAPTURE_ACTIONS = {"pause": "capture.pause", "resume": "capture.resume"}
 
 
+@router.post("/api/v1/companion/browser/open")
+async def browser_open(request: Request):
+    """Open one fixed page in the operator's authenticated browser session."""
+    try:
+        async with asyncio.timeout(STEP_TIMEOUT_SECONDS):
+            policy = await asyncio.to_thread(_bridge_policy, request, mutation=True)
+            identity = policy.identity
+            if identity is None or identity.role not in {"creator", "operator"}:
+                raise _Refusal("pairing_account_refused", 403)
+            value = await _body(request, "action")
+            if value["action"] not in {"setup", "access", "history", "creator"}:
+                raise _Refusal()
+            target = transport_manager.browser_task_target(identity.creator_account_id)
+            if target is None:
+                return _response({"detail": "browser_unreachable"}, 409)
+            delivered = await transport_manager.send_browser_navigation(identity.creator_account_id, target, value["action"])
+        return _response({"delivered": 1}, 202) if delivered else _response({"detail": "browser_unreachable"}, 409)
+    except _Refusal as error:
+        return _response({"detail": error.code}, error.status)
+    except HTTPException as error:
+        return _response({"detail": "pairing_account_refused"}, error.status_code)
+    except TimeoutError:
+        return _response({"detail": "pairing_state_refused"}, 408)
+    except Exception:
+        return _response({"detail": "pairing_storage_refused"}, 503)
+
+
 @router.post("/api/v1/companion/browser/capture")
 async def browser_capture(request: Request):
     """Ask the account's open extension sessions to pause or resume capture.
@@ -668,6 +695,8 @@ async def companion_pairing_socket(websocket: WebSocket) -> None:
             )
             # The comparison code is now visible to the opening Bridge session.
             transport_manager.notify_companion_changed(account_id)
+            from app.provisioning.events import events
+            events.publish()
             inbound = incoming.task
             terminal = asyncio.create_task(_terminal_outcome(service, pairing_id))
             try:

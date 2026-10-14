@@ -8,12 +8,10 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from app.core.customer_release import (
-    HOSTED_ORIGIN_ENVIRONMENT_VARIABLE as PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE,
     load_customer_release_config,
     resolve_hosted_api_origin,
 )
 from app.core.runtime_paths import runtime_configuration_file
-from app.core.runtime_paths import runtime_data_directory
 
 
 PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
@@ -57,13 +55,8 @@ def select_brain_application(
 
         return app
     from app.provisioning.app import create_provisioning_app
-    from app.provisioning.claim_submission import durable_claim_submission
     from app.provisioning.claim_submission import hosted_transport, installation_proof_authority
-    from app.provisioning.progress import durable_provisioning_progress
-    from app.security.capability_license_composition import durable_capability_license_delivery
     from app.security.grant_refresh import configured_grant_refresh
-    from app.provisioning.creator_association import durable_creator_association_initiation
-    from app.provisioning.binding_acquisition import durable_creator_account_binding_acquisition
     from app.provisioning.completion import (
         durable_authentication_store,
         durable_completion_reader,
@@ -73,10 +66,6 @@ def select_brain_application(
     open_store = durable_authentication_store(data_directory)
     customer_release = load_customer_release_config()
     handoff_token = os.environ.get(PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE)
-    if handoff_token is not None:
-        from app.provisioning.launcher_handoff import save_launcher_handoff
-
-        save_launcher_handoff(runtime_data_directory(data_directory), token=handoff_token, pid=os.getpid())
     hosted_origin = resolve_hosted_api_origin(customer_release)
     grant_refresh = configured_grant_refresh(
         open_store,
@@ -84,33 +73,28 @@ def select_brain_application(
         transport_factory=hosted_transport,
         proof_authority_factory=installation_proof_authority,
     )
-    return create_provisioning_app(
-        claim_submission=durable_claim_submission(open_store, hosted_origin=hosted_origin),
-        creator_association_initiation=durable_creator_association_initiation(
-            open_store, hosted_origin=hosted_origin
-        ),
-        creator_binding_acquisition=durable_creator_account_binding_acquisition(
-            open_store, hosted_origin=hosted_origin
-        ),
-        completion_ready=durable_completion_reader(
-            open_store, data_directory=data_directory
-        ),
-        provisioning_progress=durable_provisioning_progress(open_store),
-        finalize_action=durable_finalize_action(
-            open_store,
-            extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),
-            data_directory=data_directory,
-            grant_refresh=grant_refresh,
-        ),
-        capability_license_delivery=durable_capability_license_delivery(
-            open_store, hosted_origin=hosted_origin
-        ),
+    store = open_store()
+    completion_ready = durable_completion_reader(open_store, data_directory=data_directory)
+    finalize_action = durable_finalize_action(open_store,
         extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE, ""),
-        hosted_onboarding_url=customer_release.hosted_onboarding_url,
-        launcher_handoff_token=handoff_token,
-        completion_exit=provisioning_completion_exit,
-        shutdown_action=grant_refresh.stop,
-    )
+        data_directory=data_directory, grant_refresh=grant_refresh)
+    async def shutdown():
+        await grant_refresh.stop()
+    application = create_provisioning_app(completion_exit=provisioning_completion_exit, shutdown_action=shutdown)
+    if handoff_token is not None:
+        from app.onboarding.composition import attach_desktop_setup, build_desktop_setup
+
+        core = build_desktop_setup(store=store, stage="setup",
+            extension_id=os.environ.get(PROVISIONING_EXTENSION_ID_ENVIRONMENT_VARIABLE),
+            hosted_origin=hosted_origin, authentication_providers=customer_release.authentication_providers,
+            finalize=finalize_action, completion_ready=completion_ready,
+            completed=application.state.request_setup_completion)
+        coordinator = attach_desktop_setup(application, core=core, launcher_token=handoff_token)
+        if core.recovery.initial is not None and customer_release.hosted_onboarding_url:
+            from app.provisioning.receiving import install_receiving
+            from app.provisioning.setup_transfer import DesktopSetupTransfer
+            install_receiving(application, coordinator, DesktopSetupTransfer(core.recovery.initial, hosted_setup_url=customer_release.hosted_onboarding_url))
+    return application
 
 
 def run_brain() -> int:
@@ -140,19 +124,14 @@ def run_brain() -> int:
         ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
     )
     server = uvicorn.Server(configuration)
-    try:
-        from app.core.process_lifetime import parent_lifetime
-        with parent_lifetime(request_exit):
-            server.run()
-    finally:
-        from app.provisioning.launcher_handoff import remove_launcher_handoff
-
-        remove_launcher_handoff(runtime_data_directory(), pid=os.getpid())
+    from app.core.process_lifetime import parent_lifetime
+    with parent_lifetime(request_exit):
+        server.run()
     return 75 if application.state.completion_requested else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Start the local launcher or the internal Brain process mode."""
+    """Start only an internal Brain process or runtime probe."""
     arguments = tuple(sys.argv[1:] if argv is None else argv)
     if arguments == ("--companion-runtime-report",):
         import json
@@ -178,14 +157,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     hold_running_application_mutex()
     if arguments == ("--brain",):
         return run_brain()
-    if arguments:
-        raise SystemExit(
-            "usage: Brain.exe "
-            "[--brain|--sqlcipher-runtime-report|--companion-runtime-report]"
-        )
-    from app.launcher import main as launcher_main
-
-    return launcher_main()
+    raise SystemExit("Open Conversation Analytics using Bridge.exe. Brain.exe is an internal service.")
 
 
 if __name__ == "__main__":

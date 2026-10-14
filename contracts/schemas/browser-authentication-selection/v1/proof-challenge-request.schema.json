@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-authentication-selection/v1/proof-challenge-request.schema.json",
+  "title": "Browser authentication selection proof-challenge-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "target"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:browser-authentication-selection-proof:v1"
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "browser-authentication-read"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/readRequest"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "browser-authentication-select"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/selectRequest"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "browser-authentication-switch"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/switchRequest"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "request"
+          ],
+          "properties": {
+            "operation": {
+              "const": "browser-authentication-cancel"
+            },
+            "request": {
+              "$ref": "definitions.schema.json#/$defs/cancelRequest"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

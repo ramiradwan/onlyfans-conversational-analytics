@@ -118,6 +118,8 @@ def test_port_derives_registration_and_session_authority_from_verified_state(
         external_issuer=ISSUER,
         external_subject=SUBJECT,
         installation_id=INSTALLATION_ID,
+        creator_account_id=ACCOUNT_ID,
+        grant_reference_ids=references,
     )
     assert session.result is WebAuthnAuthorityResult.AUTHORIZED
     assert session.authority == SessionAuthority(
@@ -304,6 +306,8 @@ def test_port_uses_exact_grant_references_already_carried_by_policy(
         external_issuer=ISSUER,
         external_subject=SUBJECT,
         installation_id=INSTALLATION_ID,
+        creator_account_id=ACCOUNT_ID,
+        grant_reference_ids=references,
     )
 
 

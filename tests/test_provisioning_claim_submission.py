@@ -18,9 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
     Prehashed,
     decode_dss_signature,
 )
-from fastapi.testclient import TestClient
 
-from app import packaged_entry
 from app.core.config import Settings
 from app.core.runtime_paths import runtime_data_directory
 from app.persistence.auth import (
@@ -30,18 +28,12 @@ from app.persistence.auth import (
     SQLiteAuthenticationStore,
 )
 from app.provisioning import claim_submission as submission_module
-from app.provisioning.app import PROVISIONING_CLAIM_PATH
 from app.provisioning.claim_package import (
     CLAIM_PACKAGE_PROFILE,
     CLAIM_PACKAGE_PROFILE_V2,
     decode_claim_package,
 )
 from app.provisioning.claim_submission import PRODUCT_VERSION, durable_claim_submission
-from app.provisioning.session import (
-    PROVISIONING_CSRF_HEADER,
-    PROVISIONING_ORIGIN,
-    PROVISIONING_SESSION_COOKIE_NAME,
-)
 from app.security import hosted_grants as hosted_grants_module
 from app.security.hosted_grants import CLAIM_PROFILE, CLAIM_PROFILE_V2, TransportResponse
 from app.security.installation_key import (
@@ -51,6 +43,7 @@ from app.security.installation_key import (
     InstallationKeyUnavailable,
     InstallationProof,
     ProviderKeyInfo,
+    verify_installation_proof,
 )
 from contracts.loader import ContractsIntegrityError
 
@@ -321,6 +314,54 @@ class EmulatedPlatformProvider:
         )
         r, s = decode_dss_signature(der)
         return r.to_bytes(32, "big") + s.to_bytes(32, "big")
+
+
+def test_deferred_proof_authority_preserves_live_key_checks(store, monkeypatch) -> None:
+    provider = EmulatedPlatformProvider()
+    calls: list[str] = []
+
+    def resolve_provider():
+        calls.append("open")
+        return provider
+
+    monkeypatch.setattr(submission_module, "WindowsCNGInstallationKeyProvider", resolve_provider)
+    authority = submission_module.installation_proof_authority(store)
+    assert calls == []
+    assert store.installation_key_reservation() is None
+    reference = authority.ensure_ready()
+    assert calls == ["open"]
+    assert authority.reopen_existing() == reference
+    challenge = b"deferred installation proof regression"
+    proof = authority.sign_challenge(challenge)
+    assert verify_installation_proof(reference.public_key_jwk, challenge, proof)
+    assert calls == ["open"] * 3
+
+    # Losing the actual key must never be hidden by cached readiness or a new key.
+    provider._keys.clear()
+    with pytest.raises(InstallationKeyUnavailable):
+        authority.reopen_existing()
+    with pytest.raises(InstallationKeyUnavailable):
+        authority.ensure_ready()
+    with pytest.raises(InstallationKeyUnavailable):
+        authority.sign_challenge(challenge)
+    assert calls == ["open"] * 6
+    assert provider._keys == {}
+    assert store.installation_key_reference() == reference
+
+
+@pytest.mark.parametrize("action", ["ensure_ready", "reopen_existing", "sign_challenge"])
+def test_deferred_proof_action_still_refuses_unsupported_platform(store, monkeypatch, action) -> None:
+    from types import SimpleNamespace
+    from app.security import installation_key
+
+    # Keep the actual provider and authority; only select its unsupported-platform branch.
+    monkeypatch.setattr(installation_key, "os", SimpleNamespace(name="posix"))
+    authority = submission_module.installation_proof_authority(store)
+    arguments = (b"test proof",) if action == "sign_challenge" else ()
+    with pytest.raises(InstallationKeyUnavailable, match="available only on Windows"):
+        getattr(authority, action)(*arguments)
+    assert store.installation_key_reference() is None
+    assert store.installation_key_reservation() is None
 
 
 @pytest.fixture
@@ -610,84 +651,6 @@ def test_a_packaged_trust_set_defect_is_not_reported_as_a_customer_refusal(
         submit(package=PACKAGE)
 
 
-def test_the_composed_surface_refuses_a_malformed_package_without_reaching_out(
-    data_directory: Path, monkeypatch
-) -> None:
-    """The surface packaged boot builds decodes before it opens a transport."""
-
-    def refuse_transport(hosted_origin: str) -> Any:
-        raise AssertionError("hosted transport was opened for a malformed package")
-
-    monkeypatch.setattr(submission_module, "HTTPXHostedTransport", refuse_transport)
-    client, headers = _bounded_composed_session(data_directory, monkeypatch)
-
-    response = client.post(
-        PROVISIONING_CLAIM_PATH, json={"package": "not a package"}, headers=headers
-    )
-
-    assert response.status_code == 409
-    assert response.json() == {"state": "provisioning_ready", "reason": "encoding"}
-
-
-def test_the_composed_surface_verifies_grants_against_the_pinned_trust_set(
-    data_directory: Path, monkeypatch
-) -> None:
-    """Composition supplies no trust set of its own, so the pinned one applies."""
-
-    provider = EmulatedPlatformProvider()
-    grants = _signed_grants(_composed_installation_key(data_directory, provider))
-    transport = HostedClaimTransport(grants)
-    _emulate_platform(monkeypatch, provider, transport)
-    client, headers = _bounded_composed_session(data_directory, monkeypatch)
-
-    response = client.post(
-        PROVISIONING_CLAIM_PATH, json={"package": V2_PACKAGE}, headers=headers
-    )
-
-    assert response.status_code == 409
-    assert response.json() == {
-        "state": "provisioning_ready",
-        "reason": "grant_verification_refused",
-    }
-    assert [(method, path) for method, path, _ in transport.requests] == [
-        ("POST", CONSUME_PATH)
-    ]
-    assert transport.origin == HOSTED_ORIGIN
-    assert transport.requests[0][2]["request"]["claim_secret"] == CLAIM_SECRET
-    assert _composed_store(data_directory).verified_grants() == ()
-
-
-def test_the_composed_surface_registers_the_installation_from_one_package(
-    data_directory: Path, monkeypatch
-) -> None:
-    """The route reaches durable grant storage through the composed application."""
-
-    provider = EmulatedPlatformProvider()
-    installation_key = _composed_installation_key(data_directory, provider)
-    grants = _signed_grants(installation_key)
-    transport = HostedClaimTransport(grants)
-    _emulate_platform(monkeypatch, provider, transport)
-    monkeypatch.setattr(
-        hosted_grants_module, "load_pinned_trust_set", lambda _: grants.trust_set
-    )
-    client, headers = _bounded_composed_session(data_directory, monkeypatch)
-
-    response = client.post(
-        PROVISIONING_CLAIM_PATH, json={"package": f"  {V2_PACKAGE}\n"}, headers=headers
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"state": "installation_registered"}
-    stored = _composed_store(data_directory).verified_grants()
-    assert sorted(record.grant_type for record in stored) == [
-        "installation_grant",
-        "membership_snapshot",
-    ]
-    assert {record.installation_key_id for record in stored} == {
-        installation_key.installation_key_id
-    }
-
-
 def test_the_claim_record_exists_before_the_hosted_call_and_resolves_after(
     store: SQLiteAuthenticationStore, grants: SignedGrants
 ) -> None:
@@ -877,44 +840,6 @@ def _composed_installation_key(
 
     data_directory.mkdir(parents=True, exist_ok=True)
     return InstallationKeyAuthority(_composed_store(data_directory), provider).ensure_ready()
-
-
-def _bounded_composed_session(
-    data_directory: Path, monkeypatch
-) -> tuple[TestClient, dict[str, str]]:
-    """Boot the packaged provisioning surface and open one bounded session."""
-
-    monkeypatch.setenv(
-        packaged_entry.PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, HANDOFF_TOKEN
-    )
-    monkeypatch.setenv(
-        packaged_entry.PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, HOSTED_ORIGIN
-    )
-    data_directory.mkdir(parents=True, exist_ok=True)
-    application = packaged_entry.select_brain_application(data_directory)
-    client = TestClient(application, base_url=PROVISIONING_ORIGIN)
-    handoff = client.post(
-        "/api/v1/provisioning/handoff",
-        headers={"Authorization": "Provisioning " + HANDOFF_TOKEN},
-    )
-    redeemed = client.get(
-        f"/provisioning/handoff?code={handoff.json()['handoff_code']}",
-        follow_redirects=False,
-    )
-    cookie = (
-        f"{PROVISIONING_SESSION_COOKIE_NAME}="
-        f"{redeemed.cookies[PROVISIONING_SESSION_COOKIE_NAME]}"
-    )
-    token = (
-        client.get("/provisioning", headers={"Cookie": cookie})
-        .text.split('data-provisioning-csrf="')[1]
-        .split('"')[0]
-    )
-    return client, {
-        "Cookie": cookie,
-        "Origin": PROVISIONING_ORIGIN,
-        PROVISIONING_CSRF_HEADER: token,
-    }
 
 
 def _transport_factory(transport: HostedClaimTransport) -> Callable[[str], Any]:

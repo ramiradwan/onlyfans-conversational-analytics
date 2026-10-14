@@ -1,17 +1,8 @@
-"""Keeps the provisioning rehearsal stage reachable from the default suite run.
-
-``tests/test_ci_workflow.py`` asserts that a Windows job runs ``npm test`` in
-``tools/e2e-capture``. That command reaches this stage only while the spec sits
-under the configured ``testDir`` and the script stays an unfiltered
-``playwright test``, so both are asserted here: a stage nothing runs proves
-nothing.
-"""
+"""The current browser rehearsal suite remains reachable from its default command."""
 
 from __future__ import annotations
 
-import argparse
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -24,17 +15,9 @@ E2E_ROOT = PRODUCT_ROOT / "tools" / "e2e-capture"
 PLAYWRIGHT_CONFIG = E2E_ROOT / "playwright.config.mjs"
 PACKAGE_MANIFEST = E2E_ROOT / "package.json"
 
-STAGE_SPEC_NAME = "provisioning-registration.spec.mjs"
 
 # Arguments that would narrow `playwright test` to a subset of the specs.
 SELECTION_ARGUMENTS = ("--grep", "-g", "--project", "--shard", "--last-failed")
-
-
-def _configured_test_directory() -> Path:
-    source = PLAYWRIGHT_CONFIG.read_text(encoding="utf-8")
-    match = re.search(r"testDir:\s*'([^']+)'", source)
-    assert match is not None, "playwright.config.mjs does not declare a testDir"
-    return (E2E_ROOT / match.group(1)).resolve()
 
 
 def _default_test_script() -> str:
@@ -42,15 +25,6 @@ def _default_test_script() -> str:
     script = manifest.get("scripts", {}).get("test")
     assert isinstance(script, str), "tools/e2e-capture declares no `test` script"
     return script
-
-
-def test_the_stage_spec_sits_under_the_configured_test_directory() -> None:
-    spec = _configured_test_directory() / STAGE_SPEC_NAME
-
-    assert spec.is_file(), (
-        f"`{STAGE_SPEC_NAME}` is not under the configured testDir "
-        f"`{_configured_test_directory()}`, so `playwright test` never runs it"
-    )
 
 
 def test_the_default_test_script_selects_every_spec() -> None:
@@ -69,27 +43,3 @@ def test_the_default_test_script_selects_every_spec() -> None:
     assert not paths, (
         f"the `test` script names {paths}, so only those specs execute in CI"
     )
-
-
-def test_the_stage_drives_registration_and_local_authentication() -> None:
-    spec = _configured_test_directory() / STAGE_SPEC_NAME
-    source = spec.read_text(encoding="utf-8")
-
-    for symbol in ("ProvisioningHost", "completeBrowserWebAuthnCeremony"):
-        assert symbol in source, (
-            f"`{STAGE_SPEC_NAME}` no longer uses `{symbol}`, so the stage stops "
-            f"covering the step it names"
-        )
-
-
-def test_handoff_token_starting_with_dash_is_one_option_value() -> None:
-    source = (E2E_ROOT / "lib" / "provisioning-host.mjs").read_text(encoding="utf-8")
-    token = "-sample_base64url_token"
-    if "`--handoff-token=${this.handoffToken}`" in source:
-        argv = [f"--handoff-token={token}"]
-    else:
-        assert "'--handoff-token', this.handoffToken" in source
-        argv = ["--handoff-token", token]
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--handoff-token", required=True)
-    assert parser.parse_args(argv).handoff_token == token

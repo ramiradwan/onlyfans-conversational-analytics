@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/complimentary-activation/v1/error.schema.json",
+  "title": "Complimentary onboarding activation error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "reason"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:complimentary-onboarding-activation:v1"
+    },
+    "reason": {
+      "enum": [
+        "invalid",
+        "authentication_required",
+        "authorization_denied",
+        "operation_conflict",
+        "confirmation_required",
+        "expired",
+        "not_eligible",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  }
+}

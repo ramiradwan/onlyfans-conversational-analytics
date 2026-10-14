@@ -17,12 +17,15 @@ import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
+from html.parser import HTMLParser
+from pathlib import Path, PurePosixPath
 
 import pytest
 
 import exclusive_resource
+import inno_setup_compiler
 from app.core.config import Settings
+from app.core.customer_release import load_customer_release_config
 from app.persistence.sqlcipher_runtime import MINIMUM_SQLCIPHER, MINIMUM_SQLITE, _version_tuple
 
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
@@ -252,17 +255,17 @@ def _request(path: str, *, host_header: str | None = None) -> _HttpResponse | No
 
 
 def _raw_request(
-    method: str, path: str, *, headers: dict[str, str]
+    method: str, path: str, *, headers: dict[str, str], body: bytes | None = None
 ) -> tuple[int, dict[str, str], str]:
     connection = http.client.HTTPConnection("127.0.0.1", _BRAIN_PORT, timeout=2)
     try:
-        connection.request(method, path, headers=headers)
+        connection.request(method, path, body=body, headers=headers)
         response = connection.getresponse()
         response_headers = {
             name.lower(): value for name, value in response.getheaders()
         }
-        body = response.read().decode("utf-8")
-        return response.status, response_headers, body
+        response_body = response.read().decode("utf-8")
+        return response.status, response_headers, response_body
     finally:
         connection.close()
 
@@ -318,58 +321,146 @@ def _assert_packaged_runtime_serves_homepage(
         _stop_brain(process)
 
 
+class _SetupAssetReferences(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.references: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        if tag == "script" and attributes.get("type") == "module":
+            kind, path = "script", attributes.get("src")
+        elif tag == "link" and attributes.get("rel") in {"modulepreload", "stylesheet"}:
+            kind, path = str(attributes["rel"]), attributes.get("href")
+        else:
+            return
+        if path is not None:
+            self.references.append((kind, path))
+
+
 def _assert_packaged_runtime_serves_provisioning_surface(
     artifact: Path, *, data_directory: Path, working_directory: Path
 ) -> None:
+    """The unconfigured frozen owner admits native setup and serves its bundle."""
     process = _start_provisioning_brain(
         artifact, data_directory=data_directory, working_directory=working_directory
     )
+    origin = "http://bridge.localhost:17871"
     browser_headers = {"Host": "bridge.localhost:17871"}
+    json_headers = browser_headers | {"Content-Type": "application/json"}
     try:
         health = _wait_for_response(process, "/health", description="provisioning runtime")
         assert health.status == 200
+        status, _, _ = _raw_request(
+            "GET", "/api/v1/desktop/setup", headers=browser_headers
+        )
+        assert status == 401, "Native setup requires a desktop admission"
         status, _, body = _raw_request(
             "POST",
-            "/api/v1/provisioning/handoff",
-            headers=browser_headers
-            | {"Authorization": f"Provisioning {_PROVISIONING_HANDOFF_TOKEN}"},
+            "/api/v1/desktop/entry",
+            headers=json_headers
+            | {"Authorization": f"Desktop {_PROVISIONING_HANDOFF_TOKEN}"},
+            body=b"{}",
         )
-        assert status == 200, f"provisioning handoff returned {status}"
-        handoff_code = json.loads(body)["handoff_code"]
-        status, headers, _ = _raw_request(
-            "GET",
-            "/provisioning/handoff?code=" + urllib.parse.quote(handoff_code),
-            headers=browser_headers,
+        assert status == 200, f"native desktop entry returned {status}"
+        entry_body = json.dumps({"code": json.loads(body)["entry_code"]}).encode("utf-8")
+        status, headers, body = _raw_request(
+            "POST",
+            "/api/v1/desktop/entry/consume",
+            headers=json_headers | {"Origin": origin},
+            body=entry_body,
         )
-        assert status == 303, f"provisioning handoff redemption returned {status}"
+        assert status == 200, f"native desktop entry consumption returned {status}"
+        session = json.loads(body)
+        role, stage, journey = session["role"], session["stage"], session["journey_id"]
+        assert (role, stage, journey) == ("desktop", "setup", None)
         cookie = headers["set-cookie"].split(";", 1)[0]
-        session_headers = browser_headers | {"Cookie": cookie}
-        status, _, shell = _raw_request(
-            "GET", "/provisioning", headers=session_headers
+        assert cookie.partition("=")[0] == "__Host-desktop_presentation"
+        generation = session["generation"]
+        session_headers = browser_headers | {
+            "Cookie": cookie, "X-Desktop-Generation": generation,
+        }
+        status, _, _ = _raw_request(
+            "POST",
+            "/api/v1/desktop/entry/consume",
+            headers=json_headers | {"Origin": origin},
+            body=entry_body,
         )
+        assert status == 401, "Native desktop entry must be one-use"
+        status, _, body = _raw_request(
+            "GET", "/api/v1/desktop/setup", headers=session_headers
+        )
+        assert status == 200, f"native setup snapshot returned {status}"
+        snapshot = json.loads(body)
+        same_generation = snapshot["generation"] == generation
+        assert same_generation
+        assert snapshot["kind"] == "snapshot"
+        assert snapshot["journey_id"] is None
+        assert snapshot["next_task"] == "browser-access"
+        assert snapshot["pending_operations"] == []
+        assert snapshot["local_ready"] is False and snapshot["full_ready"] is False
+        assert snapshot["facts"]["browser_access"] == "missing"
+
+        status, headers, shell = _raw_request("GET", "/onboarding", headers=browser_headers)
         assert status == 200, (
-            "resource_failure: the frozen provisioning runtime could not render "
+            "resource_failure: the frozen native setup could not render "
             f"its bundled page (status {status})"
         )
         assert "<!doctype html" in shell.lower()
-        status, _, script = _raw_request(
-            "GET", "/provisioning/provisioning.js", headers=session_headers
+        assert headers["content-type"].startswith("text/html")
+        assert 'data-journey-state="desktop.setup_loading"' in shell
+        assets = _SetupAssetReferences()
+        assets.feed(shell)
+        assert any(kind == "script" for kind, _ in assets.references)
+        assert any(kind == "stylesheet" for kind, _ in assets.references)
+        for kind, path in assets.references:
+            parsed = urllib.parse.urlsplit(path)
+            assert not (parsed.scheme or parsed.netloc or parsed.query or parsed.fragment)
+            assert parsed.path.startswith("/static/dist/")
+            relative_path = PurePosixPath(parsed.path.removeprefix("/static/dist/"))
+            assert not relative_path.is_absolute() and ".." not in relative_path.parts
+            status, headers, content = _raw_request("GET", path, headers=browser_headers)
+            assert status == 200 and content, (
+                f"resource_failure: native setup asset {path} returned {status}"
+            )
+            content_types = ("text/css",) if kind == "stylesheet" else (
+                "text/javascript", "application/javascript",
+            )
+            assert headers["content-type"].startswith(content_types)
+            shipped = artifact / "_internal" / "app" / "static" / "dist" / relative_path
+            assert hashlib.sha256(content.encode("utf-8")).digest() == hashlib.sha256(
+                shipped.read_bytes()
+            ).digest()
+
+        for path, content_type in (
+            ("/onboarding/entry", "text/html"),
+            ("/onboarding/entry.js", "text/javascript"),
+        ):
+            status, headers, content = _raw_request("GET", path, headers=browser_headers)
+            assert status == 200 and content, (
+                f"resource_failure: native admission asset {path} returned {status}"
+            )
+            assert headers["content-type"].startswith(content_type)
+
+        status, _, _ = _raw_request(
+            "POST", "/api/v1/provisioning/handoff", headers=json_headers, body=b"{}"
         )
-        assert status == 200, (
-            "resource_failure: the frozen provisioning runtime could not serve "
-            f"its bundled script (status {status})"
+        assert status == 404, "Retired browser provisioning must remain absent"
+        # Hosted setup transfer owns POST /provisioning, never the retired GET page.
+        release = load_customer_release_config(
+            artifact / "_internal" / "app" / "core" / "customer-release.json"
         )
-        assert "application/json" in script
-        status, _, disclosure = _raw_request(
-            "GET",
+        status, headers, _ = _raw_request("GET", "/provisioning", headers=browser_headers)
+        assert status == (405 if release.hosted_configured else 404)
+        if release.hosted_configured:
+            assert headers["allow"] == "POST"
+        for path in (
+            "/provisioning/handoff", "/provisioning/provisioning.js",
             "/provisioning/creator-platform-data-risk-disclosure.html",
-            headers=session_headers,
-        )
-        assert status == 200, (
-            "resource_failure: the frozen provisioning runtime could not serve "
-            f"its bundled creator disclosure (status {status})"
-        )
-        assert "Creator platform &amp; data risk disclosure" in disclosure
+        ):
+            status, _, _ = _raw_request("GET", path, headers=browser_headers)
+            assert status == 404, f"Retired browser provisioning route is present: {path}"
+        assert not (data_directory / "runtime.env").exists()
     finally:
         _stop_brain(process)
 
@@ -385,7 +476,7 @@ def _assert_port_is_unused() -> None:
 def _build_real_installer(
     build_python: Path, output_root: Path, *, project_root: Path = ROOT
 ) -> Path:
-    """Freeze with the release build script and return its real installer."""
+    """Build the real internal installer, without publishing a Store candidate."""
 
     built = subprocess.run(
         [
@@ -399,6 +490,7 @@ def _build_real_installer(
             str(build_python),
             "-OutputRoot",
             str(output_root),
+            "-DevelopmentAgentBundle",
             "-PackagedSigningRule",
             str(project_root / SIGNING_RULE_FIXTURE),
             "-LegalReleaseBindings",
@@ -494,31 +586,22 @@ def _assert_installed_launcher_listener(
     return listener
 
 
-def _launcher_source_mode_falsifier_project(tmp_path: Path) -> Path:
-    """Copy the product and restore the frozen branch's rejected source command."""
-
-    project_copy = tmp_path / "source-mode-launcher-project"
-    shutil.copytree(
-        ROOT,
-        project_copy,
-        ignore=shutil.ignore_patterns(
-            ".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache", "__pycache__",
-            "node_modules"
-        ),
-    )
-    launcher = project_copy / "app" / "launcher.py"
-    source = launcher.read_text(encoding="utf-8")
-    frozen_branch = '''brain_command = (
-        (str(executable), "--brain")
-        if getattr(sys, "frozen", False)
-        else (str(executable), "-m", "app.packaged_entry", "--brain")
-    )'''
-    source_branch = '''brain_command = (
-        str(executable), "-m", "app.packaged_entry", "--brain"
-    )'''
-    assert frozen_branch in source, "launcher falsifier must replace the frozen branch"
-    launcher.write_text(source.replace(frozen_branch, source_branch, 1), encoding="utf-8")
-    return project_copy
+def _missing_backend_falsifier_installer(tmp_path: Path, real_stage: Path) -> Path:
+    """Install the real native host with its required adjacent backend removed."""
+    stage = tmp_path / "missing-backend-stage"
+    shutil.copytree(real_stage, stage)
+    assert (stage / "Bridge.exe").is_file()
+    (stage / "Brain.exe").unlink()
+    output = tmp_path / "missing-backend-installer"
+    compiler = inno_setup_compiler.require_inno_setup_compiler("Installed native falsifier requires Inno Setup")
+    result = subprocess.run([
+        str(compiler), f"/DStagingRoot={stage}", f"/DOutputRoot={output}",
+        f"/DAppVersion={Settings.model_fields['version'].default}", str(ROOT / "packaging/inno/brain.iss"),
+    ], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    installers = list(output.glob("*.exe"))
+    assert len(installers) == 1
+    return installers[0]
 
 
 @pytest.mark.ci_tier('scale')
@@ -546,7 +629,7 @@ def test_packaged_runtime_resolves_bundle_resources_from_an_unrelated_cwd(
 def test_packaged_provisioning_surface_resolves_bundled_assets(
     packaged_artifact: Path, tmp_path: Path
 ) -> None:
-    """The frozen pre-configuration app serves its page and script assets."""
+    """The frozen pre-configuration owner serves native setup and its assets."""
 
     _assert_port_is_unused()
     data_directory = tmp_path / "provisioning-data"
@@ -574,7 +657,6 @@ def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
     falsifier_root = Path(
         tempfile.mkdtemp(prefix="ofca-e2e-", dir=Path(tempfile.gettempdir()).anchor)
     )
-    falsifier_build_output = falsifier_root / "build"
     falsifier_smoke_run_root = falsifier_root / "smoke"
     try:
         installer = _build_real_installer(packaged_build_python, build_output)
@@ -588,12 +670,7 @@ def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
         result, transcript = _run_installed_launcher_smoke(installer, smoke_run_root)
         _assert_installed_launcher_listener(result, transcript)
 
-        falsifier_project = _launcher_source_mode_falsifier_project(falsifier_root)
-        falsifier_installer = _build_real_installer(
-            packaged_build_python,
-            falsifier_build_output,
-            project_root=falsifier_project,
-        )
+        falsifier_installer = _missing_backend_falsifier_installer(falsifier_root, build_output / "dist/Brain")
         falsifier_result, falsifier_transcript = _run_installed_launcher_smoke(
             falsifier_installer, falsifier_smoke_run_root
         )
@@ -604,7 +681,6 @@ def test_real_installed_launcher_starts_the_frozen_brain_and_owns_its_listener(
     finally:
         shutil.rmtree(build_output, ignore_errors=True)
         shutil.rmtree(smoke_run_root, ignore_errors=True)
-        shutil.rmtree(falsifier_build_output, ignore_errors=True)
         shutil.rmtree(falsifier_smoke_run_root, ignore_errors=True)
         shutil.rmtree(falsifier_root, ignore_errors=True)
     _assert_port_is_unused()

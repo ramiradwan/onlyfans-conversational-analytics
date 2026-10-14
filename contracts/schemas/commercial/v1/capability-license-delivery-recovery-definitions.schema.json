@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-license-delivery-recovery-definitions.schema.json",
+  "title": "CapabilityLicense delivery recovery definitions v1",
+  "$defs": {
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt",
+        "creator_account_id"
+      ],
+      "properties": {
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "creator_account_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        }
+      }
+    },
+    "proof": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/proof"
+    },
+    "readRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "activation_operation_id",
+        "delivery_generation",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+        },
+        "activation_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "delivery_generation": {
+          "oneOf": [
+            {
+              "$ref": "capability-license-delivery-recovery-definitions.schema.json#/$defs/generation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "binding": {
+          "$ref": "capability-license-delivery-recovery-definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "recoverRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "activation_operation_id",
+        "delivery_generation",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-license-delivery-recovery:v1"
+        },
+        "activation_operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "delivery_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "binding": {
+          "$ref": "capability-license-delivery-recovery-definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "redemption": {
+      "$ref": "capability-license-redemption-continuation.schema.json"
+    }
+  }
+}

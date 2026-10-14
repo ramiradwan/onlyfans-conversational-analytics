@@ -21,6 +21,7 @@ describe('GraphExplorerView projection truthfulness', () => {
 
     expect(screen.getByRole('heading', { name: 'Graph explorer' })).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain('Not ready yet');
+    expect(screen.getByRole('alert').textContent).not.toMatch(/prepared|preparing|will/iu);
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByText(/AliceFan|BobSubscriber|engagement score/i)).toBeNull();
   });
@@ -85,7 +86,7 @@ describe('GraphExplorerView projection truthfulness', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('replaces a raw projection reason code with friendly text', () => {
+  it('does not invent a preparation failure from a degraded projection reason', () => {
     bridgeTransportStore.bindAccount('creator-1');
     bridgeTransportStore.applySnapshot({
       creator_account_id: 'creator-1',
@@ -142,7 +143,8 @@ describe('GraphExplorerView projection truthfulness', () => {
     );
 
     const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain("Your conversations couldn't be prepared right now.");
+    expect(alert.textContent).toContain('Not ready yet');
+    expect(alert.textContent).not.toMatch(/prepared|preparing|couldn't|will/iu);
     expect(alert.textContent).not.toContain('projection_degraded');
   });
 });

@@ -1,0 +1,732 @@
+[
+  {
+    "case_id": "facts-none",
+    "expected": "awaiting-milestones",
+    "facts": [],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-installed",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-enrolled",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-account-bound",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-first-capture-ready",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-installed-enrolled",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-installed-account-bound",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-installed-first-capture-ready",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-enrolled-account-bound",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-enrolled-first-capture-ready",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-account-bound-first-capture-ready",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-installed-enrolled-account-bound",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-installed-enrolled-first-capture-ready",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-installed-account-bound-first-capture-ready",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-enrolled-account-bound-first-capture-ready",
+    "expected": "awaiting-milestones",
+    "facts": [
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "facts-installed-enrolled-account-bound-first-capture-ready",
+    "expected": "complete",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "invalid-exact_installation-missing-False",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": false,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "invalid-exact_installation-missing-True",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": false,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "invalid-key_matches-missing-False",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": false
+    }
+  },
+  {
+    "case_id": "invalid-key_matches-missing-True",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": false
+    }
+  },
+  {
+    "case_id": "invalid-approved_creator-missing-False",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": false,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "invalid-approved_creator-missing-True",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": false,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "invalid-enrolled_at-missing-False",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 101,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "invalid-enrolled_at-missing-True",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 101,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "future",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 101
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "unknown-fact",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "message-count",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "wrong-time-type",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": "90"
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "boolean-time",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": true
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "extra-field",
+    "expected": "refused",
+    "facts": [
+      {
+        "count": 1,
+        "milestone": "installed",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "duplicate",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "enrolled",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "account-bound",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "first-capture-ready",
+        "occurred_at": 90
+      },
+      {
+        "milestone": "installed",
+        "occurred_at": 90
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "missing-time",
+    "expected": "refused",
+    "facts": [
+      {
+        "milestone": "installed"
+      }
+    ],
+    "now": 100,
+    "store_error": false,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  },
+  {
+    "case_id": "store-error-not-awaiting",
+    "expected": "failure",
+    "facts": [],
+    "now": 100,
+    "store_error": true,
+    "target": {
+      "approved_creator": true,
+      "enrolled_at": 50,
+      "exact_installation": true,
+      "key_matches": true
+    }
+  }
+]

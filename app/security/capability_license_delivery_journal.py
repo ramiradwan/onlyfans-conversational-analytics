@@ -9,12 +9,17 @@ from datetime import datetime, timezone
 from typing import Callable, Literal, Mapping
 
 from app.persistence.database import AuthSQLite
+from app.security.capability_license_redemption_journal import provider_origin
 
 DeliveryOperation = Literal["activate", "finalize"]
 
 
 class CapabilityLicenseDeliveryJournalError(RuntimeError):
     """Pending delivery state is unavailable, corrupt, or inconsistent."""
+
+
+class CapabilityLicenseDeliveryCompleted(CapabilityLicenseDeliveryJournalError):
+    """Completion won the race; reverify its recorded authority before returning."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +32,7 @@ class PendingCapabilityLicenseDelivery:
     request_digest: str
     response_object_digest: str | None
     created_at: str
+    provider_origin: str
 
 
 class SQLiteCapabilityLicenseDeliveryJournal:
@@ -35,10 +41,12 @@ class SQLiteCapabilityLicenseDeliveryJournal:
     def __init__(
         self,
         database: AuthSQLite,
+        origin: str,
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._database = database
+        self.origin = provider_origin(origin)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def prepare(
@@ -63,20 +71,27 @@ class SQLiteCapabilityLicenseDeliveryJournal:
                 """
                 SELECT operation_type, authority_reference_id, endpoint,
                        idempotency_key, request_body, request_digest,
-                       response_object_digest, created_at
+                       response_object_digest, created_at, provider_origin
                 FROM capability_license_pending_deliveries
                 WHERE operation_type = ? AND authority_reference_id = ?
                 """,
                 (operation_type, authority_reference_id),
             ).fetchone()
             if row is None:
+                if connection.execute(
+                    "SELECT 1 FROM capability_license_redemption_journal "
+                    "WHERE provider_origin=? AND delivery_operation=? AND authority_reference_id=? "
+                    "AND completed_reference_id IS NOT NULL LIMIT 1",
+                    (self.origin, operation_type, authority_reference_id),
+                ).fetchone() is not None:
+                    raise CapabilityLicenseDeliveryCompleted("Delivery already completed")
                 connection.execute(
                     """
                     INSERT INTO capability_license_pending_deliveries (
                         operation_type, authority_reference_id, endpoint,
                         idempotency_key, request_body, request_digest,
-                        response_object_digest, state, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'pending', ?)
+                        response_object_digest, state, created_at, provider_origin
+                    ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'pending', ?, ?)
                     """,
                     (
                         operation_type,
@@ -86,13 +101,14 @@ class SQLiteCapabilityLicenseDeliveryJournal:
                         encoded,
                         digest,
                         created_at,
+                        self.origin,
                     ),
                 )
                 row = connection.execute(
                     """
                     SELECT operation_type, authority_reference_id, endpoint,
                            idempotency_key, request_body, request_digest,
-                           response_object_digest, created_at
+                           response_object_digest, created_at, provider_origin
                     FROM capability_license_pending_deliveries
                     WHERE operation_type = ? AND authority_reference_id = ?
                     """,
@@ -104,7 +120,7 @@ class SQLiteCapabilityLicenseDeliveryJournal:
                 "CapabilityLicense pending delivery was not persisted"
             )
         pending = _pending_from_row(row)
-        if pending.endpoint != endpoint:
+        if pending.endpoint != endpoint or pending.provider_origin != self.origin:
             raise CapabilityLicenseDeliveryJournalError(
                 "CapabilityLicense pending delivery endpoint changed"
             )
@@ -135,6 +151,13 @@ class SQLiteCapabilityLicenseDeliveryJournal:
                 """,
                 (pending.operation_type, pending.authority_reference_id),
             ).fetchone()
+            if row is None and connection.execute(
+                "SELECT 1 FROM capability_license_redemption_journal "
+                "WHERE provider_origin=? AND delivery_operation=? AND authority_reference_id=? "
+                "AND response_object_digest=? AND completed_reference_id IS NOT NULL LIMIT 1",
+                (self.origin, pending.operation_type, pending.authority_reference_id, object_digest),
+            ).fetchone() is not None:
+                raise CapabilityLicenseDeliveryCompleted("Delivery already completed")
             if row is None or str(row["idempotency_key"]) != pending.idempotency_key:
                 raise CapabilityLicenseDeliveryJournalError(
                     "CapabilityLicense pending delivery changed before response binding"
@@ -156,6 +179,16 @@ class SQLiteCapabilityLicenseDeliveryJournal:
                     pending.authority_reference_id,
                 ),
             )
+            request = pending.request_body.get("request", {})
+            proof = pending.request_body.get("proof", {})
+            connection.execute("UPDATE capability_license_redemption_journal SET response_object_digest=? "
+                "WHERE provider_origin=? AND delivery_operation=? AND authority_reference_id=? "
+                "AND json_extract(scope_json,'$.organization_id')=? "
+                "AND json_extract(scope_json,'$.installation_id')=? "
+                "AND json_extract(scope_json,'$.installation_key_id')=?",
+                (object_digest, self.origin, pending.operation_type, pending.authority_reference_id,
+                    request.get("organization_id"), request.get("installation_id", request.get("replacement_installation_id")),
+                    proof.get("key_id")))
         return object_digest
 
     def pending(
@@ -168,13 +201,16 @@ class SQLiteCapabilityLicenseDeliveryJournal:
                 """
                 SELECT operation_type, authority_reference_id, endpoint,
                        idempotency_key, request_body, request_digest,
-                       response_object_digest, created_at
+                       response_object_digest, created_at, provider_origin
                 FROM capability_license_pending_deliveries
                 WHERE operation_type = ? AND authority_reference_id = ?
                 """,
                 (operation_type, authority_reference_id),
             ).fetchone()
-        return None if row is None else _pending_from_row(row)
+        pending = None if row is None else _pending_from_row(row)
+        if pending is not None and pending.provider_origin != self.origin:
+            raise CapabilityLicenseDeliveryJournalError("Original delivery Provider changed")
+        return pending
 
 
 def _pending_from_row(row: object) -> PendingCapabilityLicenseDelivery:
@@ -187,6 +223,7 @@ def _pending_from_row(row: object) -> PendingCapabilityLicenseDelivery:
         request_digest = str(row["request_digest"])  # type: ignore[index]
         response_digest_raw = row["response_object_digest"]  # type: ignore[index]
         created_at = str(row["created_at"])  # type: ignore[index]
+        origin = provider_origin(row["provider_origin"])  # type: ignore[index]
     except Exception as error:
         raise CapabilityLicenseDeliveryJournalError(
             "CapabilityLicense pending delivery row is invalid"
@@ -222,6 +259,7 @@ def _pending_from_row(row: object) -> PendingCapabilityLicenseDelivery:
         request_digest=request_digest,
         response_object_digest=response_object_digest,
         created_at=created_at,
+        provider_origin=origin,
     )
 
 

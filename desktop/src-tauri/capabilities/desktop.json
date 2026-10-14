@@ -1,0 +1,29 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Read native lifecycle state in the owned local application window.",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "local": false,
+  "remote": {
+    "urls": [
+      "http://bridge.localhost:17871/",
+      "http://bridge.localhost:17871/inbox",
+      "http://bridge.localhost:17871/analytics",
+      "http://bridge.localhost:17871/graph-explorer",
+      "http://bridge.localhost:17871/settings",
+      "http://bridge.localhost:17871/onboarding",
+      "http://bridge.localhost:17871/onboarding/*"
+    ]
+  },
+  "permissions": [
+    "allow-desktop-state",
+    "allow-desktop-refresh-presentation",
+    "allow-desktop-browser-task",
+    "allow-desktop-setup-code"
+  ]
+}

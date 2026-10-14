@@ -28,8 +28,8 @@ test('Options exposes permission recovery and payload-free health fields', async
     readFile(new URL('../options.js', import.meta.url), 'utf8'),
   ]);
   assert.match(html, /id="restore-access"/);
-  assert.match(html, /id="reload-tabs"/);
-  assert.match(source, /reload_required/);
+  assert.doesNotMatch(html, /id="reload-tabs"/);
+  assert.doesNotMatch(source, /reload_required/);
   assert.match(html, /id="capture-health"/);
   assert.match(source, /capture_drop_counts/);
   assert.match(source, /startup_error_code/);

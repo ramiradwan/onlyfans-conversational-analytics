@@ -3,6 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { storyAnalyticsState, storyDateRange, type StoryAnalyticsStateKey } from './analyticsFixtures';
+import type { DesktopSnapshot, DesktopState } from '../../onboarding/client.js';
+import { validateDocument } from '../../onboarding/generated-contract';
+import type { WebAuthnApi } from '../../shared-setup/webauthn';
 import type { AnalyticsReadState } from '../analytics';
 import { AnalyticsPresentation } from '../components/analytics';
 import { AppShell } from '../layouts/AppShell';
@@ -20,10 +23,9 @@ import type {
   CompanionPairingStatus,
 } from '../services/companionPairingApi';
 import type { CreatorVaultApi, CreatorVaultStatus } from '../services/creatorVaultApi';
-import type { ExtensionPort, ExtensionPortState } from '../services/extensionPort';
+import type { DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
 import type { MessageApi } from '../services/messageApi';
-import type { WebAuthnApi } from '../services/webauthnApi';
 import { bridgeTransportStore } from '../store/transportStore';
 import { useUserStore } from '../store/userStore';
 import CreatorDashboardView from '../views/CreatorDashboardView';
@@ -273,16 +275,14 @@ function pairingApi(journey: StoryJourneyName): CompanionPairingApi {
   };
 }
 
-function activationApi(journey: StoryJourneyName): CapabilityLicenseApi {
+function activationReadiness(journey: StoryJourneyName) {
   const active = journey === 'populated';
-  return {
-    readiness: async () => journey === 'loading' ? new Promise(() => {}) : ({
-      schema: 'ofca-analysis-readiness/v1',
-      commercial_authority: active ? 'active' : 'required',
-      analysis_admission: active ? 'admitted' : 'blocked',
-    }),
-    redeem: async () => ({ state: 'checking' }),
-  };
+  return { schema: 'ofca-analysis-readiness/v1' as const,
+    commercial_authority: active ? 'active' as const : 'required' as const,
+    analysis_admission: active ? 'admitted' as const : 'blocked' as const };
+}
+function activationApi(): CapabilityLicenseApi {
+  return { redeem: async () => ({ state: 'checking' }) };
 }
 
 function vaultApi(journey: StoryJourneyName): CreatorVaultApi {
@@ -366,12 +366,47 @@ const WORKSPACE_PATHS: Record<Exclude<StoryWorkspaceName, 'passkey'>, string> = 
 
 function createDriver(journey: StoryJourneyName) {
   let currentJourney = journey;
+  let desktop: DesktopState = { connected: journey !== 'loading', pending: null, error: null, snapshot: {
+    journey_id: null, generation: '11111111-1111-4111-8111-111111111111', revision: 0, facts: {},
+    local_ready: true, full_ready: journey === 'populated', next_task: 'ready', pending_operations: [],
+    analysis_readiness: journey === 'loading' ? { availability: 'unknown', creator_account_id: ACCOUNT, value: null }
+      : { availability: 'current', creator_account_id: ACCOUNT, value: { schema: 'ofca-analysis-readiness/v1',
+        commercial_authority: journey === 'populated' ? 'active' : 'required',
+        analysis_admission: journey === 'populated' ? 'admitted' : 'blocked' } },
+    allowed_actions: journey === 'populated' ? [] : ['activation.review'],
+  } };
+  const desktopListeners = new Set<() => void>();
+  const publishDesktop = (connected = desktop.connected) => {
+    desktop = { ...desktop, connected, snapshot: desktop.snapshot && { ...desktop.snapshot, revision: desktop.snapshot.revision + 1 } };
+    for (const listener of desktopListeners) listener();
+  };
+  let desktopActionError: string | null = null;
+  const desktopActions: Array<{ action: string; provider?: string }> = [];
+  const onboarding: DesktopOnboardingApi = { getState: () => desktop, subscribe: listener => {
+    desktopListeners.add(listener); return () => { desktopListeners.delete(listener); };
+  },
+    begin: async (action, options) => {
+      desktopActions.push({ action, ...options });
+      if (desktopActionError) throw new Error(desktopActionError);
+    }, reconcile: async () => {}, openBrowser: async () => {} };
   let hold = new URLSearchParams(location.search).has('transitions');
+  let readinessHeld = hold;
+  const initialDesktop = desktop.snapshot!;
+  if (readinessHeld || journey === 'loading') desktop = { ...desktop, snapshot: null };
+  function receiveReadiness(value: unknown, error = false) {
+    readinessHeld = false;
+    const readiness = { availability: 'current' as const, creator_account_id: ACCOUNT, value };
+    // Use the production closed validator, including its disclosure rules.
+    const valid = !error && validateDocument({ profile: 'desktop-onboarding.v2', kind: 'snapshot',
+      ...initialDesktop, facts: Object.fromEntries(['browser_access', 'installation', 'account', 'configuration', 'enrollment', 'pairing', 'activation', 'analysis'].map(key => [key, 'verified'])),
+      next_task: 'complete', expires_at: 4102444800, scope_digest: 'a'.repeat(64), reason: 'none', analysis_readiness: readiness });
+    desktop = { ...desktop, error: valid ? null : 'invalid_snapshot', snapshot: {
+      ...(desktop.snapshot ?? initialDesktop), analysis_readiness: valid ? readiness as DesktopSnapshot['analysis_readiness']
+        : { availability: 'unknown', creator_account_id: ACCOUNT, value: null } } };
+    publishDesktop(valid);
+  }
+
   const pending = new Map<string, Array<{ resolve: (value: unknown) => void; reject: (error: Error) => void; run: () => unknown }>>();
-  let portState: ExtensionPortState = { status: 'absent', stage: null, attempt: null };
-  const listeners = new Set<() => void>();
-  const port: ExtensionPort = { getState: () => portState, subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
-    open: () => true, pair: () => true, cancel: () => true, retry: () => {} };
   function wrap<T extends object>(name: string, factory: () => T): T {
     return Object.fromEntries(Object.keys(factory()).map((key) => [key, (...args: unknown[]) => {
       const run = () => (factory()[key as keyof T] as (...args: unknown[]) => unknown)(...args);
@@ -383,56 +418,71 @@ function createDriver(journey: StoryJourneyName) {
     }])) as T;
   }
   const apis = {
-    activation: wrap('activation', () => activationApi(currentJourney)),
+    activation: wrap('activation', () => activationApi()),
     history: wrap('history', () => historyApi(currentJourney)),
     pairing: wrap('pairing', () => pairingApi(currentJourney)),
     vault: wrap('vault', () => vaultApi(currentJourney)),
     message: wrap('message', () => storyMessageApi),
     passkey: wrap('passkey', () => storyPasskeyApi),
-    browser: wrap('browser', () => ({ setCapture: async () => 'delivered' as const })),
+    browser: wrap('browser', () => ({ setCapture: async () => 'delivered' as const, open: async () => 'delivered' as const })),
   };
-  return { apis, pending: () => [...pending.keys()],
+  return { apis, onboarding, pending: () => [...pending.keys(), ...(readinessHeld && desktopListeners.size ? ['onboarding.readiness'] : [])],
+    desktopActions: () => desktopActions,
+    desktopActionError: (message: string | null) => { desktopActionError = message; },
+    desktopSnapshot: (patch: Partial<DesktopSnapshot>) => {
+      if (desktop.snapshot) desktop = { ...desktop, snapshot: { ...desktop.snapshot, ...patch } };
+      publishDesktop();
+    },
     sample: () => snapshot('populated'),
     messageSample: (conversationId: string) => storyMessageApi.getPage({ conversationId, limit: 50 }),
     messagePage: bridgeTransportStore.applyMessagePage,
     beginMessagePage: bridgeTransportStore.beginMessagePage,
     failMessagePage: bridgeTransportStore.failMessagePage,
     apiSample: async (key: 'history' | 'vault' | 'pairing' | 'activation') => key === 'history' ? historySettings('populated')
-      : key === 'vault' ? vaultApi('populated').get() : key === 'pairing' ? pin() : activationApi('populated').readiness(),
+      : key === 'vault' ? vaultApi('populated').get() : key === 'pairing' ? pin() : activationReadiness('populated'),
     agentSample: () => connectedAgent,
     state: bridgeTransportStore.getState,
     protocolError: bridgeTransportStore.setProtocolError,
-    reconnect: () => seedStores('populated'),
-    disconnected: bridgeTransportStore.markDisconnected,
+    reconnect: () => { seedStores('populated'); publishDesktop(true); },
+    disconnected: () => { bridgeTransportStore.markDisconnected(); publishDesktop(false); },
     companion: bridgeTransportStore.setCompanion,
     presence: bridgeTransportStore.setPresence,
     delta: bridgeTransportStore.applyDelta,
     resync: bridgeTransportStore.beginResync,
-    port,
-    pushPort(state: ExtensionPortState) { portState = state; for (const listener of listeners) listener(); },
     browser(overrides: Partial<NonNullable<AgentStatePayload['browser']>> | null) {
       bridgeTransportStore.setAgent({ ...connectedAgent, browser: overrides === null ? null : { ...connectedAgent.browser!, ...overrides } });
     },
     analytics: (key: StoryAnalyticsStateKey) => { void key; },
+    refreshReadiness() {
+      readinessHeld = hold;
+      if (hold) desktop = { ...desktop, snapshot: null, error: null };
+      publishDesktop();
+    },
     refresh: () => {},
+    resetSettings(): void { throw new Error('Settings fixture is not mounted.'); },
     resolve(key: string, value: unknown) {
+      if (key === 'onboarding.readiness') { receiveReadiness(value); return; }
       const requests = pending.get(key) ?? [];
       pending.delete(key);
       for (const request of requests) request.resolve(value);
     },
     reject(key: string, name: string) {
+      if (key === 'onboarding.readiness') { receiveReadiness(null, true); return; }
       const requests = pending.get(key) ?? [];
       pending.delete(key);
       for (const request of requests) request.reject(Object.assign(new Error('Fixture request failed'), { name }));
     },
     snapshot(next: Exclude<StoryJourneyName, 'loading'>, patch?: Partial<StateSnapshotPayload>) { currentJourney = next; bridgeTransportStore.applySnapshot({ ...snapshot(next), ...patch }); },
-    connection: bridgeTransportStore.setConnection,
+    connection: (state: Parameters<typeof bridgeTransportStore.setConnection>[0]) => {
+      bridgeTransportStore.setConnection(state); publishDesktop(state === 'connected');
+    },
     agent: bridgeTransportStore.setAgent,
     projection(status: 'current' | 'pending' | 'unavailable' | 'degraded', reason: string | null = null) {
       bridgeTransportStore.applySnapshot({ ...snapshot('populated'), projection: { ...snapshot('populated').projection, status, reason } });
     },
     async release(key: string, next: Exclude<StoryJourneyName, 'loading'> = 'populated', patch?: Record<string, unknown>, error?: string) {
       currentJourney = next;
+      if (key === 'onboarding.readiness') { receiveReadiness({ ...activationReadiness(next), ...patch }, Boolean(error)); return 1; }
       const requests = pending.get(key) ?? [];
       pending.delete(key);
       for (const request of requests) {
@@ -458,13 +508,15 @@ export function StoryWorkspace({
 }) {
   const [analysis, setAnalysis] = useState(analyticsState);
   const [revision, setRevision] = useState(0);
+  const [settingsRevision, setSettingsRevision] = useState(0);
   const [driver] = useState(() => {
     seedStores(workspace === 'analytics' ? 'populated' : journey);
     return createDriver(journey);
   });
   useEffect(() => {
     driver.analytics = (key) => setAnalysis(storyAnalyticsState(key));
-    driver.refresh = () => setRevision((value) => value + 1);
+    driver.refresh = () => { driver.refreshReadiness(); setRevision((value) => value + 1); };
+    driver.resetSettings = () => setSettingsRevision((value) => value + 1);
     window.__workspaceFixture = driver;
     return () => { delete window.__workspaceFixture; };
   }, [driver]);
@@ -479,7 +531,7 @@ export function StoryWorkspace({
     <MemoryRouter initialEntries={[WORKSPACE_PATHS[workspace]]}>
       <Routes>
         <Route element={<AppShell />}>
-          <Route index element={<CreatorDashboardView activationApi={apis.activation} />} />
+          <Route index element={<CreatorDashboardView activationApi={apis.activation} onboardingApi={driver.onboarding} />} />
           <Route path="graph-explorer" element={<GraphExplorerView />} />
           <Route
             path="analytics"
@@ -497,12 +549,13 @@ export function StoryWorkspace({
             path="settings"
             element={(
               <SettingsWithVaultView
+                key={settingsRevision}
                 activationApi={apis.activation}
                 historyApi={apis.history}
                 pairingApi={apis.pairing}
                 vaultApi={apis.vault}
                 browserApi={driver.apis.browser}
-                port={driver.port}
+                onboardingApi={driver.onboarding}
               />
             )}
           />

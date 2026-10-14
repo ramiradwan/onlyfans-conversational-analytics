@@ -115,6 +115,50 @@ async def test_reconciliation_does_not_bypass_analysis_authorization(ready, monk
 
 
 @pytest.mark.asyncio
+async def test_licensed_reconciliation_survives_unrelated_session_epoch(ready, tmp_path, monkeypatch):
+    import app.analytics.licensed_pipeline as licensed
+    from app.persistence.auth import SQLiteAuthenticationStore
+    from app.security.analysis_authorization import build_current_analysis_policy, clear_analysis_policies
+    from app.security.runtime_policy import AuthContext
+    from tests import test_analysis_restart_offline as authority_fixture
+
+    monkeypatch.setattr(authority_fixture, "ACCOUNT", ACCOUNT)
+    auth_path = tmp_path / "auth.sqlite3"
+    authority_fixture._seed_durable_authority(auth_path)
+    store = SQLiteAuthenticationStore(auth_path)
+    monkeypatch.setattr(licensed, "_auth_store", lambda path: store)
+    clear_analysis_policies()
+    build_current_analysis_policy(store, AuthContext(authority_fixture.PRINCIPAL, ACCOUNT, "agent"))
+    pipeline = licensed.LicensedAnalyticsPipeline(ready.source, projections=ready.stores.projections,
+        enrichment=ready.pipeline.enrichment, clock=lambda: NOW)
+    scheduler = InProcessProjectionScheduler(pipeline)
+    try:
+        await scheduler.start()
+        assert (await scheduler.wait(ACCOUNT)).availability == AvailabilityStatus.AVAILABLE
+        assert len(pipeline.projections.get(ACCOUNT).message_enrichments) == 9
+        store.close_companion_session("unrelated-session")
+        with ready.repositories.database.transaction() as db:
+            insert_message(db, "chat-1", "older-history", NOW-timedelta(days=40), 4)
+            advance(db)
+        await scheduler.reconcile_once()
+        assert (await scheduler.wait(ACCOUNT)).availability == AvailabilityStatus.AVAILABLE
+        assert len(pipeline.projections.get(ACCOUNT).message_enrichments) == 10
+        cold_equal(ready, pipeline.projections.get_artifact(ACCOUNT))
+
+        calls = [analyzer.calls for analyzer in ready.analyzers]
+        store.revoke_authorized_account_binding(ACCOUNT)
+        with ready.repositories.database.transaction() as db:
+            insert_message(db, "chat-1", "after-revocation", NOW-timedelta(hours=1), 5)
+            advance(db)
+        await scheduler.reconcile_once()
+        assert (await scheduler.wait(ACCOUNT)).availability == AvailabilityStatus.ERROR
+        assert [analyzer.calls for analyzer in ready.analyzers] == calls
+    finally:
+        assert await scheduler.close(timeout=10)
+        clear_analysis_policies()
+
+
+@pytest.mark.asyncio
 async def test_commit_notification_reads_only_the_account_head(ready):
     scheduler = InProcessProjectionScheduler(ready.pipeline)
     try:

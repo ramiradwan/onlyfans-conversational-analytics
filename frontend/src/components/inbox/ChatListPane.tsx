@@ -145,10 +145,7 @@ export function ChatListPane({
         ) : conversations.length === 0 ? (
           <EmptyState>
             <Typography component="p" variant="body1">
-              No conversations yet
-            </Typography>
-            <Typography component="p" variant="body2">
-              New chats will appear here when the read model updates.
+              No conversations to show
             </Typography>
           </EmptyState>
         ) : (

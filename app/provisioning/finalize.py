@@ -22,6 +22,9 @@ from app.persistence.auth import (
     InstallationKeyReference,
     ProvisioningCandidate,
     ProvisioningCandidateState,
+    SQLiteAuthenticationStore,
+    RevocationKey,
+    RevocationScopeType,
     VerifiedGrantReference,
 )
 from app.security.grant_types import (
@@ -140,6 +143,7 @@ def finalize_provisioning(
     extension_id: str,
     bundle_digest: GrantBundleDigest = grant_bundle_digest,
     data_directory: str | Path | None = None,
+    trusted_journey_id: str | None = None,
 ) -> FinalizedProvisioning:
     """Derive verified bindings and create production configuration once.
 
@@ -148,7 +152,8 @@ def finalize_provisioning(
     """
 
     bindings, account, references = verified_grant_bindings(
-        store=store, request=request, bundle_digest=bundle_digest
+        store=store, request=request, bundle_digest=bundle_digest,
+        trusted_journey_id=trusted_journey_id,
     )
     configuration = initialize_production_configuration(
         bindings=bindings,
@@ -164,6 +169,7 @@ def authorize_finalized_account(
     request: FinalizationRequest,
     finalized: FinalizedProvisioning,
     authorized_at: datetime,
+    trusted_journey_id: str | None = None,
 ) -> AuthorizedAccountBinding:
     """Record what finalization verified as a durable account authorization.
 
@@ -172,7 +178,8 @@ def authorize_finalized_account(
     of that decision. The store applies the pilot cardinality limit.
     """
 
-    candidate = _approved_candidate(store, request.association_request_id)
+    candidate = (_approved_candidate(store, request.association_request_id) if trusted_journey_id is None
+                 else _continued_candidate(store, request, trusted_journey_id))
     if candidate.creator_account_id != finalized.account.creator_account_id:
         raise FinalizationRefused("unapproved_creator_account")
     binding = AuthorizedAccountBinding(
@@ -184,7 +191,22 @@ def authorize_finalized_account(
         authorized_at=authorized_at,
         grant_reference_ids=finalized.grant_reference_ids,
     )
-    store.record_authorized_account_binding(binding)
+    if trusted_journey_id is not None:
+        if not isinstance(store, SQLiteAuthenticationStore):
+            raise FinalizationRefused("account_approval_missing")
+
+        def validate_current() -> None:
+            current = verified_grant_bindings(
+                store=store,
+                request=request,
+                trusted_journey_id=trusted_journey_id,
+            )
+            if current != (finalized.bindings, finalized.account, finalized.grant_reference_ids):
+                raise FinalizationRefused("grant_set_not_current")
+
+        store.record_authorized_account_binding(binding, validate_current=validate_current)
+    else:
+        store.record_authorized_account_binding(binding)
     return binding
 
 
@@ -193,6 +215,7 @@ def verified_grant_bindings(
     store: AuthenticationStore,
     request: FinalizationRequest,
     bundle_digest: GrantBundleDigest = grant_bundle_digest,
+    trusted_journey_id: str | None = None,
 ) -> tuple[VerifiedGrantBindings, VerifiedAccountBinding, tuple[str, ...]]:
     """Build installation identity and the account from one verified tuple.
 
@@ -200,10 +223,17 @@ def verified_grant_bindings(
     request supplies lookup and comparison values only.
     """
 
-    candidate = _approved_candidate(store, request.association_request_id)
+    candidate = (_approved_candidate(store, request.association_request_id) if trusted_journey_id is None
+                 else _continued_candidate(store, request, trusted_journey_id))
     required_grant_types = _required_provisioning_grant_types(store)
+    grants = store.verified_grants()
+    if trusted_journey_id is not None:
+        # A native-admitted context fixes the account. Other creator bindings
+        # remain intact; duplicate bindings for this account still refuse.
+        grants = tuple(grant for grant in grants if grant.grant_type != CREATOR_ACCOUNT_BINDING
+                       or grant.creator_account_id == candidate.creator_account_id)
     selected = _one_grant_per_required_type(
-        store.verified_grants(), required_grant_types
+        grants, required_grant_types
     )
     key = store.installation_key_reference()
     if key is None:
@@ -228,10 +258,19 @@ def verified_grant_bindings(
         creator_account_id=creator_account_id,
         role=bridge_role,
     )
+    if trusted_journey_id is not None and any(store.scope_is_revoked(key) for key in (
+        RevocationKey(RevocationScopeType.PRINCIPAL, membership.subject),
+        RevocationKey(RevocationScopeType.INSTALLATION, candidate.installation_id),
+        RevocationKey(RevocationScopeType.CREATOR_ACCOUNT, candidate.creator_account_id),
+        *(RevocationKey(RevocationScopeType.VERIFIED_GRANT, reference) for reference in references),
+    )):
+        raise FinalizationRefused("grant_set_not_current")
     try:
         store.build_runtime_policy_from_grants(identity, references)
     except AuthenticationStateError:
         raise FinalizationRefused("grant_set_not_current") from None
+    if trusted_journey_id is not None and _continued_candidate(store, request, trusted_journey_id) != candidate:
+        raise FinalizationRefused("grant_set_not_current")
 
     bindings = VerifiedGrantBindings(
         principal_id=membership.subject,
@@ -247,6 +286,28 @@ def verified_grant_bindings(
         ),
     )
     return bindings, account, references
+
+
+def _continued_candidate(store: AuthenticationStore, request: FinalizationRequest,
+                         journey_id: str) -> ProvisioningCandidate:
+    """The authenticated application session supplies this local reference."""
+    from app.persistence.installation_continuation import InstallationContinuationStore
+    if not isinstance(store, SQLiteAuthenticationStore):
+        raise FinalizationRefused("account_approval_missing")
+    try:
+        current = InstallationContinuationStore(store).require_current(journey_id)
+        target = current["target"]
+        if (current["state"] != "completed" or current["provider_state"] != "approved"
+                or target.binding_revoked_at is not None
+                or current["provider_expires_at"] is None
+                or datetime.fromisoformat(current["provider_expires_at"].replace("Z", "+00:00")) <= store._now()
+                or target.candidate.association_request_id != request.association_request_id
+                or target.candidate.creator_account_id != request.detected_creator_account_id
+                or target.candidate.state is not ProvisioningCandidateState.APPROVED):
+            raise FinalizationRefused("account_approval_missing")
+        return target.candidate
+    except ValueError:
+        raise FinalizationRefused("account_approval_missing") from None
 
 
 

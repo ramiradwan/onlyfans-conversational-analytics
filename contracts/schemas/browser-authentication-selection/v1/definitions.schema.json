@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/browser-authentication-selection/v1/definitions.schema.json",
+  "title": "Browser authentication selection definitions v1",
+  "$defs": {
+    "readRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "ceremony_id",
+        "binding",
+        "authentication_attempt_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-authentication-selection:v1"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "../../browser-ceremony/v1/definitions.schema.json#/$defs/binding"
+        },
+        "authentication_attempt_id": {
+          "oneOf": [
+            {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "selectRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "ceremony_id",
+        "binding",
+        "authentication_attempt_id",
+        "expected_previous_attempt_id",
+        "provider"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-authentication-selection:v1"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "../../browser-ceremony/v1/definitions.schema.json#/$defs/binding"
+        },
+        "authentication_attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "expected_previous_attempt_id": {
+          "oneOf": [
+            {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "google",
+            "microsoft-personal",
+            "default"
+          ]
+        }
+      }
+    },
+    "switchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "ceremony_id",
+        "binding",
+        "authentication_attempt_id",
+        "expected_previous_attempt_id",
+        "provider"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-authentication-selection:v1"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "../../browser-ceremony/v1/definitions.schema.json#/$defs/binding"
+        },
+        "authentication_attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "expected_previous_attempt_id": {
+          "oneOf": [
+            {
+              "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "enum": [
+            "google",
+            "microsoft-personal",
+            "default"
+          ]
+        }
+      }
+    },
+    "cancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "ceremony_id",
+        "binding",
+        "authentication_attempt_id"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:browser-authentication-selection:v1"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "ceremony_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "../../browser-ceremony/v1/definitions.schema.json#/$defs/binding"
+        },
+        "authentication_attempt_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "challenge",
+        "signature"
+      ],
+      "properties": {
+        "challenge": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "signature": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url64"
+        }
+      }
+    }
+  }
+}

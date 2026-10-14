@@ -64,7 +64,9 @@ test('only observed starts and terminals enter restricted metadata; private extr
   assert.throws(() => recorder.begin(first.id, first.configuration), /invalid_case_start/);
   assert.throws(() => finish({}), /duplicate_case_terminal/);
   now = 60_000;
-  assert.match(recorder.progress('dynamic'), /elapsed_seconds=60 selected=216 completed=1$/);
+  // Four three-width and six two-width surfaces, each with 2 themes, font
+  // scales and motion modes. The retired provisioning surface adds no cases.
+  assert.match(recorder.progress('dynamic'), /elapsed_seconds=60 selected=192 completed=1$/);
   await recorder.writeInventory(directory);
   const receipt = await recorder.finish(directory, { exitCode: 1, phaseTimings: { dynamic: 60 } });
   assert.equal(receipt.complete, false); assert.equal(receipt.cases.length, 2);

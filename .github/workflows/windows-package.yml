@@ -272,6 +272,14 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
+      - name: Retain package size measurements
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-package-measurements-${{ inputs.product_revision }}
+          path: ${{ runner.temp }}\windows-package\package-measurements.json
+          retention-days: 90
+          if-no-files-found: error
+
       # The installer directory is the artifact set: the installer, the Agent
       # bundle, and the sha256sums.txt computed over both. Signing rewrites the
       # installer, so the signing job recomputes that digest file.

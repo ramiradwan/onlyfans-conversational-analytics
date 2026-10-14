@@ -4,17 +4,15 @@ Serves the compiled Vite + React frontend via Jinja2 templates,
 injecting runtime configuration for the browser extension and WebSocket bridge.
 """
 
-import hmac
 import json
 import re
 import time
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict, Any
-from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.utils.logger import logger
@@ -89,18 +87,10 @@ _FIRST_PAINT_FONT = re.compile(r"-latin-[a-z]+-normal-[\w-]+\.woff2$")
 
 
 def _manifest_entry(manifest: Dict[str, Any]) -> tuple[str | None, Dict[str, Any]]:
-    entry_key = next(
-        (
-            key
-            for key, value in manifest.items()
-            if isinstance(value, dict) and value.get("isEntry")
-        ),
-        None,
-    )
-    if entry_key is None:
+    entry = manifest.get("index.html")
+    if not isinstance(entry, dict) or entry.get("isEntry") is not True:
         return None, {}
-    entry = manifest[entry_key]
-    return entry_key, entry
+    return "index.html", entry
 
 
 def _first_paint_fonts(entry: Dict[str, Any]) -> list[str]:
@@ -133,100 +123,6 @@ def _validate_manifest_assets(entry: Dict[str, Any]) -> str | None:
 
 
 _manifest_load = _load_manifest()
-@router.post(
-    "/api/v1/session/bootstrap",
-    include_in_schema=False,
-    response_class=RedirectResponse,
-)
-async def bootstrap_local_session(
-    request: Request,
-    authorization: str | None = Header(None, alias="Authorization"),
-) -> RedirectResponse:
-    """Consume the launcher secret once and confirm a local browser launch."""
-    if settings.websocket_auth_mode != "local_session":
-        raise HTTPException(status_code=404, detail="Not found")
-    expected_host = urlsplit(settings.bridge_origin).netloc.lower()
-    if request.headers.get("host", "").lower() != expected_host:
-        raise HTTPException(status_code=400, detail="Unexpected local Bridge origin")
-    if authorization is None:
-        raise HTTPException(status_code=401, detail="Launcher authorization is required")
-    scheme, separator, ticket = authorization.partition(" ")
-    if not separator or scheme.lower() != "bootstrap" or len(ticket) < 32:
-        raise HTTPException(status_code=401, detail="Launcher authorization is invalid")
-    expected = settings.local_session_bootstrap_token.get_secret_value()
-    if not hmac.compare_digest(ticket, expected):
-        raise HTTPException(status_code=401, detail="Bootstrap ticket is invalid or used")
-    if not transport_manager.consume_launcher_bootstrap(ticket):
-        raise HTTPException(status_code=401, detail="Bootstrap ticket is invalid or used")
-    response = RedirectResponse(url="/", status_code=303)
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return response
-
-
-@router.post(
-    "/api/v1/session/handoff",
-    include_in_schema=False,
-    response_class=JSONResponse,
-)
-async def issue_local_session_handoff(
-    request: Request,
-    authorization: str | None = Header(None, alias="Authorization"),
-) -> JSONResponse:
-    """Exchange the launcher credential for one bounded browser handoff code."""
-    if settings.websocket_auth_mode != "local_session":
-        raise HTTPException(status_code=404, detail="Not found")
-    expected_host = urlsplit(settings.bridge_origin).netloc.lower()
-    if request.headers.get("host", "").lower() != expected_host:
-        raise HTTPException(status_code=400, detail="Unexpected local Bridge origin")
-    if authorization is None:
-        raise HTTPException(status_code=401, detail="Launcher authorization is required")
-    scheme, separator, ticket = authorization.partition(" ")
-    if not separator or scheme.lower() != "bootstrap" or len(ticket) < 32:
-        raise HTTPException(status_code=401, detail="Launcher authorization is invalid")
-    expected = settings.local_session_bootstrap_token.get_secret_value()
-    if not hmac.compare_digest(ticket, expected):
-        raise HTTPException(status_code=401, detail="Launcher authorization is invalid")
-    code = transport_manager.issue_launcher_handoff(
-        ticket, ttl_seconds=settings.launcher_handoff_ttl_seconds
-    )
-    if code is None:
-        raise HTTPException(status_code=409, detail="launcher_bootstrap_already_consumed")
-    response = JSONResponse({"handoff_code": code})
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@router.get(
-    "/api/v1/session/handoff",
-    include_in_schema=False,
-    response_class=RedirectResponse,
-)
-async def redeem_local_session_handoff(
-    request: Request,
-) -> Response:
-    """Redeem one browser handoff code as proof of a local browser launch."""
-    if settings.websocket_auth_mode != "local_session":
-        raise HTTPException(status_code=404, detail="Not found")
-    expected_host = urlsplit(settings.bridge_origin).netloc.lower()
-    if request.headers.get("host", "").lower() != expected_host:
-        raise HTTPException(status_code=400, detail="Unexpected local Bridge origin")
-    code = request.query_params.get("code", "")
-    if len(code) < 32 or not transport_manager.redeem_launcher_handoff(code):
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Handoff code is invalid or unavailable"},
-            headers={
-                "Cache-Control": "no-store",
-                "Referrer-Policy": "no-referrer",
-            },
-        )
-    response = RedirectResponse(url="/", status_code=303)
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return response
-
-
 @router.get(
     "/",
     response_class=HTMLResponse,
@@ -333,6 +229,6 @@ async def serve_frontend_route(
 ):
     """Serve BrowserRouter refreshes without swallowing API or transport namespaces."""
     first_segment = frontend_path.split("/", 1)[0]
-    if first_segment in {"api", "ws", "static"}:
+    if first_segment in {"api", "ws", "static", "provisioning"}:
         raise HTTPException(status_code=404, detail="Not found")
     return await serve_frontend(request, policy)

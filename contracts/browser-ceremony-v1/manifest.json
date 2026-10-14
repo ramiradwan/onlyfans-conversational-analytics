@@ -1,0 +1,142 @@
+{
+  "case_count": 1092,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "3d52700a1b02b481ca2ad403bb83bdcbe8af9d90f4e97f6293d91c46cd277c42",
+      "size": 21834
+    },
+    {
+      "path": "callback-cases.json",
+      "sha256": "a815e81b5ca0860cc5f11e99b252448d4742d640ef86970345526f75d47752c3",
+      "size": 10456
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "7e4f17c75f106b50581b6f2e6258dc7358243aeede077942022d159966a84278",
+      "size": 21192
+    },
+    {
+      "path": "parsing-cases.json",
+      "sha256": "340d033d2c451553bac4827fc095863f29490f9c061a9d8ea80aad06c3193595",
+      "size": 1847
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "91ac9275831b365274efa0bf825eb8820f1b7d16e951b1aad75668334b41eb71",
+      "size": 195718
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "6102ee62ff841fde0a5a047312485a5f7b04d7e0ed4bd8765c8fda4ffee94d15",
+      "size": 1544404
+    }
+  ],
+  "generator": "tools/generate_browser_ceremony_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0029-operation-bound-browser-ceremonies.md",
+  "inputs": [
+    {
+      "path": "catalog/onboarding-admission-policy.json",
+      "sha256": "1a93ab1464b3015f4de1008b51c2b1c8f62bed1499526ad120087fa13a2f4738"
+    },
+    {
+      "path": "docs/adr/0029-operation-bound-browser-ceremonies.md",
+      "sha256": "28055fe17d9e74004baa2da4be6387820a990025a47f3717974c1ee388dbb355"
+    },
+    {
+      "path": "docs/browser-ceremony-v1.md",
+      "sha256": "879ce903bc927c1b00bcbedf1a26ffbcb7552a4c49bf203eafde8038b1207618"
+    },
+    {
+      "path": "openapi/browser-ceremony-v1.openapi.yaml",
+      "sha256": "8a5e92861ea626c9cbe8c6f2735a18b9e6bd024b790c8a63bdcb4e91bf62c75e"
+    },
+    {
+      "path": "profiles/browser-ceremony-proof/v1/profile.json",
+      "sha256": "b62d4150decd9cb5d345eca410c7b0ab31e1e5e07e6bd97c8cf20304e024abd7"
+    },
+    {
+      "path": "profiles/browser-ceremony/v1/profile.json",
+      "sha256": "e63209dc30396b289284e171f0289b65308c871b9564a4cebe14d69099ee8180"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/cancel-request.schema.json",
+      "sha256": "0ffa4faa3de1f5ce8309a24d84dda2209fdee8540b66dff7c4c2a9e47c52c1a6"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/cancel-response.schema.json",
+      "sha256": "10ac6cfea5bf7f27f754f4b278ef32f969909ade1300f65f4c1a4df300b7e9b2"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/definitions.schema.json",
+      "sha256": "8b7e4636fcea8ac170379fd5b77e2dcb3c59537e789dee35fd580e6b39c9964a"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/error.schema.json",
+      "sha256": "a6ca4d5089d26dad441a4e9094e4f3029f84ca7f7353ea471995f14a7d057e64"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/notification.schema.json",
+      "sha256": "cf72e5b4d88786bcd09ebc0e92e87f358a3e3e561bf6d0474e6bf62e71ef3b74"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/prepare-request.schema.json",
+      "sha256": "115ad90745f7474e8c8e9b7a21a261ae9ee5c470b3016e257daaa5d7f7c272c7"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/prepare-response.schema.json",
+      "sha256": "0f3b05a6bdc32968aad44525988960bdf7987d9f3a33529f79ebdcc4b0d202cd"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/proof-challenge-request.schema.json",
+      "sha256": "2728d3a83b06e67947dedbef88535e7429e5596e42748b3485bd2c4440600fb5"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/proof-challenge-response.schema.json",
+      "sha256": "417f75c2e6b1a03f90bf34f9caffc0389dd2182fe002cf0ad8fa976599a101d0"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/read-request.schema.json",
+      "sha256": "a48a18552849b68c10869958397326397d435cecbe3486bd10cd0dff965cbc18"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/read-response.schema.json",
+      "sha256": "91928394df58dbc366c2d2ce2e06f81622a5983aa6db9edf5897700687b1c74d"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/recover-request.schema.json",
+      "sha256": "850b0469aacc65eb264da4e5d72fabb76f0f41fb04682613c11b6f888b56bdf0"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/recover-response.schema.json",
+      "sha256": "9a2e801e280dbf80a73036c85b981c2d7ceeee9ed9f4b96672680fd42e2e7686"
+    },
+    {
+      "path": "schemas/browser-ceremony/v1/snapshot.schema.json",
+      "sha256": "c24ef2c21b3f43a33f3f4ebefef9eac5e4712444fd8c03352f0b6437ce04c4dd"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-continuation.schema.json",
+      "sha256": "c59babc00cc55a2bf382813daccc9251e67a1d26eb2cf3746eb88e58706df671"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/definitions.schema.json",
+      "sha256": "9dc00795b61d91a5a9f0d6134099a6efb5d1db4cb3a5bafd7f36b50bbf8e8dd1"
+    },
+    {
+      "path": "schemas/initial-handoff/v2/receipt-response.schema.json",
+      "sha256": "5a379355ee31d9bc6ff6c24cd239602f5a31253f2eb55329885301ee7ea03b1e"
+    },
+    {
+      "path": "tools/generate_browser_ceremony_vectors.py",
+      "sha256": "6427dd890b9a843240d90045c3c7216b4b1b632dfb777befa94e7767e7113fc5"
+    }
+  ],
+  "profile": "urn:bridge-clean:browser-ceremony-vectors:v1",
+  "test_only": true
+}

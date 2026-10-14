@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AnalyticsClientError, type AnalyticsUpdateDocument } from '../src/analytics';
 import { createAnalyticsStore } from '../src/store/analyticsStore';
+import { createBridgeTransportStore } from '../src/store/transportStore';
 import { analyticsUpdateFixture } from './analyticsFixture';
 
 function deferred<T>() {
@@ -13,6 +14,58 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+
+afterEach(() => vi.useRealTimers());
+
+it('refreshes after authoritative data changes without losing invalidations during a read', async () => {
+  vi.useFakeTimers();
+  const source = createBridgeTransportStore();
+  source.bindAccount('creator-1'); source.setConnection('connected');
+  const listeners = new Set<() => void>();
+  let revision = 1;
+  const projectionSource = { subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    getState: () => ({ ...source.getState(), viewRevision: revision,
+      projection: { ...source.getState().projection, canonical_revision: revision, projected_revision: revision } }) };
+  const pending = deferred<AnalyticsUpdateDocument>();
+  const fetchUpdate = vi.fn().mockResolvedValueOnce(analyticsUpdateFixture()).mockReturnValueOnce(pending.promise)
+    .mockResolvedValue(analyticsUpdateFixture());
+  const store = createAnalyticsStore({ source: projectionSource, fetchUpdate });
+  await store.getState().actions.activate();
+  revision = 2; listeners.forEach(listener => listener());
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(fetchUpdate).toHaveBeenCalledTimes(2);
+  revision = 3; listeners.forEach(listener => listener());
+  revision = 4; listeners.forEach(listener => listener());
+  expect(fetchUpdate).toHaveBeenCalledTimes(2);
+  pending.resolve(analyticsUpdateFixture());
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(fetchUpdate).toHaveBeenCalledTimes(3);
+  store.getState().actions.deactivate();
+  revision = 5; listeners.forEach(listener => listener());
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(fetchUpdate).toHaveBeenCalledTimes(3);
+  expect(listeners.size).toBe(0);
+});
+
+it('refreshes after reconnect even when the canonical revision is unchanged', async () => {
+  vi.useFakeTimers();
+  const source = createBridgeTransportStore();
+  source.bindAccount('creator-1'); source.setConnection('connected');
+  const listeners = new Set<() => void>();
+  const projectionSource = {
+    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    getState: () => ({ ...source.getState(), viewRevision: 1 }),
+  };
+  const fetchUpdate = vi.fn().mockRejectedValueOnce(new Error('Disconnected')).mockResolvedValue(analyticsUpdateFixture());
+  const store = createAnalyticsStore({ source: projectionSource, fetchUpdate });
+  await store.getState().actions.activate();
+  source.setConnection('disconnected'); listeners.forEach(listener => listener());
+  source.setConnection('connected'); listeners.forEach(listener => listener());
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(fetchUpdate).toHaveBeenCalledTimes(2);
+  expect(store.getState().state.status).toBe('model');
+  store.getState().actions.deactivate();
+});
 
 function baseline(document: AnalyticsUpdateDocument): AnalyticsUpdateDocument {
   const result = structuredClone(document);

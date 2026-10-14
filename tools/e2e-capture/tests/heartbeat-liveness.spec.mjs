@@ -8,11 +8,10 @@ import { BRAIN_ORIGIN, BrainProcess } from '../lib/brain.mjs';
 import {
   establishBrowserWebAuthnSession,
   readBrainSummary,
-  requestAgentPairingTicket,
+  pairCompanionForCapture,
 } from '../lib/brain-probe.mjs';
 import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
 import {
-  bindAgentFromBridgePage,
   extensionId,
   extensionState,
   extensionWorker,
@@ -73,13 +72,7 @@ test('paired Agent heartbeat advances without capture traffic', async () => {
 
     const bindingPage = context.pages()[0] ?? await context.newPage();
     await establishBrowserWebAuthnSession(bindingPage, authDatabasePath);
-    const pairing = await requestAgentPairingTicket(context);
-    await bindAgentFromBridgePage(bindingPage, {
-      extensionId: actualExtensionId,
-      creatorAccountId: pairing.creatorAccountId,
-      authTicket: pairing.pairingTicket,
-      storageBootstrap: pairing.storageBootstrap,
-    });
+    await pairCompanionForCapture(context);
     await expect.poll(async () => (await extensionState(worker)).capturePhase, {
       message: 'Pairing did not reconcile the capture phase to full.',
     }).toBe('full');

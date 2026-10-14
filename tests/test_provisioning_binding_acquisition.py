@@ -7,9 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app import packaged_entry
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.auth import (
     AuthenticationStore,
@@ -18,17 +16,9 @@ from app.persistence.auth import (
     SQLiteAuthenticationStore,
     VerifiedGrantReference,
 )
-from app.provisioning import binding_acquisition as binding_acquisition_module
-from app.provisioning import claim_submission as claim_submission_module
-from app.provisioning.app import PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH
 from app.provisioning.binding_acquisition import (
     BindingAcquisitionStatus,
     acquire_creator_account_binding,
-)
-from app.provisioning.session import (
-    PROVISIONING_CSRF_HEADER,
-    PROVISIONING_ORIGIN,
-    PROVISIONING_SESSION_COOKIE_NAME,
 )
 from app.security.hosted_grants import CreatorAssociationRequest
 from app.security.installation_key import PLATFORM_CRYPTO_PROVIDER
@@ -267,76 +257,3 @@ class InertPlatformProvider:
     """
 
     provider_name = PLATFORM_CRYPTO_PROVIDER
-
-
-def test_packaged_entry_routes_binding_acquisition_from_local_candidate(
-    tmp_path: Path, monkeypatch
-) -> None:
-    data_directory = tmp_path / "runtime-data"
-    data_directory.mkdir()
-    store = SQLiteAuthenticationStore(data_directory / "auth.sqlite3")
-    store.record_verified_grant(
-        _grant("membership_snapshot", reference_id=MEMBERSHIP_REFERENCE_ID)
-    )
-    _record_pending_candidate(store)
-    ComposedBindingClient.instances.clear()
-    monkeypatch.setattr(
-        binding_acquisition_module, "HostedGrantClient", ComposedBindingClient
-    )
-    monkeypatch.setattr(
-        claim_submission_module,
-        "WindowsCNGInstallationKeyProvider",
-        InertPlatformProvider,
-    )
-    monkeypatch.setenv(
-        packaged_entry.PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, HANDOFF_TOKEN
-    )
-    monkeypatch.setenv(
-        packaged_entry.PROVISIONING_HOSTED_ORIGIN_ENVIRONMENT_VARIABLE, HOSTED_ORIGIN
-    )
-
-    application = packaged_entry.select_brain_application(data_directory)
-    client, headers = _bounded_session(application)
-    response = client.post(
-        PROVISIONING_CREATOR_BINDING_ACQUISITION_PATH,
-        json={},
-        headers=headers,
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "association_request_id": ASSOCIATION_REQUEST_ID,
-        "status": "approved",
-    }
-    assert len(ComposedBindingClient.instances) == 1
-    assert ComposedBindingClient.instances[0].calls[0][0].creator_account_id == ACCOUNT_ID
-    candidate = store.provisioning_candidate(ASSOCIATION_REQUEST_ID)
-    assert candidate is not None
-    assert candidate.state is ProvisioningCandidateState.APPROVED
-    assert store.authorized_account_bindings() == ()
-
-
-def _bounded_session(application) -> tuple[TestClient, dict[str, str]]:
-    client = TestClient(application, base_url=PROVISIONING_ORIGIN)
-    handoff = client.post(
-        "/api/v1/provisioning/handoff",
-        headers={"Authorization": "Provisioning " + HANDOFF_TOKEN},
-    )
-    redeemed = client.get(
-        f"/provisioning/handoff?code={handoff.json()['handoff_code']}",
-        follow_redirects=False,
-    )
-    cookie = (
-        f"{PROVISIONING_SESSION_COOKIE_NAME}="
-        f"{redeemed.cookies[PROVISIONING_SESSION_COOKIE_NAME]}"
-    )
-    token = (
-        client.get("/provisioning", headers={"Cookie": cookie})
-        .text.split('data-provisioning-csrf="')[1]
-        .split('"')[0]
-    )
-    return client, {
-        "Cookie": cookie,
-        "Origin": PROVISIONING_ORIGIN,
-        PROVISIONING_CSRF_HEADER: token,
-    }

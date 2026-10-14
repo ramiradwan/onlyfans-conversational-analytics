@@ -5,9 +5,9 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
 import { BrainProcess } from '../lib/brain.mjs';
-import { establishBrowserWebAuthnSession, readBrainSummary, requestAgentPairingTicket } from '../lib/brain-probe.mjs';
+import { establishBrowserWebAuthnSession, readBrainSummary, pairCompanionForCapture } from '../lib/brain-probe.mjs';
 import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
-import { bindAgentFromBridgePage, extensionId, extensionState, extensionWorker,
+import { extensionId, extensionState, extensionWorker,
   launchExtensionBrowser } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
 
@@ -133,9 +133,7 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     }
     const binding = context.pages()[0] ?? await context.newPage();
     await establishBrowserWebAuthnSession(binding, authDatabasePath);
-    const pairing = await requestAgentPairingTicket(context);
-    await bindAgentFromBridgePage(binding, { extensionId: id, creatorAccountId: pairing.creatorAccountId,
-      authTicket: pairing.pairingTicket, storageBootstrap: pairing.storageBootstrap });
+    await pairCompanionForCapture(context);
     const platform = new SyntheticPlatform();
     await platform.install(context);
     const page = await context.newPage();
@@ -158,8 +156,8 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     let controls = await openPopup(context, id, errors);
     await expect(controls.locator('#pause'), 'desktop-owned Pause is hidden').toBeHidden();
     await setCaptureFromBridge(binding, 'pause');
-    await expect(controls.locator('#journey-primary'), 'wait for desktop-owned Resume after pause')
-      .toHaveText('Resume in the desktop app', { timeout: 8_000 });
+    await expect(controls.locator('#journey-primary'), 'wait for desktop entry after pause')
+      .toHaveText('Continue in the desktop app', { timeout: 8_000 });
     expect(await popupConsent(controls, 'read paused consent')).toEqual({ mode: 'paused', reload: false });
     platform.sendPauseProbe('paused-probe');
     await expect.poll(() => page.evaluate(() => globalThis.fixtureSocketFrames),
@@ -172,8 +170,8 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     controls = await openPopup(context, id, errors);
     await expect(controls.locator('main'), 'wait for popup after worker replacement')
       .toHaveAttribute('data-ready', 'true', { timeout: 8_000 });
-    await expect(controls.locator('#journey-primary'), 'wait for desktop-owned Resume after worker replacement')
-      .toHaveText('Resume in the desktop app', { timeout: 8_000 });
+    await expect(controls.locator('#journey-primary'), 'wait for desktop entry after worker replacement')
+      .toHaveText('Continue in the desktop app', { timeout: 8_000 });
     expect(await popupConsent(controls, 'read paused consent after worker replacement'))
       .toEqual({ mode: 'paused', reload: false });
     expect((await readBrainSummary(context)).messageCount).toBe(3);

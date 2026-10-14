@@ -1,0 +1,1429 @@
+[
+  {
+    "case_id": "connect",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": true
+  },
+  {
+    "case_id": "connect-same-read",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "read_at": 1800,
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": true
+  },
+  {
+    "case_id": "connect-stale-ceremony_id",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002changed",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-operation_id",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001changed",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-binding_digest",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaachanged",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-ceremony_admission_generation",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 5,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-source_session_binding",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-bindingchanged"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-source_admission_generation",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 10,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-actor",
+    "context": {
+      "actor": "test-actorchanged",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-permission",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "ownerchanged",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-owner_action_identity",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4changed",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-source_expires",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2201,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-ceremony_expires",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2101,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-session_expires",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2001,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-quote_expires",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2201,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-decision_digest",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5changed",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-stale-deadline",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2001,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "1970-01-01T00:33:20.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "connect-changed-display",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 2000,
+      "decision_digest": "b980ff8d3772a14e1cfa118385dfdb66cb1a40faf72aac89fabba19fcdcf9de5",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "connect-operation-4",
+      "permission": "owner",
+      "quote_expires": 2200,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "connect-account",
+      "computer_name": "My computer",
+      "creator_id": "creator-fixture",
+      "expires_at": "2026-10-12T12:11:00.000Z"
+    },
+    "reference": "MKxIj1-ZeWj0X4fTV5yo15tgNvYGVVQdwhfkbMaZC9k",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": true
+  },
+  {
+    "case_id": "activation-same-read",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "read_at": 1800,
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": true
+  },
+  {
+    "case_id": "activation-stale-ceremony_id",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002changed",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-operation_id",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001changed",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-binding_digest",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaachanged",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-ceremony_admission_generation",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 5,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-source_session_binding",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-bindingchanged"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-source_admission_generation",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 10,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-actor",
+    "context": {
+      "actor": "test-actorchanged",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-permission",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "ownerchanged",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-owner_action_identity",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7changed",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-source_expires",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2201,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-ceremony_expires",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2101,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-session_expires",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2001,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-quote_expires",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1901,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-decision_digest",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ecchanged",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-stale-deadline",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1901,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "activation-changed-display",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "ef9ed47c45fef58057ab78efd184789f8c521957aa3b4519b2467340d963e7ec",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "2026-10-12T12:11:00.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "xlY_89C0ksw1_bxpPYpmBKbfncu7ULpjgLYw1goNPIc",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "invalid-fallback-[2, 1]",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "018745a70dea72a4e6d0e55d534dcf1147cae233a0fc57c8612e067cf54f2b96",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          2,
+          1
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "N1EhA8Op9x0gR3lzRV3OEpoTwi796kCQpKt1f9yCKaA",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "invalid-fallback-[1, 1]",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "9fc67131b54a1dd2ec1a08a6b6a136ce1932f68ab3deedc001cb3822548097e3",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          1,
+          1
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "IkVCcy9LGAK_RqQQW-FW3eoepZEYS1XWkImFcN4DcGg",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "invalid-fallback-[2, 2]",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "33cf55dd1105568678a74d36d5cb3f1fa31a3ac7fbba68b537f3ee92024e8a39",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          2,
+          2
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "ZznUqjg_3t4nZC5wpEWsPo1HRarWotwIh2YZCzVQ-6Y",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  },
+  {
+    "case_id": "invalid-fallback-[2, 1, 3]",
+    "context": {
+      "actor": "test-actor",
+      "binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ceremony_admission_generation": 4,
+      "ceremony_expires": 2100,
+      "ceremony_id": "0199b234-5678-7000-8000-000000000002",
+      "deadline": 1900,
+      "decision_digest": "cbe6f24abfdea3abfd3805937484b7e4d55230700511ad8ec580c2dba8b600dd",
+      "operation_id": "0199b234-5678-7000-8000-000000000001",
+      "owner_action_identity": "confirmation-7",
+      "permission": "owner",
+      "quote_expires": 1900,
+      "session_expires": 2000,
+      "source_admission_generation": 9,
+      "source_expires": 2200,
+      "source_session_binding": "test-session-binding"
+    },
+    "decision": {
+      "action": "activate-complimentary",
+      "expires_at": "1970-01-01T00:31:40.000Z",
+      "offer": {
+        "capability": "analysis-run",
+        "compatible_artifact_family": "desktop-fixture",
+        "description": "Full analysis",
+        "fallback_major_versions": [
+          2,
+          1,
+          3
+        ],
+        "funding": "complimentary-pilot",
+        "licensed_major_version": 3,
+        "offer_version_id": "offer-fixture",
+        "pilot_credit_cost": 1,
+        "update_rights": false
+      }
+    },
+    "reference": "CIIxzEGpG7iFTeCNIHkQSIFSdOpWQ1Ga0voctKZccQI",
+    "test_key_hex": "1b9a9d4a6f389e3341e6bf916a98e211ad55d047b60c88754721afa14962bdc4",
+    "valid": false
+  }
+]

@@ -19,6 +19,31 @@ for (const [name, factory] of [
   ['authoring graph', createIndexedDbIngestionStorage],
   ['read-only Store graph', createReadOnlyIndexedDbIngestionStorage],
 ]) {
+  test(`${name} isolates one creator's encrypted outbox across authenticated Brain installations`, async () => {
+    const indexedDb = new FakeIndexedDb();
+    const options = { creatorAccountId: 'shared-creator', installationId: 'installation-one', encryptionKey: KEY_A };
+    const first = factory(indexedDb, options);
+    const record = { chat_id: 'chat-one', display_name: 'Synthetic creator data' };
+    await first.runTransaction('readwrite', [INGESTION_STORES.chats], tx => tx.put(INGESTION_STORES.chats, record));
+    const firstName = await first.databaseName;
+    const original = serializedRecords(indexedDb, firstName);
+    const second = factory(indexedDb, { ...options, installationId: 'installation-two', encryptionKey: KEY_B });
+    await second.runTransaction('readwrite', [INGESTION_STORES.chats], async tx => {
+      assert.equal(await tx.get(INGESTION_STORES.chats, record.chat_id), undefined);
+      await tx.put(INGESTION_STORES.chats, { ...record, display_name: 'Second installation' });
+    });
+    assert.notEqual(await second.databaseName, firstName);
+    assert.equal(serializedRecords(indexedDb, firstName), original, 'previous installation stays untouched');
+    const returned = factory(indexedDb, options);
+    await returned.runTransaction('readonly', [INGESTION_STORES.chats], async tx => {
+      assert.deepEqual(await tx.get(INGESTION_STORES.chats, record.chat_id), record);
+    });
+    const wrongRoot = factory(indexedDb, { ...options, encryptionKey: KEY_B });
+    await assert.rejects(wrongRoot.runTransaction('readonly', [INGESTION_STORES.chats], tx => tx.get(INGESTION_STORES.chats, record.chat_id)),
+      /encryption key does not match/);
+    for (const name of indexedDb.databases.keys()) assert.doesNotMatch(name, /shared-creator|installation-one|installation-two/);
+  });
+
   test(`${name} encrypts values and private lookup keys while preserving indexed reads`, async () => {
     const indexedDb = new FakeIndexedDb();
     const databaseName = `encrypted-${name}`;

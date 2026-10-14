@@ -32,10 +32,10 @@ describe('freshness evidence', () => {
     expect(present({ ...fresh('checking', 'canary'), last_closed_at: now.toISOString() }).label).toBe('Up to date');
     expect(present(fresh('checking', 'catch_up')).label).toBe('Checking messages');
     expect(present(fresh('current')).label).toBe('Up to date');
-    expect(present(null).label).toBe('Messages not checked');
+    expect(present(null).label).toBe('History not verified');
   });
   it('never invents a boundary or echoes an unknown reason', () => {
-    expect(present({ ...fresh('behind', 'awaiting_check'), uncertain_since: null }).label).toBe('Messages not checked');
+    expect(present({ ...fresh('behind', 'awaiting_check'), uncertain_since: null }).label).toBe('History not verified');
     expect(present({ ...fresh('paused'), reason: 'x'.repeat(4096) } as CatchupFreshness).label).toBe('Paused · needs attention');
   });
   it('downgrades a current claim when the bridge or snapshot is unusable', () => {
@@ -59,7 +59,7 @@ describe('freshness evidence', () => {
     expect(view.getByRole('button').textContent).toContain('Up to date');
     view.rerender(component(fresh('checking', 'canary')));
     view.rerender(component(fresh('paused', 'extension_offline')));
-    expect(view.getByRole('button').textContent).toContain('Paused · browser offline');
+    expect(view.getByRole('button').textContent).toContain('Extension not connected');
   });
 });
 

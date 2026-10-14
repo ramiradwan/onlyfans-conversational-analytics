@@ -179,6 +179,12 @@ describe('CreatorVaultControls', () => {
     );
 
     expect(await screen.findByText('Keeping messages for 365 days')).toBeTruthy();
+    const feedback = document.querySelector('[data-reserved-region="vault-feedback"]')!;
+    const archive = screen.getByRole('heading', { name: 'Archive' });
+    const deletion = screen.getByRole('heading', { name: 'Delete messages' });
+    expect(archive.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(deletion.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.querySelectorAll('[data-reserved-region="vault-feedback"]')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Delete all messages' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete all' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
