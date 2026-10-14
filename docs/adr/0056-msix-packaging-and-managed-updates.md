@@ -21,6 +21,8 @@ Before a migrating constructor, inspect retained state without creating replacem
 
 Preserve verified listener admission, parent-owned lifetime, Close-to-hide and explicit Quit. Bounded child-status framing may report maintenance without authorizing admission. Windows in-use deferral retains the running application; qualify hidden-app servicing and its restart boundary before claiming automatic delivery.
 
+Check shared Evergreen WebView2 before constructing the native WebView runtime or creating writable presentation state. Missing or incompatible runtimes use Windows-native recovery with one approved Microsoft acquisition action. Acquisition does not prove installation, and renderer inputs cannot choose its URL or executable. App Installer's external dependency and the native check have distinct responsibilities; qualify actual online/offline routes separately.
+
 The build owner validates, inventories and packs immutable contents. The protected signing owner signs and verifies without installing tooling or rebuilding. Package signatures, expected identity and the exact installed closure are separate required checks. Serve immutable signed bytes before promoting the direct descriptor. Store-submitted bytes and Store-delivered evidence remain separate.
 
 ## Confirmation

@@ -45,6 +45,7 @@ def stage(tmp_path):
     lambda value: value.update(minimum_os_version="10.0.26099.0"),
     lambda value: value.update(maximum_os_version_tested="10.0.26099.0"),
     lambda value: value.update(webview2_minimum_version="0.1.0.0"),
+    lambda value: value.update(webview2_minimum_version="133.0.3124.0"),
     lambda value: value["identity"].update(architecture="arm64"),
     lambda value: value["identity"].update(name="Production.Name"),
     lambda value: value.update(app_installer_uri="http://qualification.example.test/feed.appinstaller"),

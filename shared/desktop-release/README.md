@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: tools/msix_packaging.py packaging/msix/profiles/ app/core/desktop_release.py desktop/src-tauri/src/deployment.rs tests/test_desktop_release.py. -->
+<!-- CODE-VERIFY: tools/msix_packaging.py packaging/msix/profiles/ app/core/desktop_release.py desktop/src-tauri/src/deployment.rs desktop/src-tauri/src/prerequisite.rs shared/desktop-release/prerequisite-policy.json tests/test_desktop_release.py. -->
 
 # Desktop release agreement fixtures
 
@@ -12,3 +12,5 @@ python tools/msix_packaging.py desktop-descriptor --profile packaging/msix/profi
 ```
 
 An OS identity mismatch, missing descriptor in a packaged process, extra/duplicate fields or a Store descriptor carrying a direct feed must refuse. These fixtures are contract evidence; they do not authorize updates or qualify installed storage.
+
+`prerequisite-policy.json` is a separate embedded native policy, not a desktop descriptor. It owns the common Evergreen compatibility floor and the fixed Microsoft recovery page. Package profiles can strengthen that minimum. Native startup queries the real loader before constructing Tauri and uses Windows-native recovery when the runtime is unavailable; it does not infer installation from acquisition.

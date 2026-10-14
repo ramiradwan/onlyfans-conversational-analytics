@@ -34,6 +34,21 @@ BACKEND_TEST_COMMAND = "python -m pytest"
 DEPENDENCY_INSTALL_COMMAND = "python -m pip install -r requirements-dev.txt"
 FRONTEND_BUILD_COMMAND = "npm run build --prefix frontend"
 WINDOWS_PRODUCTION_MARKER = "windows_production"
+
+
+def test_native_desktop_contracts_are_required_without_installing_or_publishing_packages():
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    job = jobs["desktop-native-contracts"]
+    assert job["runs-on"] == "windows-latest" and "if" not in job
+    assert job["env"]["RUSTUP_TOOLCHAIN"] == "1.98.1"
+    command = next(step["run"] for step in job["steps"] if "cargo test" in step.get("run", ""))
+    assert "--locked" in command and "--features qualification-tools" in command
+    for selector in ("--bin Bridge", "--test process_lifetime", "--test prerequisite", "--test-threads=1"):
+        assert selector in command
+    assert "$LASTEXITCODE -ne 0" in command
+    assert "--include-ignored" not in command and "Add-AppxPackage" not in command
+    assert "desktop-native-contracts" in jobs["required-ci-gate"]["needs"]
 FIXED_SQLCIPHER_BUILDER = "packaging\\sqlcipher\\build-fixed-wheel.ps1"
 STATEFUL_TIER_A_MARKER = "stateful_tier_a"
 STATEFUL_TIER_B_MARKER = "stateful_tier_b"

@@ -2,6 +2,11 @@
   "schema_version": "1.0.0",
   "description": "Customer-visible journey states with executable presentation anchors and evidence. Desktop setup uses the Brain coordinator; browser and hosted tasks retain their domain authorities. Full analytics activation is optional after local setup. Browser tasks return automatically to their native journey, while unknown authentication and operation outcomes remain subject to authoritative reconciliation. Permission return uses an explicit 90-second creator/presentation intent and the native foreground guard; it cannot grant authority.",
   "surfaces": {
+    "desktop.prerequisite": {
+      "implementation": [
+        "desktop/src-tauri/src/prerequisite.rs"
+      ]
+    },
     "desktop.setup": {
       "implementation": [
         "frontend/onboarding/index.html",
@@ -70,6 +75,11 @@
   },
   "journeys": [
     {
+      "id": "desktop-runtime-recovery",
+      "entry_state": "desktop.webview_runtime_needed",
+      "success_state": "desktop.setup_loading"
+    },
+    {
       "id": "extension-preview",
       "entry_state": "extension.start_choice",
       "success_state": "extension.preview_available"
@@ -116,6 +126,43 @@
     }
   ],
   "states": [
+    {
+      "id": "desktop.webview_runtime_needed",
+      "surface": "desktop.prerequisite",
+      "anchor": {
+        "file": "desktop/src-tauri/src/prerequisite.rs",
+        "text": "pub const RECOVERY_STATE: &str = \"desktop.webview_runtime_needed\";"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "Check again after installing the compatible runtime"
+        },
+        {
+          "to": "desktop.passkey_sign_in",
+          "by": "user",
+          "action": "Check again for a configured installation"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/src/prerequisite.rs",
+          "name": "readiness_is_rechecked_before_launch_and_download_is_only_a_fixed_action"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/prerequisite.rs",
+          "name": "real_native_recovery_controls_cover_loader_failure_retry_download_and_close"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/prerequisite.rs",
+          "name": "real_bridge_refuses_missing_runtime_before_creating_a_webview_profile_or_brain_state"
+        }
+      ]
+    },
     {
       "id": "extension.start_choice",
       "surface": "extension.setup",

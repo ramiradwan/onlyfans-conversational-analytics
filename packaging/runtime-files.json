@@ -190,6 +190,8 @@
     "**/*.cer",
     "brain-fixture.exe",
     "**/brain-fixture.exe",
+    "prerequisite-fixture.exe",
+    "**/prerequisite-fixture.exe",
     "msedgewebview2.exe",
     "**/msedgewebview2.exe",
     ".env",

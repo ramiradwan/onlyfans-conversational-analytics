@@ -32,7 +32,7 @@ def test_client_routes_retain_the_owned_native_document_capability(capability):
     assert origin + "/api/*" not in admitted
 
 
-@pytest.mark.parametrize("relative", ["brain-fixture.exe", "WebView/msedgewebview2.exe"])
+@pytest.mark.parametrize("relative", ["brain-fixture.exe", "prerequisite-fixture.exe", "WebView/msedgewebview2.exe"])
 def test_release_rejects_qualification_fixture_and_private_browser_engine(tmp_path, relative):
     stage = _stage_runtime_tree(tmp_path)
     target = stage / relative

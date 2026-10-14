@@ -33,6 +33,41 @@ env:
   BROWSER_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_qualification }}
   BROWSER_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
 jobs:
+  desktop-native-contracts:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.1
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Install pinned desktop toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Cache native desktop dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: desktop-native-${{ runner.os }}-1.98.1-${{ hashFiles('desktop/src-tauri/Cargo.lock', 'desktop/src-tauri/bridge.manifest') }}
+      - name: Test native admission, supervision and prerequisite recovery
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/desktop-native | Out-Null
+          cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml --features qualification-tools --bin Bridge --test process_lifetime --test prerequisite -- --test-threads=1 2>&1 |
+            Tee-Object -FilePath artifacts/desktop-native/contracts.log
+          if ($LASTEXITCODE -ne 0) { throw 'Native desktop contracts failed' }
+      - name: Retain native contract outcomes
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: desktop-native-contracts-${{ env.PRODUCT_SHA }}
+          path: artifacts/desktop-native/contracts.log
+          retention-days: 14
+          if-no-files-found: error
   web-build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1209,6 +1244,7 @@ jobs:
     if: ${{ always() }}
     needs:
       - web-build-and-test
+      - desktop-native-contracts
       - backend-fast
       - analytics-integration
       - fixed-sqlcipher-wheel

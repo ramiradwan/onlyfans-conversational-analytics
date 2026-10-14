@@ -95,6 +95,13 @@ def validate_profile(profile: dict, *, production: bool = False) -> dict:
         raise ValueError("production MSIX requires the approved Windows 11 25H2 customer baseline")
     if version_tuple(profile["webview2_minimum_version"])[0] == 0:
         raise ValueError("WebView2 dependency version must have a nonzero first component")
+    prerequisite = read_json(ROOT / "shared/desktop-release/prerequisite-policy.json")
+    if (set(prerequisite) != {"schema", "webview2_minimum_version", "webview2_acquisition_uri"}
+            or prerequisite["schema"] != "ofca-desktop-prerequisite-policy/v1"
+            or prerequisite["webview2_acquisition_uri"] != "https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/"):
+        raise ValueError("invalid native prerequisite policy")
+    if version_tuple(profile["webview2_minimum_version"]) < version_tuple(prerequisite["webview2_minimum_version"]):
+        raise ValueError("WebView2 profile cannot weaken the native compatibility floor")
     qualification = profile["purpose"] == "qualification"
     synthetic_name = profile["identity"]["name"].casefold().startswith(QUALIFICATION_NAME_PREFIX.casefold())
     synthetic_publisher = profile["identity"]["publisher"].casefold().startswith(QUALIFICATION_PUBLISHER_PREFIX.casefold())

@@ -13,6 +13,8 @@ mod frame;
 mod host;
 mod policy;
 #[cfg(windows)]
+mod prerequisite;
+#[cfg(windows)]
 mod windows;
 
 #[cfg(windows)]
@@ -50,6 +52,22 @@ fn main() {
     let Ok(_application_mutex) = windows::application_mutex() else {
         return;
     };
+    // Run before even constructing the Tauri runtime, which caches whether
+    // WebView2 is installed. No Brain or writable presentation root exists yet.
+    let readiness = std::env::current_exe()
+        .map_err(|_| "invalid_installation")
+        .and_then(|image| prerequisite::required_version(&image))
+        .and_then(|minimum| {
+            prerequisite::ensure_ready(minimum, &mut prerequisite::WindowsPlatform)
+        });
+    match readiness {
+        Ok(true) => (),
+        Ok(false) => return,
+        Err(reason) => {
+            prerequisite::show_failure(reason);
+            return;
+        }
+    }
     let (sender, receiver) = mpsc::sync_channel(8);
     let state = Arc::new(host::Host {
         admitted: AtomicBool::new(false),

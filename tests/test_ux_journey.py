@@ -31,6 +31,18 @@ def test_repository_manifest_is_valid(manifest: dict) -> None:
     validate_manifest(manifest)
 
 
+def test_native_journey_anchor_names_its_actual_state_and_evidence_is_a_rust_test(manifest: dict):
+    broken = copy.deepcopy(manifest)
+    native = _state(broken, "desktop.webview_runtime_needed")
+    native["anchor"]["text"] = 'pub const RECOVERY_STATE: &str = "desktop.another_state";'
+    with pytest.raises(UxJourneyError, match="native identifier must name its own state"):
+        validate_manifest(broken)
+    broken = copy.deepcopy(manifest)
+    _state(broken, "desktop.webview_runtime_needed")["evidence"][0]["name"] = "ensure_ready"
+    with pytest.raises(UxJourneyError, match="is not a test title"):
+        validate_manifest(broken)
+
+
 def test_cli_reports_valid_manifest(capsys: pytest.CaptureFixture[str]) -> None:
     assert main([]) == 0
     assert "UX journey manifest valid" in capsys.readouterr().out
