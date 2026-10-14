@@ -121,6 +121,8 @@ SHARDED_V3_PRODUCT_CI_JOB_IDS = SHARDED_V2_PRODUCT_CI_JOB_IDS | {
 REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES | {
     "browser-reporting-safety", "browser-e2e-core", "browser-e2e-catchup", "browser-e2e-serial-control",
 }
+SHARDED_V4_PRODUCT_CI_JOB_IDS = SHARDED_V3_PRODUCT_CI_JOB_IDS | {"desktop-native-contracts"}
+REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES = REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES | {"desktop-native-contracts"}
 BROWSER_SERIAL_CONTROL_IF = "${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}"
 
 PRODUCER_ROOT = Path(__file__).resolve().parent.parent
@@ -812,6 +814,7 @@ def _ci_literal_list(source: str) -> list[str]:
 
 def _validate_sharded_v2_source(
     job_source: str, *, pr_cutover: bool = False, browser_aggregate: bool = False,
+    native_contracts: bool = False,
 ) -> None:
     jobs = _ci_literal_mapping(job_source, 2)
     for job_id, name, runner, timeout, count in (
@@ -839,6 +842,8 @@ def _validate_sharded_v2_source(
     gate_needs = SHARDED_V2_PRODUCT_CI_JOB_IDS - {
         "required-ci-gate", "build-and-test", "windows-tests",
     }
+    if native_contracts:
+        gate_needs = gate_needs | {"desktop-native-contracts"}
     if (aggregate.get("name", "windows-full-regression") != "windows-full-regression"
             or aggregate.get("if") != "${{ always() }}"
             or aggregate.get("needs") != "windows-full-shards"
@@ -862,6 +867,7 @@ def _validate_sharded_v2_source(
 
 def _validate_sharded_v3_source(
     job_source: str, policy_source: bytes | None, *, pr_cutover: bool = False,
+    native_contracts: bool = False,
 ) -> None:
     """Require the reviewed policy at the candidate SHA, not today's checkout."""
     if policy_source is None:
@@ -869,10 +875,11 @@ def _validate_sharded_v3_source(
     policy = load_json_strict(policy_source, label="Product CI source policy")
     expected = {
         "schema_version": 1,
-        "policy_version": "sharded-v3-pr-cutover" if pr_cutover else "sharded-v3",
+        "policy_version": "sharded-v4-pr-cutover" if native_contracts else (
+            "sharded-v3-pr-cutover" if pr_cutover else "sharded-v3"),
         "workflow": PRODUCT_CI_WORKFLOW,
-        "job_ids": sorted(SHARDED_V3_PRODUCT_CI_JOB_IDS),
-        "required_job_names": sorted(REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES),
+        "job_ids": sorted(SHARDED_V4_PRODUCT_CI_JOB_IDS if native_contracts else SHARDED_V3_PRODUCT_CI_JOB_IDS),
+        "required_job_names": sorted(REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES if native_contracts else REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES),
         "allowed_skipped_jobs": ["browser-e2e-serial-control"],
         "conditional_jobs": {"browser-e2e-serial-control": {
             "if": BROWSER_SERIAL_CONTROL_IF,
@@ -881,8 +888,16 @@ def _validate_sharded_v3_source(
     }
     if policy != expected or type(policy.get("schema_version")) is not int:
         raise ContractError("sharded-v3 Product CI source policy differs from the complete qualification contract")
-    _validate_sharded_v2_source(job_source, pr_cutover=pr_cutover, browser_aggregate=True)
+    _validate_sharded_v2_source(job_source, pr_cutover=pr_cutover, browser_aggregate=True,
+                                native_contracts=native_contracts)
     jobs = _ci_literal_mapping(job_source, 2)
+    if native_contracts:
+        native = _ci_literal_mapping(jobs["desktop-native-contracts"], 4)
+        if (native.get("runs-on") != "windows-latest"
+                or native.get("timeout-minutes") != "20"
+                or "if" in native or "name" in native
+                or native.get("continue-on-error", "false") != "false"):
+            raise ContractError("native desktop contracts must remain a bounded mandatory Windows job")
     matrix_job = _ci_literal_mapping(jobs["browser-e2e-execution"], 4)
     strategy = _ci_literal_mapping(matrix_job.get("strategy", ""), 6)
     matrix = _ci_literal_mapping(strategy.get("matrix", ""), 8)
@@ -986,6 +1001,7 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
         "sharded-v2-pr-cutover": (SHARDED_V2_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES),
         "sharded-v3": (SHARDED_V3_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES),
         "sharded-v3-pr-cutover": (SHARDED_V3_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES),
+        "sharded-v4-pr-cutover": (SHARDED_V4_PRODUCT_CI_JOB_IDS, REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES),
     }
     if len(versions) != 1 or versions[0] not in policies or source.count("CI_POLICY_VERSION") != 1:
         raise ContractError("Product CI source declares an unknown or ambiguous job policy")
@@ -998,10 +1014,11 @@ def product_ci_job_policy(workflow_source: bytes, policy_source: bytes | None = 
         raise ContractError("sharded Product CI source does not declare the exact required job set")
     if version in {"sharded-v2", "sharded-v2-pr-cutover"}:
         _validate_sharded_v2_source(job_block, pr_cutover=version == "sharded-v2-pr-cutover")
-    elif version in {"sharded-v3", "sharded-v3-pr-cutover"}:
-        _validate_sharded_v3_source(job_block, policy_source, pr_cutover=version == "sharded-v3-pr-cutover")
-    if version in {"sharded-v2-pr-cutover", "sharded-v3-pr-cutover"}:
-        _validate_cutover_triggers(blocks[0], browser_qualification=version == "sharded-v3-pr-cutover")
+    elif version in {"sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover"}:
+        _validate_sharded_v3_source(job_block, policy_source, pr_cutover=version != "sharded-v3",
+                                    native_contracts=version == "sharded-v4-pr-cutover")
+    if version in {"sharded-v2-pr-cutover", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover"}:
+        _validate_cutover_triggers(blocks[0], browser_qualification=version != "sharded-v2-pr-cutover")
     return set(required_names)
 
 
@@ -1220,7 +1237,7 @@ def qualify_product_ci_source(client: GitHubApi, *, source_commit: str) -> int:
         client, PRODUCT_REPOSITORY, PRODUCT_CI_WORKFLOW, source_commit
     )
     policy_source = None
-    if re.search(rb"(?m)^  CI_POLICY_VERSION: sharded-v3(?:-pr-cutover)?\r?$", workflow_source):
+    if re.search(rb"(?m)^  CI_POLICY_VERSION: (?:sharded-v3(?:-pr-cutover)?|sharded-v4-pr-cutover)\r?$", workflow_source):
         _, policy_source = fetch_git_blob(
             client, PRODUCT_REPOSITORY, PRODUCT_CI_POLICY_PATH, source_commit
         )

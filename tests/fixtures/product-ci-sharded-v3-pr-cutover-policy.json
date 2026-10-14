@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "policy_version": "sharded-v3-pr-cutover",
+  "workflow": ".github/workflows/ci.yml",
+  "job_ids": [
+    "analytics-integration",
+    "analytics-scale-qualification",
+    "analytics-windows-contract",
+    "backend-fast",
+    "browser-e2e-execution",
+    "browser-e2e-serial-control",
+    "browser-reporting-safety",
+    "build-and-test",
+    "fixed-sqlcipher-wheel",
+    "required-ci-gate",
+    "web-build-and-test",
+    "windows-browser-e2e",
+    "windows-full-regression",
+    "windows-full-shards",
+    "windows-platform-contract",
+    "windows-tests"
+  ],
+  "required_job_names": [
+    "Required CI",
+    "analytics-integration-1",
+    "analytics-integration-2",
+    "analytics-integration-3",
+    "analytics-integration-4",
+    "analytics-scale-qualification",
+    "analytics-windows-contract",
+    "backend-fast",
+    "browser-e2e-catchup",
+    "browser-e2e-core",
+    "browser-e2e-serial-control",
+    "browser-reporting-safety",
+    "build-and-test",
+    "fixed-sqlcipher-wheel",
+    "web-build-and-test",
+    "windows-browser-e2e",
+    "windows-full-regression",
+    "windows-full-regression-1",
+    "windows-full-regression-2",
+    "windows-platform-contract",
+    "windows-tests"
+  ],
+  "allowed_skipped_jobs": [
+    "browser-e2e-serial-control"
+  ],
+  "conditional_jobs": {
+    "browser-e2e-serial-control": {
+      "if": "${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}",
+      "required_conclusion_for_main_push": "skipped"
+    }
+  }
+}

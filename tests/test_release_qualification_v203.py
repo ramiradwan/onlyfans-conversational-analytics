@@ -25,7 +25,7 @@ SOURCE_COMMIT = "b" * 40
 BASELINE_COMMIT = "a" * 40
 RELEASE_TAG = "v2.0.3"
 RELEASE_VERSION = "2.0.3"
-BROWSER_CI_POLICIES = ["sharded-v3", "sharded-v3-pr-cutover"]
+BROWSER_CI_POLICIES = ["sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover"]
 PRODUCT_CI_POLICIES = [None, "sharded-v1", "sharded-v2", "sharded-v2-pr-cutover", *BROWSER_CI_POLICIES]
 
 
@@ -163,6 +163,7 @@ class QualificationApi:
             "sharded-v2-pr-cutover": producer.REQUIRED_SHARDED_V2_PRODUCT_CI_JOB_NAMES,
             "sharded-v3": producer.REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES,
             "sharded-v3-pr-cutover": producer.REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES,
+            "sharded-v4-pr-cutover": producer.REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES,
         }
         self.product_ci_jobs = [
             {
@@ -178,9 +179,9 @@ class QualificationApi:
         ]
         if ci_policy in BROWSER_CI_POLICIES:
             next(job for job in self.product_ci_jobs if job["name"] == "browser-e2e-serial-control")["conclusion"] = "skipped"
-        if ci_policy in {"sharded-v2", "sharded-v2-pr-cutover", "sharded-v3"}:
+        if ci_policy in {"sharded-v2", "sharded-v2-pr-cutover", "sharded-v3", "sharded-v3-pr-cutover"}:
             self.product_ci_source = (ROOT / f"tests/fixtures/product-ci-{ci_policy}.yml").read_bytes()
-        elif ci_policy == "sharded-v3-pr-cutover":
+        elif ci_policy == "sharded-v4-pr-cutover":
             self.product_ci_source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
         else:
             source_jobs = (producer.SHARDED_PRODUCT_CI_JOB_IDS if ci_policy
@@ -195,7 +196,7 @@ class QualificationApi:
         # Mutation cases must target the same literal source on Windows/Linux.
         self.product_ci_source = self.product_ci_source.replace(b"\r\n", b"\n")
         self.product_ci_policy = (ROOT / (
-            "tests/fixtures/product-ci-sharded-v3-policy.json" if ci_policy == "sharded-v3"
+            f"tests/fixtures/product-ci-{ci_policy}-policy.json" if ci_policy in {"sharded-v3", "sharded-v3-pr-cutover"}
             else producer.PRODUCT_CI_POLICY_PATH
         )).read_bytes()
         self.artifacts = [
@@ -280,6 +281,35 @@ def test_v3_full_release_qualification_requires_every_browser_boundary(name, fai
         api.product_ci_jobs = [job for job in api.product_ci_jobs if job["name"] != name]
     else:
         next(job for job in api.product_ci_jobs if job["name"] == name)["conclusion"] = failure
+    with pytest.raises(producer.ContractError):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("failure", ["missing", "failure", "skipped", "cancelled"])
+def test_v4_release_requires_successful_native_desktop_execution(failure):
+    api = QualificationApi(ci_policy="sharded-v4-pr-cutover")
+    assert _qualify_source(api).product_ci_run_id == 43
+    if failure == "missing":
+        api.product_ci_jobs = [job for job in api.product_ci_jobs if job["name"] != "desktop-native-contracts"]
+    else:
+        next(job for job in api.product_ci_jobs if job["name"] == "desktop-native-contracts")["conclusion"] = failure
+    with pytest.raises(producer.ContractError):
+        _qualify_source(api)
+
+
+@pytest.mark.parametrize("old,new", [
+    ("  desktop-native-contracts:\n", "  omitted-native-contracts:\n"),
+    ("  desktop-native-contracts:\n", "  desktop-native-contracts:\n    if: false\n"),
+    ("  desktop-native-contracts:\n", "  desktop-native-contracts:\n    continue-on-error: true\n"),
+    ("  desktop-native-contracts:\n", "  desktop-native-contracts:\n    name: other-name\n"),
+    ("    runs-on: windows-latest\n", "    runs-on: ubuntu-latest\n"),
+    ("    timeout-minutes: 20\n", "    timeout-minutes: 60\n"),
+    ("      - desktop-native-contracts\n", ""),
+])
+def test_v4_release_refuses_optional_or_unbounded_native_contracts(old, new):
+    api = QualificationApi(ci_policy="sharded-v4-pr-cutover")
+    assert old.encode() in api.product_ci_source
+    api.product_ci_source = api.product_ci_source.replace(old.encode(), new.encode(), 1)
     with pytest.raises(producer.ContractError):
         _qualify_source(api)
 

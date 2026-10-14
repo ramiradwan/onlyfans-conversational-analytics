@@ -14,6 +14,7 @@ pytestmark = [pytest.mark.ci_tier('fast')]
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 REQUIRED_JOBS = {
+    "desktop-native-contracts",
     "web-build-and-test", "backend-fast", "analytics-integration",
     "fixed-sqlcipher-wheel", "windows-platform-contract",
     "analytics-windows-contract", "windows-browser-e2e", "windows-full-regression",
@@ -242,7 +243,7 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
 
 def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_or_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v3-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v4-pr-cutover"
     events = workflow["on"]
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]
