@@ -64,6 +64,15 @@ class Migration:
     checksum: str
 
 
+@dataclass(frozen=True, slots=True)
+class SchemaInspection:
+    """Compatibility of an existing store; inspection executes no migration."""
+
+    current_version: int
+    target_version: int
+    pending_versions: tuple[int, ...]
+
+
 _PROCESS_MIGRATION_MUTEXES: dict[str, threading.Lock] = {}
 _PROCESS_MIGRATION_MUTEXES_GUARD = threading.Lock()
 
@@ -274,6 +283,28 @@ class MigrationRunner:
                 completed = self._process_migrations(connection)
                 self._validate_database(connection)
                 return completed
+
+    @classmethod
+    def inspect(cls, connection: sqlite3.Connection, *, migrations_dir: str | Path | None = None) -> SchemaInspection:
+        """Validate an existing read-only snapshot without creating a ledger.
+
+        The startup owner supplies the keyed connection before constructing a
+        store. A missing ledger is retained incompatible state, never evidence
+        of a fresh installation. This reuses the exact lineage and checksum
+        admission used by the forward runner.
+        """
+        if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+        ).fetchone() is None:
+            raise SchemaCompatibilityError("existing database migration ledger is missing")
+        catalog = resolve_migration_catalog(connection, migrations_dir)
+        applied = cls._validate_applied(connection, catalog)
+        cls._validate_database(connection)
+        return SchemaInspection(
+            current_version=max(applied, default=0),
+            target_version=catalog[-1].version,
+            pending_versions=tuple(item.version for item in catalog if item.version not in applied),
+        )
 
     def run_with_validated_read(
         self,

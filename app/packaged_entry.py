@@ -106,7 +106,7 @@ def run_brain() -> int:
     """Run exactly one fixed-origin ASGI worker for the selected boot mode."""
     import threading
     from app.core.process_lifetime import parent_lifetime
-    from app.core.startup_maintenance import acquire_runtime_ownership
+    from app.core.startup_maintenance import acquire_runtime_ownership, admit_retained_schemas
 
     stopped = threading.Event()
     server: uvicorn.Server | None = None
@@ -120,6 +120,9 @@ def run_brain() -> int:
         if stopped.is_set():
             return 1
         state = acquire_runtime_ownership()
+        if stopped.is_set():
+            return 1
+        admit_retained_schemas(state)
         if stopped.is_set():
             return 1
         import uvicorn

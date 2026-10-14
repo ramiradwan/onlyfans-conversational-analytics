@@ -143,3 +143,32 @@ def acquire_runtime_ownership(data_directory: str | Path | None = None) -> Retai
             raise
         _held_lease = lease
         return state
+
+
+def admit_retained_schemas(state: RetainedState) -> None:
+    """Refuse unsafe or pending schemas before a constructor can migrate them.
+
+    Pending transitions stay closed until the coordinated checkpoint and
+    resumable maintenance owner is implemented and qualified.
+    """
+    from app.persistence.database import SQLiteConfigurationError
+    from app.persistence.migrations import MigrationError
+    from app.persistence import sqlite_api as sqlite3
+    from app.persistence.upgrade_lifecycle import UpgradeStore, inspect_existing_stores
+
+    application = Path(__file__).resolve().parents[1]
+    stores = (
+        UpgradeStore("auth.sqlite3", "auth", application / "persistence" / "auth_sql"),
+        UpgradeStore("canonical.sqlite3", "canonical", application / "persistence" / "sql"),
+        UpgradeStore("projections.sqlite3", "projection", application / "persistence" / "projection_sql"),
+        UpgradeStore("analytics-projections.sqlite3", "analytics-projection", application / "analytics" / "sql"),
+    )
+    try:
+        inspections = inspect_existing_stores(state.root, stores)
+    except (OSError, ValueError, MigrationError, SQLiteConfigurationError,
+            sqlite3.DatabaseError, PrivateFileSecurityError, LocalDataKeyError):
+        # Ledger names and database error details are untrusted retained data.
+        # The process boundary reports only the closed recovery reason.
+        raise StartupRefused("retained_schema_incompatible") from None
+    if any(inspection.pending_versions for inspection in inspections.values()):
+        raise StartupRefused("retained_schema_maintenance_required")

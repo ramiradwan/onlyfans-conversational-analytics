@@ -33,6 +33,7 @@ def open_encrypted_sqlite(
     encryption_key: bytes,
     *,
     read_only: bool = False,
+    immutable: bool = False,
     isolation_level: str | None = None,
     check_same_thread: bool = False,
 ) -> sqlite3.Connection:
@@ -43,13 +44,21 @@ def open_encrypted_sqlite(
     """
 
     memory_database = str(path) == ":memory:"
-    target = Path(path).expanduser().resolve() if not memory_database else None
+    if immutable and not read_only:
+        raise SQLiteConfigurationError("immutable SQLite requires read-only opening")
+    target = reject_path_aliases(path) if not memory_database else None
     if target is not None:
-        target.parent.mkdir(parents=True, exist_ok=True)
+        if immutable and target.with_name(target.name + "-wal").exists():
+            raise SQLiteConfigurationError("immutable SQLite cannot inspect retained WAL")
+        if read_only:
+            if not target.is_file():
+                raise SQLiteConfigurationError("read-only SQLite source is missing")
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
     location = (
         ":memory:"
         if target is None
-        else f"{target.as_uri()}?mode=ro"
+        else f"{target.as_uri()}?mode=ro{'&immutable=1' if immutable else ''}"
         if read_only
         else target
     )

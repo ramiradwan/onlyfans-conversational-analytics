@@ -339,6 +339,7 @@
         "app/persistence/catchup_events.py",
         "app/persistence/database.py",
         "app/persistence/migrations.py",
+        "app/persistence/upgrade_lifecycle.py",
         "app/persistence/deletion_operations.py",
         "app/persistence/auth.py",
         "app/persistence/onboarding.py",
