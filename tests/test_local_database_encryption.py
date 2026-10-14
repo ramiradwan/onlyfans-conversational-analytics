@@ -12,6 +12,7 @@ from app.persistence.database import (
     SQLiteConfigurationError,
 )
 from app.security.local_data_key import database_key
+from app.security import local_data_key
 
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
 
@@ -63,3 +64,19 @@ def test_database_scopes_derive_distinct_keys(tmp_path: Path) -> None:
     assert database_key(tmp_path / "auth.sqlite3", "auth") != database_key(
         tmp_path / "canonical.sqlite3", "canonical"
     )
+
+
+@pytest.mark.parametrize("retained", ["auth.sqlite3", "canonical.sqlite3-wal", "projections.sqlite3-shm", "custom.db"])
+def test_missing_master_key_cannot_create_replacement_beside_retained_data(tmp_path, monkeypatch, retained):
+    retained_path = tmp_path / retained
+    retained_path.write_bytes(b"reviewed-retained-data-sentinel")
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    monkeypatch.setattr(local_data_key, "_test_master_key", lambda: None)
+    monkeypatch.setattr(local_data_key.sys, "platform", "win32")
+    def forbidden_creation(*args, **kwargs):
+        raise AssertionError("missing retained authority must not generate or protect a replacement")
+    monkeypatch.setattr(local_data_key.secrets, "token_bytes", forbidden_creation)
+    monkeypatch.setattr(local_data_key, "_dpapi_protect", forbidden_creation)
+    with pytest.raises(local_data_key.LocalDataKeyError, match="original master key"):
+        database_key(tmp_path / "analytics-projections.sqlite3", "analytics-projection")
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before

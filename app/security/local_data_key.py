@@ -68,7 +68,9 @@ def database_key(path: str | Path, scope: str) -> bytes:
             raise LocalDataKeyError(
                 "production local database encryption requires Windows DPAPI"
             )
-        master = _load_or_create_master_key(database_path.parent)
+        master = _load_or_create_master_key(
+            database_path.parent, existing_database=database_path.exists()
+        )
     return _derive(master, f"database:{normalized_scope}".encode("ascii"))
 
 
@@ -120,12 +122,17 @@ def unprotect_local_secret(payload: bytes, *, purpose: str) -> bytes:
     )
 
 
-def _load_or_create_master_key(directory: Path) -> bytes:
-    directory.mkdir(parents=True, exist_ok=True)
+def _load_or_create_master_key(directory: Path, *, existing_database: bool = False) -> bytes:
     path = directory / MASTER_KEY_FILENAME
     with _LOCK:
         if path.exists():
             return _read_master_key(path)
+        # A missing key beside retained data is a recovery condition. Creating
+        # another random key here would make the original stores unreadable
+        # and disguise missing authority as a fresh installation.
+        if existing_database or _contains_retained_database(directory):
+            raise LocalDataKeyError("retained databases require their original master key")
+        directory.mkdir(parents=True, exist_ok=True)
         master = secrets.token_bytes(MASTER_KEY_BYTES)
         protected = _dpapi_protect(master, entropy=_entropy(b"database-master"))
         payload = _MASTER_KEY_MAGIC + base64.b64encode(protected)
@@ -145,6 +152,19 @@ def _load_or_create_master_key(directory: Path) -> bytes:
             path.unlink(missing_ok=True)
             raise LocalDataKeyError("database master key could not be persisted") from error
         return master
+
+
+def _contains_retained_database(directory: Path) -> bool:
+    if not directory.exists():
+        return False
+    try:
+        for candidate in directory.iterdir():
+            name = candidate.name.lower().removesuffix("-wal").removesuffix("-shm")
+            if candidate.is_file() and name.endswith((".sqlite3", ".sqlite", ".db")):
+                return True
+    except OSError as error:
+        raise LocalDataKeyError("retained database inspection is unavailable") from error
+    return False
 
 
 def _read_master_key(path: Path) -> bytes:
