@@ -39,7 +39,8 @@ def test_private_objects_belong_to_user_even_when_created_elevated(tmp_path):
 
 @pytest.mark.windows_production
 @pytest.mark.skipif(os.name != "nt", reason="Windows non-elevated shell token")
-def test_elevated_creation_is_writable_without_elevation_and_admin_state_is_not_admitted(tmp_path):
+@pytest.mark.parametrize("prefer_shell", [False, True], ids=["filtered-token", "session-token"])
+def test_elevated_creation_is_writable_without_elevation_and_admin_state_is_not_admitted(tmp_path, prefer_shell):
     import ctypes
     from app.persistence import private_files as files
 
@@ -65,32 +66,99 @@ def test_elevated_creation_is_writable_without_elevation_and_admin_state_is_not_
     advapi.DuplicateTokenEx.restype = ctypes.c_int
     advapi.RevertToSelf.restype = ctypes.c_int
     token, shell_token, medium = ctypes.c_void_p(), ctypes.c_void_p(), ctypes.c_void_p()
+    restricted = ctypes.c_void_p()
     shell_process = None
-    assert advapi.OpenProcessToken(kernel.GetCurrentProcess(), 0x0008, ctypes.byref(token))
+    assert advapi.OpenProcessToken(kernel.GetCurrentProcess(), 0x0008 | 0x0002 | 0x0080, ctypes.byref(token))
     try:
         size, elevation = ctypes.c_uint32(), ctypes.c_uint32()
         assert advapi.GetTokenInformation(token, 18, ctypes.byref(elevation),
                                          ctypes.sizeof(elevation), ctypes.byref(size))
-        if elevation.value != 2:  # TokenElevationTypeFull
-            pytest.skip("requires an elevated split token to prove medium-token access")
+        split_token = elevation.value == 2  # TokenElevationTypeFull
+        assert advapi.GetTokenInformation(token, 20, ctypes.byref(elevation),
+                                         ctypes.sizeof(elevation), ctypes.byref(size))
+        if elevation.value == 0:
+            pytest.skip("requires an elevated process to create the administrator-only negative fixture")
         # Some Windows builds return an identification-only linked token.
         # Use the actual medium-token shell in this session and check its user
         # identity and elevation before touching only the owned test fixtures.
         shell_pid = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
              "$s=(Get-Process -Id $PID).SessionId; Get-Process explorer -ErrorAction SilentlyContinue | Where-Object SessionId -eq $s | Select-Object -First 1 -ExpandProperty Id"],
-            check=True, capture_output=True, text=True, timeout=10).stdout.strip()
-        if not shell_pid:
-            pytest.skip("requires this qualification session's non-elevated Explorer")
-        shell_process = kernel.OpenProcess(0x1000, False, int(shell_pid))
-        assert shell_process
-        assert advapi.OpenProcessToken(shell_process, 0x0008 | 0x0002,
-                                      ctypes.byref(shell_token))
-        assert advapi.DuplicateTokenEx(shell_token, 0x0008 | 0x0004, None, 2, 2,
+            check=True, capture_output=True, text=True, timeout=10).stdout.strip() if split_token and prefer_shell else ""
+        if shell_pid:
+            shell_process = kernel.OpenProcess(0x1000, False, int(shell_pid))
+            assert shell_process
+            assert advapi.OpenProcessToken(shell_process, 0x0008 | 0x0002,
+                                          ctypes.byref(shell_token))
+            source_token = shell_token
+        else:
+            # Hosted Windows runners may have UAC disabled and no Explorer.
+            # Create a real LUA token with Administrators deny-only, privileges
+            # disabled and medium integrity; do not waive the OS access checks.
+            class SidAndAttributes(ctypes.Structure):
+                _fields_ = [("sid", ctypes.c_void_p), ("attributes", ctypes.c_uint32)]
+            advapi.ConvertStringSidToSidW.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_void_p)]
+            advapi.ConvertStringSidToSidW.restype = ctypes.c_int
+            advapi.CreateRestrictedToken.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.POINTER(SidAndAttributes), ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+            advapi.CreateRestrictedToken.restype = ctypes.c_int
+            advapi.SetTokenInformation.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+            advapi.SetTokenInformation.restype = ctypes.c_int
+            advapi.GetLengthSid.argtypes = [ctypes.c_void_p]
+            advapi.GetLengthSid.restype = ctypes.c_uint32
+            advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
+            advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = ctypes.c_int
+            advapi.GetSecurityDescriptorDacl.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int),
+                ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_int)]
+            advapi.GetSecurityDescriptorDacl.restype = ctypes.c_int
+            kernel.LocalFree.argtypes = [ctypes.c_void_p]
+            kernel.LocalFree.restype = ctypes.c_void_p
+            admin_sid, integrity_sid, descriptor = ctypes.c_void_p(), ctypes.c_void_p(), ctypes.c_void_p()
+            try:
+                assert advapi.ConvertStringSidToSidW("S-1-5-32-544", ctypes.byref(admin_sid))
+                deny = SidAndAttributes(admin_sid, 0)
+                assert advapi.CreateRestrictedToken(token, 0x1 | 0x4, 1, ctypes.byref(deny),
+                    0, None, 0, None, ctypes.byref(restricted)), ctypes.WinError(ctypes.get_last_error())
+                assert advapi.ConvertStringSidToSidW("S-1-16-8192", ctypes.byref(integrity_sid))
+                label = SidAndAttributes(integrity_sid, 0x20)  # SE_GROUP_INTEGRITY
+                assert advapi.SetTokenInformation(restricted, 25, ctypes.byref(label),
+                    ctypes.sizeof(label) + advapi.GetLengthSid(integrity_sid)), ctypes.WinError(ctypes.get_last_error())
+                # Filtering retains the elevated token's default owner/DACL.
+                # Give this disposable token the user defaults of a standard
+                # session so newly created WebView files are usable by it too.
+                assert not advapi.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+                user = ctypes.create_string_buffer(size.value)
+                assert advapi.GetTokenInformation(token, 1, user, size.value, ctypes.byref(size))
+                owner = ctypes.cast(user, ctypes.POINTER(ctypes.c_void_p)).contents
+                assert advapi.SetTokenInformation(restricted, 4, ctypes.byref(owner), ctypes.sizeof(owner))
+                user_sid = files._windows_user_sid(advapi, kernel)
+                assert advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    f"D:(A;;GA;;;{user_sid})(A;;GA;;;SY)", 1, ctypes.byref(descriptor), None)
+                present, defaulted, dacl = ctypes.c_int(), ctypes.c_int(), ctypes.c_void_p()
+                assert advapi.GetSecurityDescriptorDacl(descriptor, ctypes.byref(present),
+                    ctypes.byref(dacl), ctypes.byref(defaulted))
+                assert present.value and dacl.value
+                assert advapi.SetTokenInformation(restricted, 6, ctypes.byref(dacl), ctypes.sizeof(dacl))
+            finally:
+                for sid in (admin_sid, integrity_sid, descriptor):
+                    if sid.value:
+                        assert not kernel.LocalFree(sid)
+            source_token = restricted
+        assert advapi.DuplicateTokenEx(source_token, 0x0008 | 0x0004, None, 2, 2,
                                        ctypes.byref(medium)), ctypes.WinError(ctypes.get_last_error())
         assert advapi.GetTokenInformation(medium, 20, ctypes.byref(elevation),
                                          ctypes.sizeof(elevation), ctypes.byref(size))
         assert elevation.value == 0
+        # Verify the actual integrity label, independently of TokenElevation.
+        assert not advapi.GetTokenInformation(medium, 25, None, 0, ctypes.byref(size))
+        integrity = ctypes.create_string_buffer(size.value)
+        assert advapi.GetTokenInformation(medium, 25, integrity, size.value, ctypes.byref(size))
+        integrity_sid = ctypes.cast(integrity, ctypes.POINTER(ctypes.c_void_p)).contents.value
+        advapi.GetSidSubAuthority.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        advapi.GetSidSubAuthority.restype = ctypes.POINTER(ctypes.c_uint32)
+        assert advapi.GetSidSubAuthority(integrity_sid, 0).contents.value == 8192
         user_sid = files._windows_user_sid(advapi, kernel)
         directory = tmp_path / "user-owned"
         directory.mkdir()
@@ -135,6 +203,8 @@ def test_elevated_creation_is_writable_without_elevation_and_admin_state_is_not_
             assert kernel.CloseHandle(medium)
         if shell_token.value:
             assert kernel.CloseHandle(shell_token)
+        if restricted.value:
+            assert kernel.CloseHandle(restricted)
         if shell_process:
             assert kernel.CloseHandle(shell_process)
         assert kernel.CloseHandle(token)
