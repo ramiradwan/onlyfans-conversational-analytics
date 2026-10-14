@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "dipsy-desktop-downloads",
+  "account_id": "a7c496ed19319911a55d16da6287bbbd",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-13",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{"pattern": "updates.dipsy.fi/desktop/v1/*", "zone_id": "b212ad4aeee7b7a7f61085d75826205a"}],
+  "r2_buckets": [
+    {"binding": "RELEASES", "bucket_name": "dipsy-desktop-releases-prod", "jurisdiction": "eu"},
+    {"binding": "QUALIFICATION", "bucket_name": "dipsy-desktop-qualification", "jurisdiction": "eu"}
+  ],
+  "observability": {"enabled": false}
+}

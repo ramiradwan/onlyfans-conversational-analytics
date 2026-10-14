@@ -86,6 +86,14 @@ jobs:
         with:
           node-version: 22
 
+      - name: Verify the desktop serving adapter
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --prefix tools/desktop-delivery
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop delivery dependency installation failed' }
+          npm test --prefix tools/desktop-delivery
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop delivery serving checks failed' }
+
       # The gate refuses the release unless the document held at the declared
       # Legal fetch revision and path canonicalizes to the declared digest and
       # carries the declared source revision. It runs before any dependency is
