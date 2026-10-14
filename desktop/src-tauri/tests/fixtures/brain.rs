@@ -120,5 +120,8 @@ fn main() {
             std::ptr::null_mut(),
         );
     }
+    if let Ok(delay) = std::fs::read_to_string(data.join("drain-delay")) {
+        std::thread::sleep(std::time::Duration::from_millis(delay.parse().unwrap()));
+    }
     std::fs::write(data.join("graceful"), b"parent closed").unwrap();
 }

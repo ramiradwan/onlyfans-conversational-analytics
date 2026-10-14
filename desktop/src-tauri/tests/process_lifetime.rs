@@ -235,6 +235,31 @@ fn closing_the_owned_pipe_allows_graceful_shutdown() {
 }
 
 #[test]
+fn servicing_deadline_preserves_containment_and_requires_actual_child_exit() {
+    let data = Directory::new();
+    std::fs::write(data.0.join("drain-delay"), b"500").unwrap();
+    let image = Path::new(env!("CARGO_BIN_EXE_brain-fixture"))
+        .canonicalize()
+        .unwrap();
+    let mut child = windows::Brain::start(&image, &data.0, "test-lifetime").unwrap();
+    assert_eq!(started(&data.0), child.pid);
+    assert_eq!(
+        child.stop_gracefully(Duration::from_millis(10)).unwrap(),
+        None
+    );
+    assert_eq!(
+        child.exit_code().unwrap(),
+        None,
+        "servicing deadline killed the child"
+    );
+    assert_eq!(
+        child.stop_gracefully(Duration::from_secs(2)).unwrap(),
+        Some(0)
+    );
+    assert!(data.0.join("graceful").is_file());
+}
+
+#[test]
 fn child_status_is_separate_from_lifetime_and_never_admits_a_listener() {
     let data = Directory::new();
     let image = Path::new(env!("CARGO_BIN_EXE_brain-fixture"))

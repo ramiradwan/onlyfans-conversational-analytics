@@ -810,18 +810,26 @@ impl Brain {
             std::thread::sleep(remaining.min(std::time::Duration::from_millis(100)));
         }
     }
-    pub fn stop(&mut self) -> bool {
+    /// Ask this owned child to drain and wait for its actual OS process exit.
+    /// A deadline leaves containment alive; it never forces a servicing boundary.
+    pub fn stop_gracefully(&mut self, timeout: std::time::Duration) -> Result<Option<u32>> {
         self.lifetime.take();
         // Closing this reader also unblocks a status write during cancellation.
         self.status.take();
-        unsafe {
-            if WaitForSingleObject(self.process.0, 15000) != WAIT_OBJECT_0 {
-                TerminateJobObject(self.job.0, 1);
-                WaitForSingleObject(self.process.0, 5000);
-                return false;
-            }
+        self.wait_for_exit(timeout, &std::sync::atomic::AtomicBool::new(false))
+    }
+    pub fn stop(&mut self) -> bool {
+        if matches!(
+            self.stop_gracefully(std::time::Duration::from_secs(15)),
+            Ok(Some(_))
+        ) {
+            return true;
         }
-        true
+        unsafe {
+            TerminateJobObject(self.job.0, 1);
+            WaitForSingleObject(self.process.0, 5000);
+        }
+        false
     }
 }
 impl Drop for Brain {
