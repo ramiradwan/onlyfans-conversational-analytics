@@ -22,7 +22,24 @@ The key helper's noncreating path verifies private-file permissions and reopens 
 
 Parent-lifetime observation begins before this inspection and before application construction. SQL progress, backup steps and checkpoint hashing observe cancellation. An interrupted migration rolls back its uncommitted transaction before returning; already committed migrations remain committed. Ordinary constructors and ASGI startup inherit the same supervision. The separate child-owned [bootstrap status pipe](../../shared/bootstrap-status/README.md) covers inspection and migration with bounded bytes, phase time, silence and absolute deadlines. Ready is emitted after ASGI startup completes and before Uvicorn binds the listener. It grants no listener or account authority. Closing the native parent also closes the status reader so a pending write cannot block cancellation. The Job Object remains the abnormal crash fallback.
 
-Source tests cover real encrypted snapshots, process death partway through checkpointing and between store commits, forward resume, interrupted SQL rollback and parent EOF during pre-listener SQL. Native qualification tests cover separate handle ownership and normal pipe shutdown without forced Job cleanup. Newly built A/B artifacts, real schema differences, large retained-data timing, original hardware-key use and the full launcher journey remain milestone qualification gates.
+Expected `StartupRefused` failures report the closed recovery status and return process exit 78. They do not escape into the windowed PyInstaller bootloader's exception handling. Native startup drains status before classifying an exited child. Unexpected exceptions retain their existing failure behavior.
+
+Source tests cover real encrypted snapshots, process death partway through checkpointing and between store commits, forward resume, interrupted SQL rollback and parent EOF during pre-listener SQL. Native qualification tests cover separate handle ownership and normal pipe shutdown without forced Job cleanup.
+
+The opt-in [frozen recovery test](../../desktop/src-tauri/tests/process_lifetime.rs) uses independently frozen auth32/auth33 artifacts. A creates the original DPAPI authority. The [synthetic fixture](../../tools/startup_maintenance_qualification_fixture.py) adds pending onboarding and license deliveries, a command and 150,000 messages in the supported canonical v11 lineage. This canonical fixture is historical retained state; it is not claimed to have been produced by the A binary, which bundles canonical v12.
+
+Qualification interrupts the encrypted canonical checkpoint by terminating its owned Brain, then resumes and cancels normally after auth33 commits while canonical v12 is still pending. It adds a signed synthetic publication checkpoint to the live auth33 store after that cancellation. Forward resume must retain it even though the encrypted auth checkpoint predates it. Hashes and counts verify pending work, protected text, exact configuration and the original DPAPI sidecar. A second B launch must skip full-data checkpointing. These tests qualify native frozen startup and recovery, including startup beyond 30 seconds. They do not establish installed package updates, synthetic signer acceptance by production trust, original TPM-key proof, Windows Hello or the full customer launcher journey.
+
+Run the opt-in test from `desktop/src-tauri` after building the independent artifacts. Supply absolute paths to each unpackaged common-stage Brain and a qualification Python with the pinned SQLCipher runtime. Keep these paths outside production state:
+
+```powershell
+$env:BRAIN_QUALIFICATION_A_IMAGE = '<A auth32 stage>\Brain.exe'
+$env:BRAIN_QUALIFICATION_IMAGE = '<B auth33 stage>\Brain.exe'
+$env:BRAIN_QUALIFICATION_PYTHON = '<qualification environment>\Scripts\python.exe'
+cargo test --locked --features qualification-tools --test process_lifetime frozen_recovery_preserves_pending_work_and_newer_publication_without_restore -- --ignored --exact --nocapture --test-threads=1
+```
+
+The native test owns a unique temporary root and TCP port 17871. Run other real Brain startup tests sequentially. `BRAIN_QUALIFICATION_ROWS` can vary the synthetic workload between 100 and 500,000 rows; record the chosen size with the result. The fixture does not ship in the runtime.
 
 ## Package metadata and qualification isolation
 

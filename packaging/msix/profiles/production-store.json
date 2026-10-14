@@ -1,0 +1,18 @@
+{
+  "schema": "ofca-msix-package-profile/v1",
+  "purpose": "production",
+  "distribution": "microsoft-store",
+  "identity": {
+    "name": "Dipsy.ConversationAnalytics",
+    "publisher": "CN=81B3E1E6-2B49-47B0-9BDF-4E227151CD64",
+    "publisher_display_name": "Dipsy",
+    "application_id": "Bridge",
+    "architecture": "x64"
+  },
+  "application_version": "0.7.5",
+  "release_sequence": 1,
+  "minimum_os_version": "10.0.26200.0",
+  "maximum_os_version_tested": "10.0.26340.0",
+  "webview2_minimum_version": "134.0.3124.0",
+  "app_installer_uri": null
+}

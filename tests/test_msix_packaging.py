@@ -70,6 +70,33 @@ def test_production_refuses_qualification_or_unverified_template():
         msix.validate_profile(store)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows Appx identity calculation")
+def test_reserved_store_identity_matches_windows_family_without_registration(tmp_path):
+    reserved = msix.read_json(ROOT / "packaging/msix/store-reservation.json")
+    store = msix.load_profile(ROOT / "packaging/msix/profiles/production-store.json", production=True)
+    assert store["distribution"] == "microsoft-store" and store["app_installer_uri"] is None
+    assert store["identity"]["publisher_display_name"] == reserved["publisher_display_name"]
+    assert msix.version_tuple(store["minimum_os_version"]) >= (10, 0, 26200, 0)
+    manifest = tmp_path / "AppxManifest.xml"
+    manifest.write_bytes(msix.render_manifest(store))
+    script = tmp_path / "identity.ps1"
+    script.write_text("""param([string]$Binding, [string]$Manifest)
+$ErrorActionPreference = 'Stop'
+Add-Type -Path $Binding
+[Ofca.Msix.IdentityReader]::Read([IO.File]::ReadAllBytes($Manifest)) | ConvertTo-Json -Compress
+""", encoding="utf-8")
+    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script),
+                             str(ROOT / "packaging/msix/ReadPackageIdentity.cs"), str(manifest)],
+                            capture_output=True, text=True, timeout=30, check=True)
+    identity = json.loads(result.stdout)
+    assert identity["Name"] == reserved["package_name"] == store["identity"]["name"]
+    assert identity["Publisher"] == reserved["publisher"] == store["identity"]["publisher"]
+    assert identity["FamilyName"] == reserved["package_family_name"]
+    assert reserved["store_id"] == "9PD4KGLX42JD" and reserved["product_status"] == "In draft"
+    assert profile()["identity"]["name"] != identity["Name"]
+    assert msix.load_profile(ROOT / "packaging/msix/profiles/qualification-store.json")["identity"]["name"] != identity["Name"]
+
+
 def test_deployment_counter_rolls_forward_without_changing_application_major():
     assert msix.package_version(1) == "1.0.1.0"
     assert msix.package_version(65535) == "1.0.65535.0"

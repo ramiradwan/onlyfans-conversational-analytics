@@ -22,6 +22,24 @@ pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
 
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_expected_startup_refusal_returns_a_controlled_process_exit(monkeypatch):
+    from app.core.startup_maintenance import StartupRefused
+    monkeypatch.setattr(packaged_entry, "hold_running_application_mutex", lambda: True)
+    def refused():
+        raise StartupRefused("retained_state_unavailable")
+    monkeypatch.setattr(packaged_entry, "run_brain", refused)
+    assert packaged_entry.main(("--brain",)) == 78
+
+
+def test_unexpected_startup_errors_are_not_reclassified_as_retained_state(monkeypatch):
+    monkeypatch.setattr(packaged_entry, "hold_running_application_mutex", lambda: True)
+    def failed():
+        raise RuntimeError("synthetic unexpected startup failure")
+    monkeypatch.setattr(packaged_entry, "run_brain", failed)
+    with pytest.raises(RuntimeError, match="synthetic unexpected startup failure"):
+        packaged_entry.main(("--brain",))
 # Every Settings field name, uppercased: the environment surface cleared from
 # the child process below.
 _SETTINGS_ENVIRONMENT_NAMES = {name.upper() for name in Settings.model_fields}

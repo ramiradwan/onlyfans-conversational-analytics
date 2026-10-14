@@ -190,7 +190,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments == ("--brain",):
         if sys.platform == "win32" and not published:
             return 78
-        return run_brain()
+        from app.core.startup_maintenance import StartupRefused
+        try:
+            return run_brain()
+        except StartupRefused:
+            # The status pipe already reports the bounded recovery reason.
+            # An expected refusal must terminate a windowed frozen process,
+            # rather than enter PyInstaller's unhandled-exception dialog.
+            return 78
     raise SystemExit("Open Conversation Analytics using Bridge.exe. Brain.exe is an internal service.")
 
 

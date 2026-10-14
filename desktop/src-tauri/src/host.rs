@@ -104,11 +104,11 @@ fn run(
                 brain.stop();
                 return Ok(());
             }
+            let (bytes, closed) = brain.bootstrap_bytes()?;
+            startup.receive(&bytes, Instant::now())?;
             if brain.exit_code()?.is_some() {
                 return Err("child_start_failed");
             }
-            let (bytes, closed) = brain.bootstrap_bytes()?;
-            startup.receive(&bytes, Instant::now())?;
             if closed && !startup.ready() {
                 return Err("child_status_closed");
             }

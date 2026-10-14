@@ -1,0 +1,17 @@
+{
+  "schema": "ofca-store-reservation/v1",
+  "recorded_on": "2026-10-14",
+  "evidence": "Product owner supplied Microsoft Partner Center product identity; not independently queried",
+  "account_context": "Product owner's personal Microsoft developer account",
+  "product_name": "Conversation Analytics",
+  "product_type": "MSIX or PWA app",
+  "product_status": "In draft",
+  "package_name": "Dipsy.ConversationAnalytics",
+  "publisher": "CN=81B3E1E6-2B49-47B0-9BDF-4E227151CD64",
+  "publisher_display_name": "Dipsy",
+  "package_family_name": "Dipsy.ConversationAnalytics_nhwt8as2n81zj",
+  "package_sid": "S-1-15-2-2868110188-1632184984-1174613590-2148355749-1879111927-3753244838-3885666461",
+  "store_id": "9PD4KGLX42JD",
+  "store_deep_link": null,
+  "web_store_url": null
+}
