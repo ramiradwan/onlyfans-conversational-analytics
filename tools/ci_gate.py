@@ -19,10 +19,12 @@ from typing import Any
 try:
     from tools.ci_selection import load_manifest as load_backend_manifest
     from tools.ci_windows_shards import load_manifest as load_windows_full_manifest
+    from tools.ci_windows_shards import validate_inventory as validate_windows_full_inventory
     from tools.engineering_attestation import ContractError, GitHubApi, latest_ci_jobs, load_json_strict
 except ModuleNotFoundError:  # Direct `python tools/ci_gate.py` invocation.
     from ci_selection import load_manifest as load_backend_manifest
     from ci_windows_shards import load_manifest as load_windows_full_manifest
+    from ci_windows_shards import validate_inventory as validate_windows_full_inventory
     from engineering_attestation import ContractError, GitHubApi, latest_ci_jobs, load_json_strict
 
 
@@ -387,6 +389,13 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
         "Windows": reports["legacy-windows-reference"],
     }
     inventories = {system: inventory(report) for system, report in references.items()}
+    # PRs omit exhaustive execution, but their independent Windows collection
+    # must still prove that a subsequent main push can select both shards.
+    try:
+        partition = load_windows_full_manifest(Path(__file__).resolve().parents[1])
+        validate_windows_full_inventory(inventories["Windows"].values(), partition, complete=True)
+    except (ValueError, OSError) as exc:
+        raise GateError(f"invalid Windows full regression manifest inventory: {exc}") from exc
     legacy = {}
     for system, rows in inventories.items():
         expected = {node for node, row in rows.items()

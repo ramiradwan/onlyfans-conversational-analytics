@@ -1,3 +1,4 @@
+import { prepareSigningDependency } from '../runtime/signing-parameters.mjs';
 import { AcquisitionAllowance } from './acquisition-allowance.mjs';
 import { MAX_PAGE_LIMIT, MAX_CURSOR_LENGTH, SAFE_CURSOR, SIGNING_FAILURE_CODES,
   SIGNING_VALIDATION_CODES, publicSigningError } from 'local-authenticated-read-connector/browser-signing';
@@ -75,6 +76,8 @@ const IDENTITY_FAILURE_CODES = new Set([
 
 function publicHistoryFailure(code) {
   return IDENTITY_FAILURE_CODES.has(code) ? 'identity_required'
+    : code === 'parameter_engine_unsupported' ? 'software_update_required'
+    : ['parameters_pending', 'parameters_unavailable', 'parameter_publication_rejected'].includes(code) ? 'history_dependency_wait'
     : code === 'unsupported_revision' ? 'unsupported_revision' : 'history_unavailable';
 }
 
@@ -241,6 +244,7 @@ export class HistoryAcquisitionCoordinator {
   /** Current bootstrap or durable job failure, without signing diagnostics. */
   historyErrorCode() {
     const authorization = this.#authorization();
+    if (authorization !== null && this.lastParameterFailure) return this.lastParameterFailure;
     if (authorization !== null
       && this.bootstrapFailure?.authorization === authorizationIdentity(authorization)) {
       return this.bootstrapFailure.code;
@@ -352,6 +356,21 @@ export class HistoryAcquisitionCoordinator {
     this.lastFailureAuthorization = authorizationIdentity(authorization);
     let openInventory = inventories.open;
     if (openInventory === undefined) {
+      if (this.signer.prepare) {
+      const bootstrapId = 'signing:bootstrap';
+      const savedBootstrap = await this.outbox.historyJob(bootstrapId);
+      this.#assertActive(signal, authorization);
+      const bootstrap = savedBootstrap?.authorization_revision === authorization.policy.consent_revision
+        && savedBootstrap?.account_epoch === this.outbox.identityState().account_epoch ? savedBootstrap : {
+          job_id: bootstrapId, kind: 'signing_dependency',
+          creator_account_id: authorization.session.creator_account_id,
+          authorization_revision: authorization.policy.consent_revision,
+          authorized_platform_creator_id: authorization.policy.authorized_platform_creator_id,
+          account_epoch: this.outbox.identityState().account_epoch,
+        };
+      if (!await this.allowance.canReserve('history_list', authorization.policy.pages_per_wake)) return { status: 'deferred', pages: 0 };
+      if (!await this.#parameterReady(bootstrap, authorization, signal)) return { status: 'dependency_wait', pages: 0 };
+      }
       const closed = inventories.closed;
       if (
         closed === undefined
@@ -405,6 +424,8 @@ export class HistoryAcquisitionCoordinator {
       }
       if (inventory.phase === 'inventory') {
         if (this.#deferred(inventory)) break;
+        if (!await this.allowance.canReserve('history_list', budget)) break;
+        if (!await this.#parameterReady(inventory, authorization, signal)) break;
         if (!await this.allowance.reserve('history_list', budget, { retry: (inventory.retry_count ?? 0) > 0 })) break;
         await this.#readInventoryPage(inventory, authorization, signal, attempt);
         pages += 1;
@@ -415,6 +436,8 @@ export class HistoryAcquisitionCoordinator {
           signal,
         );
         if (conversations.next !== undefined) {
+          if (!await this.allowance.canReserve('history_messages', budget)) break;
+          if (!await this.#parameterReady(conversations.next, authorization, signal)) break;
           if (!await this.allowance.reserve('history_messages', budget, { retry: (conversations.next.retry_count ?? 0) > 0 })) break;
           await this.#readConversationPage(conversations.next, authorization, signal, attempt);
           pages += 1;
@@ -453,6 +476,18 @@ export class HistoryAcquisitionCoordinator {
       }
     }
     return { status: 'progressed', pages };
+  }
+
+  async #parameterReady(job, authorization, signal) {
+    this.#assertActive(signal, authorization, job);
+    const ready = await prepareSigningDependency({ signer: this.signer, job, signal, clock: this.clock,
+      reserveProof: async () => { this.#assertActive(signal, authorization, job); return this.allowance.reserve('identity', authorization.policy.pages_per_wake, { requirePageCapacity: true }); },
+      save: (next) => { this.lastParameterFailure = next.parameter_wait?.reason === 'parameter_engine_unsupported' ? 'software_update_required' : 'history_dependency_wait'; return this.outbox.saveHistoryJob(next,
+        () => this.#assertActive(signal, authorization, next),
+        { signal, assertCurrent: () => this.#assertActive(signal, authorization, next) }); },
+    });
+    this.lastParameterFailure = ready ? null : this.lastParameterFailure ?? (job.parameter_wait?.reason === 'parameter_engine_unsupported' ? 'software_update_required' : 'history_dependency_wait');
+    return ready;
   }
 
   #deferred(job) {
@@ -575,7 +610,7 @@ export class HistoryAcquisitionCoordinator {
   async #readSigner(request, authorization, signal, attempt, job = null) {
     if (this.activeRunAttempt !== attempt) throw abortError('History acquisition attempt was superseded');
     this.#assertActive(signal, authorization, job);
-    const result = await awaitWithAbort(this.signer.read(request), signal);
+    const result = await awaitWithAbort(this.signer.read({ ...request, ...(this.signer.parameterOwner ? { reservedIdentity: request.operation === 'identity', reserveProof: async () => { this.#assertActive(signal, authorization, job); return this.allowance.reserve('identity', authorization.policy.pages_per_wake); } } : {}) }), signal);
     this.#assertActive(signal, authorization, job);
     return result;
   }
@@ -653,7 +688,7 @@ export class HistoryAcquisitionCoordinator {
       evidence: page.evidence ?? [],
       nextCursor: Object.hasOwn(page, 'nextCursor') ? page.nextCursor : claimed.cursor,
       boundary: Object.hasOwn(page, 'boundary') ? page.boundary : claimed.boundary,
-      jobPatch: { retry_count: 0, next_attempt_at: null, ...(page.jobPatch ?? {}) },
+      jobPatch: { retry_count: 0, next_attempt_at: null, parameter_wait: null, ...(page.jobPatch ?? {}) },
       spawnJobs: page.spawnJobs ?? [],
       validateAuthorization: () => this.#assertActive(signal, authorization, claimed),
       signal, assertCurrent: () => this.#assertActive(signal, authorization, claimed),

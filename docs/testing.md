@@ -137,6 +137,15 @@ The exhaustive Windows regression runs in two isolated jobs, `windows-full-regre
 
 Every pull request still collects the independent raw Windows inventory and proves each default case executes in Linux or its required Windows contract. A Linux skip cannot replace required Windows execution. The gate's closed cutover baseline permits only fourteen reviewed test identities with their exact execution platform and skip reason. Windows exceptions stay in their reviewed focused contract lane, and the four Linux process-filesystem cases must execute on Linux. Windows production boot requires actual execution of every selected case. New identities, changed reasons and skipped explicit profiles fail closed. Exhaustive main/manual runs retain same-run skip corroboration.
 
+The Windows platform job validates the exhaustive manifest immediately after its
+complete raw collection, including on pull requests. Required CI independently
+compares that same raw inventory with the manifest even when exhaustive execution
+is skipped. Added, removed or reclassified default files therefore fail before
+merge. Run `python tools/test_backend.py validate-windows-manifest --inventory <raw-Windows-report.json>`
+to repeat the check without recollecting or executing the tests. This inventory
+check does not qualify exhaustive execution; both shards must actually pass for
+main/manual qualification.
+
 ## Add or classify a backend test
 
 Tests inherit their module's `pytestmark = pytest.mark.ci_tier("fast")` declaration. Use `integration` for database, pipeline, projection and graph lifecycle behavior. A test-level declaration overrides a module default; conflicting declarations at one scope are errors. Keep large-data correctness cases required. `scale` does not authorize removing a previously required test.

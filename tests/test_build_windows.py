@@ -163,6 +163,10 @@ shutil.copyfile(root / 'app' / 'provisioning' / 'creator-platform-data-risk-disc
 core = stage / '_internal' / 'app' / 'core'
 core.mkdir()
 shutil.copyfile(root / 'app' / 'core' / 'customer-release.json', core / 'customer-release.json')
+shutil.copyfile(root / 'app' / 'core' / 'signing-parameter-release.json', core / 'signing-parameter-release.json')
+security = stage / '_internal' / 'app' / 'security'
+security.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(root / 'app' / 'security' / 'signing-publication-trust.json', security / 'signing-publication-trust.json')
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -216,7 +220,7 @@ def _run_build(
     *,
     test_injection: str = "DevelopmentConfiguration",
     inno_setup_compiler: Path | None = None,
-    packaged_signing_rule: Path | None = SIGNING_RULE_FIXTURE,
+    packaged_signing_rule: Path | None = None,
     legal_release_bindings: Path | None = LEGAL_BINDINGS_FIXTURE,
     privacy_policy_url: str | None = SYNTHETIC_PRIVACY_POLICY_URL,
     development_agent_bundle: bool = False,
@@ -899,7 +903,6 @@ def _audit_store_candidate(artifact: Path) -> subprocess.CompletedProcess[str]:
             "--audit-package",
             f"--artifact={artifact}",
             f"--customer-release-config={ROOT / 'app/core/customer-release.json'}",
-            f"--packaged-signing-rule={SIGNING_RULE_FIXTURE}",
             f"--legal-release-bindings={LEGAL_BINDINGS_FIXTURE}",
         ],
         cwd=EXTENSION_ROOT,

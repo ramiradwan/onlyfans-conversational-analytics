@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 from collections import Counter
 from pathlib import Path
 
@@ -43,8 +44,18 @@ def _agent_build_metadata() -> dict:
     """Build metadata declaring the release inputs a packaged Agent records."""
 
     bindings = json.loads(LEGAL_BINDINGS_FIXTURE.read_text(encoding="utf-8"))
+    publication = json.loads((ROOT / "app/core/signing-parameter-release.json").read_text(encoding="utf-8"))
     return {
         "schema": load_runtime_policy(POLICY_PATH)["agent_artifact"]["schema"],
+        "signing_parameters": {
+            "schema": "ofca-signing-parameter-consumer/v1",
+            "mode": "verified",
+            "engine": "onlyfans-sha1-checksum/v1",
+            "parameter_schema": "local-packaged-signing-rule/v1",
+            "trust_sha256": publication["trust_sha256"],
+            "distribution_origin": publication["origin"],
+            "distribution_base_path": publication["base_path"],
+        },
         "legal_bindings": {
             "schema": bindings["schema"],
             "source_revision": bindings["legal_repository_revision"],
@@ -104,6 +115,10 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
         source = ROOT / catalog
         destination = internal / catalog
         shutil.copytree(source, destination)
+    for name in ("app/core/signing-parameter-release.json", "app/security/signing-publication-trust.json"):
+        destination = internal / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, destination)
     return stage
 
 
@@ -892,6 +907,27 @@ def test_empty_legal_binding_declaration_does_not_satisfy_the_rule(tmp_path: Pat
 
 def test_missing_staging_root_returns_a_finding(tmp_path: Path) -> None:
     assert _codes(verify_runtime_files(tmp_path / "absent")) == {"staging_root_missing"}
+
+
+@pytest.mark.parametrize("fault", ("renamed_synthetic_root", "wrong_origin", "wrong_metadata"))
+def test_packaged_publication_resources_and_authority_are_verified(tmp_path: Path, fault: str) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    if fault == "renamed_synthetic_root":
+        with tarfile.open(ROOT / "extension/vendor/local-authenticated-read-connector-0.6.0-rc.4.tgz") as archive:
+            trust = json.loads(archive.extractfile("package/publication/vectors.json").read())["trust"]
+        trust["roots"][0]["kid"] = "dipsy-signing-root-01"
+        (stage / "_internal/app/security/signing-publication-trust.json").write_text(json.dumps(trust), encoding="utf-8")
+    elif fault == "wrong_origin":
+        target = stage / "_internal/app/core/signing-parameter-release.json"
+        release = json.loads(target.read_text(encoding="utf-8"))
+        release["origin"] = "https://untrusted.example"
+        target.write_text(json.dumps(release), encoding="utf-8")
+    else:
+        metadata = _agent_build_metadata()
+        metadata["signing_parameters"]["mode"] = "static"
+        _write_agent_build_metadata(stage, metadata)
+    findings = _codes(verify_runtime_files(stage))
+    assert ("agent_release_declaration_invalid" if fault == "wrong_metadata" else "signing_publication_resource_invalid") in findings
 
 
 def test_complete_synthetic_staging_tree_satisfies_policy(tmp_path: Path) -> None:

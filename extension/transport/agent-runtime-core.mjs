@@ -1,5 +1,6 @@
 import { assertOnlyFansTabCanRun, guardMainWorldDispatch } from './read-only-frozen-tab-guard.mjs';
 import { reserveSignerRecovery } from './signer-refresh-budget.mjs';
+import { executeTypedReadInPage } from 'local-authenticated-read-connector/browser-signing';
 
 const noOp = () => {};
 const SIGNER_STATE_KEY = 'signer-state';
@@ -70,11 +71,28 @@ function awaitSignerWork(promise, signal) {
 
 /** One provider owns the account signing document, including any save already entered on abort. */
 export function createLazyAccountSigner({
-  creatorAccountId, storage, chromeApi, factory, expectedIdentity, signal,
+  creatorAccountId, storage, chromeApi, factory, expectedIdentity, signal, parameterOwner = null, parameterContext = null,
 }) {
   const persistence = createAccountSigningPersistence(storage, creatorAccountId);
   let owner = null;
   let construction = Promise.resolve();
+  let proofDispatchGuard = null;
+  const proofGuardedChrome = chromeApi == null ? chromeApi : new Proxy(chromeApi, {
+    get(target, property, receiver) {
+      if (property !== 'scripting') return Reflect.get(target, property, receiver);
+      return new Proxy(target.scripting, {
+        get(scripting, method, scriptingReceiver) {
+          const value = Reflect.get(scripting, method, scriptingReceiver);
+          if (method === 'executeScript') return async details => {
+            if (details.world === 'MAIN' && details.func === executeTypedReadInPage
+              && details.args?.[0]?.operation === 'identity' && proofDispatchGuard) await proofDispatchGuard();
+            return value.call(scripting, details);
+          };
+          return typeof value === 'function' ? value.bind(scripting) : value;
+        },
+      });
+    },
+  });
   const identity = () => {
     const value = expectedIdentity();
     // Signer 0.2.0's absent-user-id bootstrap requires this exact string domain.
@@ -104,8 +122,9 @@ export function createLazyAccountSigner({
       const ownerSignal = AbortSignal.any([signal, controller.signal]);
       try {
         const provider = await factory({
+          ...(parameterOwner === null ? {} : { parameterSource: await parameterOwner.source() }),
           creatorAccountId,
-          chromeApi: guardMainWorldDispatch(chromeApi, { signal: ownerSignal }),
+          chromeApi: guardMainWorldDispatch(proofGuardedChrome, { signal: ownerSignal }),
           persistence,
           reserveRecovery: (requestSignal) => reserveSignerRecovery({
             storage, creatorAccountId, signal: requestSignal
@@ -128,7 +147,62 @@ export function createLazyAccountSigner({
     return awaitSignerWork(next, operationSignal);
   };
   return Object.freeze({
+    parameterOwner,
+    async prepare({ signal: callerSignal, parameterWait = null, reserveProof = null } = {}) {
+      if (parameterOwner === null) return true;
+      const operationSignal = callerSignal ? AbortSignal.any([signal, callerSignal]) : signal;
+      const context = { ...parameterContext, signal: operationSignal };
+      const persisted = await persistence.load();
+      const activeRevision = persisted?.active?.config?.source_revision;
+      let allowRecovery = true;
+      const withdrawnActivation = async (error, revision) => {
+        if (!['parameters_pending', 'parameters_unavailable'].includes(error?.code) || revision !== activeRevision
+          || persisted?.active?.proof_policy_version !== 3 || typeof persisted.active.summary?.activation_document !== 'string') return false;
+        const source = await parameterOwner.source();
+        return source.inspect(revision) === 'not_published';
+      };
+      if (!parameterWait) {
+        try { await parameterOwner.refresh(context, activeRevision); }
+        catch (error) {
+          if (!await withdrawnActivation(error, activeRevision)) throw error;
+          allowRecovery = false;
+        }
+      }
+      if (parameterWait) {
+        try {
+          if (!await parameterOwner.prepareWait(context, parameterWait)) return false;
+        } catch (error) {
+          // Only a formerly proved activation may inspect browser-owned document
+          // identity for replacement. A freshly observed missing revision stays
+          // a dependency and never borrows an older available mapping.
+          if (!await withdrawnActivation(error, parameterWait.needed_revision)) throw error;
+          allowRecovery = false;
+        }
+      }
+      return parameterOwner.operation(context, async (_source, operation) => {
+        const state = await persistence.load();
+        operation.revision = state?.active?.config?.source_revision ?? null;
+        const requestedIdentity = identity();
+        const current = await resolveOwner(requestedIdentity, operationSignal);
+        proofDispatchGuard = async () => {
+          operationSignal.throwIfAborted(); context.assertCurrent();
+          if (reserveProof && !await reserveProof()) throw Object.assign(new Error('Signing proof allowance unavailable'), { code: 'history_allowance_exhausted' });
+          operationSignal.throwIfAborted(); context.assertCurrent();
+        };
+        try { await current.provider.prepare?.({ signal: operationSignal, allowRecovery }); }
+        finally { proofDispatchGuard = null; }
+        operationSignal.throwIfAborted();
+        if (identity() !== requestedIdentity) throw identityChanged();
+        return true;
+      });
+    },
+    async refreshParameters({ force = false } = {}) {
+      if (parameterOwner === null) return;
+      const state = await persistence.load();
+      await parameterOwner.refresh(parameterContext, state?.active?.config?.source_revision, { force });
+    },
     async read(request) {
+      const { reserveProof = null, reservedIdentity = false, ...providerRequest } = request;
       const operationSignal = request.signal ? AbortSignal.any([signal, request.signal]) : signal;
       operationSignal.throwIfAborted();
       const requestedIdentity = identity();
@@ -137,7 +211,20 @@ export function createLazyAccountSigner({
       readSignal.throwIfAborted();
       await assertOnlyFansTabCanRun(chromeApi);
       readSignal.throwIfAborted();
-      const result = await current.provider.read({ ...request, signal: readSignal });
+      const perform = async () => {
+        let identityCredit = reservedIdentity ? 1 : 0;
+        proofDispatchGuard = async () => {
+          readSignal.throwIfAborted(); parameterContext?.assertCurrent();
+          if (identityCredit > 0) identityCredit--;
+          else if (reserveProof && !await reserveProof()) throw Object.assign(new Error('Signing identity allowance unavailable'), { code: 'history_allowance_exhausted' });
+          readSignal.throwIfAborted(); parameterContext?.assertCurrent();
+        };
+        try { return await current.provider.read({ ...providerRequest,
+          ...(parameterOwner === null ? {} : { refreshMode: 'never' }), signal: readSignal }); }
+        finally { proofDispatchGuard = null; }
+      };
+      const result = parameterOwner === null ? await perform()
+        : await parameterOwner.operation({ ...parameterContext, signal: readSignal }, perform);
       readSignal.throwIfAborted();
       if (identity() !== requestedIdentity) throw identityChanged();
       return result;

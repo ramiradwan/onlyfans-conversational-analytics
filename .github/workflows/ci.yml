@@ -467,6 +467,8 @@ jobs:
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/legacy-windows-reference/junit.xml
         run: python -m pytest --collect-only --override-ini=addopts= -m "not slow and not stateful_tier_a and not
           stateful_tier_b and not stateful_agent_tier_a"
+      - name: Validate exhaustive Windows shard inventory
+        run: python tools/test_backend.py validate-windows-manifest --inventory artifacts/ci-tests/legacy-windows-reference/report.json
       - name: Test Windows platform contract
         env:
           CI_TEST_LANE: windows-platform-contract

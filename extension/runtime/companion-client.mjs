@@ -7,6 +7,8 @@ import { parseMessage } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { LOCAL_SERVICE_WS, LOCAL_PAIRING_WS } from '../transport/local-service-endpoints.mjs';
 import { createConnectionRecovery, CONNECTION_STABLE_MS, CONNECTION_RECONCILE_ALARM } from './recovery-backoff.mjs';
+import { SIGNING_PARAMETER_METHOD, validateParameterRequest } from '../protocol/signing-parameters.mjs';
+import { PARAMETER_ALARM } from './signing-parameters.mjs';
 
 export const PAIRING_PORT_NAME = 'ofca.companion.pairing';
 const INSTALLATION_KEY = 'agent_installation_id';
@@ -547,13 +549,36 @@ export function createCompanionClient({
       const events = [chromeApi.runtime.onStartup, chromeApi.runtime.onInstalled, chromeApi.runtime.onMessage,
         chromeApi.tabs?.onUpdated].filter(Boolean);
       for (const event of events) event.addListener(listener);
-      const alarm = (value) => { if (value?.name === CONNECTION_RECONCILE_ALARM) listener(); };
+      const alarm = (value) => { if ([CONNECTION_RECONCILE_ALARM, PARAMETER_ALARM].includes(value?.name)) listener(); };
       chromeApi.alarms?.onAlarm?.addListener(alarm);
       void chromeApi.alarms?.create(CONNECTION_RECONCILE_ALARM, { delayInMinutes: 1, periodInMinutes: 1 });
       return () => { for (const event of events) event.removeListener?.(listener); chromeApi.alarms?.onAlarm?.removeListener?.(alarm); };
     },
   });
   const configAdapter = {
+    async resolveSigningParameters(request, { signal, context }) {
+      validateParameterRequest(request);
+      const bound = active;
+      const guard = () => {
+        signal?.throwIfAborted(); context.signal?.throwIfAborted(); context.assertCurrent();
+        if (!allowsFull() || !bound || active !== bound || bound.channel.closed
+          || bound.accountId !== context.creatorAccountId || bound.channel.identity.installation_id !== context.installationId) throw failure();
+      };
+      guard();
+      try {
+        const result = await bound.channel.rpc(SIGNING_PARAMETER_METHOD, {
+          operation: SIGNING_PARAMETER_METHOD, protocol_version: '2', auth_ticket: context.configAuthTicket(),
+          creator_account_id: context.creatorAccountId, agent_installation_id: context.agentInstallationId, request,
+        }, { signal });
+        guard();
+        return result;
+      } catch (error) {
+        guard();
+        if (error?.code === 'unknown_method') return { schema: 'signing-parameter-resolution/v1',
+          status: 'unavailable', reason: 'verification', keyset: null, catalog: null, retry_after_ms: 300_000 };
+        throw error;
+      }
+    },
     async catchupRpc(operation, payload, controls = {}) {
       if (!active || active.channel.closed || active.accountId !== payload.creator_account_id) throw failure();
       return active.channel.rpc(operation, payload, controls);

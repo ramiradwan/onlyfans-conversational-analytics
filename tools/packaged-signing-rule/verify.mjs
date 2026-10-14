@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /**
- * Retrieve and verify the packaged signing rule a Store candidate is built
- * against, and stage the verified document on ephemeral runner storage.
+ * Historical static-input verification for earlier Store candidates.
+ * Current dynamic consumers use the immutable packaged engine and public trust,
+ * audited by extension/build.mjs and tools/packaging_policy.py. Their compatible
+ * signed catalog/object authority is delivered at runtime by Brain, separately
+ * from installer/archive provenance. This legacy helper does not authorize a
+ * dynamic build, provide an unsigned fallback, or select consumer trust.
  *
  * The production rule is held in a private repository and is never checked in
  * here. It reaches a release as declared coordinates, retrieved over the one

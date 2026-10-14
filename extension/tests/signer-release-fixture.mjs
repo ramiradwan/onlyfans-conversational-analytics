@@ -62,12 +62,13 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
     })]));
   const f = {
     calls, webRequest, captureReady: deferred(),
+    rule: structuredClone(RULE), responseRevision: RULE.source_revision,
     accountId: EXPECTED_ID,
     tab: { id: 17, active: false, frozen: false },
     safeRefresh: { safe: true, reason: null },
     beforeDispatch: async () => {},
     response: (body, status = 200, extra = {}) => ({
-      status, contentType: 'application/json', responseRevision: RULE.source_revision, body, ...extra,
+      status, contentType: 'application/json', responseRevision: f.responseRevision, body, ...extra,
     }),
     snapshot: () => structuredClone(saved),
     replaceStoredState(value) { saved = structuredClone(value); },
@@ -83,14 +84,14 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
         documentLifecycle: 'active', method: 'GET', url: `${ORIGIN}/api2/v2/users/me` };
       const headers = {
         accept: 'application/json', 'app-token': 'synthetic-app-token', 'x-bc': 'synthetic-browser-context',
-        'x-of-rev': RULE.source_revision, time: String(TIMESTAMP), cookie: PRIVATE_MARKER,
-        sign: await signSyntheticRequest(RULE, String(TIMESTAMP), '/api2/v2/users/me', '0'),
+        'x-of-rev': f.rule.source_revision, time: String(TIMESTAMP), cookie: PRIVATE_MARKER,
+        sign: await signSyntheticRequest(f.rule, String(TIMESTAMP), '/api2/v2/users/me', '0'),
       };
       calls.captures.push(structuredClone(headers));
       const pairs = (value) => Object.entries(value).map(([name, value]) => ({ name, value }));
       webRequest.onBeforeSendHeaders.emit({ ...details, requestHeaders: pairs(headers) });
       webRequest.onHeadersReceived.emit({ ...details, statusCode: 200, responseHeaders: pairs({
-        'x-of-rev': RULE.source_revision, 'content-type': 'application/json',
+        'x-of-rev': f.responseRevision, 'content-type': 'application/json',
       }) });
       webRequest.onCompleted.emit({ ...details, statusCode: 200 });
     },
@@ -140,7 +141,7 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
         const url = new URL(request.url);
         assert.equal(url.origin, ORIGIN);
         calls.reads.push(structuredClone(request));
-        const signature = await signSyntheticRequest(RULE, request.headers.time,
+        const signature = await signSyntheticRequest(f.rule, request.headers.time,
           `${url.pathname}${url.search}`, request.headers['user-id']);
         result = await (request.headers.sign === signature ? f.reply(request) : f.controlReply(request));
       }
@@ -200,7 +201,7 @@ export function createSignerReleaseFixture({ initialState = null, expectedIdenti
     chromeApi: guardMainWorldDispatch(f.chromeApi, { signal: options.signal }),
     persistence: f.persistence,
     expectedIdentity,
-    packagedRule: structuredClone(RULE),
+    ...(options.parameterSource ? {} : { packagedRule: structuredClone(f.rule) }),
     now: () => TIMESTAMP,
     idFactory: () => `synthetic-${++serial}`,
     ...options,

@@ -16,13 +16,13 @@ async function established() {
   return { fixture, provider };
 }
 
-test('release contracts exercise the installed 0.5.0-rc.2 public browser-signing export', async () => {
+test('release contracts exercise the installed 0.6.0-rc.4 public browser-signing export', async () => {
   const installed = await realpath(fileURLToPath(new URL('../node_modules/local-authenticated-read-connector/', import.meta.url)));
   const resolved = await realpath(fileURLToPath(import.meta.resolve('local-authenticated-read-connector/browser-signing')));
   const entry = relative(installed, resolved);
   assert.equal(isAbsolute(entry) || entry.startsWith('..'), false);
   const metadata = JSON.parse(await readFile(new URL('../node_modules/local-authenticated-read-connector/package.json', import.meta.url)));
-  assert.equal(metadata.version, '0.5.0-rc.2');
+  assert.equal(metadata.version, '0.6.0-rc.4');
 });
 
 test('fresh absent-user-id capture validates the independently authorized account before activation', async () => {
@@ -41,7 +41,7 @@ test('fresh absent-user-id capture validates the independently authorized accoun
   assert.equal(f.calls.reads.length, 3, 'cold read contains candidate, negative control, and requested read');
   assert.equal(f.calls.reloads, 1);
   assert.equal(f.calls.saves, 1);
-  assert.equal(f.snapshot().active.proof_policy_version, 2);
+  assert.equal(f.snapshot().active.proof_policy_version, 3);
   assert.equal(f.snapshot().active.context.session.userId, EXPECTED_ID);
   for (const request of f.calls.reads) assert.equal(request.headers['user-id'], EXPECTED_ID);
   assert.doesNotMatch(JSON.stringify([result, f.snapshot()]), new RegExp(PRIVATE_MARKER));
@@ -92,7 +92,7 @@ test('legacy strong proof is retained until bounded signer-owned revalidation su
   assert.equal(f.calls.reads.length - before.reads.length, 3);
   assert.equal(f.calls.reloads - before.reloads, 1);
   assert.equal(f.calls.saves - before.saves, 1);
-  assert.equal(f.snapshot().active.proof_policy_version, 2);
+  assert.equal(f.snapshot().active.proof_policy_version, 3);
   assert.deepEqual(f.snapshot().previous, legacy.active);
 });
 
@@ -151,7 +151,7 @@ test('an ambiguous save acknowledgement is reconciled from the saved whole docum
     return true;
   });
   const committed = f.snapshot();
-  assert.equal(committed.active.proof_policy_version, 2);
+  assert.equal(committed.active.proof_policy_version, 3);
   assert.equal(f.calls.reads.length, 2, 'the unacknowledged activation cannot authorize a requested read');
   f.persistence.save = save;
   const reconstructed = await f.createProvider();
@@ -280,7 +280,7 @@ test('cancellation during entered persistence save may commit signing state but 
   assert.equal(f.snapshot(), null);
   abort.abort(reason); await rejection;
   release.resolve(); await saved.promise;
-  assert.equal(f.snapshot().active.proof_policy_version, 2);
+  assert.equal(f.snapshot().active.proof_policy_version, 3);
   assert.equal(f.calls.reads.length, 2, 'only completed candidate/control reads exist, never a late requested page');
   f.persistence.save = save;
   const reconstructed = await f.createProvider();

@@ -352,8 +352,8 @@ def test_the_release_workflow_passes_nothing_the_script_cannot_accept() -> None:
 
     misspelled = deepcopy(workflow)
     step = _package_step(misspelled)
-    step["run"] = str(step["run"]).replace("-PackagedSigningRule", "-PackagedSigningRuleFile")
-    with pytest.raises(AssertionError, match="PackagedSigningRuleFile"):
+    step["run"] = str(step["run"]).replace("-LegalReleaseBindings", "-LegalReleaseBindingsFile")
+    with pytest.raises(AssertionError, match="LegalReleaseBindingsFile"):
         _assert_the_invocation_passes_nothing_the_script_does_not_declare(misspelled, script)
 
 
@@ -393,7 +393,7 @@ def test_no_release_input_is_written_down_in_the_workflow() -> None:
             step["run"] = "\n".join(
                 line
                 for line in run.splitlines()
-                if '"PACKAGED_SIGNING_RULE=' not in line
+                if '"LEGAL_BINDINGS_DOCUMENT=' not in line
             )
     with pytest.raises(AssertionError, match="which no gate in this job stages"):
         _assert_no_release_input_is_written_down(unstaged, script)

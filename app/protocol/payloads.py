@@ -18,7 +18,7 @@ from .common import (
 )
 
 AgentCapability = Literal[
-    "capture.chats", "capture.messages", "capture.presence", "history.sync", "history.catchup.v1", "command.message.send"
+    "capture.chats", "capture.messages", "capture.presence", "history.sync", "history.catchup.v1", "command.message.send", "signing.parameters.v1"
 ]
 AgentCapabilityToken = Annotated[
     str, Field(strict=True, max_length=64, pattern=r"^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$")
@@ -268,7 +268,7 @@ class BrowserSurfacePayload(StrictModel):
     history_permission: Literal["granted", "missing"]
     legal_review_required: bool
     reported_at: Timestamp
-    history_error_code: Literal["identity_required", "unsupported_revision", "history_unavailable"] | None = Field(
+    history_error_code: Literal["identity_required", "unsupported_revision", "history_unavailable", "history_dependency_wait", "software_update_required"] | None = Field(
         default=None, exclude_if=lambda value: value is None)
 
 

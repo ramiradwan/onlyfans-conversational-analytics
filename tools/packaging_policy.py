@@ -458,16 +458,14 @@ def _check_agent_artifact(
         return
     for name in names:
         _check_release_declaration(relative, metadata.get(name), name, findings)
+    if "signing_parameters" in names:
+        _check_publication_resources(root, findings)
 
 
 def _check_release_declaration(
     relative: str, declared: Any, name: str, findings: list[PackagingFinding]
 ) -> None:
-    """Require a recorded release input: schema, source revision and digest.
-
-    The digest field is named after the declaration it covers, so a reader can
-    tell which document a recorded digest was taken over.
-    """
+    """Validate Legal document identity or packaged signing authority."""
 
     if declared is None:
         findings.append(
@@ -487,6 +485,17 @@ def _check_release_declaration(
             )
         )
         return
+    if name == "signing_parameters":
+        expected = {
+            "schema": "ofca-signing-parameter-consumer/v1", "mode": "verified",
+            "engine": "onlyfans-sha1-checksum/v1", "parameter_schema": "local-packaged-signing-rule/v1",
+            "trust_sha256": "9a0965a3684afae9b4745d9c36845abb2f0a168ce3b1da3256567720542873c9",
+            "distribution_origin": "https://updates.dipsy.fi", "distribution_base_path": "/signing-parameters/v1/",
+        }
+        if declared != expected:
+            findings.append(PackagingFinding("agent_release_declaration_invalid", relative,
+                                             "signing_parameters differs from the reviewed engine/trust/distribution"))
+        return
     for field in ("schema", "source_revision", f"{name}_digest"):
         value = declared.get(field)
         if not isinstance(value, str) or not value:
@@ -497,6 +506,23 @@ def _check_release_declaration(
                     f"{name}.{field} is missing or empty",
                 )
             )
+
+
+def _check_publication_resources(root: Path, findings: list[PackagingFinding]) -> None:
+    """Reject altered production trust/origin even when the files exist."""
+    from app.security.signing_parameter_publications import parse, validate_trust
+    references = ("app/security/signing-publication-trust.json", "app/core/signing-parameter-release.json")
+    try:
+        trust = parse((root / "_internal" / references[0]).read_bytes(), maximum=16384)
+        validate_trust(trust, production=True)
+        release = parse((root / "_internal" / references[1]).read_bytes(), maximum=4096)
+        if release != {"schema": "ofca-signing-parameter-release/v1", "origin": "https://updates.dipsy.fi",
+                       "base_path": "/signing-parameters/v1/",
+                       "trust_sha256": "9a0965a3684afae9b4745d9c36845abb2f0a168ce3b1da3256567720542873c9"}:
+            raise ValueError("fixed distribution mismatch")
+    except (OSError, ValueError, TypeError, RecursionError):
+        findings.append(PackagingFinding("signing_publication_resource_invalid", "_internal/app",
+                                         "production signing trust or fixed distribution is invalid"))
 
 
 def _check_frontend_file(dist_root: Path, staging_root: Path, relative: Any, findings: list[PackagingFinding]) -> None:

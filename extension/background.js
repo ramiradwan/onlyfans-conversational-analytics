@@ -1,3 +1,4 @@
+import { createWorkerParameterOwner } from './runtime/signing-parameters.mjs';
 import { openCreatorAccount } from './ui/actions.mjs';
 import { createSurfaceOpener, registerSurfaceNavigation } from './runtime/ui-surfaces.mjs';
 import { registerDesktopPort } from './runtime/desktop-port.mjs';
@@ -44,11 +45,13 @@ export const companionClient = createCompanionClient({
   detectedAccountId: () => provisioningIdentityBridge.currentAccountId(),
 });
 export const chromeAdapter = companionClient.adapter;
+export const signingParameterOwner = createWorkerParameterOwner({ chromeApi: chrome, resolver: (...args) => companionClient.configAdapter.resolveSigningParameters(...args) });
 export const captureDiagnostics = new CaptureDiagnostics((diagnostic) => {
   console.warn('[Conversation Analytics] capture observation dropped', diagnostic);
 });
 export const agentRuntime = createAgentRuntime({
   chromeAdapter,
+  parameterOwner: signingParameterOwner,
   chromeApi: chrome,
   configHttpFactory: () => companionClient.configAdapter,
   onHistoryStateChanged: () => surfaceReporter.changed(),

@@ -166,7 +166,7 @@ export interface LastPresenceObservation {
 }
 
 export interface CapabilityStatus {
-  capability: 'capture.chats' | 'capture.messages' | 'capture.presence' | 'history.sync' | 'history.catchup.v1' | 'command.message.send';
+  capability: 'capture.chats' | 'capture.messages' | 'capture.presence' | 'history.sync' | 'history.catchup.v1' | 'signing.parameters.v1' | 'command.message.send';
   status: 'active' | 'degraded' | 'unsupported';
   detail: string | null;
 }
@@ -444,7 +444,7 @@ export interface BrowserSurfacePayload {
   history_permission: 'granted' | 'missing';
   legal_review_required: boolean;
   reported_at: IsoDateTime;
-  history_error_code?: 'identity_required' | 'unsupported_revision' | 'history_unavailable' | null;
+  history_error_code?: 'identity_required' | 'unsupported_revision' | 'history_unavailable' | 'history_dependency_wait' | 'software_update_required' | null;
 }
 
 export interface SystemStatePayload {

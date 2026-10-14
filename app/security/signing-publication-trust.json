@@ -1,0 +1,1 @@
+{"schema":"signing-publication-trust/v1","roots":[{"kid":"dipsy-signing-root-01","jwk":{"crv":"P-256","kty":"EC","x":"C6ckn3huUv8P-QjzDXWwId3AlaXEEpXsiZAGBIR7jpI","y":"awC4oOKlJpPvwVoqokUxJgeVd1URumC5gdomdmSV3y4"}}]}

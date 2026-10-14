@@ -53,33 +53,25 @@ test('extension ID is derived from the manifest public key', () => {
   assert.notEqual(deriveExtensionId(key), deriveExtensionId(`${key.slice(0, -2)}AA`));
 });
 
-test('signer wrapper binds one canonical packaged rule and has no caller fallback', () => {
-  const source = signerWrapperSource(fixture);
-  auditExecutableSource('signer-wrapper.js', source);
-  auditSigningRuleBinding(source, fixture, { required: true });
-  assert.match(source, /packagedRule: PACKAGED_SIGNING_RULE/);
-  assert.doesNotMatch(source, /options\.packagedRule/);
-});
-
-test('signer wrapper without a packaged rule fails closed', () => {
+test('dynamic wrapper rejects raw rules and requires the nominal verified source', () => {
+  assert.throws(() => signerWrapperSource(fixture));
   const source = signerWrapperSource(null);
-  auditSigningRuleBinding(source, null, { required: false });
-  assert.match(source, /unsupported_revision/);
-  assert.match(source, /update the extension/i);
-  assert.throws(() => auditSigningRuleBinding(source, null, { required: true }));
+  auditExecutableSource('signer-wrapper.js', source);
+  assert.match(source, /isVerifiedSigningParameterSource/);
+  assert.doesNotMatch(source, /PACKAGED_SIGNING_RULE_B64/);
 });
 
-test('packaged signer cannot be switched back to reload by caller options', async () => {
-  const asModule = (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-  const dependency = asModule('export async function createChromeBrowserSigningProvider(options) { return options; }');
-  const wrapper = await import(asModule(signerWrapperSource(fixture)
+test('packaged dynamic signer fixes observe-only and refuses unsigned caller modes', async () => {
+  const asModule = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+  const dependency = asModule('export const isVerifiedSigningParameterSource = value => value?.nominal === true; export async function createChromeBrowserSigningProvider(options) { return options; }');
+  const wrapper = await import(asModule(signerWrapperSource(null)
     .replaceAll("'packaged-signer-implementation'", JSON.stringify(dependency))));
-  const options = await wrapper.createChromeBrowserSigningProvider({
-    captureMode: 'safe-reload', packagedRule: { untrusted: true }, expectedIdentity: '42',
-  });
+  await assert.rejects(wrapper.createChromeBrowserSigningProvider({ packagedRule: fixtureRule }));
+  await assert.rejects(wrapper.createChromeBrowserSigningProvider({ parameterSource: {} }));
+  const source = { nominal: true };
+  const options = await wrapper.createChromeBrowserSigningProvider({ captureMode: 'safe-reload', parameterSource: source });
   assert.equal(options.captureMode, 'observe-only');
-  assert.deepEqual(options.packagedRule, fixtureRule);
-  assert.equal(options.expectedIdentity, '42');
+  assert.equal(options.parameterSource, source);
 });
 
 test('executable audit rejects runtime discovery and executable-code factories', () => {

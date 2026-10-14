@@ -2,8 +2,9 @@
 
 <!-- CODE-VERIFY: extension/qualification/signer-release.mjs SIGNER_RELEASE, extension/transport/read-only-history-coordinator.mjs -->
 
-The product pins connector `0.5.0-rc.2`. It retains `safe-reload` as the default.
-Opt-in observe-only capture is enabled separately by onboarding.
+The product pins connector `0.6.0-rc.4`. Product fixes observe-only capture and
+uses one independently verified parameter source per worker. Its publication
+authority is separate from account proof and the versioned history-kind mapping.
 
 The reviewed prerelease delivers a versioned client category with each history
 record. It is a bounded client parity standard. It supplies no backend guarantee

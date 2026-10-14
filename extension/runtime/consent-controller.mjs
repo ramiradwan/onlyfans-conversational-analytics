@@ -781,7 +781,7 @@ export class ConsentController {
       delivery: {
         startup_error_code: ['startup_failed', 'local_service_unavailable', 'local_service_timeout'].includes(runtime.startup_error_code)
           ? runtime.startup_error_code : null,
-        history_error_code: ['history_unavailable', 'unsupported_browser', 'identity_required'].includes(runtime.history_error_code)
+        history_error_code: ['history_unavailable', 'unsupported_browser', 'identity_required', 'history_dependency_wait', 'software_update_required'].includes(runtime.history_error_code)
           ? runtime.history_error_code : null,
         browser_tab_sleeping: this.phase === 'full'
           && onlyFansTabs.some((tab) => Number.isInteger(tab?.id))

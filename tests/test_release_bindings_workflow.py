@@ -39,10 +39,6 @@ REQUIRED_INPUTS = (
     FETCH_REVISION_INPUT,
     "legal_bindings_path",
     "legal_bindings_digest",
-    "signing_rule_release_tag",
-    "signing_rule_release_asset_id",
-    "signing_rule_digest",
-    "signing_rule_source_revision",
 )
 
 # Each coordinate reaches the gate under its own name, so no two of them can

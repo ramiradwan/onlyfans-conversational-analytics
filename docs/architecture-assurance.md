@@ -19,7 +19,7 @@ The current-design exception `DESIGN-PROJECTION-ACTIVATION-IDENTITY` permits the
 
 | Measure | Count |
 | --- | ---: |
-| Modules | 25 |
+| Modules | 26 |
 | Semantic invariants | 22 |
 | Qualified semantic invariants | 13 |
 | Unique permanent semantic-oracle falsifiers | 8 |

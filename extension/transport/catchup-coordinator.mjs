@@ -1,3 +1,4 @@
+import { prepareSigningDependency } from '../runtime/signing-parameters.mjs';
 import { MAX_CURSOR_LENGTH, SAFE_CURSOR } from 'local-authenticated-read-connector/browser-signing';
 import { normalizeSignerConversation, normalizeSignerMessage } from './read-only-signer-normalization.mjs';
 import { AcquisitionAllowance, emptyCounters } from './acquisition-allowance.mjs';
@@ -391,6 +392,12 @@ export class CatchupCoordinator {
         const probe = !inventory && chat.probe && chat.cursor === null;
         const category = inventory ? job.grant.kind === 'canary' ? 'canary_list' : 'catchup_list' : 'catchup_messages';
         const policy = this.configuration().history_acquisition;
+        if (!await this.allowance.canReserve(category, policy.pages_per_wake, { automatic: true })) break;
+        if (!await prepareSigningDependency({ signer: this.signer, job, signal: this.controller.signal,
+          clock: this.clock, reserveProof: async () => { await this.#assert(expected); return this.allowance.reserve('identity', policy.pages_per_wake, { requirePageCapacity: true }); }, save: (next) => this.outbox.saveHistoryJob(next, () => this.#assert(expected),
+            { signal: this.controller.signal, assertCurrent: () => this.controller.signal.throwIfAborted() }),
+        })) break;
+        await this.#assert(expected);
         if (!await this.allowance.reserve(category, policy.pages_per_wake, { automatic: true, retry: job.retries > 0 })) break;
         const count = inventory ? 'list' : probe ? 'probes' : 'messages';
         job.counts[count]++;
@@ -406,6 +413,7 @@ export class CatchupCoordinator {
             signal.addEventListener('abort', cancel, { once: true });
           });
           const result = await Promise.race([interrupted, this.signer.read({ operation, refreshMode: 'allow', signal,
+            ...(this.signer.parameterOwner ? { reserveProof: async () => { await this.#assert(expected); return this.allowance.reserve('identity', policy.pages_per_wake); } } : {}),
             parameters: { ...(inventory ? {} : { conversationId: chatId }), query: { limit: policy.page_size, cursor } } })])
             .finally(() => signal.removeEventListener('abort', cancel));
           await this.#assert(expected);
@@ -486,7 +494,7 @@ export class CatchupCoordinator {
             chat.cursor = data.continuation;
           }
           const resultCommit = await this.#commit(job, { changes, evidence,
-            cursor: inventory ? nextCursor : job.cursor, patch: { ...job, retries: 0, retry_at: null } }, expected);
+            cursor: inventory ? nextCursor : job.cursor, patch: { ...job, retries: 0, retry_at: null, parameter_wait: null } }, expected);
           job = resultCommit.job;
         } catch (error) {
           job = await this.outbox.historyJob(ACTIVE);

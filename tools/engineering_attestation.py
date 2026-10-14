@@ -152,7 +152,9 @@ PRODUCER_JOB_NAMES = {
 STEP_LEGAL_COORDINATES = "legal-coordinates"
 STEP_LEGAL_RETRIEVAL = "legal-retrieval"
 STEP_LEGAL_DIGEST = "legal-digest"
-STEP_SIGNING_RULE = "signing-rule"
+STEP_SIGNING_PARAMETERS = "signing-parameters"
+# Exit-code compatibility for historical packaged-rule qualification helpers.
+STEP_SIGNING_RULE = STEP_SIGNING_PARAMETERS
 STEP_PRIVACY_POLICY = "privacy-policy"
 STEP_PACKAGE_AUDIT = "package-audit"
 STEP_ARTIFACT_DIGEST = "artifact-digest"
@@ -1887,6 +1889,59 @@ def qualify_packaged_signing_rule(
 
 
 @dataclass(frozen=True)
+class PackagedSigningParameters:
+    """Packaged engine, publication trust and fixed distribution identity."""
+
+    schema: str
+    mode: str
+    engine: str
+    parameter_schema: str
+    trust_sha256: str
+    distribution_origin: str
+    distribution_base_path: str
+
+
+def qualify_packaged_signing_parameters(chrome_zip: QualifiedChromeZip) -> PackagedSigningParameters:
+    """Recompute public authority from ZIP bytes and require its runtime binding."""
+    from app.security.signing_parameter_publications import canonical, validate_trust
+    expected = {
+        "schema": "ofca-signing-parameter-consumer/v1", "mode": "verified",
+        "engine": "onlyfans-sha1-checksum/v1", "parameter_schema": "local-packaged-signing-rule/v1",
+        "trust_sha256": "9a0965a3684afae9b4745d9c36845abb2f0a168ce3b1da3256567720542873c9",
+        "distribution_origin": "https://updates.dipsy.fi", "distribution_base_path": "/signing-parameters/v1/",
+    }
+    if chrome_zip.metadata.get("signing_rule") is not None or SIGNING_RULE_FILE in chrome_zip.entries:
+        refuse(STEP_SIGNING_PARAMETERS, "verified consumers cannot carry an unsigned static rule")
+    if chrome_zip.metadata.get("signing_parameters") != expected:
+        refuse(STEP_SIGNING_PARAMETERS, "recorded signing parameter authority differs from the reviewed release")
+    trust_bytes = chrome_zip.entries.get("signing-publication-trust.json")
+    release_bytes = chrome_zip.entries.get("signing-parameter-release.json")
+    if trust_bytes is None or release_bytes is None:
+        refuse(STEP_SIGNING_PARAMETERS, "the Chrome ZIP lacks required public signing release resources")
+    if len(trust_bytes) > 16384 or len(release_bytes) > 4096:
+        refuse(STEP_SIGNING_PARAMETERS, "packaged public signing release resources exceed their bounds")
+    try:
+        trust = load_json_strict(trust_bytes, label="publication public trust")
+        validate_trust(trust, production=True)
+        trust_canonical = canonical(trust)
+        release = load_json_strict(release_bytes, label="signing distribution release binding")
+    except (ContractError, ValueError, TypeError, RecursionError):
+        refuse(STEP_SIGNING_PARAMETERS, "packaged public signing authority is invalid")
+    if sha256_bytes(trust_canonical) != expected["trust_sha256"] or release != {
+        "schema": "ofca-signing-parameter-release/v1", "origin": expected["distribution_origin"],
+        "base_path": expected["distribution_base_path"], "trust_sha256": expected["trust_sha256"],
+    }:
+        refuse(STEP_SIGNING_PARAMETERS, "packaged trust or fixed distribution differs from its declaration")
+    background = chrome_zip.entries.get(BACKGROUND_FILE)
+    if background is None:
+        refuse(STEP_SIGNING_PARAMETERS, "the Chrome ZIP lacks its signing runtime")
+    source = background.decode("utf-8", errors="replace")
+    if source.count(base64.b64encode(trust_canonical).decode("ascii")) != 1:
+        refuse(STEP_SIGNING_PARAMETERS, "packaged publication trust is not bound exactly once into the runtime")
+    return PackagedSigningParameters(**expected)
+
+
+@dataclass(frozen=True)
 class ReleasePrivacyPolicy:
     """The privacy policy coordinate the shipped artifact resolves to."""
 
@@ -2102,7 +2157,6 @@ def qualify_legal_bindings(
 def run_package_audit(
     *,
     artifact: Path,
-    signing_rule: Path,
     legal_bindings: Path,
 ) -> str:
     """Require the exact Store ZIP to pass the exact-binding package audit."""
@@ -2117,7 +2171,6 @@ def run_package_audit(
             str(EXTENSION_BUILD_SCRIPT),
             "--audit-package",
             f"--artifact={artifact}",
-            f"--packaged-signing-rule={signing_rule}",
             f"--legal-release-bindings={legal_bindings}",
             f"--customer-release-config={CUSTOMER_RELEASE_CONFIG}",
         ],
@@ -2249,7 +2302,7 @@ class QualifiedStoreRelease:
 
     chrome_zip: QualifiedChromeZip
     legal_bindings: QualifiedLegalBindings
-    signing_rule: PackagedSigningRule
+    signing_parameters: PackagedSigningParameters
     privacy_policy: ReleasePrivacyPolicy
     artifact_path: Path
     artifact_sha256: str
@@ -2280,18 +2333,15 @@ def qualify_store_release(
         runner_temp=temporary_root,
         environment=environment,
     )
-    signing_rule = qualify_packaged_signing_rule(chrome_zip)
+    signing_parameters = qualify_packaged_signing_parameters(chrome_zip)
     privacy_policy = qualify_release_privacy_policy(
         chrome_zip, legal_bindings.document
     )
     artifact_path = temporary_root / chrome_zip.filename
     artifact_path.write_bytes(chrome_zip.bytes)
     if audit_package:
-        rule_path = temporary_root / SIGNING_RULE_FILE
-        rule_path.write_bytes(chrome_zip.entries[SIGNING_RULE_FILE])
         run_package_audit(
             artifact=artifact_path,
-            signing_rule=rule_path,
             legal_bindings=staged_document,
         )
     artifact_sha256 = recompute_store_zip_digest(
@@ -2300,7 +2350,7 @@ def qualify_store_release(
     return QualifiedStoreRelease(
         chrome_zip=chrome_zip,
         legal_bindings=legal_bindings,
-        signing_rule=signing_rule,
+        signing_parameters=signing_parameters,
         privacy_policy=privacy_policy,
         artifact_path=artifact_path,
         artifact_sha256=artifact_sha256,

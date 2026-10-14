@@ -205,12 +205,14 @@ for (const [mode, createRuntime] of [['full', createAgentRuntime], ['read-only',
       outboxFactory: () => ({ initialize: async () => ({ agent_stream_id: 'fixture-stream',
         acknowledged_source_seq: 0, applied_config_revision: null, account_epoch: 1 }) }),
       configHttpFactory: () => ({}), configActivatorFactory: () => ({}),
-      configClientFactory: () => ({ initialize: async () => {}, activeDocument: {
+      configClientFactory: () => ({ initialize: async () => {}, configAuthTicket: 'fixture-config-ticket', activeDocument: {
         history_acquisition: { authorized_platform_creator_id: EXPECTED_ID },
       } }),
       signerFactory(options) { modes.push(options.captureMode); return fixture.createProvider(options); },
       historyCoordinatorFactory(options) { signer = options.signer; return { wake: async () => {}, stop() {} }; },
-      transportFactory: () => ({ start() {}, stop() {} }),
+      transportFactory: () => ({ start() {}, stop() {}, session: {
+        creator_account_id: 'application-account', agent_installation_id: 'fixture-installation',
+      } }),
     });
     try {
       await runtime.start();

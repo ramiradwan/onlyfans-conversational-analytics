@@ -234,13 +234,14 @@ def test_windows_shards_must_match_checked_in_file_manifest(windows_manifest, fa
         gate.validate_coverage(reports)
 
 
-def test_windows_manifest_load_failure_is_a_gate_failure(monkeypatch):
+@pytest.mark.parametrize("event", ["pull_request", "push", "workflow_dispatch"])
+def test_windows_manifest_load_failure_is_a_gate_failure(monkeypatch, event):
     def invalid_manifest(root):
         raise ValueError("invalid manifest schema")
 
     monkeypatch.setattr(gate, "load_windows_full_manifest", invalid_manifest)
     with pytest.raises(gate.GateError, match="invalid Windows full regression manifest"):
-        gate.validate_coverage(_reports())
+        gate.validate_coverage(_pr_inputs()[2] if event == "pull_request" else _reports(), event=event)
 
 
 @pytest.mark.parametrize("lane", gate.WINDOWS_FULL_LANES)
@@ -616,6 +617,15 @@ def _pr_inputs():
     return jobs, needs, reports
 
 
+@pytest.mark.parametrize("fault", ["unassigned", "absent"])
+def test_pr_checks_exhaustive_manifest_even_when_its_execution_is_skipped(windows_manifest, fault):
+    reports = _pr_inputs()[2]
+    if fault == "unassigned": windows_manifest["files"].pop("tests/test_unit.py")
+    else: windows_manifest["files"]["tests/test_absent.py"] = 1
+    with pytest.raises(gate.GateError, match="Windows full regression manifest"):
+        gate.validate_coverage(reports, event="pull_request")
+
+
 @pytest.mark.parametrize("unexpected_lane", [gate.SCALE_LANE, *gate.WINDOWS_FULL_LANES])
 def test_pr_requires_expected_producer_skips_and_no_exhaustive_or_scale_artifact(tmp_path, unexpected_lane):
     jobs, needs, reports = _pr_inputs()
@@ -693,12 +703,13 @@ def _rename_node(reports, original, renamed):
 
 
 @pytest.mark.parametrize("identity,reason", list(gate.PR_SKIP_BASELINE.items()))
-def test_pr_accepts_only_reviewed_skip_identity_platform_and_reason(identity, reason):
+def test_pr_accepts_only_reviewed_skip_identity_platform_and_reason(identity, reason, windows_manifest):
     node, platform = identity
     _, _, reports = _pr_inputs()
     original = ("tests/test_projection1.py::test_store" if reason == "Skipped: Linux process filesystem observation"
                 else "tests/test_platform.py::test_fs" if platform == "Windows" else "tests/test_unit.py::test_fast")
     _rename_node(reports, original, node)
+    windows_manifest["files"][node.split("::", 1)[0]] = windows_manifest["files"].pop(original.split("::", 1)[0])
     for lane, report in reports.items():
         if (node in report["selected"] and not gate.SPECS[lane].reference
                 and gate.SPECS[lane].platform == platform):
@@ -711,10 +722,11 @@ def test_pr_accepts_only_reviewed_skip_identity_platform_and_reason(identity, re
         gate.validate_coverage(reports, event="pull_request")
 
 
-def test_reviewed_linux_proc_skip_on_windows_still_requires_linux_execution():
+def test_reviewed_linux_proc_skip_on_windows_still_requires_linux_execution(windows_manifest):
     _, _, reports = _pr_inputs()
     node = "tests/test_analytics_closure_process.py::test_proc_observation_only_accepts_disappearance[OSError]"
     _rename_node(reports, "tests/test_projection1.py::test_store", node)
+    windows_manifest["files"][node.split("::", 1)[0]] = windows_manifest["files"].pop("tests/test_projection1.py")
     _skip(reports["analytics-windows-contract"], node, gate.PR_SKIP_BASELINE[(node, "Windows")])
     gate.validate_coverage(reports, event="pull_request")
     _skip(reports["analytics-integration-1"], node, "Skipped: lost Linux observation")
@@ -722,10 +734,11 @@ def test_reviewed_linux_proc_skip_on_windows_still_requires_linux_execution():
         gate.validate_coverage(reports, event="pull_request")
 
 
-def test_reviewed_windows_skip_cannot_move_to_another_contract():
+def test_reviewed_windows_skip_cannot_move_to_another_contract(windows_manifest):
     _, _, reports = _pr_inputs()
     node = "tests/test_packaging_smoke.py::test_platform_capability_probe_leaves_no_persisted_key"
     _rename_node(reports, "tests/test_projection1.py::test_store", node)
+    windows_manifest["files"][node.split("::", 1)[0]] = windows_manifest["files"].pop("tests/test_projection1.py")
     _skip(reports["analytics-windows-contract"], node, gate.PR_SKIP_BASELINE[(node, "Windows")])
     with pytest.raises(gate.GateError, match="Windows contract classification differs"):
         gate.validate_coverage(reports, event="pull_request")

@@ -9,7 +9,9 @@ export class AcquisitionAllowance {
 
   update(work) { return this.outbox.updateAcquisitionState(work); }
 
-  async reserve(category, limit, { automatic = false, retry = false } = {}) {
+  canReserve(category, limit, options = {}) { return this.reserve(category, limit, { ...options, checkOnly: true }); }
+
+  async reserve(category, limit, { automatic = false, retry = false, checkOnly = false, requirePageCapacity = false } = {}) {
     let allowed = false;
     await this.update(state => {
       const now = this.clock();
@@ -21,8 +23,9 @@ export class AcquisitionAllowance {
       const page = category !== 'identity';
       const reserveHistory = automatic && state.history_pending === true
         && now - (state.history_at ?? 0) >= 300_000 ? 1 : 0;
-      if (page && state.used >= Math.max(0, limit - reserveHistory)) return;
+      if ((page || requirePageCapacity) && state.used >= Math.max(0, limit - reserveHistory)) return;
       if (automatic && daily.automatic >= this.dailyCap) return;
+      if (checkOnly) { allowed = true; return; }
       if (page) state.used++;
       if (automatic) daily.automatic++;
       if (category.startsWith('history_')) state.history_at = now;

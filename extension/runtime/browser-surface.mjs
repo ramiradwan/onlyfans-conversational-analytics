@@ -15,7 +15,7 @@ export function browserSurface({ consent, legal, historyErrorCode = null }) {
     site_access: siteAccess,
     history_permission: consent?.history_permission === true ? 'granted' : 'missing',
     legal_review_required: legal?.requires_reauthorization === true,
-    history_error_code: ['identity_required', 'unsupported_revision', 'history_unavailable'].includes(historyErrorCode)
+    history_error_code: ['identity_required', 'unsupported_revision', 'history_unavailable', 'history_dependency_wait', 'software_update_required'].includes(historyErrorCode)
       ? historyErrorCode : null,
   };
 }

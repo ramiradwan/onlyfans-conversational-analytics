@@ -45,7 +45,6 @@ SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"
 # Release inputs a Store candidate is never built without. They are resolved
 # against the tree being built, which a falsifier may stage as a copy.
 FIXTURE_DIRECTORY = Path("extension") / "tests" / "fixtures"
-SIGNING_RULE_FIXTURE = FIXTURE_DIRECTORY / "packaged-signing-rule.json"
 LEGAL_BINDINGS_FIXTURE = FIXTURE_DIRECTORY / "legal-instrument-bindings.synthetic.json"
 SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy"
 _RUNTIME_CONFIGURATION = """\
@@ -491,8 +490,6 @@ def _build_real_installer(
             "-OutputRoot",
             str(output_root),
             "-DevelopmentAgentBundle",
-            "-PackagedSigningRule",
-            str(project_root / SIGNING_RULE_FIXTURE),
             "-LegalReleaseBindings",
             str(project_root / LEGAL_BINDINGS_FIXTURE),
             "-PrivacyPolicyUrl",

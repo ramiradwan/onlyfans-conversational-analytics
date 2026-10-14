@@ -25,6 +25,14 @@ const agent: AgentStatePayload = {
 };
 
 describe('owner-scoped acquisition and saved history', () => {
+  it('keeps a parameter dependency separate from connection, permission and saved data', () => {
+    const waiting = { ...agent, browser: { ...agent.browser!, history_error_code: 'history_dependency_wait' as const } };
+    expect(presentHistory(settings, waiting, coverage)).toMatchObject({ label: 'Waiting', tone: 'info' });
+    expect(presentHistory(settings, waiting, { ...coverage, status: 'complete' }).label).toBe('Saved');
+    const incompatible = { ...agent, browser: { ...agent.browser!, history_error_code: 'software_update_required' as const } };
+    expect(presentHistory(settings, incompatible, coverage)).toMatchObject({ label: 'Update needed',
+      detail: 'History collection is waiting for a compatible app update.' });
+  });
   it('distinguishes unsupported signing from permission and saved coverage', () => {
     expect(presentHistory(settings, agent, coverage)).toMatchObject({ label: 'Needs attention', tone: 'warning' });
     expect(presentHistory(settings, { ...agent, browser: { ...agent.browser!, history_permission: 'missing' } }, coverage).label).toBe('Permission needed');

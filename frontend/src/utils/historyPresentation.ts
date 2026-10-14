@@ -28,6 +28,12 @@ export function presentHistory(settings: HistorySettings, agent: AgentStatePaylo
   if (settings.desired_state !== settings.effective_state) return {
     label: 'Starting', detail: 'Waiting for the extension to apply message history settings.', tone: 'info',
   };
+  if (agent.browser?.history_error_code === 'history_dependency_wait') return {
+    label: 'Waiting', detail: 'History collection is temporarily waiting. It will retry automatically.', tone: 'info',
+  };
+  if (agent.browser?.history_error_code === 'software_update_required') return {
+    label: 'Update needed', detail: 'History collection is waiting for a compatible app update.', tone: 'warning',
+  };
   if (agent.browser?.history_error_code === 'unsupported_revision') return {
     label: 'Needs attention', detail: 'The last history check could not read this site version. Check for an app update.', tone: 'warning',
   };
