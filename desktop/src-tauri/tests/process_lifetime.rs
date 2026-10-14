@@ -238,7 +238,8 @@ fn interrupt_before_listener(child: &mut windows::Brain, migrating_count: usize)
         child.stop(),
         "pre-listener cancellation used forced Job cleanup"
     );
-    assert_eq!(child.exit_code().unwrap(), Some(0));
+    // run_brain returns 1 when parent closure cancels pre-listener startup.
+    assert_eq!(child.exit_code().unwrap(), Some(1));
     assert!(windows::listeners().unwrap().is_empty());
 }
 
@@ -395,6 +396,48 @@ fn installed_c_resumes_governed_state_after_durable_successor_intent() {
         )
         .unwrap();
     }
+}
+
+#[test]
+#[ignore = "requires the recorded interrupted B fixture and its original receipts; never seeds or replaces retained authority"]
+fn installed_b_reinterrupts_only_its_recorded_fixture() {
+    let (image, data, receipt) = installed_corrective_context("1.0.6.0");
+    let original: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(receipt.join("original.json")).unwrap()).unwrap();
+    let failed: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(receipt.join("after-failed-b.json")).unwrap())
+            .unwrap();
+    let current = retained_fixture("observe", &data, None);
+    assert_retained_work(&original, &current);
+    assert_eq!(current, failed, "recorded fixture changed after inspection");
+    assert_eq!(current["auth_version"], 33);
+    assert_eq!(current["canonical_version"], 11);
+    assert_eq!(current["upgrade"]["schema"], "ofca-upgrade/v2");
+    assert_eq!(current["upgrade"]["original_version"], "1.0.6.0");
+    assert_eq!(current["upgrade"]["resume_version"], "1.0.6.0");
+    assert_eq!(current["upgrade"]["phase"], "intent");
+    let _installer_signal = windows::application_mutex().unwrap();
+    assert!(windows::listeners().unwrap().is_empty());
+    let mut b = windows::Brain::start(
+        &image,
+        &data,
+        "qualification-native-handoff-00000000000000000000000001",
+    )
+    .unwrap();
+    interrupt_before_listener(&mut b, 1);
+    let publication = retained_fixture("publish", &data, None);
+    assert_retained_work(&original, &publication);
+    assert_eq!(publication["canonical_version"], 11);
+    assert!(publication["publication"].is_string());
+    assert_eq!(
+        publication["upgrade"], current["upgrade"],
+        "same-target resume replaced checkpoint evidence"
+    );
+    std::fs::write(
+        receipt.join("interrupted-b.json"),
+        serde_json::to_vec_pretty(&publication).unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]

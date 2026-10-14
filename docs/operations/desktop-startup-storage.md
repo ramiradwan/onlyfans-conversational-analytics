@@ -53,6 +53,20 @@ cargo test --locked --features qualification-tools --test process_lifetime froze
 
 The native test owns a unique temporary root and TCP port 17871. Run other real Brain startup tests sequentially. `BRAIN_QUALIFICATION_ROWS` can vary the synthetic workload between 100 and 500,000 rows; record the chosen size with the result. The fixture does not ship in the runtime.
 
+## Installed corrective qualification
+
+The controlled installed test uses `OFCA.Qualification.Direct` versions `1.0.6.0` and `1.0.7.0` with the same frozen Brain. It exercises package-version adoption and pending migration recovery, not a new software release or automatic delivery. Windows validates each process's actual package identity before the native harness selects the governed default root.
+
+The fixture's `claim` operation refuses existing state, production roots and other qualification profiles. Its private marker permits synthetic data only in `%LOCALAPPDATA%\OnlyFans Conversational Analytics\qualification\OFCA.Qualification.Direct`. B starts the independent auth32 runtime there, seeds the documented canonical11 workload, then stops before normal admission after auth33 commits. Original hashes, counts and checkpoint evidence are retained outside the data root.
+
+The B helper is `installed_b_records_interrupted_intent_in_the_governed_root`. An interrupted qualification can use `installed_b_reinterrupts_only_its_recorded_fixture` only with the original and independently inspected failure receipts. That path verifies the retained state before resuming; it creates no replacement key, configuration or checkpoint. Pre-listener parent cancellation returns process exit 1, while normal listener shutdown returns 0.
+
+After all B processes exit, a controlled `Add-AppxPackage` update registers C. `installed_c_resumes_governed_state_after_durable_successor_intent` first cancels C after successor intent is durable. It checks that the original checkpoint inventory and manifest remain unchanged, then restarts C to complete canonical12 and verifies an unchanged relaunch without checkpointing. Pending work, original protected material and the publication checkpoint written after B's snapshot must survive.
+
+This sequence passed through package-debugging activation on the qualification host. An independent unpackaged observer reopened the same original DPAPI material and encrypted stores after C was uninstalled. Temporary registration and certificate trust were removed; the claimed synthetic root was preserved. Ordinary Bridge activation, WebView2 profile recovery, standard-user qualification at the customer minimum and registered App Installer delivery remain separate gates.
+
+These opt-in tests require `BRAIN_QUALIFICATION_IMAGE`, `BRAIN_QUALIFICATION_A_IMAGE`, `BRAIN_QUALIFICATION_PYTHON` and `BRAIN_QUALIFICATION_RECEIPT_DIRECTORY`. Run each native test executable inside its matching registered package context, with `--exact --ignored --nocapture --test-threads=1`. Keep the same receipt directory and claimed root between B and C; never remove retained state to make a failed migration launch.
+
 ## Package metadata and qualification isolation
 
 Native and backend consumers validate the immutable `desktop-release.json` against Windows `GetCurrentPackageId`. Missing metadata in a packaged process, a descriptor in an unpackaged process, identity mismatch, unknown/duplicate fields or a Store descriptor carrying a direct feed refuses. The descriptor describes executable distribution and storage; it grants no account or update authority. Update-source registration validation remains required before servicing.
