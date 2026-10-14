@@ -145,6 +145,9 @@ fn retained_fixture(operation: &str, data: &Path, rows: Option<usize>) -> serde_
     if let Some(rows) = rows {
         command.arg(rows.to_string());
     }
+    if data.join(".qualification-upgrade-fixture.json").is_file() {
+        command.arg("--governed-qualification-root");
+    }
     let output = command.output().unwrap();
     assert!(
         output.status.success(),
@@ -167,6 +170,230 @@ fn assert_retained_work(before: &serde_json::Value, after: &serde_json::Value) {
         ".ofca-master-key.dpapi",
     ] {
         assert_eq!(before[key], after[key], "retained work changed: {key}");
+    }
+}
+
+fn installed_corrective_context(version: &str) -> (PathBuf, PathBuf, PathBuf) {
+    assert!(std::env::var_os("LOCAL_ANALYTICS_DATA_DIR").is_none());
+    let actual = windows::package_identity()
+        .unwrap()
+        .expect("actual registered package context required");
+    assert_eq!(actual.name, "OFCA.Qualification.Direct");
+    assert_eq!(actual.publisher, "CN=OFCA MSIX Qualification Direct");
+    assert_eq!(actual.version, version);
+    assert_eq!(actual.architecture, "x64");
+    let image = PathBuf::from(std::env::var_os("BRAIN_QUALIFICATION_IMAGE").unwrap())
+        .canonicalize()
+        .unwrap();
+    let release = deployment::load(
+        &image.parent().unwrap().join("desktop-release.json"),
+        Some(&actual),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(release.purpose, "qualification");
+    let data = policy::data_directory(&image).unwrap();
+    let expected = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap())
+        .join("OnlyFans Conversational Analytics/qualification/OFCA.Qualification.Direct")
+        .canonicalize()
+        .unwrap();
+    assert_eq!(data, dunce::simplified(&expected));
+    assert!(data.join(".qualification-upgrade-fixture.json").is_file());
+    let receipt = PathBuf::from(std::env::var_os("BRAIN_QUALIFICATION_RECEIPT_DIRECTORY").unwrap());
+    assert!(receipt.is_absolute() && receipt.is_dir());
+    (image, data, receipt)
+}
+
+fn interrupt_before_listener(child: &mut windows::Brain, migrating_count: usize) {
+    let mut supervisor = bootstrap::Supervisor::new(Instant::now());
+    let mut frames = Vec::new();
+    loop {
+        assert_eq!(
+            child.exit_code().unwrap(),
+            None,
+            "maintenance stopped before interruption"
+        );
+        let (bytes, closed) = child.bootstrap_bytes().unwrap();
+        assert!(!closed);
+        supervisor.receive(&bytes, Instant::now()).unwrap();
+        frames.extend_from_slice(&bytes);
+        assert!(
+            !supervisor.ready(),
+            "normal admission preceded interruption"
+        );
+        assert!(windows::listeners().unwrap().is_empty());
+        let migrations = frames
+            .split(|b| *b == b'\n')
+            .filter(|line| !line.is_empty())
+            .filter(|line| {
+                serde_json::from_slice::<serde_json::Value>(line).unwrap()["phase"] == "migrating"
+            })
+            .count();
+        if migrations >= migrating_count {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        child.stop(),
+        "pre-listener cancellation used forced Job cleanup"
+    );
+    assert_eq!(child.exit_code().unwrap(), Some(0));
+    assert!(windows::listeners().unwrap().is_empty());
+}
+
+#[test]
+#[ignore = "requires registered qualification package 1.0.6.0, claimed governed root and frozen A32; leaves interrupted evidence for C"]
+fn installed_b_records_interrupted_intent_in_the_governed_root() {
+    let (image, data, receipt) = installed_corrective_context("1.0.6.0");
+    assert!(
+        !data.join("auth.sqlite3").exists(),
+        "cannot adopt existing installation"
+    );
+    let older = PathBuf::from(std::env::var_os("BRAIN_QUALIFICATION_A_IMAGE").unwrap())
+        .canonicalize()
+        .unwrap();
+    let rows: usize = std::env::var("BRAIN_QUALIFICATION_ROWS")
+        .unwrap_or_else(|_| "150000".into())
+        .parse()
+        .unwrap();
+    assert!((100_000..=500_000).contains(&rows));
+    let _installer_signal = windows::application_mutex().unwrap();
+    let sid = windows::current_sid().unwrap();
+    assert!(windows::listeners().unwrap().is_empty());
+    let mut a = windows::Brain::start(
+        &older,
+        &data,
+        "qualification-native-handoff-00000000000000000000000001",
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !policy::verify_listener(&windows::listeners().unwrap(), a.pid, &older, &sid).unwrap() {
+        assert_eq!(a.exit_code().unwrap(), None);
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(a.stop());
+    let original = retained_fixture("seed", &data, Some(rows));
+    assert_eq!(original["auth_version"], 32);
+    assert_eq!(original["canonical_version"], 11);
+    std::fs::write(
+        receipt.join("original.json"),
+        serde_json::to_vec_pretty(&original).unwrap(),
+    )
+    .unwrap();
+    let mut b = windows::Brain::start(
+        &image,
+        &data,
+        "qualification-native-handoff-00000000000000000000000001",
+    )
+    .unwrap();
+    interrupt_before_listener(&mut b, 2);
+    let publication = retained_fixture("publish", &data, None);
+    assert_retained_work(&original, &publication);
+    assert!(publication["publication"].is_string());
+    assert_eq!(publication["auth_version"], 33);
+    assert_eq!(publication["canonical_version"], 11);
+    assert_eq!(publication["upgrade"]["schema"], "ofca-upgrade/v2");
+    assert_eq!(publication["upgrade"]["original_kind"], "package");
+    assert_eq!(publication["upgrade"]["original_version"], "1.0.6.0");
+    assert_eq!(publication["upgrade"]["phase"], "intent");
+    std::fs::write(
+        receipt.join("interrupted-b.json"),
+        serde_json::to_vec_pretty(&publication).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "requires registered qualification package 1.0.7.0 over interrupted B; tests durable successor intent then forward resume"]
+fn installed_c_resumes_governed_state_after_durable_successor_intent() {
+    let (image, data, receipt) = installed_corrective_context("1.0.7.0");
+    let original: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(receipt.join("original.json")).unwrap()).unwrap();
+    let publication: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(receipt.join("interrupted-b.json")).unwrap())
+            .unwrap();
+    let _installer_signal = windows::application_mutex().unwrap();
+    let sid = windows::current_sid().unwrap();
+    assert!(windows::listeners().unwrap().is_empty());
+    let mut c = windows::Brain::start(
+        &image,
+        &data,
+        "qualification-native-handoff-00000000000000000000000001",
+    )
+    .unwrap();
+    interrupt_before_listener(&mut c, 1);
+    let retargeted = retained_fixture("observe", &data, None);
+    assert_retained_work(&original, &retargeted);
+    assert_eq!(retargeted["publication"], publication["publication"]);
+    assert_eq!(retargeted["canonical_version"], 11);
+    assert_eq!(retargeted["upgrade"]["phase"], "intent");
+    assert_eq!(retargeted["upgrade"]["original_version"], "1.0.6.0");
+    assert_eq!(retargeted["upgrade"]["resume_version"], "1.0.7.0");
+    assert_ne!(
+        retargeted["upgrade"]["resume_target"],
+        publication["upgrade"]["resume_target"]
+    );
+    for key in [
+        "original_target",
+        "checkpoint_inventory",
+        "checkpoint_manifest_sha256",
+        "original_schemas",
+    ] {
+        assert_eq!(
+            retargeted["upgrade"][key], publication["upgrade"][key],
+            "original checkpoint changed: {key}"
+        );
+    }
+    std::fs::write(
+        receipt.join("interrupted-c.json"),
+        serde_json::to_vec_pretty(&retargeted).unwrap(),
+    )
+    .unwrap();
+    for cycle in 0..2 {
+        let started = Instant::now();
+        let mut c = windows::Brain::start(
+            &image,
+            &data,
+            "qualification-native-handoff-00000000000000000000000001",
+        )
+        .unwrap();
+        let mut supervisor = bootstrap::Supervisor::new(started);
+        let mut frames = Vec::new();
+        loop {
+            assert_eq!(c.exit_code().unwrap(), None, "successor failed to resume");
+            let (bytes, closed) = c.bootstrap_bytes().unwrap();
+            assert!(!closed);
+            supervisor.receive(&bytes, Instant::now()).unwrap();
+            frames.extend_from_slice(&bytes);
+            if policy::verify_listener(&windows::listeners().unwrap(), c.pid, &image, &sid).unwrap()
+            {
+                assert!(supervisor.ready());
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        println!(
+            "installed corrective resume cycle {cycle}: {:.3}s",
+            started.elapsed().as_secs_f64()
+        );
+        assert!(!String::from_utf8(frames)
+            .unwrap()
+            .contains("\"phase\":\"checkpointing\""));
+        assert!(!data.join("upgrade-checkpoint").exists());
+        assert!(c.stop(), "healthy successor used forced Job cleanup");
+        let completed = retained_fixture("observe", &data, None);
+        assert_retained_work(&original, &completed);
+        assert_eq!(completed["publication"], publication["publication"]);
+        assert_eq!(completed["canonical_version"], 12);
+        assert_eq!(completed["upgrade"]["phase"], "complete");
+        assert_eq!(completed["upgrade"]["resume_version"], "1.0.7.0");
+        std::fs::write(
+            receipt.join(format!("completed-c-{cycle}.json")),
+            serde_json::to_vec_pretty(&completed).unwrap(),
+        )
+        .unwrap();
     }
 }
 

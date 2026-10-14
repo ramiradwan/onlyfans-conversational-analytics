@@ -20,6 +20,52 @@ from app.persistence.upgrade_lifecycle import UpgradeStore, inspect_existing_sto
 from app.security.local_data_key import database_key
 
 pytestmark = [pytest.mark.ci_tier("integration"), pytest.mark.windows_compat]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="governed Windows qualification root")
+@pytest.mark.parametrize("selection", ["production", "another_profile", "existing"])
+def test_installed_fixture_cannot_claim_production_another_profile_or_existing_state(tmp_path, monkeypatch, selection):
+    from tools import startup_maintenance_qualification_fixture as fixture
+    base = tmp_path / "Local"
+    monkeypatch.setenv("LOCALAPPDATA", str(base))
+    root = base / "OnlyFans Conversational Analytics"
+    if selection != "production":
+        root = root / "qualification" / ("Another" if selection == "another_profile" else "OFCA.Qualification.Direct")
+    if selection == "existing":
+        root.mkdir(parents=True)
+        retained = root / "must-survive"
+        retained.write_bytes(b"synthetic retained evidence")
+    with pytest.raises(AssertionError):
+        fixture.claim(root)
+    if selection == "existing":
+        assert retained.read_bytes() == b"synthetic retained evidence"
+        assert not (root / fixture.FIXTURE_MARKER).exists()
+    else:
+        assert not root.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="governed Windows qualification root")
+@pytest.mark.parametrize("damage", ["unknown", "schema", "nonce", "type"])
+def test_governed_fixture_requires_closed_owned_marker(tmp_path, monkeypatch, damage):
+    import json
+    from tools import startup_maintenance_qualification_fixture as fixture
+    base = tmp_path / "Local"
+    monkeypatch.setenv("LOCALAPPDATA", str(base))
+    root = base / "OnlyFans Conversational Analytics" / "qualification" / "OFCA.Qualification.Direct"
+    marker = fixture.claim(root)
+    fixture.admit_governed_fixture(root)
+    if damage == "unknown":
+        marker["authority"] = True
+    elif damage == "schema":
+        marker["schema"] = "another"
+    elif damage == "nonce":
+        marker["nonce"] = "not-an-owner-marker"
+    else:
+        marker["nonce"] = True
+    (root / fixture.FIXTURE_MARKER).write_text(json.dumps(marker), encoding="utf-8")
+    with pytest.raises(AssertionError):
+        fixture.admit_governed_fixture(root)
+
 APP = Path(__file__).resolve().parents[1] / "app"
 AUTH_CATALOG = APP / "persistence" / "auth_sql"
 AUTH = UpgradeStore("auth.sqlite3", "auth", AUTH_CATALOG)

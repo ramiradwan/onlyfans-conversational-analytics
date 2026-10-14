@@ -2,7 +2,8 @@
 
 This tool is never packaged. It seeds the supported canonical v11 lineage,
 not an invented migration, and never constructs a migrating auth store.
-Only the native test's private temporary roots are admitted.
+Only private temporary roots or an explicitly claimed synthetic package root
+are admitted. No production data root can be selected.
 """
 from __future__ import annotations
 
@@ -11,16 +12,21 @@ from datetime import datetime, timezone
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tarfile
 import tempfile
 from types import SimpleNamespace
+from uuid import uuid4
 
 from app.core.first_run import VerifiedGrantBindings, initialize_production_configuration
 from app.persistence.database import AuthSQLite, CanonicalSQLite, open_encrypted_sqlite
 from app.persistence.migrations import InstallationMigrationLock, MigrationRunner
+from app.persistence.private_files import (reject_path_aliases, apply_private_directory_security,
+                                          apply_private_file_security, private_file_identity, file_sha256)
 from app.persistence.signing_parameters import SigningParameterPersistence
 from app.security.local_data_key import database_key
 from app.security.signing_parameter_publications import (
@@ -28,6 +34,36 @@ from app.security.signing_parameter_publications import (
 )
 
 REPOSITORY = Path(__file__).resolve().parents[1]
+FIXTURE_MARKER = ".qualification-upgrade-fixture.json"
+FIXTURE_SCHEMA = "ofca-installed-maintenance-fixture/v1"
+
+
+def governed_root(root: Path) -> None:
+    assert os.name == "nt"
+    expected = Path(os.environ["LOCALAPPDATA"]) / "OnlyFans Conversational Analytics" / "qualification" / "OFCA.Qualification.Direct"
+    assert reject_path_aliases(root) == reject_path_aliases(expected)
+
+
+def claim(root: Path) -> dict:
+    governed_root(root)
+    assert not root.exists(), "a qualification fixture cannot adopt existing state"
+    root.mkdir(parents=True)
+    apply_private_directory_security(root)
+    marker = {"schema": FIXTURE_SCHEMA, "nonce": uuid4().hex}
+    path = root / FIXTURE_MARKER
+    path.write_text(json.dumps(marker), encoding="utf-8")
+    apply_private_file_security(path)
+    return marker
+
+
+def admit_governed_fixture(root: Path) -> None:
+    governed_root(root)
+    path = root / FIXTURE_MARKER
+    private_file_identity(path, repair_permissions=False)
+    assert path.stat().st_size < 1024
+    marker = json.loads(path.read_bytes())
+    assert set(marker) == {"schema", "nonce"} and marker["schema"] == FIXTURE_SCHEMA
+    assert isinstance(marker["nonce"], str) and re.fullmatch(r"[0-9a-f]{32}", marker["nonce"])
 
 
 def observe(root: Path) -> dict:
@@ -63,6 +99,20 @@ def observe(root: Path) -> dict:
             assert not handle.read(16).startswith(b"SQLite format 3")
     for filename in ("runtime.env", ".ofca-master-key.dpapi"):
         result[filename] = sha256((root / filename).read_bytes())
+    from app.persistence import upgrade_lifecycle as upgrade
+    result["upgrade"] = None
+    if (root / upgrade.JOURNAL_FILENAME).exists():
+        metadata = upgrade._validate_metadata(upgrade._read_protected(root / upgrade.JOURNAL_FILENAME), checkpoint=False)
+        effective = upgrade._effective(metadata)
+        manifest = root / upgrade.CHECKPOINT_DIRECTORY / "checkpoint.dpapi"
+        result["upgrade"] = {"schema": metadata["schema"], "phase": metadata["phase"],
+            "original_version": metadata.get("release", {}).get("version"),
+            "original_kind": metadata.get("release", {}).get("kind"),
+            "original_target": metadata["target"], "resume_target": effective["target"],
+            "resume_version": effective.get("release", {}).get("version"),
+            "original_schemas": metadata["schemas"], "resume_schemas": effective["schemas"],
+            "checkpoint_inventory": metadata["files"],
+            "checkpoint_manifest_sha256": file_sha256(manifest) if manifest.exists() else None}
     return result
 
 
@@ -136,8 +186,16 @@ def publish(root: Path) -> None:
 
 def main() -> None:
     operation, supplied, *arguments = sys.argv[1:]
+    if operation == "claim":
+        assert not arguments
+        print(json.dumps(claim(Path(supplied)), sort_keys=True))
+        return
     root = Path(supplied).resolve(strict=True)
-    assert root.parent == Path(tempfile.gettempdir()).resolve() and root.name.startswith("bridge-process-test-")
+    if "--governed-qualification-root" in arguments:
+        arguments.remove("--governed-qualification-root")
+        admit_governed_fixture(root)
+    else:
+        assert root.parent == Path(tempfile.gettempdir()).resolve() and root.name.startswith("bridge-process-test-")
     with InstallationMigrationLock(root / ".ofca-runtime-writer.lock"):
         if operation == "seed":
             seed(root, int(arguments[0]))
