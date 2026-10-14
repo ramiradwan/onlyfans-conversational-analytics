@@ -15,6 +15,8 @@ mod policy;
 #[cfg(windows)]
 mod prerequisite;
 #[cfg(windows)]
+mod servicing;
+#[cfg(windows)]
 mod windows;
 
 #[cfg(windows)]
@@ -32,6 +34,44 @@ fn desktop_state(
         return Err("desktop_admission_required");
     }
     Ok(true)
+}
+
+#[cfg(windows)]
+struct UpdateCheckGuard(std::sync::Arc<host::Host>);
+#[cfg(windows)]
+impl Drop for UpdateCheckGuard {
+    fn drop(&mut self) {
+        self.0
+            .update_check_active
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[cfg(windows)]
+#[tauri::command]
+async fn desktop_update_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+) -> Result<servicing::UpdateStatus, &'static str> {
+    use std::sync::atomic::Ordering;
+    desktop_state(window.clone(), state.clone())?;
+    let owner = state.inner().clone();
+    owner
+        .update_check_active
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .map_err(|_| "update_check_in_progress")?;
+    let guard = UpdateCheckGuard(owner.clone());
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        servicing::inspect(owner.release.as_ref(), || {
+            owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
+        })
+    })
+    .await
+    .map_err(|_| "update_check_unavailable")?;
+    // A lost admission or closed window cannot receive a result from an old check.
+    desktop_state(window, state)?;
+    Ok(status)
 }
 
 #[cfg(windows)]
@@ -74,9 +114,9 @@ fn main() {
         }
         let names = deployment::instance_names(&data, &windows::current_sid()?, release.as_ref())?;
         let ownership = windows::claim_runtime_root(&names, &executable)?;
-        Ok::<_, &'static str>((executable, image, data, names, ownership))
+        Ok::<_, &'static str>((executable, image, data, names, ownership, release))
     })();
-    let (executable, image, data, names, _ownership) = match preparation {
+    let (executable, image, data, names, _ownership, release) = match preparation {
         Ok(value) => value,
         Err(reason) => {
             prerequisite::show_failure(reason);
@@ -117,6 +157,8 @@ fn main() {
         admitted: AtomicBool::new(false),
         stopped: AtomicBool::new(false),
         quitting: AtomicBool::new(false),
+        update_check_active: AtomicBool::new(false),
+        release,
         actions: sender,
     });
     let activation = state.clone();
@@ -139,6 +181,7 @@ fn main() {
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             desktop_state,
+            desktop_update_status,
             browser::desktop_refresh_presentation,
             browser::desktop_browser_task,
             browser::desktop_setup_code,

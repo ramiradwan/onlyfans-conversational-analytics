@@ -23,6 +23,8 @@ pub struct Host {
     pub admitted: AtomicBool,
     pub stopped: AtomicBool,
     pub quitting: AtomicBool,
+    pub update_check_active: AtomicBool,
+    pub release: Option<crate::deployment::DesktopRelease>,
     pub actions: SyncSender<Action>,
 }
 
@@ -90,7 +92,7 @@ fn run(
         }
         let secret = admission::launcher_secret()?;
         let mut admission = policy::AdmissionLease::new(
-            windows::Brain::start(&image, &data, &secret)?,
+            windows::Brain::start(image, data, &secret)?,
             &state.admitted,
         );
         let brain = &mut admission.backend;
@@ -108,7 +110,7 @@ fn run(
             if closed && !startup.ready() {
                 return Err("child_status_closed");
             }
-            if policy::verify_listener(&windows::listeners()?, brain.pid, &image, &sid)? {
+            if policy::verify_listener(&windows::listeners()?, brain.pid, image, &sid)? {
                 if startup.ready() {
                     break;
                 }
@@ -119,7 +121,7 @@ fn run(
         }
         let target = admission::entry(&secret, journey.as_deref())?;
         if brain.exit_code()?.is_some()
-            || !policy::verify_listener(&windows::listeners()?, brain.pid, &image, &sid)?
+            || !policy::verify_listener(&windows::listeners()?, brain.pid, image, &sid)?
         {
             return Err("child_unavailable");
         }
@@ -136,7 +138,7 @@ fn run(
             let mut exit = brain.exit_code()?;
             if exit.is_none() {
                 let listener = windows::listeners()
-                    .and_then(|rows| policy::verify_listener(&rows, brain.pid, &image, &sid));
+                    .and_then(|rows| policy::verify_listener(&rows, brain.pid, image, &sid));
                 if listener != Ok(true) {
                     // Shutdown closes the socket before the process signals. Revoke
                     // authority now, then observe the actual exit within the same

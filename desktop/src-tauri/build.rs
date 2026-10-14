@@ -29,6 +29,7 @@ fn main() {
             )
             .app_manifest(tauri_build::AppManifest::new().commands(&[
                 "desktop_state",
+                "desktop_update_status",
                 "desktop_refresh_presentation",
                 "desktop_window",
                 "desktop_browser_task",

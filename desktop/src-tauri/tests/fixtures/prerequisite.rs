@@ -8,6 +8,8 @@ mod deployment;
 mod policy;
 #[path = "../../src/prerequisite.rs"]
 mod prerequisite;
+#[path = "../../src/servicing.rs"]
+mod servicing;
 #[path = "../../src/windows.rs"]
 mod windows;
 
@@ -210,6 +212,22 @@ impl Platform for Qualification {
 
 fn main() {
     let scenario = std::env::args().nth(1).unwrap();
+    if scenario == "update-status" {
+        let identity = windows::package_identity().unwrap();
+        let executable = std::env::current_exe().unwrap();
+        let release = deployment::load(
+            &executable.parent().unwrap().join("desktop-release.json"),
+            identity.as_ref(),
+        )
+        .unwrap();
+        let status = servicing::inspect(release.as_ref(), || false);
+        let value = serde_json::json!({"schema":"ofca-update-source-qualification/v1", "package_identity_observed": identity.is_some(), "status": status});
+        if let Some(path) = std::env::args().nth(2) {
+            std::fs::write(path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+        }
+        println!("{value}");
+        return;
+    }
     if scenario == "installation-conflict" {
         let closer =
             std::thread::spawn(|| close_failure(prerequisite::INSTALLATION_CONFLICT_STATE, None));

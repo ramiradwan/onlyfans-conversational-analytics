@@ -131,7 +131,7 @@ pub fn legacy_registration() -> Result<Option<PathBuf>> {
         )
     } != ERROR_SUCCESS
         || !(4..=65536).contains(&size)
-        || size % 2 != 0
+        || !size.is_multiple_of(2)
     {
         return Err("runtime_installation_conflict");
     }
@@ -363,7 +363,7 @@ pub fn package_identity() -> Result<Option<crate::deployment::PackageIdentity>> 
         let end = start + size as usize;
         let read = |pointer: *const u16| -> Result<String> {
             let address = pointer as usize;
-            if address < start || address >= end || address % 2 != 0 {
+            if address < start || address >= end || !address.is_multiple_of(2) {
                 return Err("package_identity_unavailable");
             }
             let characters = std::slice::from_raw_parts(pointer, (end - address) / 2);

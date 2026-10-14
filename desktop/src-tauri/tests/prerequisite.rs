@@ -50,6 +50,14 @@ fn run(scenario: &str) -> serde_json::Value {
 }
 
 #[test]
+fn native_unpacked_update_probe_reports_no_managed_source() {
+    let value = run("update-status");
+    assert_eq!(value["package_identity_observed"], false);
+    assert_eq!(value["status"]["source"]["state"], "legacy_inno");
+    assert_eq!(value["status"]["availability"]["state"], "not_checked");
+}
+
+#[test]
 fn real_native_installation_conflict_has_close_and_guidance() {
     let value = run("installation-conflict");
     assert_eq!(value["state"], "desktop.installation_conflict");
