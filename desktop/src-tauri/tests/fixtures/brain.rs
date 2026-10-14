@@ -27,7 +27,7 @@ fn main() {
         .parse()
         .unwrap();
     unsafe {
-        use windows_sys::Win32::{Foundation::*, Storage::FileSystem::*, System::Pipes::*};
+        use windows_sys::Win32::{Foundation::*, Storage::FileSystem::*};
         assert_eq!(GetFileType(status as _), FILE_TYPE_PIPE);
         assert_ne!(SetHandleInformation(status as _, HANDLE_FLAG_INHERIT, 0), 0);
         let frames = b"{\"schema\":\"ofca-bootstrap-status/v1\",\"seq\":1,\"phase\":\"starting\",\"reason\":null}\n{\"schema\":\"ofca-bootstrap-status/v1\",\"seq\":2,\"phase\":\"checking\",\"reason\":null}\n";

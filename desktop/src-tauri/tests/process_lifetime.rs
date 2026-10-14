@@ -93,6 +93,65 @@ fn child_status_is_separate_from_lifetime_and_never_admits_a_listener() {
     );
     assert_eq!(child.exit_code().unwrap(), Some(0));
 }
+
+#[test]
+#[ignore = "requires a newly built frozen Brain supplied by BRAIN_QUALIFICATION_IMAGE"]
+fn frozen_brain_uses_native_status_installer_signal_and_graceful_parent_shutdown() {
+    let image = PathBuf::from(
+        std::env::var_os("BRAIN_QUALIFICATION_IMAGE").expect("explicit frozen artifact required"),
+    )
+    .canonicalize()
+    .unwrap();
+    let data = Directory::new();
+    let _installer_signal = windows::application_mutex().unwrap();
+    let sid = windows::current_sid().unwrap();
+    let mut original_key = None;
+    for _ in 0..2 {
+        assert!(
+            windows::listeners().unwrap().is_empty(),
+            "qualification port must be free"
+        );
+        let mut child = windows::Brain::start(
+            &image,
+            &data.0,
+            "qualification-native-handoff-00000000000000000000000001",
+        )
+        .unwrap();
+        let mut observation = bootstrap::Supervisor::new(Instant::now());
+        loop {
+            assert_eq!(
+                child.exit_code().unwrap(),
+                None,
+                "frozen child refused real native startup"
+            );
+            let (bytes, closed) = child.bootstrap_bytes().unwrap();
+            assert!(!closed);
+            observation.receive(&bytes, Instant::now()).unwrap();
+            if policy::verify_listener(&windows::listeners().unwrap(), child.pid, &image, &sid)
+                .unwrap()
+            {
+                assert!(
+                    observation.ready(),
+                    "listener appeared before validated startup"
+                );
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let key = std::fs::read(data.0.join(".ofca-master-key.dpapi")).unwrap();
+        if let Some(ref previous) = original_key {
+            assert_eq!(previous, &key);
+        } else {
+            original_key = Some(key);
+        }
+        assert!(
+            child.stop(),
+            "healthy frozen maintenance used forced Job cleanup"
+        );
+        assert_eq!(child.exit_code().unwrap(), Some(0));
+        assert!(windows::listeners().unwrap().is_empty());
+    }
+}
 #[test]
 fn killing_the_supervisor_does_not_leave_its_child_running() {
     use std::os::windows::process::CommandExt;
