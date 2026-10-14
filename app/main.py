@@ -228,6 +228,8 @@ async def startup_event():
     await broadcast.connect()
     await transport_manager.start()
     start_grant_refresh()
+    from app.services.signing_parameters import start_signing_parameters
+    await start_signing_parameters(_capability_license_store)
     if hasattr(app.state, "desktop_coordinator"):
         app.state.desktop_coordinator.start()
     # Use resources created for this application lifecycle.
@@ -239,6 +241,8 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     global _grant_refresh
+    from app.services.signing_parameters import stop_signing_parameters
+    await stop_signing_parameters()
     if hasattr(app.state, "desktop_coordinator"):
         await app.state.desktop_setup_core.close()
     if _grant_refresh is not None:

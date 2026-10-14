@@ -99,19 +99,21 @@ then captures actual extension, provisioning, and Bridge pages. The existing Win
 E2E suite keeps its consent, native permission, capture, and desktop-pairing checks;
 its helpers now follow setup/Options handoffs instead of retired popup controls.
 
-For a live Full-mode source test, build with both `--legal-release-bindings=<path>`
-and `--packaged-signing-rule=<reviewed-rule.json>`. A plain development build omits
-the reviewed rule and deliberately refuses history acquisition. The pinned rule
-and its verification coordinates are in `extension/qualification/signer-0.2.0.md`.
+For a Full-mode source test, build with `--legal-release-bindings=<path>` and the
+required packaged production public trust and engine resources. Generic builds
+need no current live rule. Brain supplies signed parameter publications over the
+authenticated companion connection; the worker independently verifies them.
+Dynamic builds reject `--packaged-signing-rule` and unsigned static fallbacks.
+Current delivery and installed qualification requirements are in
+[ADR 0055](adr/0055-verified-signing-parameter-delivery.md).
 Customer entry links also require the release-owned `app/core/customer-release.json`
 configuration; the source template has empty hosted URLs.
 
 When attaching Playwright to the dedicated debug profile, use
 `chromium.connectOverCDP('http://127.0.0.1:9222', { noDefaults: true })`.
-Default focus emulation makes background pages report themselves as visible and
-correctly trips the signer's safe-refresh refusal. Keep the real creator tab
-inactive and draft-free while verifying the permitted cold-bootstrap refresh;
-do not override the page's visibility or bypass the safeguard.
+Default focus emulation changes browser-owned visibility facts. Product uses
+observe-only capture and preserves the owned-helper recovery budget; do not
+override visibility, reload a customer tab, or bypass current operation authority.
 
 ### Automatic recovery limits
 

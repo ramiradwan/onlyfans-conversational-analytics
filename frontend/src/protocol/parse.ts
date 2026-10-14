@@ -43,6 +43,7 @@ const agentCapability = literal(
   'capture.presence',
   'history.sync',
   'history.catchup.v1',
+  'signing.parameters.v1',
   'command.message.send',
 );
 const bridgeCapability = literal(
@@ -330,7 +331,7 @@ const messagePayloadValidators: Record<string, Validator> = {
       history_permission: literal('granted', 'missing'),
       legal_review_required: boolean,
       reported_at: isoDateTime,
-    }, { history_error_code: nullable(literal('identity_required', 'unsupported_revision', 'history_unavailable')) })),
+    }, { history_error_code: nullable(literal('identity_required', 'unsupported_revision', 'history_unavailable', 'history_dependency_wait', 'software_update_required')) })),
   }),
   'system.state': object({
     creator_account_id: nonEmptyString,

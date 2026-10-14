@@ -137,7 +137,6 @@ def packaged_release(
     packaged = _run_extension_build(
         [
             "--package",
-            f"--packaged-signing-rule={SIGNING_RULE_FIXTURE}",
             f"--legal-release-bindings={LEGAL_FIXTURE}",
             f"--privacy-policy-url={PRIVACY_POLICY_URL}",
             f"--customer-release-config={customer_release_config}",
@@ -409,8 +408,8 @@ def test_the_exact_store_package_qualifies_end_to_end(
     )
     assert release.legal_bindings.fetch_revision == FETCH_REVISION
     assert release.legal_bindings.source_revision != release.legal_bindings.fetch_revision
-    assert release.signing_rule.sha256 == (
-        chrome_zip.metadata["signing_rule"]["sha256"]
+    assert release.signing_parameters.trust_sha256 == (
+        chrome_zip.metadata["signing_parameters"]["trust_sha256"]
     )
     assert release.privacy_policy.url == PRIVACY_POLICY_URL
 
@@ -537,16 +536,15 @@ def test_a_document_that_cannot_be_retrieved_refuses_under_its_own_step(
     assert refusal.value.exit_code == 11
 
 
-def test_a_signing_rule_the_artifact_does_not_carry_is_refused(
+def test_publication_trust_the_artifact_does_not_carry_is_refused(
     packaged_release: dict[str, Any], tmp_path: Path
 ) -> None:
-    """The packaged rule identity refuses under its own step, not the ZIP's."""
+    """Publication trust provenance refuses under its own step, not the ZIP's."""
 
     entries = _store_entries(packaged_release["bytes"])
-    rule = json.loads(entries["packaged-signing-rule.json"].decode("utf-8"))
     metadata = json.loads(entries["build-meta.json"].decode("utf-8"))
-    assert metadata["signing_rule"]["schema"] == rule["schema"]
-    metadata["signing_rule"]["sha256"] = "sha256:" + "f" * 64
+    assert metadata["signing_parameters"]["mode"] == "verified"
+    metadata["signing_parameters"]["trust_sha256"] = "f" * 64
     entries["build-meta.json"] = json.dumps(metadata, indent=2).encode("utf-8") + b"\n"
 
     chrome_zip = _qualified_zip(
@@ -568,6 +566,41 @@ def test_a_signing_rule_the_artifact_does_not_carry_is_refused(
     assert refusal.value.exit_code != producer.QUALIFICATION_EXIT_CODES[
         producer.STEP_ARTIFACT_DIGEST
     ]
+
+
+@pytest.mark.parametrize("fault", ["missing_trust", "wrong_origin", "malformed_trust", "unbound_trust", "raw_rule"])
+def test_packaged_publication_authority_refuses_altered_artifact_bytes(
+    packaged_release: dict[str, Any], tmp_path: Path, fault: str
+) -> None:
+    entries = _store_entries(packaged_release["bytes"])
+    if fault == "missing_trust":
+        del entries["signing-publication-trust.json"]
+    elif fault == "wrong_origin":
+        release = json.loads(entries["signing-parameter-release.json"])
+        release["origin"] = "https://untrusted.example"
+        entries["signing-parameter-release.json"] = json.dumps(release).encode()
+    elif fault == "malformed_trust":
+        entries["signing-publication-trust.json"] = b'{"schema":'
+    elif fault == "unbound_trust":
+        from app.security.signing_parameter_publications import canonical
+        literal = base64.b64encode(canonical(json.loads(entries["signing-publication-trust.json"])))
+        assert entries["background.js"].count(literal) == 1
+        entries["background.js"] = entries["background.js"].replace(literal, b"altered-public-trust")
+    else:
+        entries["packaged-signing-rule.json"] = SIGNING_RULE_FIXTURE.read_bytes()
+    # Make the artifact internally consistent so the authority check, rather
+    # than an earlier output checksum check, has to detect the substitution.
+    metadata = json.loads(entries["build-meta.json"])
+    metadata["outputs"] = {
+        name: "sha256:" + hashlib.sha256(raw).hexdigest()
+        for name, raw in entries.items() if name != "build-meta.json"
+    }
+    entries["build-meta.json"] = json.dumps(metadata, indent=2).encode() + b"\n"
+    chrome_zip = _qualified_zip(packaged_release, store_zip=_rebuild_store_zip(entries))
+    with pytest.raises(producer.QualificationError) as refusal:
+        producer.qualify_packaged_signing_parameters(chrome_zip)
+    assert refusal.value.step == producer.STEP_SIGNING_PARAMETERS
+    assert refusal.value.exit_code == 16
 
 
 def test_a_privacy_policy_url_outside_the_legal_instrument_is_refused(
@@ -844,8 +877,8 @@ def test_the_signed_payload_binds_the_qualified_artifact_and_nothing_more(
     assert bindings.source_revision != bindings.fetch_revision
     assert bindings.document_path == LEGAL_DOCUMENT_PATH
     assert bindings.digest == packaged_release["legal_digest"]
-    assert release.signing_rule.sha256 == (
-        chrome_zip.metadata["signing_rule"]["sha256"]
+    assert release.signing_parameters.trust_sha256 == (
+        chrome_zip.metadata["signing_parameters"]["trust_sha256"]
     )
     assert release.privacy_policy.url == PRIVACY_POLICY_URL
 

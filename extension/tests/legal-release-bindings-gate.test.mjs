@@ -129,7 +129,6 @@ test('a production package is refused without Legal release bindings', async () 
   await withScratchDirectory(async ({ signingRule }) => {
     const result = await runBuild([
       '--package',
-      `--packaged-signing-rule=${signingRule}`,
       `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
     ]);
     assert.notEqual(result.code, 0, result.output);
@@ -156,7 +155,6 @@ test('a production package is refused when Legal release bindings are invalid', 
 
     const result = await runBuild([
       '--package',
-      `--packaged-signing-rule=${signingRule}`,
       `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
       `--legal-release-bindings=${bindingsPath}`,
     ]);
@@ -171,7 +169,6 @@ test('a production package is created with valid Legal release bindings', async 
   await withScratchDirectory(async ({ signingRule }) => {
     const result = await runBuild([
       '--package',
-      `--packaged-signing-rule=${signingRule}`,
       `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
       `--legal-release-bindings=${SYNTHETIC_BINDINGS}`,
     ]);
@@ -188,7 +185,6 @@ test('a packaged build binds the runtime to the verified instruments', async () 
   await withScratchDirectory(async ({ signingRule }) => {
     const result = await runBuild([
       '--package',
-      `--packaged-signing-rule=${signingRule}`,
       `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
       `--legal-release-bindings=${SYNTHETIC_BINDINGS}`,
     ]);
@@ -228,7 +224,6 @@ test('the recorded digest is the digest of the bindings file as fetched', async 
   await withScratchDirectory(async ({ signingRule }) => {
     const result = await runBuild([
       '--package',
-      `--packaged-signing-rule=${signingRule}`,
       `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
       `--legal-release-bindings=${SYNTHETIC_BINDINGS}`,
     ]);
@@ -308,7 +303,6 @@ test('a production package is refused when the bindings members are reordered', 
 
     const result = await runBuild([
       '--package',
-      `--packaged-signing-rule=${signingRule}`,
       `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
       `--legal-release-bindings=${reorderedPath}`,
     ]);
@@ -324,7 +318,6 @@ test('a production package is refused when the bindings file is pretty-printed',
 
     const result = await runBuild([
       '--package',
-      `--packaged-signing-rule=${signingRule}`,
       `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
       `--legal-release-bindings=${bindingsPath}`,
     ]);
@@ -343,7 +336,6 @@ test('an archive that fails its own audit is not left behind', async () => {
       await clearPackagedArchives();
       const result = await runBuildScript(withoutGate, [
         '--package',
-        `--packaged-signing-rule=${signingRule}`,
         `--privacy-policy-url=${PRIVACY_POLICY_URL}`,
       ]);
       assert.notEqual(result.code, 0, result.output);

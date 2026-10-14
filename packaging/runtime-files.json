@@ -21,7 +21,9 @@
     "_internal/app/onboarding/entry.js",
     "_internal/shared/desktop-onboarding/schema-v2.json",
     "_internal/shared/browser-tasks/schema.json",
-    "_internal/app/static/dist/setup-code/index.html"
+    "_internal/app/static/dist/setup-code/index.html",
+    "_internal/app/core/signing-parameter-release.json",
+    "_internal/app/security/signing-publication-trust.json"
   ],
   "required_directories": [
     "_internal/app/static",
@@ -46,7 +48,8 @@
     "build_metadata_path": "Agent/build-meta.json",
     "schema": "ofca-extension-build/v4",
     "release_declarations": [
-      "legal_bindings"
+      "legal_bindings",
+      "signing_parameters"
     ]
   },
   "sql_catalogs": [
@@ -103,7 +106,8 @@
         "0029_desktop_pairing_operations.sql": "9976f21edff5dc6a4f556d354e1bd70e291ff07c416421ca7f48d9b6cc8b227a",
         "0030_desktop_authentication_closure.sql": "4a6b73d306d3a54f70dbdfd23e3f8964437fdeaa01966c5e5edd884887b6a50d",
         "0031_activation_delivery_recovery.sql": "27a963a4d5fb38a83c12b89aaf8e85331643fb18b6ecd1bc3d728361b0e2d678",
-        "0032_desktop_presentation_refresh.sql": "8c4b006eb8cd438c8a92eee68b58921a1257d845a4ea8d148d57be1d62d5f096"
+        "0032_desktop_presentation_refresh.sql": "8c4b006eb8cd438c8a92eee68b58921a1257d845a4ea8d148d57be1d62d5f096",
+        "0033_signing_publication_authority.sql": "ca65ce8cfc02108d0d8a249499d206c5246bb3b7fa942e4c9a6bd2381ba216bb"
       }
     },
     {

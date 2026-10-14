@@ -143,6 +143,7 @@ function historyJobRoute(key) {
   if (key === 'catchup:active' || key === 'catchup:control') {
     return { generationId: 'catchup', kindOrder: '2', rangeStart: false };
   }
+  if (key === 'signing:bootstrap') return { generationId: 'signing', kindOrder: '2', rangeStart: false };
   const conversationIndex = key.indexOf(HISTORY_JOB_CONVERSATION_MARKER);
   if (conversationIndex > 0) {
     const generationId = key.slice(0, conversationIndex);

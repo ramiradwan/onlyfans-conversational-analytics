@@ -331,6 +331,8 @@
     "tests/test_shared_graph_lifecycle.py": 1,
     "tests/test_shared_graph_queries.py": 1,
     "tests/test_shared_membership_pages.py": 2,
+    "tests/test_signing_parameter_qualification_admission.py": 1,
+    "tests/test_signing_parameters.py": 1,
     "tests/test_small_conversation_pages.py": 1,
     "tests/test_source_catalog_cache.py": 2,
     "tests/test_source_token_migration.py": 1,

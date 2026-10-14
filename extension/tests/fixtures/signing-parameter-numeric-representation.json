@@ -1,0 +1,23 @@
+{
+  "notice": "Public synthetic scalar2; real rc4 producer signed catalog; raw integral numeric representation interop.",
+  "producer_source": "5c635031fdce2f723470d738b8cfb768e0ed9dbe",
+  "trust": {
+    "schema": "signing-publication-trust/v1",
+    "roots": [
+      {
+        "kid": "synthetic-root",
+        "jwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+          "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      }
+    ]
+  },
+  "now": 1800000000,
+  "keyset": "eyJhbGciOiJFUzI1NiIsImtpZCI6InN5bnRoZXRpYy1yb290IiwidHlwIjoic2lnbmluZy1wdWJsaXNoZXIta2V5c2V0K2p3cyJ9.eyJleHBpcmVzX2F0IjoxODAyNTkyMDAwLCJpc3N1ZWRfYXQiOjE3OTk5OTY0MDAsImtleXMiOlt7Imp3ayI6eyJjcnYiOiJQLTI1NiIsImt0eSI6IkVDIiwieCI6ImZQSjdHSTBEVDM2S1VqZ0RCTFVhdzhDSmFlSjM4aHMxcGd0SV9FZG1tWGciLCJ5IjoiQjNkVkVOdU8wRUFwUFpyR24zUXcyN3A5cmVZODZZSXBuZ1MzblNKNGM5RSJ9LCJraWQiOiJzeW50aGV0aWMtcHVibGlzaGVyIiwibm90X2FmdGVyIjoxODAyNTkyMDAwLCJub3RfYmVmb3JlIjoxNzk5OTk2NDAwfV0sInNjaGVtYSI6InNpZ25pbmctcHVibGlzaGVyLWtleXNldC92MSIsInNlcXVlbmNlIjoxfQ.nqYEamlkoxinYxpyDz5mCazVirnE0B0zYP7CORXCj0TF_61Scc9j0t0cPepAvHeC6ff6osA2N5Zerjoio3U5jw",
+  "catalog": "eyJhbGciOiJFUzI1NiIsImtpZCI6InN5bnRoZXRpYy1wdWJsaXNoZXIiLCJ0eXAiOiJzaWduaW5nLXBhcmFtZXRlci1jYXRhbG9nK2p3cyJ9.eyJlbmdpbmUiOiJvbmx5ZmFucy1zaGExLWNoZWNrc3VtL3YxIiwiZXhwaXJlc19hdCI6MTgwMDYwNDc0MCwiaXNzdWVkX2F0IjoxNzk5OTk5OTQwLCJwYXJhbWV0ZXJfc2NoZW1hIjoibG9jYWwtcGFja2FnZWQtc2lnbmluZy1ydWxlL3YxIiwicGxhdGZvcm0iOiJvbmx5ZmFucyIsInJ1bGVzIjpbeyJzaGEyNTYiOiJlNWQxNDhiOTc5M2NkYTM2ZDc4ZTNkMDBlMTZiN2YzYzI4OGMwMTAyNjQ0OWY2Mzc4YzFiNWI1MTk4NGI2YWQxIiwic2l6ZSI6MzE4LCJzb3VyY2VfcmV2aXNpb24iOiJyZXZpc2lvbi0xIn1dLCJzY2hlbWEiOiJzaWduaW5nLXBhcmFtZXRlci1jYXRhbG9nL3YxIiwic2VxdWVuY2UiOjF9.I4vRep6oJHOly6V0lRGs0U5zha9R_ELAl449IpsJbzTlC7I7qVxbrZzE2pTsYOTpqjhn7MqCiBWVa9G31s8Q8A",
+  "object": "ewogICJzY2hlbWEiOiAibG9jYWwtcGFja2FnZWQtc2lnbmluZy1ydWxlL3YxIiwKICAic291cmNlX3JldmlzaW9uIjogInJldmlzaW9uLTEiLAogICJzdGF0aWNfcGFyYW0iOiAiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLAogICJmb3JtYXQiOiB7CiAgICAicHJlZml4IjogIjU0MzIxIiwKICAgICJzdWZmaXgiOiAiY2FmZWJhYmUiLAogICAgImNoZWNrc3VtX2luZGV4ZXMiOiBbCiAgICAgIDAuMCwKICAgICAgMiwKICAgICAgMiwKICAgICAgMTAsCiAgICAgIDM5CiAgICBdLAogICAgImNoZWNrc3VtX2NvbnN0YW50IjogLTE3ZTAKICB9Cn0K",
+  "source_revision": "revision-1"
+}

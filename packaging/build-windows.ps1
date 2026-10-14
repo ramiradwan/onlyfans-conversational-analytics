@@ -26,9 +26,8 @@ param(
     # only after the staged artifact has passed every release gate.
     [string] $InnoSetupCompiler = "",
 
-    # The packaged signing rule and the Legal release bindings the Store
-    # candidate is built against. A release requires both; nothing else makes
-    # them optional and there is no discovery, default or environment fallback.
+    # Retired input: dynamic builds refuse unsigned raw-rule overrides.
+    # Publication origin and public trust are required, release-bound resources.
     [string] $PackagedSigningRule = "",
     [string] $LegalReleaseBindings = "",
 
@@ -147,8 +146,32 @@ function Resolve-ReleaseUrl {
 if (-not (Test-Path -LiteralPath $ExtensionBuildScript -PathType Leaf)) {
     throw "Extension build script does not exist: $ExtensionBuildScript"
 }
+if ($PackagedSigningRule) {
+    throw "Verified parameter builds refuse -PackagedSigningRule"
+}
+$SigningParameterReleasePath = Join-Path $ProjectRoot "app/core/signing-parameter-release.json"
+$SigningPublicationTrustPath = Join-Path $ProjectRoot "app/security/signing-publication-trust.json"
+foreach ($requiredResource in @($SigningParameterReleasePath, $SigningPublicationTrustPath)) {
+    if (-not (Test-Path -LiteralPath $requiredResource -PathType Leaf)) {
+        throw "Required signing publication release resource is absent: $requiredResource"
+    }
+}
+# Validate the packaged public root and fixed origin before writing output.
+# Runtime composition reads these same resources; no environment default applies.
+$verifySigningRelease = @'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from app.security.signing_parameter_publications import validate_trust
+from app.services.signing_parameters import FixedDistribution
+validate_trust(json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")), production=True)
+FixedDistribution()
+'@
+$verifySigningRelease | & $BuildPython - $ProjectRoot $SigningPublicationTrustPath
+if ($LASTEXITCODE -ne 0) {
+    throw "Production signing publication trust or distribution binding is invalid"
+}
 if ($ReleaseMode) {
-    $PackagedSigningRule = Resolve-ReleaseInput -Value $PackagedSigningRule -Name "PackagedSigningRule"
     $LegalReleaseBindings = Resolve-ReleaseInput -Value $LegalReleaseBindings -Name "LegalReleaseBindings"
     $PrivacyPolicyUrl = Resolve-ReleaseUrl -Value $PrivacyPolicyUrl -Name "PrivacyPolicyUrl"
 }
@@ -204,9 +227,6 @@ function Get-ExtensionReleaseArguments {
     $arguments = @($ExtensionBuildScript)
     if ($Verb) {
         $arguments += $Verb
-    }
-    if ($PackagedSigningRule) {
-        $arguments += "--packaged-signing-rule=$PackagedSigningRule"
     }
     if ($LegalReleaseBindings) {
         $arguments += "--legal-release-bindings=$LegalReleaseBindings"
@@ -291,7 +311,7 @@ function New-AgentStorePackage {
     <#
         Mint the Store candidate with extension/build.mjs --package, the only
         archive engine a release uses. That step refuses the package when the
-        packaged signing rule, the Legal release bindings or the privacy policy
+        publication trust/distribution, the Legal release bindings or the privacy policy
         configuration is absent or invalid, it writes the archive only after
         every one of those checks, and it removes an archive that fails its own
         audit, so a refusal leaves no archive behind.
@@ -307,7 +327,7 @@ function New-AgentStorePackage {
         -FailureMessage "The Agent Store package was refused"
 
     $metadata = Get-Content -Raw -LiteralPath (Join-Path $distRoot "build-meta.json") | ConvertFrom-Json
-    foreach ($declaration in @("signing_rule", "legal_bindings")) {
+    foreach ($declaration in @("signing_parameters", "legal_bindings")) {
         if ($null -eq $metadata.$declaration) {
             throw "The packaged Agent artifact records no $declaration"
         }

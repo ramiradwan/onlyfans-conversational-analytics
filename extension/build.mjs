@@ -16,6 +16,7 @@ import { zipSync } from 'fflate';
 import { validatePackagedSigningRule } from 'local-authenticated-read-connector/browser-signing';
 import { auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
 import { readArchiveEntries } from './qualification/archive-entries.mjs';
+import { signingPublicationTrust, SIGNING_PUBLICATION_TRUST_SHA256, SIGNING_PUBLICATION_TRUST_B64 } from './runtime/signing-publication-trust.mjs';
 import { SIGNER_RELEASE, signerReleaseFiles, auditInstalledSigner, auditSignerMetadata } from './qualification/signer-release.mjs';
 import { auditPackagedSnow, SNOW_WASM_FILE } from './qualification/companion-snow-release.mjs';
 
@@ -40,6 +41,8 @@ let verifiedSignerFiles = null;
 let verifiedSnow = null;
 const SIGNER_ENTRY = fileURLToPath(import.meta.resolve(`${SIGNER_PACKAGE}/browser-signing`));
 const SIGNING_RULE_FILE = 'packaged-signing-rule.json';
+const PUBLICATION_TRUST_FILE = 'signing-publication-trust.json';
+const PARAMETER_RELEASE_FILE = 'signing-parameter-release.json';
 const COMPANION_TRUST_FILE = 'companion-grant-trust.json';
 const COMPANION_TRUST_SOURCE = path.join(ROOT, '../contracts/production/grant-profile-v1/trust-set.json');
 const BUILD_METADATA_FILE = 'build-meta.json';
@@ -190,24 +193,27 @@ export function validateSigningRuleDocument(document) {
   return validatePackagedSigningRule(document);
 }
 
-async function loadSigningRule({ required }) {
-  const filename = argumentValue('--packaged-signing-rule');
-  if (filename === null || filename.length === 0) {
-    if (required) {
-      throw new Error(
-        'Chrome package creation requires --packaged-signing-rule=<path>.',
-      );
-    }
-    return null;
-  }
-  const rule = validateSigningRuleDocument(await readJson(path.resolve(filename)));
-  const bytes = TEXT_ENCODER.encode(stableJson(rule));
-  return Object.freeze({
-    document: rule,
-    bytes,
-    digest: sha256(bytes),
-  });
+async function loadSigningRule() {
+  assert.equal(argumentValue('--packaged-signing-rule'), null,
+    'Dynamic signing mode rejects raw packaged-rule overrides');
+  const publicTrust = await readJson(path.join(ROOT, '../app/security/signing-publication-trust.json'));
+  assert.deepEqual(publicTrust, signingPublicationTrust);
+  assert.equal(sha256Hex(Buffer.from(canonicalTrustJson(publicTrust))), SIGNING_PUBLICATION_TRUST_SHA256,
+    'Production signing trust differs from the reviewed public root');
+  const release = await readJson(path.join(ROOT, '../app/core/signing-parameter-release.json'));
+  assert.deepEqual(release, { schema: 'ofca-signing-parameter-release/v1', origin: 'https://updates.dipsy.fi',
+    base_path: '/signing-parameters/v1/', trust_sha256: SIGNING_PUBLICATION_TRUST_SHA256 });
+  return null;
 }
+function canonicalTrustJson(value) {
+  if (Array.isArray(value)) return '[' + value.map(canonicalTrustJson).join(',') + ']';
+  if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalTrustJson(value[key])).join(',') + '}';
+  return JSON.stringify(value);
+}
+const signingParametersMetadata = Object.freeze({ schema: 'ofca-signing-parameter-consumer/v1', mode: 'verified',
+  engine: 'onlyfans-sha1-checksum/v1', parameter_schema: 'local-packaged-signing-rule/v1',
+  trust_sha256: SIGNING_PUBLICATION_TRUST_SHA256, distribution_origin: 'https://updates.dipsy.fi',
+  distribution_base_path: '/signing-parameters/v1/' });
 
 const LEGAL_RELEASE_BINDINGS_ARGUMENT = '--legal-release-bindings';
 
@@ -289,28 +295,17 @@ function legalBindingsMetadata(legalBindings) {
 }
 
 export function signerWrapperSource(signingRule) {
-  const ruleBase64 = signingRule === null
-    ? ''
-    : Buffer.from(signingRule.bytes).toString('base64');
-  const ruleDigest = signingRule?.digest ?? '';
+  assert.equal(signingRule, null, 'Dynamic signing mode rejects unsigned rules');
   return [
     "import * as signerModule from 'packaged-signer-implementation';",
     "export * from 'packaged-signer-implementation';",
-    `export const PACKAGED_SIGNING_RULE_B64 = ${JSON.stringify(ruleBase64)};`,
-    `export const PACKAGED_SIGNING_RULE_SHA256 = ${JSON.stringify(ruleDigest)};`,
-    'const PACKAGED_SIGNING_RULE = PACKAGED_SIGNING_RULE_B64 === \'\'',
-    '  ? null',
-    '  : Object.freeze(JSON.parse(atob(PACKAGED_SIGNING_RULE_B64)));',
     'export async function createChromeBrowserSigningProvider(options = {}) {',
-    '  if (PACKAGED_SIGNING_RULE === null || PACKAGED_SIGNING_RULE_SHA256 === \'\') {',
-    "    const error = new Error('History sync is unavailable for this revision; update the extension.');",
-    "    error.code = 'unsupported_revision';",
-    '    throw error;',
+    "  if (Object.hasOwn(options, 'packagedRule') || !signerModule.isVerifiedSigningParameterSource(options.parameterSource)) {",
+    "    throw new TypeError('A worker-owned verified signing parameter source is required.');",
     '  }',
     '  return signerModule.createChromeBrowserSigningProvider({',
     '    ...options,',
     "    captureMode: 'observe-only',",
-    '    packagedRule: PACKAGED_SIGNING_RULE,',
     '  });',
     '}',
     '',
@@ -609,33 +604,13 @@ function occurrences(source, value) {
   return source.split(value).length - 1;
 }
 
-export function auditSigningRuleBinding(source, signingRule, { required }) {
-  assert.match(source, /PACKAGED_SIGNING_RULE_B64/);
-  assert.match(source, /PACKAGED_SIGNING_RULE_SHA256/);
-  assert.match(source, /packagedRule:\s*PACKAGED_SIGNING_RULE/);
-  assert.doesNotMatch(source, /packagedRule\s*\?\?|packagedRule\s*\|\|/);
-  assert.match(source, /unsupported_revision/);
-  assert.match(source, /update the extension/i);
-
-  if (signingRule === null) {
-    assert.equal(required, false, 'packaged Chrome artifact has no signing rule');
-    assert.match(source, /PACKAGED_SIGNING_RULE_B64\s*=\s*""/);
-    assert.match(source, /PACKAGED_SIGNING_RULE_SHA256\s*=\s*""/);
-    return;
-  }
-
-  const encoded = Buffer.from(signingRule.bytes).toString('base64');
-  assert.equal(occurrences(source, encoded), 1, 'packaged signing rule is not bound exactly once');
-  assert.equal(
-    occurrences(source, signingRule.digest),
-    1,
-    'packaged signing rule digest is not bound exactly once',
-  );
-  assert.match(source, new RegExp(`PACKAGED_SIGNING_RULE_B64\\s*=\\s*${JSON.stringify(encoded)}`));
-  assert.match(
-    source,
-    new RegExp(`PACKAGED_SIGNING_RULE_SHA256\\s*=\\s*${JSON.stringify(signingRule.digest)}`),
-  );
+export function auditSigningRuleBinding(source, signingRule) {
+  assert.equal(signingRule, null, 'Dynamic builds cannot contain unsigned rule overrides');
+  assert.match(source, /isVerifiedSigningParameterSource/);
+  assert.match(source, /createVerifiedSigningParameterSource/);
+  assert.match(source, /worker-owned verified signing parameter source/);
+  assert.doesNotMatch(source, /PACKAGED_SIGNING_RULE_B64|packagedRule:\s*PACKAGED_SIGNING_RULE/);
+  assert.equal(occurrences(source, SIGNING_PUBLICATION_TRUST_B64), 1, 'Production public trust must be bound once');
 }
 
 async function auditDependencyLock() {
@@ -733,6 +708,16 @@ async function auditArtifactView(view, {
   assert.equal(sha256(trustBytes), sha256(await readFile(COMPANION_TRUST_SOURCE)));
   assert.equal(metadata.outputs[COMPANION_TRUST_FILE], sha256(trustBytes));
 
+  const publicationTrustBytes = await view.read(PUBLICATION_TRUST_FILE);
+  const publicationTrust = JSON.parse(TEXT_DECODER.decode(publicationTrustBytes));
+  assert.equal(sha256Hex(Buffer.from(canonicalTrustJson(publicationTrust))), SIGNING_PUBLICATION_TRUST_SHA256);
+  assert.deepEqual(publicationTrust, signingPublicationTrust);
+  assert.equal(metadata.outputs[PUBLICATION_TRUST_FILE], sha256(publicationTrustBytes));
+  const parameterReleaseBytes = await view.read(PARAMETER_RELEASE_FILE);
+  assert.deepEqual(JSON.parse(TEXT_DECODER.decode(parameterReleaseBytes)), {
+    schema: 'ofca-signing-parameter-release/v1', origin: 'https://updates.dipsy.fi',
+    base_path: '/signing-parameters/v1/', trust_sha256: SIGNING_PUBLICATION_TRUST_SHA256 });
+  assert.equal(metadata.outputs[PARAMETER_RELEASE_FILE], sha256(parameterReleaseBytes));
   let artifactSigningRule = null;
   if (metadata.signing_rule !== null) {
     const bytes = await view.read(SIGNING_RULE_FILE);
@@ -754,7 +739,8 @@ async function auditArtifactView(view, {
       sha256: artifactSigningRule.digest,
     });
   }
-  if (requireSigningRule) assert.notEqual(artifactSigningRule, null);
+  assert.equal(artifactSigningRule, null, 'Dynamic consumer must contain no unsigned rule');
+  assert.deepEqual(metadata.signing_parameters, signingParametersMetadata);
   if (expectedSigningRule !== null) {
     assert.notEqual(artifactSigningRule, null);
     assert.equal(artifactSigningRule.digest, expectedSigningRule.digest);
@@ -868,6 +854,8 @@ async function auditArtifactView(view, {
     NOTICE_FILE,
     SNOW_WASM_FILE,
     COMPANION_TRUST_FILE,
+    PUBLICATION_TRUST_FILE,
+    PARAMETER_RELEASE_FILE,
     ...(artifactSigningRule === null ? [] : [SIGNING_RULE_FILE]),
   ].sort();
   assert.deepEqual(Object.keys(metadata.outputs).sort(), expectedOutputNames);
@@ -892,7 +880,7 @@ export async function auditChromeArchive(
   expectedLegalBindings = null,
 ) {
   await auditDependencyLock();
-  assert.notEqual(expectedSigningRule, null, 'archive audit requires an expected signing rule');
+  assert.equal(expectedSigningRule, null, 'Dynamic archive refuses raw signing rules');
   const bytes = await readFile(filename);
   const view = archiveView(readArchiveEntries(bytes));
   const metadata = await auditArtifactView(view, {
@@ -972,6 +960,8 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
   await writeFile(path.join(DIST, NOTICE_FILE), notice, 'utf8');
   await writeFile(path.join(DIST, SNOW_WASM_FILE), verifiedSnow.files.get(SNOW_WASM_FILE));
   await copyFile(COMPANION_TRUST_SOURCE, path.join(DIST, COMPANION_TRUST_FILE));
+  await copyFile(path.join(ROOT, '../app/security/signing-publication-trust.json'), path.join(DIST, PUBLICATION_TRUST_FILE));
+  await copyFile(path.join(ROOT, '../app/core/signing-parameter-release.json'), path.join(DIST, PARAMETER_RELEASE_FILE));
   if (signingRule !== null) {
     await writeFile(path.join(DIST, SIGNING_RULE_FILE), signingRule.bytes);
   }
@@ -984,6 +974,8 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     NOTICE_FILE,
     SNOW_WASM_FILE,
     COMPANION_TRUST_FILE,
+    PUBLICATION_TRUST_FILE,
+    PARAMETER_RELEASE_FILE,
     ...(signingRule === null ? [] : [SIGNING_RULE_FILE]),
   ];
   const outputs = {};
@@ -998,6 +990,7 @@ async function writeArtifact(compiled, signingRule, extensionConfig, legalBindin
     signer_tarball: sha256(await readFile(SIGNER_TARBALL)),
     signer_release: SIGNER_RELEASE,
     companion_snow: verifiedSnow.release,
+    signing_parameters: signingParametersMetadata,
     signing_rule: signingRule === null ? null : {
       schema: signingRule.document.schema,
       source_revision: signingRule.document.source_revision,

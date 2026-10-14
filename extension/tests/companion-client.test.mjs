@@ -222,6 +222,53 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
     unpair() { paired = false; }, pairingResult() { pairingWait.resolve(JSON.stringify(vector.result)); } };
 }
 
+const parameterRequest = { schema: 'signing-parameter-request/v1', engine: 'onlyfans-sha1-checksum/v1',
+  parameter_schema: 'local-packaged-signing-rule/v1', source_revision: 'frontend-A',
+  catalog_sequence: 0, keyset_sequence: 0, object_sha256: null };
+const parameterContext = h => ({ creatorAccountId: ACCOUNT, installationId: vector.expected.identity.installation_id,
+  agentInstallationId: h.chrome.storage.local.values.agent_installation_id,
+  configAuthTicket: () => 'config-fixture', assertCurrent() {} });
+
+test('old Brain parameter refusal keeps the admitted channel and ordinary config healthy', async () => {
+  const h = harness();
+  try {
+    await h.client.adapter.loadBrainBinding();
+    const channel = h.channels[0], rpc = channel.rpc.bind(channel);
+    channel.rpc = (method, ...args) => method === 'agent.signing-rule.resolve'
+      ? Promise.reject(Object.assign(new Error('Feature unavailable'), { code: 'unknown_method' })) : rpc(method, ...args);
+    const result = await h.client.configAdapter.resolveSigningParameters(parameterRequest, { context: parameterContext(h) });
+    assert.equal(result.status, 'unavailable');
+    assert.equal(result.retry_after_ms, 300000);
+    assert.equal(channel.closed, false);
+    assert.equal((await h.client.configAdapter.fetchConfig({ creatorAccountId: ACCOUNT, authTicket: 'config-fixture',
+      agentInstallationId: h.chrome.storage.local.values.agent_installation_id,
+      currentEtag: null, currentConfigRevision: null, supportedSchemaVersions: ['2'] })).status, 304);
+    assert.equal(h.stats.networks, 1);
+  } finally { h.client.invalidate(); }
+});
+
+test('parameter resolver refuses pause before RPC and discards a result after channel replacement', async () => {
+  const h = harness();
+  try {
+    await h.client.adapter.loadBrainBinding();
+    const context = parameterContext(h), channel = h.channels[0];
+    let calls = 0;
+    const gate = deferred();
+    channel.rpc = () => { calls++; return gate.promise; };
+    h.setFull(false);
+    await assert.rejects(h.client.configAdapter.resolveSigningParameters(parameterRequest, { context }));
+    assert.equal(calls, 0);
+    h.setFull(true);
+    const pending = h.client.configAdapter.resolveSigningParameters(parameterRequest, { context });
+    assert.equal(calls, 1);
+    h.client.invalidate();
+    gate.resolve({ schema: 'signing-parameter-resolution/v1', status: 'unavailable', reason: 'network',
+      keyset: null, catalog: null, retry_after_ms: 1000 });
+    await assert.rejects(pending);
+    assert.equal(h.stats.networks, 1);
+  } finally { h.client.invalidate(); }
+});
+
 test('tab creation and removal do not create companion runtime wake storms', () => {
   const h = harness({ full: false });
   let wakes = 0;

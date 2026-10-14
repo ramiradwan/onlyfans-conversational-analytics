@@ -31,7 +31,7 @@ export const READ_ONLY_CAPABILITIES = Object.freeze([
 
 const healthSummary = object({ status: literal('healthy', 'degraded'), detail: nullable(string) });
 const capabilityStatus = object({
-  capability: literal(...READ_ONLY_CAPABILITIES, 'history.catchup.v1'),
+  capability: literal(...READ_ONLY_CAPABILITIES, 'history.catchup.v1', 'signing.parameters.v1'),
   status: literal('active', 'degraded', 'unsupported'),
   detail: nullable(string),
 });
@@ -105,7 +105,7 @@ const payloadValidators = {
     auth_ticket: nonEmptyString,
     agent_installation_id: uuid,
     requested_creator_account_id: nonEmptyString,
-    capabilities: array(literal(...READ_ONLY_CAPABILITIES, 'history.catchup.v1'), 1),
+    capabilities: array(literal(...READ_ONLY_CAPABILITIES, 'history.catchup.v1', 'signing.parameters.v1'), 1),
     extension_version: nonEmptyString,
     agent_stream_id: uuid,
     last_acknowledged_source_seq: integer(0),

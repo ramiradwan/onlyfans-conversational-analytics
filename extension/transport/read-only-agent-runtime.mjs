@@ -73,6 +73,7 @@ export function createReadOnlyAgentRuntime(options = {}) {
       };
       let transport = null;
       let history = null;
+      let lazySigner = null;
       const configuration = configClientFactory({
         signal,
         identity,
@@ -92,7 +93,18 @@ export function createReadOnlyAgentRuntime(options = {}) {
       await configuration.initialize();
       signal.throwIfAborted();
       if (signerFactory !== null) {
-        const lazySigner = createLazyAccountSigner({
+        lazySigner = createLazyAccountSigner({
+          parameterOwner: options.parameterOwner,
+          parameterContext: {
+            creatorAccountId, installationId: binding.installationId, agentInstallationId, signal,
+            configAuthTicket: () => configuration.configAuthTicket,
+            assertCurrent: () => {
+              signal.throwIfAborted();
+              if (!transport?.session || transport.session.creator_account_id !== creatorAccountId
+                || transport.session.agent_installation_id !== agentInstallationId
+                || configuration.configAuthTicket == null) throw new Error('Signing parameter account authority ended');
+            },
+          },
           creatorAccountId,
           storage: accountStorage,
           chromeApi,
@@ -121,7 +133,7 @@ export function createReadOnlyAgentRuntime(options = {}) {
       signal.throwIfAborted();
       transport = transportFactory({
         identity,
-        capabilities: [...READ_ONLY_CAPABILITIES, 'history.catchup.v1'],
+        capabilities: [...READ_ONLY_CAPABILITIES, 'history.catchup.v1', 'signing.parameters.v1'],
         creatorAccountId,
         authTicket,
         reconnectAuthTicket,
@@ -135,12 +147,12 @@ export function createReadOnlyAgentRuntime(options = {}) {
         outbox: durableOutbox,
         configClient: configuration,
         health: () => configuration.healthSummary(),
-        onSession: () => { if (!signal.aborted) void history?.wake('admission').catch(() => undefined); },
+        onSession: () => { if (!signal.aborted) void Promise.resolve(lazySigner?.refreshParameters({ force: true })).catch(() => undefined).then(() => history?.wake('admission')).catch(() => undefined); },
         onSessionLost: () => history?.cancelCurrent?.('Agent session ended'),
         onIngestAcknowledged: (payload) => { if (!signal.aborted) void history?.onIngestAcknowledged?.(payload)?.catch?.(() => undefined); },
       });
       signal.throwIfAborted();
-      return { transport, configuration, history, drain: () => accountStorage.drain(), bindingFingerprint: bindingFingerprint(binding) };
+      return { transport, configuration, history, drain: async () => { await options.parameterOwner?.suspend(); await options.parameterOwner?.drain(); await accountStorage.drain(); }, bindingFingerprint: bindingFingerprint(binding) };
     },
   });
 }

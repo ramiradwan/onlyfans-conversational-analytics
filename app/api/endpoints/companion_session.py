@@ -121,6 +121,7 @@ class SessionRPC:
         "history.check.begin", "agent.analysis.readiness", "agent.config.get",
         "agent.storage.unseal", "agent.storage.rotate", "agent.surface.report",
         "agent.browser-task.report",
+        "agent.signing-rule.resolve",
     })
 
     def __init__(self, authority, pin):
@@ -128,6 +129,26 @@ class SessionRPC:
         self.auth_ticket = None
         self.reconnect_ticket = None
         self.config_ticket = None
+        self.capabilities = frozenset()
+
+    async def resolve_signing_parameters(self, params):
+        from app.protocol.signing_parameters import SigningParameterResolveRequest, CAPABILITY
+        from app.services.signing_parameters import signing_parameter_service, RETRY_MS
+        request = SigningParameterResolveRequest.model_validate_json(encode_document(params))
+        if self.auth_ticket is None or CAPABILITY not in self.capabilities:
+            raise CompanionRecordError()
+        def admitted():
+            self.authority.validate_config(request.auth_ticket, request.creator_account_id, str(request.agent_installation_id))
+            policy = self.authority.current_policy()
+            if policy.identity is None or policy.identity.role != "agent" or policy.identity.creator_account_id != self.pin.creator_account_id:
+                raise CompanionRecordError()
+        await asyncio.to_thread(admitted)
+        service = signing_parameter_service()
+        result = ({"schema": "signing-parameter-resolution/v1", "status": "unavailable", "keyset": None,
+                   "catalog": None, "reason": "storage", "retry_after_ms": RETRY_MS}
+                  if service is None else await service.resolve(request.request))
+        await asyncio.to_thread(admitted)
+        return result
 
     def hello(self, ticket, account, installation):
         result = self.authority.accept_hello(ticket, account, str(installation))
@@ -297,7 +318,7 @@ def browser_surface(params) -> dict:
         or params["history_permission"] not in {"granted", "missing"}
         or type(params["legal_review_required"]) is not bool
         or (params["history_error_code"] is not None and (type(params["history_error_code"]) is not str
-            or params["history_error_code"] not in {"identity_required", "unsupported_revision", "history_unavailable"}))
+            or params["history_error_code"] not in {"identity_required", "unsupported_revision", "history_unavailable", "history_dependency_wait", "software_update_required"}))
     ):
         raise CompanionRecordError()
     return {key: params[key] for key in _SURFACE_FIELDS if key != "schema"}
@@ -370,6 +391,8 @@ async def _serve(channel, pin):
         while True:
             value = await inbound.get()
             if value.get("type") != "rpc.request":
+                if value.get("type") == "agent.hello":
+                    rpc.capabilities = frozenset(value.get("payload", {}).get("capabilities", []))
                 socket.queue.put_nowait(value)
                 continue
             _exact(value, ("type", "id", "method", "params"))
@@ -392,6 +415,8 @@ async def _serve(channel, pin):
                 async with asyncio.timeout(10):
                     if value["method"] == "agent.surface.report":
                         result = await browser.report(value["params"])
+                    elif value["method"] == "agent.signing-rule.resolve":
+                        result = await rpc.resolve_signing_parameters(value["params"])
                     elif value["method"] == "agent.browser-task.report":
                         result = await browser.task_report(value["params"])
                     else:

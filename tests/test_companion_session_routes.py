@@ -185,7 +185,10 @@ def _refused_rpc(socket, oracle, method, params):
             "params": params,
         },
     )
-    response = _receive(socket, oracle)
+    for _ in range(16):
+        response = _receive(socket, oracle)
+        if response.get("type") == "rpc.response":
+            break
     # Never print a provider response if a secret were accidentally exported.
     if response != {
         "type": "rpc.response",
@@ -198,7 +201,7 @@ def _refused_rpc(socket, oracle, method, params):
 
 
 @pytest.mark.parametrize(
-    "method", ["agent.storage.unseal", "agent.storage.rotate", "agent.config.get"]
+    "method", ["agent.storage.unseal", "agent.storage.rotate", "agent.config.get", "agent.signing-rule.resolve"]
 )
 def test_no_runtime_rpc_before_agent_identity_proof(route, method):
     with _client(route) as client, client.websocket_connect(
@@ -354,6 +357,59 @@ def test_production_route_native_noise_identity_proof_and_storage_rpc(route):
         )
         assert rotation["schema"] == "ofca-extension-storage-rotation/v1"
         assert isinstance(rotation["storage_bootstrap"], str)
+
+
+def _parameter_session(socket, oracle, route, *, capable=True):
+    authenticated = _prove(socket, oracle, route)
+    _send(socket, oracle, {"type": "agent.hello", "protocol_version": "2", "message_id": str(uuid4()),
+        "payload": {"auth_ticket": authenticated["auth_ticket"],
+            "agent_installation_id": route.snapshot.pin.agent_installation_id,
+            "requested_creator_account_id": route.local.account,
+            "capabilities": ["capture.chats", *(["signing.parameters.v1"] if capable else [])],
+            "extension_version": "2.0.3", "agent_stream_id": str(uuid4()), "last_acknowledged_source_seq": 0,
+            "applied_config_revision": None}})
+    session = _receive(socket, oracle)
+    assert session["type"] == "agent.session"
+    return {"operation": "agent.signing-rule.resolve", "protocol_version": "2",
+        "auth_ticket": session["payload"]["config_auth_ticket"],
+        "agent_installation_id": route.snapshot.pin.agent_installation_id,
+        "creator_account_id": route.local.account,
+        "request": {"schema": "signing-parameter-request/v1", "engine": "onlyfans-sha1-checksum/v1",
+            "parameter_schema": "local-packaged-signing-rule/v1", "source_revision": "revision-A",
+            "catalog_sequence": 0, "keyset_sequence": 0, "object_sha256": None}}
+
+
+def test_parameter_feed_failure_is_typed_and_keeps_real_authenticated_channel_healthy(route, monkeypatch):
+    from app.services import signing_parameters
+    class Offline:
+        async def resolve(self, request):
+            assert set(request.model_dump()) == {"schema", "engine", "parameter_schema", "source_revision", "catalog_sequence", "keyset_sequence", "object_sha256"}
+            return {"schema": "signing-parameter-resolution/v1", "status": "unavailable", "reason": "network",
+                    "keyset": None, "catalog": None, "retry_after_ms": 30000}
+    monkeypatch.setattr(signing_parameters, "signing_parameter_service", lambda: Offline())
+    with _client(route) as client, client.websocket_connect("/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}) as socket:
+        oracle = _establish(socket, route)
+        params = _parameter_session(socket, oracle, route)
+        for _ in range(3):
+            assert _rpc(socket, oracle, "agent.signing-rule.resolve", params)["reason"] == "network"
+        config = _rpc(socket, oracle, "agent.config.get", {"operation": "agent.config.get", "protocol_version": "2",
+            "auth_ticket": params["auth_ticket"], "agent_installation_id": params["agent_installation_id"],
+            "creator_account_id": params["creator_account_id"], "current_etag": None, "current_config_revision": None,
+            "supported_config_schema_versions": ["2"]})
+        assert config["status"] == 200
+
+
+@pytest.mark.parametrize("bad", ["no-capability", "account", "installation", "extra-inner", "extra-wrapper", "boolean-sequence"])
+def test_parameter_rpc_requires_negotiated_capability_and_exact_current_tuple(route, bad):
+    with _client(route) as client, client.websocket_connect("/ws/agent", headers={"Host": "127.0.0.1:17871", "Origin": ORIGIN}) as socket:
+        oracle = _establish(socket, route)
+        params = _parameter_session(socket, oracle, route, capable=bad != "no-capability")
+        if bad == "account": params["creator_account_id"] = "another-account"
+        if bad == "installation": params["agent_installation_id"] = str(uuid4())
+        if bad == "extra-inner": params["request"]["url"] = "https://fixture.invalid/"
+        if bad == "extra-wrapper": params["trust"] = {}
+        if bad == "boolean-sequence": params["request"]["catalog_sequence"] = True
+        _refused_rpc(socket, oracle, "agent.signing-rule.resolve", params)
 
 
 def test_bridge_lists_safe_pin_projection_and_revokes_live_noise_session(route):

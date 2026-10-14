@@ -355,7 +355,8 @@ for (const variant of variants) {
         assert.deepEqual(await replacement.persistence.load(), signingBefore, 'retained signing state is never reset to adopt a mapping');
         if (incompatible === 'changed mapping') {
           await assert.rejects(provider.read({ operation: 'identity' }), { code: 'account_mismatch' });
-          assert.equal(replacement.calls.reads.length, 0, 'installed signer also retains its independent expected-identity fence');
+          assert.equal(replacement.calls.reads.length, 1, 'an unknown document sends one fresh candidate which rejects the different account');
+          assert.deepEqual(await replacement.persistence.load(), signingBefore, 'wrong-account candidate cannot activate or save');
         }
         coordinator.stop();
       });
