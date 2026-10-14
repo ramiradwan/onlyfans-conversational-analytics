@@ -1,4 +1,4 @@
-"""Read-only schema admission before any migrating application constructor.
+"""Coordinated retained-schema maintenance before application construction.
 
 The composition owner holds the process-lifetime root lease. Catalog paths are
 inputs, so this persistence owner never imports the analytics application.
@@ -20,7 +20,7 @@ from uuid import uuid4
 from app.persistence.database import LocalSQLite, open_encrypted_sqlite
 from app.persistence import sqlite_api as sqlite3
 from app.persistence.migrations import (MigrationRunner, SchemaInspection, SchemaCompatibilityError,
-                                       MigrationCancelled, load_migration_catalog)
+                                       MigrationCancelled, load_migration_catalog, resolve_migration_catalog)
 from app.persistence.private_files import (private_file_identity, reject_path_aliases,
     apply_private_file_security, apply_private_directory_security, file_sha256, sync_file, sync_directory)
 from app.security.local_data_key import (database_key, MASTER_KEY_FILENAME,
@@ -186,9 +186,102 @@ def _file_record(path: Path, should_cancel: Callable[[], bool] = lambda: False) 
     return record
 
 
+def _version(value, *, packaged: bool) -> tuple[int, ...]:
+    if not isinstance(value, str):
+        raise ValueError()
+    parts = value.split(".")
+    if len(parts) != (4 if packaged else 3) or any(not p.isascii() or not p.isdecimal() for p in parts):
+        raise ValueError()
+    numbers = tuple(int(p) for p in parts)
+    if any(str(n) != p or n > 65535 for n, p in zip(numbers, parts)) or (packaged and numbers[0] == 0):
+        raise ValueError()
+    return numbers
+
+
+def _validate_release(value):
+    if (not isinstance(value, dict) or set(value) != {"id", "kind", "identity", "version"}
+            or not isinstance(value["id"], str) or not 1 <= len(value["id"]) <= 16384
+            or value["kind"] not in {"package", "legacy"}):
+        raise ValueError()
+    identity = value["identity"]
+    if value["kind"] == "legacy":
+        if identity != {"product": "brain-bridge/v1"}:
+            raise ValueError()
+    else:
+        keys = {"purpose", "name", "publisher", "architecture", "application_id", "update_owner", "app_installer_uri"}
+        if (not isinstance(identity, dict) or set(identity) != keys
+                or identity["purpose"] not in {"production", "qualification"}
+                or identity["architecture"] != "x64"
+                or identity["update_owner"] not in {"direct-appinstaller", "microsoft-store"}):
+            raise ValueError()
+        for name in keys - {"app_installer_uri"}:
+            if (not isinstance(identity[name], str) or not 1 <= len(identity[name]) <= 8192
+                    or any(ord(character) < 32 for character in identity[name])):
+                raise ValueError()
+        uri = identity["app_installer_uri"]
+        if ((identity["update_owner"] == "microsoft-store" and uri is not None)
+                or (identity["update_owner"] == "direct-appinstaller" and
+                    (not isinstance(uri, str) or not uri.startswith("https://") or len(uri) > 2048))):
+            raise ValueError()
+    _version(value["version"], packaged=value["kind"] == "package")
+
+
+def _validate_catalogs(catalogs, schemas):
+    if not isinstance(catalogs, dict) or set(catalogs) != set(schemas):
+        raise ValueError()
+    for name, entries in catalogs.items():
+        if not isinstance(entries, list) or len(entries) != schemas[name]["target"]:
+            raise ValueError()
+        for version, entry in enumerate(entries, 1):
+            if (not isinstance(entry, list) or len(entry) != 3
+                    or type(entry[0]) is not int or entry[0] != version
+                    or not isinstance(entry[1], str) or not 1 <= len(entry[1]) <= 256
+                    or any(ord(character) < 32 for character in entry[1])
+                    or not isinstance(entry[2], str) or not _DIGEST.fullmatch(entry[2])):
+                raise ValueError()
+
+
+def _target(release, catalogs) -> str:
+    return hashlib.sha256(_json({"release": release, "catalogs": catalogs})).hexdigest()
+
+
+def _catalog_proofs(root, stores, inspections, should_cancel):
+    result = {}
+    for store in stores:
+        if store.filename in inspections:
+            with _existing_snapshot(root, store, should_cancel) as (connection, _):
+                catalog = resolve_migration_catalog(connection, store.catalog)
+            result[store.filename] = [[m.version, m.name, m.checksum] for m in catalog]
+    return result
+
+
+def _effective(metadata):
+    return metadata["resume"] if metadata["schema"] == "ofca-upgrade/v2" else metadata
+
+
+def _can_advance(previous, current) -> bool:
+    old, new = previous["release"], current["release"]
+    if old["kind"] != new["kind"] or old["identity"] != new["identity"]:
+        return False
+    old_version = _version(old["version"], packaged=old["kind"] == "package")
+    new_version = _version(new["version"], packaged=new["kind"] == "package")
+    if new_version <= old_version:
+        return False
+    if set(previous["catalogs"]) != set(current["catalogs"]):
+        return False
+    return all(current["catalogs"][name][:len(entries)] == entries
+               for name, entries in previous["catalogs"].items())
+
+
 def _validate_metadata(value, *, checkpoint: bool):
-    schema = "ofca-upgrade-checkpoint/v1" if checkpoint else "ofca-upgrade/v1"
+    prefix = "ofca-upgrade-checkpoint" if checkpoint else "ofca-upgrade"
+    v2 = isinstance(value, dict) and value.get("schema") == prefix + "/v2"
+    schema = prefix + ("/v2" if v2 else "/v1")
     fields = {"schema", "phase", "target", "root", "schemas", "materials", "files"}
+    if v2:
+        fields |= {"release", "catalogs"}
+        if not checkpoint:
+            fields.add("resume")
     phases = {"building", "prepared"} if checkpoint else {"intent", "complete"}
     try:
         if (not isinstance(value, dict) or set(value) != fields or value["schema"] != schema
@@ -204,6 +297,29 @@ def _validate_metadata(value, *, checkpoint: bool):
                     or any(type(v) is not int or not 0 <= v <= 9999 for v in versions.values())
                     or versions["source"] > versions["target"]):
                 raise ValueError()
+        if v2:
+            _validate_release(value["release"])
+            _validate_catalogs(value["catalogs"], schemas)
+            if value["target"] != _target(value["release"], value["catalogs"]):
+                raise ValueError()
+            if not checkpoint:
+                resume = value["resume"]
+                if (not isinstance(resume, dict) or set(resume) != {"target", "release", "catalogs", "schemas"}
+                        or not isinstance(resume["schemas"], dict) or set(resume["schemas"]) != set(schemas)):
+                    raise ValueError()
+                for name, versions in resume["schemas"].items():
+                    if (not isinstance(versions, dict) or set(versions) != {"source", "target"}
+                            or versions["source"] != schemas[name]["source"]
+                            or type(versions["source"]) is not int
+                            or type(versions["target"]) is not int
+                            or not schemas[name]["target"] <= versions["target"] <= 9999):
+                        raise ValueError()
+                _validate_release(resume["release"])
+                _validate_catalogs(resume["catalogs"], resume["schemas"])
+                if resume["target"] != _target(resume["release"], resume["catalogs"]):
+                    raise ValueError()
+                if resume["target"] != value["target"] and not _can_advance(value, resume):
+                    raise ValueError()
         material = value["materials"]
         if not isinstance(material, dict) or set(material) != set(_MATERIAL_FILES):
             raise ValueError()
@@ -330,6 +446,7 @@ def _remove_journal_temporaries(root: Path) -> None:
 
 
 def maintain_existing_stores(root: Path, stores: tuple[UpgradeStore, ...], *, release_id: str,
+                            release_coordinate: dict | None = None,
                             should_cancel: Callable[[], bool] = lambda: False,
                             on_phase: Callable[[str], None] = lambda _: None) -> bool:
     """Checkpoint, migrate forward and complete before the application graph.
@@ -352,13 +469,22 @@ def maintain_existing_stores(root: Path, stores: tuple[UpgradeStore, ...], *, re
     reject_path_aliases(cohort)
     root_id = hashlib.sha256(os.path.normcase(str(root)).encode("utf-8")).hexdigest()
     catalogs = {s.filename: [(m.version, m.name, m.checksum) for m in load_migration_catalog(s.catalog)] for s in stores}
-    target = hashlib.sha256(_json({"release": release_id, "catalogs": catalogs})).hexdigest()
+    legacy_target = _target(release_id, catalogs)
+    release, proofs = None, None
+    if release_coordinate is not None:
+        if not isinstance(release_coordinate, dict) or set(release_coordinate) != {"kind", "identity", "version"}:
+            raise ValueError("upgrade release coordinate is invalid")
+        release = {"id": release_id, **release_coordinate}
+        _validate_release(release)
+        proofs = _catalog_proofs(root, stores, inspections, should_cancel)
+    target = _target(release, proofs) if release is not None else legacy_target
     prior = _validate_metadata(_read_protected(journal), checkpoint=False) if journal.exists() else None
+    retarget = None
     if prior is not None:
         if prior["root"] != root_id or not set(prior["schemas"]) <= set(inspections):
             raise UpgradeRecoveryRequired("upgrade_retained_state_changed")
         if prior["phase"] == "complete":
-            if any(inspections[name].current_version < versions["target"] for name, versions in prior["schemas"].items()):
+            if any(inspections[name].current_version < versions["target"] for name, versions in _effective(prior)["schemas"].items()):
                 raise UpgradeRecoveryRequired("upgrade_schema_regressed")
             _purge_checkpoint(cohort, prior["files"], should_cancel=should_cancel)
             if not any(i.pending_versions for i in inspections.values()):
@@ -366,10 +492,26 @@ def maintain_existing_stores(root: Path, stores: tuple[UpgradeStore, ...], *, re
             journal.unlink()
             sync_directory(root)
             prior = None
-        elif (prior["target"] != target or set(prior["schemas"]) != set(inspections)
-                or any(not versions["source"] <= inspections[name].current_version <= versions["target"]
-                       for name, versions in prior["schemas"].items())):
-            raise UpgradeRecoveryRequired("upgrade_target_conflict")
+        else:
+            effective = _effective(prior)
+            if (set(prior["schemas"]) != set(inspections)
+                    or any(not versions["source"] <= inspections[name].current_version <= versions["target"]
+                           for name, versions in effective["schemas"].items())):
+                raise UpgradeRecoveryRequired("upgrade_target_conflict")
+            if prior["schema"] == "ofca-upgrade/v1":
+                # V1 never recorded unapplied history or delivery identity.
+                # Do not infer that missing proof from a newer binary.
+                if prior["target"] != legacy_target:
+                    raise UpgradeRecoveryRequired("upgrade_target_conflict")
+            elif release is None:
+                raise UpgradeRecoveryRequired("upgrade_target_conflict")
+            elif effective["target"] != target:
+                candidate = {"target": target, "release": release, "catalogs": proofs,
+                             "schemas": {name: {"source": prior["schemas"][name]["source"],
+                                                "target": i.target_version} for name, i in inspections.items()}}
+                if not _can_advance(effective, candidate):
+                    raise UpgradeRecoveryRequired("upgrade_target_conflict")
+                retarget = candidate
     pending_authority = any(i.pending_versions for name, i in inspections.items() if name in _AUTHORITATIVE)
     if prior is None and not pending_authority and not cohort.exists():
         if not any(i.pending_versions for i in inspections.values()):
@@ -383,13 +525,23 @@ def maintain_existing_stores(root: Path, stores: tuple[UpgradeStore, ...], *, re
     if prior is None:
         schemas = {name: {"source": i.current_version, "target": i.target_version} for name, i in inspections.items()}
         materials = _materials(root)
-        metadata = {"schema": "ofca-upgrade-checkpoint/v1", "phase": "building", "target": target,
+        metadata = {"schema": "ofca-upgrade-checkpoint/v2" if release is not None else "ofca-upgrade-checkpoint/v1",
+                    "phase": "building", "target": target,
                     "root": root_id, "schemas": schemas, "materials": _material_digests(materials), "files": {}}
+        if release is not None:
+            metadata.update(release=release, catalogs=proofs)
         if cohort.exists():
             if (cohort / _MANIFEST).exists():
                 previous = _validate_metadata(_read_protected(cohort / _MANIFEST), checkpoint=True)
-                if any(previous[key] != metadata[key] for key in ("target", "root", "schemas", "materials")):
+                if any(previous[key] != metadata[key] for key in ("root", "materials")):
                     raise UpgradeRecoveryRequired("upgrade_target_conflict")
+                if any(previous["schemas"].get(name, {}).get("source") != i.current_version
+                       for name, i in inspections.items()) or set(previous["schemas"]) != set(inspections):
+                    raise UpgradeRecoveryRequired("upgrade_target_conflict")
+                if previous["target"] != target:
+                    if (previous["schema"] != "ofca-upgrade-checkpoint/v2" or release is None
+                            or not _can_advance(previous, metadata)):
+                        raise UpgradeRecoveryRequired("upgrade_target_conflict")
                 _purge_checkpoint(cohort, previous["files"], unfinished=True, should_cancel=should_cancel)
             else:
                 _purge_checkpoint(cohort, None, should_cancel=should_cancel)
@@ -411,8 +563,10 @@ def maintain_existing_stores(root: Path, stores: tuple[UpgradeStore, ...], *, re
         metadata["phase"] = "prepared"
         _atomic_protected(cohort / _MANIFEST, metadata)
         _verify_checkpoint(root, cohort, metadata, stores, should_cancel=should_cancel)
-        prior = {**metadata, "schema": "ofca-upgrade/v1", "phase": "intent",
+        prior = {**metadata, "schema": "ofca-upgrade/v2" if release is not None else "ofca-upgrade/v1", "phase": "intent",
                  "files": {**metadata["files"], _MANIFEST: _file_record(cohort / _MANIFEST, should_cancel)}}
+        if release is not None:
+            prior["resume"] = {key: prior[key] for key in ("target", "release", "catalogs", "schemas")}
         _atomic_protected(journal, prior)
     else:
         metadata = _validate_metadata(_read_protected(cohort / _MANIFEST), checkpoint=True)
@@ -421,6 +575,12 @@ def maintain_existing_stores(root: Path, stores: tuple[UpgradeStore, ...], *, re
                 or {**metadata["files"], _MANIFEST: _file_record(cohort / _MANIFEST, should_cancel)} != prior["files"]):
             raise UpgradeRecoveryRequired("upgrade_checkpoint_changed")
         _verify_checkpoint(root, cohort, metadata, stores, should_cancel=should_cancel)
+        if retarget is not None:
+            # The checkpoint remains immutable. Persist the verified successor
+            # intent in one journal replacement before any successor SQL runs.
+            _check_cancel(should_cancel)
+            prior["resume"] = retarget
+            _atomic_protected(journal, prior)
     _check_cancel(should_cancel)
     _run_pending(root, stores, inspections, should_cancel, on_phase)
     on_phase("validating")

@@ -342,6 +342,7 @@
     "tests/test_tied_insertion_safety.py": 2,
     "tests/test_tied_insertion_scheduler.py": 2,
     "tests/test_transport_auth_v2.py": 3,
+    "tests/test_upgrade_corrective.py": 4,
     "tests/test_upstream_retention_authority.py": 3,
     "tests/test_ux_journey.py": 2,
     "tests/test_validation_receipts.py": 2,
@@ -356,6 +357,7 @@
       {"selector": "tests/test_startup_maintenance.py", "reason": "Actual process-held root ownership, read-only DPAPI inspection and pre-constructor refusal require Windows qualification."},
       {"selector": "tests/test_upgrade_lifecycle.py", "reason": "Keyed admission must see committed SQLCipher WAL, refuse incompatible state and complete pending schemas before constructors."},
       {"selector": "tests/test_upgrade_checkpoint.py", "reason": "Encrypted transition checkpoints and killed-process forward resume must qualify on the fixed Windows runtime."},
+      {"selector": "tests/test_upgrade_corrective.py", "reason": "Corrective-release intent adoption must preserve encrypted state, unchanged catalog history and delivery identity across process interruption."},
       {"selector": "tests/test_bootstrap_status.py", "reason": "Inherited child status and parent EOF must cancel pre-listener SQL on Windows without forced process cleanup."},
       {
         "selector": "tests/test_msix_packaging.py",

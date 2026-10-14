@@ -88,6 +88,37 @@ def test_packaged_boot_constructs_application_only_after_pending_auth_maintenanc
         packaged_entry.run_brain()
 
 
+@pytest.mark.parametrize("packaged", [False, True])
+def test_frozen_owner_supplies_validated_delivery_context_without_importing_runtime_settings(tmp_path, monkeypatch, packaged):
+    import sys
+    from app.core import desktop_release, startup_maintenance
+    from app.persistence import upgrade_lifecycle
+    image = tmp_path / "Brain.exe"
+    image.write_bytes(b"synthetic frozen image identity")
+    (tmp_path / "release-manifest.json").write_text(
+        '{"schema":"ofca-release-manifest/v1","version":"0.7.5","architecture":"x64"}', encoding="utf-8")
+    release = desktop_release.DesktopRelease("qualification",
+        desktop_release.PackageIdentity("OFCA.Qualification.Direct", "CN=OFCA MSIX Qualification Direct", "1.0.6.0", "x64"),
+        "Bridge", "direct-appinstaller", "https://qualification.example.test/desktop/direct/Dipsy.appinstaller")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(image))
+    monkeypatch.setattr(desktop_release, "current_desktop_release", lambda: release if packaged else None)
+    captured = {}
+    def maintain(root, stores, **arguments):
+        captured.update(arguments)
+    monkeypatch.setattr(upgrade_lifecycle, "maintain_existing_stores", maintain)
+    startup_maintenance.admit_retained_schemas(RetainedState(tmp_path, "fresh", ()))
+    coordinate = captured["release_coordinate"]
+    if packaged:
+        assert coordinate["kind"] == "package" and coordinate["version"] == "1.0.6.0"
+        assert coordinate["identity"]["publisher"] == release.identity.publisher
+        assert coordinate["identity"]["app_installer_uri"] == release.app_installer_uri
+        assert "version" not in coordinate["identity"]
+    else:
+        assert coordinate == {"kind": "legacy", "identity": {"product": "brain-bridge/v1"}, "version": "0.7.5"}
+        assert captured["release_id"].startswith("legacy-binary:")
+
+
 @pytest.mark.parametrize("mutation", ["future", "checksum", "missing-ledger", "version"])
 def test_incompatible_ledger_is_never_fresh_or_rewritten(tmp_path, mutation):
     database = seed(tmp_path)

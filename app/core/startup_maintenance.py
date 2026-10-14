@@ -165,13 +165,43 @@ def admit_retained_schemas(state: RetainedState, *,
     )
     try:
         release_id = "source-catalog/v1"
+        release_coordinate = None
         if getattr(sys, "frozen", False):
             from app.core.desktop_release import current_desktop_release
             from app.persistence.private_files import file_sha256
             release = current_desktop_release()
             release_id = (json.dumps(asdict(release), sort_keys=True, separators=(",", ":"))
                           if release is not None else "legacy-binary:" + file_sha256(sys.executable))
+            if release is not None:
+                identity = asdict(release.identity)
+                version = identity.pop("version")
+                release_coordinate = {"kind": "package", "version": version,
+                    "identity": {**identity, "purpose": release.purpose,
+                        "application_id": release.application_id, "update_owner": release.update_owner,
+                        "app_installer_uri": release.app_installer_uri}}
+            else:
+                # Ordinary Inno/common-stage releases have a build-owned
+                # version manifest. Missing evidence retains strict V1-style
+                # exact-target recovery rather than inventing provenance.
+                manifest = Path(sys.executable).parent / "release-manifest.json"
+                if manifest.exists():
+                    if not manifest.is_file() or manifest.stat().st_size > 65536:
+                        raise ValueError("release manifest invalid")
+                    def unique(pairs):
+                        value = {}
+                        for key, item in pairs:
+                            if key in value:
+                                raise ValueError("release manifest invalid")
+                            value[key] = item
+                        return value
+                    value = json.loads(manifest.read_bytes(), object_pairs_hook=unique)
+                    if (not isinstance(value, dict) or value.get("schema") != "ofca-release-manifest/v1"
+                            or value.get("architecture") != "x64"):
+                        raise ValueError("release manifest invalid")
+                    release_coordinate = {"kind": "legacy", "version": value.get("version"),
+                                          "identity": {"product": "brain-bridge/v1"}}
         maintain_existing_stores(state.root, stores, release_id=release_id,
+                                 release_coordinate=release_coordinate,
                                  should_cancel=should_cancel, on_phase=on_phase)
         if state.mode == "configured":
             _validate_configuration(state.root)

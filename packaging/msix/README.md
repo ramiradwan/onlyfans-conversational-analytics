@@ -10,7 +10,9 @@ The customer MSIX baseline is **Windows 11 25H2 or later, x64** (`10.0.26200.0`)
 
 The approved nonsecret defaults are Application Id `Bridge`, PublisherDisplayName `Dipsy`, and configurable direct Name `Dipsy.OnlyFansConversationalAnalytics`. Schema defaults document these choices; they do not fill missing values during validation.
 
-Production certificate Subject DN, Store reservation and live HTTPS App Installer URL remain external provisioning gates. Copy the exact Subject DN from the verified signing identity, without example locality placeholders or manual normalization. Keep the Name and Publisher stable across certificate renewal. Capture Windows-derived full/family names in release verification and compare the existing approved family on later releases.
+The direct production certificate Subject DN and live HTTPS App Installer URL remain external provisioning gates. Copy the exact Subject DN from the verified signing identity, without example locality placeholders or manual normalization. Keep the Name and Publisher stable across certificate renewal. Capture Windows-derived full/family names in release verification and compare the existing approved family on later releases.
+
+The owner supplied the Store draft reservation for `Dipsy.ConversationAnalytics`, Store ID `9PD4KGLX42JD`. [store-reservation.json](store-reservation.json) retains its provenance and exact identity; the production Store profile uses those values. Windows-derived PFN matches the supplied reservation. This does not establish capability approval, submission or Store delivery, and it supplies no direct-distribution signing identity.
 
 `production-direct.template.json` deliberately fails validation: Publisher is empty and the feed URI is null. Its WebView2 version is an initial fixture value, not an installed prerequisite qualification claim. There is no automatic fallback from an incomplete production profile to a synthetic identity. Neither a validated profile nor a package build authorizes production publication or distribution cutover.
 
@@ -19,6 +21,7 @@ Production certificate Subject DN, Store reservation and live HTTPS App Installe
 | `profiles/qualification-direct.json` | Isolated synthetic Name and Publisher; `.example.test` URI is a rendering fixture | Direct App Installer |
 | `profiles/qualification-store.json` | Separate synthetic Name and Publisher; no direct feed | Microsoft Store candidate |
 | `profiles/production-direct.template.json` | Incomplete production input template; must refuse until externally verified inputs are supplied | Direct App Installer |
+| `profiles/production-store.json` | Owner-supplied reserved Store identity; submission and delivery gates remain | Microsoft Store |
 
 Qualification identities must not be used for customer distribution, Store submission or retained production state. Qualification scripts require an explicit `-AllowQualification` for release verification. Production verification refuses these profiles.
 
@@ -113,6 +116,6 @@ The implemented [startup storage boundary](../../docs/operations/desktop-startup
 
 Bridge now checks the installed WebView2 version before constructing Tauri or creating presentation/Brain state. The native recovery surface offers a fixed Microsoft acquisition action, a fresh check and Close. Its shared minimum and approved page are in [prerequisite-policy.json](../../shared/desktop-release/prerequisite-policy.json). Native OS tests observe real controls and the actual Bridge refusal path. The [startup document](../../docs/operations/desktop-startup-storage.md) distinguishes this evidence from installed acquisition qualification.
 
-Remaining release gates include original hardware-key use, the full launcher journey, older/mixed-install transition detection, corrective-target recovery, installed online/offline prerequisite recovery, registered-source validation and graceful servicing, protected workflow integration, and installed direct A→B continuity. Direct certificate and hosting inputs remain pending. Store capability approval, submission and actual delivery remain separate gates after reservation. Inno retirement and public cutover remain separately approved actions.
+Source maintenance now supports governed corrective targets through protected catalog proofs and durable successor intent. Installed corrective recovery remains unqualified. Remaining release gates include original hardware-key use, the full launcher journey, older/mixed-install transition detection, installed online/offline prerequisite recovery, registered-source validation and graceful servicing, protected workflow integration, and installed direct A→B continuity. Direct certificate and hosting inputs remain pending. Store capability approval, submission and actual delivery remain separate gates after reservation. Inno retirement and public cutover remain separately approved actions.
 
 Regenerate the technical MSIX PNG sizes from the approved existing icon with `generate-assets.ps1`. Do not hand-edit those generated files or introduce separate branding for package qualification.
