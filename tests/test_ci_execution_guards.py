@@ -169,14 +169,24 @@ def test_windows_consumers_fail_closed_on_the_shared_producer() -> None:
         assert "workflow_run_attempt -gt [int]$env:GITHUB_RUN_ATTEMPT" in verify["run"]
 
 
-def test_every_backend_invocation_retains_distinct_failure_evidence() -> None:
-    jobs = _workflow_document()["jobs"]
+def _assert_backend_execution_evidence(workflow: dict[str, Any]) -> None:
+    jobs = workflow["jobs"]
     lanes = set()
     for name in BACKEND_JOBS:
         steps = jobs[name]["steps"]
-        invocations = [step for step in steps if "python -m pytest" in str(step.get("run", "")) or "python tools/test_backend.py" in str(step.get("run", ""))]
+        # This exact command only consumes the preceding raw report. Everything
+        # else invoking the runner remains subject to execution-evidence checks.
+        report_validation = (
+            "python tools/test_backend.py validate-windows-manifest "
+            "--inventory artifacts/ci-tests/legacy-windows-reference/report.json"
+        )
+        invocations = [step for step in steps
+                       if step.get("run") != report_validation
+                       and ("python -m pytest" in str(step.get("run", ""))
+                            or "python tools/test_backend.py" in str(step.get("run", "")))]
         assert invocations, f"{name} has no tests"
         for step in invocations:
+            assert isinstance(step.get("env"), dict), f"{step.get('name')} has no execution evidence environment"
             environment = step["env"]
             lane = environment["CI_TEST_LANE"]
             assert lane not in lanes, f"{lane} overwrites another invocation's evidence"
@@ -192,6 +202,25 @@ def test_every_backend_invocation_retains_distinct_failure_evidence() -> None:
         assert not upload["with"].get("overwrite"), "attempt-specific execution evidence must stay immutable"
         for coordinate in ("${{ env.PRODUCT_SHA }}", "${{ github.run_id }}", "${{ github.run_attempt }}"):
             assert coordinate in upload["with"]["name"]
+
+
+def test_every_backend_invocation_retains_distinct_failure_evidence() -> None:
+    _assert_backend_execution_evidence(_workflow_document())
+
+
+@pytest.mark.parametrize("command", [
+    "python tools/test_backend.py --lane fast",
+    "python tools/test_backend.py validate-windows-manifest "
+    "--inventory artifacts/ci-tests/legacy-windows-reference/report.json\n"
+    "python tools/test_backend.py --lane fast",
+])
+def test_read_only_validation_cannot_hide_execution_without_failure_evidence(command: str) -> None:
+    workflow = _workflow_document()
+    step = next(step for step in workflow["jobs"]["windows-platform-contract"]["steps"]
+                if step.get("name") == "Validate exhaustive Windows shard inventory")
+    step["run"] = command
+    with pytest.raises(AssertionError, match="no execution evidence environment"):
+        _assert_backend_execution_evidence(workflow)
 
 
 def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() -> None:

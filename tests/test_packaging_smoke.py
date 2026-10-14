@@ -38,7 +38,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SMOKE_SCRIPT = ROOT / "tools" / "packaging-smoke" / "run.ps1"
 BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
 # Release inputs a Store candidate is never built without.
-SIGNING_RULE_FIXTURE = ROOT / "extension" / "tests" / "fixtures" / "packaged-signing-rule.json"
 LEGAL_BINDINGS_FIXTURE = (
     ROOT / "extension" / "tests" / "fixtures" / "legal-instrument-bindings.synthetic.json"
 )
@@ -371,6 +370,10 @@ for name in ('creator-platform-data-risk-disclosure.html',):
 core = stage / '_internal' / 'app' / 'core'
 core.mkdir()
 shutil.copyfile(root / 'app' / 'core' / 'customer-release.json', core / 'customer-release.json')
+shutil.copyfile(root / 'app' / 'core' / 'signing-parameter-release.json', core / 'signing-parameter-release.json')
+security = stage / '_internal' / 'app' / 'security'
+security.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(root / 'app' / 'security' / 'signing-publication-trust.json', security / 'signing-publication-trust.json')
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -410,8 +413,6 @@ def _build_real_installer(tmp_path: Path, *, serves_health: bool = False) -> Pat
             "-SkipAssetBuild",
             "-InnoSetupCompiler",
             str(compiler),
-            "-PackagedSigningRule",
-            str(SIGNING_RULE_FIXTURE),
             "-LegalReleaseBindings",
             str(LEGAL_BINDINGS_FIXTURE),
             "-PrivacyPolicyUrl",

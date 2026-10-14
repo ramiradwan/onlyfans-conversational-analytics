@@ -27,7 +27,6 @@ BUILD_SCRIPT = ROOT / "packaging" / "build-windows.ps1"
 # Release inputs a Store candidate is never built without. They are taken from
 # the tree being built, so a project copy supplies its own checked-in fixtures.
 FIXTURE_DIRECTORY = Path("extension") / "tests" / "fixtures"
-SIGNING_RULE_FIXTURE = FIXTURE_DIRECTORY / "packaged-signing-rule.json"
 LEGAL_BINDINGS_FIXTURE = (
     FIXTURE_DIRECTORY / "legal-instrument-bindings.synthetic.json"
 )
@@ -77,6 +76,10 @@ for name in ('creator-platform-data-risk-disclosure.html',):
 core = stage / '_internal' / 'app' / 'core'
 core.mkdir()
 shutil.copyfile(root / 'app' / 'core' / 'customer-release.json', core / 'customer-release.json')
+shutil.copyfile(root / 'app' / 'core' / 'signing-parameter-release.json', core / 'signing-parameter-release.json')
+security = stage / '_internal' / 'app' / 'security'
+security.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(root / 'app' / 'security' / 'signing-publication-trust.json', security / 'signing-publication-trust.json')
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -155,7 +158,6 @@ def _run_build(
         str(script), "-BuildPython", sys.executable, "-PyInstallerExecutable",
         str(pyinstaller), "-InnoSetupCompiler", str(compiler), "-OutputRoot", str(output),
         "-SkipAssetBuild",
-        "-PackagedSigningRule", str(project_root / SIGNING_RULE_FIXTURE),
         "-LegalReleaseBindings", str(project_root / LEGAL_BINDINGS_FIXTURE),
         "-PrivacyPolicyUrl", SYNTHETIC_PRIVACY_POLICY_URL,
     ]
