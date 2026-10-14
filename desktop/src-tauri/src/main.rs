@@ -149,6 +149,9 @@ fn main() {
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                     .title("Conversation Analytics")
+                    // Navigation briefly exposes the native surface before
+                    // either dark startup document has painted.
+                    .background_color(tauri::window::Color(20, 25, 22, 255))
                     .data_directory(
                         policy::webview_directory(&data).map_err(std::io::Error::other)?,
                     )
