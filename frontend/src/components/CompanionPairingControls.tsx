@@ -277,7 +277,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
             Waiting for the browser extension to connect.
           </Typography>
           {remainingSeconds !== null && (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
               Connection window expires in {remainingLabel(remainingSeconds)}.
             </Typography>
           )}
@@ -302,7 +302,7 @@ function PairingAttemptControls({ api, browserApi, onboarding, connection, creat
             {failed ? '••• •••' : `${status.comparison_code!.slice(0, 3)} ${status.comparison_code!.slice(3)}`}
           </Typography>
           {remainingSeconds !== null && (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
               Code expires in {remainingLabel(remainingSeconds)}.
             </Typography>
           )}
