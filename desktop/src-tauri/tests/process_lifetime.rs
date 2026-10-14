@@ -1,5 +1,9 @@
 #![cfg(all(windows, feature = "qualification-tools"))]
 #![allow(dead_code)]
+#[path = "../src/bootstrap.rs"]
+mod bootstrap;
+#[path = "../src/deployment.rs"]
+mod deployment;
 #[path = "../src/policy.rs"]
 mod policy;
 #[path = "../src/windows.rs"]
@@ -50,9 +54,44 @@ fn closing_the_owned_pipe_allows_graceful_shutdown() {
     assert!(image.as_os_str().to_string_lossy().starts_with(r"\\?\"));
     let mut child = windows::Brain::start(&image, &data.0, "test-lifetime").unwrap();
     assert_eq!(started(&data.0), child.pid);
-    child.stop();
+    assert!(
+        child.stop(),
+        "ordinary pipe closure required forced Job cleanup"
+    );
     assert_eq!(child.exit_code().unwrap(), Some(0));
     assert!(data.0.join("graceful").is_file());
+}
+
+#[test]
+fn child_status_is_separate_from_lifetime_and_never_admits_a_listener() {
+    let data = Directory::new();
+    let image = Path::new(env!("CARGO_BIN_EXE_brain-fixture"))
+        .canonicalize()
+        .unwrap();
+    let mut child = windows::Brain::start(&image, &data.0, "test-lifetime").unwrap();
+    assert_eq!(started(&data.0), child.pid);
+    let mut observation = bootstrap::Supervisor::new(Instant::now());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let (bytes, closed) = child.bootstrap_bytes().unwrap();
+        assert!(!closed);
+        observation.receive(&bytes, Instant::now()).unwrap();
+        if !bytes.is_empty() {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!observation.ready());
+    assert!(!windows::listeners()
+        .unwrap()
+        .iter()
+        .any(|row| row.pid == child.pid));
+    assert!(
+        child.stop(),
+        "ordinary maintenance shutdown required forced Job cleanup"
+    );
+    assert_eq!(child.exit_code().unwrap(), Some(0));
 }
 #[test]
 fn killing_the_supervisor_does_not_leave_its_child_running() {

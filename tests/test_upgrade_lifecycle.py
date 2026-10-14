@@ -48,22 +48,21 @@ def test_current_schema_admission_creates_no_files_or_authority(tmp_path):
     admit_retained_schemas(RetainedState(root, "provisioning", (AUTH.filename,)))
 
 
-def test_pending_auth_migration_refuses_before_any_forward_sql(tmp_path):
+def test_pending_auth_migration_completes_before_application_construction(tmp_path):
     catalog = tmp_path / "old-catalog"
     catalog.mkdir()
     first = sorted(AUTH_CATALOG.glob("*.sql"))[0]
     shutil.copy2(first, catalog / first.name)
     root = tmp_path / "retained"
     seed(root, catalog=catalog)
-    before = authority_bytes(root)
     inspected = inspect_existing_stores(root, (AUTH,))[AUTH.filename]
     assert inspected.current_version == 1 and inspected.pending_versions[0] == 2
-    with pytest.raises(StartupRefused, match="retained_schema_maintenance_required"):
-        admit_retained_schemas(RetainedState(root, "provisioning", (AUTH.filename,)))
-    assert authority_bytes(root) == before
+    admit_retained_schemas(RetainedState(root, "provisioning", (AUTH.filename,)))
+    assert not inspect_existing_stores(root, (AUTH,))[AUTH.filename].pending_versions
+    assert not (root / "upgrade-checkpoint").exists()
 
 
-def test_packaged_boot_never_constructs_application_with_pending_auth_schema(tmp_path, monkeypatch):
+def test_packaged_boot_constructs_application_only_after_pending_auth_maintenance(tmp_path, monkeypatch):
     from app import packaged_entry
     from app.core import startup_maintenance, process_lifetime
     catalog = tmp_path / "old-catalog"
@@ -72,18 +71,21 @@ def test_packaged_boot_never_constructs_application_with_pending_auth_schema(tmp
     shutil.copy2(first, catalog / first.name)
     root = tmp_path / "retained"
     seed(root, catalog=catalog)
-    before = authority_bytes(root)
     @contextmanager
     def parent(_callback):
         yield
     monkeypatch.setattr(process_lifetime, "parent_lifetime", parent)
     monkeypatch.setattr(startup_maintenance, "acquire_runtime_ownership",
                         lambda: RetainedState(root, "provisioning", (AUTH.filename,)))
-    monkeypatch.setattr(packaged_entry, "select_brain_application",
-                        lambda **kwargs: pytest.fail("migrating application constructor reached"))
-    with pytest.raises(StartupRefused, match="retained_schema_maintenance_required"):
+    class Selected(RuntimeError):
+        pass
+    def select(**kwargs):
+        assert not inspect_existing_stores(root, (AUTH,))[AUTH.filename].pending_versions
+        assert not (root / "upgrade-checkpoint").exists()
+        raise Selected()
+    monkeypatch.setattr(packaged_entry, "select_brain_application", select)
+    with pytest.raises(Selected):
         packaged_entry.run_brain()
-    assert authority_bytes(root) == before
 
 
 @pytest.mark.parametrize("mutation", ["future", "checksum", "missing-ledger", "version"])

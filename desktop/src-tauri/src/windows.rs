@@ -14,7 +14,11 @@ use windows_sys::Win32::{
     Networking::WinSock::{AF_INET, AF_INET6},
     Security::*,
     Storage::FileSystem::*,
-    System::{JobObjects::*, Pipes::CreatePipe, Threading::*},
+    System::{
+        JobObjects::*,
+        Pipes::{CreatePipe, PeekNamedPipe},
+        Threading::*,
+    },
     UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
 };
 
@@ -309,6 +313,7 @@ pub struct Brain {
     process: Handle,
     job: Handle,
     lifetime: Option<Handle>,
+    status: Option<Handle>,
     pub pid: u32,
 }
 
@@ -341,8 +346,24 @@ impl Brain {
             if SetHandleInformation(write.0, HANDLE_FLAG_INHERIT, 0) == 0 {
                 return Err("child_start_failed");
             }
+            let (mut status_read, mut status_write) = (null_mut(), null_mut());
+            if CreatePipe(
+                &mut status_read,
+                &mut status_write,
+                &security,
+                crate::bootstrap::MAX_TOTAL_BYTES as u32,
+            ) == 0
+            {
+                return Err("child_start_failed");
+            }
+            let status_read = Handle::checked(status_read, "child_start_failed")?;
+            let status_write = Handle::checked(status_write, "child_start_failed")?;
+            if SetHandleInformation(status_read.0, HANDLE_FLAG_INHERIT, 0) == 0 {
+                return Err("child_start_failed");
+            }
             // A windowless Python process still needs valid standard handles.
-            // Inherit only this null device and the separate lifetime pipe.
+            // Inherit only the null device, parent-lifetime reader and
+            // child-owned bootstrap writer. The status reader stays here.
             let null_device = Handle::checked(
                 CreateFileW(
                     wide(std::ffi::OsStr::new("NUL")).as_ptr(),
@@ -355,7 +376,7 @@ impl Brain {
                 ),
                 "child_start_failed",
             )?;
-            let mut inherited = [read.0, null_device.0];
+            let mut inherited = [read.0, status_write.0, null_device.0];
             let mut attributes = Attributes::new(&mut inherited)?;
             let mut startup: STARTUPINFOEXW = zeroed();
             startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
@@ -373,6 +394,7 @@ impl Brain {
                                 | "PYTHONHOME"
                                 | "LOCAL_ANALYTICS_DATA_DIR"
                                 | "BRAIN_PARENT_LIFETIME_HANDLE"
+                                | "BRAIN_BOOTSTRAP_STATUS_HANDLE"
                                 | "LOCAL_PROVISIONING_HANDOFF_TOKEN"
                                 | "LOCAL_PROVISIONING_EXTENSION_ID"
                         )
@@ -385,6 +407,10 @@ impl Brain {
             environment.insert(
                 "BRAIN_PARENT_LIFETIME_HANDLE".into(),
                 (read.0 as usize).to_string().into(),
+            );
+            environment.insert(
+                "BRAIN_BOOTSTRAP_STATUS_HANDLE".into(),
+                (status_write.0 as usize).to_string().into(),
             );
             environment.insert("LOCAL_PROVISIONING_HANDOFF_TOKEN".into(), handoff.into());
             environment.insert(
@@ -445,8 +471,50 @@ impl Brain {
                 process: process_handle,
                 job,
                 lifetime: Some(write),
+                status: Some(status_read),
                 pid: process.dwProcessId,
             })
+        }
+    }
+    pub fn bootstrap_bytes(&self) -> Result<(Vec<u8>, bool)> {
+        let status = self.status.as_ref().ok_or("child_status_closed")?;
+        unsafe {
+            let mut available = 0;
+            if PeekNamedPipe(
+                status.0,
+                null_mut(),
+                0,
+                null_mut(),
+                &mut available,
+                null_mut(),
+            ) == 0
+            {
+                return if GetLastError() == ERROR_BROKEN_PIPE {
+                    Ok((Vec::new(), true))
+                } else {
+                    Err("child_status_unavailable")
+                };
+            }
+            if available == 0 {
+                return Ok((Vec::new(), false));
+            }
+            if available as usize > crate::bootstrap::MAX_TOTAL_BYTES {
+                return Err("bootstrap_bytes_invalid");
+            }
+            let mut bytes = vec![0u8; available as usize];
+            let mut received = 0;
+            if ReadFile(
+                status.0,
+                bytes.as_mut_ptr(),
+                available,
+                &mut received,
+                null_mut(),
+            ) == 0
+            {
+                return Err("child_status_unavailable");
+            }
+            bytes.truncate(received as usize);
+            Ok((bytes, false))
         }
     }
     pub fn exit_code(&self) -> Result<Option<u32>> {
@@ -487,14 +555,18 @@ impl Brain {
             std::thread::sleep(remaining.min(std::time::Duration::from_millis(100)));
         }
     }
-    pub fn stop(&mut self) {
+    pub fn stop(&mut self) -> bool {
         self.lifetime.take();
+        // Closing this reader also unblocks a status write during cancellation.
+        self.status.take();
         unsafe {
             if WaitForSingleObject(self.process.0, 15000) != WAIT_OBJECT_0 {
                 TerminateJobObject(self.job.0, 1);
                 WaitForSingleObject(self.process.0, 5000);
+                return false;
             }
         }
+        true
     }
 }
 impl Drop for Brain {

@@ -63,6 +63,22 @@ def file_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def apply_private_directory_security(path: str | Path) -> None:
+    """Protect an owned recovery directory without losing POSIX traversal."""
+    target = reject_path_aliases(path)
+    if not target.is_dir():
+        raise PrivateFileSecurityError("private directory is missing")
+    if os.name == "nt":
+        apply_private_file_security(target)
+    else:
+        try:
+            os.chmod(target, 0o700)
+            if stat.S_IMODE(target.stat().st_mode) != 0o700:
+                raise OSError("owner-only directory verification failed")
+        except OSError as error:
+            raise PrivateFileSecurityError("private directory security failed") from error
+
+
 def sync_file(path: str | Path) -> None:
     with open(path, "r+b") as handle:
         os.fsync(handle.fileno())

@@ -3,6 +3,7 @@
 
 #[cfg(windows)]
 mod admission;
+mod bootstrap;
 #[cfg(windows)]
 mod browser;
 mod deployment;

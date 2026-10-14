@@ -1,16 +1,18 @@
 """Pre-constructor retained-state inspection and process-lifetime ownership.
 
 Lock order is the runtime root lease, then the existing installation migration
-lock, then individual database connections. This owner never executes SQL or
-creates replacement customer authority.
+lock, then individual database connections. SQL remains owned by the existing
+forward migrator; this composition creates no replacement customer authority.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
+import json
 import re
+import sys
 import threading
-from typing import Literal
+from typing import Callable, Literal
 
 from dotenv import dotenv_values
 
@@ -145,16 +147,14 @@ def acquire_runtime_ownership(data_directory: str | Path | None = None) -> Retai
         return state
 
 
-def admit_retained_schemas(state: RetainedState) -> None:
-    """Refuse unsafe or pending schemas before a constructor can migrate them.
-
-    Pending transitions stay closed until the coordinated checkpoint and
-    resumable maintenance owner is implemented and qualified.
-    """
+def admit_retained_schemas(state: RetainedState, *,
+                          should_cancel: Callable[[], bool] = lambda: False,
+                          on_phase: Callable[[str], None] = lambda _: None) -> None:
+    """Complete coordinated maintenance before a migrating constructor."""
     from app.persistence.database import SQLiteConfigurationError
-    from app.persistence.migrations import MigrationError
+    from app.persistence.migrations import MigrationError, MigrationCancelled
     from app.persistence import sqlite_api as sqlite3
-    from app.persistence.upgrade_lifecycle import UpgradeStore, inspect_existing_stores
+    from app.persistence.upgrade_lifecycle import UpgradeStore, maintain_existing_stores, UpgradeRecoveryRequired
 
     application = Path(__file__).resolve().parents[1]
     stores = (
@@ -164,11 +164,23 @@ def admit_retained_schemas(state: RetainedState) -> None:
         UpgradeStore("analytics-projections.sqlite3", "analytics-projection", application / "analytics" / "sql"),
     )
     try:
-        inspections = inspect_existing_stores(state.root, stores)
+        release_id = "source-catalog/v1"
+        if getattr(sys, "frozen", False):
+            from app.core.desktop_release import current_desktop_release
+            from app.persistence.private_files import file_sha256
+            release = current_desktop_release()
+            release_id = (json.dumps(asdict(release), sort_keys=True, separators=(",", ":"))
+                          if release is not None else "legacy-binary:" + file_sha256(sys.executable))
+        maintain_existing_stores(state.root, stores, release_id=release_id,
+                                 should_cancel=should_cancel, on_phase=on_phase)
+        if state.mode == "configured":
+            _validate_configuration(state.root)
+    except MigrationCancelled:
+        raise StartupRefused("startup_cancelled") from None
+    except UpgradeRecoveryRequired as error:
+        raise StartupRefused(str(error)) from None
     except (OSError, ValueError, MigrationError, SQLiteConfigurationError,
             sqlite3.DatabaseError, PrivateFileSecurityError, LocalDataKeyError):
         # Ledger names and database error details are untrusted retained data.
         # The process boundary reports only the closed recovery reason.
         raise StartupRefused("retained_schema_incompatible") from None
-    if any(inspection.pending_versions for inspection in inspections.values()):
-        raise StartupRefused("retained_schema_maintenance_required")

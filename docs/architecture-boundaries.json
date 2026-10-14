@@ -534,6 +534,7 @@
         "app/packaged_entry.py",
         "app/core/**",
         "shared/desktop-release/**",
+        "shared/bootstrap-status/**",
         "app/models/**",
         "app/utils/**",
         "app/__init__.py",

@@ -37,6 +37,27 @@ def test_fresh_inspection_does_not_create_root_key_configuration_or_database(tmp
     assert not root.exists()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows installer mutex contract")
+def test_brain_can_publish_installer_signal_already_held_by_its_bridge(monkeypatch):
+    import ctypes
+    from uuid import uuid4
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateMutexW.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p)
+    kernel.CreateMutexW.restype = ctypes.c_void_p
+    kernel.CloseHandle.argtypes = (ctypes.c_void_p,)
+    name = "OFCA-qualification-installer-signal-" + uuid4().hex
+    bridge = kernel.CreateMutexW(None, False, name)
+    assert bridge
+    monkeypatch.setattr(packaged_entry, "RUNNING_APPLICATION_MUTEX_NAME", name)
+    monkeypatch.setattr(packaged_entry, "_running_application_mutex", None)
+    try:
+        assert packaged_entry.hold_running_application_mutex()
+    finally:
+        if packaged_entry._running_application_mutex is not None:
+            kernel.CloseHandle(packaged_entry._running_application_mutex)
+        kernel.CloseHandle(bridge)
+
+
 def test_saved_provisioning_and_configured_roots_are_read_without_mutation(tmp_path):
     root = tmp_path / "retained"
     auth_store(root)

@@ -7,6 +7,8 @@ import os
 import re
 import threading
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,6 +58,10 @@ class MigrationLockError(MigrationError):
     """Another Brain or updater owns the installation migration lock."""
 
 
+class MigrationCancelled(MigrationError):
+    """The owning process cancelled at a safe migration boundary."""
+
+
 @dataclass(frozen=True, slots=True)
 class Migration:
     version: int
@@ -75,6 +81,17 @@ class SchemaInspection:
 
 _PROCESS_MIGRATION_MUTEXES: dict[str, threading.Lock] = {}
 _PROCESS_MIGRATION_MUTEXES_GUARD = threading.Lock()
+_STARTUP_CANCELLATION: ContextVar[Callable[[], bool] | None] = ContextVar("startup_migration_cancellation", default=None)
+
+
+@contextmanager
+def startup_migration_supervision(should_cancel: Callable[[], bool]):
+    """Carry parent observation through ordinary constructors and ASGI startup."""
+    token = _STARTUP_CANCELLATION.set(should_cancel)
+    try:
+        yield
+    finally:
+        _STARTUP_CANCELLATION.reset(token)
 
 
 def process_migration_mutex(lock_path: str | Path) -> threading.Lock:
@@ -265,6 +282,7 @@ class MigrationRunner:
         lock_path: str | Path | None = None,
         backups_dir: str | Path | None = None,
         lock_timeout_seconds: float = 0.0,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> None:
         self.database = database
         self.migrations_dir = Path(migrations_dir or Path(__file__).with_name("sql"))
@@ -274,13 +292,31 @@ class MigrationRunner:
         self.backups_dir = Path(backups_dir or database.path.parent / "backups")
         self.lock_timeout_seconds = lock_timeout_seconds
         self.last_backup_path: Path | None = None
+        self.should_cancel = should_cancel or _STARTUP_CANCELLATION.get() or (lambda: False)
+
+    def _check_cancellation(self) -> None:
+        if self.should_cancel():
+            raise MigrationCancelled("startup maintenance cancelled")
+
+    @contextmanager
+    def _cancellable_sql(self, connection):
+        connection.set_progress_handler(lambda: int(self.should_cancel()), 1000)
+        try:
+            yield
+        except sqlite3.DatabaseError:
+            self._check_cancellation()
+            raise
+        finally:
+            connection.set_progress_handler(None, 0)
 
     def run(self) -> list[int]:
+        self._check_cancellation()
         with process_migration_mutex(self.lock_path), InstallationMigrationLock(
             self.lock_path, timeout_seconds=self.lock_timeout_seconds
         ):
-            with self.database.read() as connection:
+            with self.database.read() as connection, self._cancellable_sql(connection):
                 completed = self._process_migrations(connection)
+                self._check_cancellation()
                 self._validate_database(connection)
                 return completed
 
@@ -322,7 +358,7 @@ class MigrationRunner:
             self.lock_path, timeout_seconds=self.lock_timeout_seconds
         ), self.database.exclusive_lifecycle(self.database.path):
             before_open = private_file_identity(self.database.path, missing_ok=True)
-            with self.database.read() as connection:
+            with self.database.read() as connection, self._cancellable_sql(connection):
                 identity = getattr(connection, "_secured_file_identity", None)
                 if identity is None or (
                     before_open is not None and identity != before_open
@@ -377,12 +413,14 @@ class MigrationRunner:
         self._require_startup_file(identity)
 
     def _process_migrations(self, connection: sqlite3.Connection) -> list[int]:
+        self._check_cancellation()
         with startup_span("startup.migration_ledger_validation"):
             self._ensure_ledger(connection)
             catalog = self._load_catalog(connection)
             applied = self._validate_applied(connection, catalog)
             pending = [item for item in catalog if item.version not in applied]
         if pending:
+            self._check_cancellation()
             with startup_span("startup.migration_backup"):
                 self.last_backup_path = self._backup(
                     connection, applied, catalog[-1].version
@@ -390,6 +428,9 @@ class MigrationRunner:
         completed: list[int] = []
         with startup_span("startup.migrations", pending_count=len(pending)):
             for migration in pending:
+                # The progress handler can cancel uncommitted work; _apply
+                # rolls back that transaction before cancellation returns.
+                self._check_cancellation()
                 self._apply(connection, migration)
                 completed.append(migration.version)
         if completed:
@@ -467,7 +508,8 @@ class MigrationRunner:
             backup = self.database.open_detached(temporary)
             try:
                 apply_private_file_security(temporary)
-                source.backup(backup)
+                source.backup(backup, pages=1024,
+                              progress=lambda *_: self._check_cancellation())
             finally:
                 backup.close()
             apply_private_file_security(temporary)
