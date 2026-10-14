@@ -97,6 +97,41 @@ fn child_status_is_separate_from_lifetime_and_never_admits_a_listener() {
 #[test]
 #[ignore = "requires a newly built frozen Brain supplied by BRAIN_QUALIFICATION_IMAGE"]
 fn frozen_brain_uses_native_status_installer_signal_and_graceful_parent_shutdown() {
+    qualify_frozen_startup(None);
+}
+
+#[test]
+#[ignore = "requires independently built A/B artifacts with auth catalogs 32 and 33"]
+fn frozen_a_to_b_migrates_before_admission_and_reopens_original_protected_key() {
+    let older = PathBuf::from(
+        std::env::var_os("BRAIN_QUALIFICATION_A_IMAGE").expect("explicit A artifact required"),
+    )
+    .canonicalize()
+    .unwrap();
+    let newer = PathBuf::from(
+        std::env::var_os("BRAIN_QUALIFICATION_IMAGE").expect("explicit B artifact required"),
+    )
+    .canonicalize()
+    .unwrap();
+    let catalog = |image: &Path| {
+        image
+            .parent()
+            .unwrap()
+            .join("_internal/app/persistence/auth_sql")
+    };
+    let count = |image: &Path| {
+        std::fs::read_dir(catalog(image))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "sql"))
+            .count()
+    };
+    assert_eq!(count(&older), 32);
+    assert_eq!(count(&newer), 33);
+    qualify_frozen_startup(Some(&older));
+}
+
+fn qualify_frozen_startup(older: Option<&Path>) {
     let image = PathBuf::from(
         std::env::var_os("BRAIN_QUALIFICATION_IMAGE").expect("explicit frozen artifact required"),
     )
@@ -106,7 +141,27 @@ fn frozen_brain_uses_native_status_installer_signal_and_graceful_parent_shutdown
     let _installer_signal = windows::application_mutex().unwrap();
     let sid = windows::current_sid().unwrap();
     let mut original_key = None;
-    for _ in 0..2 {
+    if let Some(older) = older {
+        assert!(windows::listeners().unwrap().is_empty());
+        let mut child = windows::Brain::start(
+            older,
+            &data.0,
+            "qualification-native-handoff-00000000000000000000000001",
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !policy::verify_listener(&windows::listeners().unwrap(), child.pid, older, &sid)
+            .unwrap()
+        {
+            assert_eq!(child.exit_code().unwrap(), None);
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        original_key = Some(std::fs::read(data.0.join(".ofca-master-key.dpapi")).unwrap());
+        assert!(child.stop(), "A did not quiesce normally before transition");
+        assert_eq!(child.exit_code().unwrap(), Some(0));
+    }
+    for cycle in 0..2 {
         assert!(
             windows::listeners().unwrap().is_empty(),
             "qualification port must be free"
@@ -118,6 +173,7 @@ fn frozen_brain_uses_native_status_installer_signal_and_graceful_parent_shutdown
         )
         .unwrap();
         let mut observation = bootstrap::Supervisor::new(Instant::now());
+        let mut frames = Vec::new();
         loop {
             assert_eq!(
                 child.exit_code().unwrap(),
@@ -125,6 +181,7 @@ fn frozen_brain_uses_native_status_installer_signal_and_graceful_parent_shutdown
                 "frozen child refused real native startup"
             );
             let (bytes, closed) = child.bootstrap_bytes().unwrap();
+            frames.extend_from_slice(&bytes);
             assert!(!closed);
             observation.receive(&bytes, Instant::now()).unwrap();
             if policy::verify_listener(&windows::listeners().unwrap(), child.pid, &image, &sid)
@@ -138,6 +195,27 @@ fn frozen_brain_uses_native_status_installer_signal_and_graceful_parent_shutdown
             }
             std::thread::sleep(Duration::from_millis(50));
         }
+        let phases: Vec<String> = frames
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                serde_json::from_slice::<serde_json::Value>(line).unwrap()["phase"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        if older.is_some() && cycle == 0 {
+            assert!(phases.iter().any(|phase| phase == "checkpointing"));
+            assert!(phases.iter().any(|phase| phase == "migrating"));
+            assert!(data.0.join(".ofca-upgrade-state.dpapi").is_file());
+        } else {
+            assert!(!phases.iter().any(|phase| phase == "checkpointing"));
+        }
+        assert!(
+            !data.0.join("upgrade-checkpoint").exists(),
+            "normal work preceded checkpoint completion"
+        );
         let key = std::fs::read(data.0.join(".ofca-master-key.dpapi")).unwrap();
         if let Some(ref previous) = original_key {
             assert_eq!(previous, &key);
