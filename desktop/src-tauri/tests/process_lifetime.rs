@@ -45,6 +45,178 @@ fn started(data: &Path) -> u32 {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+#[test]
+#[ignore = "internal owned-process fixture for root ownership OS tests"]
+fn native_root_owner_fixture() {
+    use windows_sys::Win32::{Foundation::*, UI::WindowsAndMessaging::*};
+    unsafe extern "system" fn receive(
+        hwnd: HWND,
+        message: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> isize {
+        if message == WM_COPYDATA {
+            let data =
+                &*(lparam as *const windows_sys::Win32::System::DataExchange::COPYDATASTRUCT);
+            assert_eq!(data.dwData, 1542);
+            assert!(data.cbData <= 65536);
+            let bytes = std::slice::from_raw_parts(data.lpData.cast::<u8>(), data.cbData as usize);
+            let root = PathBuf::from(std::env::var_os("OFCA_ROOT_OWNER_TEST_DIRECTORY").unwrap());
+            std::fs::write(root.join("forwarded"), bytes).unwrap();
+            PostQuitMessage(0);
+            return 1;
+        }
+        DefWindowProcW(hwnd, message, wparam, lparam)
+    }
+    let root = PathBuf::from(std::env::var_os("OFCA_ROOT_OWNER_TEST_DIRECTORY").unwrap());
+    let names = deployment::instance_names(&root, &windows::current_sid().unwrap(), None).unwrap();
+    let executable = std::env::current_exe().unwrap();
+    let ownership = windows::claim_runtime_root(&names, &executable).unwrap();
+    assert!(ownership.primary());
+    let id = if std::env::var_os("OFCA_ROOT_OWNER_TEST_OLD").is_some() {
+        "org.conversation-analytics.bridge"
+    } else {
+        &names.plugin_id
+    };
+    let class: Vec<u16> = format!("{id}-sic").encode_utf16().chain(Some(0)).collect();
+    let caption: Vec<u16> = format!("{id}-siw").encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        let definition = WNDCLASSW {
+            lpfnWndProc: Some(receive),
+            lpszClassName: class.as_ptr(),
+            ..std::mem::zeroed()
+        };
+        assert_ne!(RegisterClassW(&definition), 0);
+        let window = CreateWindowExW(
+            0,
+            class.as_ptr(),
+            caption.as_ptr(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null(),
+        );
+        assert!(!window.is_null());
+        std::fs::write(root.join("started"), std::process::id().to_string()).unwrap();
+        let mut message = std::mem::zeroed();
+        while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
+            DispatchMessageW(&message);
+        }
+        DestroyWindow(window);
+    }
+}
+
+#[test]
+fn native_root_ownership_fences_other_namespaces_and_forwards_only_verified_peers() {
+    use std::os::windows::process::CommandExt;
+    let root = Directory::new();
+    let executable = std::env::current_exe().unwrap();
+    let mut process = std::process::Command::new(&executable);
+    process.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    process
+        .args([
+            "native_root_owner_fixture",
+            "--exact",
+            "--ignored",
+            "--test-threads=1",
+        ])
+        .env("OFCA_ROOT_OWNER_TEST_DIRECTORY", &root.0);
+    let mut child = process.spawn().unwrap();
+    assert_eq!(started(&root.0), child.id());
+    let names =
+        deployment::instance_names(&root.0, &windows::current_sid().unwrap(), None).unwrap();
+    let secondary = windows::claim_runtime_root(&names, &executable).unwrap();
+    assert!(!secondary.primary());
+    let mut other = names.clone();
+    other.plugin_id.push_str(".another-family");
+    assert!(windows::claim_runtime_root(&other, &executable).is_err());
+    assert!(
+        windows::claim_runtime_root(&names, Path::new(env!("CARGO_BIN_EXE_brain-fixture")))
+            .is_err()
+    );
+    let arguments = vec![
+        executable.to_string_lossy().into_owned(),
+        "--open-workspace".into(),
+        "ofca://onboarding/?journey=00000000-0000-0000-0000-000000000001".into(),
+    ];
+    windows::forward_instance(&names, &executable, &arguments).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while child.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let forwarded = std::fs::read_to_string(root.0.join("forwarded")).unwrap();
+    assert!(
+        forwarded.ends_with("ofca://onboarding/?journey=00000000-0000-0000-0000-000000000001\0")
+    );
+    drop(secondary);
+    assert!(windows::claim_runtime_root(&names, &executable)
+        .unwrap()
+        .primary());
+}
+
+#[test]
+fn uncoordinated_legacy_instance_refuses_before_data_or_child_creation() {
+    use std::os::windows::process::CommandExt;
+    let root = Directory::new();
+    let executable = std::env::current_exe().unwrap();
+    let mut command = std::process::Command::new(&executable);
+    command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    command
+        .args([
+            "native_root_owner_fixture",
+            "--exact",
+            "--ignored",
+            "--test-threads=1",
+        ])
+        .env("OFCA_ROOT_OWNER_TEST_DIRECTORY", &root.0)
+        .env("OFCA_ROOT_OWNER_TEST_OLD", "1");
+    let mut child = command.spawn().unwrap();
+    assert_eq!(started(&root.0), child.id());
+    let names =
+        deployment::instance_names(&root.0, &windows::current_sid().unwrap(), None).unwrap();
+    assert!(windows::claim_runtime_root(&names, &executable).is_err());
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(windows::claim_runtime_root(&names, &executable)
+        .unwrap()
+        .primary());
+    assert!(!root.0.join("auth.sqlite3").exists());
+    assert!(!root.0.join("webview").exists());
+}
+
+#[test]
+fn registered_legacy_source_requires_explicit_transition_but_qualification_stays_isolated() {
+    let root = Directory::new();
+    let registered = root.0.join("registered");
+    let candidate = root.0.join("candidate");
+    std::fs::create_dir(&registered).unwrap();
+    std::fs::create_dir(&candidate).unwrap();
+    let own = registered.join("Bridge.exe");
+    assert!(windows::validate_legacy_registration(&own, Some(&registered), false).is_ok());
+    assert!(windows::validate_legacy_registration(
+        &candidate.join("Bridge.exe"),
+        Some(&registered),
+        false
+    )
+    .is_err());
+    assert!(windows::validate_legacy_registration(
+        &candidate.join("Bridge.exe"),
+        Some(&registered),
+        true
+    )
+    .is_ok());
+    assert!(
+        windows::validate_legacy_registration(&own, Some(&root.0.join("missing")), false).is_err()
+    );
+    assert_eq!(std::fs::read_dir(&registered).unwrap().count(), 0);
+}
 #[test]
 fn closing_the_owned_pipe_allows_graceful_shutdown() {
     let data = Directory::new();

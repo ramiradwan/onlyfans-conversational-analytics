@@ -51,8 +51,10 @@ pub fn supervise(
     state: Arc<Host>,
     receiver: Receiver<Action>,
     journey: Option<String>,
+    image: PathBuf,
+    data: PathBuf,
 ) {
-    if run(&app, &state, &receiver, journey).is_err() {
+    if run(&app, &state, &receiver, journey, &image, &data).is_err() {
         unavailable(&app, &state);
     }
     // Failure is stable until the user quits. App links never start a crash loop.
@@ -73,15 +75,9 @@ fn run(
     state: &Host,
     receiver: &Receiver<Action>,
     mut journey: Option<String>,
+    image: &std::path::Path,
+    data: &std::path::Path,
 ) -> Result<(), &'static str> {
-    let executable = std::env::current_exe().map_err(|_| "invalid_installation")?;
-    let image: PathBuf = executable
-        .parent()
-        .ok_or("invalid_installation")?
-        .join("Brain.exe")
-        .canonicalize()
-        .map_err(|_| "invalid_installation")?;
-    let data = policy::data_directory(&image)?;
     let sid = windows::current_sid()?;
     let mut restart = RestartPolicy::default();
     loop {

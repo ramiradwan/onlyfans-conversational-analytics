@@ -50,6 +50,13 @@ fn run(scenario: &str) -> serde_json::Value {
 }
 
 #[test]
+fn real_native_installation_conflict_has_close_and_guidance() {
+    let value = run("installation-conflict");
+    assert_eq!(value["state"], "desktop.installation_conflict");
+    assert_eq!(value["close_and_guidance_observed"], true);
+}
+
+#[test]
 fn real_native_recovery_controls_cover_loader_failure_retry_download_and_close() {
     for scenario in ["loader-missing", "too-old", "preview", "retry", "acquire"] {
         let value = run(scenario);

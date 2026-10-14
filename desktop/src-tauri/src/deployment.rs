@@ -10,6 +10,48 @@ pub struct PackageIdentity {
     pub architecture: String,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct InstanceNames {
+    pub root_mutex: String,
+    pub plugin_id: String,
+}
+
+/// The root signal fences presentation writers too. The activation namespace
+/// also binds user and delivery identity, without a versioned executable path.
+pub fn instance_names(
+    root: &Path,
+    sid: &[u8],
+    release: Option<&DesktopRelease>,
+) -> Result<InstanceNames, &'static str> {
+    use sha2::{Digest, Sha256};
+    let root = root
+        .to_str()
+        .ok_or("invalid_data_directory")?
+        .to_lowercase();
+    let root_key =
+        serde_json::to_vec(&("desktop-root/v1", &root)).map_err(|_| "invalid_installation")?;
+    let identity = release.map(|r| {
+        (
+            &r.purpose,
+            &r.identity.name,
+            &r.identity.publisher,
+            &r.identity.architecture,
+            &r.identity.application_id,
+            &r.update_owner,
+            &r.app_installer_uri,
+        )
+    });
+    let instance_key = serde_json::to_vec(&("desktop-instance/v1", &root, sid, identity))
+        .map_err(|_| "invalid_installation")?;
+    Ok(InstanceNames {
+        root_mutex: format!("Global\\OFCA.NativeRoot.v1.{:x}", Sha256::digest(root_key)),
+        plugin_id: format!(
+            "org.conversation-analytics.bridge.instance.{:x}",
+            Sha256::digest(instance_key)
+        ),
+    })
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
@@ -199,6 +241,55 @@ pub fn load(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn activation_names_bind_root_user_and_delivery_but_not_package_version() {
+        let mut release: DesktopRelease = serde_json::from_str(include_str!(
+            "../../../shared/desktop-release/qualification-direct.json"
+        ))
+        .unwrap();
+        let root = Path::new("C:/retained/qualification/Direct");
+        let names = instance_names(root, b"user-one", Some(&release)).unwrap();
+        release.package_version = "1.0.2.0".into();
+        assert_eq!(
+            names,
+            instance_names(root, b"user-one", Some(&release)).unwrap()
+        );
+        let other_user = instance_names(root, b"user-two", Some(&release)).unwrap();
+        assert_eq!(names.root_mutex, other_user.root_mutex);
+        assert_ne!(names.plugin_id, other_user.plugin_id);
+        let other_root = instance_names(
+            Path::new("C:/retained/another"),
+            b"user-one",
+            Some(&release),
+        )
+        .unwrap();
+        assert_ne!(names.root_mutex, other_root.root_mutex);
+        assert_ne!(names.plugin_id, other_root.plugin_id);
+        let legacy = instance_names(root, b"user-one", None).unwrap();
+        assert_eq!(names.root_mutex, legacy.root_mutex);
+        assert_ne!(names.plugin_id, legacy.plugin_id);
+        release.identity.publisher = "CN=Another".into();
+        assert_ne!(
+            names.plugin_id,
+            instance_names(root, b"user-one", Some(&release))
+                .unwrap()
+                .plugin_id
+        );
+        assert_eq!(
+            names,
+            instance_names(
+                Path::new("c:/RETAINED/qualification/DIRECT"),
+                b"user-one",
+                Some(
+                    &serde_json::from_str(include_str!(
+                        "../../../shared/desktop-release/qualification-direct.json"
+                    ))
+                    .unwrap()
+                )
+            )
+            .unwrap()
+        );
+    }
     fn actual(name: &str, publisher: &str) -> PackageIdentity {
         PackageIdentity {
             name: name.into(),

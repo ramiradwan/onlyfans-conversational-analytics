@@ -87,6 +87,261 @@ pub fn current_sid() -> Result<Vec<u8>> {
     unsafe { process_sid(GetCurrentProcess()) }
 }
 
+/// Read the one supported per-user Inno registration. No registration or
+/// executable is removed to make an installation start.
+pub fn legacy_registration() -> Result<Option<PathBuf>> {
+    use windows_sys::Win32::System::Registry::*;
+    let key=wide(std::ffi::OsStr::new("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{a860574e-ff86-4305-be8f-93b5c91cde44}_is1"));
+    let mut raw = null_mut();
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            0,
+            KEY_QUERY_VALUE | KEY_WOW64_64KEY,
+            &mut raw,
+        )
+    };
+    if status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND {
+        return Ok(None);
+    }
+    if status != ERROR_SUCCESS {
+        return Err("runtime_installation_conflict");
+    }
+    struct Key(HKEY);
+    impl Drop for Key {
+        fn drop(&mut self) {
+            unsafe {
+                RegCloseKey(self.0);
+            }
+        }
+    }
+    let key = Key(raw);
+    let value = wide(std::ffi::OsStr::new("InstallLocation"));
+    let mut size = 0u32;
+    if unsafe {
+        RegGetValueW(
+            key.0,
+            null(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            null_mut(),
+            null_mut(),
+            &mut size,
+        )
+    } != ERROR_SUCCESS
+        || !(4..=65536).contains(&size)
+        || size % 2 != 0
+    {
+        return Err("runtime_installation_conflict");
+    }
+    let mut buffer = vec![0u16; size as usize / 2];
+    if unsafe {
+        RegGetValueW(
+            key.0,
+            null(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            null_mut(),
+            buffer.as_mut_ptr().cast(),
+            &mut size,
+        )
+    } != ERROR_SUCCESS
+    {
+        return Err("runtime_installation_conflict");
+    }
+    buffer.truncate(size as usize / 2);
+    if buffer.pop() != Some(0) || buffer.contains(&0) {
+        return Err("runtime_installation_conflict");
+    }
+    let path = PathBuf::from(OsString::from_wide(&buffer));
+    if !path.is_absolute() {
+        return Err("runtime_installation_conflict");
+    }
+    Ok(Some(path))
+}
+
+pub fn validate_legacy_registration(
+    executable: &Path,
+    registered: Option<&Path>,
+    qualification: bool,
+) -> Result<()> {
+    if qualification {
+        return Ok(());
+    }
+    if let Some(registered) = registered {
+        let own = executable
+            .parent()
+            .ok_or("invalid_installation")?
+            .canonicalize()
+            .map_err(|_| "runtime_installation_conflict")?;
+        if registered
+            .canonicalize()
+            .map_err(|_| "runtime_installation_conflict")?
+            != own
+        {
+            return Err("runtime_installation_conflict");
+        }
+    }
+    Ok(())
+}
+
+pub struct RootOwnership {
+    handle: Handle,
+    owned: bool,
+    // Mutex ownership belongs to this UI thread, not another Rust thread.
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+impl RootOwnership {
+    pub fn primary(&self) -> bool {
+        self.owned
+    }
+}
+impl Drop for RootOwnership {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe {
+                ReleaseMutex(self.handle.0);
+            }
+        }
+    }
+}
+
+fn instance_window(id: &str) -> windows_sys::Win32::Foundation::HWND {
+    use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
+    unsafe {
+        FindWindowW(
+            wide(std::ffi::OsStr::new(&format!("{id}-sic"))).as_ptr(),
+            wide(std::ffi::OsStr::new(&format!("{id}-siw"))).as_ptr(),
+        )
+    }
+}
+
+fn verified_instance(id: &str, executable: &Path) -> Result<(HWND, u32)> {
+    let window = instance_window(id);
+    if window.is_null() {
+        return Err("runtime_installation_conflict");
+    }
+    let mut pid = 0;
+    unsafe {
+        GetWindowThreadProcessId(window, &mut pid);
+    }
+    if pid == 0 || pid == unsafe { GetCurrentProcessId() } {
+        return Err("runtime_installation_conflict");
+    }
+    let process = Handle::checked(
+        unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) },
+        "owner_inspection_failed",
+    )?;
+    if process_sid(process.0)? != current_sid()?
+        || process_image(process.0)?
+            != executable
+                .canonicalize()
+                .map_err(|_| "owner_inspection_failed")?
+    {
+        return Err("runtime_installation_conflict");
+    }
+    Ok((window, pid))
+}
+
+/// Acquire before a WebView profile or Brain exists. A secondary may only
+/// forward to this exact image/user/namespace; it cannot become a new writer.
+pub fn claim_runtime_root(
+    names: &crate::deployment::InstanceNames,
+    executable: &Path,
+) -> Result<RootOwnership> {
+    // Older pinned-plugin builds used one global application identifier. Do
+    // not hand a new installation's arguments to that uncoordinated instance.
+    if !instance_window("org.conversation-analytics.bridge").is_null() {
+        return Err("runtime_installation_conflict");
+    }
+    let handle = Handle::checked(
+        unsafe {
+            CreateMutexW(
+                null(),
+                0,
+                wide(std::ffi::OsStr::new(&names.root_mutex)).as_ptr(),
+            )
+        },
+        "owner_inspection_failed",
+    )?;
+    match unsafe { WaitForSingleObject(handle.0, 0) } {
+        WAIT_OBJECT_0 | WAIT_ABANDONED => {
+            let ownership = RootOwnership {
+                handle,
+                owned: true,
+                _thread: std::marker::PhantomData,
+            };
+            if !listeners()?.is_empty() {
+                return Err("runtime_installation_conflict");
+            }
+            Ok(ownership)
+        }
+        WAIT_TIMEOUT => {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                if verified_instance(&names.plugin_id, executable).is_ok() {
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err("runtime_installation_conflict");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+            Ok(RootOwnership {
+                handle,
+                owned: false,
+                _thread: std::marker::PhantomData,
+            })
+        }
+        _ => Err("owner_inspection_failed"),
+    }
+}
+
+/// Pinned tauri-plugin-single-instance 2.5.3 framing. No Tauri/WebView runtime
+/// is constructed for a validated secondary activation.
+pub fn forward_instance(
+    names: &crate::deployment::InstanceNames,
+    executable: &Path,
+    args: &[String],
+) -> Result<()> {
+    use windows_sys::Win32::{System::DataExchange::COPYDATASTRUCT, UI::WindowsAndMessaging::*};
+    let (window, pid) = verified_instance(&names.plugin_id, executable)?;
+    if args.iter().any(|s| s.contains(['|', '\0'])) {
+        return Err("invalid_activation");
+    }
+    let cwd = std::env::current_dir().map_err(|_| "invalid_activation")?;
+    let cwd = cwd.to_str().ok_or("invalid_activation")?;
+    if cwd.contains(['|', '\0']) {
+        return Err("invalid_activation");
+    }
+    let payload = format!("{}|{}\0", cwd, args.join("|"));
+    if payload.len() > 65536 {
+        return Err("invalid_activation");
+    }
+    let data = COPYDATASTRUCT {
+        dwData: 1542,
+        cbData: payload.len() as u32,
+        lpData: payload.as_ptr().cast_mut().cast(),
+    };
+    unsafe {
+        AllowSetForegroundWindow(pid);
+        if SendMessageTimeoutW(
+            window,
+            WM_COPYDATA,
+            0,
+            (&data as *const COPYDATASTRUCT) as isize,
+            SMTO_ABORTIFHUNG,
+            5000,
+            null_mut(),
+        ) == 0
+        {
+            return Err("runtime_installation_conflict");
+        }
+    }
+    Ok(())
+}
+
 pub fn package_identity() -> Result<Option<crate::deployment::PackageIdentity>> {
     use windows_sys::Win32::Storage::Packaging::Appx::{GetCurrentPackageId, PACKAGE_ID};
     unsafe {

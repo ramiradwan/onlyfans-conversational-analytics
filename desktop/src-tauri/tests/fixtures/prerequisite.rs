@@ -37,6 +37,62 @@ unsafe extern "system" fn find(hwnd: HWND, data: isize) -> i32 {
     1
 }
 
+fn close_conflict() {
+    unsafe extern "system" fn find(hwnd: HWND, data: isize) -> i32 {
+        let mut pid = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        let marker: Vec<u16> = prerequisite::INSTALLATION_CONFLICT_STATE
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        if pid == std::process::id() && !GetPropW(hwnd, marker.as_ptr()).is_null() {
+            *(data as *mut usize) = hwnd as usize;
+            return 0;
+        }
+        1
+    }
+    unsafe extern "system" fn labels(hwnd: HWND, data: isize) -> i32 {
+        let observed = &mut *(data as *mut [bool; 2]);
+        let mut caption = [0u16; 1024];
+        let length = GetWindowTextW(hwnd, caption.as_mut_ptr(), caption.len() as i32);
+        let mut class = [0u16; 64];
+        let count = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32);
+        let kind = String::from_utf16_lossy(&class[..count.max(0) as usize]);
+        if length > 0 {
+            observed[if kind == "Button" { 0 } else { 1 }] = true;
+        }
+        1
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let mut found = 0usize;
+        unsafe {
+            EnumWindows(Some(find), &mut found as *mut usize as isize);
+        }
+        if found != 0 {
+            let mut observed = [false; 2];
+            unsafe {
+                EnumChildWindows(
+                    found as HWND,
+                    Some(labels),
+                    &mut observed as *mut [bool; 2] as isize,
+                );
+            }
+            if observed == [true; 2] {
+                unsafe {
+                    SendMessageW(found as HWND, TDM_CLICK_BUTTON as u32, IDCLOSE as usize, 0);
+                }
+                return;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "installation conflict controls and guidance were not rendered"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn click_dialog(pid: u32, button: i32) {
     let deadline = Instant::now() + Duration::from_secs(10);
     let hwnd = loop {
@@ -132,6 +188,16 @@ impl Platform for Qualification {
 
 fn main() {
     let scenario = std::env::args().nth(1).unwrap();
+    if scenario == "installation-conflict" {
+        let closer = std::thread::spawn(close_conflict);
+        prerequisite::show_failure("runtime_installation_conflict");
+        closer.join().unwrap();
+        println!(
+            "{}",
+            serde_json::json!({"state":prerequisite::INSTALLATION_CONFLICT_STATE,"close_and_guidance_observed":true})
+        );
+        return;
+    }
     if scenario == "--close-bridge" {
         let pid = std::env::args().nth(2).unwrap().parse().unwrap();
         click_dialog(pid, IDCANCEL);

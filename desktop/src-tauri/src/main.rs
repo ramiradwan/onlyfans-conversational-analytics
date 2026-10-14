@@ -52,6 +52,43 @@ fn main() {
     let Ok(_application_mutex) = windows::application_mutex() else {
         return;
     };
+    let preparation = (|| {
+        let executable = std::env::current_exe().map_err(|_| "invalid_installation")?;
+        let image = executable
+            .parent()
+            .ok_or("invalid_installation")?
+            .join("Brain.exe");
+        let data = policy::data_directory(&image)?;
+        let release = deployment::load(
+            &image.parent().unwrap().join("desktop-release.json"),
+            windows::package_identity()?.as_ref(),
+        )?;
+        // Qualification owns its isolated root. Customer-root adoption from
+        // another registered Inno location requires the explicit transition.
+        let qualification = release
+            .as_ref()
+            .is_some_and(|r| r.purpose == "qualification");
+        if !qualification {
+            let registered = windows::legacy_registration()?;
+            windows::validate_legacy_registration(&executable, registered.as_deref(), false)?;
+        }
+        let names = deployment::instance_names(&data, &windows::current_sid()?, release.as_ref())?;
+        let ownership = windows::claim_runtime_root(&names, &executable)?;
+        Ok::<_, &'static str>((executable, image, data, names, ownership))
+    })();
+    let (executable, image, data, names, _ownership) = match preparation {
+        Ok(value) => value,
+        Err(reason) => {
+            prerequisite::show_failure(reason);
+            return;
+        }
+    };
+    if !_ownership.primary() {
+        if let Err(reason) = windows::forward_instance(&names, &executable, &args) {
+            prerequisite::show_failure(reason);
+        }
+        return;
+    }
     // Run before even constructing the Tauri runtime, which caches whether
     // WebView2 is installed. No Brain or writable presentation root exists yet.
     let readiness = std::env::current_exe()
@@ -68,6 +105,13 @@ fn main() {
             return;
         }
     }
+    let image = match image.canonicalize() {
+        Ok(image) => image,
+        Err(_) => {
+            prerequisite::show_failure("invalid_installation");
+            return;
+        }
+    };
     let (sender, receiver) = mpsc::sync_channel(8);
     let state = Arc::new(host::Host {
         admitted: AtomicBool::new(false),
@@ -77,6 +121,8 @@ fn main() {
     });
     let activation = state.clone();
     let setup = state.clone();
+    let mut context = tauri::generate_context!();
+    context.config_mut().identifier = names.plugin_id;
     let application = tauri::Builder::default()
         // Must be registered before any plugin can create windows or a child.
         .plugin(tauri_plugin_single_instance::init(
@@ -99,12 +145,6 @@ fn main() {
             frame::desktop_window
         ])
         .setup(move |app| {
-            let executable = std::env::current_exe()?;
-            let image = executable
-                .parent()
-                .ok_or("invalid_installation")?
-                .join("Brain.exe");
-            let data = policy::data_directory(&image).map_err(std::io::Error::other)?;
             let navigation = setup.clone();
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
@@ -159,10 +199,12 @@ fn main() {
             }
             tray.build(app)?;
             let handle = app.handle().clone();
-            std::thread::spawn(move || host::supervise(handle, setup, receiver, journey));
+            std::thread::spawn(move || {
+                host::supervise(handle, setup, receiver, journey, image, data)
+            });
             Ok(())
         })
-        .build(tauri::generate_context!());
+        .build(context);
     if let Ok(application) = application {
         application.run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { api, .. } = event {

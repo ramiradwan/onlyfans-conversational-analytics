@@ -229,6 +229,10 @@ pub fn show_recovery(reason: RecoveryReason) -> Result<RecoveryAction, &'static 
 }
 
 pub fn show_failure(reason: &'static str) {
+    if reason == "runtime_installation_conflict" {
+        show_installation_conflict();
+        return;
+    }
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     let message = match reason {
         "webview_acquisition_unavailable" => "Microsoft's download page could not be opened. Use your browser to get Microsoft Edge WebView2 from Microsoft's website, or ask your administrator. After installation, open Conversation Analytics again.",
@@ -242,6 +246,64 @@ pub fn show_failure(reason: &'static str) {
             wide("Conversation Analytics").as_ptr(),
             MB_OK | MB_ICONERROR,
         );
+    }
+}
+
+pub const INSTALLATION_CONFLICT_STATE: &str = "desktop.installation_conflict";
+
+unsafe extern "system" fn conflict_callback(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    message: u32,
+    _: usize,
+    _: isize,
+    _: isize,
+) -> i32 {
+    use windows_sys::Win32::UI::{
+        Controls::{TDN_CREATED, TDN_DESTROYED},
+        WindowsAndMessaging::{RemovePropW, SetPropW},
+    };
+    if message == TDN_CREATED as u32 {
+        SetPropW(
+            hwnd,
+            wide(INSTALLATION_CONFLICT_STATE).as_ptr(),
+            1usize as _,
+        );
+    }
+    if message == TDN_DESTROYED as u32 {
+        RemovePropW(hwnd, wide(INSTALLATION_CONFLICT_STATE).as_ptr());
+    }
+    0
+}
+
+fn show_installation_conflict() {
+    use windows_sys::Win32::UI::{Controls::*, WindowsAndMessaging::*};
+    let title = wide("Conversation Analytics");
+    let heading = wide("Another installation may be using your data folder");
+    let guidance = wide("Quit the other Conversation Analytics installation from its tray menu, then reopen this one. If it is still blocked, use your existing installation and contact support. Your files were left unchanged.");
+    let mut config: TASKDIALOGCONFIG = unsafe { std::mem::zeroed() };
+    config.cbSize = std::mem::size_of::<TASKDIALOGCONFIG>() as u32;
+    config.pszWindowTitle = title.as_ptr();
+    config.pszMainInstruction = heading.as_ptr();
+    config.pszContent = guidance.as_ptr();
+    config.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+    config.pfCallback = Some(conflict_callback);
+    if unsafe {
+        TaskDialogIndirect(
+            &config,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    } < 0
+    {
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                guidance.as_ptr(),
+                title.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
+        }
     }
 }
 
