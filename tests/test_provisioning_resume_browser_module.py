@@ -11,7 +11,10 @@ pytestmark = [pytest.mark.ci_tier('fast')]
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("module", ["setup-transfer.test.mjs", "validation.test.mjs"])
+@pytest.mark.parametrize(
+    "module",
+    ["app/provisioning/setup-transfer.test.mjs", "shared/onboarding/json.test.mjs"],
+)
 def test_explicit_recovery_browser_module(module: str) -> None:
     """Keep explicit transfer/parser coverage in the ordinary CI test matrix."""
 
@@ -19,7 +22,7 @@ def test_explicit_recovery_browser_module(module: str) -> None:
         [
             "node",
             "--test",
-            str(ROOT / "app" / "provisioning" / module),
+            str(ROOT / module),
         ],
         cwd=ROOT,
         check=True,

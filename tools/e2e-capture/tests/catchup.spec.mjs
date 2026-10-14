@@ -46,9 +46,8 @@ async function grantHistoryPermission(context, popup, worker) {
   if (granted) return;
 
   const options = await openManageExtension(popup);
-  await expect(options.getByRole('button', { name: 'Allow message history' })).toBeVisible();
-  const settingsPage = context.waitForEvent('page');
-  await options.getByRole('button', { name: 'Allow message history' }).click();
+  await expect(options.getByRole('button', { name: 'Allow browser access' })).toBeVisible();
+  await options.getByRole('button', { name: 'Allow browser access' }).click();
   const hasPermission = () => worker.evaluate(async (origin) => chrome.permissions.contains({
     permissions: ['webRequest'],
     origins: [origin],
@@ -67,8 +66,6 @@ async function grantHistoryPermission(context, popup, worker) {
     timeout: 12_000,
     message: 'History permission was not granted through the extension UI.',
   }).toBe(true);
-  const opened = await settingsPage;
-  if (opened !== popup && opened !== options) await opened.close().catch(() => undefined);
   await options.close().catch(() => undefined);
 }
 
