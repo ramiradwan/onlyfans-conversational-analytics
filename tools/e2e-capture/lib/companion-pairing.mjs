@@ -248,7 +248,11 @@ export async function pairCompanionForCapture(context) {
     expect(current.creator_account_id).toBe(config.CREATOR_ID);
     expect(current.comparison_code).toBe(code);
     const confirmed = await confirmCompanionPairing(context, opened.pairing_id, current.version, code);
-    expect(confirmed.state).toBe('confirmed');
+    // Confirmation returns the admitted durable pin, not the window that it
+    // consumed. The Agent must still finish its independent storage commit.
+    expect(confirmed.state).toBe('admitted');
+    expect(confirmed.pairing_id).toBe(opened.pairing_id);
+    expect(confirmed.creator_account_id).toBe(config.CREATOR_ID);
     await expect.poll(() => setup.evaluate(() => globalThis.__capturePairingStatus?.state),
       { timeout: 20_000 }).toBe('paired');
     await waitForBoundFullSession(worker);

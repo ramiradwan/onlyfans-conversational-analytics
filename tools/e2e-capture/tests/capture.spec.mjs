@@ -215,22 +215,13 @@ test('real MV3 capture proves exact ordering, durable replay, and alarm recovery
 
       const bindingPage = context.pages()[0] ?? await context.newPage();
       await establishBrowserWebAuthnSession(bindingPage, authDatabasePath);
-      const provisioningIdentity = await bindingPage.evaluate(async (targetExtensionId) => (
-        Promise.race([
-          chrome.runtime.sendMessage(targetExtensionId, {
-            type: 'provisioning.identity.query', version: 1,
-          }),
-          new Promise((_, reject) => setTimeout(
-            () => reject(new Error('The unpaired worker blocked the desktop identity query.')),
-            3_000,
-          )),
-        ])
-      ), actualExtensionId);
-      expect(provisioningIdentity).toEqual({
-        type: 'provisioning.identity.result',
-        version: 1,
-        authenticated_profile: null,
-      });
+      // Native onboarding retired the external desktop identity query. Capture
+      // still starts without an observed platform identity; the production
+      // content bridge below must discover it before pairing and Full capture.
+      const unpairedIdentity = await worker.evaluate(async (key) => (
+        (await chrome.storage.session.get([key]))[key] ?? null
+      ), PROVISIONING_IDENTITY_STORAGE_KEY);
+      expect(unpairedIdentity?.contexts ?? []).toEqual([]);
       const pairing = await pairCompanionForCapture(context);
       expect(pairing.creatorAccountId).toBe('dev-creator-account');
       expect(pairing.extensionId).toBe(actualExtensionId);
