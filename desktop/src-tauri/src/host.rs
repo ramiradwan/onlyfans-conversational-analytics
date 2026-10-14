@@ -1,5 +1,5 @@
 use crate::{
-    admission,
+    admission, bootstrap,
     policy::{self, RestartPolicy},
     windows,
 };
@@ -51,8 +51,10 @@ pub fn supervise(
     state: Arc<Host>,
     receiver: Receiver<Action>,
     journey: Option<String>,
+    image: PathBuf,
+    data: PathBuf,
 ) {
-    if run(&app, &state, &receiver, journey).is_err() {
+    if run(&app, &state, &receiver, journey, &image, &data).is_err() {
         unavailable(&app, &state);
     }
     // Failure is stable until the user quits. App links never start a crash loop.
@@ -73,15 +75,9 @@ fn run(
     state: &Host,
     receiver: &Receiver<Action>,
     mut journey: Option<String>,
+    image: &std::path::Path,
+    data: &std::path::Path,
 ) -> Result<(), &'static str> {
-    let executable = std::env::current_exe().map_err(|_| "invalid_installation")?;
-    let image: PathBuf = executable
-        .parent()
-        .ok_or("invalid_installation")?
-        .join("Brain.exe")
-        .canonicalize()
-        .map_err(|_| "invalid_installation")?;
-    let data = policy::data_directory(&image)?;
     let sid = windows::current_sid()?;
     let mut restart = RestartPolicy::default();
     loop {
@@ -98,21 +94,27 @@ fn run(
             &state.admitted,
         );
         let brain = &mut admission.backend;
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut startup = bootstrap::Supervisor::new(Instant::now());
         loop {
             if state.quitting.load(Ordering::SeqCst) {
                 brain.stop();
                 return Ok(());
             }
+            let (bytes, closed) = brain.bootstrap_bytes()?;
+            startup.receive(&bytes, Instant::now())?;
             if brain.exit_code()?.is_some() {
                 return Err("child_start_failed");
             }
+            if closed && !startup.ready() {
+                return Err("child_status_closed");
+            }
             if policy::verify_listener(&windows::listeners()?, brain.pid, &image, &sid)? {
-                break;
+                if startup.ready() {
+                    break;
+                }
+                return Err("child_listener_before_validation");
             }
-            if Instant::now() >= deadline {
-                return Err("child_start_timeout");
-            }
+            startup.check_deadline(Instant::now())?;
             std::thread::sleep(Duration::from_millis(100));
         }
         let target = admission::entry(&secret, journey.as_deref())?;

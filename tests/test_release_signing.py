@@ -38,7 +38,7 @@ TIMESTAMP_READ = "$null -ne $signature.TimeStamperCertificate"
 SIGNING_ACTION = "azure/trusted-signing-action"
 PUBLISH_ACTION = "actions/upload-artifact"
 VERIFICATION_STEP_ID = "verify-signatures"
-VERIFICATION_COMMAND = ".\\packaging\\verify-signatures.ps1"
+VERIFICATION_COMMAND = ".\\packaging\\verify-desktop-release.ps1"
 COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 
 # The signing job holds the federated credential, so what may run inside it is
@@ -53,7 +53,7 @@ SIGNING_JOB_ACTIONS = frozenset(
     }
 )
 SIGNING_JOB_COMMANDS = frozenset(
-    {VERIFICATION_COMMAND, ".\\packaging\\write-digests.ps1"}
+    {VERIFICATION_COMMAND, ".\\packaging\\write-digests.ps1", ".\\packaging\\assert-desktop-release-inputs.ps1"}
 )
 
 # The build job is identified by the release build it runs, and its first-run
@@ -436,6 +436,69 @@ def _assert_publication_is_downstream_of_verification(
     )
 
 
+def _assert_msix_build_and_sign_boundaries(workflow):
+    triggers = workflow.get("on", workflow.get(True))
+    target = triggers["workflow_dispatch"]["inputs"]["desktop_target"]
+    assert target["default"] == "inno" and target["options"] == ["inno", "msix-direct", "msix-store", "r2-credential-check"]
+    build = _steps(_build_job(workflow))
+    pack = [index for index, step in enumerate(build) if ".\\packaging\\stage-msix-release.ps1" in str(step.get("run", ""))]
+    assert len(pack) == 1, "MSIX must be packed once by the build owner"
+    assert _first_run_gate_index(build) < pack[0], "MSIX packing must follow common first-run qualification"
+    native = [index for index, step in enumerate(build) if "--companion-runtime-report" in str(step.get("run", ""))]
+    assert len(native) == 1 and native[0] < pack[0], "MSIX packing must follow native runtime qualification"
+    uploads = [index for index, step in enumerate(build)
+               if _action_path(step) == PUBLISH_ACTION and step["with"]["name"] == _unsigned_package_artifact_name(workflow)]
+    assert len(uploads) == 1 and pack[0] < uploads[0], "Signing must consume the sealed MSIX handoff"
+    assert "msix-release" in build[uploads[0]]["with"]["path"]
+    sign = _steps(_signing_job(workflow))
+    inputs = [index for index, step in enumerate(sign) if ".\\packaging\\assert-desktop-release-inputs.ps1" in str(step.get("run", ""))]
+    assert len(inputs) == 1, "Signing inputs need a pre-credential check"
+    login = next(index for index, step in enumerate(sign) if _action_path(step) == "azure/login")
+    signer = next(index for index, step in enumerate(sign) if _action_path(step) == SIGNING_ACTION)
+    verified = next(index for index, step in enumerate(sign) if step.get("id") == VERIFICATION_STEP_ID)
+    assert inputs[0] < login < signer < verified, "Validate immutable inputs before Azure and verify the signed output"
+    assert sign[login]["if"] == sign[signer]["if"] == "inputs.desktop_target != 'msix-store'", "Store candidate must remain unsigned"
+    assert sign[signer]["with"]["files-folder-filter"] == "${{ inputs.desktop_target == 'msix-direct' && 'msix' || 'exe' }}", "Direct signing must include MSIX"
+    for index in (inputs[0], verified):
+        command = sign[index]["run"]
+        assert '-Target "$env:DESKTOP_RELEASE_TARGET"' in command
+        assert '-ProductRevision "$env:PRODUCT_REVISION"' in command
+        for name in ("MSIX_DIRECT_PUBLISHER", "MSIX_DIRECT_EXPECTED_FAMILY", "MSIX_DIRECT_APPINSTALLER_URI",
+                     "DESKTOP_R2_BUCKET", "DESKTOP_R2_ENDPOINT", "DESKTOP_UPDATES_BASE_URL"):
+            assert sign[index]["env"][name] == "${{ vars." + name + " }}", "Resolved environment inputs must agree with the approved profile"
+    sparse = next(step["with"]["sparse-checkout"] for step in sign if _action_path(step) == "actions/checkout")
+    assert "packaging/verify-msix.ps1" in sparse and "packaging/msix/release-artifacts.psm1" in sparse
+    assert "build-msix.ps1" not in sparse and "stage-msix-release.ps1" not in sparse
+
+
+def test_msix_workflow_preserves_build_sign_and_channel_boundaries():
+    workflow = _workflow_document()
+    _assert_msix_build_and_sign_boundaries(workflow)
+    changed = deepcopy(workflow)
+    steps = _steps(_build_job(changed))
+    pack = next(step for step in steps if ".\\packaging\\stage-msix-release.ps1" in str(step.get("run", "")))
+    _build_job(changed)["steps"].remove(pack)
+    with pytest.raises(AssertionError, match="packed once"):
+        _assert_msix_build_and_sign_boundaries(changed)
+    changed = deepcopy(workflow)
+    steps = _build_job(changed)["steps"]
+    pack = next(step for step in steps if ".\\packaging\\stage-msix-release.ps1" in str(step.get("run", "")))
+    steps.remove(pack)
+    steps.insert(0, pack)
+    with pytest.raises(AssertionError, match="follow common first-run"):
+        _assert_msix_build_and_sign_boundaries(changed)
+    changed = deepcopy(workflow)
+    signer = next(step for step in _steps(_signing_job(changed)) if _action_path(step) == SIGNING_ACTION)
+    signer["with"]["files-folder-filter"] = "exe"
+    with pytest.raises(AssertionError, match="include MSIX"):
+        _assert_msix_build_and_sign_boundaries(changed)
+    changed = deepcopy(workflow)
+    signer = next(step for step in _steps(_signing_job(changed)) if _action_path(step) == SIGNING_ACTION)
+    signer["if"] = "success()"
+    with pytest.raises(AssertionError, match="remain unsigned"):
+        _assert_msix_build_and_sign_boundaries(changed)
+
+
 def test_only_the_signing_job_holds_the_federated_token() -> None:
     """Granting the token to the build job, or workflow-wide, turns the named check red."""
 
@@ -791,3 +854,45 @@ def test_the_gate_selection_collects_the_packaged_first_run_test() -> None:
 
     deselected = _collect(_without_marker_selection(arguments))
     assert _collected_node_ids(deselected) == [], deselected.stdout + deselected.stderr
+
+
+def _assert_credential_check_isolation(workflow):
+    jobs = _jobs(workflow)
+    for name in ("build", "sign"):
+        assert jobs[name]["if"] == "inputs.desktop_target != 'r2-credential-check'", "Credential check must skip packaging and signing"
+    prepare, check = jobs["prepare-credential-check"], jobs["credential-check"]
+    for job in (prepare, check):
+        assert job["if"] == "inputs.desktop_target == 'r2-credential-check'"
+        assert job["permissions"] == {"contents": "read"}, "Credential check must not acquire signing tokens"
+        _assert_every_job_action_is_pinned_to_a_commit(job, label="credential-check")
+    assert "environment" not in prepare
+    assert check["environment"] == "release" and check["needs"] == "prepare-credential-check"
+    assert "vcredential-check-" in prepare["steps"][0]["run"]
+    assert "$env:PRODUCT_REVISION -cne $env:REF_COMMIT" in prepare["steps"][0]["run"]
+    commands = [step for step in _steps(check) if "run" in step]
+    assert len(commands) == 2
+    assert "check.mjs check" in commands[0]["run"]
+    assert "check.mjs cleanup" in commands[1]["run"] and commands[1]["if"] == "always()", "Backup cleanup must always run"
+    expected = {name: "${{ secrets." + name + " }}" for name in ("DESKTOP_R2_ACCESS_KEY_ID", "DESKTOP_R2_SECRET_ACCESS_KEY")}
+    expected.update({name: "${{ vars." + name + " }}" for name in ("DESKTOP_R2_BUCKET", "DESKTOP_R2_ENDPOINT")})
+    assert all(step["env"] == expected for step in commands), "Check must use actual release secrets and configured storage"
+    assert all("npm" not in step["run"] for step in commands)
+    assert all("secrets." not in str(step) for step in _steps(prepare))
+    uploads = [step for step in _steps(check) if _action_path(step) == PUBLISH_ACTION]
+    assert len(uploads) == 1 and uploads[0]["if"] == "always()"
+    assert "receipt.json" in uploads[0]["with"]["path"] and "intent.json" not in uploads[0]["with"]["path"]
+
+
+def test_nonpublishing_r2_check_preserves_release_authority_and_cleanup():
+    workflow = _workflow_document()
+    _assert_credential_check_isolation(workflow)
+    for job, field, value in [("build", "if", "true"), ("credential-check", "environment", "qualification"), ("credential-check", "permissions", {"contents": "read", "id-token": "write"})]:
+        changed = deepcopy(workflow)
+        changed["jobs"][job][field] = value
+        with pytest.raises(AssertionError):
+            _assert_credential_check_isolation(changed)
+    changed = deepcopy(workflow)
+    cleanup = next(step for step in changed["jobs"]["credential-check"]["steps"] if "check.mjs cleanup" in step.get("run", ""))
+    cleanup["if"] = "success()"
+    with pytest.raises(AssertionError, match="always run"):
+        _assert_credential_check_isolation(changed)

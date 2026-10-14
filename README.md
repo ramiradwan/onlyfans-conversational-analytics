@@ -54,6 +54,7 @@ Uninstalling the application removes program files but leaves this data director
 - [Windows installation](docs/install-windows.md)
 - [Contributing](CONTRIBUTING.md)
 - [Documentation index](docs/README.md)
+- [Non-publishing desktop release credential check](tools/desktop-credential-check/README.md)
 
 ## License
 

@@ -1,5 +1,9 @@
 //! OS process qualification only; excluded from production builds and packaging.
 #![allow(dead_code)]
+#[path = "../../src/bootstrap.rs"]
+mod bootstrap;
+#[path = "../../src/deployment.rs"]
+mod deployment;
 #[path = "../../src/policy.rs"]
 mod policy;
 #[path = "../../src/windows.rs"]
@@ -18,6 +22,28 @@ fn main() {
     }
     assert_eq!(args.len(), 2);
     assert_eq!(args[1], "--brain");
+    let status: usize = std::env::var("BRAIN_BOOTSTRAP_STATUS_HANDLE")
+        .unwrap()
+        .parse()
+        .unwrap();
+    unsafe {
+        use windows_sys::Win32::{Foundation::*, Storage::FileSystem::*};
+        assert_eq!(GetFileType(status as _), FILE_TYPE_PIPE);
+        assert_ne!(SetHandleInformation(status as _, HANDLE_FLAG_INHERIT, 0), 0);
+        let frames = b"{\"schema\":\"ofca-bootstrap-status/v1\",\"seq\":1,\"phase\":\"starting\",\"reason\":null}\n{\"schema\":\"ofca-bootstrap-status/v1\",\"seq\":2,\"phase\":\"checking\",\"reason\":null}\n";
+        let mut written = 0;
+        assert_ne!(
+            WriteFile(
+                status as _,
+                frames.as_ptr(),
+                frames.len() as u32,
+                &mut written,
+                std::ptr::null_mut()
+            ),
+            0
+        );
+        assert_eq!(written as usize, frames.len());
+    }
     // Qualification uses a short ordinary install path. The child must receive
     // that form, so Python resource loaders can safely join relative assets.
     assert!(!std::env::current_exe()

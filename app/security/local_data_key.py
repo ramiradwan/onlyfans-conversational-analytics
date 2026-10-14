@@ -26,6 +26,8 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from app.persistence.private_files import (
     PrivateFileSecurityError,
     apply_private_file_security,
+    private_file_identity,
+    reject_path_aliases,
     sync_directory,
     sync_file,
 )
@@ -52,7 +54,7 @@ class _DataBlob(ctypes.Structure):
     ]
 
 
-def database_key(path: str | Path, scope: str) -> bytes:
+def database_key(path: str | Path, scope: str, *, create_if_missing: bool = True) -> bytes:
     """Derive a stable 256-bit SQLCipher key for one closed database scope."""
 
     normalized_scope = scope.strip().lower()
@@ -61,14 +63,19 @@ def database_key(path: str | Path, scope: str) -> bytes:
         for character in normalized_scope
     ):
         raise LocalDataKeyError("database key scope is invalid")
-    database_path = Path(path).expanduser().resolve()
+    database_path = reject_path_aliases(path)
     master = _test_master_key()
     if master is None:
         if sys.platform != "win32":
             raise LocalDataKeyError(
                 "production local database encryption requires Windows DPAPI"
             )
-        master = _load_or_create_master_key(database_path.parent)
+        if create_if_missing:
+            master = _load_or_create_master_key(
+                database_path.parent, existing_database=database_path.exists()
+            )
+        else:
+            master = _read_master_key(database_path.parent / MASTER_KEY_FILENAME, repair_permissions=False)
     return _derive(master, f"database:{normalized_scope}".encode("ascii"))
 
 
@@ -120,12 +127,17 @@ def unprotect_local_secret(payload: bytes, *, purpose: str) -> bytes:
     )
 
 
-def _load_or_create_master_key(directory: Path) -> bytes:
-    directory.mkdir(parents=True, exist_ok=True)
+def _load_or_create_master_key(directory: Path, *, existing_database: bool = False) -> bytes:
     path = directory / MASTER_KEY_FILENAME
     with _LOCK:
         if path.exists():
             return _read_master_key(path)
+        # A missing key beside retained data is a recovery condition. Creating
+        # another random key here would make the original stores unreadable
+        # and disguise missing authority as a fresh installation.
+        if existing_database or _contains_retained_database(directory):
+            raise LocalDataKeyError("retained databases require their original master key")
+        directory.mkdir(parents=True, exist_ok=True)
         master = secrets.token_bytes(MASTER_KEY_BYTES)
         protected = _dpapi_protect(master, entropy=_entropy(b"database-master"))
         payload = _MASTER_KEY_MAGIC + base64.b64encode(protected)
@@ -147,10 +159,28 @@ def _load_or_create_master_key(directory: Path) -> bytes:
         return master
 
 
-def _read_master_key(path: Path) -> bytes:
+def _contains_retained_database(directory: Path) -> bool:
+    if not directory.exists():
+        return False
     try:
-        apply_private_file_security(path)
+        for candidate in directory.iterdir():
+            name = candidate.name.lower().removesuffix("-wal").removesuffix("-shm")
+            if candidate.is_file() and name.endswith((".sqlite3", ".sqlite", ".db")):
+                return True
+    except OSError as error:
+        raise LocalDataKeyError("retained database inspection is unavailable") from error
+    return False
+
+
+def _read_master_key(path: Path, *, repair_permissions: bool = True) -> bytes:
+    try:
+        reject_path_aliases(path)
+        identity = private_file_identity(path, repair_permissions=repair_permissions)
+        if path.stat().st_size > 65536:
+            raise LocalDataKeyError("database master key exceeds its bound")
         payload = path.read_bytes()
+        if private_file_identity(path, repair_permissions=False) != identity:
+            raise LocalDataKeyError("database master key changed during inspection")
         protected = _decode_payload(payload, _MASTER_KEY_MAGIC)
         master = _dpapi_unprotect(protected, entropy=_entropy(b"database-master"))
     except (OSError, PrivateFileSecurityError) as error:

@@ -62,7 +62,8 @@
         "packaging/**",
         "tools/packaged-signing-rule/**",
         "tools/legal-release-bindings/**",
-        "tools/packaging_policy.py"
+        "tools/packaging_policy.py",
+        "tools/msix_packaging.py"
       ],
       "role": "Windows packaging scripts, installer definitions, PyInstaller spec, runtime file closure manifests, and release signing verification tools.",
       "authority": "authoritative",
@@ -338,6 +339,7 @@
         "app/persistence/catchup_events.py",
         "app/persistence/database.py",
         "app/persistence/migrations.py",
+        "app/persistence/upgrade_lifecycle.py",
         "app/persistence/deletion_operations.py",
         "app/persistence/auth.py",
         "app/persistence/onboarding.py",
@@ -531,6 +533,8 @@
         "app/launcher.py",
         "app/packaged_entry.py",
         "app/core/**",
+        "shared/desktop-release/**",
+        "shared/bootstrap-status/**",
         "app/models/**",
         "app/utils/**",
         "app/__init__.py",
@@ -1704,6 +1708,7 @@
           "tools/packaged-signing-rule/**",
           "tools/legal-release-bindings/**",
           "tools/packaging_policy.py",
+          "tools/msix_packaging.py",
           ".github/workflows/**"
         ]
       }

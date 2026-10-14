@@ -2,13 +2,14 @@
 
 # Build Windows release artifacts
 
-`packaging/build-windows.ps1` builds the installer, Agent bundle, and release digests.
+`packaging/build-windows.ps1` builds the desktop package, Agent bundle, and release digests. Inno remains the default. Explicit `-DesktopPackageTarget msix` or `both` adds the MSIX adapter around the same qualified runtime; see [MSIX packaging](../packaging/msix/README.md) for profiles and its separate installed-system gates.
 
 ## Requirements
 
 - An isolated Python environment with `requirements.txt` and `packaging/requirements-build.txt`. Build the local SQLCipher wheel before installing dependencies.
 - Node.js and npm, unless using `-SkipAssetBuild`.
-- Inno Setup 6.
+- Registered MSVC C++ build tools and the repository's pinned Rust toolchain for Bridge and native runtime dependencies.
+- Inno Setup 6 for `inno` or `both`; Windows SDK `10.0.26100.0` and an explicit `-MsixPackageProfile` for `msix` or `both`.
 - A new output directory outside the repository.
 
 The script finds Inno Setup from `-InnoSetupCompiler`, `INNO_SETUP_COMPILER`, `ISCC`, `PATH`, or standard install locations.
@@ -26,7 +27,7 @@ python -m venv .build-venv
 
 The script stages runtime files, freezes Brain, builds Agent, compiles the installer, and writes SHA-256 digests. The installer is under `installer\` in the output root.
 
-The local installer is unsigned. The release workflow signs and timestamps it, verifies Authenticode, and recomputes digests. The workflow accepts only immutable `v*` tags.
+Local desktop packages are unsigned. The current release workflow signs and timestamps the Inno installer, verifies Authenticode, and recomputes digests. It accepts only immutable `v*` tags. MSIX production workflow integration and publication remain closed until their separate runtime, identity and installed-update gates pass.
 
 See [Windows acceptance](installation-and-acceptance.md) to test the installer on a clean guest.
 

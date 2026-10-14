@@ -13,6 +13,133 @@ import pytest
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat, pytest.mark.serial]
 
 
+@pytest.mark.windows_production
+@pytest.mark.skipif(os.name != "nt", reason="Windows owner and token semantics")
+def test_private_objects_belong_to_user_even_when_created_elevated(tmp_path):
+    import ctypes
+    from app.persistence import private_files as files
+
+    directory = tmp_path / "private-user-root"
+    directory.mkdir()
+    files.apply_private_directory_security(directory)
+    target = directory / "authority.bin"
+    target.write_bytes(b"original protected fixture")
+    identity = target.stat().st_ino
+    files.apply_private_file_security(target)
+    assert files._windows_acl_is_owner_only(directory)
+    assert files.private_file_identity(target, repair_permissions=False)[1] == identity
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    assert files._windows_user_sid(advapi, kernel).startswith("S-1-")
+    # The ACL verifier compares both the owner and sole full-control ACE with
+    # TokenUser. An Administrators-only object must not satisfy that contract.
+    assert target.read_bytes() == b"original protected fixture"
+
+
+@pytest.mark.windows_production
+@pytest.mark.skipif(os.name != "nt", reason="Windows non-elevated shell token")
+def test_elevated_creation_is_writable_without_elevation_and_admin_state_is_not_admitted(tmp_path):
+    import ctypes
+    from app.persistence import private_files as files
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel.CloseHandle.restype = ctypes.c_int
+    advapi.OpenProcessToken.argtypes = [ctypes.c_void_p, ctypes.c_uint32,
+                                      ctypes.POINTER(ctypes.c_void_p)]
+    advapi.OpenProcessToken.restype = ctypes.c_int
+    advapi.GetTokenInformation.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                                         ctypes.c_void_p, ctypes.c_uint32,
+                                         ctypes.POINTER(ctypes.c_uint32)]
+    advapi.GetTokenInformation.restype = ctypes.c_int
+    advapi.ImpersonateLoggedOnUser.argtypes = [ctypes.c_void_p]
+    advapi.ImpersonateLoggedOnUser.restype = ctypes.c_int
+    advapi.DuplicateTokenEx.argtypes = [ctypes.c_void_p, ctypes.c_uint32,
+                                      ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+                                      ctypes.POINTER(ctypes.c_void_p)]
+    advapi.DuplicateTokenEx.restype = ctypes.c_int
+    advapi.RevertToSelf.restype = ctypes.c_int
+    token, shell_token, medium = ctypes.c_void_p(), ctypes.c_void_p(), ctypes.c_void_p()
+    shell_process = None
+    assert advapi.OpenProcessToken(kernel.GetCurrentProcess(), 0x0008, ctypes.byref(token))
+    try:
+        size, elevation = ctypes.c_uint32(), ctypes.c_uint32()
+        assert advapi.GetTokenInformation(token, 18, ctypes.byref(elevation),
+                                         ctypes.sizeof(elevation), ctypes.byref(size))
+        if elevation.value != 2:  # TokenElevationTypeFull
+            pytest.skip("requires an elevated split token to prove medium-token access")
+        # Some Windows builds return an identification-only linked token.
+        # Use the actual medium-token shell in this session and check its user
+        # identity and elevation before touching only the owned test fixtures.
+        shell_pid = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             "$s=(Get-Process -Id $PID).SessionId; Get-Process explorer -ErrorAction SilentlyContinue | Where-Object SessionId -eq $s | Select-Object -First 1 -ExpandProperty Id"],
+            check=True, capture_output=True, text=True, timeout=10).stdout.strip()
+        if not shell_pid:
+            pytest.skip("requires this qualification session's non-elevated Explorer")
+        shell_process = kernel.OpenProcess(0x1000, False, int(shell_pid))
+        assert shell_process
+        assert advapi.OpenProcessToken(shell_process, 0x0008 | 0x0002,
+                                      ctypes.byref(shell_token))
+        assert advapi.DuplicateTokenEx(shell_token, 0x0008 | 0x0004, None, 2, 2,
+                                       ctypes.byref(medium)), ctypes.WinError(ctypes.get_last_error())
+        assert advapi.GetTokenInformation(medium, 20, ctypes.byref(elevation),
+                                         ctypes.sizeof(elevation), ctypes.byref(size))
+        assert elevation.value == 0
+        user_sid = files._windows_user_sid(advapi, kernel)
+        directory = tmp_path / "user-owned"
+        directory.mkdir()
+        files.apply_private_directory_security(directory)
+        target = directory / "authority.bin"
+        target.write_bytes(b"original protected fixture")
+        files.apply_private_file_security(target)
+        original_identity = files.private_file_identity(target, repair_permissions=False)
+
+        # Reproduce the old helper's exact group-owner/group-only ACL on an
+        # independent disposable file, never on retained application state.
+        legacy = tmp_path / "administrator-only.bin"
+        legacy.write_bytes(b"unsupported owner")
+        subprocess.run(["icacls", str(legacy), "/setowner", "*S-1-5-32-544"],
+                       check=True, capture_output=True, timeout=10)
+        subprocess.run(["icacls", str(legacy), "/inheritance:r", "/grant:r",
+                        "*S-1-5-32-544:F"], check=True, capture_output=True, timeout=10)
+        before = subprocess.run(["icacls", str(legacy)], check=True,
+                                capture_output=True, timeout=10).stdout
+        with pytest.raises(files.PrivateFileSecurityError):
+            files.private_file_identity(legacy, repair_permissions=False)
+        assert subprocess.run(["icacls", str(legacy)], check=True,
+                              capture_output=True, timeout=10).stdout == before
+
+        assert advapi.ImpersonateLoggedOnUser(medium)
+        try:
+            assert files._windows_user_sid(advapi, kernel) == user_sid
+            assert files.private_file_identity(target, repair_permissions=False) == original_identity
+            assert target.read_bytes() == b"original protected fixture"
+            with target.open("ab") as handle:
+                handle.write(b"; medium-token write")
+            # The root admits presentation creation without granting access to
+            # any other user or to the Administrators group.
+            (directory / "webview").mkdir()
+            (directory / "webview" / "probe").write_bytes(b"writable")
+            with pytest.raises(PermissionError):
+                legacy.read_bytes()
+        finally:
+            assert advapi.RevertToSelf()
+    finally:
+        if medium.value:
+            assert kernel.CloseHandle(medium)
+        if shell_token.value:
+            assert kernel.CloseHandle(shell_token)
+        if shell_process:
+            assert kernel.CloseHandle(shell_process)
+        assert kernel.CloseHandle(token)
+
+
 def _measure_acl_growth(path: Path, *, combined: bool = False) -> dict[str, int]:
     import ctypes
     import gc

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Owned Brain bootstrap observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "seq", "phase", "reason"],
+  "properties": {
+    "schema": {"const": "ofca-bootstrap-status/v1"},
+    "seq": {"type": "integer", "minimum": 1, "maximum": 256},
+    "phase": {"enum": ["starting", "checking", "checkpointing", "migrating", "validating", "ready-to-check-listener", "recovery-required"]},
+    "reason": {"enum": [null, "retained-data", "writer-conflict", "maintenance", "cancelled", "installation"]}
+  },
+  "allOf": [{
+    "if": {"properties": {"phase": {"const": "recovery-required"}}},
+    "then": {"properties": {"reason": {"type": "string"}}},
+    "else": {"properties": {"reason": {"type": "null"}}}
+  }]
+}

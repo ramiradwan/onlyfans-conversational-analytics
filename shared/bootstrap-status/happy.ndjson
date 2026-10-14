@@ -1,0 +1,6 @@
+{"schema":"ofca-bootstrap-status/v1","seq":1,"phase":"starting","reason":null}
+{"schema":"ofca-bootstrap-status/v1","seq":2,"phase":"checking","reason":null}
+{"schema":"ofca-bootstrap-status/v1","seq":3,"phase":"checkpointing","reason":null}
+{"schema":"ofca-bootstrap-status/v1","seq":4,"phase":"migrating","reason":null}
+{"schema":"ofca-bootstrap-status/v1","seq":5,"phase":"validating","reason":null}
+{"schema":"ofca-bootstrap-status/v1","seq":6,"phase":"ready-to-check-listener","reason":null}

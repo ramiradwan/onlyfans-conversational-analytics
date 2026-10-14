@@ -1,0 +1,8 @@
+{
+  "name": "dipsy-desktop-delivery",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test worker.test.mjs" },
+  "engines": { "node": ">=22" },
+  "devDependencies": { "miniflare": "5.20261006.2-beta" }
+}

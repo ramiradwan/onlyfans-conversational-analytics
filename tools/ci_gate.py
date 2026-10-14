@@ -82,10 +82,10 @@ SPECS = {
     "windows-persistence-smoke": ReportSpec("windows-platform-contract", "Windows", "windows_persistence_smoke", "windows_persistence_smoke", ("tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke",)),
 }
 ACTUAL_JOBS = {spec.job for spec in SPECS.values()} | {
-    "web-build-and-test", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
+    "web-build-and-test", "desktop-native-contracts", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
 }
 NEEDED_JOBS = {spec.logical_job for spec in SPECS.values()} | {
-    "web-build-and-test", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
+    "web-build-and-test", "desktop-native-contracts", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
 }
 WINDOWS_FULL_LANES = ("windows-full-regression-1", "windows-full-regression-2")
 LEGACY_EXCLUDED = {"slow", "stateful_tier_a", "stateful_tier_b", "stateful_agent_tier_a"}

@@ -22,6 +22,7 @@ TRANSITION_TRIGGERS = frozenset({"user", "system"})
 EVIDENCE_KINDS = frozenset({"unit", "browser", "visual"})
 JOURNEY_ATTRIBUTE = 'data-journey-state="{state_id}"'
 JOURNEY_ATTRIBUTE_PATTERN = re.compile(r'data-journey-state="([^"]*)"')
+NATIVE_STATE_PATTERN = re.compile(r'pub const [A-Z][A-Z0-9_]*: &str = "([a-z]+\.[a-z0-9_]+)";')
 JOURNEY_ATTRIBUTE_ROOTS = ("frontend/src",)
 JOURNEY_ATTRIBUTE_SUFFIXES = frozenset({".ts", ".tsx"})
 IDENTIFIER_ANCHOR_PATTERNS = (
@@ -79,7 +80,10 @@ def _require_anchor(root: Path, anchor: Any, state_id: str, where: str) -> str:
     match = JOURNEY_ATTRIBUTE_PATTERN.fullmatch(text)
     if match is not None and match.group(1) != state_id:
         raise UxJourneyError(f"{where} text {text!r} must name its own state {state_id}")
-    if match is None and not any(pattern.fullmatch(text) for pattern in IDENTIFIER_ANCHOR_PATTERNS):
+    native = NATIVE_STATE_PATTERN.fullmatch(text) if anchor["file"].endswith(".rs") else None
+    if native is not None and native.group(1) != state_id:
+        raise UxJourneyError(f"{where} native identifier must name its own state {state_id}")
+    if match is None and native is None and not any(pattern.fullmatch(text) for pattern in IDENTIFIER_ANCHOR_PATTERNS):
         raise UxJourneyError(f"{where} text {text!r} must be a code identifier, not interface copy")
     if text not in source:
         raise UxJourneyError(f"{where} text {text!r} is not present in {anchor['file']}")
@@ -94,6 +98,8 @@ def _require_evidence(root: Path, item: dict[str, Any], where: str) -> None:
         patterns = (rf"\b(?:workspace|state|variant): '{name}'", rf"^\s*{name}: Object\.freeze\(")
     else:
         patterns = (rf"\b(?:it|test|describe|test\.step)\(\s*(['\"`]){name}\1", rf"^\s*(?:async\s+)?def {name}\(")
+        if item["file"].endswith(".rs"):
+            patterns += (rf"#\[test\]\s*(?:pub\s+)?fn {name}\(",)
     if not any(re.search(pattern, source, re.MULTILINE) for pattern in patterns):
         kind = "capture scenario" if item["kind"] == "visual" else "test title"
         raise UxJourneyError(f"{where} name {item['name']!r} is not a {kind} in {item['file']}")

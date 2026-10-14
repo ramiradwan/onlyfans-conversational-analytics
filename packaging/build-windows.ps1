@@ -26,6 +26,14 @@ param(
     # only after the staged artifact has passed every release gate.
     [string] $InnoSetupCompiler = "",
 
+    # Desktop packaging is independent of Chrome extension release mode.
+    [ValidateSet('inno', 'msix', 'both')]
+    [string] $DesktopPackageTarget = 'inno',
+    [string] $MsixPackageProfile = '',
+    [string] $WindowsSdkVersion = '10.0.26100.0',
+    [string] $MakeAppx = '',
+    [string] $MsixPackageUri = '',
+
     # Retired input: dynamic builds refuse unsigned raw-rule overrides.
     # Publication origin and public trust are required, release-bound resources.
     [string] $PackagedSigningRule = "",
@@ -73,10 +81,8 @@ $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 $StoreCandidateSuffix = "-chrome.zip"
 $ReleaseMode = -not $DevelopmentAgentBundle
 
-# Staging directories the installer leaves out; keep in step with the Excludes
-# directive in packaging/inno/brain.iss. A digest file that ships inside the
-# installation may not list anything under them.
-$InstallerExcludedStagingDirectories = @("Agent")
+# Installed closure is owned by runtime-files/v2. The complete staged Agent is
+# qualified before either adapter is allowed to select installed files.
 
 if (-not (Test-Path -LiteralPath $BuildPython -PathType Leaf)) {
     throw "Build Python does not exist: $BuildPython"
@@ -87,7 +93,7 @@ if (-not (Test-Path -LiteralPath $SpecPath -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $RuntimePolicyPath -PathType Leaf)) {
     throw "Runtime packaging policy does not exist: $RuntimePolicyPath"
 }
-if (-not (Test-Path -LiteralPath $InnoScriptPath -PathType Leaf)) {
+if ($DesktopPackageTarget -in @('inno', 'both') -and -not (Test-Path -LiteralPath $InnoScriptPath -PathType Leaf)) {
     throw "Inno Setup script does not exist: $InnoScriptPath"
 }
 if (-not (Test-Path -LiteralPath $DigestScriptPath -PathType Leaf)) {
@@ -101,6 +107,13 @@ if ($OutputRoot -eq $ProjectRoot -or $OutputRoot.StartsWith($ProjectRoot + [IO.P
 }
 if (Test-Path -LiteralPath $OutputRoot) {
     throw "Build output directory already exists; choose a fresh path: $OutputRoot"
+}
+if ($DesktopPackageTarget -in @('msix', 'both')) {
+    if (-not (Test-Path -LiteralPath $MsixPackageProfile -PathType Leaf)) {
+        throw 'MSIX builds require an explicit -MsixPackageProfile'
+    }
+    & $BuildPython (Join-Path $ProjectRoot 'tools/msix_packaging.py') validate-profile --profile $MsixPackageProfile
+    if ($LASTEXITCODE -ne 0) { throw 'MSIX package profile was refused' }
 }
 
 function Resolve-ReleaseInput {
@@ -174,6 +187,10 @@ if ($LASTEXITCODE -ne 0) {
 if ($ReleaseMode) {
     $LegalReleaseBindings = Resolve-ReleaseInput -Value $LegalReleaseBindings -Name "LegalReleaseBindings"
     $PrivacyPolicyUrl = Resolve-ReleaseUrl -Value $PrivacyPolicyUrl -Name "PrivacyPolicyUrl"
+} elseif ($LegalReleaseBindings) {
+    # The extension validator runs in extension/, including development mode.
+    # Bind an explicitly supplied fixture/input before changing directories.
+    $LegalReleaseBindings = Resolve-ReleaseInput -Value $LegalReleaseBindings -Name "LegalReleaseBindings"
 }
 
 & $BuildPython -c "import struct, sys; sys.exit(0 if struct.calcsize('P') == 8 else 1)"
@@ -360,7 +377,9 @@ function Copy-DeclaredTopLevelFiles {
     param([Parameter(Mandatory)] [string] $StagingRoot)
 
     $policy = Get-Content -Raw -LiteralPath $RuntimePolicyPath | ConvertFrom-Json
-    foreach ($relative in $policy.required_files) {
+    $resources = @($policy.required_files)
+    if ($DesktopPackageTarget -in @('inno', 'both')) { $resources += $policy.package_payloads.inno.adapter_resources }
+    foreach ($relative in $resources) {
         if ($relative -in @("Brain.exe", "Bridge.exe", "release-manifest.json") -or $relative.StartsWith("_internal/")) {
             continue
         }
@@ -525,13 +544,14 @@ from pathlib import Path
 
 from tools.packaging_policy import verify_runtime_files
 
-findings = verify_runtime_files(Path(sys.argv[1]))
+adapters = ('inno', 'msix') if sys.argv[2] == 'both' else (sys.argv[2],)
+findings = verify_runtime_files(Path(sys.argv[1]), adapters=adapters)
 print(json.dumps([asdict(finding) for finding in findings], sort_keys=True))
 raise SystemExit(1 if findings else 0)
 '@
     Push-Location $ProjectRoot
     try {
-        $output = & $BuildPython -c $verifier $StagingRoot 2>&1
+        $output = & $BuildPython -c $verifier $StagingRoot $DesktopPackageTarget 2>&1
         $exitCode = $LASTEXITCODE
     } finally {
         Pop-Location
@@ -558,23 +578,19 @@ function Get-InstalledRelativePath {
     #>
     param([Parameter(Mandatory)] [string] $StagingRoot)
 
-    $excludedPrefixes = @(
-        $InstallerExcludedStagingDirectories | ForEach-Object { "$_/" }
-    )
-    return @(
-        Get-ChildItem -LiteralPath $StagingRoot -Recurse -File |
-            Sort-Object FullName |
-            ForEach-Object { Get-RelativeFilePath -Root $StagingRoot -FullName $_.FullName } |
-            Where-Object { $_ -ne "sha256sums.txt" } |
-            Where-Object {
-                $relative = $_
-                $excluded = @(
-                    $excludedPrefixes |
-                        Where-Object { $relative.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }
-                )
-                $excluded.Count -eq 0
-            }
-    )
+    $collector = @'
+import json
+import sys
+from pathlib import Path
+from tools.packaging_policy import installed_runtime_files
+paths = installed_runtime_files(Path(sys.argv[1]), 'inno')
+print(json.dumps([path for path in paths if path != 'sha256sums.txt']))
+'@
+    Push-Location $ProjectRoot
+    try { $result = & $BuildPython -c $collector $StagingRoot } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw 'Installed Inno closure was refused' }
+    $selected = ($result -join "`n") | ConvertFrom-Json
+    foreach ($relative in $selected) { Write-Output ([string]$relative) }
 }
 
 function Write-Sha256Sums {
@@ -717,6 +733,12 @@ if (-not (Test-Path -LiteralPath $desktopExecutable -PathType Leaf)) {
     throw 'The native desktop artifact is absent: Bridge.exe'
 }
 Copy-Item -LiteralPath $desktopExecutable -Destination (Join-Path $stagingRoot 'Bridge.exe')
+if ($DesktopPackageTarget -in @('msix', 'both')) {
+    $peInspection = & (Join-Path $ProjectRoot 'packaging/verify-pe-manifests.ps1') `
+        -Path @((Join-Path $stagingRoot 'Brain.exe'), (Join-Path $stagingRoot 'Bridge.exe'))
+    $peInspectionPath = Join-Path $OutputRoot 'pe-manifests.json'
+    $peInspection | Set-Content -LiteralPath $peInspectionPath -Encoding utf8
+}
 Copy-AgentArtifact -StagingRoot $stagingRoot
 Write-ReleaseManifest -StagingRoot $stagingRoot
 
@@ -727,24 +749,46 @@ if ($TestInjection -eq "DevelopmentConfiguration") {
 }
 
 Invoke-PackagingPolicy -BuildPython $BuildPython -ProjectRoot $ProjectRoot -StagingRoot $stagingRoot
-Write-Sha256Sums -Directory $stagingRoot -RelativePaths (Get-InstalledRelativePath -StagingRoot $stagingRoot)
+if ($DesktopPackageTarget -in @('inno', 'both')) {
+    Write-Sha256Sums -Directory $stagingRoot -RelativePaths (Get-InstalledRelativePath -StagingRoot $stagingRoot)
+}
 
 $installerOutput = Join-Path $OutputRoot "installer"
-$compiler = Resolve-InnoSetupCompiler -ExplicitCompiler $InnoSetupCompiler
 $version = Get-BrainVersion
-Invoke-RequiredCommand -FilePath $compiler -Arguments @(
-    "/DStagingRoot=$stagingRoot",
-    "/DOutputRoot=$installerOutput",
-    "/DAppVersion=$version",
-    "/DAppIconFile=$(Join-Path $ProjectRoot 'packaging\windows\conversation-analytics.ico')",
-    $InnoScriptPath
-)
-$installerName = "OnlyFans-Conversational-Analytics-Setup-$version-x64.exe"
-$installerPath = Join-Path $installerOutput $installerName
-if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
-    throw "Inno Setup did not produce the required installer: $installerPath"
+$desktopArtifacts = [System.Collections.Generic.List[string]]::new()
+New-Item -ItemType Directory -Path $installerOutput | Out-Null
+if ($DesktopPackageTarget -in @('inno', 'both')) {
+    $compiler = Resolve-InnoSetupCompiler -ExplicitCompiler $InnoSetupCompiler
+    Invoke-RequiredCommand -FilePath $compiler -Arguments @(
+        "/DStagingRoot=$stagingRoot",
+        "/DOutputRoot=$installerOutput",
+        "/DAppVersion=$version",
+        "/DAppIconFile=$(Join-Path $ProjectRoot 'packaging\windows\conversation-analytics.ico')",
+        $InnoScriptPath
+    )
+    $installerName = "OnlyFans-Conversational-Analytics-Setup-$version-x64.exe"
+    $installerPath = Join-Path $installerOutput $installerName
+    if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
+        throw "Inno Setup did not produce the required installer: $installerPath"
+    }
+    $desktopArtifacts.Add($installerName)
+    Write-PackageMeasurements -StagingRoot $stagingRoot -InstallerPath $installerPath
+    Write-Host "Windows installer ready: $installerPath"
 }
-Write-PackageMeasurements -StagingRoot $stagingRoot -InstallerPath $installerPath
+if ($DesktopPackageTarget -in @('msix', 'both')) {
+    $msix = & (Join-Path $ProjectRoot 'packaging/build-msix.ps1') -BuildPython $BuildPython `
+        -StagingRoot $stagingRoot -PackageProfile $MsixPackageProfile -OutputRoot (Join-Path $OutputRoot 'msix') `
+        -WindowsSdkVersion $WindowsSdkVersion -MakeAppx $MakeAppx -PackageUri $MsixPackageUri
+    foreach ($path in @($msix.PackagePath, $msix.InventoryPath, $msix.ProfilePath, $msix.BuildReceiptPath, $msix.AppInstallerPath)) {
+        if (-not $path) { continue }
+        Copy-Item -LiteralPath $path -Destination $installerOutput
+        $desktopArtifacts.Add([IO.Path]::GetFileName($path))
+    }
+    $peInspectionName = [IO.Path]::GetFileNameWithoutExtension($msix.PackagePath) + '.pe-manifests.json'
+    Copy-Item -LiteralPath $peInspectionPath -Destination (Join-Path $installerOutput $peInspectionName)
+    $desktopArtifacts.Add($peInspectionName)
+    Write-Host "Windows MSIX ready: $($msix.PackagePath)"
+}
 
 # The published artifact set: the installer, the Agent archive a user loads into
 # the browser, and a digest file computed over both after they exist.
@@ -765,16 +809,14 @@ if ($ReleaseMode) {
     Invoke-ExtensionBuild `
         -Arguments ((Get-ExtensionReleaseArguments -Verb "--audit-package") + "--artifact=$storeCandidate") `
         -FailureMessage "The published Store candidate failed its package audit"
-    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName, $storeCandidateName)
-    Write-Host "Windows installer ready: $installerPath"
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($desktopArtifacts.ToArray() + $storeCandidateName)
     Write-Host "Store candidate ready: $storeCandidate (sha256:$storeCandidateDigest)"
 } else {
     $developmentOutput = Join-Path $OutputRoot "development"
     New-Item -ItemType Directory -Path $developmentOutput | Out-Null
     $developmentBundle = Join-Path $developmentOutput "agent-development-unpacked-$agentVersion.zip"
     New-DevelopmentAgentBundle -AgentRoot $stagedAgentRoot -BundlePath $developmentBundle
-    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName)
-    Write-Host "Windows installer ready: $installerPath"
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths $desktopArtifacts.ToArray()
     Write-Host "Development Agent bundle ready: $developmentBundle"
 }
 Write-Host "Published digests ready: $(Join-Path $installerOutput 'sha256sums.txt')"

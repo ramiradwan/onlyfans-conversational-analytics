@@ -197,6 +197,8 @@ Installation backup uses the SQLite backup mechanism to create a consistent snap
 
 ### Update and rollback
 
+> [ADR 0056](0056-msix-packaging-and-managed-updates.md) supersedes the executable-update mechanism and managed upgrade-checkpoint policy below. User-selected backups and the retained-data uninstall contract remain authoritative.
+
 Every installation uses the same generic signed release. Binaries are replaceable; mutable databases, logs, and projection scratch space remain under the per-user application-data directory.
 
 Updates are staged and signature-verified. Before an authoritative migration, the updater creates and verifies a consistent backup, quiesces Brain, activates binaries, runs migrations, validates integrity and health, and only then resumes work. Failure keeps the listener closed and enters recovery tooling.
