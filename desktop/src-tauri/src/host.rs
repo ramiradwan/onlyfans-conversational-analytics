@@ -58,6 +58,12 @@ fn unavailable(app: &AppHandle, state: &Host) {
     }
 }
 
+fn observe_servicing(window: &tauri::WebviewWindow, code: &'static str) {
+    if let Ok(handle) = window.hwnd() {
+        windows::observe_servicing(handle.0 as _, code);
+    }
+}
+
 pub fn supervise(
     app: AppHandle,
     state: Arc<Host>,
@@ -199,8 +205,17 @@ fn run(
                 return Err("child_stopped");
             }
             if Instant::now() >= next_check {
+                let started = prepare_update(state);
+                if started
+                    && state
+                        .release
+                        .as_ref()
+                        .is_some_and(|release| release.update_owner == "direct-appinstaller")
+                {
+                    observe_servicing(&window, "prepare_started");
+                }
                 next_check = Instant::now()
-                    + if prepare_update(state) {
+                    + if started {
                         Duration::from_secs(6 * 60 * 60)
                     } else {
                         Duration::from_secs(10)
@@ -216,7 +231,10 @@ fn run(
                     }
                     let cancel = match crate::servicing_handoff::Cancellation::new() {
                         Ok(value) => value,
-                        Err(_) => continue,
+                        Err(reason) => {
+                            observe_servicing(&window, reason);
+                            continue;
+                        }
                     };
                     {
                         let mut signal = state
@@ -230,14 +248,21 @@ fn run(
                     }
                     let mut receipt = match startup.shutdown_receipt() {
                         Ok(value) => value,
-                        Err(_) => continue,
+                        Err(reason) => {
+                            observe_servicing(&window, reason);
+                            continue;
+                        }
                     };
                     let mut pending =
                         match crate::servicing_handoff::start(data, release, &update, cancel) {
                             Ok(value) => value,
-                            Err(_) => continue,
+                            Err(reason) => {
+                                observe_servicing(&window, reason);
+                                continue;
+                            }
                         };
                     state.admitted.store(false, Ordering::SeqCst);
+                    observe_servicing(&window, "draining");
                     let _ = window.navigate(
                         "http://tauri.localhost/index.html"
                             .parse()
@@ -251,8 +276,10 @@ fn run(
                         && !state.quitting.load(Ordering::SeqCst)
                         && pending.commit().is_ok()
                     {
+                        observe_servicing(&window, "committed");
                         return Ok(true);
                     }
+                    observe_servicing(&window, "drain_or_commit_refused");
                     drop(pending);
                     unavailable(app, state);
                     // Retain the owned Brain and Job Object on refusal. A servicing
@@ -268,7 +295,7 @@ fn run(
                     brain.stop();
                     return Ok(false);
                 }
-                Ok(Action::Prepared(Err(_))) => (),
+                Ok(Action::Prepared(Err(reason))) => observe_servicing(&window, reason),
                 Ok(Action::RefreshPresentation(generation, reply)) => {
                     let result = if state.admitted.load(Ordering::SeqCst) {
                         admission::refresh(&secret, &generation)

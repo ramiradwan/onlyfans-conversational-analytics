@@ -48,6 +48,34 @@ fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
 }
 
+fn servicing_marker(code: &str) -> Option<Vec<u16>> {
+    if code.is_empty()
+        || code.len() > 64
+        || !code
+            .bytes()
+            .all(|value| value.is_ascii_lowercase() || value == b'_')
+    {
+        return None;
+    }
+    Some(wide(std::ffi::OsStr::new(&format!(
+        "OFCA.Servicing.{code}"
+    ))))
+}
+
+/// Passive local diagnostics contain compiler-owned codes only. They never
+/// carry URLs, paths, frames or account authority and disappear with the HWND.
+pub fn observe_servicing(window: windows_sys::Win32::Foundation::HWND, code: &'static str) {
+    if let Some(marker) = servicing_marker(code) {
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetPropW(
+                window,
+                marker.as_ptr(),
+                std::ptr::without_provenance_mut(1),
+            );
+        }
+    }
+}
+
 pub(crate) fn process_sid(process: HANDLE) -> Result<Vec<u8>> {
     unsafe {
         let mut raw = null_mut();
@@ -891,6 +919,56 @@ impl Drop for Brain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn servicing_diagnostics_refuse_dynamic_values_and_are_bounded() {
+        assert!(servicing_marker("windows_stage_failed").is_some());
+        for invalid in [
+            "",
+            "https://example.test/",
+            "C:\\data",
+            "failure: private",
+            "active\nsecret",
+        ] {
+            assert!(servicing_marker(invalid).is_none());
+        }
+        assert!(servicing_marker(&"a".repeat(65)).is_none());
+    }
+    #[test]
+    fn servicing_observation_is_a_passive_owned_window_property() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        let window = unsafe {
+            CreateWindowExW(
+                0,
+                wide(std::ffi::OsStr::new("STATIC")).as_ptr(),
+                wide(std::ffi::OsStr::new("")).as_ptr(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                HWND_MESSAGE,
+                null_mut(),
+                null_mut(),
+                null(),
+            )
+        };
+        assert!(!window.is_null());
+        struct Window(HWND);
+        impl Drop for Window {
+            fn drop(&mut self) {
+                unsafe {
+                    DestroyWindow(self.0);
+                }
+            }
+        }
+        let _owned = Window(window);
+        observe_servicing(window, "windows_stage_failed");
+        let marker = servicing_marker("windows_stage_failed").unwrap();
+        assert!(!unsafe { GetPropW(window, marker.as_ptr()) }.is_null());
+        observe_servicing(window, "private value");
+        let invalid = wide(std::ffi::OsStr::new("OFCA.Servicing.private value"));
+        assert!(unsafe { GetPropW(window, invalid.as_ptr()) }.is_null());
+    }
     #[test]
     fn source_checkout_process_has_no_os_package_identity() {
         assert_eq!(package_identity().unwrap(), None);

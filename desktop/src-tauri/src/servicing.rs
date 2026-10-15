@@ -37,7 +37,6 @@ pub struct PreparedUpdate {
 /// Windows downloads and validates the package. Only descriptor bytes cross
 /// this process; a successful deferred registration is required before drain.
 #[cfg(windows)]
-#[allow(dead_code)] // Connected to the coordinator only after installed qualification.
 pub fn prepare_direct(
     release: &DesktopRelease,
     cancelled: impl Fn() -> bool,
@@ -55,12 +54,9 @@ pub fn prepare_direct(
         return Err("direct_source_required");
     }
     automatic_policy(&current)?;
-    if !matches!(
-        check_availability(&current, &cancelled).map_err(|_| "windows_check_failed")?,
-        Availability::Available | Availability::Required
-    ) {
-        return Err("update_available_not_confirmed");
-    }
+    // Availability is an informational Windows cache. The exact registered
+    // descriptor supplies the forward target; Windows must still validate and
+    // stage its signed same-family bytes before any runtime drain is allowed.
     let bytes = crate::servicing_feed::read_metadata(
         actual
             .app_installer_uri
