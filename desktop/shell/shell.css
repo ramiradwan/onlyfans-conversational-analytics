@@ -1,4 +1,4 @@
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+:root { color-scheme: dark; color: #e9eeeb; background: #141916; font-family: system-ui, sans-serif; }
 body { margin: 0; min-height: 100vh; }
 header { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.5rem; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); font-weight: 600; }
 main { max-width: 38rem; padding: 2rem; margin: 8vh auto; }
