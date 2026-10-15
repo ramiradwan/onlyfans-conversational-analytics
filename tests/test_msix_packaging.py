@@ -594,6 +594,31 @@ def test_pe_manifest_gate_reads_embedded_resources_and_rejects_missing_opt_in(tm
     rejected = subprocess.run(inspect, capture_output=True, text=True, check=False)
     assert rejected.returncode != 0 and "must embed longPathAware" in rejected.stderr, rejected.stdout + rejected.stderr
 
+    # The GUI executable needs an explicit process default before any HWND is
+    # created. Exercise the resource gate, including a valid but wrong DPI mode.
+    bridge = tmp_path / "Bridge.exe"
+    shutil.copyfile(source, bridge)
+    bridge_inspect = inspect[:-1] + [str(bridge)]
+    valid_manifest = (ROOT / "desktop/src-tauri/bridge.manifest").read_text(encoding="utf-8")
+    for dpi_mode in ("missing", "system", "PerMonitorV2"):
+        contents = valid_manifest
+        if dpi_mode == "missing":
+            contents = "\n".join(line for line in contents.splitlines() if "<dpiAware" not in line)
+        elif dpi_mode == "system":
+            contents = contents.replace(">PerMonitorV2<", ">system<")
+        manifest.write_text(contents, encoding="utf-8")
+        changed = subprocess.run([str(MANIFEST_TOOL), "-nologo", "-manifest", str(manifest),
+                                  f"-outputresource:{bridge};#1"], capture_output=True, text=True, check=False)
+        assert changed.returncode == 0, changed.stdout + changed.stderr
+        inspected = subprocess.run(bridge_inspect, capture_output=True, text=True, check=False)
+        if dpi_mode == "PerMonitorV2":
+            assert inspected.returncode == 0, inspected.stdout + inspected.stderr
+            record = json.loads(inspected.stdout)["executables"][0]
+            assert record["dpi_awareness"] == "PerMonitorV2"
+            assert record["legacy_dpi_aware"] == "true/pm"
+        else:
+            assert inspected.returncode != 0 and "must embed PerMonitorV2" in inspected.stderr, inspected.stdout + inspected.stderr
+
 
 # Verified direct-distribution inputs share this registered Windows packaging suite.
 INPUTS = ROOT / 'packaging/msix/direct-delivery.json'

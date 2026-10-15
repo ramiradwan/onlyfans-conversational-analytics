@@ -34,17 +34,29 @@ try {
         $namespaces = [Xml.XmlNamespaceManager]::new($document.NameTable)
         $namespaces.AddNamespace('v3', 'urn:schemas-microsoft-com:asm.v3')
         $namespaces.AddNamespace('settings', 'http://schemas.microsoft.com/SMI/2016/WindowsSettings')
+        $namespaces.AddNamespace('legacySettings', 'http://schemas.microsoft.com/SMI/2005/WindowsSettings')
         $aware = $document.SelectNodes('//v3:application/v3:windowsSettings/settings:longPathAware', $namespaces)
         $privileges = $document.SelectNodes('//v3:requestedExecutionLevel', $namespaces)
         if ($aware.Count -ne 1 -or $aware[0].InnerText -cne 'true' -or $privileges.Count -ne 1 -or
             $privileges[0].GetAttribute('level') -cne 'asInvoker' -or $privileges[0].GetAttribute('uiAccess') -cne 'false') {
             throw 'Executable must embed longPathAware and ordinary asInvoker privileges'
         }
+        $isBridge = [IO.Path]::GetFileName($file).Equals('Bridge.exe', [StringComparison]::OrdinalIgnoreCase)
+        if ($isBridge) {
+            $dpi = $document.SelectNodes('//v3:application/v3:windowsSettings/settings:dpiAwareness', $namespaces)
+            $legacyDpi = $document.SelectNodes('//v3:application/v3:windowsSettings/legacySettings:dpiAware', $namespaces)
+            if ($dpi.Count -ne 1 -or $dpi[0].InnerText -cne 'PerMonitorV2' -or
+                $legacyDpi.Count -ne 1 -or $legacyDpi[0].InnerText -cne 'true/pm') {
+                throw 'Bridge must embed PerMonitorV2 DPI awareness and the per-monitor fallback'
+            }
+        }
         $hasher = [Security.Cryptography.SHA256]::Create()
         $stream = [IO.File]::OpenRead($output)
         try { $digest = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
         finally { $hasher.Dispose(); $stream.Dispose() }
-        $records.Add([ordered]@{ executable = [IO.Path]::GetFileName($file); embedded_manifest_sha256 = $digest; long_path_aware = $true; execution_level = 'asInvoker' })
+        $record = [ordered]@{ executable = [IO.Path]::GetFileName($file); embedded_manifest_sha256 = $digest; long_path_aware = $true; execution_level = 'asInvoker' }
+        if ($isBridge) { $record.dpi_awareness = 'PerMonitorV2'; $record.legacy_dpi_aware = 'true/pm' }
+        $records.Add($record)
     }
     [ordered]@{ schema = 'ofca-pe-manifests/v1'; executables = $records.ToArray() } | ConvertTo-Json -Depth 6
 } finally {
