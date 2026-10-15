@@ -1687,6 +1687,39 @@ def test_delayed_complete_webview_receipt_is_accepted_without_a_window(tmp_path:
             assert _run_silently(prefix / "unins000.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") == 0
 
 
+def test_silent_installer_observer_distinguishes_zero_area_from_foreground(tmp_path: Path) -> None:
+    # Unknown geometry, untitled presentation and any actual foreground window
+    # remain failures. A zero-area nonforeground window alone is not displayed.
+    record = visible_windows.DesktopWindow
+    assert record("STATIC", "", True, 1, "fixture.exe", (120, 80)).steals_focus()
+    assert record("STATIC", "Setup", True, 1, "fixture.exe").steals_focus()
+    assert record("STATIC", "", False, 1, "fixture.exe", (0, 0), True).steals_focus()
+
+    source = INSTALLER_SCRIPT.read_text(encoding="utf-8")
+    source = source.replace("  if SharedWebView2Available() then\n    exit;", "", 1)
+    source = source.replace("    and SharedWebView2Available() then", "    and False then", 1)
+    # Hold the real Inno fallback long enough to observe its native geometry.
+    # Only this fixture uses synchronous waiting; production silent setup does not.
+    source = source.replace("    WaitMode := ewNoWait;", "    WaitMode := ewWaitUntilTerminated;", 1)
+    installer = _compile_installer(
+        tmp_path, source, version="1.0.0-window-observation",
+        webview_prerequisite="param([string] $ResultPath)\nStart-Sleep -Milliseconds 1500\n"
+        "[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n",
+    )
+    prefix = tmp_path / "refused-prerequisite"
+    with visible_windows.recording_windows(
+        lambda window: visible_windows.is_inno_setup_image(window.process_image),
+        interval_seconds=0.01,
+    ) as observed:
+        assert _install_silently(installer, prefix) != 0
+    assert any(
+        window.class_name == "TWindowDisabler-Window" and window.visible and window.size == (0, 0)
+        for window in observed
+    ), "the actual zero-area Inno fallback must have been observed"
+    assert not [window for window in observed if window.steals_focus()]
+    assert not (prefix / "Bridge.exe").exists()
+
+
 class _NCryptKeyName(ctypes.Structure):
     _fields_ = [
         ("pszName", wintypes.LPWSTR),

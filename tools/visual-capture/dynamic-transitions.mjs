@@ -9,6 +9,7 @@ import { driveWorkspaceDetails } from './workspace-transitions.mjs';
 import { runCaptureJobs } from './capture-jobs.mjs';
 import { assertSetupTaskGeometry } from './task-copy.mjs';
 import { inspectSettingsFrames, settingsFixturePolicy } from './settings-stability.mjs';
+import { failureSummary } from './failure-summary.mjs';
 
 import { DYNAMIC_VIEWS, dynamicCases, dynamicSequence } from './dynamic-matrix.mjs';
 export { DYNAMIC_VIEWS } from './dynamic-matrix.mjs';
@@ -290,6 +291,7 @@ export async function captureDynamicTransitions(browser, base, outDir, only = DY
       finish?.({ outcome: failures.length ? 'failed' : 'passed', observations: transitions.map(({ id }) => id), files: [`transitions/${name}.json`] });
       await page.close();
       console.log(`transitions ${name}: ${transitions.length}, failures=${failures.length}`);
+      if (failures.length) console.log(`transition-failure-counts ${name}: ${JSON.stringify(failureSummary(errors, watcher.failures))}`);
   });
   assert.equal(reports.length, cases.length, 'Missing capture configuration');
   reports.sort((first, second) => first.file.localeCompare(second.file));

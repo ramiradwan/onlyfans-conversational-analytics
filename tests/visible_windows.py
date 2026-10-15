@@ -34,6 +34,10 @@ _IMAGE_PATH_CHARACTERS = 1024
 _TEXT_CHARACTERS = 512
 
 
+class _RECT(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_int32) for name in ("left", "top", "right", "bottom")]
+
+
 @dataclass(frozen=True)
 class DesktopWindow:
     class_name: str
@@ -41,11 +45,21 @@ class DesktopWindow:
     visible: bool
     process_id: int
     process_image: str
+    size: tuple[int, int] | None = None
+    foreground: bool = False
 
     def steals_focus(self) -> bool:
-        """A titled, visible top-level window is one a person would see."""
+        """Refuse a displayed window or an actual foreground takeover.
 
-        return self.visible and bool(self.title)
+        IsWindowVisible reports a style bit, including Inno's zero-area fallback
+        window. Unknown geometry stays fail-closed; no class-name exemption is
+        needed, and an untitled or zero-area foreground window is still refused.
+        """
+
+        return self.foreground or (
+            self.visible
+            and (self.size is None or (self.size[0] > 0 and self.size[1] > 0))
+        )
 
     def mentions(self, token: str) -> bool:
         """Report whether the title or the owning image names `token`."""
@@ -93,6 +107,11 @@ def sample_windows(
 
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    user32.GetWindowRect.argtypes = [_HWND, ctypes.POINTER(_RECT)]
+    user32.GetWindowRect.restype = _BOOL
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = _HWND
+    foreground = user32.GetForegroundWindow()
     enumerate_windows = ctypes.WINFUNCTYPE(_BOOL, _HWND, _LPARAM)
     cache = {} if image_cache is None else image_cache
     found: list[DesktopWindow] = []
@@ -106,12 +125,20 @@ def sample_windows(
         user32.GetClassNameW(window_handle, class_name, _TEXT_CHARACTERS)
         title = ctypes.create_unicode_buffer(_TEXT_CHARACTERS)
         user32.GetWindowTextW(window_handle, title, _TEXT_CHARACTERS)
+        bounds = _RECT()
+        size = (
+            (bounds.right - bounds.left, bounds.bottom - bounds.top)
+            if user32.GetWindowRect(window_handle, ctypes.byref(bounds))
+            else None
+        )
         window = DesktopWindow(
             class_name=class_name.value,
             title=title.value,
             visible=bool(user32.IsWindowVisible(window_handle)),
             process_id=process_id.value,
             process_image=cache[process_id.value],
+            size=size,
+            foreground=window_handle == foreground,
         )
         if window_predicate(window):
             found.append(window)
