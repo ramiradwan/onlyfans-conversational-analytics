@@ -265,6 +265,16 @@ def _seed_supported_qualification_work(tmp_path, monkeypatch):
     return fixture
 
 
+def test_qualification_fixture_import_does_not_construct_unconfigured_runtime_settings(tmp_path):
+    environment = os.environ.copy()
+    environment.update(LOCAL_ANALYTICS_DATA_DIR=str(tmp_path), ENVIRONMENT="production",
+                       WEBSOCKET_AUTH_MODE="local_session", LOCAL_SESSION_BOOTSTRAP_TOKEN="")
+    program = "import sys; import tools.startup_maintenance_qualification_fixture; assert 'app.core.config' not in sys.modules"
+    result = subprocess.run([sys.executable, "-c", program], cwd=APP.parent,
+                            env=environment, capture_output=True, timeout=15)
+    assert result.returncode == 0, "fixture import constructed an unconfigured runtime graph"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="real DPAPI qualification fixture")
 def test_qualification_fixture_pending_command_is_usable_by_the_real_expiry_worker(tmp_path, monkeypatch):
     from datetime import datetime, timezone

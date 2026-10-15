@@ -7,7 +7,7 @@ are admitted. No production data root can be selected.
 """
 from __future__ import annotations
 
-from contextlib import closing, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 from datetime import datetime, timezone
 import asyncio
 import hashlib
@@ -29,9 +29,7 @@ from app.persistence.migrations import InstallationMigrationLock, MigrationRunne
 from app.persistence.private_files import (reject_path_aliases, apply_private_directory_security,
                                           apply_private_file_security, private_file_identity, file_sha256)
 from app.persistence.signing_parameters import SigningParameterPersistence
-from app.persistence.repositories import SQLiteCommandRepository
 from app.protocol.common import MessageSendAction
-from app.provisioning.progress_reporting import _new_uuid7
 from app.services.command_execution import CommandDeliveryTarget, CommandService
 from app.security.local_data_key import database_key
 from app.security.signing_parameter_publications import (
@@ -41,6 +39,22 @@ from app.security.signing_parameter_publications import (
 REPOSITORY = Path(__file__).resolve().parents[1]
 FIXTURE_MARKER = ".qualification-upgrade-fixture.json"
 FIXTURE_SCHEMA = "ofca-installed-maintenance-fixture/v1"
+
+
+@contextmanager
+def fixture_configuration(root: Path):
+    """Load configured repository adapters only after this fixture has a config."""
+    assert (root / "runtime.env").is_file()
+    name = "LOCAL_ANALYTICS_DATA_DIR"
+    previous = os.environ.get(name)
+    os.environ[name] = str(root)
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
 
 
 def governed_root(root: Path) -> None:
@@ -101,11 +115,16 @@ def observe(root: Path) -> dict:
                 result["message_count"] = count
                 # Reconstruct through the actual read-only repository. A raw
                 # table digest alone does not prove retained work is usable.
-                commands = SQLiteCommandRepository(SimpleNamespace(read=lambda: nullcontext(connection))).list()
+                with fixture_configuration(root):
+                    from app.persistence.repositories import SQLiteCommandRepository
+                    commands = SQLiteCommandRepository(SimpleNamespace(read=lambda: nullcontext(connection))).list()
                 for command in commands:
                     MessageSendAction.model_validate(command.action)
                     assert command.idempotency_policy == "deduplicate"
-                result["commands"] = sha256(canonical([list(row) for row in connection.execute("SELECT * FROM commands")]))
+                result["commands"] = sha256(canonical({
+                    table: [list(row) for row in connection.execute("SELECT * FROM " + table + " ORDER BY rowid")]
+                    for table in ("commands", "command_transitions", "command_results", "command_result_receipts")
+                }))
         with path.open("rb") as handle:
             assert not handle.read(16).startswith(b"SQLite format 3")
     for filename in ("runtime.env", ".ofca-master-key.dpapi"):
@@ -131,6 +150,12 @@ def seed(root: Path, rows: int) -> None:
     assert 100 <= rows <= 500_000
     auth = AuthSQLite(root / "auth.sqlite3", encryption_key=database_key(root / "auth.sqlite3", "auth", create_if_missing=False))
     now = datetime.now(timezone.utc).isoformat()
+    with auth.read() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 32
+    initialize_production_configuration(bindings=VerifiedGrantBindings("synthetic-installation", "creator"),
+                                        extension_id="a" * 32, data_directory=root)
+    with fixture_configuration(root):
+        from app.provisioning.progress_reporting import _new_uuid7
     with auth.transaction() as connection:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 32
         connection.execute("""INSERT INTO onboarding_progress_outbox
@@ -144,8 +169,6 @@ def seed(root: Path, rows: int) -> None:
             (operation_type,authority_reference_id,endpoint,idempotency_key,request_body,request_digest,created_at)
             VALUES ('activate','synthetic-reference','https://qualification.example.test/activate',
                     'synthetic-idempotency',?,?,?)""", (body, sha256(body.encode()), now))
-    initialize_production_configuration(bindings=VerifiedGrantBindings("synthetic-installation", "creator"),
-                                        extension_id="a" * 32, data_directory=root)
     assert not (root / "canonical.sqlite3").exists()
     database = CanonicalSQLite(root / "canonical.sqlite3")
     with tempfile.TemporaryDirectory(prefix="ofca-canonical-v11-") as temporary:
@@ -174,6 +197,8 @@ def seed(root: Path, rows: int) -> None:
 
 async def seed_pending_command(database: CanonicalSQLite, *, now: datetime) -> None:
     """Use the real command boundary with a local delivery sink, never a socket."""
+    with fixture_configuration(database.path.parent):
+        from app.persistence.repositories import SQLiteCommandRepository
     sent = []
 
     async def capture(payload):
