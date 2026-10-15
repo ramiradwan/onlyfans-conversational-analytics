@@ -24,6 +24,14 @@ Offline prerequisite recovery also passed on an isolated Windows 11 25H2 clone u
 
 The real App Installer online route then passed on a separate Windows 11 25H2 clone with the same package and retained synthetic state. App Installer `1.26.509.0` recognized one missing mandatory `Microsoft.WebView2` dependency. Its diagnostic log records acquisition, verified bootstrapper hashes and successful external-dependency installation. The ordinary limited Install action required no operator-run runtime installer. App Installer installed a per-user `155.0.4283.45` runtime; the existing machine Edge updater concurrently restored that version too. The actual Launch button opened non-elevated Bridge/Brain, and the observed Bridge child used the signature-verified machine runtime. The read-only oracle preserved all 5,000 messages, usable pending work, original key/configuration and publication state. Quit ended both processes with exit zero in 480 ms. Temporary registration, trust and tasks were removed; the network was disconnected and the clone shut down cleanly. This qualifies local-file App Installer acquisition in that ordinary updater environment. It does not isolate ownership of every Microsoft download or establish customer-feed delivery, incompatible-runtime refusal or the native acquisition-page action.
 
+Native incompatibility passed in the reused 25H2 VM. Isolated `1.0.38.0` required `156.0.0.0` while the actual runtime remained `155.0.4283.45`, without overrides or downgrade. Update guidance appeared before Tauri or Brain; Cancel exited zero, and Check again kept startup refused.
+
+Get WebView2 closed Bridge and opened the approved Microsoft consumer page in the ordinary browser. That browser had no Product package identity, and forward `1.0.39.0` registered while it remained open, restoring the normal `134.0.3124.0` requirement. Stopped authority, key/configuration and WebView Local State stayed byte-identical through refusal, acquisition and registration.
+
+Ordinary Explorer activation then reached health and preserved the read-only 5,000-message/pending-work oracle. Quit ended both processes with exit zero in 534 ms. Both packages reuse frozen source `3891ce63` and passed strict signature/inventory verification under temporary qualification trust; cleanup removed registration, trust and tasks.
+
+This functional check used 2.5 GiB after host reserve checks refused larger allocations. It establishes neither the customer performance profile nor an obsolete Evergreen installation below the production floor.
+
 ## Approved inputs and release boundary
 
 The customer MSIX baseline is **Windows 11 25H2 or later, x64** (`10.0.26200.0`). Isolated qualification can exercise the selected feature floor at Windows 11 24H2 (`10.0.26100.0`). Minimum and tested versions are explicit profile inputs; the producer does not infer them from its host.
