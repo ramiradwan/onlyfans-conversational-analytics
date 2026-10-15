@@ -21,6 +21,7 @@ from app.persistence.database import LocalSQLite
 from app.persistence.managed_recovery import prune_managed_recovery_files
 from app.persistence.private_files import (
     PrivateFileSecurityError,
+    apply_private_directory_security,
     apply_private_file_security,
     private_file_identity,
     sync_directory,
@@ -495,7 +496,16 @@ class MigrationRunner:
         applied: dict[int, sqlite3.Row],
         target_version: int,
     ) -> Path:
-        self.backups_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.backups_dir.mkdir(parents=True)
+        except FileExistsError:
+            if not self.backups_dir.is_dir():
+                raise
+        else:
+            # An elevated token's default ACL can make this new runtime-owned
+            # container Administrator-only. Bind it to the effective user;
+            # existing containers remain outside creation-time hardening.
+            apply_private_directory_security(self.backups_dir)
         current_version = max(applied, default=0)
         created_at = datetime.now(timezone.utc)
         timestamp = created_at.strftime("%Y%m%dT%H%M%S%fZ")

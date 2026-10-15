@@ -878,20 +878,26 @@ impl Brain {
                 {
                     return Err("child_inspection_failed");
                 }
-                if code != 0 || !receipt.confirmed() {
-                    return Ok(false);
+                if code != 0 {
+                    return Err("servicing_child_exit_failed");
+                }
+                if !receipt.confirmed() {
+                    return Err("servicing_child_drain_unconfirmed");
                 }
                 if accounting.ActiveProcesses == 0 {
                     return Ok(true);
                 }
                 if std::time::Instant::now() >= deadline {
-                    return Ok(false);
+                    return Err("servicing_owned_processes_remain");
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
                 continue;
             }
-            if (closed && !receipt.confirmed()) || std::time::Instant::now() >= deadline {
-                return Ok(false);
+            if closed && !receipt.confirmed() {
+                return Err("servicing_child_drain_unconfirmed");
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("servicing_child_exit_timeout");
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }

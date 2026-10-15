@@ -268,18 +268,24 @@ fn run(
                             .parse()
                             .expect("fixed URL"),
                     );
-                    if brain.stop_for_servicing(
+                    let drained = brain.stop_for_servicing(
                         &mut receipt,
                         Duration::from_secs(90),
                         &state.quitting,
-                    ) == Ok(true)
-                        && !state.quitting.load(Ordering::SeqCst)
-                        && pending.commit().is_ok()
-                    {
-                        observe_servicing(&window, "committed");
-                        return Ok(true);
+                    );
+                    match drained {
+                        Ok(true) if !state.quitting.load(Ordering::SeqCst) => {
+                            match pending.commit() {
+                                Ok(()) => {
+                                    observe_servicing(&window, "committed");
+                                    return Ok(true);
+                                }
+                                Err(reason) => observe_servicing(&window, reason),
+                            }
+                        }
+                        Err(reason) => observe_servicing(&window, reason),
+                        _ => observe_servicing(&window, "servicing_cancelled"),
                     }
-                    observe_servicing(&window, "drain_or_commit_refused");
                     drop(pending);
                     unavailable(app, state);
                     // Retain the owned Brain and Job Object on refusal. A servicing

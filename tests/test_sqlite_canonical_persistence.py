@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -233,6 +234,29 @@ def test_migrations_are_idempotent_checksummed_and_backed_up(tmp_path: Path) -> 
     )
     with pytest.raises(MigrationChecksumError):
         runner.run()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows effective-user directory ownership")
+@pytest.mark.parametrize("existing", [False, True])
+def test_migration_backup_container_is_private_on_creation_and_preserves_existing_acl(tmp_path: Path, existing: bool) -> None:
+    import subprocess
+    from app.persistence.private_files import _windows_acl_is_owner_only
+
+    directory = tmp_path / "migration-backups"
+    if existing:
+        directory.mkdir()
+        before = subprocess.run(["icacls", str(directory)], check=True, capture_output=True, timeout=10).stdout
+    catalog = tmp_path / "catalog"
+    write_migration(catalog, "0001_initial.sql", "CREATE TABLE retained_value (id INTEGER PRIMARY KEY);")
+    runner = MigrationRunner(CanonicalSQLite(tmp_path / "canonical.sqlite3"), migrations_dir=catalog, backups_dir=directory)
+    assert runner.run() == [1]
+    assert runner.last_backup_path.is_file()
+    if existing:
+        assert subprocess.run(["icacls", str(directory)], check=True, capture_output=True, timeout=10).stdout == before
+    else:
+        # This checks the actual owner and DACL, including an elevated token's
+        # Administrators-default-owner case; a private backup file alone is insufficient.
+        assert _windows_acl_is_owner_only(directory)
 
 
 def test_failed_migration_rolls_back_and_can_be_recovered_on_restart(

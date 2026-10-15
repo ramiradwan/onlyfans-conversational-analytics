@@ -268,12 +268,32 @@ fn servicing_requires_drain_receipt_and_all_owned_processes_to_exit() {
     let good = b"{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":3,\"drained\":true}\n";
     let refused = b"{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":3,\"drained\":false}\n";
     for (tail, descendant, quitting, expected) in [
-        (good.as_slice(), false, false, Some(true)),
-        (refused.as_slice(), false, false, Some(false)),
-        (b"".as_slice(), false, false, Some(false)),
-        (b"invalid\n".as_slice(), false, false, None),
-        (good.as_slice(), true, false, Some(false)),
-        (good.as_slice(), false, true, Some(false)),
+        (good.as_slice(), false, false, Ok(true)),
+        (
+            refused.as_slice(),
+            false,
+            false,
+            Err("servicing_child_drain_unconfirmed"),
+        ),
+        (
+            b"".as_slice(),
+            false,
+            false,
+            Err("servicing_child_drain_unconfirmed"),
+        ),
+        (
+            b"invalid\n".as_slice(),
+            false,
+            false,
+            Err("runtime_shutdown_frame_invalid"),
+        ),
+        (
+            good.as_slice(),
+            true,
+            false,
+            Err("servicing_owned_processes_remain"),
+        ),
+        (good.as_slice(), false, true, Ok(false)),
     ] {
         let data = Directory::new();
         std::fs::write(data.0.join("servicing"), tail).unwrap();
@@ -296,7 +316,7 @@ fn servicing_requires_drain_receipt_and_all_owned_processes_to_exit() {
             Duration::from_millis(500),
             &AtomicBool::new(quitting),
         );
-        assert_eq!(result.ok(), expected);
+        assert_eq!(result, expected);
         if descendant {
             assert_eq!(child.exit_code().unwrap(), Some(0));
             assert!(child
