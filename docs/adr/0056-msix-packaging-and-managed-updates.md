@@ -41,6 +41,8 @@ The build owner validates, inventories and packs immutable contents. The protect
 
 ## Confirmation
 
+Controlled qualification has demonstrated ordinary non-elevated A activation, Close-to-hide, registered-source staging, authenticated native relaunch and a real two-store schema transition before B admission. The controller did not activate B. These locally trusted synthetic packages establish that specific installed servicing path; interrupted installed recovery, original hardware-key/pairing/license continuity and the customer distribution route still require their own evidence. The [package README](../../packaging/msix/README.md) records exact runtime coordinates and limits.
+
 The direct gate installs through ordinary signed HTTPS acquisition, completes setup, receives a genuine software/schema update through its registered source and proves continuity of data, Windows Hello, original keys, pairing, licenses and publication checkpoints. Include interruption, unavailable prerequisites, incompatible state, duplicate writers, uninstall/reinstall and irreversible deletion.
 
 Store readiness requires capability/certification review. Actual Store delivery requires its own authorized installation/update. Neither package construction nor direct evidence proves Store delivery. Production identity, hosting, Store submission and public cutover require the exact release inputs and approvals specified by the implementation plan.
