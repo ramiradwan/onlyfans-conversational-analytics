@@ -434,7 +434,9 @@ jobs:
   windows-platform-contract:
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
-    timeout-minutes: 20
+    # SDK producer contracts took 15m38s on a hosted runner. Leave bounded
+    # room for setup, production boot and all three persistence profiles.
+    timeout-minutes: 25
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
