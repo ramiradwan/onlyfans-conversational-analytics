@@ -46,14 +46,10 @@ impl Host {
     }
 }
 
-fn unavailable(app: &AppHandle, state: &Host) {
+fn unavailable(app: &AppHandle, state: &Host, reason: &'static str) {
     state.admitted.store(false, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.navigate(
-            "http://tauri.localhost/unavailable.html"
-                .parse()
-                .expect("fixed URL"),
-        );
+        let _ = window.navigate(policy::failure_document(reason).parse().expect("fixed URL"));
         let _ = window.show();
     }
 }
@@ -82,7 +78,7 @@ pub fn supervise(
             });
             return;
         }
-        Err(_) => unavailable(&app, &state),
+        Err(reason) => unavailable(&app, &state, reason),
         Ok(false) => (),
     }
     // Failure is stable until the user quits. App links never start a crash loop.
@@ -130,8 +126,8 @@ fn run(
             }
             let (bytes, closed) = brain.bootstrap_bytes()?;
             startup.receive(&bytes, Instant::now())?;
-            if brain.exit_code()?.is_some() {
-                return Err("child_start_failed");
+            if let Some(code) = brain.exit_code()? {
+                return Err(bootstrap::startup_exit_error(code));
             }
             if closed && !startup.ready() {
                 return Err("child_status_closed");
@@ -287,7 +283,7 @@ fn run(
                         _ => observe_servicing(&window, "servicing_cancelled"),
                     }
                     drop(pending);
-                    unavailable(app, state);
+                    unavailable(app, state, "servicing_failed");
                     // Retain the owned Brain and Job Object on refusal. A servicing
                     // deadline never becomes forced cleanup or normal admission.
                     while !state.quitting.load(Ordering::SeqCst) {

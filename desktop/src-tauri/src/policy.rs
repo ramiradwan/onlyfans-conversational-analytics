@@ -67,7 +67,17 @@ pub fn shell_document(url: &Url) -> bool {
         && url.password().is_none()
         && url.query().is_none()
         && url.fragment().is_none()
-        && matches!(url.path(), "/" | "/index.html" | "/unavailable.html")
+        && matches!(
+            url.path(),
+            "/" | "/index.html" | "/unavailable.html" | "/data-recovery.html"
+        )
+}
+
+pub fn failure_document(reason: &str) -> &'static str {
+    match reason {
+        "child_recovery_required" => "http://tauri.localhost/data-recovery.html",
+        _ => "http://tauri.localhost/unavailable.html",
+    }
 }
 
 pub fn window_controls(label: &str, url: &Url, admitted: bool, quitting: bool) -> bool {
@@ -404,7 +414,12 @@ mod tests {
     }
     #[test]
     fn window_controls_require_own_shell_or_live_local_admission() {
-        for path in ["/", "/index.html", "/unavailable.html"] {
+        for path in [
+            "/",
+            "/index.html",
+            "/unavailable.html",
+            "/data-recovery.html",
+        ] {
             let url = Url::parse(&format!("http://tauri.localhost{path}")).unwrap();
             assert!(window_controls("main", &url, false, false));
             assert!(!window_controls("other", &url, true, false));
@@ -415,6 +430,7 @@ mod tests {
         assert!(!window_controls("main", &local, false, false));
         for denied in [
             "http://tauri.localhost/unavailable.html?redirect=x",
+            "http://tauri.localhost/data-recovery.html?redirect=x",
             "http://tauri.localhost/other.html",
             "http://tauri.localhost:17871/",
             "http://user@tauri.localhost/",
@@ -428,6 +444,27 @@ mod tests {
                 true,
                 false
             ));
+        }
+    }
+
+    #[test]
+    fn recovery_guidance_is_a_fixed_unadmitted_shell_document() {
+        let recovery = Url::parse(failure_document("child_recovery_required")).unwrap();
+        assert_eq!(recovery.path(), "/data-recovery.html");
+        assert!(window_controls("main", &recovery, false, false));
+        assert!(!local_document(&recovery));
+        assert!(!window_controls("other", &recovery, false, false));
+        for reason in [
+            "child_start_failed",
+            "servicing_failed",
+            "port_conflict",
+            "http://attacker.example/",
+            "",
+        ] {
+            assert_eq!(
+                failure_document(reason),
+                "http://tauri.localhost/unavailable.html"
+            );
         }
     }
     #[test]

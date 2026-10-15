@@ -9,6 +9,16 @@ const FAST_SECONDS: u64 = 30;
 const ABSOLUTE_SECONDS: u64 = 900;
 const SILENCE_SECONDS: u64 = 15;
 
+/// The owned child may exit before its final status frame is read. This is
+/// failure classification only; an exit code never grants listener admission.
+pub fn startup_exit_error(code: u32) -> &'static str {
+    if code == 78 {
+        "child_recovery_required"
+    } else {
+        "child_start_failed"
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
 enum Phase {
@@ -355,5 +365,18 @@ mod tests {
         assert!(status
             .receive(&frame(3, "starting"), start + Duration::from_secs(1))
             .is_err());
+    }
+
+    #[test]
+    fn refusal_exit_and_status_frame_share_a_closed_recovery_outcome() {
+        let start = Instant::now();
+        let mut status = Supervisor::new(start);
+        status.receive(&frame(1, "starting"), start).unwrap();
+        let result = status.receive(b"{\"schema\":\"ofca-bootstrap-status/v1\",\"seq\":2,\"phase\":\"recovery-required\",\"reason\":\"maintenance\"}\n", start);
+        assert_eq!(result, Err(startup_exit_error(78)));
+        assert!(!status.ready());
+        for code in [0, 1, 75, u32::MAX] {
+            assert_eq!(startup_exit_error(code), "child_start_failed");
+        }
     }
 }

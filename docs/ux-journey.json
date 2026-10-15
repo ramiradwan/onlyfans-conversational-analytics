@@ -76,6 +76,14 @@
       "implementation": [
         "desktop/src-tauri/src/prerequisite.rs"
       ]
+    },
+    "desktop.runtime": {
+      "implementation": [
+        "desktop/src-tauri/src/host.rs",
+        "desktop/src-tauri/src/policy.rs",
+        "desktop/src-tauri/src/bootstrap.rs",
+        "desktop/shell/data-recovery.html"
+      ]
     }
   },
   "journeys": [
@@ -138,6 +146,11 @@
       "id": "native-startup-recovery",
       "entry_state": "desktop.installation_unavailable",
       "success_state": "desktop.setup_loading"
+    },
+    {
+      "id": "desktop-retained-data-recovery",
+      "entry_state": "desktop.retained_data_recovery",
+      "success_state": "desktop.passkey_sign_in"
     }
   ],
   "states": [
@@ -2618,6 +2631,38 @@
           "kind": "unit",
           "file": "desktop/src-tauri/tests/prerequisite.rs",
           "name": "real_native_startup_failure_identifies_data_access_and_installation_errors"
+        }
+      ]
+    },
+    {
+      "id": "desktop.retained_data_recovery",
+      "surface": "desktop.runtime",
+      "anchor": {
+        "file": "desktop/shell/data-recovery.html",
+        "text": "data-journey-state=\"desktop.retained_data_recovery\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.passkey_sign_in",
+          "by": "user",
+          "action": "Quit, restore access with a compatible approved app version, then reopen"
+        },
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "Reopen a provisioning installation with a compatible approved version"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/src/bootstrap.rs",
+          "name": "refusal_exit_and_status_frame_share_a_closed_recovery_outcome"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/src/policy.rs",
+          "name": "recovery_guidance_is_a_fixed_unadmitted_shell_document"
         }
       ]
     }
