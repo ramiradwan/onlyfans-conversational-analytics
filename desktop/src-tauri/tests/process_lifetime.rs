@@ -217,6 +217,40 @@ fn registered_legacy_source_requires_explicit_transition_but_qualification_stays
     );
     assert_eq!(std::fs::read_dir(&registered).unwrap().count(), 0);
 }
+
+#[test]
+fn known_production_families_use_windows_identity_derivation_and_absent_registration() {
+    let identities = deployment::production_package_identities().unwrap();
+    for (identity, family) in identities.iter().zip([
+        "Dipsy.OnlyFansConversationalAnalytics_bvmm2ppd090g2",
+        "Dipsy.ConversationAnalytics_nhwt8as2n81zj",
+    ]) {
+        assert_eq!(
+            windows::msix_family_name(&identity.name, &identity.publisher).unwrap(),
+            family
+        );
+    }
+    let mut nonce = [0u8; 8];
+    getrandom::fill(&mut nonce).unwrap();
+    let suffix: String = nonce.iter().map(|byte| format!("{byte:02x}")).collect();
+    let name = format!("OFCA.Qualification.Absent.{suffix}");
+    assert!(!windows::registered_msix_family(&name, "CN=OFCA MSIX Qualification Absent").unwrap());
+    assert!(windows::msix_family_name("invalid\0name", "CN=Absent").is_err());
+    let product = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap())
+        .join("OnlyFans Conversational Analytics");
+    assert!(policy::uses_customer_data_root(&product).unwrap());
+    assert!(!policy::uses_customer_data_root(&product.join("qualification")).unwrap());
+}
+
+#[test]
+#[ignore = "requires one explicitly owned registered qualification package"]
+fn actual_registered_qualification_family_is_detected_without_product_processes() {
+    let name = std::env::var("OFCA_OWNERSHIP_QUALIFICATION_NAME").unwrap();
+    let publisher = std::env::var("OFCA_OWNERSHIP_QUALIFICATION_PUBLISHER").unwrap();
+    assert!(name.starts_with("OFCA.Qualification."));
+    assert!(publisher.starts_with("CN=OFCA MSIX Qualification"));
+    assert!(windows::registered_msix_family(&name, &publisher).unwrap());
+}
 #[test]
 fn closing_the_owned_pipe_allows_graceful_shutdown() {
     let data = Directory::new();

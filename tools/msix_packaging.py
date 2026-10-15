@@ -154,6 +154,7 @@ def render_manifest(profile: dict) -> bytes:
         "@PACKAGE_VERSION@": package_version(profile["release_sequence"]),
         "@MINIMUM_OS@": profile["minimum_os_version"], "@TESTED_OS@": profile["maximum_os_version_tested"],
         "@WEBVIEW2_MINIMUM@": profile["webview2_minimum_version"],
+        "@WEBVIEW2_OPTIONAL@": "true" if profile["distribution"] == "direct-appinstaller" else "false",
     }
     root = ET.fromstring((CONFIG_ROOT / "AppxManifest.xml.in").read_bytes())
     for prefix, namespace in NAMESPACES.items():

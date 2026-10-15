@@ -25,7 +25,7 @@
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="@MINIMUM_OS@" MaxVersionTested="@TESTED_OS@" />
     <win32dependencies:ExternalDependency Name="Microsoft.WebView2"
       Publisher="CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
-      MinVersion="@WEBVIEW2_MINIMUM@" Optional="false" />
+      MinVersion="@WEBVIEW2_MINIMUM@" Optional="@WEBVIEW2_OPTIONAL@" />
   </Dependencies>
   <Resources><Resource Language="en-us" /></Resources>
   <Applications>

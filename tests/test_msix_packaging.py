@@ -24,6 +24,19 @@ MANIFEST_TOOL = SDK_ROOT / "bin/10.0.26100.0/x64/mt.exe"
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
 
 
+@pytest.mark.parametrize(("profile_name", "optional"), [
+    ("qualification-direct", "true"), ("production-direct", "true"),
+    ("qualification-store", "false"), ("production-store", "false"),
+])
+def test_dependency_policy_is_owned_by_distribution(profile_name, optional):
+    selected = msix.load_profile(ROOT / f"packaging/msix/profiles/{profile_name}.json")
+    manifest = ET.fromstring(msix.render_manifest(selected))
+    dependency = manifest.find(".//win32dependencies:ExternalDependency", msix.NAMESPACES)
+    assert dependency is not None
+    assert dependency.attrib["Optional"] == optional
+    assert dependency.attrib["MinVersion"] == selected["webview2_minimum_version"]
+
+
 def profile():
     return msix.load_profile(PROFILE_PATH)
 
@@ -386,15 +399,15 @@ def test_msix_does_not_hide_unsafe_input_when_it_selects_files(stage):
         installed_runtime_files(stage, "msix")
 
 
-def _prepared_and_sealed(stage, tmp_path):
+def _prepared_and_sealed(stage, tmp_path, profile_path=PROFILE_PATH):
     working = tmp_path / "msix-output"
-    msix.prepare_payload(stage, working, PROFILE_PATH)
+    msix.prepare_payload(stage, working, profile_path)
     result = subprocess.run([
         "powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "packaging/write-digests.ps1"),
         "-Directory", str(working / "payload/app"),
     ], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
-    msix.seal_payload(working, PROFILE_PATH, Path(sys.executable))
+    msix.seal_payload(working, profile_path, Path(sys.executable))
     return working
 
 
@@ -429,6 +442,38 @@ def test_archive_verifier_rejects_tampered_and_extra_payload(stage, tmp_path):
     write_package(extra=True)
     with pytest.raises(ValueError, match="extra or missing"):
         msix.verify_archive(package, working / "inventory.json", PROFILE_PATH)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows manifest policy verifier")
+@pytest.mark.parametrize("profile_name", ["qualification-direct", "qualification-store"])
+def test_dependency_policy_cannot_be_reversed_by_resealing_inventory(stage, tmp_path, profile_name):
+    profile_path = ROOT / f"packaging/msix/profiles/{profile_name}.json"
+    working = _prepared_and_sealed(stage, tmp_path, profile_path)
+    manifest_path = working / "payload/AppxManifest.xml"
+    manifest = ET.fromstring(manifest_path.read_bytes())
+    dependency = manifest.find(".//win32dependencies:ExternalDependency", msix.NAMESPACES)
+    dependency.set("Optional", "false" if dependency.attrib["Optional"] == "true" else "true")
+    manifest_path.write_bytes(ET.tostring(manifest, encoding="utf-8", xml_declaration=True))
+    inventory_path = working / "inventory.json"
+    inventory = json.loads(inventory_path.read_text())
+    record = next(entry for entry in inventory["files"] if entry["path"] == "AppxManifest.xml")
+    record.update(msix.file_record(manifest_path, "AppxManifest.xml"))
+    inventory_path.write_text(json.dumps(inventory))
+    package = tmp_path / "reversed-policy.msix"
+    with zipfile.ZipFile(package, "w") as archive:
+        for path in (working / "payload").rglob("*"):
+            if path.is_file():
+                archive.write(path, path.relative_to(working / "payload").as_posix())
+        archive.writestr("AppxBlockMap.xml", b"footprint-for-negative-test")
+        archive.writestr("[Content_Types].xml", b"footprint-for-negative-test")
+    with pytest.raises(ValueError, match="expected identity and policy"):
+        msix.verify_archive(package, inventory_path, profile_path)
+    result = subprocess.run([
+        "pwsh", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "packaging/verify-msix.ps1"),
+        "-Package", str(package), "-Inventory", str(inventory_path), "-PackageProfile", str(profile_path),
+        "-AllowQualification", "-VerificationMode", "StoreSubmission" if profile_name.endswith("store") else "DirectSigned",
+    ], capture_output=True, text=True, check=False)
+    assert result.returncode == 2 and "Manifest identity or policy differs" in result.stdout, result.stdout + result.stderr
 
 
 def test_appinstaller_has_one_fixed_update_owner_and_no_downgrade_policy():

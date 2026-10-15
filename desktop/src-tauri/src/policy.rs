@@ -148,6 +148,18 @@ pub(crate) fn safe_data_path(path: &Path) -> Result<PathBuf, &'static str> {
     Ok(resolved)
 }
 
+fn product_data_directory() -> Result<PathBuf, &'static str> {
+    Ok(
+        PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("data_directory_unavailable")?)
+            .join("OnlyFans Conversational Analytics"),
+    )
+}
+
+pub fn uses_customer_data_root(data: &Path) -> Result<bool, &'static str> {
+    let product = safe_data_path(&product_data_directory()?)?;
+    Ok(data.to_string_lossy().to_lowercase() == product.to_string_lossy().to_lowercase())
+}
+
 pub fn data_directory(image: &Path) -> Result<PathBuf, &'static str> {
     #[cfg(windows)]
     let release = crate::deployment::load(
@@ -159,9 +171,7 @@ pub fn data_directory(image: &Path) -> Result<PathBuf, &'static str> {
     )?;
     #[cfg(not(windows))]
     let release: Option<crate::deployment::DesktopRelease> = None;
-    let product =
-        PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("data_directory_unavailable")?)
-            .join("OnlyFans Conversational Analytics");
+    let product = product_data_directory()?;
     let path = if let Some(value) = std::env::var_os("LOCAL_ANALYTICS_DATA_DIR") {
         PathBuf::from(value)
     } else {

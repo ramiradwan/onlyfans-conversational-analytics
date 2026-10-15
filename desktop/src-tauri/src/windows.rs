@@ -115,6 +115,66 @@ pub fn current_sid() -> Result<Vec<u8>> {
     unsafe { process_sid(GetCurrentProcess()) }
 }
 
+pub fn msix_family_name(name: &str, publisher: &str) -> Result<String> {
+    use windows_sys::Win32::Storage::Packaging::Appx::{PackageFamilyNameFromId, PACKAGE_ID};
+    if name.is_empty() || publisher.is_empty() || name.contains('\0') || publisher.contains('\0') {
+        return Err("runtime_installation_conflict");
+    }
+    let mut name = wide(std::ffi::OsStr::new(name));
+    let mut publisher = wide(std::ffi::OsStr::new(publisher));
+    let identity = PACKAGE_ID {
+        name: name.as_mut_ptr(),
+        publisher: publisher.as_mut_ptr(),
+        ..Default::default()
+    };
+    let mut length = 0;
+    if unsafe { PackageFamilyNameFromId(&identity, &mut length, null_mut()) }
+        != ERROR_INSUFFICIENT_BUFFER
+        || !(2..=128).contains(&length)
+    {
+        return Err("runtime_installation_conflict");
+    }
+    let mut buffer = vec![0u16; length as usize];
+    if unsafe { PackageFamilyNameFromId(&identity, &mut length, buffer.as_mut_ptr()) }
+        != ERROR_SUCCESS
+        || length as usize > buffer.len()
+        || length < 2
+    {
+        return Err("runtime_installation_conflict");
+    }
+    buffer.truncate(length as usize);
+    if buffer.pop() != Some(0) || buffer.contains(&0) {
+        return Err("runtime_installation_conflict");
+    }
+    String::from_utf16(&buffer).map_err(|_| "runtime_installation_conflict")
+}
+
+/// Current-user registration lookup works even while the other channel is
+/// stopped. Only the bounded sizing query is needed; no package files or
+/// registration are opened, altered or removed.
+pub fn registered_msix_family(name: &str, publisher: &str) -> Result<bool> {
+    use windows_sys::Win32::Storage::Packaging::Appx::GetPackagesByPackageFamily;
+    let family = wide(std::ffi::OsStr::new(&msix_family_name(name, publisher)?));
+    let mut count = 0;
+    let mut length = 0;
+    let status = unsafe {
+        GetPackagesByPackageFamily(
+            family.as_ptr(),
+            &mut count,
+            null_mut(),
+            &mut length,
+            null_mut(),
+        )
+    };
+    match status {
+        ERROR_SUCCESS if count == 0 => Ok(false),
+        ERROR_INSUFFICIENT_BUFFER if count > 0 && count <= 64 && (2..=65536).contains(&length) => {
+            Ok(true)
+        }
+        _ => Err("runtime_installation_conflict"),
+    }
+}
+
 /// Read the one supported per-user Inno registration. No registration or
 /// executable is removed to make an installation start.
 pub fn legacy_registration() -> Result<Option<PathBuf>> {

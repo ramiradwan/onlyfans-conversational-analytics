@@ -135,6 +135,11 @@ fn main() {
         if !qualification {
             let registered = windows::legacy_registration()?;
             windows::validate_legacy_registration(&executable, registered.as_deref(), false)?;
+            deployment::validate_msix_coexistence(
+                release.as_ref(),
+                policy::uses_customer_data_root(&data)?,
+                windows::registered_msix_family,
+            )?;
         }
         let names = deployment::instance_names(&data, &windows::current_sid()?, release.as_ref())?;
         let ownership = windows::claim_runtime_root(&names, &executable)?;

@@ -62,6 +62,54 @@ pub struct Identity {
     pub architecture: String,
 }
 
+/// Compile the approved identities from the same profiles used by packaging.
+/// Package versions and executable paths do not identify a competing channel.
+pub fn production_package_identities() -> Result<Vec<Identity>, &'static str> {
+    #[derive(Deserialize)]
+    struct Profile {
+        purpose: String,
+        identity: Identity,
+    }
+    [
+        include_str!("../../../packaging/msix/profiles/production-direct.json"),
+        include_str!("../../../packaging/msix/profiles/production-store.json"),
+    ]
+    .iter()
+    .map(|bytes| {
+        let profile: Profile = serde_json::from_str(bytes).map_err(|_| "invalid_installation")?;
+        if profile.purpose != "production" {
+            return Err("invalid_installation");
+        }
+        Ok(profile.identity)
+    })
+    .collect()
+}
+
+/// Only customer-root launches can conflict with these registered channels.
+/// The caller supplies the OS query, never renderer input or a process list.
+pub fn validate_msix_coexistence(
+    release: Option<&DesktopRelease>,
+    customer_root: bool,
+    mut registered: impl FnMut(&str, &str) -> Result<bool, &'static str>,
+) -> Result<(), &'static str> {
+    if !customer_root || release.is_some_and(|r| r.purpose == "qualification") {
+        return Ok(());
+    }
+    for identity in production_package_identities()? {
+        if release.is_some_and(|r| {
+            r.identity.name == identity.name && r.identity.publisher == identity.publisher
+        }) {
+            continue;
+        }
+        if registered(&identity.name, &identity.publisher)
+            .map_err(|_| "runtime_installation_conflict")?
+        {
+            return Err("runtime_installation_conflict");
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DesktopRelease {
@@ -241,6 +289,63 @@ pub fn load(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn registered_other_msix_channel_requires_a_deliberate_transition() {
+        let identities = production_package_identities().unwrap();
+        assert_eq!(identities.len(), 2);
+        let mut release: DesktopRelease = serde_json::from_str(include_str!(
+            "../../../shared/desktop-release/qualification-direct.json"
+        ))
+        .unwrap();
+        release.purpose = "production".into();
+        for (own, other) in [(0, 1), (1, 0)] {
+            release.identity = identities[own].clone();
+            let mut queried = Vec::new();
+            assert_eq!(
+                validate_msix_coexistence(Some(&release), true, |name, publisher| {
+                    queried.push((name.to_owned(), publisher.to_owned()));
+                    Ok(true)
+                }),
+                Err("runtime_installation_conflict")
+            );
+            assert_eq!(
+                queried,
+                vec![(
+                    identities[other].name.clone(),
+                    identities[other].publisher.clone()
+                )]
+            );
+            assert!(validate_msix_coexistence(Some(&release), true, |_, _| Ok(false)).is_ok());
+        }
+        assert_eq!(
+            validate_msix_coexistence(None, true, |_, _| Ok(true)),
+            Err("runtime_installation_conflict")
+        );
+        assert!(validate_msix_coexistence(None, true, |_, _| Ok(false)).is_ok());
+    }
+
+    #[test]
+    fn isolated_roots_do_not_query_customer_installations_and_query_failure_refuses() {
+        let release: DesktopRelease = serde_json::from_str(include_str!(
+            "../../../shared/desktop-release/qualification-direct.json"
+        ))
+        .unwrap();
+        assert!(
+            validate_msix_coexistence(Some(&release), true, |_, _| panic!(
+                "isolated qualification queried customer packages"
+            ))
+            .is_ok()
+        );
+        assert!(validate_msix_coexistence(None, false, |_, _| panic!(
+            "external root queried customer packages"
+        ))
+        .is_ok());
+        assert_eq!(
+            validate_msix_coexistence(None, true, |_, _| Err("query_failed")),
+            Err("runtime_installation_conflict")
+        );
+    }
+
     #[test]
     fn activation_names_bind_root_user_and_delivery_but_not_package_version() {
         let mut release: DesktopRelease = serde_json::from_str(include_str!(

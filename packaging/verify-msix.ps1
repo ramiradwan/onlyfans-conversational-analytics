@@ -226,6 +226,7 @@ try {
             '@APPLICATION_ID@' = $identity.application_id; '@PACKAGE_VERSION@' = $packageVersion
             '@MINIMUM_OS@' = $profile.minimum_os_version; '@TESTED_OS@' = $profile.maximum_os_version_tested
             '@WEBVIEW2_MINIMUM@' = $profile.webview2_minimum_version
+            '@WEBVIEW2_OPTIONAL@' = $(if ($profile.distribution -ceq 'direct-appinstaller') { 'true' } else { 'false' })
         }
         foreach ($node in $template.SelectNodes('//@* | //text()')) {
             if ($substitutions.ContainsKey($node.Value)) { $node.Value = $substitutions[$node.Value] }
