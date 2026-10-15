@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright';
 import { startHarness } from './capture.mjs';
-import { inspectFrames, observeRegions, readWatcher, settleNativeWatcher } from './shift-watcher.mjs';
-import { drivePairingExpiry } from './workspace-transitions.mjs';
+import { inspectFrames, nativeBoundary, observeRegions, readWatcher, settleNativeWatcher } from './shift-watcher.mjs';
+import { drivePairingExpiry, openPairingFallback, waitForPairingOpenPresentation } from './workspace-transitions.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
 
 const require = createRequire(new URL('../../frontend/package.json', import.meta.url));
@@ -106,9 +106,7 @@ test('pairing expiry driver holds its boundary through slow native observation, 
     await page.getByRole('button', { name: 'Connection options', exact: true }).waitFor();
     await startPassive(page, ['settings-browser']);
     await page.clock.install({ time: new Date('2026-06-30T12:05:00Z') });
-    await page.getByRole('button', { name: 'Connection options', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Compare connection codes', exact: true }).click();
-    await page.clock.fastForward(250);
+    await openPairingFallback(page);
     const pin = await push(page, 'apiSample', 'pairing');
     const stages = [];
     const step = async (id, action) => {
@@ -133,6 +131,54 @@ test('pairing expiry driver holds its boundary through slow native observation, 
     const before = await page.evaluate(() => Date.now());
     await new Promise(resolve => setTimeout(resolve, 50));
     assert((await page.evaluate(() => Date.now())) > before, 'Later driver actions require a resumed clock');
+  } finally { await owner.close(); }
+});
+
+test('pairing driver completes the waiting presentation before a passive companion notice under delayed scheduling', async () => {
+  const owner = await context({ viewport: { width: 390, height: 844 }, colorScheme: 'dark', reducedMotion: 'reduce' });
+  const page = await owner.newPage();
+  try {
+    await page.addInitScript(() => {
+      const Channel = MessageChannel, nativeTask = setTimeout.bind(window);
+      window.MessageChannel = class extends Channel {
+        constructor() {
+          super();
+          const send = this.port2.postMessage.bind(this.port2);
+          this.port2.postMessage = (...args) => nativeTask(() => send(...args), 200);
+        }
+      };
+    });
+    await page.goto(`${harness.base}?workspace=settings&state=loading&transitions=1&mode=dark`);
+    await page.waitForFunction(() => window.__workspaceFixture);
+    await push(page, 'snapshot', 'fresh');
+    await push(page, 'connection', 'connected');
+    await page.waitForFunction(() => ['history.get', 'vault.get', 'pairing.pins'].every(key => window.__workspaceFixture.pending().includes(key)));
+    for (const key of await push(page, 'pending')) await push(page, 'release', key, 'fresh');
+    await push(page, 'desktopSnapshot', { allowed_actions: ['activation.review'] });
+    await page.getByRole('button', { name: 'Connection options', exact: true }).waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await startPassive(page, ['settings-browser', 'browser-feedback']);
+    await page.clock.install({ time: new Date('2026-06-30T12:05:00Z') });
+    await openPairingFallback(page);
+    const pin = await push(page, 'apiSample', 'pairing');
+    const expires_at = await page.evaluate(() => new Date(Date.now() + 300_000).toISOString());
+    await push(page, 'resolve', 'pairing.open', { ...pin, expires_at, state: 'open', version: 0, comparison_code: null, agent_identity_thumbprint: null });
+    await waitForPairingOpenPresentation(page);
+    await settleNativeWatcher(page);
+    const before = await nativeBoundary(page);
+    await push(page, 'companion', { creator_account_id: pin.creator_account_id, revision: 101, changed_at: expires_at });
+    // Observe both the notice and delayed work after it without resolving get().
+    await new Promise(resolve => setTimeout(resolve, 350));
+    await settleNativeWatcher(page);
+    const raw = await readWatcher(page);
+    const observed = raw.rawShifts.filter(shift => shift.at >= before.nativeAt);
+    const frames = raw.frames.slice(Math.max(0, before.frame - 1))
+      .map(frame => ({ ...frame, shifts: frame.shifts.filter(shift => shift.at >= before.nativeAt) }));
+    assert.deepEqual(observed, [], 'A passive notice cannot admit a delayed open-page layout change');
+    assert.deepEqual(inspectFrames(frames), []);
+    assert((await push(page, 'pending')).includes('pairing.get'));
+    assert(await page.getByText('Waiting for the browser extension to connect.', { exact: true }).isVisible());
+    await record(page, 'pairing-delayed-scheduler', { ...raw, passiveStart: before, observed, passiveFailures: inspectFrames(frames) });
   } finally { await owner.close(); }
 });
 
