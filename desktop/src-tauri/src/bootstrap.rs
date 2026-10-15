@@ -195,7 +195,19 @@ impl ShutdownReceipt {
         Ok(())
     }
     pub fn confirmed(&self) -> bool {
-        !self.invalid && self.bytes.is_empty() && self.drained == Some(true)
+        self.require_drained().is_ok()
+    }
+    pub fn require_drained(&self) -> Result<(), &'static str> {
+        if self.invalid {
+            return Err("runtime_shutdown_frame_invalid");
+        }
+        if !self.bytes.is_empty() || self.drained.is_none() {
+            return Err("servicing_child_drain_unconfirmed");
+        }
+        if self.drained == Some(false) {
+            return Err("servicing_child_owners_undrained");
+        }
+        Ok(())
     }
 }
 
@@ -215,12 +227,21 @@ mod tests {
             .unwrap();
         let mut receipt = startup.shutdown_receipt().unwrap();
         assert!(!receipt.confirmed());
+        assert_eq!(
+            receipt.require_drained(),
+            Err("servicing_child_drain_unconfirmed")
+        );
         for byte in include_bytes!("../../../shared/bootstrap-status/shutdown.ndjson") {
             receipt.receive(&[*byte]).unwrap();
         }
         assert!(receipt.confirmed());
+        assert_eq!(receipt.require_drained(), Ok(()));
         assert!(receipt.receive(b"\n").is_err());
         assert!(!receipt.confirmed());
+        assert_eq!(
+            receipt.require_drained(),
+            Err("runtime_shutdown_frame_invalid")
+        );
         assert!(receipt.receive(b"").is_err());
         for invalid in [
             "{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":5,\"drained\":true}\n",
@@ -237,6 +258,10 @@ mod tests {
             )
             .unwrap();
         assert!(!refused.confirmed());
+        assert_eq!(
+            refused.require_drained(),
+            Err("servicing_child_owners_undrained")
+        );
         assert!(startup
             .shutdown_receipt()
             .unwrap()

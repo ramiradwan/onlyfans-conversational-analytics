@@ -273,7 +273,7 @@ fn servicing_requires_drain_receipt_and_all_owned_processes_to_exit() {
             refused.as_slice(),
             false,
             false,
-            Err("servicing_child_drain_unconfirmed"),
+            Err("servicing_child_owners_undrained"),
         ),
         (
             b"".as_slice(),

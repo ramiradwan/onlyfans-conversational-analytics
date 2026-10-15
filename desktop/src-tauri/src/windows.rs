@@ -881,9 +881,7 @@ impl Brain {
                 if code != 0 {
                     return Err("servicing_child_exit_failed");
                 }
-                if !receipt.confirmed() {
-                    return Err("servicing_child_drain_unconfirmed");
-                }
+                receipt.require_drained()?;
                 if accounting.ActiveProcesses == 0 {
                     return Ok(true);
                 }
@@ -894,7 +892,7 @@ impl Brain {
                 continue;
             }
             if closed && !receipt.confirmed() {
-                return Err("servicing_child_drain_unconfirmed");
+                receipt.require_drained()?;
             }
             if std::time::Instant::now() >= deadline {
                 return Err("servicing_child_exit_timeout");
