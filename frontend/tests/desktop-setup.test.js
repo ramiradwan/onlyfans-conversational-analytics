@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runInNewContext } from 'node:vm';
 import { readFileSync } from 'node:fs';
 import generatedContract from '../onboarding/generated-contract.js?raw';
+import setupThemeInitializer from '../public/setup-theme-init.js?raw';
 import markup from '../onboarding/index.html?raw';
 import { DesktopSetupClient } from '../onboarding/client.js';
 import { snapshot } from '../onboarding/contract.js';
@@ -22,6 +23,18 @@ const initial = () => ({ profile: 'desktop-onboarding.v2', kind: 'snapshot', jou
 const response = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 const session = { role: 'desktop', stage: 'setup', generation, csrf_token: 'A'.repeat(43) };
 const storage = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }; };
+
+it('selects the saved setup theme before the entry module can paint', () => {
+  const earlyDocument = { documentElement: { dataset: {} } };
+  runInNewContext(setupThemeInitializer, {document: earlyDocument, localStorage: {getItem: () => 'dark'}});
+  expect(earlyDocument.documentElement.dataset.colorScheme).toBe('dark');
+  expect(markup.indexOf('src="/setup-theme-init.js"')).toBeGreaterThan(0);
+  expect(markup.indexOf('src="/setup-theme-init.js"')).toBeLessThan(markup.indexOf('type="module"'));
+  const denied = {document: {documentElement: {dataset: {}}}};
+  Object.defineProperty(denied, 'localStorage', {get: () => {throw new Error('denied');}});
+  expect(() => runInNewContext(setupThemeInitializer, denied)).not.toThrow();
+  expect(denied.document.documentElement.dataset.colorScheme).toBeUndefined();
+});
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.documentElement.removeAttribute('data-color-scheme'); });
 

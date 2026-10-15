@@ -8,6 +8,8 @@
 
 The shared onboarding construction, authentication-task handlers and typed source lifecycle remain within those modules. [ADR 0054](adr/0054-consolidate-onboarding-coordination.md) preserves their separate runtime authority and transport admission boundaries.
 
+The generated `frontend/public/setup-theme-init.js` belongs to `bridge-orchestration`. It runs the existing shared theme rule before onboarding's module entry, with no setup, browser or account authority. Its generator keeps the blocking script and module consumers on the same rule.
+
 The repository contains three runtime components and supporting release controls:
 
 - **Brain (`app/`)**: Local Python backend running on the creator's machine. It hosts the local HTTP and WebSocket endpoints, authenticates sessions, coordinates first-run provisioning, commits canonical conversation state to SQLite, and runs derived analytics. There is no standalone `brain/` directory.

@@ -753,6 +753,7 @@
         "frontend/browser-tasks/**",
         "frontend/setup-code/**",
         "frontend/shared-setup/**",
+        "frontend/public/setup-theme-init.js",
         "frontend/src/store/**",
         "frontend/src/services/**",
         "frontend/src/analytics/**",
