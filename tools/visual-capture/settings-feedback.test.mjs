@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright';
 import { startHarness } from './capture.mjs';
-import { inspectFrames, observeRegions, readWatcher } from './shift-watcher.mjs';
+import { inspectFrames, observeRegions, readWatcher, settleNativeWatcher } from './shift-watcher.mjs';
+import { drivePairingExpiry } from './workspace-transitions.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
 
 const require = createRequire(new URL('../../frontend/package.json', import.meta.url));
@@ -92,6 +93,48 @@ async function textFits(locator) {
     return node.scrollWidth <= node.clientWidth;
   });
 }
+
+test('pairing expiry driver holds its boundary through slow native observation, then expires explicitly', async () => {
+  const owner = await context({ viewport: { width: 1440, height: 900 }, colorScheme: 'light' });
+  const page = await owner.newPage();
+  try {
+    await settings(page, 'light', 1.25);
+    await push(page, 'desktopSnapshot', { allowed_actions: ['activation.review'] });
+    await push(page, 'refresh');
+    await settle(page);
+    for (const key of await push(page, 'pending')) await push(page, 'release', key, 'fresh');
+    await page.getByRole('button', { name: 'Connection options', exact: true }).waitFor();
+    await startPassive(page, ['settings-browser']);
+    await page.clock.install({ time: new Date('2026-06-30T12:05:00Z') });
+    await page.getByRole('button', { name: 'Connection options', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Compare connection codes', exact: true }).click();
+    await page.clock.fastForward(250);
+    const pin = await push(page, 'apiSample', 'pairing');
+    const stages = [];
+    const step = async (id, action) => {
+      await action();
+      await settleNativeWatcher(page);
+      if (id === 'pairing:before-expiry') {
+        const before = await page.evaluate(() => ({ date: Date.now(), native: window.__regionWatchControl.boundary().nativeAt }));
+        // Deliberately exceed the one-second expiry margin in real time.
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await settleNativeWatcher(page);
+        const after = await page.evaluate(() => ({ date: Date.now(), native: window.__regionWatchControl.boundary().nativeAt }));
+        assert(after.native - before.native >= 1500);
+        assert.equal(after.date, before.date, 'Driver latency must not advance the expiry state');
+        assert(await page.getByText('Waiting for the browser extension to connect.', { exact: true }).isVisible());
+        assert.equal(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).count(), 0);
+      }
+      stages.push(id);
+    };
+    await drivePairingExpiry(page, pin, (method, ...args) => push(page, method, ...args), step);
+    assert.deepEqual(stages, ['pairing:pending', 'pairing:before-expiry', 'pairing:expired']);
+    assert(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).isVisible());
+    const before = await page.evaluate(() => Date.now());
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert((await page.evaluate(() => Date.now())) > before, 'Later driver actions require a resumed clock');
+  } finally { await owner.close(); }
+});
 
 for (const [width, height, scale] of [[640, 480, 1], [390, 844, 1.25]])
 for (const mode of ['light', 'dark']) test(`compact Settings keeps passive browser feedback stable at ${width}x${height}/${scale} in ${mode}`, async () => {

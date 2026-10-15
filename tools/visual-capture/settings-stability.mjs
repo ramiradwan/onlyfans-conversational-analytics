@@ -57,6 +57,35 @@ export function settingsFailureSummary(observerErrors) {
   return { stages, unassigned: failureSummary([], remaining) };
 }
 
+// Locate an unassigned shift using only closed stage names. Exact timestamps,
+// layout sources and geometry remain in the private capture, never CI output.
+export function settingsUnassignedShiftSummary(attribution, transitions, auxiliary = []) {
+  const windows = [...transitions.map(window => ({ ...window, kind: 'transition' })),
+    ...auxiliary.map(window => ({ ...window, kind: 'fixture' }))]
+    .filter(window => Number.isFinite(window.before?.nativeAt) && Number.isFinite(window.after?.nativeAt))
+    .sort((a, b) => a.before.nativeAt - b.before.nativeAt);
+  const label = window => window && (window.kind === 'transition' ? known.has(window.id)
+    : fixtureContentChanges.has(window.id) || fixtureStable.has(window.id)) ? window.id : null;
+  const groups = new Map();
+  for (const entry of attribution ?? []) {
+    if (entry.classification !== 'unattributed') continue;
+    const at = entry.at;
+    const previous = windows.findLast(window => window.after.nativeAt <= at);
+    const next = windows.find(window => window.before.nativeAt >= at);
+    const owners = windows.filter(window => at > window.before.nativeAt && at < window.after.nativeAt);
+    const boundary = windows.some(window => at === window.before.nativeAt || at === window.after.nativeAt);
+    const position = !Number.isFinite(at) || !windows.length ? 'unknown' : boundary ? 'boundary'
+      : at < windows[0].before.nativeAt ? 'startup' : at > windows.at(-1).after.nativeAt ? 'tail'
+        : owners.length > 1 ? 'overlap' : 'gap';
+    const context = { position, after: label(previous), before: label(next) };
+    const key = JSON.stringify(context);
+    const group = groups.get(key) ?? { ...context, count: 0 };
+    group.count++;
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
 // Ordinary screenshots use the same task policy as the causal Settings matrix.
 // They must not treat initial owner responses or an explicit form opening as a
 // passive status update, or extend those windows into subsequent idle frames.

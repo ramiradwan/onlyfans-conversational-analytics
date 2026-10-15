@@ -2,6 +2,27 @@ import { publishActivation } from './desktop-decision-fixtures.mjs';
 import { waitForPairingResultPresentation } from './pairing-result-completion.mjs';
 
 const settle = (page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+
+export async function drivePairingExpiry(page, pin, push, step) {
+  const initialExpiry = await page.evaluate(() => new Date(Date.now() + 299_000).toISOString());
+  await step('pairing:pending', async () => {
+    await push('resolve', 'pairing.open', { ...pin, state: 'open', version: 0, comparison_code: null, agent_identity_thumbprint: null, expires_at: initialExpiry });
+    await page.getByText(/^Connection window expires in /).waitFor();
+  });
+  await step('pairing:before-expiry', async () => {
+    // Keep the existing one-second boundary deterministic while native frame
+    // observation continues. Real driver/render latency cannot consume it.
+    await page.clock.pauseAt(new Date(Date.parse(initialExpiry) - 1000));
+    await page.getByText('Waiting for the browser extension to connect.', { exact: true }).waitFor();
+  });
+  await step('pairing:expired', async () => {
+    const remaining = await page.evaluate(expiry => Date.parse(expiry) - Date.now(), initialExpiry);
+    await page.clock.fastForward(Math.max(0, remaining));
+    await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).waitFor();
+    await page.clock.resume();
+  });
+}
+
 export async function driveWorkspaceDetails(page, view, step, unseen) {
   const push = (method, ...args) => page.evaluate(({ method, args }) => window.__workspaceFixture[method](...args), { method, args });
   const sample = await push('sample');
@@ -163,20 +184,7 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
     await page.clock.fastForward(250);
   };
   await step('pairing:open', openPairingFallback);
-  const initialExpiry = await page.evaluate(() => new Date(Date.now() + 299_000).toISOString());
-  await step('pairing:pending', async () => {
-    await push('resolve', 'pairing.open', { ...pin, state: 'open', version: 0, comparison_code: null, agent_identity_thumbprint: null, expires_at: initialExpiry });
-    await page.getByText(/^Connection window expires in /).waitFor();
-  });
-  await step('pairing:before-expiry', async () => {
-    await page.clock.fastForward(298000);
-    await page.getByText('Waiting for the browser extension to connect.', { exact: true }).waitFor();
-  });
-  await step('pairing:expired', async () => {
-    const remaining = await page.evaluate(expiry => Date.parse(expiry) - Date.now(), initialExpiry);
-    await page.clock.fastForward(Math.max(0, remaining));
-    await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).waitFor();
-  });
+  await drivePairingExpiry(page, pin, push, step);
   let noticeRevision = 100;
   for (const outcome of ['declined', 'cancelled', 'confirmed', 'refused']) {
     // Independent outcomes start with a fresh settings component, while the

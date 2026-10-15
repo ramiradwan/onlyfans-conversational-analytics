@@ -8,7 +8,7 @@ import { installSurfaceFixture } from '../../extension/qualification/surface-run
 import { driveWorkspaceDetails } from './workspace-transitions.mjs';
 import { runCaptureJobs } from './capture-jobs.mjs';
 import { assertSetupTaskGeometry } from './task-copy.mjs';
-import { inspectSettingsFrames, settingsFixturePolicy, settingsFailureSummary } from './settings-stability.mjs';
+import { inspectSettingsFrames, settingsFixturePolicy, settingsFailureSummary, settingsUnassignedShiftSummary } from './settings-stability.mjs';
 import { failureSummary } from './failure-summary.mjs';
 
 import { DYNAMIC_VIEWS, dynamicCases, dynamicSequence } from './dynamic-matrix.mjs';
@@ -293,6 +293,7 @@ export async function captureDynamicTransitions(browser, base, outDir, only = DY
       console.log(`transitions ${name}: ${transitions.length}, failures=${failures.length}`);
       if (failures.length) console.log(`transition-failure-counts ${name}: ${JSON.stringify(failureSummary(errors, watcher.failures))}`);
       if (view === 'settings' && watcher.failures.length) console.log(`settings-failure-stages ${name}: ${JSON.stringify(settingsFailureSummary(watcher.failures))}`);
+      if (view === 'settings' && watcher.failures.length) console.log(`settings-shift-gaps ${name}: ${JSON.stringify(settingsUnassignedShiftSummary(watcher.shiftAttribution, transitions, auxiliary))}`);
   });
   assert.equal(reports.length, cases.length, 'Missing capture configuration');
   reports.sort((first, second) => first.file.localeCompare(second.file));

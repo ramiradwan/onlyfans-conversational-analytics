@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { inspectSettingsFrames, settingsGeometryPolicy, settingsFixturePolicy, ordinarySettingsTransition, settingsFailureSummary } from './settings-stability.mjs';
+import { inspectSettingsFrames, settingsGeometryPolicy, settingsFixturePolicy, ordinarySettingsTransition, settingsFailureSummary, settingsUnassignedShiftSummary } from './settings-stability.mjs';
 import { dynamicSequence } from './dynamic-matrix.mjs';
 
 const frame = (y = 0, overflow = false) => ({ regions: [{ id: 'settings', rect: [0, y, 300, 200], overflow }], shifts: [], errors: [] });
@@ -29,6 +29,30 @@ test('CI stage diagnostics partition failures without exposing browser data or i
     .flatMap(counts => Object.values(counts)).reduce((sum, count) => sum + count, 0);
   assert.equal(total, errors.length);
   assert.deepEqual(settingsFailureSummary([]).stages, []);
+});
+
+test('unassigned shift diagnostics distinguish clock fences without exposing private evidence', () => {
+  const privateValue = 'PRIVATE-CANARY-cookie=abc@example.test';
+  const transitions = [
+    { id: 'loading', before: { nativeAt: 10 }, after: { nativeAt: 20 } },
+    { id: 'history:acknowledgement:running', before: { nativeAt: 30 }, after: { nativeAt: 40 } },
+  ];
+  const entries = [5, 25, 25, 30, 45].map(at => ({ classification: 'unattributed', at, sources: [privateValue] }));
+  entries.push({ classification: 'content-transition', at: 15 });
+  const summary = settingsUnassignedShiftSummary(entries, transitions);
+  assert.deepEqual(summary, [
+    { position: 'startup', after: null, before: 'loading', count: 1 },
+    { position: 'gap', after: 'loading', before: 'history:acknowledgement:running', count: 2 },
+    { position: 'boundary', after: 'loading', before: 'history:acknowledgement:running', count: 1 },
+    { position: 'tail', after: 'history:acknowledgement:running', before: null, count: 1 },
+  ]);
+  const unknown = settingsUnassignedShiftSummary(entries, [
+    { id: privateValue, before: { nativeAt: 10 }, after: { nativeAt: 20 } },
+  ]);
+  assert.equal(JSON.stringify({ summary, unknown }).includes(privateValue), false);
+  assert.equal(JSON.stringify(summary).includes('sources'), false);
+  assert.equal(JSON.stringify(summary).includes('nativeAt'), false);
+  assert.deepEqual(settingsUnassignedShiftSummary([], transitions), []);
 });
 const trace = id => [{ id, before: { frame: 1, nativeAt: 10 }, after: { frame: 2, nativeAt: 20 } }];
 const inspect = (frames, transitions) => {
