@@ -75,6 +75,30 @@ def test_broken_status_reader_requests_cancellation():
         emitter.close()
 
 
+def test_shutdown_observation_is_one_bounded_tail_after_ready():
+    reader, writer = os.pipe()
+    stopped = threading.Event()
+    emitter = status.BootstrapStatus(writer, stopped)
+    try:
+        with pytest.raises(ValueError):
+            emitter.shutdown_complete(True)
+        for phase in ("starting", "checking", "checkpointing", "migrating", "validating", "ready-to-check-listener"):
+            emitter.emit(phase)
+        emitter.shutdown_complete(True)
+        with pytest.raises(ValueError):
+            emitter.shutdown_complete(True)
+        emitter.close()
+        frames = os.read(reader, status.MAX_TOTAL_BYTES).splitlines(keepends=True)
+        assert frames[-1] == (REPOSITORY / "shared/bootstrap-status/shutdown.ndjson").read_bytes()
+        jsonschema.validate(json.loads(frames[-1]), json.loads(
+            (REPOSITORY / "shared/bootstrap-status/shutdown.schema.json").read_text()))
+        assert len(frames[-1]) <= status.MAX_FRAME_BYTES
+        assert not stopped.is_set()
+    finally:
+        emitter.close()
+        os.close(reader)
+
+
 def test_invalid_status_handle_never_enters_application(monkeypatch):
     monkeypatch.setenv(status.HANDLE_ENV, "invalid")
     with pytest.raises(ValueError):

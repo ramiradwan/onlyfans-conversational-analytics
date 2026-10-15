@@ -818,6 +818,58 @@ impl Brain {
         self.status.take();
         self.wait_for_exit(timeout, &std::sync::atomic::AtomicBool::new(false))
     }
+    #[cfg(feature = "qualification-tools")]
+    #[allow(dead_code)] // The shipping coordinator must retain this owner on refusal.
+    pub fn stop_for_servicing(
+        &mut self,
+        receipt: &mut crate::bootstrap::ShutdownReceipt,
+        timeout: std::time::Duration,
+        quitting: &std::sync::atomic::AtomicBool,
+    ) -> Result<bool> {
+        use std::sync::atomic::Ordering;
+        self.lifetime.take();
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let (bytes, closed) = self.bootstrap_bytes()?;
+            receipt.receive(&bytes)?;
+            if quitting.load(Ordering::SeqCst) {
+                return Ok(false);
+            }
+            if let Some(code) = self.exit_code()? {
+                // The child can write its tail between the first read and exit.
+                let (bytes, _) = self.bootstrap_bytes()?;
+                receipt.receive(&bytes)?;
+                let mut accounting: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { zeroed() };
+                if unsafe {
+                    QueryInformationJobObject(
+                        self.job.0,
+                        JobObjectBasicAccountingInformation,
+                        &mut accounting as *mut _ as _,
+                        size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                        null_mut(),
+                    )
+                } == 0
+                {
+                    return Err("child_inspection_failed");
+                }
+                if code != 0 || !receipt.confirmed() {
+                    return Ok(false);
+                }
+                if accounting.ActiveProcesses == 0 {
+                    return Ok(true);
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Ok(false);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                continue;
+            }
+            if (closed && !receipt.confirmed()) || std::time::Instant::now() >= deadline {
+                return Ok(false);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
     pub fn stop(&mut self) -> bool {
         if matches!(
             self.stop_gracefully(std::time::Duration::from_secs(15)),

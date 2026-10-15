@@ -113,6 +113,19 @@ impl Supervisor {
     pub fn ready(&self) -> bool {
         self.phase == Phase::ReadyToCheckListener
     }
+    #[cfg(any(test, feature = "qualification-tools"))]
+    #[allow(dead_code)]
+    pub fn shutdown_receipt(&self) -> Result<ShutdownReceipt, &'static str> {
+        if !self.ready() || !self.buffer.is_empty() {
+            return Err("runtime_shutdown_not_ready");
+        }
+        Ok(ShutdownReceipt {
+            after_sequence: self.sequence,
+            bytes: Vec::new(),
+            drained: None,
+            invalid: false,
+        })
+    }
     pub fn check_deadline(&self, now: Instant) -> Result<(), &'static str> {
         let phase_seconds = match self.phase {
             Phase::Starting | Phase::ReadyToCheckListener | Phase::RecoveryRequired => FAST_SECONDS,
@@ -135,9 +148,107 @@ impl Supervisor {
     }
 }
 
+/// A single bounded child-owned tail, bound to the startup already admitted.
+#[cfg(any(test, feature = "qualification-tools"))]
+#[allow(dead_code)]
+pub struct ShutdownReceipt {
+    after_sequence: u32,
+    bytes: Vec<u8>,
+    drained: Option<bool>,
+    invalid: bool,
+}
+#[cfg(any(test, feature = "qualification-tools"))]
+#[allow(dead_code)]
+impl ShutdownReceipt {
+    pub fn receive(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
+        let result = self.receive_inner(bytes);
+        self.invalid |= result.is_err();
+        result
+    }
+    fn receive_inner(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Receipt {
+            schema: String,
+            after_seq: u32,
+            drained: bool,
+        }
+        if self.invalid {
+            return Err("runtime_shutdown_frame_invalid");
+        }
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        if self.drained.is_some() || self.bytes.len().saturating_add(bytes.len()) > MAX_FRAME_BYTES
+        {
+            return Err("runtime_shutdown_frame_invalid");
+        }
+        self.bytes.extend_from_slice(bytes);
+        if let Some(end) = self.bytes.iter().position(|byte| *byte == b'\n') {
+            if end != self.bytes.len() - 1 {
+                return Err("runtime_shutdown_frame_invalid");
+            }
+            let receipt: Receipt = serde_json::from_slice(&self.bytes[..end])
+                .map_err(|_| "runtime_shutdown_frame_invalid")?;
+            if receipt.schema != "ofca-runtime-shutdown/v1"
+                || receipt.after_seq != self.after_sequence
+            {
+                return Err("runtime_shutdown_frame_invalid");
+            }
+            self.drained = Some(receipt.drained);
+            self.bytes.clear();
+        }
+        Ok(())
+    }
+    pub fn confirmed(&self) -> bool {
+        !self.invalid && self.bytes.is_empty() && self.drained == Some(true)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shutdown_receipt_requires_one_closed_tail_from_the_admitted_startup() {
+        let now = Instant::now();
+        let mut startup = Supervisor::new(now);
+        assert!(startup.shutdown_receipt().is_err());
+        startup
+            .receive(
+                include_bytes!("../../../shared/bootstrap-status/happy.ndjson"),
+                now,
+            )
+            .unwrap();
+        let mut receipt = startup.shutdown_receipt().unwrap();
+        assert!(!receipt.confirmed());
+        for byte in include_bytes!("../../../shared/bootstrap-status/shutdown.ndjson") {
+            receipt.receive(&[*byte]).unwrap();
+        }
+        assert!(receipt.confirmed());
+        assert!(receipt.receive(b"\n").is_err());
+        assert!(!receipt.confirmed());
+        assert!(receipt.receive(b"").is_err());
+        for invalid in [
+            "{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":5,\"drained\":true}\n",
+            "{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":6,\"drained\":true,\"grant\":true}\n",
+            "{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":6,\"drained\":true,\"drained\":false}\n",
+            "{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":6,\"drained\":true}\n \n",
+        ] {
+            assert!(startup.shutdown_receipt().unwrap().receive(invalid.as_bytes()).is_err());
+        }
+        let mut refused = startup.shutdown_receipt().unwrap();
+        refused
+            .receive(
+                b"{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":6,\"drained\":false}\n",
+            )
+            .unwrap();
+        assert!(!refused.confirmed());
+        assert!(startup
+            .shutdown_receipt()
+            .unwrap()
+            .receive(&[b'x'; MAX_FRAME_BYTES + 1])
+            .is_err());
+    }
     #[test]
     fn owning_python_trace_has_no_listener_admission_authority() {
         let now = Instant::now();

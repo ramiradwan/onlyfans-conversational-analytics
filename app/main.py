@@ -222,6 +222,7 @@ if os.environ.get("LOCAL_PROVISIONING_HANDOFF_TOKEN") is not None:
 # -------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
+    app.state.runtime_shutdown_drained = False
     from app.core.lifecycle_receipts import start
     start()
     activate_runtime()
@@ -241,6 +242,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     global _grant_refresh
+    app.state.runtime_shutdown_drained = False
     from app.services.signing_parameters import stop_signing_parameters
     await stop_signing_parameters()
     if hasattr(app.state, "desktop_coordinator"):
@@ -261,6 +263,7 @@ async def shutdown_event():
     await broadcast.disconnect()
     from app.core.lifecycle_receipts import finish
     finish(drained)
+    app.state.runtime_shutdown_drained = bool(drained)
 
 # -------------------------------------------------
 # Health Check

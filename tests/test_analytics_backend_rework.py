@@ -851,6 +851,7 @@ async def test_app_shutdown_awaits_scheduler_and_logs_fixed_timeout(
     await main_module.shutdown_event()
 
     assert calls == ["transport", "scheduler", "broadcast"]
+    assert main_module.app.state.runtime_shutdown_drained is False
     assert "reason_code=analytics_projection_shutdown_timeout" in caplog.text
     assert "event_type=shutdown count=1" in caplog.text
     assert all(record.exc_info is None for record in caplog.records)

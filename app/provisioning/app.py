@@ -7,6 +7,7 @@ from app.provisioning.events import events
 def create_provisioning_app(*, completion_exit=None, shutdown_action=None):
     @asynccontextmanager
     async def lifecycle(application):
+        application.state.runtime_shutdown_drained = False
         coordinator = getattr(application.state, "desktop_coordinator", None)
         try:
             if coordinator is not None:
@@ -19,6 +20,7 @@ def create_provisioning_app(*, completion_exit=None, shutdown_action=None):
             finally:
                 if shutdown_action is not None:
                     await shutdown_action()
+            application.state.runtime_shutdown_drained = True
 
     application = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifecycle)
     application.state.completion_requested = False

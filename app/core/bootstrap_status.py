@@ -53,6 +53,7 @@ class BootstrapStatus:
         self.total_bytes = 0
         self.last_emitted = 0.0
         self.terminal = False
+        self.shutdown_emitted = False
 
     def emit(self, phase: str, reason: str | None = None) -> None:
         if (phase not in PHASES or self.terminal or (self.phase is not None and
@@ -85,6 +86,25 @@ class BootstrapStatus:
 
     def maintenance_phase(self, phase: str) -> None:
         self.emit("validating" if phase == "complete" else phase)
+
+    def shutdown_complete(self, drained: bool) -> None:
+        """One final observation after ready; it cannot grant startup admission."""
+        if (self.phase != "ready-to-check-listener" or self.shutdown_emitted
+                or type(drained) is not bool):
+            raise ValueError("runtime shutdown observation refused")
+        self.shutdown_emitted = True
+        if self.descriptor is None:
+            return
+        frame = (json.dumps({"schema": "ofca-runtime-shutdown/v1",
+            "after_seq": self.sequence, "drained": drained}, separators=(",", ":")) + "\n").encode("utf-8")
+        if len(frame) > MAX_FRAME_BYTES:
+            raise ValueError("runtime shutdown observation too large")
+        try:
+            if os.write(self.descriptor, frame) != len(frame):
+                self.stopped.set()
+        except OSError:
+            # Ordinary Quit may already have closed the parent's reader.
+            self.stopped.set()
 
     def close(self) -> None:
         if self.descriptor is not None:

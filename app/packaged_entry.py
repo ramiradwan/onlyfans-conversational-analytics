@@ -114,6 +114,32 @@ def supervised_server(configuration, application):
     return OwnedServer(configuration)
 
 
+class ObservedApplication:
+    """Observe ASGI lifecycle completion without changing domain shutdown owners."""
+
+    def __init__(self, application, status, stopped):
+        self.application, self.status, self.stopped = application, status, stopped
+        self.drained = False
+
+    async def __call__(self, scope, receive, send):
+        async def observed_send(message):
+            if message["type"] == "lifespan.startup.complete":
+                self.status.emit("ready-to-check-listener")
+                if self.stopped.is_set():
+                    await send({"type": "lifespan.startup.failed", "message": "startup_cancelled"})
+                    return
+            await send(message)
+            if message["type"] == "lifespan.shutdown.complete":
+                self.drained = getattr(self.application.state, "runtime_shutdown_drained", False) is True
+            elif message["type"] == "lifespan.shutdown.failed":
+                self.drained = False
+        try:
+            await self.application(scope, receive, observed_send if scope["type"] == "lifespan" else send)
+        except BaseException:
+            self.drained = False
+            raise
+
+
 def run_brain() -> int:
     """Run exactly one fixed-origin ASGI worker for the selected boot mode."""
     import threading
@@ -155,15 +181,7 @@ def run_brain() -> int:
         if stopped.is_set():
             return 1
 
-        async def observed_application(scope, receive, send):
-            async def observed_send(message):
-                if message["type"] == "lifespan.startup.complete":
-                    status.emit("ready-to-check-listener")
-                    if stopped.is_set():
-                        await send({"type": "lifespan.startup.failed", "message": "startup_cancelled"})
-                        return
-                await send(message)
-            await application(scope, receive, observed_send if scope["type"] == "lifespan" else send)
+        observed_application = ObservedApplication(application, status, stopped)
 
         configuration = uvicorn.Config(
             observed_application, host="127.0.0.1", port=17871, workers=1, access_log=False, lifespan="on",
@@ -173,6 +191,8 @@ def run_brain() -> int:
         if stopped.is_set():
             server.should_exit = True
         server.run()
+        if status.phase == "ready-to-check-listener":
+            status.shutdown_complete(observed_application.drained)
     return 75 if state.mode != "configured" and application.state.completion_requested else 0
 
 

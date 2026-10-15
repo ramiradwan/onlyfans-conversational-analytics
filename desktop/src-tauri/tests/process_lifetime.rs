@@ -260,6 +260,58 @@ fn servicing_deadline_preserves_containment_and_requires_actual_child_exit() {
 }
 
 #[test]
+fn servicing_requires_drain_receipt_and_all_owned_processes_to_exit() {
+    use std::sync::atomic::AtomicBool;
+    let image = Path::new(env!("CARGO_BIN_EXE_brain-fixture"))
+        .canonicalize()
+        .unwrap();
+    let good = b"{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":3,\"drained\":true}\n";
+    let refused = b"{\"schema\":\"ofca-runtime-shutdown/v1\",\"after_seq\":3,\"drained\":false}\n";
+    for (tail, descendant, quitting, expected) in [
+        (good.as_slice(), false, false, Some(true)),
+        (refused.as_slice(), false, false, Some(false)),
+        (b"".as_slice(), false, false, Some(false)),
+        (b"invalid\n".as_slice(), false, false, None),
+        (good.as_slice(), true, false, Some(false)),
+        (good.as_slice(), false, true, Some(false)),
+    ] {
+        let data = Directory::new();
+        std::fs::write(data.0.join("servicing"), tail).unwrap();
+        if descendant {
+            std::fs::write(data.0.join("spawn-descendant"), b"owned child").unwrap();
+        }
+        let mut child = windows::Brain::start(&image, &data.0, "test-lifetime").unwrap();
+        assert_eq!(started(&data.0), child.pid);
+        let mut startup = bootstrap::Supervisor::new(Instant::now());
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !startup.ready() {
+            let (bytes, _) = child.bootstrap_bytes().unwrap();
+            startup.receive(&bytes, Instant::now()).unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut receipt = startup.shutdown_receipt().unwrap();
+        let result = child.stop_for_servicing(
+            &mut receipt,
+            Duration::from_millis(500),
+            &AtomicBool::new(quitting),
+        );
+        assert_eq!(result.ok(), expected);
+        if descendant {
+            assert_eq!(child.exit_code().unwrap(), Some(0));
+            assert!(child
+                .stop_for_servicing(
+                    &mut receipt,
+                    Duration::from_secs(2),
+                    &AtomicBool::new(false)
+                )
+                .unwrap());
+        }
+        child.stop();
+    }
+}
+
+#[test]
 fn child_status_is_separate_from_lifetime_and_never_admits_a_listener() {
     let data = Directory::new();
     let image = Path::new(env!("CARGO_BIN_EXE_brain-fixture"))
@@ -294,7 +346,13 @@ fn child_status_is_separate_from_lifetime_and_never_admits_a_listener() {
 #[test]
 #[ignore = "requires a newly built frozen Brain supplied by BRAIN_QUALIFICATION_IMAGE"]
 fn frozen_brain_uses_native_status_installer_signal_and_graceful_parent_shutdown() {
-    qualify_frozen_startup(None);
+    qualify_frozen_startup(None, false);
+}
+
+#[test]
+#[ignore = "requires a newly frozen Brain with the runtime shutdown observation"]
+fn frozen_brain_reports_owned_drain_before_servicing_exit() {
+    qualify_frozen_startup(None, true);
 }
 
 #[test]
@@ -325,7 +383,7 @@ fn frozen_a_to_b_migrates_before_admission_and_reopens_original_protected_key() 
     };
     assert_eq!(count(&older), 32);
     assert_eq!(count(&newer), 33);
-    qualify_frozen_startup(Some(&older));
+    qualify_frozen_startup(Some(&older), false);
 }
 
 fn retained_fixture(operation: &str, data: &Path, rows: Option<usize>) -> serde_json::Value {
@@ -888,7 +946,7 @@ fn frozen_recovery_preserves_pending_work_and_newer_publication_without_restore(
     }
 }
 
-fn qualify_frozen_startup(older: Option<&Path>) {
+fn qualify_frozen_startup(older: Option<&Path>, servicing: bool) {
     let image = PathBuf::from(
         std::env::var_os("BRAIN_QUALIFICATION_IMAGE").expect("explicit frozen artifact required"),
     )
@@ -979,10 +1037,25 @@ fn qualify_frozen_startup(older: Option<&Path>) {
         } else {
             original_key = Some(key);
         }
-        assert!(
-            child.stop(),
-            "healthy frozen maintenance used forced Job cleanup"
-        );
+        if servicing {
+            let mut receipt = observation.shutdown_receipt().unwrap();
+            assert!(
+                child
+                    .stop_for_servicing(
+                        &mut receipt,
+                        Duration::from_secs(15),
+                        &std::sync::atomic::AtomicBool::new(false)
+                    )
+                    .unwrap(),
+                "frozen child did not prove drained owners and actual process exit"
+            );
+            assert!(receipt.confirmed());
+        } else {
+            assert!(
+                child.stop(),
+                "healthy frozen maintenance used forced Job cleanup"
+            );
+        }
         assert_eq!(child.exit_code().unwrap(), Some(0));
         assert!(windows::listeners().unwrap().is_empty());
     }
