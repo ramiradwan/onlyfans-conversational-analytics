@@ -113,8 +113,6 @@ impl Supervisor {
     pub fn ready(&self) -> bool {
         self.phase == Phase::ReadyToCheckListener
     }
-    #[cfg(any(test, feature = "qualification-tools"))]
-    #[allow(dead_code)]
     pub fn shutdown_receipt(&self) -> Result<ShutdownReceipt, &'static str> {
         if !self.ready() || !self.buffer.is_empty() {
             return Err("runtime_shutdown_not_ready");
@@ -149,16 +147,12 @@ impl Supervisor {
 }
 
 /// A single bounded child-owned tail, bound to the startup already admitted.
-#[cfg(any(test, feature = "qualification-tools"))]
-#[allow(dead_code)]
 pub struct ShutdownReceipt {
     after_sequence: u32,
     bytes: Vec<u8>,
     drained: Option<bool>,
     invalid: bool,
 }
-#[cfg(any(test, feature = "qualification-tools"))]
-#[allow(dead_code)]
 impl ShutdownReceipt {
     pub fn receive(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
         let result = self.receive_inner(bytes);

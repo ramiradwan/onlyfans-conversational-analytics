@@ -235,10 +235,11 @@ pub fn show_failure(reason: &'static str) {
     }
     use windows_sys::Win32::UI::{Controls::*, WindowsAndMessaging::*};
     let (heading, message) = match reason {
-        "data_directory_unavailable" | "invalid_data_directory" => (
+        "data_directory_unavailable" | "invalid_data_directory" | "servicing_storage_invalid" | "servicing_intent_invalid" => (
             "Your data folder is unavailable",
             "Close Conversation Analytics and ask your administrator to check your data folder's permissions and location. Keep your existing data and keys. After access is restored, reopen the app.",
         ),
+        "servicing_pending" => ("Finishing the update", "Conversation Analytics is finishing an update. Wait a moment, then open it again from the Start menu. Keep your existing data and keys."),
         "webview_acquisition_unavailable" => ("WebView2 could not be acquired", "Microsoft's download page could not be opened. Use your browser to get Microsoft Edge WebView2 from Microsoft's website, or ask your administrator. After installation, open Conversation Analytics again."),
         "webview_recovery_unavailable" => ("WebView2 recovery is unavailable", "Conversation Analytics could not open its WebView2 recovery window. Get Microsoft Edge WebView2 from Microsoft's website or ask your administrator, then open the app again."),
         _ => ("This installation could not be verified", "Conversation Analytics could not verify this installation. Repair or reinstall the app from its approved source, or contact your administrator."),

@@ -75,7 +75,7 @@ pub fn window_controls(label: &str, url: &Url, admitted: bool, quitting: bool) -
 }
 
 /// Noncreating resolution: aliases and installation containment fail before writes.
-fn safe_data_path(path: &Path) -> Result<PathBuf, &'static str> {
+pub(crate) fn safe_data_path(path: &Path) -> Result<PathBuf, &'static str> {
     use std::path::Component;
     if !path.is_absolute() {
         return Err("invalid_data_directory");

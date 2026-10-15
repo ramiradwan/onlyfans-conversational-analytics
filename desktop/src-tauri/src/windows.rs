@@ -48,7 +48,7 @@ fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
 }
 
-fn process_sid(process: HANDLE) -> Result<Vec<u8>> {
+pub(crate) fn process_sid(process: HANDLE) -> Result<Vec<u8>> {
     unsafe {
         let mut raw = null_mut();
         if OpenProcessToken(process, TOKEN_QUERY, &mut raw) == 0 {
@@ -395,7 +395,7 @@ pub fn package_identity() -> Result<Option<crate::deployment::PackageIdentity>> 
     }
 }
 
-fn process_image(process: HANDLE) -> Result<PathBuf> {
+pub(crate) fn process_image(process: HANDLE) -> Result<PathBuf> {
     let mut path = vec![0u16; 32768];
     let mut size = path.len() as u32;
     if unsafe { QueryFullProcessImageNameW(process, 0, path.as_mut_ptr(), &mut size) } == 0 {
@@ -818,8 +818,6 @@ impl Brain {
         self.status.take();
         self.wait_for_exit(timeout, &std::sync::atomic::AtomicBool::new(false))
     }
-    #[cfg(feature = "qualification-tools")]
-    #[allow(dead_code)] // The shipping coordinator must retain this owner on refusal.
     pub fn stop_for_servicing(
         &mut self,
         receipt: &mut crate::bootstrap::ShutdownReceipt,

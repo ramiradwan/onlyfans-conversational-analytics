@@ -8,7 +8,7 @@ use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{Receiver, SyncSender},
-        Arc,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -17,6 +17,7 @@ use tauri::{AppHandle, Manager};
 pub enum Action {
     Activate(Option<String>),
     RefreshPresentation(String, SyncSender<Result<String, &'static str>>),
+    Prepared(Result<crate::servicing::PreparedUpdate, &'static str>),
     Quit,
 }
 pub struct Host {
@@ -24,6 +25,7 @@ pub struct Host {
     pub stopped: AtomicBool,
     pub quitting: AtomicBool,
     pub update_check_active: AtomicBool,
+    pub servicing_cancel: Mutex<Option<crate::servicing_handoff::Cancellation>>,
     pub release: Option<crate::deployment::DesktopRelease>,
     pub actions: SyncSender<Action>,
 }
@@ -31,6 +33,14 @@ pub struct Host {
 impl Host {
     pub fn quit(&self) {
         self.quitting.store(true, Ordering::SeqCst);
+        if let Some(cancel) = self
+            .servicing_cancel
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+        {
+            cancel.signal();
+        }
         self.admitted.store(false, Ordering::SeqCst);
         let _ = self.actions.try_send(Action::Quit);
     }
@@ -56,8 +66,18 @@ pub fn supervise(
     image: PathBuf,
     data: PathBuf,
 ) {
-    if run(&app, &state, &receiver, journey, &image, &data).is_err() {
-        unavailable(&app, &state);
+    match run(&app, &state, &receiver, journey, &image, &data) {
+        Ok(true) => {
+            state.stopped.store(true, Ordering::SeqCst);
+            app.exit(if state.quitting.load(Ordering::SeqCst) {
+                0
+            } else {
+                crate::handoff_contract::EXIT_FOR_SERVICING as i32
+            });
+            return;
+        }
+        Err(_) => unavailable(&app, &state),
+        Ok(false) => (),
     }
     // Failure is stable until the user quits. App links never start a crash loop.
     while !state.quitting.load(Ordering::SeqCst) {
@@ -74,17 +94,17 @@ pub fn supervise(
 
 fn run(
     app: &AppHandle,
-    state: &Host,
+    state: &Arc<Host>,
     receiver: &Receiver<Action>,
     mut journey: Option<String>,
     image: &std::path::Path,
     data: &std::path::Path,
-) -> Result<(), &'static str> {
+) -> Result<bool, &'static str> {
     let sid = windows::current_sid()?;
     let mut restart = RestartPolicy::default();
     loop {
         if state.quitting.load(Ordering::SeqCst) {
-            return Ok(());
+            return Ok(false);
         }
         // Repeat on replacement too: never adopt or terminate a stranger.
         if !windows::listeners()?.is_empty() {
@@ -100,7 +120,7 @@ fn run(
         loop {
             if state.quitting.load(Ordering::SeqCst) {
                 brain.stop();
-                return Ok(());
+                return Ok(false);
             }
             let (bytes, closed) = brain.bootstrap_bytes()?;
             startup.receive(&bytes, Instant::now())?;
@@ -126,14 +146,16 @@ fn run(
             return Err("child_unavailable");
         }
         state.admitted.store(true, Ordering::SeqCst);
+        crate::servicing_handoff::admitted(data)?;
         let window = app.get_webview_window("main").ok_or("window_unavailable")?;
         window.navigate(target).map_err(|_| "window_unavailable")?;
+        let mut next_check = Instant::now() + Duration::from_secs(15);
         loop {
             if state.quitting.load(Ordering::SeqCst) {
                 restart.quit();
                 state.admitted.store(false, Ordering::SeqCst);
                 brain.stop();
-                return Ok(());
+                return Ok(false);
             }
             let mut exit = brain.exit_code()?;
             if exit.is_none() {
@@ -155,7 +177,7 @@ fn run(
                     if state.quitting.load(Ordering::SeqCst) {
                         restart.quit();
                         brain.stop();
-                        return Ok(());
+                        return Ok(false);
                     }
                     if exit.is_none() {
                         return Err(listener.err().unwrap_or("listener_lost"));
@@ -176,7 +198,77 @@ fn run(
                 }
                 return Err("child_stopped");
             }
+            if Instant::now() >= next_check {
+                next_check = Instant::now()
+                    + if prepare_update(state) {
+                        Duration::from_secs(6 * 60 * 60)
+                    } else {
+                        Duration::from_secs(10)
+                    };
+            }
             match receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(Action::Prepared(Ok(update))) => {
+                    let Some(release) = state.release.as_ref() else {
+                        continue;
+                    };
+                    if state.quitting.load(Ordering::SeqCst) {
+                        continue;
+                    }
+                    let cancel = match crate::servicing_handoff::Cancellation::new() {
+                        Ok(value) => value,
+                        Err(_) => continue,
+                    };
+                    {
+                        let mut signal = state
+                            .servicing_cancel
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner());
+                        if state.quitting.load(Ordering::SeqCst) {
+                            continue;
+                        }
+                        *signal = Some(cancel.clone());
+                    }
+                    let mut receipt = match startup.shutdown_receipt() {
+                        Ok(value) => value,
+                        Err(_) => continue,
+                    };
+                    let mut pending =
+                        match crate::servicing_handoff::start(data, release, &update, cancel) {
+                            Ok(value) => value,
+                            Err(_) => continue,
+                        };
+                    state.admitted.store(false, Ordering::SeqCst);
+                    let _ = window.navigate(
+                        "http://tauri.localhost/index.html"
+                            .parse()
+                            .expect("fixed URL"),
+                    );
+                    if brain.stop_for_servicing(
+                        &mut receipt,
+                        Duration::from_secs(90),
+                        &state.quitting,
+                    ) == Ok(true)
+                        && !state.quitting.load(Ordering::SeqCst)
+                        && pending.commit().is_ok()
+                    {
+                        return Ok(true);
+                    }
+                    drop(pending);
+                    unavailable(app, state);
+                    // Retain the owned Brain and Job Object on refusal. A servicing
+                    // deadline never becomes forced cleanup or normal admission.
+                    while !state.quitting.load(Ordering::SeqCst) {
+                        if matches!(
+                            receiver.recv_timeout(Duration::from_millis(100)),
+                            Ok(Action::Quit) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+                        ) {
+                            state.quit();
+                        }
+                    }
+                    brain.stop();
+                    return Ok(false);
+                }
+                Ok(Action::Prepared(Err(_))) => (),
                 Ok(Action::RefreshPresentation(generation, reply)) => {
                     let result = if state.admitted.load(Ordering::SeqCst) {
                         admission::refresh(&secret, &generation)
@@ -213,4 +305,37 @@ fn run(
             }
         }
     }
+}
+
+fn prepare_update(state: &Arc<Host>) -> bool {
+    let Some(release) = state
+        .release
+        .as_ref()
+        .filter(|value| value.update_owner == "direct-appinstaller")
+    else {
+        return true;
+    };
+    if state
+        .update_check_active
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return false;
+    }
+    struct Check(Arc<Host>);
+    impl Drop for Check {
+        fn drop(&mut self) {
+            self.0.update_check_active.store(false, Ordering::SeqCst);
+        }
+    }
+    let owner = state.clone();
+    let release = release.clone();
+    std::thread::spawn(move || {
+        let _check = Check(owner.clone());
+        let result = crate::servicing::prepare_direct(&release, || {
+            owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
+        });
+        let _ = owner.actions.try_send(Action::Prepared(result));
+    });
+    true
 }

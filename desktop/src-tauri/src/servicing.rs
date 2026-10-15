@@ -591,15 +591,7 @@ impl Drop for Apartment {
 #[cfg(windows)]
 fn observe(
 ) -> windows_runtime::core::Result<(windows_runtime::ApplicationModel::Package, Observation)> {
-    use windows_runtime::{
-        ApplicationModel::{IPackageStatics, Package, PackageSignatureKind},
-        System::ProcessorArchitecture,
-    };
-    use windows_sys::Win32::Storage::Packaging::Appx::{
-        GetStagedPackageOrigin, PackageOrigin_DeveloperSigned as ORIGIN_DEVELOPER_SIGNED,
-        PackageOrigin_LineOfBusiness as ORIGIN_LINE_OF_BUSINESS,
-        PackageOrigin_Store as ORIGIN_STORE,
-    };
+    use windows_runtime::ApplicationModel::{IPackageStatics, Package};
     let factory: IPackageStatics = unsafe {
         windows_runtime::Win32::System::WinRT::RoGetActivationFactory(
             &windows_runtime::core::HSTRING::from("Windows.ApplicationModel.Package"),
@@ -609,6 +601,35 @@ fn observe(
     let mut pointer = std::ptr::null_mut();
     let code = unsafe { (factory.vtable().Current)(factory.as_raw(), &mut pointer) };
     let package: Package = owned_result(code, pointer)?;
+    observe_package(package)
+}
+
+#[cfg(windows)]
+pub(crate) fn installed(full_name: &str) -> Result<(Observation, String), &'static str> {
+    use windows_runtime::{core::HSTRING, Management::Deployment::PackageManager};
+    let _apartment = Apartment::new().map_err(|_| "servicing_source_unavailable")?;
+    let manager: PackageManager = activate_owned().map_err(|_| "servicing_source_unavailable")?;
+    let package = manager
+        .FindPackageByUserSecurityIdPackageFullName(&HSTRING::new(), &HSTRING::from(full_name))
+        .map_err(|_| "servicing_source_unavailable")?;
+    let location = package
+        .InstalledPath()
+        .map_err(|_| "servicing_source_unavailable")?
+        .to_string();
+    let (_, observed) = observe_package(package).map_err(|_| "servicing_source_unavailable")?;
+    Ok((observed, location))
+}
+
+#[cfg(windows)]
+fn observe_package(
+    package: windows_runtime::ApplicationModel::Package,
+) -> windows_runtime::core::Result<(windows_runtime::ApplicationModel::Package, Observation)> {
+    use windows_runtime::{ApplicationModel::PackageSignatureKind, System::ProcessorArchitecture};
+    use windows_sys::Win32::Storage::Packaging::Appx::{
+        GetStagedPackageOrigin, PackageOrigin_DeveloperSigned as ORIGIN_DEVELOPER_SIGNED,
+        PackageOrigin_LineOfBusiness as ORIGIN_LINE_OF_BUSINESS,
+        PackageOrigin_Store as ORIGIN_STORE,
+    };
     let id = package.Id()?;
     let version = id.Version()?;
     let full_name: Vec<u16> = id.FullName()?.iter().copied().chain(Some(0)).collect();

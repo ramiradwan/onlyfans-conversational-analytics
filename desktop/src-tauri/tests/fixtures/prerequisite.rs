@@ -4,6 +4,8 @@
 mod bootstrap;
 #[path = "../../src/deployment.rs"]
 mod deployment;
+#[path = "../../src/handoff_contract.rs"]
+mod handoff_contract;
 #[path = "../../src/policy.rs"]
 mod policy;
 #[path = "../../src/prerequisite.rs"]
@@ -12,6 +14,8 @@ mod prerequisite;
 mod servicing;
 #[path = "../../src/servicing_feed.rs"]
 mod servicing_feed;
+#[path = "../../src/servicing_handoff.rs"]
+mod servicing_handoff;
 #[path = "../../src/windows.rs"]
 mod windows;
 
@@ -213,7 +217,87 @@ impl Platform for Qualification {
 }
 
 fn main() {
-    let scenario = std::env::args().nth(1).unwrap();
+    let args: Vec<String> = std::env::args().collect();
+    if servicing_handoff::helper_requested(&args) {
+        let result = servicing_handoff::helper_main(&args);
+        // Static reason only; no handles, frames, paths or account authority.
+        if let Err(reason) = result {
+            eprintln!("{reason}");
+        }
+        std::process::exit(if result.is_ok() { 0 } else { 1 });
+    }
+    let executable = std::env::current_exe().unwrap();
+    let fixture = executable.parent().unwrap().join("handoff-fixture.json");
+    if fixture.is_file() {
+        let identity = windows::package_identity().unwrap().unwrap();
+        let release = deployment::load(
+            &executable.parent().unwrap().join("desktop-release.json"),
+            Some(&identity),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(release.purpose, "qualification");
+        let fixture: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixture).unwrap()).unwrap();
+        let output = std::path::PathBuf::from(fixture["evidence"].as_str().unwrap());
+        let data = policy::data_directory(&executable.parent().unwrap().join("Brain.exe")).unwrap();
+        let names =
+            deployment::instance_names(&data, &windows::current_sid().unwrap(), Some(&release))
+                .unwrap();
+        let ownership = windows::claim_runtime_root(&names, &executable).unwrap();
+        assert!(ownership.primary());
+        let session = if args.len() == 3 && args[1] == servicing_handoff::ACTIVATION_FLAG {
+            Some(args[2].as_str())
+        } else {
+            None
+        };
+        let gate =
+            servicing_handoff::startup(&data, Some(&release), Some(&identity.version), session);
+        std::fs::write(output.join(format!("startup-{}-{}.json", identity.version, std::process::id())), serde_json::to_vec_pretty(&serde_json::json!({"version":identity.version,"pid":std::process::id(),"automatic":session.is_some(),"gate":gate})).unwrap()).unwrap();
+        if gate.is_err() {
+            return;
+        }
+        if fixture["source_version"].as_str() == Some(&identity.version) {
+            let stop = output.join("stop");
+            let prepared = servicing::prepare_direct(&release, || stop.exists()).unwrap();
+            let cancel = servicing_handoff::Cancellation::new().unwrap();
+            let mut pending =
+                match servicing_handoff::start(&data, &release, &prepared, cancel.clone()) {
+                    Ok(value) => value,
+                    Err(reason) => {
+                        std::fs::write(
+                            output.join("handoff-refused.json"),
+                            serde_json::to_vec(&serde_json::json!({"reason":reason})).unwrap(),
+                        )
+                        .unwrap();
+                        return;
+                    }
+                };
+            std::fs::write(
+                output.join("helper-ready.json"),
+                b"{\"authenticated\":true}",
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(90);
+            while !output.join("commit").exists() && !stop.exists() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            if stop.exists() || Instant::now() >= deadline {
+                cancel.signal();
+                return;
+            }
+            pending.commit().unwrap();
+            std::process::exit(handoff_contract::EXIT_FOR_SERVICING as i32);
+        }
+        servicing_handoff::admitted(&data).unwrap();
+        std::fs::write(output.join("target-admitted.json"), serde_json::to_vec_pretty(&serde_json::json!({"version":identity.version,"pid":std::process::id(),"automatic":session.is_some()})).unwrap()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        while !output.join("stop").exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        return;
+    }
+    let scenario = args.get(1).cloned().unwrap();
     if scenario == "stage-and-hold" || scenario == "prepare-and-hold" {
         let output = std::path::PathBuf::from(std::env::args().nth(2).unwrap());
         let stop = std::path::PathBuf::from(std::env::args().nth(3).unwrap());

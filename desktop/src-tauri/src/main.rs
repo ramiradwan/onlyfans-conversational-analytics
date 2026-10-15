@@ -9,6 +9,7 @@ mod browser;
 mod deployment;
 #[cfg(windows)]
 mod frame;
+mod handoff_contract;
 #[cfg(windows)]
 mod host;
 mod policy;
@@ -17,6 +18,8 @@ mod prerequisite;
 #[cfg(windows)]
 mod servicing;
 mod servicing_feed;
+#[cfg(windows)]
+mod servicing_handoff;
 #[cfg(windows)]
 mod windows;
 
@@ -87,8 +90,28 @@ fn main() {
         WebviewUrl, WebviewWindowBuilder,
     };
     let args: Vec<String> = std::env::args().collect();
-    let Ok(journey) = policy::launch_journey(&args) else {
-        return;
+    if servicing_handoff::helper_requested(&args) {
+        std::process::exit(if servicing_handoff::helper_main(&args).is_ok() {
+            0
+        } else {
+            1
+        });
+    }
+    let servicing_session = if args.len() == 3
+        && args[1] == servicing_handoff::ACTIVATION_FLAG
+        && handoff_contract::hex(&args[2], 32)
+    {
+        Some(args[2].clone())
+    } else {
+        None
+    };
+    let journey = if servicing_session.is_some() {
+        None
+    } else {
+        let Ok(journey) = policy::launch_journey(&args) else {
+            return;
+        };
+        journey
     };
     let Ok(_application_mutex) = windows::application_mutex() else {
         return;
@@ -125,7 +148,24 @@ fn main() {
         }
     };
     if !_ownership.primary() {
+        if servicing_session.is_some() {
+            return;
+        }
         if let Err(reason) = windows::forward_instance(&names, &executable, &args) {
+            prerequisite::show_failure(reason);
+        }
+        return;
+    }
+    let startup = windows::package_identity().and_then(|identity| {
+        servicing_handoff::startup(
+            &data,
+            release.as_ref(),
+            identity.as_ref().map(|value| value.version.as_str()),
+            servicing_session.as_deref(),
+        )
+    });
+    if let Err(reason) = startup {
+        if servicing_session.is_none() {
             prerequisite::show_failure(reason);
         }
         return;
@@ -159,6 +199,7 @@ fn main() {
         stopped: AtomicBool::new(false),
         quitting: AtomicBool::new(false),
         update_check_active: AtomicBool::new(false),
+        servicing_cancel: std::sync::Mutex::new(None),
         release,
         actions: sender,
     });
