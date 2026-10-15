@@ -14,6 +14,10 @@ export function applyTheme(document, storage) {
   try {
     if (storage === undefined) storage = globalThis.localStorage;
     const selected = storage.getItem('mui-mode');
-    if (selected === 'light' || selected === 'dark') document.documentElement.dataset.colorScheme = selected;
+    if (selected === 'light' || selected === 'dark') {
+      document.documentElement.dataset.colorScheme = selected;
+      // The browser paints its canvas before the external stylesheet arrives.
+      document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', selected);
+    }
   } catch { /* The system theme remains available when local storage is denied. */ }
 }

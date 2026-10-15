@@ -25,9 +25,11 @@ const session = { role: 'desktop', stage: 'setup', generation, csrf_token: 'A'.r
 const storage = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }; };
 
 it('selects the saved setup theme before the entry module can paint', () => {
-  const earlyDocument = { documentElement: { dataset: {} } };
+  const meta = { setAttribute: vi.fn() };
+  const earlyDocument = { documentElement: { dataset: {} }, querySelector: () => meta };
   runInNewContext(setupThemeInitializer, {document: earlyDocument, localStorage: {getItem: () => 'dark'}});
   expect(earlyDocument.documentElement.dataset.colorScheme).toBe('dark');
+  expect(meta.setAttribute).toHaveBeenCalledWith('content', 'dark');
   expect(markup.indexOf('src="/setup-theme-init.js"')).toBeGreaterThan(0);
   expect(markup.indexOf('src="/setup-theme-init.js"')).toBeLessThan(markup.indexOf('type="module"'));
   const denied = {document: {documentElement: {dataset: {}}}};
