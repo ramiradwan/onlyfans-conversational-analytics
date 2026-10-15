@@ -9,6 +9,7 @@ from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import base64
+import ctypes
 import hashlib
 import json
 import os
@@ -102,6 +103,22 @@ def inspect_existing_stores(root: Path, stores: tuple[UpgradeStore, ...], *,
 def _check_cancel(should_cancel: Callable[[], bool]) -> None:
     if should_cancel():
         raise MigrationCancelled("startup maintenance cancelled")
+
+
+def _available_disk_bytes(root: Path) -> int:
+    if os.name != "nt":
+        return shutil.disk_usage(root).free
+    # Python 3.11's Windows disk_usage returns volume-wide free space. The
+    # first Win32 output accounts for the current user's enforced quota.
+    query = ctypes.WinDLL("kernel32", use_last_error=True).GetDiskFreeSpaceExW
+    counter = ctypes.c_ulonglong
+    query.argtypes = (ctypes.c_wchar_p, ctypes.POINTER(counter),
+                      ctypes.POINTER(counter), ctypes.POINTER(counter))
+    query.restype = ctypes.c_int
+    available = counter()
+    if not query(os.fspath(root), ctypes.byref(available), None, None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return available.value
 
 
 def _json(value) -> bytes:
@@ -547,7 +564,7 @@ def maintain_existing_stores(root: Path, stores: tuple[UpgradeStore, ...], *, re
                 _purge_checkpoint(cohort, None, should_cancel=should_cancel)
         size = sum((root / name).stat().st_size + ((root / (name + "-wal")).stat().st_size
                    if (root / (name + "-wal")).exists() else 0) for name in inspections)
-        if shutil.disk_usage(root).free < 3 * size + _RESERVE_BYTES:
+        if _available_disk_bytes(root) < 3 * size + _RESERVE_BYTES:
             raise UpgradeRecoveryRequired("upgrade_space_insufficient")
         on_phase("checkpointing")
         cohort.mkdir()

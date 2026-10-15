@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import closing
 from pathlib import Path
+import ctypes
 import os
 import subprocess
 import sys
@@ -156,13 +157,85 @@ def test_insufficient_space_and_cancellation_precede_authoritative_writes(tmp_pa
     stores = catalogs(tmp_path)
     root = tmp_path / "retained"
     seed(root, stores)
-    monkeypatch.setattr(upgrade.shutil, "disk_usage", lambda _: type("Space", (), {"free": 0})())
+    before = {p.name: p.read_bytes() for p in root.iterdir() if p.is_file()}
+    monkeypatch.setattr(upgrade, "_available_disk_bytes", lambda _: 0)
     with pytest.raises(upgrade.UpgradeRecoveryRequired, match="space_insufficient"):
         upgrade.maintain_existing_stores(root, stores, release_id="synthetic-B")
+    assert {p.name: p.read_bytes() for p in root.iterdir() if p.is_file()} == before
     assert [value(root, store) for store in stores] == ["before migration"] * 2
     assert not (root / upgrade.JOURNAL_FILENAME).exists()
+    assert not (root / upgrade.CHECKPOINT_DIRECTORY).exists()
     with pytest.raises(MigrationCancelled):
         upgrade.maintain_existing_stores(root, stores, release_id="synthetic-B", should_cancel=lambda: True)
+
+
+def _mock_windows_disk_query(monkeypatch, query):
+    class NativeAPI:
+        @staticmethod
+        def WinDLL(*args, **kwargs):
+            return type("Kernel", (), {"GetDiskFreeSpaceExW": query})()
+
+        def __getattr__(self, name):
+            return getattr(ctypes, name)
+
+    # Keep real ACL and key APIs intact in the encrypted transition fixture.
+    monkeypatch.setattr(upgrade, "ctypes", NativeAPI())
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows caller-available quota contract")
+@pytest.mark.parametrize("caller_available", [32 * 1024**2, 7 * 1024**3])
+def test_windows_capacity_uses_caller_allowance_before_checkpoint(tmp_path, monkeypatch, caller_available):
+    stores = catalogs(tmp_path)
+    root = tmp_path / "retained"
+    seed(root, stores)
+    before = {p.name: p.read_bytes() for p in root.iterdir() if p.is_file()}
+    calls = []
+
+    class Query:
+        def __call__(self, path, available, total, free):
+            calls.append(path)
+            ctypes.cast(available, ctypes.POINTER(ctypes.c_ulonglong))[0] = caller_available
+            if total is not None:
+                ctypes.cast(total, ctypes.POINTER(ctypes.c_ulonglong))[0] = 1024**4
+            if free is not None:
+                ctypes.cast(free, ctypes.POINTER(ctypes.c_ulonglong))[0] = 800 * 1024**3
+            return 1
+
+    _mock_windows_disk_query(monkeypatch, Query())
+    monkeypatch.setattr(upgrade.shutil, "disk_usage", lambda _: type("Space", (), {"free": 800 * 1024**3})())
+    assert upgrade._available_disk_bytes(root) == caller_available
+    if caller_available < upgrade._RESERVE_BYTES:
+        with pytest.raises(upgrade.UpgradeRecoveryRequired, match="space_insufficient"):
+            upgrade.maintain_existing_stores(root, stores, release_id="synthetic-B")
+        assert {p.name: p.read_bytes() for p in root.iterdir() if p.is_file()} == before
+        assert not (root / upgrade.JOURNAL_FILENAME).exists()
+        assert not (root / upgrade.CHECKPOINT_DIRECTORY).exists()
+    else:
+        assert upgrade.maintain_existing_stores(root, stores, release_id="synthetic-B")
+        assert [value(root, store) for store in stores] == ["committed migration result"] * 2
+    assert calls == [str(root), str(root)]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows capacity-query failure contract")
+def test_windows_capacity_query_failure_never_falls_back_to_volume_space(tmp_path, monkeypatch):
+    stores = catalogs(tmp_path)
+    root = tmp_path / "retained"
+    seed(root, stores)
+    before = {p.name: p.read_bytes() for p in root.iterdir() if p.is_file()}
+
+    class Query:
+        def __call__(self, *args):
+            ctypes.set_last_error(5)
+            return 0
+
+    _mock_windows_disk_query(monkeypatch, Query())
+    monkeypatch.setattr(upgrade.shutil, "disk_usage", lambda _: pytest.fail("volume-free fallback would bypass caller quota"))
+    with pytest.raises(OSError) as error:
+        upgrade.maintain_existing_stores(root, stores, release_id="synthetic-B")
+    assert error.value.winerror == 5
+    assert {p.name: p.read_bytes() for p in root.iterdir() if p.is_file()} == before
+    assert not (root / upgrade.JOURNAL_FILENAME).exists()
+    assert not (root / upgrade.CHECKPOINT_DIRECTORY).exists()
 
 
 def test_authenticated_deletion_after_completion_cannot_restore_from_upgrade_cohort(tmp_path):
