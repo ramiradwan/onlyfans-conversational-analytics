@@ -167,6 +167,7 @@ test('pairing driver completes the waiting presentation before a passive compani
     await settleNativeWatcher(page);
     const before = await nativeBoundary(page);
     await push(page, 'companion', { creator_account_id: pin.creator_account_id, revision: 101, changed_at: expires_at });
+    await page.waitForFunction(() => window.__workspaceFixture.pending().includes('pairing.get'));
     // Observe both the notice and delayed work after it without resolving get().
     await new Promise(resolve => setTimeout(resolve, 350));
     await settleNativeWatcher(page);
@@ -174,8 +175,8 @@ test('pairing driver completes the waiting presentation before a passive compani
     const observed = raw.rawShifts.filter(shift => shift.at >= before.nativeAt);
     const frames = raw.frames.slice(Math.max(0, before.frame - 1))
       .map(frame => ({ ...frame, shifts: frame.shifts.filter(shift => shift.at >= before.nativeAt) }));
-    assert.deepEqual(observed, [], 'A passive notice cannot admit a delayed open-page layout change');
-    assert.deepEqual(inspectFrames(frames), []);
+    assert.equal(observed.length, 0, 'A passive notice cannot admit a delayed open-page layout change');
+    assert.equal(inspectFrames(frames).length, 0, 'Passive companion-notice geometry must stay stable');
     assert((await push(page, 'pending')).includes('pairing.get'));
     assert(await page.getByText('Waiting for the browser extension to connect.', { exact: true }).isVisible());
     await record(page, 'pairing-delayed-scheduler', { ...raw, passiveStart: before, observed, passiveFailures: inspectFrames(frames) });
