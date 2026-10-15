@@ -94,12 +94,12 @@ export function createCompanionClient({
     if (typeof account !== 'string' || !account || (expected !== null && account !== expected)) throw failure();
     return account;
   }
-  async function connect(controls = {}, requestId) {
+  async function connect(controls = {}, requestId, onConnectionStart) {
     const controller = new AbortController();
     const signal = controls.signal ? AbortSignal.any([controller.signal, controls.signal]) : controller.signal;
     const timer = setTimeout(() => controller.abort(), 10_000);
     try {
-      const connected = await abortable(connectCurrent({ ...controls, signal }, requestId), signal);
+      const connected = await abortable(connectCurrent({ ...controls, signal }, requestId, onConnectionStart), signal);
       signal.throwIfAborted(); controls.assertCurrent?.();
       return connected;
     }
@@ -109,7 +109,7 @@ export function createCompanionClient({
     }
     finally { clearTimeout(timer); }
   }
-  async function connectCurrent(controls, requestId) {
+  async function connectCurrent(controls, requestId, onConnectionStart) {
     controls.signal?.throwIfAborted(); controls.assertCurrent?.();
     const accountId = await permitted();
     controls.signal.throwIfAborted(); controls.assertCurrent?.();
@@ -127,6 +127,7 @@ export function createCompanionClient({
     const version = generation;
     const controller = new AbortController();
     connectionAbort = controller;
+    onConnectionStart?.(controller);
     const timer = setTimeout(() => controller.abort(), 10_000);
     connectingAccount = accountId;
     const current = () => {
@@ -435,15 +436,17 @@ export function createCompanionClient({
     const facade = { readyState: 0, onopen: null, onmessage: null, onclose: null,
       onerror: null, authTicket: null, retryAfterMs: 0 };
     const controller = new AbortController();
-    let channel = null, stopped = false, unsubscribe;
+    let channel = null, openingAbort = null, stopped = false, unsubscribe;
     facade.close = (code = null, reason = null) => {
       if (stopped) return;
       record('facade-close', { code: Number.isInteger(code) && code >= 1000 && code <= 4999 ? code : null,
         reason: safeCompanionCloseReason(reason) });
       stopped = true; facade.readyState = 3;
       controller.abort();
-      unsubscribe?.(); (channel ?? active?.channel)?.close();
-      if (channel === null) connectionAbort?.abort();
+      unsubscribe?.(); channel?.close();
+      // A pending facade owns only the handshake it started. Another caller
+      // may have established or begun the current shared connection meanwhile.
+      openingAbort?.abort(); openingAbort = null;
       void recovery.retryAfterMs().then((delay) => { facade.retryAfterMs = delay; })
         .catch(() => { facade.retryAfterMs = 60_000; })
         .finally(() => facade.onclose?.({ code: 4008 }));
@@ -453,9 +456,10 @@ export function createCompanionClient({
       let message; try { message = JSON.parse(text); } catch { facade.close(); throw failure(); }
       void channel.send(message).catch(() => facade.close());
     };
-    void connect({ signal: controller.signal }).then((connected) => {
+    void connect({ signal: controller.signal }, undefined, owner => { openingAbort = owner; }).then((connected) => {
       if (stopped) return;
       channel = connected.channel;
+      openingAbort = null;
       facade.authTicket = connected.authTicket;
       unsubscribe = channel.onMessage((message) => { if (!stopped) facade.onmessage?.({ data: JSON.stringify(message) }); });
       channel.onClose(() => facade.close());

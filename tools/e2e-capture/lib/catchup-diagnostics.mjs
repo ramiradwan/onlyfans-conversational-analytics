@@ -248,7 +248,7 @@ export async function readCatchupWorker(context, findWorker = async context => {
 
 export async function withCatchupDiagnostics(assertion, { summary, platform, context, brain,
   readWorker = () => readCatchupWorker(context), log = line => console.error(line), timeoutMs = 2_500,
-  checkpoint = null }) {
+  checkpoint = null, failureContext = 'catchup' }) {
   const report = async prefix => {
     let fields;
     try {
@@ -261,7 +261,7 @@ export async function withCatchupDiagnostics(assertion, { summary, platform, con
   let result;
   try { result = await assertion(); }
   catch (error) {
-    await report('Catch-up poll timed out');
+    await report(failureContext === 'capture' ? 'Capture checkpoint failed' : 'Catch-up poll timed out');
     throw error;
   }
   if (checkpoint === 'initial_history') await report('Catch-up checkpoint initial_history');

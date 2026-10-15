@@ -147,10 +147,10 @@ test('worker wake subscriptions retain message and tab wakes plus the minute ala
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(values, key)).map((key) => [key, values[key]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const key of keys) delete values[key]; } }; }
 
-function harness({ full = true, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
+function harness({ full = true, accountGate = null, channelGate = null, unsealGate = null, wrongPin = false, malformed = false, chromeApi = null, refusal = null, now = Date.now, scheduler = null, enforcePairing = false, channelCloseReason = null, surfaceFailures = 0 } = {}) {
   const stats = { stores: 0, snow: 0, networks: 0, cancel: 0, forget: 0, proofValid: false, closedStores: 0 }, channels = [];
   const chrome = chromeApi ?? { runtime: { id: 'a'.repeat(32), getURL: (path) => `chrome-extension://${'a'.repeat(32)}/${path}`, onConnect: event(), onStartup: event(), onInstalled: event(), onMessage: event() }, storage: { local: area(), session: area() }, tabs: { onUpdated: event(), onCreated: event(), onRemoved: event() }, alarms: { onAlarm: event(), async create() {} } };
-  let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures;
+  let enabled = full, account = ACCOUNT, paired = true, pairingWait, remainingSurfaceFailures = surfaceFailures, accountReads = 0;
   const pairingStore = {
     async identity() { return { privateKey: key }; }, async status() { return { paired }; },
     async savedPairing() { return paired ? 'fixture-pin' : null; },
@@ -162,7 +162,10 @@ function harness({ full = true, channelGate = null, unsealGate = null, wrongPin 
       paired = false; stats.forget++;
     }, close() { stats.closedStores++; },
   };
-  const client = createCompanionClient({ chromeApi: chrome, allowsFull: () => enabled, detectedAccountId: async () => account,
+  const client = createCompanionClient({ chromeApi: chrome, allowsFull: () => enabled, detectedAccountId: async () => {
+    if (accountGate && ++accountReads === 1) await accountGate.promise;
+    return account;
+  },
     now, scheduler, random: () => 0.5,
     accountDatabaseName: async (id) => `encrypted-account-${id}`, storeFactory: async () => { stats.stores++; return pairingStore; },
     loadSnow: async () => { stats.snow++; return { SnowSession: class {}, generateStaticKeypair() { return new Uint8Array(64); } }; },
@@ -566,6 +569,36 @@ test('closing a connecting protocol facade aborts its pending protected connecti
   assert.equal(h.client.connected, false); assert.equal(socket.readyState, 3);
   assert.equal(h.channels[0].closed, true);
 });
+
+for (const phase of ['admitted', 'connecting']) {
+  test(`closing an unbound protocol facade preserves another caller's ${phase} connection`, async () => {
+    const accountGate = deferred(), channelGate = phase === 'connecting' ? deferred() : null;
+    const h = harness({ accountGate, channelGate });
+    try {
+      const socket = h.client.webSocketFactory();
+      await tick();
+      assert.equal(h.stats.networks, 0);
+      const binding = h.client.adapter.loadBrainBinding().then(value => ({ value }), error => ({ error }));
+      if (phase === 'admitted') assert.ok((await binding).value);
+      else {
+        for (let i = 0; i < 20 && !h.channels.length; i++) await tick();
+        assert.equal(h.channels.length, 1);
+      }
+      socket.close();
+      channelGate?.resolve();
+      const outcome = await binding;
+      assert.equal(outcome.error, undefined, 'The unrelated connection owner must not be cancelled');
+      assert.equal(h.channels[0].closed, false);
+      assert.equal(h.client.connected, true);
+      accountGate.resolve();
+      await tick();
+      assert.equal(h.channels[0].closed, false, 'Late completion of the closed facade must stay fenced');
+      assert.equal(h.stats.networks, 1);
+    } finally {
+      accountGate.resolve(); channelGate?.resolve(); h.client.invalidate();
+    }
+  });
+}
 
 test('protocol facade publishes only the fresh authenticated ticket and encrypted documents', async () => {
   const h = harness(), socket = h.client.webSocketFactory();

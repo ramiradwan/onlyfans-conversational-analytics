@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { parseNativePermissionTrace, runNativePermissionInteraction } from '../../lib/native-permission-diagnostics.mjs';
 
 const trace = (overrides = {}) => ({
@@ -100,4 +102,32 @@ test('permission diagnosis has one bounded read and cannot hang or leak its erro
     readPermission: async () => { throw new Error('private'); },
   }));
   assert.equal(deniedRead.permission_state, 'unavailable');
+});
+
+test('actual aborted subprocess preserves a complete trace and strips private stderr', { timeout: 10_000 }, async () => {
+  const execFileAsync = promisify(execFile);
+  let command, abort;
+  const result = await readFailure(runNativePermissionInteraction({
+    schedule(callback, delay) {
+      if (delay === 15_000) abort = callback;
+      return setTimeout(callback, delay === 15_000 ? 2_000 : delay);
+    }, cancel: clearTimeout,
+    run(signal) {
+      const record = JSON.stringify(trace());
+      command = execFileAsync(process.execPath, ['-e',
+        `process.stdout.write(${JSON.stringify(record + '\n')}); process.stderr.write('private_stderr'); setInterval(() => {}, 1000);`,
+      ], { signal, windowsHide: true });
+      let received = '';
+      command.child.stdout.on('data', chunk => {
+        received += chunk;
+        if (received.includes('\n')) abort();
+      });
+      return command;
+    }, readPermission: async () => false,
+  })).finally(() => { if (command?.child.exitCode === null) command.child.kill(); });
+  assert.equal(result.stage, 'prompt_found');
+  assert.equal(result.prompt_found, true);
+  assert.equal(result.timeout_fired, true);
+  assert.equal(result.permission_state, 'denied');
+  assert.doesNotMatch(JSON.stringify(result), /private_/);
 });

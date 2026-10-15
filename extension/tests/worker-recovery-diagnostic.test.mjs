@@ -115,6 +115,20 @@ test('session task provenance survives collection without arbitrary data', () =>
   assert.doesNotMatch(JSON.stringify(entry), /private_/);
 });
 
+test('channel admission diagnosis retains only five closed comparison flags', () => {
+  const admission = { closed: false, monotonicRollback: false, wallRollback: true,
+    deadlinePassed: false, grantExpired: false };
+  const read = value => diagnostics.readSessionFailures('e2e-session-failure: '
+    + JSON.stringify({ method: 'session.check', admission: value, causes: [] }))[0];
+  assert.deepEqual(read(admission).admission, admission);
+  for (const invalid of [null, [], { ...admission, rawTime: 'private_clock' },
+    { ...admission, closed: 'private_payload' }, { ...admission, wallRollback: 1 }]) {
+    const result = read(invalid);
+    assert.equal(result.admission, null);
+    assert.doesNotMatch(JSON.stringify(result), /private_/);
+  }
+});
+
 test('successful recovery checkpoints retain rotation evidence with bounded redaction', () => {
   const output = [];
   diagnostics.logWorkerRecoveryCheckpoint('alarm', { token: 'private_token',

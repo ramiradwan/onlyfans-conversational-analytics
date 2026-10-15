@@ -10,6 +10,7 @@ import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
 import { extensionId, extensionState, extensionWorker,
   launchExtensionBrowser } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
+import { withCatchupDiagnostics } from '../lib/catchup-diagnostics.mjs';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -44,7 +45,9 @@ async function setCaptureFromBridge(page, action) {
     });
     return { status: response.status, body: await response.json().catch(() => null) };
   }, action);
-  expect(result.status).toBe(202);
+  const reason = ['browser_unreachable', 'pairing_account_refused', 'pairing_state_refused',
+    'pairing_storage_refused'].includes(result.body?.detail) ? result.body.detail : 'unavailable';
+  expect(result.status, `Desktop capture delivery (${reason})`).toBe(202);
   expect(result.body?.delivered).toBeGreaterThan(0);
 }
 
@@ -146,8 +149,13 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     await page.evaluate(() => globalThis.fixtureRead('/api2/v2/chats'));
     await page.evaluate((pathname) => globalThis.fixtureRead(pathname), `/api2/v2/chats/${SYNTHETIC.chatId}/messages`);
     await page.evaluate(() => globalThis.fixtureOpenSocket());
-    await expect.poll(async () => (await readBrainSummary(context)).messageCount,
-      { timeout: 30_000, message: 'wait for initial message count' }).toBe(3);
+    let initialSummary = null;
+    await withCatchupDiagnostics(() => expect.poll(async () => {
+      initialSummary = await readBrainSummary(context);
+      return initialSummary.messageCount;
+    }, { timeout: 30_000, message: 'wait for initial message count' }).toBe(3), {
+      summary: () => initialSummary ?? readBrainSummary(context), platform, context, brain, failureContext: 'capture',
+    });
     const documentToken = await page.evaluate(() => globalThis.fixtureDocumentToken);
     const previousInstance = (await extensionState(worker)).workerInstanceId;
     expect(previousInstance).not.toBeNull();
@@ -155,7 +163,10 @@ test('soft pause survives worker replacement and resumes the existing socket wit
       { timeout: 30_000, message: 'wait for active browser control state' }).toBe('active');
     let controls = await openPopup(context, id, errors);
     await expect(controls.locator('#pause'), 'desktop-owned Pause is hidden').toBeHidden();
-    await setCaptureFromBridge(binding, 'pause');
+    const capture = action => withCatchupDiagnostics(() => setCaptureFromBridge(binding, action), {
+      summary: () => readBrainSummary(context), platform, context, brain, failureContext: 'capture',
+    });
+    await capture('pause');
     await expect(controls.locator('#journey-primary'), 'wait for desktop entry after pause')
       .toHaveText('Continue in the desktop app', { timeout: 8_000 });
     expect(await popupConsent(controls, 'read paused consent')).toEqual({ mode: 'paused', reload: false });
@@ -177,7 +188,7 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     expect((await readBrainSummary(context)).messageCount).toBe(3);
     await expect.poll(async () => (await readBrainSummary(context)).browser?.capture ?? null,
       { timeout: 30_000, message: 'wait for paused browser control state' }).toBe('paused');
-    await setCaptureFromBridge(binding, 'resume');
+    await capture('resume');
     await expect.poll(() => popupConsent(controls, 'read resumed consent'),
       { timeout: 8_000, message: 'wait for Full consent after resume' })
       .toEqual({ mode: 'full', reload: false });
