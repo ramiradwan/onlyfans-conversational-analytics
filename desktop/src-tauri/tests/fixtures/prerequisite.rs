@@ -10,6 +10,8 @@ mod policy;
 mod prerequisite;
 #[path = "../../src/servicing.rs"]
 mod servicing;
+#[path = "../../src/servicing_feed.rs"]
+mod servicing_feed;
 #[path = "../../src/windows.rs"]
 mod windows;
 
@@ -212,7 +214,7 @@ impl Platform for Qualification {
 
 fn main() {
     let scenario = std::env::args().nth(1).unwrap();
-    if scenario == "stage-and-hold" {
+    if scenario == "stage-and-hold" || scenario == "prepare-and-hold" {
         let output = std::path::PathBuf::from(std::env::args().nth(2).unwrap());
         let stop = std::path::PathBuf::from(std::env::args().nth(3).unwrap());
         let identity = windows::package_identity().unwrap();
@@ -223,7 +225,18 @@ fn main() {
         )
         .unwrap()
         .unwrap();
-        let status = servicing::probe_appinstaller_deferral(&release, || stop.exists());
+        let status = if scenario == "prepare-and-hold" {
+            assert_eq!(release.purpose, "qualification");
+            match servicing::prepare_direct(&release, || stop.exists()) {
+                Ok(prepared) => serde_json::json!({"state":"prepared","update":prepared}),
+                Err(reason) => serde_json::json!({"state":"refused","reason":reason}),
+            }
+        } else {
+            serde_json::to_value(servicing::probe_appinstaller_deferral(&release, || {
+                stop.exists()
+            }))
+            .unwrap()
+        };
         let identity = identity.unwrap();
         let value = serde_json::json!({"schema":"ofca-deferred-stage-qualification/v1",
             "pid": std::process::id(), "version": identity.version, "deployment": status});

@@ -28,6 +28,269 @@ pub struct UpdateStatus {
     pub availability: Availability,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PreparedUpdate {
+    pub package_full_name: String,
+    pub version: String,
+}
+
+/// Windows downloads and validates the package. Only descriptor bytes cross
+/// this process; a successful deferred registration is required before drain.
+#[cfg(windows)]
+#[allow(dead_code)] // Connected to the coordinator only after installed qualification.
+pub fn prepare_direct(
+    release: &DesktopRelease,
+    cancelled: impl Fn() -> bool,
+) -> Result<PreparedUpdate, &'static str> {
+    use windows_runtime::{
+        core::HSTRING,
+        Management::Deployment::{PackageManager, RegisterPackageOptions, StagePackageOptions},
+    };
+    if cancelled() {
+        return Err("deployment_cancelled");
+    }
+    let _apartment = Apartment::new().map_err(|_| "windows_source_unavailable")?;
+    let (current, actual) = observe().map_err(|_| "windows_source_unavailable")?;
+    if bind(release, &actual) != UpdateSource::DirectAppinstaller {
+        return Err("direct_source_required");
+    }
+    automatic_policy(&current)?;
+    if !matches!(
+        check_availability(&current, &cancelled).map_err(|_| "windows_check_failed")?,
+        Availability::Available | Availability::Required
+    ) {
+        return Err("update_available_not_confirmed");
+    }
+    let bytes = crate::servicing_feed::read_metadata(
+        actual
+            .app_installer_uri
+            .as_deref()
+            .ok_or("direct_source_required")?,
+        &cancelled,
+    )?;
+    let target = crate::servicing_feed::parse(&bytes, release, &actual.identity)?;
+    if cancelled() {
+        return Err("deployment_cancelled");
+    }
+    let manager: PackageManager = activate_owned().map_err(|_| "windows_stage_failed")?;
+    let uri = owned_uri(&target.package_uri).map_err(|_| "windows_stage_failed")?;
+    let options: StagePackageOptions = activate_owned().map_err(|_| "windows_stage_failed")?;
+    let staged = manager
+        .StagePackageByUriAsync(&uri, &options)
+        .map_err(|_| "windows_stage_failed")?;
+    wait_deployment(&staged, &cancelled, Duration::from_secs(300))
+        .map_err(|_| "windows_stage_failed")?;
+    let full_name = HSTRING::from(format!(
+        "{}_{}_x64__{}",
+        actual.identity.name,
+        target.version,
+        current
+            .Id()
+            .and_then(|id| id.PublisherId())
+            .map_err(|_| "staged_identity_mismatch")?
+    ));
+    let manifest = staged_manifest(&full_name.to_string())?;
+    // Recheck effective settings after the potentially long Windows download.
+    let (again, actual_again) = observe().map_err(|_| "windows_source_unavailable")?;
+    if bind(release, &actual_again) != UpdateSource::DirectAppinstaller {
+        return Err("direct_source_required");
+    }
+    automatic_policy(&again)?;
+    if cancelled() {
+        return Err("deployment_cancelled");
+    }
+    // Register the verified main package's manifest, using its Windows-owned
+    // installed location rather than an untrusted path from the descriptor.
+    let manifest = owned_uri(&manifest).map_err(|_| "staged_package_unavailable")?;
+    let options: RegisterPackageOptions =
+        activate_owned().map_err(|_| "windows_registration_failed")?;
+    options
+        .SetDeferRegistrationWhenPackagesAreInUse(true)
+        .map_err(|_| "windows_registration_failed")?;
+    let registration = manager
+        .RegisterPackageByUriAsync(&manifest, &options)
+        .map_err(|_| "windows_registration_failed")?;
+    let result = wait_deployment(&registration, &cancelled, Duration::from_secs(60))
+        .map_err(|_| "windows_registration_failed")?;
+    if result
+        .IsRegistered()
+        .map_err(|_| "windows_registration_failed")?
+    {
+        return Err("windows_registration_not_deferred");
+    }
+    Ok(PreparedUpdate {
+        package_full_name: full_name.to_string(),
+        version: target.version,
+    })
+}
+
+#[cfg(windows)]
+fn staged_manifest(full_name: &str) -> Result<String, &'static str> {
+    use std::{os::windows::ffi::OsStringExt, ptr::null_mut};
+    use windows_sys::Win32::{
+        Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
+        Storage::Packaging::Appx::{
+            GetStagedPackageOrigin, GetStagedPackagePathByFullName,
+            PackageOrigin_DeveloperSigned as SIGNED, PackageOrigin_LineOfBusiness as ENTERPRISE,
+        },
+    };
+    let name: Vec<u16> = full_name.encode_utf16().chain(Some(0)).collect();
+    let mut origin = 0;
+    let mut length = 0;
+    // These documented APIs work for staged packages without administrative
+    // package enumeration. StagePackageByUriAsync above retains signature
+    // validation; developer-unsigned and unknown staged origins are refused.
+    unsafe {
+        if GetStagedPackageOrigin(name.as_ptr(), &mut origin) != ERROR_SUCCESS
+            || !matches!(origin, SIGNED | ENTERPRISE)
+        {
+            return Err("staged_identity_mismatch");
+        }
+        if GetStagedPackagePathByFullName(name.as_ptr(), &mut length, null_mut())
+            != ERROR_INSUFFICIENT_BUFFER
+            || !(2..=32768).contains(&length)
+        {
+            return Err("staged_package_unavailable");
+        }
+        let mut path = vec![0u16; length as usize];
+        if GetStagedPackagePathByFullName(name.as_ptr(), &mut length, path.as_mut_ptr())
+            != ERROR_SUCCESS
+            || length < 2
+            || length as usize > path.len()
+            || path[length as usize - 1] != 0
+        {
+            return Err("staged_package_unavailable");
+        }
+        let path =
+            std::path::PathBuf::from(std::ffi::OsString::from_wide(&path[..length as usize - 1]));
+        if !path.is_absolute() {
+            return Err("staged_package_unavailable");
+        }
+        url::Url::from_file_path(path.join("AppxManifest.xml"))
+            .map(|uri| uri.into())
+            .map_err(|_| "staged_package_unavailable")
+    }
+}
+
+#[cfg(windows)]
+fn automatic_policy(
+    package: &windows_runtime::ApplicationModel::Package,
+) -> Result<(), &'static str> {
+    use windows_runtime::ApplicationModel::AppInstallerPolicySource;
+    let info = registered_info(package)
+        .map_err(|_| "update_policy_unavailable")?
+        .ok_or("direct_source_required")?;
+    let read = || -> windows_runtime::core::Result<bool> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| {
+                windows_runtime::core::Error::from_hresult(windows_runtime::core::HRESULT(
+                    0x80004005u32 as i32,
+                ))
+            })?;
+        let ticks = now.as_nanos() / 100 + 116_444_736_000_000_000u128;
+        Ok(info.PolicySource()? == AppInstallerPolicySource::Default
+            && info.AutomaticBackgroundTask()?
+            && info.OnLaunch()?
+            && !info.ForceUpdateFromAnyVersion()?
+            && !info.ShowPrompt()?
+            && info.HoursBetweenUpdateChecks()? == 6
+            && !info.UpdateBlocksActivation()?
+            && paused_until(&info)?.is_none_or(|until| until as i128 <= ticks as i128)
+            && info.UpdateUris()?.Size()? == 0
+            && info.OptionalPackageUris()?.Size()? == 0
+            && info.DependencyPackageUris()?.Size()? == 0)
+    };
+    if read().map_err(|_| "update_policy_unavailable")? {
+        Ok(())
+    } else {
+        Err("update_policy_disabled_or_changed")
+    }
+}
+
+#[cfg(windows)]
+fn paused_until(
+    info: &windows_runtime::ApplicationModel::AppInstallerInfo,
+) -> windows_runtime::core::Result<Option<i64>> {
+    use windows_runtime::{
+        core::Interface,
+        ApplicationModel::IAppInstallerInfo2,
+        Foundation::{DateTime, IReference},
+    };
+    let interface: IAppInstallerInfo2 = info.cast()?;
+    let mut pointer = std::ptr::null_mut();
+    let code = unsafe { (interface.vtable().PausedUntil)(interface.as_raw(), &mut pointer) };
+    let value = if pointer.is_null() {
+        None
+    } else {
+        Some(unsafe { IReference::<DateTime>::from_raw(pointer) })
+    };
+    code.ok()?;
+    value
+        .map(|value| Ok(value.Value()?.UniversalTime))
+        .transpose()
+}
+
+#[cfg(windows)]
+fn wait_deployment(
+    operation: &windows_future::IAsyncOperationWithProgress<
+        windows_runtime::Management::Deployment::DeploymentResult,
+        windows_runtime::Management::Deployment::DeploymentProgress,
+    >,
+    cancelled: &impl Fn() -> bool,
+    budget: Duration,
+) -> windows_runtime::core::Result<windows_runtime::Management::Deployment::DeploymentResult> {
+    let started = Instant::now();
+    struct CancelOnDrop<F: Fn()>(F);
+    impl<F: Fn()> Drop for CancelOnDrop<F> {
+        fn drop(&mut self) {
+            (self.0)();
+        }
+    }
+    let _cancel = CancelOnDrop(|| {
+        let _ = operation.Cancel();
+    });
+    loop {
+        if cancelled() || started.elapsed() >= budget {
+            let _ = operation.Cancel();
+            return Err(windows_runtime::core::Error::from_hresult(
+                windows_runtime::core::HRESULT(0x800704c7u32 as i32),
+            ));
+        }
+        match operation.Status()? {
+            windows_future::AsyncStatus::Started => std::thread::sleep(Duration::from_millis(100)),
+            _ => {
+                let result = operation.GetResults()?;
+                result.ExtendedErrorCode()?.ok()?;
+                return Ok(result);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn owned_uri(value: &str) -> windows_runtime::core::Result<windows_runtime::Foundation::Uri> {
+    use windows_runtime::{
+        core::{Interface, HSTRING},
+        Foundation::IUriRuntimeClassFactory,
+    };
+    let factory: IUriRuntimeClassFactory = unsafe {
+        windows_runtime::Win32::System::WinRT::RoGetActivationFactory(&HSTRING::from(
+            "Windows.Foundation.Uri",
+        ))?
+    };
+    let text = HSTRING::from(value);
+    let mut pointer = std::ptr::null_mut();
+    let code = unsafe {
+        (factory.vtable().CreateUri)(
+            factory.as_raw(),
+            std::mem::transmute_copy(&text),
+            &mut pointer,
+        )
+    };
+    owned_result(code, pointer)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Origin {
     Store,
@@ -396,6 +659,15 @@ fn observe(
 fn registered_uri(
     package: &windows_runtime::ApplicationModel::Package,
 ) -> windows_runtime::core::Result<Option<String>> {
+    registered_info(package)?
+        .map(|info| Ok(info.Uri()?.RawUri()?.to_string()))
+        .transpose()
+}
+
+#[cfg(windows)]
+fn registered_info(
+    package: &windows_runtime::ApplicationModel::Package,
+) -> windows_runtime::core::Result<Option<windows_runtime::ApplicationModel::AppInstallerInfo>> {
     use windows_runtime::{
         core::Interface,
         ApplicationModel::{AppInstallerInfo, IPackage6},
@@ -413,8 +685,7 @@ fn registered_uri(
         Some(unsafe { AppInstallerInfo::from_raw(pointer) })
     };
     result.ok()?;
-    info.map(|info| Ok(info.Uri()?.RawUri()?.to_string()))
-        .transpose()
+    Ok(info)
 }
 
 #[cfg(windows)]
@@ -642,6 +913,20 @@ mod tests {
                 .unwrap();
             assert!(matches!(status.source, UpdateSource::Unconfigured { .. }));
             assert_eq!(status.availability, Availability::NotChecked);
+        }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn preparation_requires_an_installed_source_before_network_or_deployment() {
+        assert!(matches!(
+            prepare_direct(&release(false), || true),
+            Err("deployment_cancelled")
+        ));
+        for _ in 0..3 {
+            let result = std::thread::spawn(|| prepare_direct(&release(false), || false))
+                .join()
+                .unwrap();
+            assert!(matches!(result, Err("windows_source_unavailable")));
         }
     }
     #[cfg(all(windows, feature = "qualification-tools"))]

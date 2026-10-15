@@ -16,6 +16,7 @@ mod policy;
 mod prerequisite;
 #[cfg(windows)]
 mod servicing;
+mod servicing_feed;
 #[cfg(windows)]
 mod windows;
 
