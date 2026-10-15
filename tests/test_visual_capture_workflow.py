@@ -96,6 +96,7 @@ def _assert_contracts_and_safety_are_explicit(workflow: dict[str, Any]) -> None:
     assert "if" not in surfaces and not surfaces.get("continue-on-error")
     requirements = (ROOT / "requirements-dev.txt").read_text().splitlines()
     install = _step(job, "Install pinned reporting safety dependencies")["run"]
+    assert "starlette==1.8.0" in install
     for name in ("pytest", "pytest-asyncio"):
         assert next(line for line in requirements if line.startswith(f"{name}==")) in install
     assert "needs" not in workflow["jobs"]["visual-capture-execution"], "capture feedback must start independently"

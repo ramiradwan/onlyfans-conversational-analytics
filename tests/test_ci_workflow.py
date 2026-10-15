@@ -1150,6 +1150,7 @@ def test_browser_split_cannot_bypass_isolation_or_reporting_safety(mutation: str
 def test_reporting_safety_python_pins_match_the_existing_development_requirements() -> None:
     safety = _jobs(_workflow_document())["browser-reporting-safety"]
     install = next(step["run"] for step in _steps(safety) if step.get("name") == "Install pinned reporting dependencies")
+    assert "starlette==1.8.0" in install
     requirements = (ROOT / "requirements-dev.txt").read_text().splitlines()
     for name in ("pytest", "pytest-asyncio"):
         pin = next(line for line in requirements if line.startswith(f"{name}=="))
