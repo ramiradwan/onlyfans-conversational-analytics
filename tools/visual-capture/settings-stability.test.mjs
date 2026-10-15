@@ -1,9 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { inspectSettingsFrames, settingsGeometryPolicy, settingsFixturePolicy, ordinarySettingsTransition } from './settings-stability.mjs';
+import { inspectSettingsFrames, settingsGeometryPolicy, settingsFixturePolicy, ordinarySettingsTransition, settingsFailureSummary } from './settings-stability.mjs';
 import { dynamicSequence } from './dynamic-matrix.mjs';
 
 const frame = (y = 0, overflow = false) => ({ regions: [{ id: 'settings', rect: [0, y, 300, 200], overflow }], shifts: [], errors: [] });
+
+test('CI stage diagnostics partition failures without exposing browser data or invented IDs', () => {
+  const privateValue = 'PRIVATE-CANARY-cookie=abc@example.test';
+  const errors = [
+    `history:acknowledgement:running: ${privateValue}: moved or resized`,
+    `history:acknowledgement:running: ${privateValue}: removed`,
+    'history:acknowledgement:running: layout shift after first paint',
+    `fixture:scroll-audit: ${privateValue}: overflow`,
+    `${privateValue}: moved or resized`,
+    `invented-stage: ${privateValue}: layout shift after first paint`, null,
+  ];
+  const summary = settingsFailureSummary(errors);
+  assert.deepEqual(summary.stages.map(stage => stage.id), ['history:acknowledgement:running', 'fixture:scroll-audit']);
+  assert.equal(summary.stages[0].counts.geometry, 2);
+  assert.equal(summary.stages[0].counts.shift, 1);
+  assert.equal(summary.stages[1].counts.overflow, 1);
+  assert.equal(summary.unassigned.geometry, 1);
+  assert.equal(summary.unassigned.shift, 1);
+  assert.equal(summary.unassigned.other, 1);
+  assert.equal(JSON.stringify(summary).includes(privateValue), false);
+  assert.equal(JSON.stringify(summary).includes('invented-stage'), false);
+  const total = [...summary.stages.map(stage => stage.counts), summary.unassigned]
+    .flatMap(counts => Object.values(counts)).reduce((sum, count) => sum + count, 0);
+  assert.equal(total, errors.length);
+  assert.deepEqual(settingsFailureSummary([]).stages, []);
+});
 const trace = id => [{ id, before: { frame: 1, nativeAt: 10 }, after: { frame: 2, nativeAt: 20 } }];
 const inspect = (frames, transitions) => {
   let sequence = 0;

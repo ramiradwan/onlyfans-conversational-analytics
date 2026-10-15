@@ -1,6 +1,7 @@
 import { inspectFrames } from './shift-watcher.mjs';
 import { dynamicSequence } from './dynamic-matrix.mjs';
 import { inspectShiftTimeline } from './shift-timeline.mjs';
+import { failureSummary } from './failure-summary.mjs';
 
 const known = new Set(dynamicSequence('settings', 390));
 const contentChanges = new Map([
@@ -40,6 +41,21 @@ const fixtureStable = new Set([
   'fixture:activation-admission-setup', 'fixture:after-admission', 'fixture:activation-code-input',
   'fixture:pairing-companion-notice', 'fixture:pairing-codes-match', 'fixture:scroll-audit',
 ]);
+
+// Emit only source-owned stage IDs and fixed category counts. Raw browser
+// failures, region names, geometry and rendered content stay in local evidence.
+export function settingsFailureSummary(observerErrors) {
+  let remaining = [...observerErrors];
+  const stages = [];
+  for (const id of [...known, ...fixtureContentChanges.keys(), ...fixtureStable]) {
+    const matches = error => typeof error === 'string' && error.startsWith(id + ': ');
+    const errors = remaining.filter(matches);
+    if (!errors.length) continue;
+    stages.push({ id, counts: failureSummary([], errors) });
+    remaining = remaining.filter(error => !matches(error));
+  }
+  return { stages, unassigned: failureSummary([], remaining) };
+}
 
 // Ordinary screenshots use the same task policy as the causal Settings matrix.
 // They must not treat initial owner responses or an explicit form opening as a
