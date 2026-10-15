@@ -168,6 +168,14 @@ These are release obligations, not claims that the producer has fixed the runtim
 
 The implemented [startup storage boundary](../../docs/operations/desktop-startup-storage.md) holds a process-lifetime root lease, binds package descriptors to Windows identity, isolates qualification roots and sets a stable WebView2 profile path. Coordinated encrypted checkpoints, forward migration/resume and child-owned status framing have source and native OS tests. Independently frozen A/B artifacts now exercise genuine auth32→33, historical canonical11→12, interrupted checkpointing, graceful pre-listener cancellation, retained pending work and later publication-state preservation. The linked storage document explains the fixture and evidence limits.
 
+### Caller capacity and quota recovery
+
+On 25H2 build 26200.8037, ordinary limited-user activation of qualification B `1.0.51.0` refused with 32 MiB caller allowance despite ample physical space. Brain exited 78 and the readable recovery page appeared. The original databases, protected key and configuration stayed byte-identical; no checkpoint or transition intent was created.
+
+After restoring the original quota policy, the same B migrated auth33→35 and canonical12→14 before admission. All 5,000 synthetic messages, usable pending commands, journals, publication state and original key/configuration survived. Relaunch and normal Quit passed; all 1,888 installed inventory entries matched. State remained usable after uninstall, and temporary trust and registration were removed.
+
+B freezes isolated source `24f59528`, containing Product `e6cf05d6` plus four qualification migrations; A `1.0.49.0` reuses `ae230662`. Earlier packages `1.0.47.0`/`1.0.48.0` exposed the volume-free-space bug: maintenance recorded intent, refused, then recovered forward after quota restoration. The corrected [capacity admission](../../docs/operations/desktop-startup-storage.md) checks the caller's allowance. Neither locally trusted quota campaign qualifies physical disk exhaustion, hardware keys or customer delivery.
+
 ### Earlier qualification checkpoints
 
 These records preserve earlier results and failures. Statements about unfinished work describe that checkpoint; current qualification is recorded above. None of these historical fixtures establishes customer delivery.
