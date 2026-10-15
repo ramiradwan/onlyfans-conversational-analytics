@@ -128,6 +128,22 @@ pwsh -File .\packaging\verify-msix.ps1 `
 
 Add `-AllowQualification` only for isolated tests. Real SDK tests use stand-in Windows PEs to prove semantic packing and closure. They do **not** prove PyInstaller/Tauri startup, a trusted timestamped direct signature or an installed customer journey. The direct positive signature and chain/timestamp failure matrix remain required release qualification.
 
+### Certification assessment
+
+After verifying the final package and exercising ordinary limited-user activation, run the Windows App Certification Kit in an elevated interactive Windows session. Its documented package-file entry point assesses the exact sealed artifact:
+
+```powershell
+$kit = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits\10\App Certification Kit\appcert.exe'
+& $kit reset
+& $kit test -appxpackagepath C:\release\desktop.msix -reportoutputpath C:\release\certification.xml
+```
+
+Retain the complete unfiltered report and diagnostic logs. Process exit zero means the verb completed; the XML records individual and overall test results. [Microsoft kit instructions](https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/windows-app-certification-kit)
+
+With SDK `10.0.26100.7705` on the isolated 25H2 VM, the normal `6aa03eac` package reported `PASS` through this entry point: 23 tests passed and the optional blocked-executables test failed. DPI validation passed on the kit's extracted copy. The same signed bytes assessed through `-packagefullname` reported a DPI infrastructure warning. A direct `CreateActCtxW` probe returned access denied at the installed WindowsApps path and read `PerMonitorV2` from the identical writable copy. Spaces, read-only attributes, file write denial and directory creation denial each passed in isolated controls. Both reports and the native-reader controls remain retained with their distinct scopes.
+
+The optional finding still needs assessment of actual launch dependencies; raw executable-name strings alone do not establish behavior. Microsoft treats optional Desktop Bridge tests as informational. This controlled assessment uses temporary qualification trust and does not establish Store approval, S-mode/WDAC compatibility or final customer-route certification. Ordinary installed launch, retained-state continuity and the final customer artifact still require their own evidence. [Desktop Bridge test interpretation](https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/windows-desktop-bridge-app-tests)
+
 ## App Installer and publication
 
 The owner supplied the reserved **Conversation Analytics** Store draft on 2026-10-14. [production-store.json](profiles/production-store.json) records its exact package Name, Publisher and display name. [store-reservation.json](store-reservation.json) records the supplied PFN, SID, Store ID and provenance. Windows Appx derives the same PFN from the manifest in the producer test, without registering a package.
