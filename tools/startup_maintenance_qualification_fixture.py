@@ -7,8 +7,9 @@ are admitted. No production data root can be selected.
 """
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import datetime, timezone
+import asyncio
 import hashlib
 import io
 import json
@@ -28,6 +29,10 @@ from app.persistence.migrations import InstallationMigrationLock, MigrationRunne
 from app.persistence.private_files import (reject_path_aliases, apply_private_directory_security,
                                           apply_private_file_security, private_file_identity, file_sha256)
 from app.persistence.signing_parameters import SigningParameterPersistence
+from app.persistence.repositories import SQLiteCommandRepository
+from app.protocol.common import MessageSendAction
+from app.provisioning.progress_reporting import _new_uuid7
+from app.services.command_execution import CommandDeliveryTarget, CommandService
 from app.security.local_data_key import database_key
 from app.security.signing_parameter_publications import (
     canonical, checkpoint, sha256, verify_catalog, verify_keyset,
@@ -94,6 +99,12 @@ def observe(root: Path) -> dict:
                     count += 1
                 result["messages"] = digest.hexdigest()
                 result["message_count"] = count
+                # Reconstruct through the actual read-only repository. A raw
+                # table digest alone does not prove retained work is usable.
+                commands = SQLiteCommandRepository(SimpleNamespace(read=lambda: nullcontext(connection))).list()
+                for command in commands:
+                    MessageSendAction.model_validate(command.action)
+                    assert command.idempotency_policy == "deduplicate"
                 result["commands"] = sha256(canonical([list(row) for row in connection.execute("SELECT * FROM commands")]))
         with path.open("rb") as handle:
             assert not handle.read(16).startswith(b"SQLite format 3")
@@ -125,8 +136,9 @@ def seed(root: Path, rows: int) -> None:
         connection.execute("""INSERT INTO onboarding_progress_outbox
             (milestone,event_id,occurred_at,onboarding_transaction_id,organization_id,installation_id,
              correlation_id,state,attempts,next_attempt_at)
-            VALUES ('enrolled','synthetic-event',?,'synthetic-transaction','synthetic-org',
-                    'synthetic-installation','synthetic-correlation','pending',2,'2099-01-01T00:00:00Z')""", (now,))
+            VALUES ('enrolled',?,?,'synthetic-transaction','synthetic-org',
+                    'synthetic-installation',?,'pending',2,'2099-01-01T00:00:00Z')""",
+            (_new_uuid7(datetime.fromisoformat(now)), now, _new_uuid7(datetime.fromisoformat(now))))
         body = canonical({"synthetic": "pending-activation"}).decode()
         connection.execute("""INSERT INTO capability_license_pending_deliveries
             (operation_type,authority_reference_id,endpoint,idempotency_key,request_body,request_digest,created_at)
@@ -157,11 +169,28 @@ def seed(root: Path, rows: int) -> None:
                     'synthetic-message-hash',1,1,'synthetic-message-event',0,?,'ordinary',?)""",
             ((f"synthetic-message-{index:08}", "Synthetic protected text " + "q" * 4096, now, now, now)
              for index in range(rows)))
-        connection.execute("""INSERT INTO commands
-            (command_id,creator_account_id,action_json,deadline,idempotency_policy,issued_at,state,
-             delivery_attempts,result_apply_count)
-            VALUES ('synthetic-command','synthetic-account','{}','2099-01-01T00:00:00Z',
-                    'synthetic-policy',?,'issued',2,0)""", (now,))
+    asyncio.run(seed_pending_command(database, now=datetime.fromisoformat(now)))
+
+
+async def seed_pending_command(database: CanonicalSQLite, *, now: datetime) -> None:
+    """Use the real command boundary with a local delivery sink, never a socket."""
+    sent = []
+
+    async def capture(payload):
+        sent.append(payload)
+
+    service = CommandService(SQLiteCommandRepository(database))
+    record = await service.issue(
+        creator_account_id="synthetic-account",
+        action={"type": "message.send", "conversation_id": "synthetic-chat",
+                "text": "Synthetic pending command", "media_url": None},
+        deadline=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        target=CommandDeliveryTarget(uuid4(), "synthetic-fence", "synthetic-account"),
+        sender=capture, now=now,
+    )
+    assert record.state == "issued" and record.delivery_attempts == 1
+    assert len(sent) == 1 and sent[0]["command_id"] == str(record.command_id)
+    assert service.expire(now) == []
 
 
 def publish(root: Path) -> None:

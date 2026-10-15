@@ -248,3 +248,57 @@ def test_refusal_diagnostic_does_not_echo_untrusted_ledger_text(tmp_path):
     rendered = "".join(traceback.format_exception(captured.value))
     assert "retained_schema_incompatible" in rendered
     assert sentinel not in rendered
+
+
+def _seed_supported_qualification_work(tmp_path, monkeypatch):
+    from tools import startup_maintenance_qualification_fixture as fixture
+    from app.persistence.private_files import apply_private_directory_security
+    monkeypatch.delenv("OFCA_TEST_DATABASE_MASTER_KEY_HEX", raising=False)
+    apply_private_directory_security(tmp_path)
+    catalog = tmp_path / "auth32-catalog"
+    catalog.mkdir()
+    for path in sorted(AUTH_CATALOG.glob("[0-9]*.sql"))[:32]:
+        shutil.copyfile(path, catalog / path.name)
+    database = AuthSQLite(tmp_path / "auth.sqlite3")
+    MigrationRunner(database, migrations_dir=catalog).run()
+    fixture.seed(tmp_path, 100)
+    return fixture
+
+
+@pytest.mark.skipif(os.name != "nt", reason="real DPAPI qualification fixture")
+def test_qualification_fixture_pending_command_is_usable_by_the_real_expiry_worker(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    from app.persistence.database import CanonicalSQLite
+    from app.persistence.repositories import SQLiteCommandRepository
+    from app.services.command_execution import CommandService
+    from app.protocol.common import MessageSendAction
+    fixture = _seed_supported_qualification_work(tmp_path, monkeypatch)
+    before = fixture.observe(tmp_path)
+    database = CanonicalSQLite(tmp_path / "canonical.sqlite3")
+    service = CommandService(SQLiteCommandRepository(database))
+    command, = service.list()
+    MessageSendAction.model_validate(command.action)
+    assert command.state == "issued" and command.delivery_attempts == 1
+    assert command.idempotency_policy == "deduplicate"
+    assert service.expire(datetime.now(timezone.utc)) == []
+    assert fixture.observe(tmp_path) == before
+
+
+@pytest.mark.skipif(os.name != "nt", reason="real DPAPI qualification fixture")
+@pytest.mark.parametrize("damage", ["identifier", "action"])
+def test_qualification_observation_refuses_unusable_commands_instead_of_only_hashing_them(tmp_path, monkeypatch, damage):
+    from datetime import datetime, timezone
+    from app.persistence.database import CanonicalSQLite
+    fixture = _seed_supported_qualification_work(tmp_path, monkeypatch)
+    database = CanonicalSQLite(tmp_path / "canonical.sqlite3")
+    with database.transaction() as connection:
+        if damage == "action":
+            connection.execute("UPDATE commands SET action_json='{}'")
+        else:
+            connection.execute("""INSERT INTO commands
+                (command_id, creator_account_id, action_json, deadline, idempotency_policy, issued_at, state,
+                 delivery_attempts, result_apply_count)
+                SELECT 'synthetic-command', creator_account_id, action_json, deadline, idempotency_policy, ?, state, 0, 0
+                FROM commands LIMIT 1""", (datetime.now(timezone.utc).isoformat(),))
+    with pytest.raises(ValueError):
+        fixture.observe(tmp_path)
