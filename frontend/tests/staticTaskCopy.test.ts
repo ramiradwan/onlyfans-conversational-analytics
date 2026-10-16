@@ -7,8 +7,19 @@ const read = (file: string) => fs.readFileSync('../' + file, 'utf8').replace(/\r
 const parse = (file: string) => new DOMParser().parseFromString(read(file), 'text/html');
 const baseline = JSON.parse(fs.readFileSync('tests/fixtures/protected-static-disclosures.json', 'utf8'));
 
+function approvedSectionNames() {
+  const source = read('extension/setup.html');
+  return Object.entries(baseline.activation_sections).map(([name, digest]) => {
+    const sections = [...source.matchAll(new RegExp(`data-approved-copy="${name}">\\n([\\s\\S]*?)</div>`, 'g'))];
+    expect(sections, name).toHaveLength(1);
+    expect(createHash('sha256').update(sections[0][1]).digest('hex'), name).toBe(digest);
+    return name;
+  });
+}
+
 describe('task-focused static copy', () => {
   it('keeps protected disclosures unchanged', () => {
+    approvedSectionNames();
     const doc = parse('extension/setup.html');
     for (const [id, item] of Object.entries(baseline.blocks) as [string, { element_sha256: string }][]) {
       const element = doc.getElementById(id);
@@ -32,6 +43,15 @@ describe('task-focused static copy', () => {
   it.each(['extension/popup.html', 'extension/setup.html', 'extension/options.html', 'frontend/onboarding/index.html'])('has no semicolons in rendered copy in %s', (file) => {
     const doc = parse(file);
     doc.querySelectorAll('style,script').forEach((node) => node.remove());
+    // Formatting rules cannot rewrite exact adopted text. Verify those bytes
+    // before excluding only the three named sections from this copy-style rule.
+    if (file === 'extension/setup.html') {
+      for (const name of approvedSectionNames()) {
+        const sections = doc.querySelectorAll(`[data-approved-copy="${name}"]`);
+        expect(sections).toHaveLength(1);
+        sections[0].remove();
+      }
+    }
     expect(doc.body.textContent).not.toContain(';');
   });
   it.each(['extension/popup.js', 'extension/runtime/customer-journey.mjs', 'frontend/onboarding/view.js'])('has no semicolons in operational messages in %s', (file) => {

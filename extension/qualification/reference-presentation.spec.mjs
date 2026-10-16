@@ -152,7 +152,7 @@ for (const width of [800, 640]) {
     const brandHeight = await page.locator('.onboarding-header .product-name').evaluate((element) => element.getBoundingClientRect().height);
     expect(brandHeight).toBeLessThan(130);
     await expect(page.locator('#pre-mode')).toBeVisible();
-    await expect(page.locator('#start-disclosure')).toContainText('no general automatic age-based expiry');
+    await expect(page.locator('#start-disclosure')).toContainText('no general automatic expiry');
     await page.locator('#terms-accepted').check();
     await page.locator('#risk-acknowledged').check();
     const action = page.locator('#activate-software');

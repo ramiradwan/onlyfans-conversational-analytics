@@ -40,7 +40,7 @@ async function renderSurface(surface, model) {
         classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
           contains: (name) => classes.has(name) },
         setAttribute() {}, removeAttribute() {}, addEventListener() {},
-        querySelector: node, cloneNode() { return this; }, replaceChildren() {}, append() {} });
+        querySelector: node, cloneNode() { return this; }, replaceChildren() {}, append() {}, insertBefore() {} });
     }
     return nodes.get(id);
   };
