@@ -90,6 +90,7 @@ button { min-height: var(--dipsy-static-large-control-height); font-size: var(--
 .check-row { gap: 10px; padding: 8px 0; }
 .check-row input { width: 18px; height: 18px; }
 .points { padding-left: 20px; }
+.points[data-approved-copy] { padding-left: 0; }
 .points li { margin-bottom: 8px; }
 .pairing-code { margin: 20px 0 4px; font-family: var(--dipsy-font-family-numeric); font-size: 2.75rem; line-height: 1.25; }
 #pairing-label { text-align: center; margin: 0 0 20px; }

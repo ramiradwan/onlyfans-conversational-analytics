@@ -17,6 +17,13 @@ import { createSetupChoice } from './ui/setup-choice.mjs';
 import { previewCounts } from './ui/preview-counts.mjs';
 import { setupRequirement } from './ui/setup-requirement.mjs';
 
+// Keep the approved section bytes intact in HTML; focus identifiers are presentation state.
+for (const mode of ['preview', 'full']) {
+  const heading = document.querySelector(`#${mode}-disclosure .points h2`);
+  heading.id = `${mode}-choice-title`;
+  heading.tabIndex = -1;
+}
+
 let failed = false;
 let dismissed = false;
 let fullReviewRequested = false;
@@ -213,8 +220,12 @@ function render(model) {
     const disclosure = element('start-disclosure');
     if (disclosure.dataset.mode !== selected) {
       const original = element(selected === 'full' ? 'full-disclosure' : 'preview-disclosure');
-      disclosure.replaceChildren(original.querySelector('.points').cloneNode(true));
-      if (selected === 'preview') disclosure.append(original.querySelector('.fine-print').cloneNode(true));
+      const copy = original.querySelector('.points').cloneNode(true);
+      copy.querySelector('h2').removeAttribute('id');
+      copy.querySelector('h2').removeAttribute('tabindex');
+      const separateChoices = element('separate-choices-disclosure').cloneNode(true);
+      separateChoices.removeAttribute('id');
+      disclosure.replaceChildren(copy, separateChoices);
       disclosure.dataset.mode = selected;
     }
   }
@@ -230,6 +241,10 @@ function render(model) {
   const reviewFull = fullReviewRequested || Boolean(browserTask);
   show('preview-disclosure', view === 'mode' && !reviewFull);
   show('full-disclosure', view === 'mode' && reviewFull);
+  if (view === 'mode') {
+    element(reviewFull ? 'full-disclosure' : 'preview-disclosure').insertBefore(
+      element('separate-choices-disclosure'), element(reviewFull ? 'enable-full' : 'enable-preview'));
+  }
   show('enable-preview', !active); show('enable-full', mode !== 'full' || legal.requires_reauthorization);
   text('full-secondary', mode === 'preview' ? 'Keep Preview' : 'Not now');
   text('access-title', 'Allow site access');

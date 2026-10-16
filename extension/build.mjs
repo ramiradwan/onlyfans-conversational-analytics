@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { zipSync } from 'fflate';
 import { validatePackagedSigningRule } from 'local-authenticated-read-connector/browser-signing';
-import { auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
+import { auditActivationDisclosures, auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
 import { readArchiveEntries } from './qualification/archive-entries.mjs';
 import { signingPublicationTrust, SIGNING_PUBLICATION_TRUST_SHA256, SIGNING_PUBLICATION_TRUST_B64 } from './runtime/signing-publication-trust.mjs';
 import { SIGNER_RELEASE, signerReleaseFiles, auditInstalledSigner, auditSignerMetadata } from './qualification/signer-release.mjs';
@@ -820,7 +820,7 @@ async function auditArtifactView(view, {
 
   const popup = TEXT_DECODER.decode(await view.read('popup.html'));
   assert.match(popup, /Observed in this browser/);
-  assert.match(TEXT_DECODER.decode(await view.read('setup.html')), /Preview retains no message text/);
+  auditActivationDisclosures(TEXT_DECODER.decode(await view.read('setup.html')));
   assert.doesNotMatch(popup, /id="(?:pre-mode|mode-choice|companion-pairing|delete-local-data)"/);
   assert.match(popup, /not affiliated with or endorsed by OnlyFans/);
 

@@ -377,7 +377,8 @@ test('Full disclosure stays in the setup tab while a legal document is reviewed'
     expect((await browser.state()).mode).toBe('preview');
     await admitSyntheticBrowserAccess(setup);
     await expect(setup.locator('#full-disclosure')).toBeVisible();
-    await setup.locator('#full-disclosure .extension-privacy-link').click();
+    await expect(setup.locator('#full-secondary')).toHaveText('Keep Preview');
+    await setup.locator('#full-disclosure').getByRole('link', { name: 'Extension Privacy Notice' }).click();
     await expect.poll(() => desktop.pages).toContain('/extension-privacy');
     expect(setup.isClosed()).toBe(false);
     await setup.bringToFront();

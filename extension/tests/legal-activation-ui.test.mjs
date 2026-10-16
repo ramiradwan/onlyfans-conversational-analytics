@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { auditActivationDisclosures } from '../qualification/legal-binding-literals.mjs';
 
 const html = await readFile(new URL('../setup.html', import.meta.url), 'utf8');
 const script = (await Promise.all(['../setup.js', '../ui/actions.mjs'].map((file) => readFile(new URL(file, import.meta.url), 'utf8')))).join('\n');
@@ -12,49 +13,49 @@ function requireFragment(pattern, label) {
   return match[0];
 }
 
-function listItems(fragment) {
-  return [...fragment.matchAll(/<li>([\s\S]*?)<\/li>/g)]
-    .map(([, item]) => item.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
-}
-
 const modeChoice = requireFragment(/<section id="mode-choice"[\s\S]*?<\/section>/, 'Mode choice');
 
-// Legal's approved prominent-disclosure copy, rendered with the notice URL as a link.
-const APPROVED_PREVIEW_POINTS = [
-  'Transient inspection: generating Preview metrics can require the Extension to transiently inspect supported chat and message response information as the supported page handles it.',
-  'Retained Preview data: Preview retains only identifier-free daily counts and message direction information.',
-  'Seven-day retention: retained Preview metrics are automatically removed after seven days.',
-  'No content or identifiers retained: Preview retains no message text or participant, message or chat identifiers.',
-];
-const APPROVED_FULL_POINTS = [
-  'Message content: Full handles and retains message text and related conversation, message and participant information.',
-  'Same-computer transfer: Full information leaves the Extension but remains on the same computer. The Extension sends it to the companion analytics service running on that computer.',
-  'Persistence: the Extension and companion analytics service can both retain Full information at the same time, and there is currently no general automatic age-based expiry for the main Full conversation dataset.',
-  'Deletion boundary: deleting Extension data does not delete Full information already retained by the companion analytics service.',
-  'Other people: Full contains subscriber and other-person information. Enabling Full is not consent on behalf of a subscriber or another person.',
-  'Extension Privacy Notice: read the complete data-handling description.',
-];
+// Exact adopted customer-render sections; UI containers/actions stay outside these bytes.
+const APPROVED_SECTION_HASHES = {
+  preview: '92642f8a5c46c5026de0b6845dbfdb0c4adbedaa5612d2d634c4d796a02f4fa2',
+  full: '5527bb2a4b92d4a3381c77ccbd944ac73379ec4f2b1d01c73e6538b9f7a38151',
+  'separate-choices': 'd9b04f4a0f4e015e99092f3d89af1cce0af430fb823b4d97e10a497cbc833837',
+};
 
-test('Preview disclosure renders the Legal-approved points and actions', () => {
+function approvedSection(name) {
+  const matches = [...html.matchAll(new RegExp(`data-approved-copy="${name}">\\n([\\s\\S]*?)</div>`, 'g'))];
+  assert.equal(matches.length, 1, `${name} must have one complete section`);
+  assert.equal(createHash('sha256').update(matches[0][1]).digest('hex'), APPROVED_SECTION_HASHES[name]);
+  return matches[0][1];
+}
+
+test('Preview disclosure retains the adopted section and exact actions', () => {
+  approvedSection('preview');
   const preview = requireFragment(/<div id="preview-disclosure"[\s\S]*?(?=<div id="full-disclosure")/, 'Preview disclosure');
-  assert.deepEqual(listItems(preview), APPROVED_PREVIEW_POINTS);
-  assert.match(preview, /Read the <a class="extension-privacy-link" href="#">Extension Privacy Notice<\/a>\./);
   assert.match(preview, /id="enable-preview"[^>]*>Enable Preview<\/button>/);
   assert.match(preview, /id="not-now-preview"[^>]*>Not now<\/button>/);
   assert.match(preview, /id="review-full"[^>]*>Review Full analytics<\/button>/);
 });
 
-test('Full disclosure uses Legal-approved ordering and Enable Full analytics action', () => {
-  const fullDisclosure = requireFragment(/<div id="full-disclosure"[\s\S]*?(?=<\/section>)/, 'Full disclosure');
-  assert.match(fullDisclosure, /Before choosing Full, review these points:/);
-  assert.deepEqual(listItems(fullDisclosure), APPROVED_FULL_POINTS);
-  assert.match(fullDisclosure, /class="extension-privacy-link"/);
-  assert.match(fullDisclosure, />Enable Full analytics<\/button>/);
-  assert.match(fullDisclosure, /id="full-secondary"/);
+test('Full disclosure retains the adopted section and separate Full action', () => {
+  approvedSection('full');
+  const full = requireFragment(/<div id="full-disclosure"[\s\S]*?(?=<div id="separate-choices-disclosure")/, 'Full disclosure');
+  assert.match(full, /id="enable-full"[^>]*>Enable Full analytics<\/button>/);
+  assert.match(full, /id="full-secondary"[^>]*>Not now<\/button>/);
   assert.match(script, /'Keep Preview' : 'Not now'/);
-  assert.doesNotMatch(fullDisclosure, /Connect full analytics/);
   assert.doesNotMatch(script, /transition\(['"]full['"]\)/);
   assert.match(script, /LEGAL_CHOOSE_MODE_MESSAGE_TYPE/);
+});
+
+test('the distinct separate-choices section retains its adopted bytes', () => {
+  approvedSection('separate-choices');
+});
+
+test('the package copy audit refuses changed, missing and duplicate disclosures', () => {
+  auditActivationDisclosures(html);
+  assert.throws(() => auditActivationDisclosures(html.replace('local tokens', 'local counts')));
+  assert.throws(() => auditActivationDisclosures(html.replace('data-approved-copy="full"', 'data-removed-copy="full"')));
+  assert.throws(() => auditActivationDisclosures(`${html}<div data-approved-copy="preview">\n${approvedSection('preview')}</div>`));
 });
 
 test('mode choice keeps every required point visible without a collapsed section', () => {

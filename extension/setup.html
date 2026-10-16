@@ -101,35 +101,37 @@
       </section>
     <section id="mode-choice" class="onboarding-card hidden">
         <div id="preview-disclosure" class="choice" role="group" aria-labelledby="preview-choice-title">
-          <h2 id="preview-choice-title" tabindex="-1">Start with Preview</h2>
-          <p class="lead">See how many messages you send and receive each day.</p>
-          <ul class="points">
-            <li><strong>Transient inspection:</strong> generating Preview metrics can require the Extension to transiently inspect supported chat and message response information as the supported page handles it.</li>
-            <li><strong>Retained Preview data:</strong> Preview retains only identifier-free daily counts and message direction information.</li>
-            <li><strong>Seven-day retention:</strong> retained Preview metrics are automatically removed after seven days.</li>
-            <li><strong>No content or identifiers retained:</strong> Preview retains no message text or participant, message or chat identifiers.</li>
-          </ul>
-          <p class="fine-print">Read the <a class="extension-privacy-link" href="#">Extension Privacy Notice</a>.</p>
+          <div class="points" data-approved-copy="preview">
+<h2>Preview</h2>
+<p>Preview temporarily handles account, chat and message information received by supported OnlyFans pages to measure recent activity. This information can include message text.</p>
+<p>It keeps local tokens (codes derived from account, chat and message identifiers), the key used to create them, activity dates and message direction. This avoids duplicate counts. Saved activity records exclude message text, original identifiers and display names.</p>
+<p>Activity counts cover today and the previous six days. Days start at midnight UTC. Older entries are removed at startup and during maintenance. Cleanup waits while Chrome is stopped.</p>
+<p>The extension may observe an inactive OnlyFans tab that it opens. Pause stops forwarding and saving new observations; observation code already attached to a page can still temporarily process this information.</p>
+<p>Local processing and limited retention do not mean OnlyFans permits Preview. Platform restrictions can apply to collection and put your account and earnings at risk.</p>
+<p>Read the <a href="/legal/extension-privacy">Extension Privacy Notice</a> and <a href="/legal/creator-risk-disclosure">Creator platform and data risks</a>.</p>
+</div>
           <button id="enable-preview" class="primary" type="button">Enable Preview</button>
           <button id="not-now-preview" class="text-button" type="button">Not now</button>
           <button id="review-full" class="menu-row" type="button">Review Full analytics</button>
         </div>
 
         <div id="full-disclosure" class="choice hidden" role="group" aria-labelledby="full-choice-title">
-          <h2 id="full-choice-title" tabindex="-1">Full analytics</h2>
-          <p class="lead">Get insights from your conversations in the desktop app.</p>
-          <p>Before choosing Full, review these points:</p>
-          <ol class="points">
-            <li><strong>Message content:</strong> Full handles and retains message text and related conversation, message and participant information.</li>
-            <li><strong>Same-computer transfer:</strong> Full information leaves the Extension but remains on the same computer. The Extension sends it to the companion analytics service running on that computer.</li>
-            <li><strong>Persistence:</strong> the Extension and companion analytics service can both retain Full information at the same time, and there is currently <strong>no general automatic age-based expiry for the main Full conversation dataset</strong>.</li>
-            <li><strong>Deletion boundary:</strong> deleting Extension data does <strong>not</strong> delete Full information already retained by the companion analytics service.</li>
-            <li><strong>Other people:</strong> Full contains subscriber and other-person information. Enabling Full is <strong>not consent on behalf of a subscriber or another person</strong>.</li>
-            <li><strong>Extension Privacy Notice:</strong> <a class="extension-privacy-link" href="#">read the complete data-handling description</a>.</li>
-          </ol>
+          <div class="points" data-approved-copy="full">
+<h2>Full</h2>
+<p>Full handles and keeps message text, identifiers, participant details and related conversation information. The extension sends this information to the companion analytics app on the same computer. Both can keep a copy.</p>
+<p>The companion can keep message tone, topic and activity analysis linked to messages and people. It can also keep links between participants, conversations and messages.</p>
+<p>Messages kept for ongoing analysis have no general automatic expiry. Archive copies and analytics have separate retention rules. Deleting extension data does not delete the companion's copies, exported files or every recovery copy.</p>
+<p>Full's collection and history retrieval are subject to OnlyFans restrictions. Your permission, read-only access and local processing do not mean OnlyFans permits them. Enforcement may affect your account, payments and earnings.</p>
+<p>Enabling Full is not consent on anyone else's behalf. Read the <a href="/legal/extension-privacy">Extension Privacy Notice</a> and <a href="/legal/creator-risk-disclosure">Creator platform and data risks</a>.</p>
+</div>
           <button id="enable-full" class="primary" type="button">Enable Full analytics</button>
           <button id="full-secondary" class="text-button" type="button">Not now</button>
         </div>
+        <div id="separate-choices-disclosure" class="points" data-approved-copy="separate-choices">
+<h2>Separate choices</h2>
+<p>Enabling Full does not enable history access; you enable it separately. In the ordinary software workflow, the normal conversation dataset stays on your computer and is not sent to our hosted analytics or storage services.</p>
+<p>Accepting the Software Terms, acknowledging risks and choosing a mode are separate steps. Enabling a mode does not accept OnlyFans' updated terms. Complete any required acceptance directly with OnlyFans.</p>
+  </div>
       </section>
     <section id="access-card" class="journey-card onboarding-card hidden" aria-labelledby="access-title">
       <h2 id="access-title" tabindex="-1"></h2>

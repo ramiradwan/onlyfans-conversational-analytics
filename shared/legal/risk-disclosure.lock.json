@@ -8,19 +8,19 @@
   "recorded_state": {
     "document_id": "risk-disclosure",
     "status": "approved",
-    "version": "1.0.0",
-    "effective_at": "2026-09-04",
-    "approved_at": "2026-09-04",
-    "approved_by": "ramiradwan",
+    "version": "1.1.0",
+    "effective_at": "2026-10-16",
+    "approved_at": "2026-10-16T04:30:33Z",
+    "approved_by": "legal-team-lead",
     "public_url": "/legal/creator-risk-disclosure",
     "canonical_locale": "en",
     "variant": {
       "locale": "en",
       "source_path": "published/risk-disclosure/en.html",
-      "source_sha256": "3532abcaa51189102aaa3e8fc762cf1af06f0564bb1c115bb28ded6c41831246",
-      "rendered_sha256": "3532abcaa51189102aaa3e8fc762cf1af06f0564bb1c115bb28ded6c41831246",
-      "approved_at": "2026-09-04",
-      "approved_by": "ramiradwan"
+      "source_sha256": "e72b5efe378723f53a071f7b576db22c801520e5df6448ed611e89f8c2664572",
+      "rendered_sha256": "e72b5efe378723f53a071f7b576db22c801520e5df6448ed611e89f8c2664572",
+      "approved_at": "2026-10-16T04:30:33Z",
+      "approved_by": "legal-team-lead"
     }
   }
 }

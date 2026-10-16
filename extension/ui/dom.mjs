@@ -26,8 +26,13 @@ export function renderReadiness(model) {
 export function renderLegalLinks(legal) {
   const bindings = legal?.configured ? legal.bindings : null;
   const instruments = bindings?.instruments;
-  for (const [selector, name] of [['#terms-link', 'terms_of_service'], ['#risk-link', 'risk_disclosure'],
-    ['#privacy-link, .extension-privacy-link', 'extension_privacy_notice']]) {
+  for (const [route, name] of [['/legal/extension-privacy', 'extension_privacy_notice'],
+    ['/legal/creator-risk-disclosure', 'risk_disclosure']]) {
+    for (const link of document.querySelectorAll(`a[href="${route}"]`)) link.dataset.legalInstrument = name;
+  }
+  for (const [selector, name] of [['#terms-link', 'terms_of_service'],
+    ['#risk-link, [data-legal-instrument="risk_disclosure"]', 'risk_disclosure'],
+    ['#privacy-link, .extension-privacy-link, [data-legal-instrument="extension_privacy_notice"]', 'extension_privacy_notice']]) {
     let url = null;
     try { if (instruments?.[name]) url = secureExternalUrl(new URL(instruments[name].public_url, bindings.public_origin).href); } catch {}
     for (const link of document.querySelectorAll(selector)) {

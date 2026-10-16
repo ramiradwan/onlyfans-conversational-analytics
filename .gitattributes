@@ -13,6 +13,8 @@ app/analytics/sql/** text eol=lf
 
 # The creator disclosure is served and integrity-tested as frozen UTF-8 bytes.
 app/provisioning/creator-platform-data-risk-disclosure.html text eol=lf
+# Prominent activation sections retain their approved rendered UTF-8 bytes.
+extension/setup.html text eol=lf
 
 # Cross-repository attestation vectors are compared as exact published text.
 tests/fixtures/engineering-attestation-v1-ed25519.json text eol=lf

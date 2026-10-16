@@ -59,7 +59,7 @@ async function initialize(saved, admitted = record, intent = null, options = {})
   const nodes = new Map(), actions = {}, visibility = [], calls = [];
   const element = (id) => {
     if (!nodes.has(id)) nodes.set(id, { hidden: initiallyHidden.has(id), dataset: {}, classList: { toggle() {} },
-      setAttribute() {}, removeAttribute() {}, addEventListener() {} });
+      setAttribute() {}, removeAttribute() {}, addEventListener() {}, insertBefore() {} });
     return nodes.get(id);
   };
   let admit;

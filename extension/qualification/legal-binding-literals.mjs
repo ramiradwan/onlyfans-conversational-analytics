@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 
+// Approved customer-render sections; surrounding UI controls are separately qualified.
+const ACTIVATION_DISCLOSURES = {
+  preview: '92642f8a5c46c5026de0b6845dbfdb0c4adbedaa5612d2d634c4d796a02f4fa2',
+  full: '5527bb2a4b92d4a3381c77ccbd944ac73379ec4f2b1d01c73e6538b9f7a38151',
+  'separate-choices': 'd9b04f4a0f4e015e99092f3d89af1cce0af430fb823b4d97e10a497cbc833837',
+};
+
+export function auditActivationDisclosures(html) {
+  for (const [name, digest] of Object.entries(ACTIVATION_DISCLOSURES)) {
+    const sections = [...html.matchAll(new RegExp(`data-approved-copy="${name}">\\n([\\s\\S]*?)</div>`, 'g'))];
+    assert.equal(sections.length, 1, `expected one ${name} disclosure`);
+    assert.equal(createHash('sha256').update(sections[0][1]).digest('hex'), digest,
+      `${name} disclosure differs from the approved rendering`);
+  }
+}
+
 // Read generated declarations strictly as data. Never evaluate a candidate bundle.
 export function extractStringConstant(source, name) {
   assert.match(name, /^[A-Z][A-Z0-9_]+$/);
