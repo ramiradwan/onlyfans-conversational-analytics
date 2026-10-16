@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 
 import pytest
+import yaml
 
 import inno_setup_compiler
 from test_packaging_policy import _stage_runtime_tree
@@ -13,6 +14,23 @@ from tools.packaging_policy import verify_runtime_files
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="actual PowerShell dispatch guard")
+def test_prerequisite_guard_refuses_mutable_wrong_source_and_publication(tmp_path: Path) -> None:
+    workflow = yaml.safe_load((ROOT / '.github/workflows/windows-package.yml').read_text(encoding='utf-8'))
+    guard = workflow['jobs']['prerequisite-check']['steps'][0]['run']
+    path = tmp_path / "guard.ps1"
+    path.write_text("$ErrorActionPreference='Stop'\n" + guard, encoding="utf-8")
+    valid = {"REF_TYPE": "tag", "REF_NAME": "vmsix-diagnostic-local", "REF_COMMIT": "a" * 40,
+             "PRODUCT_REVISION": "a" * 40, "PUBLICATION_REQUESTED": "false"}
+    for overrides, accepted in (({}, True), ({"REF_TYPE": "branch"}, False),
+        ({"REF_NAME": "v1.0.0"}, False), ({"PRODUCT_REVISION": "b" * 40}, False),
+        ({"PUBLICATION_REQUESTED": "true"}, False)):
+        result = subprocess.run(["pwsh.exe", "-NoProfile", "-NonInteractive", "-File", str(path)],
+            env=os.environ | valid | overrides, capture_output=True, text=True, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW)
+        assert (result.returncode == 0) is accepted, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("capability", ["desktop", "window-frame"])
@@ -53,7 +71,8 @@ def test_release_requires_native_host_as_well_as_frozen_backend(tmp_path):
     "present", "present_user", "newer", "maximum_major", "old", "partial", "extra",
     "leading_zero", "preview", "zero_major", "out_of_range", "missing",
     "untrusted", "wrong_publisher", "download_failure", "install_failure",
-    "missing_after_install", "old_after_install", "timeout",
+    "missing_after_install", "old_after_install", "delayed_registration", "registration_at_deadline",
+    "nonzero_exit_with_runtime", "timeout",
 ])
 def test_shared_webview_prerequisite_skips_present_and_refuses_failed_install(tmp_path, scenario):
     script = (ROOT / "packaging/windows/ensure-webview2.ps1").read_text(encoding="utf-8")
@@ -83,6 +102,23 @@ $script:starts = 0
 $script:kills = 0
 $script:disposed = 0
 $script:downloadPath = $null
+$script:elapsed = 0
+$script:clocks = 0
+$script:sleeps = 0
+function Get-WebView2InstallClock {
+    $script:clocks++
+    $clock = [pscustomobject]@{}
+    $clock | Add-Member -MemberType ScriptProperty -Name ElapsedMilliseconds -Value { return $script:elapsed }
+    return $clock
+}
+function Start-Sleep {
+    param([int]$Milliseconds)
+    if ($Milliseconds -le 0 -or $Milliseconds -gt 250 -or $script:elapsed + $Milliseconds -gt 180000) { throw 'poll_budget_exceeded' }
+    $script:sleeps++
+    $script:elapsed += $Milliseconds
+    if ($scenario -eq 'delayed_registration' -and $script:elapsed -ge 500) { $script:runtimeVersion = $MinimumVersion }
+    if ($scenario -eq 'registration_at_deadline' -and $script:elapsed -eq 180000) { $script:runtimeVersion = $MinimumVersion }
+}
 function Get-ItemProperty {
     param($LiteralPath, $Name, $ErrorAction)
     if ($Name -ne 'pv' -or $LiteralPath -notin @(
@@ -110,10 +146,17 @@ function Start-Process {
     $script:starts++
     if ($WindowStyle -ne 'Hidden' -or ($ArgumentList -join ' ') -ne '/silent /install') { throw 'unexpected_invocation' }
     $script:runtimeVersion = if ($scenario -eq 'old_after_install') { "$($required.Major - 1).65535.65535.65535" }
-        elseif ($scenario -notin @('install_failure','missing_after_install','timeout')) { $MinimumVersion }
+        elseif ($scenario -notin @('install_failure','missing_after_install','delayed_registration','registration_at_deadline','timeout')) { $MinimumVersion }
         else { $null }
-    $result = [pscustomobject]@{ExitCode=$(if ($scenario -eq 'install_failure') {1} else {0});HasExited=$scenario -ne 'timeout'}
-    $result | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {param($timeout) return $scenario -ne 'timeout' -or $script:kills -gt 0}
+    $result = [pscustomobject]@{ExitCode=$(if ($scenario -in @('install_failure','nonzero_exit_with_runtime')) {1} else {0});HasExited=$scenario -ne 'timeout'}
+    $result | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+        param($timeout)
+        if ($script:kills -gt 0) { if ($timeout -ne 5000) { throw 'wrong_cleanup_budget' }; return $true }
+        if ($timeout -ne 180000) { throw 'wrong_install_budget' }
+        if ($scenario -eq 'registration_at_deadline') { $script:elapsed = 179900 }
+        if ($scenario -eq 'timeout') { $script:elapsed = 180000; return $false }
+        return $true
+    }
     $result | Add-Member -MemberType ScriptMethod -Name Kill -Value {$script:kills++}
     $result | Add-Member -MemberType ScriptMethod -Name Dispose -Value {$script:disposed++}
     return $result
@@ -121,20 +164,70 @@ function Start-Process {
 $failed = $false
 try { Install-WebView2Runtime } catch { $failed = $true }
 if ($scenario -in @('present','present_user','newer','maximum_major')) {
-    if ($failed -or $script:downloads -ne 0 -or $script:starts -ne 0) { exit 11 }
-} elseif ($scenario -in @('old','partial','extra','leading_zero','preview','zero_major','out_of_range','missing')) {
+    if ($failed -or $script:downloads -ne 0 -or $script:starts -ne 0 -or $script:clocks -ne 0) { exit 11 }
+} elseif ($scenario -in @('old','partial','extra','leading_zero','preview','zero_major','out_of_range','missing','delayed_registration')) {
     if ($failed -or $script:downloads -ne 1 -or $script:starts -ne 1 -or -not (Test-WebView2Runtime)) { exit 12 }
 } else {
     if (-not $failed) { exit 13 }
-    if ($scenario -notin @('install_failure','missing_after_install','old_after_install','timeout') -and $script:starts -ne 0) { exit 14 }
+    if ($scenario -notin @('install_failure','missing_after_install','old_after_install','registration_at_deadline','nonzero_exit_with_runtime','timeout') -and $script:starts -ne 0) { exit 14 }
 }
 if ($script:disposed -ne $script:starts) { exit 15 }
 if ($script:kills -ne $(if ($scenario -eq 'timeout') {1} else {0})) { exit 16 }
 if ($script:downloadPath -and (Test-Path -LiteralPath (Split-Path -Parent $script:downloadPath))) { exit 17 }
+if ($scenario -eq 'delayed_registration' -and ($script:sleeps -ne 2 -or $script:elapsed -ne 500)) { exit 18 }
+if ($scenario -in @('missing_after_install','old_after_install','registration_at_deadline') -and ($script:elapsed -ne 180000 -or $script:webView2Acquisition.reason -ne 'runtime_not_ready')) { exit 19 }
+if ($scenario -eq 'nonzero_exit_with_runtime' -and ($script:sleeps -ne 0 -or $script:webView2Acquisition.reason -ne 'bootstrapper_failed')) { exit 20 }
+$diagnostic = Get-WebView2AcquisitionLine
+if ($diagnostic.Length -gt 256 -or $diagnostic -notmatch '^phase=[a-z_]+;outcome=(pass|fail);reason=[a-z_]+;bootstrapper_exit_code=(none|-?[0-9]+)$') { exit 21 }
+if (($script:webView2Acquisition.outcome -eq 'fail') -ne $failed) { exit 22 }
 ''', encoding="utf-8")
     result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
         "-File", str(harness), "-MinimumVersion", minimum], capture_output=True, text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows prerequisite result protocol")
+@pytest.mark.parametrize("scenario", ["present", "invalid_minimum", "registry_failure", "diagnostic_write_failure"])
+def test_webview_acquisition_diagnostics_are_bounded_and_preserve_result_protocol(tmp_path, scenario):
+    script = (ROOT / "packaging/windows/ensure-webview2.ps1").read_text(encoding="utf-8")
+    minimum = json.loads((ROOT / "shared/desktop-release/prerequisite-policy.json").read_text(encoding="utf-8"))["webview2_minimum_version"]
+    boundary = script.index("$resultCode = 0")
+    # Exercise the real top-level result writer, replacing registry reads only.
+    # Every case finishes before network acquisition; private exception text is
+    # deliberately supplied to prove it cannot become observable diagnostics.
+    harness = tmp_path / "prerequisite-result.ps1"
+    harness.write_text(script[:boundary] + f"\n$scenario = '{scenario}'\n" + r'''
+function Get-ItemProperty {
+    param($LiteralPath, $Name, $ErrorAction)
+    if ($scenario -eq 'registry_failure') { throw 'private exception path or URL must not escape' }
+    return [pscustomobject]@{pv=$MinimumVersion}
+}
+function Invoke-WebRequest { throw 'network must not be reached' }
+''' + script[boundary:], encoding="utf-8")
+    result_path = tmp_path / "result.txt"
+    diagnostic_path = Path(str(result_path) + ".diagnostics")
+    if scenario == "diagnostic_write_failure":
+        diagnostic_path.mkdir()
+    else:
+        diagnostic_path.write_text("stale private observation", encoding="ascii")
+    supplied_minimum = "not-a-version" if scenario == "invalid_minimum" else minimum
+    result = subprocess.run([
+        "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", str(harness), "-MinimumVersion", supplied_minimum, "-ResultPath", str(result_path),
+    ], capture_output=True, text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+    failed = scenario in {"invalid_minimum", "registry_failure"}
+    assert result.returncode == int(failed), result.stdout + result.stderr
+    assert result_path.read_bytes() == (b"1" if failed else b"0")
+    reason = "minimum_invalid" if scenario == "invalid_minimum" else "probe_failed" if failed else "compatible_present"
+    expected = f"phase=probe;outcome={'fail' if failed else 'pass'};reason={reason};bootstrapper_exit_code=none"
+    assert result.stdout.strip() == expected
+    assert result.stderr == ""
+    assert len(expected.encode("ascii")) <= 256
+    if scenario == "diagnostic_write_failure":
+        assert diagnostic_path.is_dir(), "diagnostic failure must not alter result admission"
+    else:
+        assert diagnostic_path.read_bytes() == expected.encode("ascii")
+    assert not list(tmp_path.glob("*.pending"))
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows build policy consumer")

@@ -259,17 +259,47 @@ function New-InstallationLayout {
     }
 }
 
+function Get-InstallerPrerequisiteObservation {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    # Only the helper's closed, bounded diagnostic grammar may enter evidence.
+    # Setup and Microsoft updater logs can contain private machine information.
+    $observation = @{ status = 'not_recorded' }
+    try {
+        $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+        if (-not (Test-UsableFileIdentity -File $item) -or $item.Length -gt 8388608) { return $observation }
+        $pattern = 'WebView2 prerequisite: phase=(probe|download|signature|launch|wait|readiness|complete);outcome=(pass|fail);reason=(compatible_present|runtime_ready|download_failed|signature_refused|launch_failed|bootstrapper_timeout|bootstrapper_failed|runtime_not_ready|minimum_invalid|probe_failed|unexpected_failure);bootstrapper_exit_code=(none|0|-?[1-9][0-9]{0,9})$'
+        foreach ($line in [IO.File]::ReadLines($item.FullName)) {
+            if ($line.Length -gt 512 -or $line -cnotmatch $pattern) { continue }
+            $code = $null
+            if ($Matches[4] -cne 'none') {
+                $parsed = 0
+                if (-not [int]::TryParse($Matches[4], [ref]$parsed)) { continue }
+                $code = $parsed
+            }
+            $observation = @{ status = 'recorded'; phase = $Matches[1]; outcome = $Matches[2]; reason = $Matches[3]; bootstrapper_exit_code = $code }
+        }
+    } catch {
+        # Passive evidence cannot change the installer result or cleanup.
+    }
+    return $observation
+}
+
 function Invoke-InstallArtifact {
     param([Parameter(Mandatory)] [psobject] $Layout)
 
+    $installerLog = Join-Path $Layout.RunRoot 'installer.log'
+    $installerExitCode = $null
     try {
         # /VERYSILENT also suppresses the installation progress window, which
         # /SILENT still displays and which steals desktop focus.
         Write-SmokeProgress -Stage 'installer-wait' -Phase begin
         $installerProcess = Start-Process -FilePath $ArtifactPath -ArgumentList @(
             '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+            ('/LOG="' + $installerLog + '"'),
             ("/DIR=`"" + $Layout.InstallationPrefix + "`"")
         ) -Wait -PassThru -WindowStyle Hidden
+        $installerExitCode = $installerProcess.ExitCode
         Write-SmokeProgress -Stage 'installer-wait' -Phase end -Details @{ exit_code = $installerProcess.ExitCode }
         if ($installerProcess.ExitCode -ne 0) {
             throw "installer exited with code $($installerProcess.ExitCode)"
@@ -298,6 +328,8 @@ function Invoke-InstallArtifact {
     } catch {
         Add-Result -Step 'install-artifact' -Outcome fail -Evidence @{
             finding = 'installation_failed'; exception = $_.Exception.GetType().Name; message = $_.Exception.Message
+            installer_exit_code = $installerExitCode
+            webview_prerequisite = Get-InstallerPrerequisiteObservation -Path $installerLog
         }
         return $null
     }

@@ -622,6 +622,8 @@ def _assert_installed_launcher_listener(
     installation = _smoke_step(transcript, "install-artifact")
     assert result.returncode == 40, (
         result.stdout + result.stderr
+        + "\nInstallation evidence (first 4096 characters): "
+        + json.dumps(installation, ensure_ascii=True, sort_keys=True)[:4096]
         + "\nProvisioning listener evidence (first 4096 characters): "
         + json.dumps(
             next((step for step in transcript.get("steps", [])
@@ -711,6 +713,20 @@ def test_webview_prerequisite_observation_is_failure_only(monkeypatch, tmp_path)
     with pytest.raises(AssertionError, match="WebView prerequisite host observation"):
         _assert_installed_launcher_listener(subprocess.CompletedProcess([], 41, "", ""), transcript)
     assert calls == [True]
+
+
+def test_installed_failure_reports_installation_before_missing_listener(monkeypatch):
+    transcript = {"steps": [{"step": "install-artifact", "outcome": "fail", "evidence": {
+        "installer_exit_code": 7,
+        "webview_prerequisite": {"phase": "wait", "reason": "bootstrapper_timeout"},
+    }}]}
+    monkeypatch.setitem(sys.modules[__name__].__dict__, "_webview2_prerequisite_observation", lambda: {})
+    with pytest.raises(AssertionError) as failure:
+        _assert_installed_launcher_listener(subprocess.CompletedProcess([], 32, "", ""), transcript)
+    message = str(failure.value)
+    assert '"installer_exit_code": 7' in message
+    assert '"reason": "bootstrapper_timeout"' in message
+    assert '"outcome": "missing", "step": "provisioning-listener"' in message
 
 
 def _missing_backend_falsifier_installer(tmp_path: Path, real_stage: Path) -> Path:

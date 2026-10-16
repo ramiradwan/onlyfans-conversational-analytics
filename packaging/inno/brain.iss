@@ -348,7 +348,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ExitCode, Waited: Integer;
   ResultPath: String;
-  ResultText: AnsiString;
+  ResultText, DiagnosticText: AnsiString;
   WaitMode: TExecWait;
 begin
   Result := '';
@@ -358,6 +358,7 @@ begin
   WizardForm.StatusLabel.Caption := 'Checking the shared Microsoft WebView2 Runtime...';
   ResultPath := ExpandConstant('{tmp}\webview2-result.txt');
   DeleteFile(ResultPath);
+  DeleteFile(ResultPath + '.diagnostics');
   Result := 'Microsoft WebView2 Runtime could not be installed. Check your internet connection, then retry setup.';
   // Interactive Exec pumps window messages while waiting. Silent setup avoids
   // its focus-taking wait window and reads a completed prerequisite receipt.
@@ -381,6 +382,11 @@ begin
       Waited := Waited + 250;
     end;
   end;
+  // The helper emits only bounded static phase/reason tokens and an exit code.
+  // Retain these in an explicitly requested setup log, never raw updater logs.
+  if LoadStringFromFile(ResultPath + '.diagnostics', DiagnosticText)
+    and (Length(DiagnosticText) <= 256) then
+    Log('WebView2 prerequisite: ' + String(DiagnosticText));
   if LoadStringFromFile(ResultPath, ResultText) and (ResultText = '0')
     and SharedWebView2Available() then
     Result := '';

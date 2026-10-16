@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       desktop_target:
-        description: Desktop artifact route or non-publishing R2 credential check
+        description: Desktop artifact route or non-publishing credential/prerequisite check
         required: true
         default: inno
         type: choice
@@ -21,6 +21,7 @@ on:
           - msix-direct
           - msix-store
           - r2-credential-check
+          - webview2-prerequisite-check
       publish_direct:
         description: Request approved direct MSIX upload and descriptor promotion
         required: false
@@ -49,7 +50,7 @@ env:
 
 jobs:
   build:
-    if: inputs.desktop_target != 'r2-credential-check'
+    if: inputs.desktop_target != 'r2-credential-check' && inputs.desktop_target != 'webview2-prerequisite-check'
     outputs:
       publisher_runtime_sha256: ${{ steps.publisher-runtime.outputs.sha256 }}
     name: Build the unsigned package
@@ -325,7 +326,7 @@ jobs:
           retention-days: 7
 
   sign:
-    if: inputs.desktop_target != 'r2-credential-check'
+    if: inputs.desktop_target != 'r2-credential-check' && inputs.desktop_target != 'webview2-prerequisite-check'
     # The federated credential is scoped to a job, not to a step, so this job
     # installs no dependency, compiles nothing, checks out no build tooling,
     # and pins every action it runs to a commit.
@@ -517,6 +518,54 @@ jobs:
             ${{ runner.temp }}/desktop-publication-receipt.json
           if-no-files-found: warn
           retention-days: 30
+
+  prerequisite-check:
+    name: Qualify the shared WebView2 prerequisite
+    if: inputs.desktop_target == 'webview2-prerequisite-check'
+    runs-on: windows-2022
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - name: Require the exact immutable diagnostic source
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_COMMIT: ${{ github.sha }}
+          PRODUCT_REVISION: ${{ inputs.product_revision }}
+          PUBLICATION_REQUESTED: ${{ inputs.publish_direct }}
+        run: |
+          if ($env:REF_TYPE -cne 'tag' -or $env:REF_NAME -cnotmatch '^vmsix-diagnostic-[0-9A-Za-z][0-9A-Za-z._-]*$' -or
+              $env:PRODUCT_REVISION -cne $env:REF_COMMIT -or $env:PUBLICATION_REQUESTED -cne 'false') {
+            throw 'Require the declared immutable diagnostic tag with publication disabled'
+          }
+
+      - name: Checkout the exact prerequisite source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.product_revision }}
+          persist-credentials: false
+
+      - name: Exercise the actual prerequisite helper without building an app
+        shell: pwsh
+        run: |
+          $policy = Get-Content -Raw -LiteralPath shared/desktop-release/prerequisite-policy.json | ConvertFrom-Json
+          if ($policy.schema -cne 'ofca-desktop-prerequisite-policy/v1') { throw 'Unknown prerequisite policy' }
+          $result = Join-Path $env:RUNNER_TEMP 'webview2-qualification-result.txt'
+          $output = Join-Path $env:RUNNER_TEMP 'webview2-helper-private-output.txt'
+          # Arbitrary PowerShell/download exception text never enters public logs.
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File packaging/windows/ensure-webview2.ps1 -MinimumVersion $policy.webview2_minimum_version -ResultPath $result *> $output
+          $helperExitCode = $LASTEXITCODE
+          if (Test-Path -LiteralPath ($result + '.diagnostics')) {
+            $line = [IO.File]::ReadAllText($result + '.diagnostics')
+            if ($line.Length -le 256 -and $line -cmatch '^phase=(probe|download|signature|launch|wait|readiness|complete);outcome=(pass|fail);reason=(compatible_present|runtime_ready|download_failed|signature_refused|launch_failed|bootstrapper_timeout|bootstrapper_failed|runtime_not_ready|minimum_invalid|probe_failed|unexpected_failure);bootstrapper_exit_code=(none|0|-?[1-9][0-9]{0,9})$') {
+              Write-Host $line
+            } else { throw 'Prerequisite diagnostic refused' }
+          } else { throw 'Prerequisite diagnostic missing' }
+          if ($helperExitCode -ne 0 -or [IO.File]::ReadAllText($result) -cne '0') { throw 'Actual runtime acquisition or compatibility failed' }
+          Write-Host 'Shared runtime prerequisite qualified. No Product package was built or signed.'
 
   prepare-credential-check:
     name: Qualify the non-publishing R2 check

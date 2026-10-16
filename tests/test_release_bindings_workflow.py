@@ -7,6 +7,7 @@ that no mutation turns red.
 
 from __future__ import annotations
 
+import ast
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -432,6 +433,42 @@ def test_every_release_coordinate_is_required_and_carries_no_default() -> None:
         del _triggers(dropped)["workflow_dispatch"]["inputs"][name]
         with pytest.raises(AssertionError):
             _assert_every_coordinate_is_required_and_defaulted_nowhere(dropped)
+
+
+def _prerequisite_route_jobs(workflow: dict[str, Any], target: str) -> set[str]:
+    selected = set()
+    for name, job in _jobs(workflow).items():
+        expression = str(job.get("if", "true"))
+        expression = expression.replace("inputs.desktop_target", repr(target)).replace("inputs.publish_direct", "False")
+        expression = expression.replace("&&", " and ").replace("||", " or ")
+        expression = re.sub(r"\btrue\b", "True", expression)
+        expression = re.sub(r"\bfalse\b", "False", expression)
+        tree = ast.parse(expression, mode="eval")
+        assert all(isinstance(node, (ast.Expression, ast.BoolOp, ast.And, ast.Or, ast.Compare,
+            ast.Eq, ast.NotEq, ast.Constant)) for node in ast.walk(tree)), expression
+        if eval(compile(tree, "<job-condition>", "eval"), {"__builtins__": {}}):
+            selected.add(name)
+    return selected
+
+
+def test_prerequisite_check_cannot_select_build_sign_publication_or_credentials() -> None:
+    workflow = _workflow_document()
+    assert _prerequisite_route_jobs(workflow, "webview2-prerequisite-check") == {"prerequisite-check"}
+    assert _prerequisite_route_jobs(workflow, "msix-direct") == {"build", "sign"}
+    assert _prerequisite_route_jobs(workflow, "r2-credential-check") == {"prepare-credential-check", "credential-check"}
+    diagnostic = _jobs(workflow)["prerequisite-check"]
+    assert diagnostic["permissions"] == {"contents": "read"}
+    assert "environment" not in diagnostic and "needs" not in diagnostic
+    encoded = str(diagnostic)
+    assert "secrets." not in encoded and "id-token" not in encoded
+    assert diagnostic["timeout-minutes"] == 8
+    uses = [step["uses"] for step in _steps(diagnostic) if "uses" in step]
+    assert len(uses) == 1 and re.fullmatch(r"actions/checkout@[0-9a-f]{40}", uses[0])
+    checkout = next(step for step in _steps(diagnostic) if "uses" in step)
+    assert checkout["with"] == {"ref": "${{ inputs.product_revision }}", "persist-credentials": False}
+    unguarded = deepcopy(workflow)
+    unguarded["jobs"]["sign"]["if"] = "inputs.desktop_target != 'r2-credential-check'"
+    assert "sign" in _prerequisite_route_jobs(unguarded, "webview2-prerequisite-check")
 
 
 def test_the_two_legal_revisions_reach_the_gate_as_separate_coordinates() -> None:

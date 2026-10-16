@@ -1768,13 +1768,68 @@ def test_failed_webview_prerequisite_does_not_install_or_open_a_window(tmp_path:
     # Force the absent-runtime branch and return a failed prerequisite receipt.
     # The real silent Inno flow must remain hidden and leave no application.
     installer = _compile_installer(tmp_path, source.replace(detection, "", 1), version="1.0.0-webview",
-        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n")
-    prefix = tmp_path / "failed-prerequisite"
+        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\n"
+        "[IO.File]::WriteAllText($ResultPath + '.diagnostics', 'phase=wait;outcome=fail;reason=bootstrapper_timeout;bootstrapper_exit_code=none')\n"
+        "[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n")
     with visible_windows.recording_windows(lambda window: visible_windows.is_inno_setup_image(window.process_image)) as observed:
-        assert _install_silently(installer, prefix) != 0
-    assert not (prefix / "Bridge.exe").exists()
-    assert not (prefix / "unins000.exe").exists()
+        result, transcript = _run_smoke(tmp_path / "failed-prerequisite", artifact_path=installer)
+    _assert_install_failure_exit(result, transcript)
+    evidence = _step(transcript, "install-artifact")["evidence"]
+    assert evidence["installer_exit_code"] != 0
+    assert evidence["webview_prerequisite"] == {
+        "status": "recorded", "phase": "wait", "outcome": "fail",
+        "reason": "bootstrapper_timeout", "bootstrapper_exit_code": None,
+    }
+    assert not any(step["step"] == "open-bridge" for step in transcript["steps"])
+    assert _step(transcript, "uninstall-artifact")["outcome"] == "pass"
     assert not [window for window in observed if window.steals_focus()]
+
+
+def test_installer_diagnostics_exclude_unstructured_private_log_data(tmp_path: Path) -> None:
+    private = "private machine path and updater response"
+    logs = [
+        private + "\n2026-10-17 WebView2 prerequisite: phase=wait;outcome=fail;reason=bootstrapper_failed;bootstrapper_exit_code=-2147219187\n",
+        "WebView2 prerequisite: phase=readiness;outcome=fail;reason=runtime_not_ready;bootstrapper_exit_code=0\n",
+        "WebView2 prerequisite: phase=download;outcome=fail;reason=download_failed;bootstrapper_exit_code=none\n",
+        "WebView2 prerequisite: phase=wait;outcome=fail;reason=bootstrapper_failed;bootstrapper_exit_code=2147483648\n",
+        "WebView2 prerequisite: phase=wait;outcome=fail;reason=private;bootstrapper_exit_code=0\n",
+        "WebView2 prerequisite: phase=wait;outcome=fail;reason=bootstrapper_failed;bootstrapper_exit_code=0;private=secret\n",
+        private,
+    ]
+    paths = []
+    for index, content in enumerate(logs):
+        path = tmp_path / f"installer-{index}.log"
+        path.write_text(content, encoding="utf-8")
+        paths.append(str(path))
+    paths.append(str(tmp_path / "missing.log"))
+    inputs = tmp_path / "inputs.json"
+    inputs.write_text(json.dumps(paths), encoding="utf-8")
+    harness = tmp_path / "read-diagnostics.ps1"
+    harness.write_text(r'''
+param([string] $Source, [string] $Inputs)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile($Source, [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw 'smoke_parse_failed' }
+foreach ($name in @('Test-UsableFileIdentity','Get-InstallerPrerequisiteObservation')) {
+    $function = $ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name}, $true)
+    if (-not $function) { throw 'missing_actual_diagnostic_consumer' }
+    Invoke-Expression $function.Extent.Text
+}
+$results = @(foreach ($path in (Get-Content -Raw -LiteralPath $Inputs | ConvertFrom-Json)) {
+    Get-InstallerPrerequisiteObservation -Path $path
+})
+ConvertTo-Json -Depth 5 -InputObject $results
+''', encoding="utf-8")
+    result = subprocess.run(["pwsh.exe", "-NoProfile", "-NonInteractive", "-File", str(harness),
+        "-Source", str(SMOKE_SCRIPT), "-Inputs", str(inputs)], capture_output=True, text=True, timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW)
+    assert result.returncode == 0, result.stdout + result.stderr
+    observations = json.loads(result.stdout)
+    assert [item["status"] for item in observations] == ["recorded"] * 3 + ["not_recorded"] * 5
+    assert [item["bootstrapper_exit_code"] for item in observations[:3]] == [-2147219187, 0, None]
+    assert private not in result.stdout and "secret" not in result.stdout
 
 
 @pytest.mark.parametrize("runtime_available", [True, False])
