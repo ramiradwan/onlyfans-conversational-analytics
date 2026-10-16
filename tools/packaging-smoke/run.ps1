@@ -417,6 +417,72 @@ public static class PackagingSmokeNativeProcess {
             exit == 0 ? 0 : DateTime.FromFileTimeUtc(exit).Ticks, state == 0 || exit > 0 ? 1 : 0, id };
     }
 
+
+    public static uint ReadExitCode(SafeProcessHandle process) {
+        uint exitCode;
+        if (!GetExitCodeProcess(process, out exitCode))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        return exitCode;
+    }
+
+    private delegate bool WindowCallback(IntPtr window, IntPtr data);
+    private delegate int PropertyCallback(IntPtr window, IntPtr name, IntPtr value, IntPtr data);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EnumWindows(WindowCallback callback, IntPtr data);
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int EnumPropsExW(IntPtr window, PropertyCallback callback, IntPtr data);
+
+    public static string[] DiagnosticWindowProperties(SafeProcessHandle process, int processId, long creationTicks) {
+        var result = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+        Func<bool> liveOwned = () => {
+            var lifetime = ReadLifetime(process);
+            return lifetime[3] == processId && lifetime[0] == creationTicks && lifetime[2] == 0;
+        };
+        if (!liveOwned()) return new string[0];
+        Exception observationFailure = null;
+        WindowCallback windows = (window, ignored) => {
+            try {
+                uint owner;
+                GetWindowThreadProcessId(window, out owner);
+                if (owner != processId || !liveOwned()) return true;
+                var found = new System.Collections.Generic.List<string>();
+                PropertyCallback properties = (propertyWindow, name, value, data) => {
+                  try {
+                    // Atom-valued names are not string pointers. Never read values,
+                    // titles, text, class names, URLs or any application payload.
+                    if (name.ToInt64() <= 65535) return 1;
+                    var text = Marshal.PtrToStringUni(name);
+                    if (text == "desktop.webview_runtime_needed" ||
+                        text == "desktop.installation_unavailable" ||
+                        text == "desktop.installation_conflict" ||
+                        (text != null && System.Text.RegularExpressions.Regex.IsMatch(text,
+                            @"^OFCA\.StartupFailure\.[a-z_]{1,96}$"))) found.Add(text);
+                    return 1;
+                  } catch (Exception error) { observationFailure = error; return 0; }
+                };
+                EnumPropsExW(window, properties, IntPtr.Zero);
+                if (observationFailure != null) return false;
+                GetWindowThreadProcessId(window, out owner);
+                if (owner == processId && liveOwned()) {
+                    foreach (var name in found) {
+                        if (result.Count >= 16) break;
+                        result.Add(name);
+                    }
+                }
+                return true;
+            } catch (Exception error) { observationFailure = error; return false; }
+        };
+        if (!EnumWindows(windows, IntPtr.Zero) && observationFailure == null)
+            observationFailure = new Win32Exception(Marshal.GetLastWin32Error());
+        if (observationFailure != null) throw observationFailure;
+        var names = new string[result.Count];
+        result.CopyTo(names);
+        Array.Sort(names, StringComparer.Ordinal);
+        return names;
+    }
+
     public static void Stop(SafeProcessHandle process) {
         if (WaitForSingleObject(process, 0) == 0)
             return;
@@ -906,6 +972,47 @@ function Invoke-UninstallArtifact {
     }
 }
 
+function Get-ProvisioningFailureObservation {
+    param([int[]] $LastListenerProcessIds, [bool] $ListenerQuerySucceeded)
+
+    # Passive diagnostics never grant ownership, change the decision or delay the
+    # acceptance deadline. Only already-retained identities may expose markers.
+    $evidence = @{
+        # These IDs describe the last successful query, not a fresh table read.
+        last_successful_listener_query_available = $ListenerQuerySucceeded
+        listener_process_count = $LastListenerProcessIds.Count
+        listener_process_ids = @($LastListenerProcessIds | Select-Object -First 16)
+        listener_process_ids_truncated = $LastListenerProcessIds.Count -gt 16
+        owned_window_markers = @()
+    }
+    try {
+        $harnessProcess = [Diagnostics.Process]::GetCurrentProcess()
+        try {
+            $evidence.harness_session_id = $harnessProcess.SessionId
+            $evidence.harness_user_interactive = [Environment]::UserInteractive
+        } finally { $harnessProcess.Dispose() }
+        if ($null -ne $script:launcherProcessRecord) {
+            $lifetime = Get-OwnedProcessLifetime -Record $script:launcherProcessRecord
+            $evidence.launcher_has_exited = $lifetime.HasExited
+            $evidence.launcher_exit_code = [PackagingSmokeNativeProcess]::ReadExitCode($script:launcherProcessRecord.Handle)
+        }
+        $records = @($script:ownedProcessRecords.Values)
+        $evidence.retained_owned_record_count = $records.Count
+        $evidence.owned_window_marker_records_truncated = $records.Count -gt 16
+        $markers = @(foreach ($record in @($records | Select-Object -First 16)) {
+            [void] (Get-OwnedProcessLifetime -Record $record)
+            $names = @([PackagingSmokeNativeProcess]::DiagnosticWindowProperties(
+                $record.Handle, [int] $record.ProcessId, [long] $record.CreationUtcTicks))
+            if ($names.Count) { @{ process_id = [int] $record.ProcessId; properties = $names } }
+        })
+        $evidence.owned_window_markers = $markers
+    } catch {
+        # Keep the original listener finding; expose only a controlled type name.
+        $evidence.diagnostic_exception_type = $_.Exception.GetType().Name
+    }
+    return $evidence
+}
+
 function Invoke-VerifyProvisioningListener {
     param([System.Diagnostics.Process] $LauncherProcess)
 
@@ -915,12 +1022,16 @@ function Invoke-VerifyProvisioningListener {
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     $lastFailure = 'listener_not_ready'
+    $lastListenerProcessIds = @()
+    $listenerQuerySucceeded = $false
     # One seam covers both observations, so ownership-bypass mutation tests still
     # exercise the complete negative control, including the post-health check.
     $listenerOwnershipProbe = { param($processId, $records) Test-ListenerOwnedProcess -OwnerProcessId $processId -OwnedRecords $records }
     do {
         try {
             $listenerProcessIds = @(Get-ListeningProcessIdsForPort -Port 17871)
+            $lastListenerProcessIds = $listenerProcessIds
+            $listenerQuerySucceeded = $true
             if ($listenerProcessIds.Count -ne 1) {
                 $lastFailure = 'listener_owner_not_unique'
                 Start-Sleep -Milliseconds 250
@@ -935,6 +1046,7 @@ function Invoke-VerifyProvisioningListener {
                     finding = 'listener_owned_by_unrelated_process'; endpoint = 'http://127.0.0.1:17871/health'
                     listener_process_id = $ownerProcessId; launcher_process_id = $LauncherProcess.Id
                     launcher_family_process_ids = $ownedProcessIds
+                    observation = (Get-ProvisioningFailureObservation -LastListenerProcessIds $lastListenerProcessIds -ListenerQuerySucceeded $listenerQuerySucceeded)
                 }
                 return $false
             }
@@ -968,7 +1080,10 @@ function Invoke-VerifyProvisioningListener {
         }
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
-    Add-Result -Step 'provisioning-listener' -Outcome fail -Evidence @{ finding = 'provisioning_listener_unavailable'; reason = $lastFailure }
+    Add-Result -Step 'provisioning-listener' -Outcome fail -Evidence @{
+        finding = 'provisioning_listener_unavailable'; reason = $lastFailure
+        observation = (Get-ProvisioningFailureObservation -LastListenerProcessIds $lastListenerProcessIds -ListenerQuerySucceeded $listenerQuerySucceeded)
+    }
     return $false
 }
 

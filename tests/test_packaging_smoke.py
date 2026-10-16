@@ -1059,6 +1059,111 @@ foreach ($definition in $ast.FindAll({ param($node) $node -is [Management.Automa
     }
     Invoke-Expression $definition.Extent.Text
 }
+if ($Scenario -like 'native-diagnostic-*') {
+    Initialize-SmokeProcessInterop
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public static class PackagingSmokeDiagnosticWindowFixture {
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern IntPtr CreateWindowExW(uint ex, string cls, string title, uint style,
+        int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern bool SetPropW(IntPtr window, string name, IntPtr value);
+    [DllImport("user32.dll", SetLastError=true)]
+    public static extern bool DestroyWindow(IntPtr window);
+    public static IntPtr Create() {
+        // Hidden, untitled and owned by this probe; never launches an application.
+        var window = CreateWindowExW(0, "STATIC", "", 0, 0, 0, 1, 1,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        if (window == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        return window;
+    }
+    public static void Property(IntPtr window, string name, int value) {
+        if (!SetPropW(window, name, new IntPtr(value))) throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+}
+'@
+    $record=New-OwnedProcessRecord -Process ([Diagnostics.Process]::GetCurrentProcess())
+    $window=[IntPtr]::Zero
+    try {
+        $window=[PackagingSmokeDiagnosticWindowFixture]::Create()
+        $allowed=@('desktop.webview_runtime_needed','desktop.installation_unavailable','desktop.installation_conflict','OFCA.StartupFailure.synthetic_probe')
+        foreach ($name in $allowed) { [PackagingSmokeDiagnosticWindowFixture]::Property($window, $name, 1) }
+        foreach ($name in @('private.synthetic_unrelated','OFCA.StartupFailure.UPPERCASE','OFCA.Servicing.synthetic_probe')) {
+            [PackagingSmokeDiagnosticWindowFixture]::Property($window, $name, 1)
+        }
+        if ($Scenario -eq 'native-diagnostic-window-markers') {
+            $names=@([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, $record.CreationUtcTicks))
+            if (@(Compare-Object ($allowed | Sort-Object) ($names | Sort-Object)).Count) { throw 'diagnostic marker allowlist changed' }
+            $sorted=[string[]]$names.Clone()
+            [Array]::Sort([Array]$sorted, [Collections.IComparer][StringComparer]::Ordinal)
+            if (($names -join '|') -ne ($sorted -join '|')) { throw 'diagnostic markers not ordinal sorted' }
+            if (@([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, ($record.ProcessId+1), $record.CreationUtcTicks)).Count) { throw 'different PID exposed owned markers' }
+            if (@([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, ($record.CreationUtcTicks+1))).Count) { throw 'different birth exposed owned markers' }
+            for ($index=0; $index -lt 20; $index++) {
+                [PackagingSmokeDiagnosticWindowFixture]::Property($window, ('OFCA.StartupFailure.bound_'+[char]([int][char]'a'+$index)), 1)
+            }
+            if (@([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, $record.CreationUtcTicks)).Count -ne 16) { throw 'diagnostic marker bound changed' }
+        } else {
+            # Controlled managed faults must return through each native callback
+            # before surfacing to PowerShell, rather than terminate the process.
+            $init=$ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Initialize-SmokeProcessInterop' }, $false)[0]
+            $source=$init.FindAll({ param($node) $node -is [Management.Automation.Language.StringConstantExpressionAst] -and $node.Value.Contains('public static class PackagingSmokeNativeProcess') }, $true)[0].Value
+            if ($Scenario -eq 'native-diagnostic-property-callback-error') {
+                [PackagingSmokeDiagnosticWindowFixture]::Property($window, 'private.controlled_callback_fault', 12345)
+                $needle='                    // Atom-valued names are not string pointers.'
+                $injection='                    if (value == new IntPtr(12345)) throw new InvalidOperationException("controlled_callback_fault");'
+            } elseif ($Scenario -eq 'native-diagnostic-window-callback-error') {
+                $needle='                if (owner != processId || !liveOwned()) return true;'
+                $injection='                if (owner == processId) throw new InvalidOperationException("controlled_callback_fault");'
+            } else { throw 'unknown diagnostic native scenario' }
+            if ([regex]::Matches($source, [regex]::Escape($needle)).Count -ne 1) { throw 'diagnostic callback boundary changed' }
+            Add-Type -TypeDefinition $source.Replace('PackagingSmokeNativeProcess','PackagingSmokeCallbackFaultProbe').Replace($needle, $injection+"`n"+$needle)
+            $caught=$false
+            try { [void][PackagingSmokeCallbackFaultProbe]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, $record.CreationUtcTicks) } catch {
+                $failure=$_.Exception
+                while ($null -ne $failure.InnerException) { $failure=$failure.InnerException }
+                $caught=$failure -is [InvalidOperationException] -and $failure.Message -eq 'controlled_callback_fault'
+            }
+            if (-not $caught) { throw 'native callback fault escaped controlled observation' }
+        }
+    } finally {
+        if ($window -ne [IntPtr]::Zero -and -not [PackagingSmokeDiagnosticWindowFixture]::DestroyWindow($window)) { throw 'owned diagnostic window cleanup failed' }
+        Close-OwnedProcessRecord -Record $record
+    }
+    [pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+    exit 0
+}
+if ($Scenario -eq 'diagnostic-failure-observation') {
+    $script:launcherProcessRecord=New-OwnedProcessRecord -Process ([Diagnostics.Process]::GetCurrentProcess())
+    $script:ownedProcessRecords=@{ owned=$script:launcherProcessRecord }
+    try {
+        foreach ($ids in @(@{ values=[int[]]@() }, @{ values=[int[]]@(101,102) }, @{ values=[int[]](1..18) })) {
+            $evidence=Get-ProvisioningFailureObservation -LastListenerProcessIds $ids.values -ListenerQuerySucceeded $true
+            if (-not $evidence.last_successful_listener_query_available -or $evidence.listener_process_count -ne $ids.values.Count -or $evidence.listener_process_ids.Count -ne [Math]::Min(16,$ids.values.Count) -or $evidence.listener_process_ids_truncated -ne ($ids.values.Count -gt 16)) { throw 'last-successful listener observation lost count or bound' }
+            if ($evidence.launcher_has_exited -or $evidence.launcher_exit_code -ne 259 -or $evidence.harness_session_id -ne $script:launcherProcessRecord.Process.SessionId -or $evidence.harness_user_interactive -ne [Environment]::UserInteractive -or $evidence.ContainsKey('diagnostic_exception_type')) { throw 'owned active process/session observation failed' }
+        }
+        $unavailable=Get-ProvisioningFailureObservation -LastListenerProcessIds ([int[]]@()) -ListenerQuerySucceeded $false
+        if ($unavailable.last_successful_listener_query_available -or $unavailable.listener_process_count -ne 0) { throw 'unavailable query became an empty successful query' }
+        # Real rejection helper, with closed synthetic listener/family boundaries:
+        # a diagnostic exception must neither authorize health nor change refusal.
+        function Get-ListeningProcessIdsForPort { param($Port) return @(777) }
+        function Get-LauncherFamilyRecords { param($LauncherRecord,$DeadlineUtc) return @($LauncherRecord) }
+        function Test-ListenerOwnedProcess { param($OwnerProcessId,$OwnedRecords) return $false }
+        function Get-OwnedProcessLifetime { param($Record) throw [InvalidOperationException]::new('synthetic private diagnostic message') }
+        function Invoke-WebRequest { throw 'unrelated listener reached health request' }
+        function Write-SmokeProgress { param($Stage,$Phase,$Details) }
+        $script:results=[Collections.Generic.List[object]]::new()
+        function Add-Result { param($Step,$Outcome,$Evidence) $script:results.Add([pscustomobject]@{step=$Step; outcome=$Outcome; evidence=$Evidence}) }
+        $accepted=Invoke-VerifyProvisioningListener -LauncherProcess $script:launcherProcessRecord.Process
+        if ($accepted -or $script:results.Count -ne 1 -or $script:results[0].outcome -ne 'fail' -or $script:results[0].evidence.finding -ne 'listener_owned_by_unrelated_process' -or $script:results[0].evidence.observation.diagnostic_exception_type -ne 'InvalidOperationException') { throw 'observation exception changed listener refusal' }
+        if (($script:results | ConvertTo-Json -Depth 8) -match 'synthetic private diagnostic message') { throw 'diagnostics exposed exception message' }
+    } finally { Close-OwnedProcessRecord -Record $script:launcherProcessRecord }
+    [pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+    exit 0
+}
 if ($Scenario -like 'interop-*') {
     Initialize-SmokeProcessInterop
     $mode=switch ($Scenario) {
@@ -1224,6 +1329,9 @@ if ($Scenario -in @('native-live-retained-handle','native-exited-retained-handle
         $record=New-OwnedProcessRecord -Process $process
         $before=Get-OwnedProcessLifetime -Record $record
         if ($before.HasExited -ne ($Scenario -eq 'native-exited-retained-handle')) { throw 'native lifetime state differs' }
+        $expectedExitCode=$(if ($before.HasExited) { 0 } else { 259 })
+        if ([PackagingSmokeNativeProcess]::ReadExitCode($record.Handle) -ne $expectedExitCode) { throw 'retained native exit code differs' }
+        if ($before.HasExited -and @([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, $record.CreationUtcTicks)).Count) { throw 'exited process exposed live window markers' }
         Stop-OwnedProcessRecord -Record $record
         if (-not (Wait-OwnedProcessRecord -Record $record -RemainingMilliseconds 5000)) { throw 'retained native handle wait failed' }
         $after=Get-OwnedProcessLifetime -Record $record
@@ -1447,6 +1555,8 @@ if ($Scenario -like 'cleanup-*') {
         "cleanup-retained-instance", "cleanup-wait-failure", "cleanup-stop-failure",
         "cleanup-many-wait-failure", "cleanup-many-stop-failure", "cleanup-shared-wait-budget",
         "native-live-retained-handle", "native-exited-retained-handle",
+        "native-diagnostic-window-markers", "native-diagnostic-property-callback-error",
+        "native-diagnostic-window-callback-error", "diagnostic-failure-observation",
         "cleanup-refresh-finds-child", "cleanup-refresh-query-failure", "cleanup-refresh-deadline",
         "native-parent-waits-child-cleanup", "native-denied-live-retained-handle",
         "interop-exited-unsignaled-wait-refused", "interop-denied-live-refused",
