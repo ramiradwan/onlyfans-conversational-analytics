@@ -29,6 +29,12 @@ describe('reviewed chrome contracts', () => {
     expect(theme.components?.MuiIconButton?.defaultProps?.disableFocusRipple).toBe(true);
     expect(theme.components?.MuiIconButton?.defaultProps?.disableRipple).not.toBe(true);
   });
+  it('rings keyboard focus on menu items inside the menu edge', () => {
+    const root = theme.components?.MuiMenuItem?.styleOverrides?.root;
+    const rules = (typeof root === 'function' ? root({ theme } as never) : root) as Record<string, Record<string, unknown>>;
+    expect(rules['&:focus-visible, &.Mui-focusVisible']).toMatchObject({
+      outline: `${effectTokens.focus.width} solid ${theme.vars.palette.primary.main}`, outlineOffset: '-' + effectTokens.focus.offset });
+  });
   it('derives the concentric rail dimensions from the existing radii', () => {
     const inset = componentTokens.MuiPaper.borderRadius - componentTokens.MuiListItemButton.borderRadius;
     expect(inset).toBe(8); expect(componentTokens.shell.desktopRailWidth - 2 * inset).toBe(48);

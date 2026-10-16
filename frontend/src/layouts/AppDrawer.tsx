@@ -180,7 +180,8 @@ export function AppDrawer({
           },
         }}
       >
-        <Box sx={{ alignItems: 'center', display: 'flex', minHeight: headerHeight, px: 2.5 }}>
+        {/* The narrow app bar covers the drawer's top, with the status row below its toolbar. */}
+        <Box sx={{ alignItems: 'center', display: 'flex', minHeight: headerHeight, mb: `${componentTokens.FreshnessStatus.narrowRowHeight}px`, px: 2.5 }}>
           <BrandMark />
         </Box>
         <NavigationList

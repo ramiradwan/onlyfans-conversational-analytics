@@ -21,6 +21,7 @@ import {
   type CapabilityLicenseApi,
 } from '../services/capabilityLicenseApi';
 import { desktopOnboardingApi, selectAnalysisReadiness, type DesktopOnboardingApi } from '../services/desktopOnboarding';
+import { componentTokens } from '../theme';
 
 function safeMessage(error: unknown): string {
   return error instanceof CapabilityLicenseApiError ? error.message : "Activation couldn't be checked.";
@@ -241,7 +242,7 @@ export function CommercialActivationControls({
             disabled={!desktop.connected || opening || codeBusy || codePending} describedBy="activation-switch-note"
             onSelect={provider => void openSetup('auth.switch', provider)} /></Box>
           <Button onClick={() => setChoosingAccount(false)} disabled={opening}>Back</Button>
-        </Stack> : <Stack spacing={2}>
+        </Stack> : <Stack spacing={2} useFlexGap>
         {accountLabel && <Typography variant="body2">Full analytics account: {accountLabel}</Typography>}
         <Box component="dl" sx={{
           display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(8rem, 1fr) minmax(0, 2fr)' },
@@ -258,8 +259,9 @@ export function CommercialActivationControls({
           <Typography component="dt">Update rights</Typography><Typography component="dd">{offer.update_rights ? 'Included' : 'Not included'}</Typography>
           {offer.fallback_major_versions.length > 0 && <><Typography component="dt">Earlier versions</Typography><Typography component="dd">{offer.fallback_major_versions.map(version => `${version}.x`).join(', ')}</Typography></>}
         </Box>
-        <StatusLine essential id="activation-offer-feedback" text={!desktop.connected ? 'Activation status could not be received.' : noticeError || (opening ? 'Confirming activation…' : null)} tone={noticeError ? 'error' : 'secondary'} />
-        {canSwitch && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={!desktop.connected || opening || codeBusy || codePending}>Sign in to Full analytics with another account</Button>}
+        <Box id="activation-offer-feedback"><StatusLine essential id="activation-offer-feedback" text={!desktop.connected ? 'Activation status could not be received.' : noticeError || (opening ? 'Confirming activation…' : null)} tone={noticeError ? 'error' : 'secondary'} /></Box>
+        {canSwitch && <Button ref={switchElement} onClick={() => setChoosingAccount(true)} disabled={!desktop.connected || opening || codeBusy || codePending}
+          sx={{ justifyContent: 'flex-start', minHeight: componentTokens.staticUi.controlHeight, mx: -1, textAlign: 'start', '&, &:hover': { textDecoration: 'underline' } }}>Sign in to Full analytics with another account</Button>}
         </Stack>}</DialogContent><DialogActions><Button onClick={() => setOfferOpen(false)}>Not now</Button>
         {!choosingAccount && <Button onClick={() => void openSetup('activation.confirm')} disabled={!canConfirm || opening || codeBusy || codePending}
           aria-describedby="activation-offer-feedback" variant="contained" sx={{ alignSelf: 'flex-start' }}>Activate for free</Button>}
@@ -267,7 +269,7 @@ export function CommercialActivationControls({
       {!decision && !fullReady && !choosingProvider && ((activationRequired && canOpen) || codeOpen) && !pendingActivation && <Button
         onClick={() => void openSetup()} disabled={!canOpen || !canRedeem || opening || checking || codeBusy || codePending}
         aria-describedby="activation-notice" variant="outlined">Set up Full analytics</Button>}
-      {!fullReady && <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap' }} spacing={1}>
+      {!fullReady && <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap', ml: -1 }} spacing={1}>
         {!accepted && !choosingProvider && authentication?.actions.open_browser && authentication.browser_operation_id
           && (authentication.state === 'admitted' || entryError !== null || browserLaunchError !== null) && <Button
           onClick={() => void reopenBrowser()} disabled={!desktop.connected || opening}>Try again</Button>}
@@ -277,7 +279,7 @@ export function CommercialActivationControls({
       {!decision && !authentication && !accepted && activationRequired && !canOpen && !pendingActivation && desktop.connected && <Typography variant="body2">The activation request is unavailable.</Typography>}
       {!fullReady && (activationRequired || codeOpen) && <Box sx={{ mt: 2 }}>
         <Button type="button" aria-expanded={codeOpen} aria-controls={codeFormId}
-          onClick={() => setCodeOpen(value => !value)}>Use an activation code</Button>
+          onClick={() => setCodeOpen(value => !value)} sx={{ ml: -1 }}>Use an activation code</Button>
         {codeOpen && <Stack id={codeFormId} component="form" spacing={2} sx={{ mt: 2, maxWidth: 480 }}
           onSubmit={event => { event.preventDefault(); void redeemCode(); }}>
           <TextField inputRef={codeInput} label="Activation code" autoComplete="off" fullWidth size="small" value={code}

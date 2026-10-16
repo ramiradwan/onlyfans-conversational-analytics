@@ -4,38 +4,79 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--dipsy-color-background); color: var(--dipsy-color-text); font: 400 1rem/1.55 var(--dipsy-font-family-ui); }
-.setup-header { display: flex; align-items: center; min-height: 72px; padding: 12px 24px 12px 32px; border-bottom: 1px solid var(--dipsy-color-divider); }
-.setup-brand { font-weight: 600; letter-spacing: -.02em; }
+/* The header shares the app shell's height and brand position. */
+.setup-header { display: flex; align-items: center; gap: calc(2 * var(--dipsy-space-unit)); min-height: var(--dipsy-static-header-height); padding: 12px 24px 12px var(--dipsy-static-brand-inset); border-bottom: 1px solid var(--dipsy-color-divider); }
+.setup-brand { display: flex; flex: none; align-items: center; gap: calc(1.25 * var(--dipsy-space-unit)); font-weight: 600; letter-spacing: -.02em; white-space: nowrap; }
+.brand-mark { display: grid; place-items: center; inline-size: var(--dipsy-static-brand-size); block-size: var(--dipsy-static-brand-size); border-radius: var(--dipsy-radius-compact); color: var(--dipsy-intent-brand-contrast-text); background: linear-gradient(140deg, var(--dipsy-intent-brand-light), var(--dipsy-intent-brand-main)); }
+.brand-mark svg { inline-size: var(--dipsy-static-brand-glyph-size); block-size: var(--dipsy-static-brand-glyph-size); stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.brand-mark circle { fill: currentColor; stroke: none; }
+/* The creator account sits at the end of the header, before any window controls. */
+.setup-account { display: flex; align-items: center; gap: calc(1.25 * var(--dipsy-space-unit)); min-inline-size: 0; margin-inline-start: auto; line-height: 1.4; }
+.setup-account:not([hidden]) ~ desktop-window-controls { margin-inline-start: 0; }
+.setup-account .account-avatar { display: grid; place-items: center; flex: none; inline-size: var(--dipsy-static-brand-size); block-size: var(--dipsy-static-brand-size); border-radius: var(--dipsy-static-identity-tile-radius); font-size: var(--dipsy-static-identity-tile-font-size); font-weight: var(--dipsy-font-weight-semibold); line-height: 1; }
+.setup-account-text { display: grid; min-inline-size: 0; }
+.setup-account-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#header-account-name { font-size: var(--dipsy-static-label-size); font-weight: var(--dipsy-font-weight-semibold); }
+#header-account-handle { color: var(--dipsy-color-text-secondary); font-size: var(--dipsy-static-caption-size); }
 .setup-main { max-width: 880px; margin: 0 auto; padding: 56px 32px; }
 .setup-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; list-style: none; padding: 0; margin: 0 0 40px; color: var(--dipsy-color-text-secondary); font-size: .875rem; }
 .setup-steps li { display: flex; align-items: center; gap: 10px; }
-.setup-steps span { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border: 1px solid var(--dipsy-color-divider); border-radius: 50%; }
+.setup-steps span { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border: 1px solid var(--dipsy-intent-surface-control-border); border-radius: 50%; }
 .setup-steps [aria-current="step"] { color: var(--dipsy-color-text); font-weight: 600; }
-.setup-steps [aria-current="step"] span, .setup-steps [data-complete="true"] span { color: var(--dipsy-color-on-primary); background: var(--dipsy-color-primary); border-color: var(--dipsy-color-primary); }
+.setup-steps [aria-current="step"] span { color: var(--dipsy-color-on-primary); background: var(--dipsy-color-primary); border-color: var(--dipsy-color-primary); }
+.setup-steps [data-complete="true"] span { color: var(--dipsy-intent-action-state-selected-foreground); background: var(--dipsy-color-selected); border-color: var(--dipsy-color-primary); }
+@media (width > 600px) {
+  .setup-steps li:nth-child(2) { justify-content: center; }
+  .setup-steps li:last-child { justify-content: flex-end; }
+}
 .setup-card { padding: 40px; background: var(--dipsy-color-paper); border: 1px solid var(--dipsy-color-divider); border-radius: var(--dipsy-radius-surface); box-shadow: var(--dipsy-shadow-raised); }
-.decision-details { display: grid; gap: 16px; margin: 24px 0; padding: 20px; border: 1px solid var(--dipsy-color-divider); border-radius: var(--dipsy-radius-control); }
-.decision-details > div { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr); gap: 12px; }
-.decision-details dt { color: var(--dipsy-color-text-secondary); }
-.decision-details dd { margin: 0; overflow-wrap: anywhere; font-weight: 500; }
+.decision-details { margin: 24px 0; border: 1px solid var(--dipsy-color-divider); border-radius: var(--dipsy-radius-control); }
+/* Each fact sits beside an identity tile, with its label above its value. */
+.decision-details > div { position: relative; min-block-size: calc(var(--dipsy-static-identity-tile-size) + 4 * var(--dipsy-space-unit)); padding: calc(2 * var(--dipsy-space-unit)); padding-inline-start: calc(var(--dipsy-static-identity-tile-size) + 3.5 * var(--dipsy-space-unit)); }
+.decision-details > div + div { border-block-start: 1px solid var(--dipsy-color-divider); }
+.decision-details dt { color: var(--dipsy-color-text-secondary); font-size: var(--dipsy-static-caption-size); }
+.decision-details dd { margin: 0; overflow-wrap: anywhere; font-weight: var(--dipsy-font-weight-semibold); }
+/* The identifier wraps below the name as a unit when both do not fit on one line. */
+.decision-details .account-identifier { display: inline-block; color: var(--dipsy-color-text-secondary); font-weight: var(--dipsy-font-weight-regular); }
+.identity-tile { position: absolute; inset-block-start: calc(2 * var(--dipsy-space-unit)); inset-inline-start: calc(2 * var(--dipsy-space-unit)); display: grid; place-items: center; inline-size: var(--dipsy-static-identity-tile-size); block-size: var(--dipsy-static-identity-tile-size); border-radius: var(--dipsy-static-identity-tile-radius); background: var(--dipsy-color-surface-subtle); color: var(--dipsy-color-text-secondary); font-size: var(--dipsy-static-identity-tile-font-size); font-weight: var(--dipsy-font-weight-semibold); line-height: 1; }
+.account-avatar { background: var(--dipsy-intent-surface-avatar-fill); color: var(--dipsy-intent-surface-avatar-text); }
 .setup-eyebrow { margin: 0 0 12px; color: var(--dipsy-color-text-secondary); font-size: .875rem; }
 h1 { margin: 0 0 16px; font-size: clamp(1.65rem, 3vw, 2rem); font-weight: 600; line-height: 1.2; letter-spacing: -.03em; }
 p { max-width: 58ch; margin: 0 0 20px; }
+.setup-card section > h2 { margin: calc(2.5 * var(--dipsy-space-unit)) 0 var(--dipsy-space-unit); font-size: var(--dipsy-static-nested-task-heading-size); font-weight: var(--dipsy-font-weight-semibold); }
 #task-status { color: var(--dipsy-color-text-secondary); min-block-size: 2.8em; overflow-wrap: anywhere; }
+/* Browser task progress and instructions use body text. Errors and completion keep the secondary colour. */
+main:is([data-journey-state="browser.loading"], [data-journey-state="browser.ready"], [data-journey-state="browser.paused"],
+  [data-journey-state="browser.needs_consent"], [data-journey-state="browser.needs_permission"], [data-journey-state="browser.needs_account"],
+  [data-journey-state="browser.auth_idle"], [data-journey-state="browser.auth_opening"], [data-journey-state="browser.auth_checking"],
+  [data-journey-state="browser.pairing_connecting"], [data-journey-state="browser.pairing_checking"], [data-journey-state="browser.pairing_saved"]) #task-status { color: var(--dipsy-color-text); }
 .setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 28px; }
-.setup-form { display: grid; gap: 12px; }
-.setup-field { width: 100%; min-width: 0; padding: 12px 16px; border: 1px solid var(--dipsy-color-divider); border-radius: var(--dipsy-radius-control); background: var(--dipsy-color-paper); color: var(--dipsy-color-text); font: inherit; }
+/* The task status owns the gaps around it. */
+.setup-card > :is(#task-description, .provider-choices, .decision-details) { margin-block-end: 0; }
+.setup-card > #task-status { margin-block: var(--dipsy-space-unit) calc(2 * var(--dipsy-space-unit)); }
+.setup-card:has(> .provider-choices:not([hidden]), > .decision-details:not([hidden])) > #task-status { margin-block-start: calc(2 * var(--dipsy-space-unit)); }
+.setup-card:has(> #local-access:not([hidden])) > #task-status { margin-block-start: 0; }
+.setup-card > #task-status ~ .setup-actions { margin-block-start: 0; }
+.setup-card > #task-status ~ .setup-actions:not([hidden]) ~ .setup-actions { margin-block-start: calc(3 * var(--dipsy-space-unit)); }
+.setup-form { display: grid; max-width: var(--dipsy-static-compact-form-max-width); }
+.setup-form label { margin-block-end: var(--dipsy-space-unit); font-size: var(--dipsy-static-label-size); font-weight: var(--dipsy-font-weight-medium); }
+.setup-field { width: 100%; min-width: 0; padding: 12px 16px; border: 1px solid var(--dipsy-intent-surface-control-border); border-radius: var(--dipsy-radius-control); background: var(--dipsy-color-paper); color: var(--dipsy-color-text); font: inherit; }
 textarea.setup-field { min-height: 7rem; resize: vertical; }
-.setup-field:disabled { background: var(--dipsy-color-surface-subtle); color: var(--dipsy-color-text-secondary); }
-.setup-form .setup-actions { margin-top: 8px; }
+.setup-field:disabled { border-color: var(--dipsy-color-divider); background: var(--dipsy-color-surface-subtle); color: var(--dipsy-color-text-secondary); }
+.setup-form .setup-actions { margin-top: calc(2.5 * var(--dipsy-space-unit)); }
 button, .button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 20px; border: 1px solid transparent; border-radius: var(--dipsy-radius-control); font: 600 .9375rem/1.4 var(--dipsy-font-family-ui); text-decoration: none; background: var(--dipsy-color-primary); color: var(--dipsy-color-on-primary); cursor: pointer; }
 button:hover, .button:hover { background: var(--dipsy-intent-action-primary-dark); }
-button.secondary { color: var(--dipsy-color-text); background: var(--dipsy-color-paper); border-color: var(--dipsy-color-divider); }
-button.secondary:hover { background: var(--dipsy-color-surface-subtle); }
+button.secondary, .button.secondary { color: var(--dipsy-color-text); background: var(--dipsy-color-paper); border-color: var(--dipsy-intent-surface-control-border); }
+button.secondary:hover, .button.secondary:hover { background: var(--dipsy-color-surface-subtle); }
+button.secondary:disabled { border-color: var(--dipsy-color-divider); }
 button:disabled { color: var(--dipsy-color-text-secondary); background: var(--dipsy-color-surface-subtle); cursor: default; }
 :focus-visible { outline: 2px solid var(--dipsy-color-primary); outline-offset: 4px; }
+/* Bordered controls draw the focus ring over their border. */
+.secondary:focus-visible, .setup-field:focus-visible { outline-offset: calc(-1 * var(--dipsy-border-thin)); }
 h1:focus { outline: none; }
 @media (max-width: 600px) {
   .setup-header { padding-inline: 16px 8px; }
+  .setup-header:has(> .setup-account:not([hidden]), > desktop-window-controls:defined) .brand-name { display: none; }
   .setup-main { padding: 28px 16px; }
   .setup-steps { grid-template-columns: 1fr; gap: 12px; margin-bottom: 24px; }
   .setup-card { padding: 28px 24px; }
@@ -43,11 +84,17 @@ h1:focus { outline: none; }
 @media (max-width: 380px) {
   .setup-main { padding-inline: 12px; }
   .setup-card { padding: 24px 16px; }
-  .decision-details > div { grid-template-columns: 1fr; gap: 4px; }
   .setup-actions > button, .setup-actions > .button { width: 100%; }
 }
 
-html { scrollbar-width: thin; scrollbar-color: var(--dipsy-color-divider) transparent; scrollbar-gutter: stable; }
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--dipsy-color-divider); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+html { scrollbar-gutter: stable; }
+/* Scrollbars are thin, with the theme thumb on a clear track. In forced colors the thumb uses the system button text color. */
+* { scrollbar-width: thin; scrollbar-color: var(--dipsy-intent-surface-scrollbar-thumb) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--dipsy-intent-surface-scrollbar-thumb); border-radius: var(--dipsy-radius-pill); border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--dipsy-color-text-secondary); }
 ::-webkit-scrollbar-track { background: transparent; }
+@media (forced-colors: active) {
+  * { scrollbar-width: auto; scrollbar-color: auto; }
+  ::-webkit-scrollbar-thumb, ::-webkit-scrollbar-thumb:hover { background-color: ButtonText; }
+}

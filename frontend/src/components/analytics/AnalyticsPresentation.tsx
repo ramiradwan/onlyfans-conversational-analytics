@@ -7,7 +7,7 @@ import { AnalyticsWindowLabel } from './AnalyticsWindowLabel';
 import { ChartPanel } from './ChartPanel';
 import { ResponseOverview } from './ResponseOverview';
 import { SentimentEngagementTrend } from './SentimentEngagementTrend';
-import { TopicsTable } from './TopicsTable';
+import { TopicsTable, topicRegionSize } from './TopicsTable';
 import {
   analyticsWindowLabel,
   type AnalyticsDateRange,
@@ -15,7 +15,7 @@ import {
   type AnalyticsWindowSource,
   type AnalyticsWindowSources,
 } from '../../analytics';
-import { componentTokens } from '../../theme';
+import { componentTokens, layoutTokens } from '../../theme';
 import { ReservedRegion } from '../ui/ReservedRegion';
 
 const Root = styled(Box)(({ theme }) => ({
@@ -41,6 +41,14 @@ const FullWidth = styled(Box)(({ theme }) => ({
     gridColumn: '1 / -1',
   },
 }));
+
+const Results = styled(Box)({ containerName: 'analytics-results', containerType: 'inline-size' });
+
+// The topics table fits once the results, less their 10px scrollbar and the panel's padding, hold topicTableMinWidth.
+const topicTableFits = `@container analytics-results (min-width: calc(${componentTokens.analytics.topicTableMinWidth} + ${layoutTokens.spacingUnit * 5 + 10}px))`;
+// The results hold the topics region and a rem allowance for each layout's other content.
+const resultsSize = (topics: string) => ({ xs: `calc(86.5rem + ${topics})`, sm: `calc(77rem + ${topics})`, md: `calc(51rem + ${topics})` });
+const resultsWithTopicTable = { [topicTableFits]: { blockSize: resultsSize(topicRegionSize.table) } };
 
 /** Returns the source shared by every panel, or null when panel windows differ. */
 function sharedWindowSource(sources: AnalyticsWindowSource[]): AnalyticsWindowSource | null {
@@ -101,7 +109,8 @@ export function AnalyticsPresentation({
           onApply={onDateRangeChange}
           isRefreshing={state.isRefreshing}
         />
-        <ReservedRegion id="analytics-content" regionRole="scroll" size={{ xs: 1750, sm: 1120 }}><Box key={state.data ? 'results' : state.status} data-region-content>
+        {/* Holds the results. The panels stack in one column below md. */}
+        <Results><ReservedRegion id="analytics-content" regionRole="scroll" size={resultsSize(topicRegionSize.list)} sx={resultsWithTopicTable}><Box key={state.data ? 'results' : state.status} data-region-content>
         <AnalyticsStateFrame state={state} onRetry={onRetry}>
           {model && (
             <Stack spacing={1.5}>
@@ -135,7 +144,7 @@ export function AnalyticsPresentation({
             </Stack>
           )}
         </AnalyticsStateFrame>
-        </Box></ReservedRegion>
+        </Box></ReservedRegion></Results>
         </>}
       </Stack>
     </Root>

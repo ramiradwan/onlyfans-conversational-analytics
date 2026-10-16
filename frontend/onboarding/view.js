@@ -32,6 +32,10 @@ const passkeyErrors = {
   passkey_unconfirmed: 'Verification could not be confirmed.',
 };
 
+// Avatars show the first character of a labelled account's name.
+const initial = label => [...new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  .segment((label?.display_name || label?.username || '').trim())][0]?.segment.toUpperCase() || '';
+
 export function renderSetup(document, state) {
   const get = id => document.getElementById(id);
   const value = state.snapshot;
@@ -74,8 +78,21 @@ export function renderSetup(document, state) {
   const label = decision && value?.creator_label?.creator_id === decision.creator_id ? value.creator_label : null;
   get('decision-account').textContent = decision ? label?.display_name || (label?.username ? '@' + label.username
     : 'OnlyFans account ' + decision.creator_id) : '';
-  get('decision-account-id').textContent = decision?.creator_id || '';
-  get('decision-account-id').closest('details').hidden = !decision || !label;
+  // Unlabelled accounts show a generic glyph.
+  get('decision-account-avatar').textContent = initial(label);
+  get('decision-account-avatar').hidden = !get('decision-account-avatar').textContent;
+  get('decision-account-glyph').hidden = !get('decision-account-avatar').hidden;
+  const account = value?.creator_label && (!value.decision || value.decision.creator_id === value.creator_label.creator_id)
+    ? value.creator_label : null;
+  get('header-account').hidden = !account;
+  get('header-account-avatar').textContent = initial(account);
+  get('header-account-name').textContent = account ? account.display_name || '@' + account.username : '';
+  get('header-account-handle').textContent = account?.display_name && account.username ? '@' + account.username : '';
+  get('header-account-handle').hidden = !get('header-account-handle').textContent;
+  // A display name may be shared, so the handle or account number follows it.
+  get('decision-account-identifier').textContent = !label?.display_name ? ''
+    : label.username ? '@' + label.username : 'OnlyFans account ' + decision.creator_id;
+  get('decision-account-identifier').hidden = !get('decision-account-identifier').textContent;
   get('decision-computer').textContent = decision?.computer_name || '';
   get('task-step').textContent = task === 'complete' ? 'Desktop setup' : task ? 'Step ' + (Object.keys(tasks).indexOf(task) + 1) + ' of 3' : 'Desktop setup';
   const pending = Boolean(state.pending || value?.pending_operations.length);

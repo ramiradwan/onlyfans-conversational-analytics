@@ -594,6 +594,44 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('task-action').disabled).toBe(true);
   });
 
+  it.each([
+    [{ display_name: 'Mia Studio', username: 'mia.studio' }, 'Mia Studio', '@mia.studio', 'M'],
+    [{ display_name: 'Mia Studio', username: null }, 'Mia Studio', 'OnlyFans account creator-selected', 'M'],
+    [{ display_name: null, username: 'mia.studio' }, '@mia.studio', '', 'M'],
+    [null, 'OnlyFans account creator-selected', '', ''],
+  ])('shows the account number only when no handle identifies the creator account', (label, name, identifier, letter) => {
+    mount();
+    renderSetup(document, { snapshot: { ...initial(), next_task: 'account-connection', allowed_actions: ['account.confirm'],
+      pending_operations: [{ ...record, action: 'account.connect' }], creator_label: label && { creator_id: 'creator-selected', ...label },
+      decision: { operation_id: operationId, action: 'connect-account', creator_id: 'creator-selected',
+        computer_name: 'Studio computer', expires_at: '2030-01-01T00:00:00Z' } }, connected: true });
+    expect(document.getElementById('decision-account').textContent).toBe(name);
+    expect(document.getElementById('decision-account-identifier').textContent).toBe(identifier);
+    expect(document.getElementById('decision-account-identifier').hidden).toBe(!identifier);
+    expect(document.getElementById('decision-account-avatar').textContent).toBe(letter);
+    expect(document.getElementById('decision-account-glyph').hidden).toBe(Boolean(letter));
+    if (label?.username) expect(document.getElementById('decision-details').textContent).not.toContain('creator-selected');
+  });
+
+  it.each([
+    [{ creator_id: 'creator-selected', display_name: 'Mia Studio', username: 'mia.studio' }, null, 'Mia Studio', '@mia.studio', 'M'],
+    [{ creator_id: 'creator-selected', display_name: 'Mia Studio', username: null }, null, 'Mia Studio', '', 'M'],
+    [{ creator_id: 'creator-selected', display_name: null, username: 'mia.studio' }, null, '@mia.studio', '', 'M'],
+    [{ creator_id: 'creator-selected', display_name: 'Mia Studio', username: 'mia.studio' }, 'creator-other', null],
+    [null, null, null],
+  ])('names the labelled creator account in the header', (label, decisionCreator, name, handle, letter) => {
+    mount();
+    renderSetup(document, { snapshot: { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'], creator_label: label,
+      decision: decisionCreator && { operation_id: operationId, action: 'connect-account', creator_id: decisionCreator,
+        computer_name: 'Studio computer', expires_at: '2030-01-01T00:00:00Z' } }, connected: true });
+    expect(document.getElementById('header-account').hidden).toBe(!name);
+    if (!name) return;
+    expect(document.getElementById('header-account-name').textContent).toBe(name);
+    expect(document.getElementById('header-account-handle').textContent).toBe(handle);
+    expect(document.getElementById('header-account-handle').hidden).toBe(!handle);
+    expect(document.getElementById('header-account-avatar').textContent).toBe(letter);
+  });
+
   it('distinguishes browser sign-in from accepted work without declaring local readiness', () => {
     mount();
     for (const [state, message] of [['awaiting-authentication', 'Finish signing in in Chrome.'],

@@ -9,7 +9,19 @@
   </head>
   <body>
     <header class="setup-header" data-desktop-drag-region>
-      <span class="setup-brand">Conversation Analytics</span>
+      <span class="setup-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="none" focusable="false"><path d="M5 3.75h10A2.25 2.25 0 0 1 17.25 6v6A2.25 2.25 0 0 1 15 14.25h-4.4L7 16.75v-2.5H5A2.25 2.25 0 0 1 2.75 12V6A2.25 2.25 0 0 1 5 3.75Z"/><path d="M6.25 10.75 8.7 8.45l2 1.45 2.8-3"/><circle cx="6.25" cy="10.75" r=".8"/><circle cx="8.7" cy="8.45" r=".8"/><circle cx="10.7" cy="9.9" r=".8"/><circle cx="13.5" cy="6.9" r=".8"/></svg>
+        </span>
+        <span class="brand-name">Conversation Analytics</span>
+      </span>
+      <div id="header-account" class="setup-account" hidden>
+        <span id="header-account-avatar" class="account-avatar" aria-hidden="true"></span>
+        <span class="setup-account-text">
+          <span id="header-account-name"></span>
+          <span id="header-account-handle" hidden></span>
+        </span>
+      </div>
       <desktop-window-controls></desktop-window-controls>
     </header>
     <main class="setup-main" data-journey-state="desktop.setup_loading">
@@ -34,8 +46,26 @@
           <button class="provider-button" type="button" data-provider="default" aria-describedby="task-description task-status">Other sign-in options</button>
         </div>
         <dl id="decision-details" class="decision-details" hidden>
-          <div><dt>Creator account</dt><dd><span id="decision-account"></span><details hidden><summary>Account details</summary><span id="decision-account-id"></span></details></dd></div>
-          <div><dt>Computer</dt><dd id="decision-computer"></dd></div>
+          <div>
+            <dt>Creator account</dt>
+            <dd>
+              <span id="decision-account-avatar" class="identity-tile account-avatar" aria-hidden="true" hidden></span>
+              <span id="decision-account-glyph" class="identity-tile" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" focusable="false"><circle cx="11" cy="8" r="3.5"/><path d="M4.5 18.5c.9-3.4 3.4-5.25 6.5-5.25s5.6 1.85 6.5 5.25"/></svg>
+              </span>
+              <span id="decision-account"></span>
+              <span id="decision-account-identifier" class="account-identifier" hidden></span>
+            </dd>
+          </div>
+          <div>
+            <dt>Computer</dt>
+            <dd>
+              <span class="identity-tile" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="4" y="5" width="14" height="9.5" rx="1.5"/><path d="M2.5 17.5h17"/></svg>
+              </span>
+              <span id="decision-computer"></span>
+            </dd>
+          </div>
         </dl>
         <section id="local-access" aria-labelledby="local-access-title" data-journey-state="desktop.setup_local_access" hidden>
           <h2 id="local-access-title">Access on this computer</h2>

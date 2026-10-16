@@ -13,6 +13,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { getConversationTitle, sortMessages } from './inboxModel';
 import { MessageBubble } from './MessageBubble';
+import { PaneHeader, paneHeaderPaddingY } from './PaneHeader';
 import type { ConversationRecord } from '../../protocol';
 import type { ConversationMessageState } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
@@ -27,16 +28,6 @@ const Pane = styled(Paper)(({ theme }) => ({
   height: '100%',
   minHeight: 0,
   overflow: 'hidden',
-}));
-
-const PaneHeader = styled(Box)(({ theme }) => ({
-  alignItems: 'center',
-  backgroundColor: theme.vars.palette.background.paper,
-  borderBottom: '1px solid ' + theme.vars.palette.divider,
-  display: 'flex',
-  justifyContent: 'space-between',
-  minHeight: theme.spacing(8),
-  padding: theme.spacing(1.5, 2),
 }));
 
 const Stream = styled(Box)(({ theme }) => ({
@@ -227,8 +218,9 @@ export function MessageStreamPane({
   return (
     <Pane data-reserved-region="message-stream" data-region-role="scroll" variant="outlined" role="region" aria-labelledby="message-stream-title">
       <PaneHeader>
-        <Box data-reading-viewport sx={{ minWidth: 0, flex: 1, height: '2.5rem', overflowY: 'auto', overflowWrap: 'anywhere' }}>
-          <Typography id="message-stream-title" component="h2" variant="subtitle1">
+        {/* The first title line is centered. Longer titles run into the lower padding and scroll. */}
+        <Box data-reading-viewport sx={(theme) => ({ minWidth: 0, flex: 1, height: `calc(${componentTokens.inbox.paneTitleHeight} + ${theme.spacing(paneHeaderPaddingY)})`, mb: -paneHeaderPaddingY, overflowY: 'auto', overflowWrap: 'anywhere' })}>
+          <Typography id="message-stream-title" component="h2" variant="subtitle1" sx={{ py: `calc((${componentTokens.inbox.paneTitleHeight} - 1lh) / 2)` }}>
             {isLoading ? 'Messages' : title}
           </Typography>
         </Box>
@@ -273,11 +265,11 @@ export function MessageStreamPane({
             </Typography>
           </CenteredState>
         ) : messageState?.status === 'error' && messages.length === 0 ? (
-          <CenteredState key="error">
+          <CenteredState key="error" sx={{ gap: 2 }}>
             <Alert severity="warning" sx={{ minWidth: 0, overflowWrap: 'anywhere', maxHeight: '100%', overflowY: 'auto' }}>
               {messageState.error ?? "Messages couldn't load. Try again."}
             </Alert>
-            <Button onClick={onReloadLatest}>Try again</Button>
+            <Button onClick={onReloadLatest} variant="outlined">Try again</Button>
           </CenteredState>
         ) : messages.length === 0 ? (
           <CenteredState key="empty">

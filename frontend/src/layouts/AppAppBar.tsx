@@ -14,6 +14,10 @@ import { bridgeTransportStore, type BridgeTransportState } from '@store/transpor
 import { BRAND_INSET, BrandMark } from './BrandMark';
 import { DesktopWindowControls, hasDesktopWindowControls } from './DesktopWindowControls';
 
+// The pill's padding and glyph gutter inset its glyph, so the narrow row pulls the pill back to the content edge.
+const { dotSize, iconGutter, paddingInline } = componentTokens.FreshnessStatus;
+const STATUS_GLYPH_INSET = paddingInline + (iconGutter - dotSize) / 2;
+
 export function getStatusPresentation(state: Readonly<BridgeTransportState>) {
   if (state.protocolError?.fatal) return { label: 'Action needed', detail: protocolErrorText(state.protocolError), color: 'error' as const };
   const presentation = presentFreshness({ freshness: state.catchupFreshness, bridge: state.connection,
@@ -40,11 +44,13 @@ export function AppAppBar({ headerHeight = componentTokens.shell.headerHeight, o
         <Box sx={{ display: { xs: 'none', [statusBreakpoint]: 'block' } }}>{slot}</Box><ThemeToggle />
         <DesktopWindowControls />
       </Toolbar>
-      <Box data-reserved-region="freshness-row" sx={{ display: { xs: 'flex', [statusBreakpoint]: 'none' }, height: componentTokens.FreshnessStatus.narrowRowHeight, alignItems: 'center', px: 2 }}>{slot}</Box>
+      <Box data-reserved-region="freshness-row" sx={{ display: { xs: 'flex', [statusBreakpoint]: 'none' }, height: componentTokens.FreshnessStatus.narrowRowHeight, alignItems: 'center', px: 2,
+        '& [data-reserved-region="freshness-status"]': { ml: `-${STATUS_GLYPH_INSET}px` } }}>{slot}</Box>
     </AppBar>
+    {/* The band sits under the open narrow drawer, and its text follows the page gutter. */}
     <Box data-reserved-region="issue-band" data-region-role="overlay" sx={(theme) => ({ position: 'fixed', top: { xs: headerHeight + componentTokens.FreshnessStatus.narrowRowHeight, [statusBreakpoint]: headerHeight },
       left: { xs: 0, sm: componentTokens.shell.desktopRailWidth + componentTokens.shell.railInset }, right: 0, height: { xs: componentTokens.reserved.issueBand.narrow, sm: componentTokens.reserved.issueBand.wide },
-      zIndex: theme.zIndex.appBar - 1, p: '12px 16px', backgroundColor: `color-mix(in oklch, ${theme.vars.palette.background.paper} 85%, transparent)`, backdropFilter: 'blur(16px)',
+      zIndex: theme.zIndex.drawer - 1, py: 1.5, px: { xs: 2, sm: 3, lg: 4 }, backgroundColor: `color-mix(in oklch, ${theme.vars.palette.background.paper} 85%, transparent)`, backdropFilter: 'blur(16px)',
       visibility: phase === 'interrupted' ? 'visible' : 'hidden', opacity: phase === 'interrupted' ? 1 : 0, transform: phase === 'interrupted' ? 'translateY(0)' : 'translateY(-8px)',
       transition: 'transform 200ms ease-out, opacity 200ms ease-out', '@media (prefers-reduced-motion: reduce)': { transition: 'none' }, pointerEvents: phase === 'interrupted' ? 'auto' : 'none' })}>
       <Box data-region-content role={phase === 'interrupted' ? 'status' : undefined}>

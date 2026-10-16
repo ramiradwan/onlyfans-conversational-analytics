@@ -24,7 +24,7 @@ import {
   bridgeTransportStore,
   type BridgeTransportState,
 } from '../store/transportStore';
-import { componentTokens } from '../theme/generated/tokens';
+import { componentTokens, effectTokens } from '../theme/generated/tokens';
 import {
   coverageProgressLabel,
   formatAdditiveMetric,
@@ -48,6 +48,13 @@ const LOCAL_DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 });
 const LOCAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+// The scroll container clips left of the basis row's inset, so the label meets the text edge and focus draws inside.
+const DETAILS_BUTTON_SX = {
+  justifyContent: 'flex-start',
+  ml: -0.5,
+  px: 0.5,
+  '&:focus-visible': { outlineOffset: '-' + effectTokens.focus.width },
+} as const;
 
 
 type CreatorDashboardState = Omit<
@@ -260,6 +267,7 @@ function NumbersBasis({
           aria-haspopup="dialog"
           onClick={(event) => setAnchor(event.currentTarget)}
           size="small"
+          sx={DETAILS_BUTTON_SX}
         >
           Details
         </Button>
@@ -368,14 +376,16 @@ export default function CreatorDashboardView({
               : fullAnalyticsReady === undefined ? 'Checking setup…' : null} />
           </Box>
         </Box>
-        <ReservedRegion id="dashboard-overview" size={{ xs: 450, sm: 300 }}>
+        {/* The overview stacks its counts until md, so the stacked reservation holds until then. */}
+        <ReservedRegion id="dashboard-overview" size={{ xs: 450, md: 300 }}>
           <Box data-region-content><DashboardOverview isLoading={!hasSnapshot} conversations={format(analytics?.total_conversations)} messages={format(analytics?.total_messages)} progress={progress} received={format(analytics?.inbound_messages)} sent={format(analytics?.outbound_messages)} split={directionSplit(analytics?.inbound_messages, analytics?.outbound_messages, readiness)} /></Box>
           {!hasSnapshot && <Box sx={{ position: 'absolute', inset: 0 }}><LoadingFrame label="Loading dashboard…" /></Box>}
         </ReservedRegion>
         <ReservedRegion id="dashboard-basis" size={{ xs: 128, sm: 88 }}>
           {hasSnapshot && evidence !== null && <Box data-region-content><NumbersBasis evidence={evidence} messagesCounted={analytics?.total_messages?.sample_size ?? null} syncing={progress !== null && !progress.complete} /></Box>}
         </ReservedRegion>
-        <ReservedRegion id="dashboard-recent" size={{ xs: 440, sm: 360 }} regionRole="scroll">
+        {/* Holds four conversations. Below sm the heading and the inbox link can take extra lines. */}
+        <ReservedRegion id="dashboard-recent" size={{ xs: 472, sm: 448 }} regionRole="scroll">
           {hasSnapshot ? <Box data-region-content><RecentConversations conversations={state.conversations} showInboxLink={canViewInbox} /></Box> : <LoadingFrame label="Loading dashboard…" />}
         </ReservedRegion>
         <ReservedRegion id="dashboard-setup" size={{ xs: 720, sm: 600 }} regionRole="scroll">

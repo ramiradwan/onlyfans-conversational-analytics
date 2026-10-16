@@ -196,7 +196,7 @@ export function CreatorVaultControls({
 
   return (
     <Panel data-visual="stored-messages" sx={{ p: 0,
-      '& .MuiButton-outlined:not(.Mui-disabled)': { color: 'action.selectedForeground', borderColor: 'surface.trust.border' },
+      '& .MuiButton-outlined:not(.Mui-disabled)': { color: 'action.selectedForeground' },
     }}>
       <Stack data-journey-state="desktop.stored_messages" spacing={0}
         sx={{ '& > .MuiAlert-root, & > [role="status"]': { m: 3 } }}>

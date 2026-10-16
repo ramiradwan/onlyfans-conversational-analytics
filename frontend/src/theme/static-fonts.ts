@@ -36,7 +36,8 @@ export function generateStaticFontsCss(repositoryRoot: string): string {
 }
 
 /** Start decoding the embedded first-paint faces before the browser lays out body text. */
-export function replaceStaticFontPreloads(source: string, fontsCss: string, count = 2): string {
+export function replaceStaticFontPreloads(consumerSource: string, fontsCss: string, count = 2): string {
+  const source = consumerSource.replace(/\r\n/g, '\n');
   const urls = [...fontsCss.matchAll(/url\((data:font\/woff2;base64,[^)]+)\)/g)].map((match) => match[1]);
   if (urls.length !== 2 || count < 1 || count > urls.length) throw new Error('Expected the pinned first-paint font URLs');
   const marker = /^([ \t]*)<!-- static-font-preloads:start -->[\s\S]*?<!-- static-font-preloads:end -->/gm;

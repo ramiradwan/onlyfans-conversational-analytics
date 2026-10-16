@@ -94,6 +94,13 @@ const NarrowDetail = styled(Box)(({ theme }) => ({
   },
 }));
 
+// The inbox grid clips at the button's edge, so the icon meets the content edge and focus draws inside.
+const BACK_BUTTON_SX = {
+  alignSelf: 'flex-start',
+  pl: 0.5,
+  '&:focus-visible': { outlineOffset: '-' + effectTokens.focus.width },
+} as const;
+
 function getIssue(state: ReturnType<OperatorInboxStore['getState']>): StatusMessage | null {
   if (state.protocolError !== null) {
     return {
@@ -469,7 +476,7 @@ export default function OperatorInboxView({
                 ref={backButtonRef}
                 startIcon={<ArrowBackRoundedIcon />}
                 onClick={closeNarrowDetail}
-                sx={{ alignSelf: 'flex-start' }}
+                sx={BACK_BUTTON_SX}
               >
                 Back to conversations
               </Button>

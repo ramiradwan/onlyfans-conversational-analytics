@@ -340,6 +340,7 @@ export const semanticIntents = {
         "text": "oklch(84.5666% 0.04732 182.84)"
       },
       "canvas": "oklch(20.3962% 0.00728 164.17)",
+      "controlBorder": "oklch(71.2460% 0.01862 158.93)",
       "divider": "oklch(34.9609% 0.01582 156.31)",
       "dominant": {
         "border": "oklch(47.9449% 0.02524 157.88)",
@@ -389,6 +390,7 @@ export const semanticIntents = {
       "paper": "oklch(24.1875% 0.00825 169.61)",
       "placeholder": "oklch(34.9609% 0.01582 156.31)",
       "rim": "linear-gradient(180deg, oklch(100.0000% 0.00000 0.00 / 0.09), oklch(100.0000% 0.00000 0.00 / 0.02) 48%, oklch(100.0000% 0.00000 0.00 / 0.00))",
+      "scrollbarThumb": "oklch(71.2460% 0.01862 158.93)",
       "segment": {
         "elevation": "0 1px 2px oklch(0.0000% 0.00000 0.00 / 0.40)",
         "selected": "oklch(24.1875% 0.00825 169.61)",
@@ -524,6 +526,7 @@ export const semanticIntents = {
         "text": "oklch(42.9123% 0.07160 186.90)"
       },
       "canvas": "oklch(96.7853% 0.00453 78.30)",
+      "controlBorder": "oklch(52.9987% 0.00786 145.46)",
       "divider": "oklch(91.4244% 0.00918 78.28)",
       "dominant": {
         "border": "oklch(86.8321% 0.01343 82.40)",
@@ -573,6 +576,7 @@ export const semanticIntents = {
       "paper": "oklch(100.0000% 0.00000 0.00)",
       "placeholder": "oklch(91.4244% 0.00918 78.28)",
       "rim": "linear-gradient(180deg, oklch(21.9569% 0.00360 164.71 / 0.07), oklch(21.9569% 0.00360 164.71 / 0.03))",
+      "scrollbarThumb": "oklch(52.9987% 0.00786 145.46)",
       "segment": {
         "elevation": "0 1px 2px oklch(21.9569% 0.00360 164.71 / 0.04), 0 4px 16px -8px oklch(21.9569% 0.00360 164.71 / 0.08)",
         "selected": "oklch(100.0000% 0.00000 0.00)",
@@ -1098,7 +1102,9 @@ export const componentTokens = {
   "RecentConversations": {
     "avatarFontSize": "0.8125rem",
     "avatarRadius": 11,
-    "avatarSize": 34
+    "avatarSize": 34,
+    "nameMinWidth": "8rem",
+    "stackedRowMaxWidth": "14rem"
   },
   "StatusChip": {
     "borderRadius": 999,
@@ -1118,14 +1124,16 @@ export const componentTokens = {
     "markSize": 8,
     "metricIconSize": 48,
     "refreshOpacity": 0.56,
-    "topicColumns": "minmax(0, 1.6fr) minmax(0, 2fr) 92px 176px"
+    "topicColumns": "minmax(0, 1.6fr) minmax(0, 2fr) 5.75rem 11rem",
+    "topicTableMinWidth": "35rem"
   },
   "inbox": {
     "bubbleMaxWidth": "36rem",
     "bubbleRadius": 16,
     "bubbleWidth": "70%",
     "conversationPaneMinWidth": "18rem",
-    "insightsPaneMinWidth": "17rem"
+    "insightsPaneMinWidth": "17rem",
+    "paneTitleHeight": "2.5rem"
   },
   "reserved": {
     "actionRow": 48,
@@ -1236,11 +1244,16 @@ export const componentTokens = {
     "brandGlyphSize": 20,
     "brandSize": 32,
     "captionSize": "0.75rem",
+    "compactFormMaxWidth": "22.5rem",
     "controlHeight": 44,
     "fullWorkspaceWidth": "65rem",
     "headerHeight": 72,
+    "identityTileFontSize": "0.8125rem",
+    "identityTileRadius": 11,
+    "identityTileSize": 40,
     "labelSize": "0.875rem",
     "largeControlHeight": 48,
+    "nestedTaskHeadingSize": "1.125rem",
     "noticeBlock": 88,
     "noticeBlockNarrow": 128,
     "popupBodySize": "0.8125rem",

@@ -193,6 +193,28 @@ test('popup uses pause and resume commands without changing the selected mode', 
     .toEqual(['pause', 'resume']);
 });
 
+for (const [name, state] of Object.entries(SURFACE_STATES).filter(([, value]) => value.surface === 'popup')) {
+  test(`popup keyboard order follows its content layout (${name})`, async ({ page }) => {
+    await renderSurfaceState(page, state);
+    await expect(page.locator('#journey-primary')).toBeVisible();
+    const stops = [];
+    for (let index = 0; index < 12; index++) {
+      await page.keyboard.press('Tab');
+      const stop = await page.evaluate(() => {
+        const node = document.activeElement;
+        if (!node || node === document.body) return null;
+        const content = node.closest('.popup-content > [data-region-content]');
+        return { key: node.id || node.outerHTML, top: content ? node.getBoundingClientRect().top - content.getBoundingClientRect().top : null };
+      });
+      if (!stop || stops.some((seen) => seen.key === stop.key)) break;
+      stops.push(stop);
+    }
+    const tops = stops.filter((stop) => stop.top !== null).map((stop) => stop.top);
+    expect(tops.length).toBeGreaterThan(0);
+    expect(tops).toEqual([...tops].sort((a, b) => a - b));
+  });
+}
+
 test('while the desktop app controls this browser, the popup explains where pause moved', async ({ page }) => {
   await renderSurfaceState(page, SURFACE_STATES.desktop_controlled);
   await expect(page.locator('#pause')).toBeHidden();
@@ -251,6 +273,38 @@ test('options offers no second pause control', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.preview, surface: 'options' });
   await expect(page.locator('#pause')).toHaveCount(0);
 });
+
+for (const [name, state] of [['connection', SURFACE_STATES.connection], ['manage', SURFACE_STATES.manage],
+  ['permission_required', { ...SURFACE_STATES.connection, phase: 'permission_required' }]]) {
+  test(`options frames show their whole cards (${name})`, async ({ page }) => {
+    await renderSurfaceState(page, state);
+    await expect(page.locator('#restore-access')).toBeVisible({ visible: name === 'permission_required' });
+    for (const width of [1280, 601, 600, 390, 360, 359, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      const cut = await page.locator('.options-frame').evaluateAll((frames) => frames.map((frame) => frame.scrollHeight - frame.clientHeight));
+      expect(cut, `${width}px`).toEqual([0, 0, 0]);
+    }
+  });
+}
+
+for (const width of [1280, 390, 320]) {
+  test(`options notice band holds the loading line at ${width}px and the frames keep their place`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const rendering = renderSurfaceState(page, { ...SURFACE_STATES.manage, initialRequestHold: 'ofca.ui.status' });
+    await page.waitForFunction(() => typeof window.__releaseInitialRequest === 'function');
+    await expect(page.locator('#loading')).toBeVisible();
+    const band = await page.locator('.reserved-notice').boundingBox();
+    const loading = await page.locator('#loading').boundingBox();
+    expect(Math.abs(loading.y - band.y)).toBeLessThan(0.5);
+    expect(Math.abs(loading.height - band.height)).toBeLessThan(0.5);
+    const frameTops = () => page.locator('.options-frame').evaluateAll((frames) => frames.map((frame) => frame.getBoundingClientRect().top));
+    const before = await frameTops();
+    await page.evaluate(() => window.__releaseInitialRequest());
+    await rendering;
+    await expect(page.locator('#loading')).toBeHidden();
+    expect(await frameTops()).toEqual(before);
+  });
+}
 
 test('only the admitted task presents Full consent and permission actions', async ({ page }) => {
   await renderSurfaceState(page, { ...SURFACE_STATES.software_activation, browserTask: true });
