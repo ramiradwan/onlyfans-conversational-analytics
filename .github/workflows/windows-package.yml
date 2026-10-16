@@ -553,11 +553,42 @@ jobs:
           $policy = Get-Content -Raw -LiteralPath shared/desktop-release/prerequisite-policy.json | ConvertFrom-Json
           if ($policy.schema -cne 'ofca-desktop-prerequisite-policy/v1') { throw 'Unknown prerequisite policy' }
           $result = Join-Path $env:RUNNER_TEMP 'webview2-qualification-result.txt'
-          $output = Join-Path $env:RUNNER_TEMP 'webview2-helper-private-output.txt'
-          # Arbitrary PowerShell/download exception text never enters public logs.
-          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-            -File packaging/windows/ensure-webview2.ps1 -MinimumVersion $policy.webview2_minimum_version -ResultPath $result *> $output
-          $helperExitCode = $LASTEXITCODE
+          # A direct PS7 native invocation filters its module paths. Inno and
+          # other intermediate processes preserve them, so use the same inherited
+          # environment here. Never print arbitrary child output or exceptions.
+          $start = [Diagnostics.ProcessStartInfo]::new()
+          $start.FileName = "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe"
+          $start.UseShellExecute = $false
+          $start.CreateNoWindow = $true
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          foreach ($argument in @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+              '-File', (Join-Path $PWD 'packaging/windows/ensure-webview2.ps1'),
+              '-MinimumVersion', $policy.webview2_minimum_version, '-ResultPath', $result)) {
+            $start.ArgumentList.Add($argument)
+          }
+          $process = [Diagnostics.Process]::new()
+          $process.StartInfo = $start
+          $clock = [Diagnostics.Stopwatch]::StartNew()
+          try {
+            if (-not $process.Start()) { throw 'Prerequisite process could not start' }
+            $stdout = $process.StandardOutput.ReadToEndAsync()
+            $stderr = $process.StandardError.ReadToEndAsync()
+            $remaining = [int][Math]::Max(0, 330000 - $clock.ElapsedMilliseconds)
+            if (-not $process.WaitForExit($remaining)) {
+              # Stop only this owned helper, never the shared Microsoft updater.
+              $process.Kill()
+              $null = $process.WaitForExit(5000)
+              throw 'Prerequisite process exceeded its bounded deadline'
+            }
+            $helperExitCode = $process.ExitCode
+            # Descendants may retain a pipe after the helper exits. Draining
+            # must fit in the same overall budget as process completion.
+            $remaining = [int][Math]::Max(0, 330000 - $clock.ElapsedMilliseconds)
+            try { $drained = [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdout, $stderr), $remaining) }
+            catch { throw 'Prerequisite output could not be drained' }
+            if (-not $drained) { throw 'Prerequisite output exceeded its bounded deadline' }
+          } finally { $process.Dispose() }
           if (Test-Path -LiteralPath ($result + '.diagnostics')) {
             $line = [IO.File]::ReadAllText($result + '.diagnostics')
             if ($line.Length -le 256 -and $line -cmatch '^phase=(probe|download|signature|launch|wait|readiness|complete);outcome=(pass|fail);reason=(compatible_present|runtime_ready|download_failed|signature_refused|launch_failed|bootstrapper_timeout|bootstrapper_failed|runtime_not_ready|minimum_invalid|probe_failed|unexpected_failure);bootstrapper_exit_code=(none|0|-?[1-9][0-9]{0,9})$') {

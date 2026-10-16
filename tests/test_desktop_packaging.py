@@ -3,6 +3,7 @@ import json
 import os
 import re
 from pathlib import Path
+import shutil
 import subprocess
 
 import pytest
@@ -64,6 +65,129 @@ def test_release_requires_native_host_as_well_as_frozen_backend(tmp_path):
     stage = _stage_runtime_tree(tmp_path)
     (stage / "Bridge.exe").unlink()
     assert any(item.code == "required_file_missing" and item.path == "Bridge.exe" for item in verify_runtime_files(stage))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell module inheritance")
+@pytest.mark.parametrize("architecture", ["System32", "SysWOW64"])
+def test_webview_helper_uses_builtin_signature_verifier_after_an_intermediate_process(tmp_path, architecture):
+    # Python preserves the inherited PS7 search path, unlike a direct PS7 to
+    # Windows PowerShell launch. Exercise the actual helper initialization and
+    # real signature command; no network, runtime installation or trust mocks.
+    pwsh = shutil.which("pwsh.exe")
+    assert pwsh, "PowerShell 7 is required to reproduce inherited module paths"
+    modules = Path(pwsh).resolve().parent / "Modules"
+    assert (modules / "Microsoft.PowerShell.Security").is_dir()
+    source = (ROOT / "packaging/windows/ensure-webview2.ps1").read_text(encoding="utf-8")
+    initialization = tmp_path / "helper-initialization.ps1"
+    initialization.write_text(source[:source.index("$script:webView2Acquisition =")], encoding="utf-8")
+    unsigned = tmp_path / "unsigned.exe"
+    unsigned.write_bytes(b"synthetic unsigned prerequisite; never executable")
+    harness = tmp_path / "inherited-signature.ps1"
+    harness.write_text(r'''
+param([string]$Initialization, [string]$Unsigned)
+$ErrorActionPreference = 'Stop'
+$ambientFailed = $false
+try { $null = Get-AuthenticodeSignature -LiteralPath $Unsigned }
+catch [Management.Automation.CommandNotFoundException] { $ambientFailed = $true }
+if (-not $ambientFailed) { throw 'incompatible_module_context_not_reproduced' }
+. $Initialization -MinimumVersion '134.0.3124.0'
+$signed = Get-AuthenticodeSignature -LiteralPath ([IO.Path]::Combine($PSHOME, 'powershell.exe'))
+$unsignedSignature = Get-AuthenticodeSignature -LiteralPath $Unsigned
+if ($signed.Status -ne 'Valid' -or $null -eq $signed.SignerCertificate) { throw 'real_signed_file_not_verified' }
+if ($unsignedSignature.Status -eq 'Valid' -or $null -ne $unsignedSignature.SignerCertificate) { throw 'unsigned_file_admitted' }
+if ($env:PSModulePath -cne [IO.Path]::Combine($PSHOME, 'Modules')) { throw 'module_discovery_not_isolated' }
+$command = Get-Command Get-AuthenticodeSignature
+if ($command.Module.Version.ToString() -ne '3.0.0.0') { throw 'wrong_security_module' }
+# Also exercise the other built-in modules needed after signature validation.
+Start-Sleep -Milliseconds 1
+if (-not (Test-Path -LiteralPath $Unsigned)) { throw 'management_module_unavailable' }
+[Console]::Write('builtin_signature_verification_passed')
+''', encoding="utf-8")
+    executable = Path(os.environ["SystemRoot"]) / architecture / "WindowsPowerShell/v1.0/powershell.exe"
+    result = subprocess.run([
+        str(executable), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", str(harness), "-Initialization", str(initialization), "-Unsigned", str(unsigned),
+    ], env=os.environ | {"PSModulePath": str(modules)}, capture_output=True, text=True,
+        timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == "builtin_signature_verification_passed" and not result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="actual workflow inherited Windows PowerShell context")
+def test_prerequisite_workflow_preserves_inherited_context_for_real_signature_probe(tmp_path):
+    pwsh = shutil.which("pwsh.exe")
+    assert pwsh, "PowerShell 7 is required for the actual workflow launch"
+    modules = Path(pwsh).resolve().parent / "Modules"
+    assert (modules / "Microsoft.PowerShell.Security").is_dir()
+    workflow = yaml.safe_load((ROOT / ".github/workflows/windows-package.yml").read_text(encoding="utf-8"))
+    step = next(step for step in workflow["jobs"]["prerequisite-check"]["steps"]
+        if step.get("name") == "Exercise the actual prerequisite helper without building an app")
+    source = (ROOT / "packaging/windows/ensure-webview2.ps1").read_text(encoding="utf-8")
+    initialization = source[:source.index("$script:webView2Acquisition =")]
+    # Observe the child before the real initialization repairs discovery. A
+    # direct PS7 native invocation would filter its module path and fail this
+    # inherited-context requirement even if the signature probe then worked.
+    initialization = initialization.replace("Set-StrictMode -Version Latest", r'''
+$script:InheritedPowerShell7Modules = ($env:PSModulePath -split [IO.Path]::PathSeparator) -contains $env:OFCA_TEST_PS7_MODULES
+[Console]::WriteLine('private fixture stdout must not escape')
+[Console]::Error.WriteLine('private fixture stderr must not escape')
+Set-StrictMode -Version Latest''', 1)
+    fixture = tmp_path / "workflow-cwd"
+    policy = fixture / "shared/desktop-release/prerequisite-policy.json"
+    policy.parent.mkdir(parents=True)
+    policy.write_bytes((ROOT / "shared/desktop-release/prerequisite-policy.json").read_bytes())
+    helper = fixture / "packaging/windows/ensure-webview2.ps1"
+    helper.parent.mkdir(parents=True)
+    (helper.parent / "unsigned.exe").write_bytes(b"synthetic unsigned probe; never executable")
+    # Only the production initialization runs: no acquisition function, network
+    # request or runtime installer exists in this small helper fixture.
+    helper.write_text(initialization + r'''
+$modulePathIsolated = $env:PSModulePath -ceq [IO.Path]::Combine($PSHOME, 'Modules')
+$signedAccepted = $false
+$unsignedRefused = $false
+$builtinVerifier = $false
+try {
+    $signed = Get-AuthenticodeSignature -LiteralPath ([IO.Path]::Combine($PSHOME, 'powershell.exe'))
+    $unsigned = Get-AuthenticodeSignature -LiteralPath ([IO.Path]::Combine($PSScriptRoot, 'unsigned.exe'))
+    $command = Get-Command Get-AuthenticodeSignature
+    $signedAccepted = $signed.Status -eq 'Valid' -and $null -ne $signed.SignerCertificate
+    $unsignedRefused = $unsigned.Status -ne 'Valid' -and $null -eq $unsigned.SignerCertificate
+    $builtinVerifier = $command.Module.Name -eq 'Microsoft.PowerShell.Security' -and $command.Module.Version.ToString() -eq '3.0.0.0'
+} catch { }
+$passed = $script:InheritedPowerShell7Modules -and $modulePathIsolated -and $signedAccepted -and $unsignedRefused -and $builtinVerifier
+$context = '{"inherited_ps7_modules":' + $script:InheritedPowerShell7Modules.ToString().ToLowerInvariant() +
+    ',"module_path_isolated":' + $modulePathIsolated.ToString().ToLowerInvariant() +
+    ',"signed_accepted":' + $signedAccepted.ToString().ToLowerInvariant() +
+    ',"unsigned_refused":' + $unsignedRefused.ToString().ToLowerInvariant() +
+    ',"builtin_verifier":' + $builtinVerifier.ToString().ToLowerInvariant() + '}'
+[IO.File]::WriteAllText($ResultPath + '.context.json', $context, [Text.Encoding]::ASCII)
+$line = if ($passed) { 'phase=probe;outcome=pass;reason=compatible_present;bootstrapper_exit_code=none' }
+    else { 'phase=probe;outcome=fail;reason=probe_failed;bootstrapper_exit_code=none' }
+[IO.File]::WriteAllText($ResultPath + '.diagnostics', $line, [Text.Encoding]::ASCII)
+$code = if ($passed) { 0 } else { 1 }
+[IO.File]::WriteAllText($ResultPath, [string]$code, [Text.Encoding]::ASCII)
+exit $code
+''', encoding="utf-8")
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    harness = fixture / "workflow-run.ps1"
+    harness.write_text("$ErrorActionPreference='Stop'\n" + step["run"], encoding="utf-8")
+    result = subprocess.run([
+        pwsh, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(harness),
+    ], cwd=fixture, env=os.environ | {
+        "PSModulePath": str(modules), "OFCA_TEST_PS7_MODULES": str(modules), "RUNNER_TEMP": str(runner_temp),
+    }, capture_output=True, text=True, timeout=45, creationflags=subprocess.CREATE_NO_WINDOW)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stderr == ""
+    assert result.stdout.splitlines() == [
+        "phase=probe;outcome=pass;reason=compatible_present;bootstrapper_exit_code=none",
+        "Shared runtime prerequisite qualified. No Product package was built or signed.",
+    ]
+    context = json.loads((runner_temp / "webview2-qualification-result.txt.context.json").read_text(encoding="ascii"))
+    assert context == {
+        "inherited_ps7_modules": True, "module_path_isolated": True, "signed_accepted": True,
+        "unsigned_refused": True, "builtin_verifier": True,
+    }
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows prerequisite script")

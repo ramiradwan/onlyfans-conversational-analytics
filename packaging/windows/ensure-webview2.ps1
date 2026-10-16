@@ -8,6 +8,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Inno can inherit PowerShell 7 module paths through an intermediate process.
+# This Windows PowerShell helper needs only its own built-in modules. Keep
+# discovery local to this process so incompatible modules cannot hide the
+# signature verifier or other prerequisite commands.
+$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
+
 $script:webView2Acquisition = [ordered]@{
     phase = 'probe'; outcome = 'fail'; reason = 'probe_failed'; bootstrapper_exit_code = $null
 }

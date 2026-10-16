@@ -484,7 +484,7 @@ def _assert_publication_is_downstream_of_verification(
 def _assert_msix_build_and_sign_boundaries(workflow):
     triggers = workflow.get("on", workflow.get(True))
     target = triggers["workflow_dispatch"]["inputs"]["desktop_target"]
-    assert target["default"] == "inno" and target["options"] == ["inno", "msix-direct", "msix-store", "r2-credential-check"]
+    assert target["default"] == "inno" and target["options"] == ["inno", "msix-direct", "msix-store", "r2-credential-check", "webview2-prerequisite-check"]
     build = _steps(_build_job(workflow))
     pack = [index for index, step in enumerate(build) if ".\\packaging\\stage-msix-release.ps1" in str(step.get("run", ""))]
     assert len(pack) == 1, "MSIX must be packed once by the build owner"
@@ -904,7 +904,7 @@ def test_the_gate_selection_collects_the_packaged_first_run_test() -> None:
 def _assert_credential_check_isolation(workflow):
     jobs = _jobs(workflow)
     for name in ("build", "sign"):
-        assert jobs[name]["if"] == "inputs.desktop_target != 'r2-credential-check'", "Credential check must skip packaging and signing"
+        assert jobs[name]["if"] == "inputs.desktop_target != 'r2-credential-check' && inputs.desktop_target != 'webview2-prerequisite-check'", "Credential check must skip packaging and signing"
     prepare, check = jobs["prepare-credential-check"], jobs["credential-check"]
     for job in (prepare, check):
         assert job["if"] == "inputs.desktop_target == 'r2-credential-check'"
@@ -936,6 +936,14 @@ def test_nonpublishing_r2_check_preserves_release_authority_and_cleanup():
         changed["jobs"][job][field] = value
         with pytest.raises(AssertionError):
             _assert_credential_check_isolation(changed)
+    # Removing either diagnostic exclusion must fail for both build and sign.
+    for job in ("build", "sign"):
+        for remaining_exclusion in ("inputs.desktop_target != 'r2-credential-check'",
+                                    "inputs.desktop_target != 'webview2-prerequisite-check'"):
+            changed = deepcopy(workflow)
+            changed["jobs"][job]["if"] = remaining_exclusion
+            with pytest.raises(AssertionError, match="skip packaging and signing"):
+                _assert_credential_check_isolation(changed)
     changed = deepcopy(workflow)
     cleanup = next(step for step in changed["jobs"]["credential-check"]["steps"] if "check.mjs cleanup" in step.get("run", ""))
     cleanup["if"] = "success()"
