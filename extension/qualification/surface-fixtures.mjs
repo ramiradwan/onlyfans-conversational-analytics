@@ -15,7 +15,8 @@ async function bundle(surface, receiving = false) {
       context.onLoad({ filter: /customer-release-config\.mjs$/ }, () => ({ contents:
         `export const customerReleaseConfig = { desktop_app_download_url: 'https://downloads.example.test/desktop' };`, loader: 'js' }));
       if (receiving) context.onLoad({ filter: /onboarding-release-config\.mjs$/ }, () => ({ contents:
-        `export const onboardingHostedOrigin = 'https://setup.example.test';`, loader: 'js' }));
+        `export const onboardingHostedOrigin = 'https://setup.example.test';
+export const setupTransferReceiverUrl = 'https://setup.example.test/public/onboarding/setup';`, loader: 'js' }));
     } }] }).then((result) => result.outputFiles[0].text));
   return bundles.get(key);
 }
