@@ -21,6 +21,7 @@ PROFILE_PATH = ROOT / "packaging/msix/profiles/qualification-direct.json"
 SDK_ROOT = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Windows Kits/10"
 MAKEAPPX = SDK_ROOT / "bin/10.0.26100.0/x64/makeappx.exe"
 MANIFEST_TOOL = SDK_ROOT / "bin/10.0.26100.0/x64/mt.exe"
+IDENTITY_PROBE_TIMEOUT_SECONDS = 120
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
 
 
@@ -39,6 +40,49 @@ def test_dependency_policy_is_owned_by_distribution(profile_name, optional):
 
 def profile():
     return msix.load_profile(PROFILE_PATH)
+
+
+def _read_windows_package_identity(manifest, tmp_path):
+    """Keep cold PowerShell compilation bounded and retain its failing phase."""
+    script = tmp_path / "identity-probe.ps1"
+    script.write_text("""param([string]$Binding, [string]$Manifest)
+$ErrorActionPreference = 'Stop'
+$timer = [Diagnostics.Stopwatch]::StartNew()
+function Write-ProbePhase([string]$Phase) {
+    [Console]::Error.WriteLine(('ofca-msix-identity-probe:{0}:{1}ms' -f $Phase, $timer.ElapsedMilliseconds))
+}
+Write-ProbePhase 'script-entry'
+try {
+    Add-Type -Path $Binding
+    Write-ProbePhase 'add-type-complete'
+    $bytes = [IO.File]::ReadAllBytes($Manifest)
+    Write-ProbePhase 'windows-read-start'
+    $identity = [Ofca.Msix.IdentityReader]::Read($bytes)
+    Write-ProbePhase 'windows-read-complete'
+    $identity | ConvertTo-Json -Compress
+} finally {
+    Write-ProbePhase 'exit'
+}
+""", encoding="utf-8")
+    try:
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script),
+             str(ROOT / "packaging/msix/ReadPackageIdentity.cs"), str(manifest)],
+            capture_output=True, text=True, timeout=IDENTITY_PROBE_TIMEOUT_SECONDS, check=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        diagnostic = error.stderr or ""
+        if isinstance(diagnostic, bytes):
+            diagnostic = diagnostic.decode("utf-8", errors="replace")
+        phases = [line for line in diagnostic.splitlines()
+                  if line.startswith("ofca-msix-identity-probe:")]
+        error.add_note("Windows identity probe phases (elapsed from script entry):\n"
+                       + ("\n".join(phases)[:2048] or "No script phase was captured."))
+        if diagnostic:
+            error.add_note("Windows identity probe stderr (last 2048 characters):\n"
+                           + diagnostic[-2048:])
+        raise
+    return json.loads(result.stdout)
 
 
 @pytest.fixture
@@ -93,16 +137,7 @@ def test_reserved_store_identity_matches_windows_family_without_registration(tmp
     assert msix.version_tuple(store["minimum_os_version"]) >= (10, 0, 26200, 0)
     manifest = tmp_path / "AppxManifest.xml"
     manifest.write_bytes(msix.render_manifest(store))
-    script = tmp_path / "identity.ps1"
-    script.write_text("""param([string]$Binding, [string]$Manifest)
-$ErrorActionPreference = 'Stop'
-Add-Type -Path $Binding
-[Ofca.Msix.IdentityReader]::Read([IO.File]::ReadAllBytes($Manifest)) | ConvertTo-Json -Compress
-""", encoding="utf-8")
-    result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script),
-                             str(ROOT / "packaging/msix/ReadPackageIdentity.cs"), str(manifest)],
-                            capture_output=True, text=True, timeout=30, check=True)
-    identity = json.loads(result.stdout)
+    identity = _read_windows_package_identity(manifest, tmp_path)
     assert identity["Name"] == reserved["package_name"] == store["identity"]["name"]
     assert identity["Publisher"] == reserved["publisher"] == store["identity"]["publisher"]
     assert identity["FamilyName"] == reserved["package_family_name"]
@@ -680,13 +715,15 @@ def test_verified_direct_family_is_derived_by_windows(tmp_path):
     profile = msix.load_profile(PROFILE, production=True)
     manifest = tmp_path / 'AppxManifest.xml'
     manifest.write_bytes(msix.render_manifest(profile))
-    script = tmp_path / 'read-identity.ps1'
-    script.write_text('param([string]$Binding,[string]$Manifest)\n'
-                      '$ErrorActionPreference="Stop"; Add-Type -Path $Binding; '
-                      '[Ofca.Msix.IdentityReader]::Read([IO.File]::ReadAllBytes($Manifest)) | ConvertTo-Json -Compress', encoding='utf-8')
-    result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script),
-                             str(ROOT / 'packaging/msix/ReadPackageIdentity.cs'), str(manifest)],
-                            check=True, capture_output=True, text=True, timeout=30)
-    identity = json.loads(result.stdout)
+    identity = _read_windows_package_identity(manifest, tmp_path)
     assert identity['Publisher'] == profile['identity']['publisher']
     assert identity['FamilyName'] == msix.read_json(INPUTS)['expected_package_family']
+    malformed = tmp_path / "MalformedManifest.xml"
+    malformed.write_bytes(b"<Package>")
+    with pytest.raises(subprocess.CalledProcessError) as rejected:
+        _read_windows_package_identity(malformed, tmp_path)
+    assert not rejected.value.stdout.strip(), "A malformed manifest must not produce an accepted identity"
+    diagnostic = rejected.value.__notes__[0]
+    for phase in ("script-entry", "add-type-complete", "windows-read-start", "exit"):
+        assert f"ofca-msix-identity-probe:{phase}:" in diagnostic
+    assert "ofca-msix-identity-probe:windows-read-complete:" not in diagnostic
