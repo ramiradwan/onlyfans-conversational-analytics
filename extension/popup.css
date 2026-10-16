@@ -928,7 +928,8 @@ body[data-surface="popup"] .popup-action-only {
 .reserved-status { height: 40px; margin-top: 8px; }
 .reserved-status .feedback { margin: 0; line-height: 20px; }
 .reserved-status .feedback:empty { visibility: hidden; }
-.reserved-actions { height: 48px; }
+/* The action slot keeps its button's box while hidden and grows when the label wraps. */
+.reserved-actions { padding-bottom: var(--dipsy-space-unit); }
 .reserved-actions button { margin: 0; min-height: 40px; }
 .reserved-actions .hidden { display: block !important; visibility: hidden; }
 /* The popup opens at its full height and scrolls as one page. Shorter states keep the menu at the bottom. */

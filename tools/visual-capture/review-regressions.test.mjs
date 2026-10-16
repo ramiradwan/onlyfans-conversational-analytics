@@ -159,13 +159,28 @@ for (const width of [320, 390]) for (const fontScale of [1, 2]) test(`popup sect
           .filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden' && !['absolute', 'fixed'].includes(getComputedStyle(node).position))
           .map((node) => ({ name: node.id || node.dataset.reservedRegion || node.localName, top: node.getBoundingClientRect().top, bottom: node.getBoundingClientRect().bottom }));
         const overlaps = sections.slice(1).flatMap((section, index) => section.top < sections[index].bottom - 0.5 ? [`${sections[index].name} and ${section.name}`] : []);
-        return { nested, overlaps };
+        const action = document.querySelector('#journey-primary');
+        return { nested, overlaps, spill: action.getBoundingClientRect().bottom - action.parentElement.getBoundingClientRect().bottom };
       });
       assert.deepEqual(layout.nested, [], `The ${name} popup scrolls inside the page`);
       assert.deepEqual(layout.overlaps, [], `The ${name} popup overlaps its sections`);
+      assert(layout.spill <= 0.5, `The ${name} popup's status action extends ${layout.spill}px past its slot`);
     } finally { await page.close(); }
   }
 });
+
+const popupLayout = (page, selectors) => page.evaluate((selectors) => {
+  const edges = (node) => { const { top, bottom } = node.getBoundingClientRect(); return [top + scrollY, bottom + scrollY]; };
+  const action = document.querySelector('#journey-primary');
+  return { action: action.getBoundingClientRect().height, below: edges(action)[1], boxes: selectors.map((selector) => edges(document.querySelector(selector))) };
+}, selectors);
+// A status label that wraps differently moves what follows it by its own change in height, and nothing else moves.
+const assertPopupHeld = (current, initial, message) => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const change = current.action - initial.action;
+  assert.deepEqual(current.boxes.map((box) => box.map(round)),
+    initial.boxes.map((box) => box.map((edge) => round(edge >= initial.below - 0.5 ? edge + change : edge))), message);
+};
 
 for (const width of [320, 390]) for (const fontScale of [1, 2]) test(`pausing and resuming Preview keep the popup in place at ${width} and ${fontScale}x text`, async () => {
   const page = await browser.newPage({ viewport: { width, height: 600 }, reducedMotion: 'reduce' });
@@ -174,19 +189,19 @@ for (const width of [320, 390]) for (const fontScale of [1, 2]) test(`pausing an
     await renderSurfaceState(page, SURFACE_STATES.preview);
     await settle(page);
     const selectors = ['#journey-card', '#preview-metrics', '[data-reserved-region="surface-feedback"]', 'nav.menu', 'footer'];
-    const initial = await popupBoxes(page, selectors);
+    const initial = await popupLayout(page, selectors);
     await page.locator('#pause').focus();
     await page.keyboard.press('Enter');
     await page.locator('main[aria-busy="false"]').waitFor({ state: 'attached' });
     await page.locator('#pause').waitFor({ state: 'hidden' });
     await settle(page);
-    assert.deepEqual(await popupBoxes(page, selectors), initial, 'Pausing moves the popup');
+    assertPopupHeld(await popupLayout(page, selectors), initial, 'Pausing moves the popup');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'journey-title', 'Pausing must move focus to the status heading');
     await page.locator('#journey-primary').click();
     await page.locator('main[aria-busy="false"]').waitFor({ state: 'attached' });
     await page.locator('#pause').waitFor();
     await settle(page);
-    assert.deepEqual(await popupBoxes(page, selectors), initial, 'Resuming moves the popup');
+    assertPopupHeld(await popupLayout(page, selectors), initial, 'Resuming moves the popup');
   } finally { await page.close(); }
 });
 
