@@ -6,9 +6,11 @@ const settle = (page) => page.evaluate(() => new Promise((done) => requestAnimat
 export async function openPairingFallback(page) {
   await page.getByRole('button', { name: 'Connection options', exact: true }).click();
   const dialog = page.getByRole('dialog');
+  const openedAt = await page.evaluate(() => Date.now());
   await dialog.getByRole('button', { name: 'Compare connection codes', exact: true }).click();
   await page.clock.fastForward(250);
   await dialog.waitFor({ state: 'hidden' });
+  return openedAt;
 }
 
 export async function waitForPairingOpenPresentation(page) {
@@ -18,8 +20,11 @@ export async function waitForPairingOpenPresentation(page) {
   await page.getByText(/^Connection window expires in /).waitFor();
 }
 
-export async function drivePairingExpiry(page, pin, push, step) {
-  const initialExpiry = await page.evaluate(() => new Date(Date.now() + 299_000).toISOString());
+export async function drivePairingExpiry(page, pin, push, step, openedAt) {
+  if (!Number.isFinite(openedAt)) throw new Error('Pairing expiry requires the original open time');
+  // The component caps this attempt from its open action, before the response.
+  // Native observation or a delayed response must not move the fixture past it.
+  const initialExpiry = new Date(openedAt + 299_000).toISOString();
   await step('pairing:pending', async () => {
     await push('resolve', 'pairing.open', { ...pin, state: 'open', version: 0, comparison_code: null, agent_identity_thumbprint: null, expires_at: initialExpiry });
     await waitForPairingOpenPresentation(page);
@@ -193,8 +198,9 @@ export async function driveWorkspaceDetails(page, view, step, unseen) {
   }
   await step.fixture('fixture:refresh:pairing.pins', () => refresh('pairing.pins', undefined, 'fresh'));
   const pin = await push('apiSample', 'pairing');
-  await step('pairing:open', () => openPairingFallback(page));
-  await drivePairingExpiry(page, pin, push, step);
+  let pairingOpenedAt;
+  await step('pairing:open', async () => { pairingOpenedAt = await openPairingFallback(page); });
+  await drivePairingExpiry(page, pin, push, step, pairingOpenedAt);
   let noticeRevision = 100;
   for (const outcome of ['declined', 'cancelled', 'confirmed', 'refused']) {
     // Independent outcomes start with a fresh settings component, while the

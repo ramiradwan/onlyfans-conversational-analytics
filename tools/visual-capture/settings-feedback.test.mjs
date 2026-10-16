@@ -106,7 +106,7 @@ test('pairing expiry driver holds its boundary through slow native observation, 
     await page.getByRole('button', { name: 'Connection options', exact: true }).waitFor();
     await startPassive(page, ['settings-browser']);
     await page.clock.install({ time: new Date('2026-06-30T12:05:00Z') });
-    await openPairingFallback(page);
+    const openedAt = await openPairingFallback(page);
     const pin = await push(page, 'apiSample', 'pairing');
     const stages = [];
     const step = async (id, action) => {
@@ -125,12 +125,60 @@ test('pairing expiry driver holds its boundary through slow native observation, 
       }
       stages.push(id);
     };
-    await drivePairingExpiry(page, pin, (method, ...args) => push(page, method, ...args), step);
+    await drivePairingExpiry(page, pin, (method, ...args) => push(page, method, ...args), step, openedAt);
     assert.deepEqual(stages, ['pairing:pending', 'pairing:before-expiry', 'pairing:expired']);
     assert(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).isVisible());
     const before = await page.evaluate(() => Date.now());
     await new Promise(resolve => setTimeout(resolve, 50));
     assert((await page.evaluate(() => Date.now())) > before, 'Later driver actions require a resumed clock');
+  } finally { await owner.close(); }
+});
+
+test('pairing expiry driver preserves the original open deadline when its response is delayed', async () => {
+  const owner = await context({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark', reducedMotion: 'reduce' });
+  const page = await owner.newPage();
+  try {
+    await settings(page, 'dark', 1.25);
+    await push(page, 'desktopSnapshot', { allowed_actions: ['activation.review'] });
+    await push(page, 'refresh');
+    await settle(page);
+    for (const key of await push(page, 'pending')) await push(page, 'release', key, 'fresh');
+    await page.getByRole('button', { name: 'Connection options', exact: true }).waitFor();
+    await startPassive(page, ['settings-browser']);
+    await page.clock.install({ time: new Date('2026-06-30T12:05:00Z') });
+    // Capture the actual open click before React starts its local deadline.
+    await page.evaluate(() => {
+      const recordOpen = event => {
+        if (!(event.target instanceof Element)
+          || event.target.closest('button')?.textContent.trim() !== 'Compare connection codes') return;
+        window.__pairingExpiryOpenedAt = Date.now();
+        document.removeEventListener('click', recordOpen, true);
+      };
+      document.addEventListener('click', recordOpen, true);
+    });
+    await openPairingFallback(page);
+    const openedAt = await page.evaluate(() => window.__pairingExpiryOpenedAt);
+    assert(Number.isFinite(openedAt), 'The real open action must establish the deadline anchor');
+    // The component's five-minute cap already runs while the response is pending.
+    await page.clock.fastForward(4000);
+    assert((await page.evaluate(() => Date.now())) - openedAt >= 4000);
+    const pin = await push(page, 'apiSample', 'pairing');
+    page.setDefaultTimeout(3000);
+    const stages = [];
+    const step = async (id, action) => {
+      await action();
+      await settleNativeWatcher(page);
+      if (id === 'pairing:before-expiry') {
+        assert((await page.evaluate(() => Date.now())) - openedAt < 300_000,
+          'The before-expiry observation must precede the original local deadline');
+        assert(await page.getByText('Waiting for the browser extension to connect.', { exact: true }).isVisible());
+        assert.equal(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).count(), 0);
+      }
+      stages.push(id);
+    };
+    await drivePairingExpiry(page, pin, (method, ...args) => push(page, method, ...args), step, openedAt);
+    assert.deepEqual(stages, ['pairing:pending', 'pairing:before-expiry', 'pairing:expired']);
+    assert(await page.getByText('Time ran out before the connection finished. Try again.', { exact: true }).isVisible());
   } finally { await owner.close(); }
 });
 
