@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright';
-import { startHarness } from './capture.mjs';
+import { FIXED_NOW, startHarness } from './capture.mjs';
 import { auditScrolling, installWatcher, readWatcher } from './shift-watcher.mjs';
 import { renderSurfaceState, SURFACE_STATES } from '../../extension/qualification/surface-fixtures.mjs';
 import { publishActivation } from './desktop-decision-fixtures.mjs';
@@ -105,6 +105,121 @@ for (const width of [320, 390, 1440]) for (const fontScale of [1, 2]) for (const
       assert.equal(await page.evaluate(() => document.activeElement.id), focus, 'A passive status change cannot steal focus');
     }
     assert.deepEqual((await readWatcher(page)).failures, []);
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 1280]) for (const [state, title, count] of [
+  [{ ...SURFACE_STATES.software_activation, fullIntent: true, browserTask: true }, 'activation-title', 2],
+  [SURFACE_STATES.full_review, 'full-choice-title', 1],
+]) test(`approved copy sections sit under ${title} at ${width}`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  try {
+    await renderSurfaceState(page, state);
+    const levels = await page.evaluate(id => {
+      const size = node => parseFloat(getComputedStyle(node).fontSize);
+      const top = node => node.getBoundingClientRect().top, bottom = node => node.getBoundingClientRect().bottom;
+      const heading = document.getElementById(id);
+      const sections = [...heading.closest('section').querySelectorAll('.points > h2')]
+        .filter(node => node !== heading && node.getClientRects().length);
+      const copy = sections[0].nextElementSibling;
+      return { title: size(heading), sizes: sections.map(size), paragraph: top(copy.nextElementSibling) - bottom(copy),
+        below: sections.map(node => top(node.nextElementSibling) - bottom(node)),
+        above: sections.filter(node => node.parentElement.previousElementSibling?.matches('.points'))
+          .map(node => top(node) - bottom(node.parentElement.previousElementSibling.lastElementChild)) };
+    }, title);
+    assert.equal(levels.sizes.length, count);
+    assert(levels.sizes.every(size => size < levels.title), 'Approved copy headings must sit under the title');
+    assert(levels.below.every(gap => gap < levels.paragraph), 'A section heading must sit closer to its copy than paragraphs do');
+    assert(levels.above.length && levels.above.every(gap => gap > levels.paragraph), 'A new section must start further away than the next paragraph');
+  } finally { await page.close(); }
+});
+
+const popupBoxes = (page, selectors) => page.evaluate((selectors) => selectors.map((selector) => {
+  const { top, bottom } = document.querySelector(selector).getBoundingClientRect();
+  return `${selector} ${top + scrollY}-${bottom + scrollY}`;
+}), selectors);
+
+for (const width of [320, 390]) for (const fontScale of [1, 2]) test(`popup sections stack in one page scroll at ${width} and ${fontScale}x text`, async () => {
+  for (const [name, state] of Object.entries(SURFACE_STATES).filter(([, state]) => state.surface === 'popup')) {
+    const page = await browser.newPage({ viewport: { width, height: 600 }, reducedMotion: 'reduce' });
+    try {
+      await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+      await renderSurfaceState(page, state);
+      await settle(page);
+      const layout = await page.evaluate(() => {
+        const nested = [...document.querySelectorAll('body *')].filter((node) => {
+          if (!/(auto|scroll)/.test(getComputedStyle(node).overflowY)) return false;
+          const start = node.scrollTop;
+          node.scrollTop = start + 40;
+          const moved = node.scrollTop !== start;
+          node.scrollTop = start;
+          return moved;
+        }).map((node) => node.id || node.getAttribute('class') || node.localName);
+        const sections = [...document.querySelectorAll('.popup-content > [data-region-content] > *, nav.menu, footer')]
+          .filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden' && !['absolute', 'fixed'].includes(getComputedStyle(node).position))
+          .map((node) => ({ name: node.id || node.dataset.reservedRegion || node.localName, top: node.getBoundingClientRect().top, bottom: node.getBoundingClientRect().bottom }));
+        const overlaps = sections.slice(1).flatMap((section, index) => section.top < sections[index].bottom - 0.5 ? [`${sections[index].name} and ${section.name}`] : []);
+        const action = document.querySelector('#journey-primary');
+        return { nested, overlaps, spill: action.getBoundingClientRect().bottom - action.parentElement.getBoundingClientRect().bottom };
+      });
+      assert.deepEqual(layout.nested, [], `The ${name} popup scrolls inside the page`);
+      assert.deepEqual(layout.overlaps, [], `The ${name} popup overlaps its sections`);
+      assert(layout.spill <= 0.5, `The ${name} popup's status action extends ${layout.spill}px past its slot`);
+    } finally { await page.close(); }
+  }
+});
+
+const popupLayout = (page, selectors) => page.evaluate((selectors) => {
+  const edges = (node) => { const { top, bottom } = node.getBoundingClientRect(); return [top + scrollY, bottom + scrollY]; };
+  const action = document.querySelector('#journey-primary');
+  return { action: action.getBoundingClientRect().height, below: edges(action)[1], boxes: selectors.map((selector) => edges(document.querySelector(selector))) };
+}, selectors);
+// A status label that wraps differently moves what follows it by its own change in height, and nothing else moves.
+const assertPopupHeld = (current, initial, message) => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const change = current.action - initial.action;
+  assert.deepEqual(current.boxes.map((box) => box.map(round)),
+    initial.boxes.map((box) => box.map((edge) => round(edge >= initial.below - 0.5 ? edge + change : edge))), message);
+};
+
+for (const width of [320, 390]) for (const fontScale of [1, 2]) test(`pausing and resuming Preview keep the popup in place at ${width} and ${fontScale}x text`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 600 }, reducedMotion: 'reduce' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await renderSurfaceState(page, SURFACE_STATES.preview);
+    await settle(page);
+    const selectors = ['#journey-card', '#preview-metrics', '[data-reserved-region="surface-feedback"]', 'nav.menu', 'footer'];
+    const initial = await popupLayout(page, selectors);
+    await page.locator('#pause').focus();
+    await page.keyboard.press('Enter');
+    await page.locator('main[aria-busy="false"]').waitFor({ state: 'attached' });
+    await page.locator('#pause').waitFor({ state: 'hidden' });
+    await settle(page);
+    assertPopupHeld(await popupLayout(page, selectors), initial, 'Pausing moves the popup');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'journey-title', 'Pausing must move focus to the status heading');
+    await page.locator('#journey-primary').click();
+    await page.locator('main[aria-busy="false"]').waitFor({ state: 'attached' });
+    await page.locator('#pause').waitFor();
+    await settle(page);
+    assertPopupHeld(await popupLayout(page, selectors), initial, 'Resuming moves the popup');
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 390]) test(`the desktop control note takes the Pause slot at ${width}`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 600 }, reducedMotion: 'reduce' });
+  try {
+    await renderSurfaceState(page, SURFACE_STATES.full_ready);
+    await settle(page);
+    const selectors = ['#journey-card', '#ready-details', '[data-reserved-region="surface-feedback"]', 'nav.menu', 'footer'];
+    const initial = await popupBoxes(page, selectors);
+    await page.evaluate((state) => window.__surfaceFixture.change(state, true), SURFACE_STATES.desktop_controlled);
+    await page.locator('#desktop-control-note').waitFor();
+    await settle(page);
+    assert.deepEqual(await popupBoxes(page, selectors), initial, 'Desktop control moves the popup');
+    await page.evaluate((state) => window.__surfaceFixture.change(state, true), SURFACE_STATES.full_ready);
+    await page.locator('#pause').waitFor();
+    await settle(page);
+    assert.deepEqual(await popupBoxes(page, selectors), initial, 'Releasing desktop control moves the popup');
   } finally { await page.close(); }
 });
 
@@ -221,6 +336,158 @@ for (const width of [390, 1440]) for (const fontScale of [1, 1.25]) test(`activa
         assert.deepEqual(await chip.boundingBox(), initialChip, 'Status chip moves inside its slot');
       } else assert.equal(await chip.count(), 0);
     }
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 390, 1440]) for (const fontScale of [1, 2]) test(`recent conversations show four rows without scrolling at ${width} and ${fontScale}x text`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await page.clock.setFixedTime(FIXED_NOW);
+    await page.goto(harness.base + '?workspace=home&state=populated');
+    const region = page.locator('[data-reserved-region="dashboard-recent"]');
+    await region.locator('li').nth(3).waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    assert.equal(await region.locator('li').count(), 4);
+    const { content, client } = await region.evaluate((node) => ({ content: node.scrollHeight, client: node.clientHeight }));
+    assert(content <= client, `Recent conversations scroll by ${content - client}px`);
+  } finally { await page.close(); }
+});
+
+for (const [times, now] of Object.entries({ today: FIXED_NOW, 'same-year': '2026-07-01T12:05:00.000Z', 'earlier-year': '2027-01-15T12:05:00.000Z' })) for (const width of [320, 390]) for (const fontScale of [1, 1.25, 2]) test(`recent conversation rows keep names, times and previews apart at ${width} and ${fontScale}x text with ${times} times`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce', timezoneId: 'UTC' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await page.clock.setFixedTime(now);
+    await page.goto(harness.base + '?workspace=home&state=populated');
+    const region = page.locator('[data-reserved-region="dashboard-recent"]');
+    await region.locator('li').nth(3).waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    assert.equal(await region.locator('li').count(), 4);
+    const failures = await region.evaluate((node) => {
+      const rects = (target) => { const range = document.createRange(); range.selectNodeContents(target); return [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0); };
+      const card = node.querySelector('section').getBoundingClientRect();
+      const inside = (rect) => rect.left >= card.left - 0.5 && rect.right <= card.right + 0.5;
+      const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const failures = [];
+      const link = [...node.querySelectorAll('a')].find((element) => element.textContent.trim() === 'Open inbox');
+      const label = [...link.childNodes].find((child) => child.nodeType === Node.TEXT_NODE && child.textContent.trim());
+      const lines = new Set(rects(label).map((rect) => Math.round(rect.top))).size;
+      if (lines !== 1) failures.push(`Open inbox takes ${lines} lines`);
+      if (!inside(link.getBoundingClientRect())) failures.push('Open inbox leaves the card');
+      for (const item of node.querySelectorAll('li')) {
+        const [name, preview] = item.querySelectorAll('[data-region-content]');
+        const badge = item.querySelector('span[aria-hidden="true"]')?.parentElement;
+        const parts = Object.entries({ name: rects(name), time: rects(item.querySelector('time')), preview: rects(preview), badge: badge ? [badge.getBoundingClientRect()] : [] });
+        parts.forEach(([first, a], index) => parts.slice(index + 1).forEach(([second, b]) => {
+          if (a.some((p) => b.some((q) => hit(p, q)))) failures.push(`${name.textContent}: ${first} overlaps ${second}`);
+        }));
+        if (parts.some(([, list]) => list.some((rect) => !inside(rect)))) failures.push(`${name.textContent}: text leaves the card`);
+        const column = name.parentElement.getBoundingClientRect();
+        const overrun = Math.max(...rects(name).map((rect) => rect.right)) - column.right;
+        if (overrun > 0.5) failures.push(`${name.textContent}: name runs ${Math.round(overrun)}px past its column`);
+        const space = Math.min(8 * rem, item.getBoundingClientRect().right - parseFloat(getComputedStyle(item).paddingRight) - column.left);
+        if (column.width < space - 0.5) failures.push(`${name.textContent}: name keeps ${Math.round(column.width)}px of ${Math.round(space)}px`);
+      }
+      return failures;
+    });
+    assert.deepEqual(failures, []);
+  } finally { await page.close(); }
+});
+
+for (const fontScale of [1, 2]) test(`inbox pane headers share one height and title line at ${fontScale}x text`, async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await page.clock.setFixedTime(FIXED_NOW);
+    await page.goto(harness.base + '?workspace=inbox&state=populated');
+    await page.locator('#message-stream-title').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const [list, stream] = await page.evaluate(() => ['conversations-title', 'message-stream-title'].map((id) => {
+      const title = document.getElementById(id);
+      const header = title.closest('[data-reserved-region]').firstElementChild.getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(title);
+      return { height: header.height, bottom: header.bottom, line: text.getClientRects()[0].top };
+    }));
+    assert(Math.abs(list.height - stream.height) < 0.5, `Pane headers are ${list.height}px and ${stream.height}px tall`);
+    assert(Math.abs(list.bottom - stream.bottom) < 0.5, 'Pane header dividers do not line up');
+    assert(Math.abs(list.line - stream.line) < 0.5, `Pane titles sit ${stream.line - list.line}px apart`);
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 600, 900, 1440]) for (const fontScale of [1, 2]) test(`analytics results fit their region without scrolling at ${width} and ${fontScale}x text`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await page.clock.setFixedTime(FIXED_NOW);
+    await page.goto(harness.base + '?workspace=analytics&state=model');
+    const region = page.locator('[data-reserved-region="analytics-content"]');
+    await region.locator('[data-reserved-region="topics-list"]').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const { content, client } = await region.evaluate((node) => ({ content: node.scrollHeight, client: node.clientHeight }));
+    assert(content <= client, `Analytics results scroll by ${content - client}px`);
+  } finally { await page.close(); }
+});
+
+for (const width of [390, 600, 900, 1440]) for (const fontScale of [1, 1.1, 1.25, 1.5, 2]) test(`a scrolling topics list shows part of its next row at ${width} and ${fontScale}x text`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await page.clock.setFixedTime(FIXED_NOW);
+    await page.goto(harness.base + '?workspace=analytics&state=model');
+    const region = page.locator('[data-reserved-region="topics-list"]');
+    await region.waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const cut = await region.evaluate((node) => {
+      const bottom = node.getBoundingClientRect().top + node.clientHeight;
+      const row = [...node.querySelectorAll('li, tbody tr')].map((item) => item.getBoundingClientRect()).find((rect) => rect.height > 0 && rect.bottom > bottom + 0.5);
+      return row ? (bottom - row.top) / row.height : null;
+    });
+    if (cut !== null) assert(cut >= 0.2 && cut <= 0.8, `The topics list cuts a row at ${Math.round(cut * 100)}% of its height`);
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 600, 700, 900, 1440]) for (const fontScale of [1, 1.25, 2]) test(`topics fit their panel without scrolling sideways at ${width} and ${fontScale}x text`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await page.clock.setFixedTime(FIXED_NOW);
+    await page.goto(harness.base + '?workspace=analytics&state=model');
+    const region = page.locator('[data-reserved-region="topics-list"]');
+    await region.waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const { shown, sideways, spills } = await region.evaluate((node) => {
+      const layouts = [...node.querySelectorAll(':scope > [data-region-content]')].filter((item) => getComputedStyle(item).display !== 'none');
+      const sideways = [node, ...layouts, ...layouts.flatMap((item) => [...item.querySelectorAll('table')])]
+        .filter((item) => item.scrollWidth > item.clientWidth).map((item) => `${item.tagName.toLowerCase()} by ${item.scrollWidth - item.clientWidth}px`);
+      const spills = new Set();
+      for (const layout of layouts) {
+        const walker = document.createTreeWalker(layout, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const text = walker.currentNode;
+          const cell = text.parentElement.closest('th, td, li');
+          if (!text.textContent.trim() || !cell) continue;
+          const box = cell.getBoundingClientRect(), style = getComputedStyle(cell);
+          const left = box.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+          const right = box.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight);
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          if ([...range.getClientRects()].some((rect) => rect.left < left - 0.5 || rect.right > right + 0.5)) spills.add(text.textContent.trim());
+        }
+      }
+      return { shown: layouts.length, sideways, spills: [...spills] };
+    });
+    assert.equal(shown, 1, `The topics region shows ${shown} layouts`);
+    assert.deepEqual(sideways, [], 'Topics scroll sideways');
+    assert.deepEqual(spills, [], 'Topic text spills out of its cell');
   } finally { await page.close(); }
 });
 

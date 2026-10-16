@@ -28,6 +28,8 @@ Arguments after `--` pass through to pytest. For example, `python tools/test_bac
 
 Windows contract execution requires Windows and the fixed SQLCipher runtime. A Linux collection that skips a Windows-native test does not reproduce that test. Required hosted and packaged-runtime evidence still comes from their respective workflows.
 
+The MSIX producer contract also requires the Windows SDK `10.0.26100.0` tools and UAP v17 schema. Install the SDK before running `tests/test_msix_packaging.py` or the Windows platform/full regression lanes. A missing SDK on Windows fails qualification instead of skipping it. See [MSIX packaging](../packaging/msix/README.md) for isolated profiles and the remaining installed-system gates.
+
 Other local checks:
 
 ```powershell
@@ -179,6 +181,8 @@ After each hosted run finishes, save its metadata as `run.json` and its complete
 Start each comparison with `gh workflow run ci.yml --ref <candidate-branch> -f browser_qualification=true -f browser_serial_control=true`. Repeat at the same candidate commit for three distinct runs. Download each run's `browser-e2e-inputs-*` artifacts with `gh run download <run-id> --pattern 'browser-e2e-inputs-*' --dir artifacts/browser-comparison/pair-1`, changing the directory for the other runs. Keep the original artifact directories. Then run `python tools/browser_ci_compare.py --run <run-1> artifacts/browser-comparison/pair-1 --run <run-2> artifacts/browser-comparison/pair-2 --run <run-3> artifacts/browser-comparison/pair-3 --output artifacts/browser-comparison/coverage.json`. This verifier reads fresh GitHub run/job history and the source-versioned registry and policy; it refuses failed jobs, repeated attempts, reused runs, mismatched source, retries, and missing execution outcomes. Saved summaries or a complete bundle alone cannot qualify a comparison.
 
 Integration assignment is checked in. Download complete successful Linux timing artifacts, then run `python tools/test_backend.py update-manifest --rebalance --timings artifacts/ci-evidence --dry-run`. Review the assignments and repeat without `--dry-run` to save them. The importer combines setup, call and teardown times, takes the median across complete samples, and rejects targeted or stateful runs. A file-to-seconds JSON mapping is also accepted. Record the source run, sample count and report digest with each reviewed rebalance. A shard over ten minutes produces a maintenance warning; its twenty-minute timeout protects against runaway execution.
+
+The Windows platform job has a separate 25-minute cap for dependency setup, real SDK packaging contracts, production boot and all three persistence profiles. Hosted run `38687882648` passed its platform tests in 15m38s but exhausted the former 20-minute job budget during the final profile. All profiles and their required evidence remain enabled; the diagnostic traceback timer still does not terminate tests.
 
 The exhaustive Windows manifest is balanced separately from complete Windows timings. Its initial measured files come from PR run 36970647763, with provenance and unmeasured additions recorded in the manifest. Use `update-windows-manifest --inventory <raw-report.json> --timings <complete-windows-report.json> --rebalance --dry-run` to review a rebalance; all current files need measurements. Rerun an individual Windows shard locally with the same command as CI, adding a node ID after `--` for a focused reproduction. Narrow local runs are useful diagnostics but cannot satisfy the complete hosted coverage gate.
 

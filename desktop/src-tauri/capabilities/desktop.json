@@ -22,6 +22,7 @@
   },
   "permissions": [
     "allow-desktop-state",
+    "allow-desktop-update-status",
     "allow-desktop-refresh-presentation",
     "allow-desktop-browser-task",
     "allow-desktop-setup-code"

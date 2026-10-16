@@ -128,6 +128,7 @@ describe('native commercial activation', () => {
     expect(begin).toHaveBeenCalledExactlyOnceWith('activation.confirm');
     expect(api.redeem).not.toHaveBeenCalled();
     expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent).toBe('Confirming activation…');
   });
 
   it('never equates accepted activation with canonical Full readiness', async () => {

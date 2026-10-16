@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runInNewContext } from 'node:vm';
 import { readFileSync } from 'node:fs';
 import generatedContract from '../onboarding/generated-contract.js?raw';
+import setupThemeInitializer from '../public/setup-theme-init.js?raw';
 import markup from '../onboarding/index.html?raw';
 import { DesktopSetupClient } from '../onboarding/client.js';
 import { snapshot } from '../onboarding/contract.js';
@@ -22,6 +23,20 @@ const initial = () => ({ profile: 'desktop-onboarding.v2', kind: 'snapshot', jou
 const response = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 const session = { role: 'desktop', stage: 'setup', generation, csrf_token: 'A'.repeat(43) };
 const storage = () => { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }; };
+
+it('selects the saved setup theme before the entry module can paint', () => {
+  const meta = { setAttribute: vi.fn() };
+  const earlyDocument = { documentElement: { dataset: {} }, querySelector: () => meta };
+  runInNewContext(setupThemeInitializer, {document: earlyDocument, localStorage: {getItem: () => 'dark'}});
+  expect(earlyDocument.documentElement.dataset.colorScheme).toBe('dark');
+  expect(meta.setAttribute).toHaveBeenCalledWith('content', 'dark');
+  expect(markup.indexOf('src="/setup-theme-init.js"')).toBeGreaterThan(0);
+  expect(markup.indexOf('src="/setup-theme-init.js"')).toBeLessThan(markup.indexOf('type="module"'));
+  const denied = {document: {documentElement: {dataset: {}}}};
+  Object.defineProperty(denied, 'localStorage', {get: () => {throw new Error('denied');}});
+  expect(() => runInNewContext(setupThemeInitializer, denied)).not.toThrow();
+  expect(denied.document.documentElement.dataset.colorScheme).toBeUndefined();
+});
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.documentElement.removeAttribute('data-color-scheme'); });
 
@@ -577,6 +592,44 @@ describe('desktop setup presentation', () => {
     expect(document.getElementById('browser-reopen').hidden).toBe(true);
     renderSetup(document, { snapshot: value, connected: false, error: 'status_unavailable' });
     expect(document.getElementById('task-action').disabled).toBe(true);
+  });
+
+  it.each([
+    [{ display_name: 'Mia Studio', username: 'mia.studio' }, 'Mia Studio', '@mia.studio', 'M'],
+    [{ display_name: 'Mia Studio', username: null }, 'Mia Studio', 'OnlyFans account creator-selected', 'M'],
+    [{ display_name: null, username: 'mia.studio' }, '@mia.studio', '', 'M'],
+    [null, 'OnlyFans account creator-selected', '', ''],
+  ])('shows the account number only when no handle identifies the creator account', (label, name, identifier, letter) => {
+    mount();
+    renderSetup(document, { snapshot: { ...initial(), next_task: 'account-connection', allowed_actions: ['account.confirm'],
+      pending_operations: [{ ...record, action: 'account.connect' }], creator_label: label && { creator_id: 'creator-selected', ...label },
+      decision: { operation_id: operationId, action: 'connect-account', creator_id: 'creator-selected',
+        computer_name: 'Studio computer', expires_at: '2030-01-01T00:00:00Z' } }, connected: true });
+    expect(document.getElementById('decision-account').textContent).toBe(name);
+    expect(document.getElementById('decision-account-identifier').textContent).toBe(identifier);
+    expect(document.getElementById('decision-account-identifier').hidden).toBe(!identifier);
+    expect(document.getElementById('decision-account-avatar').textContent).toBe(letter);
+    expect(document.getElementById('decision-account-glyph').hidden).toBe(Boolean(letter));
+    if (label?.username) expect(document.getElementById('decision-details').textContent).not.toContain('creator-selected');
+  });
+
+  it.each([
+    [{ creator_id: 'creator-selected', display_name: 'Mia Studio', username: 'mia.studio' }, null, 'Mia Studio', '@mia.studio', 'M'],
+    [{ creator_id: 'creator-selected', display_name: 'Mia Studio', username: null }, null, 'Mia Studio', '', 'M'],
+    [{ creator_id: 'creator-selected', display_name: null, username: 'mia.studio' }, null, '@mia.studio', '', 'M'],
+    [{ creator_id: 'creator-selected', display_name: 'Mia Studio', username: 'mia.studio' }, 'creator-other', null],
+    [null, null, null],
+  ])('names the labelled creator account in the header', (label, decisionCreator, name, handle, letter) => {
+    mount();
+    renderSetup(document, { snapshot: { ...initial(), next_task: 'finish-setup', allowed_actions: ['browser.pair'], creator_label: label,
+      decision: decisionCreator && { operation_id: operationId, action: 'connect-account', creator_id: decisionCreator,
+        computer_name: 'Studio computer', expires_at: '2030-01-01T00:00:00Z' } }, connected: true });
+    expect(document.getElementById('header-account').hidden).toBe(!name);
+    if (!name) return;
+    expect(document.getElementById('header-account-name').textContent).toBe(name);
+    expect(document.getElementById('header-account-handle').textContent).toBe(handle);
+    expect(document.getElementById('header-account-handle').hidden).toBe(!handle);
+    expect(document.getElementById('header-account-avatar').textContent).toBe(letter);
   });
 
   it('distinguishes browser sign-in from accepted work without declaring local readiness', () => {

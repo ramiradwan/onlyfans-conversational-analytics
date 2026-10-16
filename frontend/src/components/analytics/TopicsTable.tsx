@@ -8,16 +8,28 @@ import {
 } from '../../analytics';
 import { componentTokens, layoutTokens } from '../../theme';
 import { barArrival } from '../../theme/presentationMotion';
+import { ReservedRegion } from '../ui/ReservedRegion';
 
-const DesktopScroller = styled(Box)(({ theme }) => ({
+// The table shows once its panel holds topicTableMinWidth, and the list shows below that.
+const tableFits = `@container topics (min-width: ${componentTokens.analytics.topicTableMinWidth})`;
+
+/**
+ * Heights of the topics region. Padding stays fixed while text scales, so each size counts both and cuts a row at the
+ * same place at any text size. A listed topic is 41px and 3.75rem, a table row 17px and 1.3125rem, and the table header
+ * 17px and 2.0625rem.
+ */
+export const topicRegionSize = {
+  list: 'calc(4.35 * (41px + 3.75rem))',
+  table: 'calc(17px + 2.0625rem + 7.5 * (17px + 1.3125rem))',
+};
+
+const WideTopics = styled(Box)(({ theme }) => ({
   display: 'none',
-  overflowX: 'auto',
-  [theme.breakpoints.up('sm')]: { display: 'block' },
+  [tableFits]: { display: 'block' },
   '& table': {
     display: 'grid',
     gridTemplateColumns: componentTokens.analytics.topicColumns,
     fontSize: theme.typography.body2.fontSize,
-    minWidth: theme.spacing(70),
     width: '100%',
   },
   '& thead, & tbody, & tr': { display: 'grid', gridColumn: '1 / -1', gridTemplateColumns: 'subgrid' },
@@ -38,12 +50,12 @@ const DesktopScroller = styled(Box)(({ theme }) => ({
   },
 }));
 
-const NarrowTopics = styled('ul')(({ theme }) => ({
+const NarrowTopics = styled('ul')({
   listStyle: 'none',
   margin: 0,
   padding: 0,
-  [theme.breakpoints.up('sm')]: { display: 'none' },
-}));
+  [tableFits]: { display: 'none' },
+});
 
 const NarrowTopic = styled('li')(({ theme }) => ({
   borderBottom: `1px solid ${theme.vars.palette.divider}`,
@@ -57,7 +69,7 @@ const MagnitudeCell = styled(Box, { shouldForwardProp: (p) => p !== '$labelled' 
   display: 'grid',
   gap: theme.spacing(1),
   minWidth: 0,
-  gridTemplateColumns: $labelled ? 'minmax(0, 1fr) calc(var(--topic-count-width) + 9ch)' : 'minmax(0, 1fr) var(--topic-count-width)',
+  gridTemplateColumns: $labelled ? 'minmax(0, 1fr) minmax(0, calc(var(--topic-count-width) + 9ch))' : 'minmax(0, 1fr) var(--topic-count-width)',
 }));
 
 const BarTrack = styled(Box)(({ theme }) => ({
@@ -102,59 +114,62 @@ export function TopicsTable({ topics }: TopicsTableProps) {
     return <Typography sx={{ color: 'text.secondary' }}>No topics found for these dates.</Typography>;
   }
 
+  // A scrolling list shows part of its next row.
   return (
-    <Box data-reserved-region="topics-list" data-region-role="scroll" sx={{ height: { xs: 440, sm: 320 }, overflowY: 'auto', scrollbarGutter: 'stable' }}>
-      <NarrowTopics data-region-content aria-label="Topics and trend" style={columnStyle}>
-        {topics.map((topic) => (
-          <NarrowTopic key={topic.id}>
-            <Typography component="p" variant="subtitle2">{topic.label}</Typography>
-            <MagnitudeCell $labelled>
-              <BarTrack aria-hidden="true" data-visual="topic-track">
-                <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
-              </BarTrack>
-              <Typography component="span" variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography> messages
-              </Typography>
-            </MagnitudeCell>
-            <NarrowMetadata>
-              <Typography variant="caption">Share {formatPercentValue(topic.sharePercent)}</Typography>
-              <Typography variant="caption">
-                Change {topic.trendPercent === null ? '—' : formatPercentValue(topic.trendPercent)}
-              </Typography>
-            </NarrowMetadata>
-          </NarrowTopic>
-        ))}
-      </NarrowTopics>
+    <Box sx={{ containerName: 'topics', containerType: 'inline-size' }}>
+      <ReservedRegion id="topics-list" regionRole="scroll" size={{ xs: topicRegionSize.list }} sx={{ [tableFits]: { blockSize: topicRegionSize.table } }}>
+        <NarrowTopics data-region-content aria-label="Topics and trend" style={columnStyle}>
+          {topics.map((topic) => (
+            <NarrowTopic key={topic.id}>
+              <Typography component="p" variant="subtitle2">{topic.label}</Typography>
+              <MagnitudeCell $labelled>
+                <BarTrack aria-hidden="true" data-visual="topic-track">
+                  <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
+                </BarTrack>
+                <Typography component="span" variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography> messages
+                </Typography>
+              </MagnitudeCell>
+              <NarrowMetadata>
+                <Typography variant="caption">Share {formatPercentValue(topic.sharePercent)}</Typography>
+                <Typography variant="caption">
+                  Change {topic.trendPercent === null ? '—' : formatPercentValue(topic.trendPercent)}
+                </Typography>
+              </NarrowMetadata>
+            </NarrowTopic>
+          ))}
+        </NarrowTopics>
 
-      <DesktopScroller data-region-content style={columnStyle}>
-        <table aria-label="Topics and trend" role="table">
-          <thead>
-            <tr role="row">
-              <th scope="col">Topic</th>
-              <th scope="col">Messages</th>
-              <th scope="col">Share</th>
-              <th scope="col">Change from previous period</th>
-            </tr>
-          </thead>
-          <tbody>
-            {topics.map((topic) => (
-              <tr role="row" key={topic.id}>
-                <td>{topic.label}</td>
-                <td>
-                  <MagnitudeCell>
-                    <BarTrack aria-hidden="true" data-visual="topic-track">
-                      <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
-                    </BarTrack>
-                    <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography>
-                  </MagnitudeCell>
-                </td>
-                <td>{formatPercentValue(topic.sharePercent)}</td>
-                <td>{topic.trendPercent === null ? '—' : formatPercentValue(topic.trendPercent)}</td>
+        <WideTopics data-region-content style={columnStyle}>
+          <table aria-label="Topics and trend" role="table">
+            <thead>
+              <tr role="row">
+                <th scope="col">Topic</th>
+                <th scope="col">Messages</th>
+                <th scope="col">Share</th>
+                <th scope="col">Change from previous period</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </DesktopScroller>
+            </thead>
+            <tbody>
+              {topics.map((topic) => (
+                <tr role="row" key={topic.id}>
+                  <td>{topic.label}</td>
+                  <td>
+                    <MagnitudeCell>
+                      <BarTrack aria-hidden="true" data-visual="topic-track">
+                        <Bar style={{ width: `${(topic.volume / maximum) * 100}%` }} />
+                      </BarTrack>
+                      <Typography component="span" variant="numericBody">{formatCount(topic.volume)}</Typography>
+                    </MagnitudeCell>
+                  </td>
+                  <td>{formatPercentValue(topic.sharePercent)}</td>
+                  <td>{topic.trendPercent === null ? '—' : formatPercentValue(topic.trendPercent)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </WideTopics>
+      </ReservedRegion>
     </Box>
   );
 }

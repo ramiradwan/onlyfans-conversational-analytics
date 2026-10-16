@@ -29,10 +29,45 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-  CI_POLICY_VERSION: sharded-v3-pr-cutover
+  CI_POLICY_VERSION: sharded-v4-pr-cutover
   BROWSER_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_qualification }}
   BROWSER_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
 jobs:
+  desktop-native-contracts:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.1
+    steps:
+      - name: Checkout exact Product revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.PRODUCT_SHA }}
+      - name: Install pinned desktop toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Cache native desktop dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: desktop-native-${{ runner.os }}-1.98.1-${{ hashFiles('desktop/src-tauri/Cargo.lock', 'desktop/src-tauri/bridge.manifest') }}
+      - name: Test native admission, supervision and prerequisite recovery
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/desktop-native | Out-Null
+          cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml --features qualification-tools --bin Bridge --test process_lifetime --test prerequisite -- --test-threads=1 2>&1 |
+            Tee-Object -FilePath artifacts/desktop-native/contracts.log
+          if ($LASTEXITCODE -ne 0) { throw 'Native desktop contracts failed' }
+      - name: Retain native contract outcomes
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: desktop-native-contracts-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/desktop-native/contracts.log
+          retention-days: 14
+          if-no-files-found: error
   web-build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -85,6 +120,10 @@ jobs:
         run: npm test --prefix frontend
       - name: Test extension
         run: npm test --prefix extension
+      - name: Install locked desktop delivery test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix tools/desktop-delivery
+      - name: Test desktop serving and publication boundaries
+        run: npm test --prefix tools/desktop-delivery
       - name: Test provisioning page module
         run: node --test app/provisioning/*.test.mjs
       - name: Install analytics conformance dependencies
@@ -395,7 +434,9 @@ jobs:
   windows-platform-contract:
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
-    timeout-minutes: 20
+    # SDK producer contracts took 15m38s on a hosted runner. Leave bounded
+    # room for setup, production boot and all three persistence profiles.
+    timeout-minutes: 25
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
@@ -861,7 +902,7 @@ jobs:
         run: |
           npm ci --prefix tools/e2e-capture
           npm ci --prefix extension
-          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0
+          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0 starlette==1.8.0
       - name: Test restricted browser reporting
         run: npm run test:ci-tools --prefix tools/e2e-capture
       - name: Probe the actual pinned Playwright reporter
@@ -1209,6 +1250,7 @@ jobs:
     if: ${{ always() }}
     needs:
       - web-build-and-test
+      - desktop-native-contracts
       - backend-fast
       - analytics-integration
       - fixed-sqlcipher-wheel

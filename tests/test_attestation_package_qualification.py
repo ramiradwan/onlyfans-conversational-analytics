@@ -1,9 +1,9 @@
 """Attestation qualifies the exact Store package for itself, or refuses.
 
-Every test here drives the production precondition chain against a real Store
-ZIP produced by the release packaging path, and a loopback stand-in for the
-Legal repository the release gate reads. A refusal must name its own step and
-must stop before any key material is decoded.
+Tests exercise the independent routing policy and the production precondition
+chain against a real Store ZIP produced by the release packaging path, with a
+loopback stand-in for the repository the release gate reads. A refusal must name
+its own step and must stop before any key material is decoded.
 """
 
 from __future__ import annotations
@@ -104,14 +104,51 @@ def _run_extension_build(arguments: list[str]) -> subprocess.CompletedProcess[st
 def customer_release_config(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     path = tmp_path_factory.mktemp("customer-release") / "customer-release.json"
     path.write_text(json.dumps({
-        "schema": "ofca-customer-release/v1",
-        "hosted_onboarding_url": "https://setup.example.com/public/onboarding/setup",
+        "schema": "ofca-customer-release/v2",
+        "setup_transfer_receiver_url": "https://setup.example.com/public/onboarding/setup",
         "hosted_api_origin": "https://setup.example.com",
         "authentication_providers": ["default"],
     }), encoding="utf-8")
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(producer, "CUSTOMER_RELEASE_CONFIG", path)
         yield path
+
+
+@pytest.mark.parametrize("receiver_configured", [False, True])
+def test_workspace_policy_tracks_explicit_receiver_access(tmp_path, monkeypatch, receiver_configured):
+    origin = "https://setup.example.com"
+    receiver = origin + "/public/onboarding/setup" if receiver_configured else ""
+    path = tmp_path / "customer-release.json"
+    path.write_text(json.dumps({"schema": "ofca-customer-release/v2",
+        "setup_transfer_receiver_url": receiver, "hosted_api_origin": origin,
+        "authentication_providers": ["default"]}), encoding="utf-8")
+    monkeypatch.setattr(producer, "CUSTOMER_RELEASE_CONFIG", path)
+    matches = ["http://bridge.localhost:17871/*"] + ([receiver] if receiver else [])
+    matches += [origin + "/public/onboarding/installation-continuation"]
+    manifest = {"host_permissions": ["http://bridge.localhost/*", origin + "/*"],
+                "externally_connectable": {"matches": matches}}
+    assert producer._qualified_workspace_policy(manifest)
+    # The controlled package policy rejects both missing and excess messaging access.
+    manifest["externally_connectable"]["matches"] = matches + [origin + "/*"]
+    assert not producer._qualified_workspace_policy(manifest)
+
+
+def test_api_only_extension_build_omits_receiver_messaging_access(tmp_path):
+    _require_extension_toolchain()
+    origin = "https://setup.example.com"
+    config = tmp_path / "customer-release.json"
+    config.write_text(json.dumps({"schema": "ofca-customer-release/v2",
+        "setup_transfer_receiver_url": "", "hosted_api_origin": origin,
+        "authentication_providers": ["default"]}), encoding="utf-8")
+    output = tmp_path / "extension"
+    arguments = [f"--outdir={output}", f"--customer-release-config={config}"]
+    for flags in ([], ["--audit"]):
+        result = _run_extension_build(arguments + flags)
+        assert result.returncode == 0, result.stdout + result.stderr
+    manifest = json.loads((output / "manifest.json").read_bytes())
+    assert manifest["host_permissions"] == ["http://bridge.localhost/*", origin + "/*"]
+    assert manifest["externally_connectable"] == {"matches": [
+        "http://bridge.localhost:17871/*", origin + "/public/onboarding/installation-continuation"]}
 
 
 @pytest.fixture(scope="module")

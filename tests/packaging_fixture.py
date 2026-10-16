@@ -37,8 +37,8 @@ def configured_release_source(module, destination: Path):
     native.write_bytes(b"native-desktop-build-fixture")
     config = destination / "app/core/customer-release.json"
     config.write_text(json.dumps({
-        "schema": "ofca-customer-release/v1",
-        "hosted_onboarding_url": "https://setup.example.com/public/onboarding/setup",
+        "schema": "ofca-customer-release/v2",
+        "setup_transfer_receiver_url": "https://setup.example.com/public/onboarding/setup",
         "hosted_api_origin": "https://setup.example.com",
         "authentication_providers": ["default"],
     }), encoding="utf-8")

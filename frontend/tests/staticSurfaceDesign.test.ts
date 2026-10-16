@@ -46,6 +46,7 @@ describe('static surface font delivery', () => {
 
 it.each([['extension/popup.html', 2], ['extension/setup.html', 2], ['extension/options.html', 2]] as const)('keeps early font preloads current in %s', (file, count) => {
   expect(replaceStaticFontPreloads(read(file), fonts, count)).toBe(read(file));
+  expect(replaceStaticFontPreloads(read(file).replace(/\n/g, '\r\n'), fonts, count)).toBe(read(file));
 });
 
 describe('static surface content and behavior boundaries', () => {
@@ -77,6 +78,8 @@ describe('static semantic treatments', () => {
     const css = generateStaticTokensCss(JSON.stringify(raw));
     expect(css).toContain('--dipsy-static-header-height: 80px;');
     expect(css).toContain('--dipsy-static-brand-inset: 32px;');
+    expect(read('frontend/shared-setup/shell.css')).toMatch(
+      /\.setup-header \{[^}]*min-height: var\(--dipsy-static-header-height\);[^}]*var\(--dipsy-static-brand-inset\)/);
   });
 
   it.each(['light', 'dark'] as const)('keeps %s feedback fields opaque and body text readable', (mode) => {

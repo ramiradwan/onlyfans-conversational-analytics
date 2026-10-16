@@ -21,7 +21,7 @@ import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
 import { captureVisionDiagnostics } from './vision-diagnostics.mjs';
 import { ordinaryCases, ordinaryName } from './ci/inventory.mjs';
-import { CaptureRecorder, parseCaptureOptions, sourceIdentity } from './ci/recording.mjs';
+import { assertSafeCaptureOutput, CaptureRecorder, parseCaptureOptions, sourceIdentity } from './ci/recording.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const frontend = resolve(here, '../../frontend');
@@ -164,7 +164,7 @@ export async function capture(argv = process.argv.slice(2)) {
   const outDir = options.output;
   const repository = resolve(here, '../..');
   // Never recursively clear the repository, a parent, or a drive root.
-  if (outDir === repository || relative(outDir, repository).split(/[\\/]/).every(part => part !== '..')) throw new Error('visual_ci_unsafe_output_directory');
+  assertSafeCaptureOutput(outDir, repository);
   const source = sourceIdentity(process.env, repository);
   const previousRevision = process.env.VISUAL_CAPTURE_REVISION;
   const recorder = new CaptureRecorder({ group: options.group, source, partial: options.partial });

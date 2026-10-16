@@ -4,7 +4,7 @@ import asyncio
 import importlib
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -199,31 +199,31 @@ def test_runtime_exposes_only_bridge_ticket() -> None:
         assert DEV_AGENT_AUTH_TICKET not in root.text
 
 
-def test_runtime_exposes_release_secure_setup_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runtime_exposes_release_setup_transfer_receiver_url(monkeypatch: pytest.MonkeyPatch) -> None:
     frontend = importlib.import_module("app.api.endpoints.frontend")
-    onboarding_url = "https://setup.example.test/activate"
+    onboarding_url = "https://setup.example.test/public/onboarding/setup"
 
     def configured() -> CustomerReleaseConfig:
         return CustomerReleaseConfig(
-            hosted_onboarding_url=onboarding_url,
+            setup_transfer_receiver_url=onboarding_url,
             hosted_api_origin="https://api.example.test",
         )
 
     def unavailable() -> CustomerReleaseConfig:
         raise CustomerReleaseConfigurationError("customer release configuration is unavailable")
 
-    frontend._secure_setup_url.cache_clear()
+    frontend._setup_transfer_receiver_url.cache_clear()
     monkeypatch.setattr(frontend, "load_customer_release_config", configured)
     try:
         with TestClient(app) as client:
-            assert f'"SECURE_SETUP_URL": "{onboarding_url}"' in client.get("/").text
+            assert f'"SETUP_TRANSFER_RECEIVER_URL": "{onboarding_url}"' in client.get("/").text
 
-        frontend._secure_setup_url.cache_clear()
+        frontend._setup_transfer_receiver_url.cache_clear()
         monkeypatch.setattr(frontend, "load_customer_release_config", unavailable)
         with TestClient(app) as client:
-            assert '"SECURE_SETUP_URL": ""' in client.get("/").text
+            assert '"SETUP_TRANSFER_RECEIVER_URL": ""' in client.get("/").text
     finally:
-        frontend._secure_setup_url.cache_clear()
+        frontend._setup_transfer_receiver_url.cache_clear()
 
 
 def test_settings_are_csrf_cas_and_matching_config_revision_bound() -> None:
@@ -320,6 +320,104 @@ def test_non_ceremony_state_changing_route_requires_csrf() -> None:
 
     assert response.status_code == 403
     assert response.json() == {"detail": "CSRF token is required"}
+
+
+@pytest.mark.parametrize("closed_transport", ["companion", "websocket"])
+def test_history_publication_survives_a_closed_agent_notification(closed_transport: str) -> None:
+    from types import SimpleNamespace
+
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.api.endpoints.companion_session import ProtectedSocket
+    from app.transport.companion_channel import CompanionChannel
+
+    if closed_transport == "companion":
+        channel = CompanionChannel(
+            SimpleNamespace(client=None),
+            None,
+            None,
+            datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+        # Closure can precede the socket task's lease cleanup. No record may
+        # leave this channel, even though its transport lease is still present.
+        channel.closed = True
+        socket = ProtectedSocket(channel)
+    else:
+        class ClosedSocket:
+            async def send_text(self, _text):
+                raise WebSocketDisconnect(1000)
+
+        socket = ClosedSocket()
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        lease = AgentLease(
+            websocket=socket,
+            principal_id=DEV_PRINCIPAL_ID,
+            creator_account_id=DEV_ACCOUNT_ID,
+            connection_id=uuid4(),
+            fencing_token="test-fence",
+            agent_installation_id=INSTALLATION_ID,
+            agent_stream_id=STREAM_ID,
+            config_auth_ticket="test-config-ticket",
+            applied_config_revision=BOOTSTRAP_CONFIG_REVISION,
+            last_heartbeat_at=datetime.now(timezone.utc),
+        )
+        transport_manager.active_agents[DEV_ACCOUNT_ID] = lease
+        request = {
+            "desired_state": "running",
+            "consent_policy_version": "history-consent-v1",
+            "accept_consent": True,
+            "recent_window_days": 30,
+            "page_size": 100,
+            "pages_per_wake": 2,
+            "request_interval_ms": 500,
+            "retry_limit": 3,
+        }
+        headers = {"If-Match": "0", "X-CSRF-Token": creator_csrf()}
+        response = client.put("/api/v1/settings/history", headers=headers, json=request)
+        saved = transport_manager.history.history_settings(DEV_ACCOUNT_ID)
+        # The HTTP result describes the durable desired setting. It must never
+        # claim the disconnected Agent applied that setting.
+        assert saved["settings_revision"] == 1
+        assert saved["required_config_revision"] == PUBLISHED_CONFIG_REVISION
+        assert saved["effective_settings_revision"] is None
+        assert response.status_code == 200
+        assert response.headers["etag"] == '"1"'
+        assert response.json()["effective_state"] == "not_applied"
+        assert client.put(
+            "/api/v1/settings/history", headers=headers, json=request,
+        ).status_code == 412
+        # A later session retrieves the same committed document rather than
+        # depending on a notification that the closed connection could not take.
+        later = transport_manager.config_authority.bind_installation(
+            DEV_ACCOUNT_ID, uuid4(), None,
+        )
+        assert later.required_config_revision == PUBLISHED_CONFIG_REVISION
+        document = transport_manager.required_config_document(DEV_ACCOUNT_ID)
+        assert document.history_acquisition.enabled is True
+
+
+@pytest.mark.parametrize("failure", [ValueError, RuntimeError])
+def test_config_notification_does_not_hide_unexpected_failures(monkeypatch, failure) -> None:
+    async def broken_notification(*_args, **_kwargs):
+        raise failure("unexpected notification failure")
+
+    monkeypatch.setattr(transport_manager, "send_agent", broken_notification)
+    with TestClient(app):
+        transport_manager.active_agents[DEV_ACCOUNT_ID] = AgentLease(
+            websocket=None,
+            principal_id=DEV_PRINCIPAL_ID,
+            creator_account_id=DEV_ACCOUNT_ID,
+            connection_id=uuid4(),
+            fencing_token="test-fence",
+            agent_installation_id=INSTALLATION_ID,
+            agent_stream_id=STREAM_ID,
+            config_auth_ticket="test-config-ticket",
+            applied_config_revision=BOOTSTRAP_CONFIG_REVISION,
+            last_heartbeat_at=datetime.now(timezone.utc),
+        )
+        with pytest.raises(failure, match="unexpected notification failure"):
+            asyncio.run(transport_manager.signal_config_available(DEV_ACCOUNT_ID))
 
 
 @pytest.mark.parametrize("eligible", [True, False])

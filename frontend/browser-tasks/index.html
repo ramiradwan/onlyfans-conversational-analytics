@@ -7,7 +7,14 @@
     <title>Browser task · Conversation Analytics</title>
   </head>
   <body>
-    <header class="setup-header"><span class="setup-brand">Conversation Analytics</span></header>
+    <header class="setup-header">
+      <span class="setup-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="none" focusable="false"><path d="M5 3.75h10A2.25 2.25 0 0 1 17.25 6v6A2.25 2.25 0 0 1 15 14.25h-4.4L7 16.75v-2.5H5A2.25 2.25 0 0 1 2.75 12V6A2.25 2.25 0 0 1 5 3.75Z"/><path d="M6.25 10.75 8.7 8.45l2 1.45 2.8-3"/><circle cx="6.25" cy="10.75" r=".8"/><circle cx="8.7" cy="8.45" r=".8"/><circle cx="10.7" cy="9.9" r=".8"/><circle cx="13.5" cy="6.9" r=".8"/></svg>
+        </span>
+        <span class="brand-name">Conversation Analytics</span>
+      </span>
+    </header>
     <main class="setup-main" data-journey-state="browser.loading">
       <section class="setup-card" aria-labelledby="task-title">
         <p class="setup-eyebrow">Chrome browser task</p>
@@ -17,7 +24,7 @@
           <button id="pairing-replace" type="button" aria-describedby="task-status" hidden>Replace saved connection</button>
           <button id="extension-open" type="button" aria-describedby="task-status" hidden>Open extension</button>
           <button id="authentication-open" type="button" aria-describedby="task-status" hidden>Continue sign-in</button>
-          <a id="authentication-browser" class="button" rel="noopener noreferrer" target="_blank" hidden>Continue in Chrome</a>
+          <a id="authentication-browser" class="button secondary" rel="noopener noreferrer" target="_blank" hidden>Continue in Chrome</a>
           <a id="extension-install" class="button" rel="noreferrer" target="_blank" hidden>Get the extension</a>
           <button id="task-retry" class="secondary" type="button" aria-describedby="task-status" hidden>Retry</button>
           <a id="desktop-return" class="button secondary" hidden>Return to desktop</a>

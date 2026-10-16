@@ -273,6 +273,28 @@ def test_http_entry_requires_launcher_proof_and_browser_origin_then_separate_coo
         assert client.get("/onboarding/entry?code=" + code).status_code == 400
 
 
+def test_entry_stylesheet_is_available_before_admission_without_loosening_csp(setup):
+    admissions, _ = setup
+    app = FastAPI()
+    app.include_router(admission_router(admissions, launcher_token="t" * 43))
+    with TestClient(app, base_url=ORIGIN) as client:
+        for path in ("/onboarding/entry", "/browser-tasks/entry"):
+            landing = client.get(path)
+            assert landing.status_code == 200
+            assert '<link rel="stylesheet" href="/onboarding/entry.css">' in landing.text.split("</head>")[0]
+            assert "style-src 'self'" in landing.headers["content-security-policy"]
+            assert "'unsafe-inline'" not in landing.headers["content-security-policy"]
+            assert "set-cookie" not in landing.headers
+        stylesheet = client.get("/onboarding/entry.css")
+        assert stylesheet.status_code == 200 and stylesheet.text
+        assert stylesheet.headers["content-type"].startswith("text/css")
+        assert stylesheet.headers["cache-control"] == "no-store"
+        assert stylesheet.headers["x-content-type-options"] == "nosniff"
+        assert "set-cookie" not in stylesheet.headers
+        assert client.get("/onboarding/entry.css", headers={"Host": "outside.example"}).status_code == 421
+        assert client.get("/api/v1/desktop/session").status_code == 401
+
+
 def test_stale_document_cannot_discover_replacement_generation_through_shared_cookie(setup):
     admissions, _ = setup
     old = desktop(admissions)

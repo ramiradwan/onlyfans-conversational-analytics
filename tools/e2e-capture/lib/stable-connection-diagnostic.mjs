@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from 'node:util';
 import { safeCompanionCloseReason, safeCompanionChannelDiagnostic } from '../../../extension/transport/companion-channel.mjs';
 
-const EVENTS = new Set(['connect-start', 'connect-admitted', 'connect-failed', 'circuit-reset', 'channel-close', 'facade-close', 'invalidate', 'credential-rotation-failed']);
+const EVENTS = new Set(['connect-start', 'connect-admitted', 'connect-failed', 'circuit-reset', 'channel-close', 'facade-close', 'invalidate', 'credential-rotation-failed', 'control-admitted', 'control-close']);
 const ERROR_CLASSES = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'EvalError']);
 const number = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const boolean = (value) => typeof value === 'boolean' ? value : null;
@@ -39,6 +39,13 @@ function configurationDiagnostic(value) {
   };
 }
 
+function channelAdmission(value) {
+  const keys = ['closed', 'monotonicRollback', 'wallRollback', 'deadlinePassed', 'grantExpired'];
+  if (!value || Array.isArray(value) || Object.keys(value).length !== keys.length
+      || keys.some(key => typeof value[key] !== 'boolean')) return null;
+  return Object.fromEntries(keys.map(key => [key, value[key]]));
+}
+
 export function readSessionFailures(output) {
   const results = [];
   for (const line of String(output).split('\n')) {
@@ -47,14 +54,15 @@ export function readSessionFailures(output) {
     try { value = JSON.parse(line.slice('e2e-session-failure: '.length)); } catch { continue; }
     results.push({
       method: enumValue(value?.method, ['agent.storage.rotate', 'agent.storage.unseal', 'agent.config.get',
-        'capture.state.report', 'history.check.begin', 'agent.challenge', 'agent.authenticate', 'agent.analysis.readiness', 'session.serve']),
+        'capture.state.report', 'history.check.begin', 'agent.challenge', 'agent.authenticate', 'agent.analysis.readiness', 'session.serve', 'session.check']),
+      ...(value?.method === 'session.check' ? { admission: channelAdmission(value.admission) } : {}),
       causes: Array.isArray(value?.causes) ? value.causes.slice(0, 4).map(cause => ({
         errorName: enumValue(cause?.errorName, ['CompanionSessionError', 'CompanionRecordError', 'AuthenticationStateError',
           'CompanionPairingPersistenceError', 'LocalDataKeyError', 'RuntimeError', 'ValueError', 'TypeError', 'KeyError',
           'OperationalError', 'DatabaseError', 'IntegrityError', 'TimeoutError', 'ValidationError', 'PermissionError',
           'InvalidToken', 'InvalidTag', 'OSError', 'QueueFull', 'WebSocketDisconnect']),
         phase: enumValue(cause?.phase, ['dispatch', 'validate_config', 'open_bootstrap', 'seal_bootstrap',
-          'policy', 'consume_config', 'ticket_binding', 'data_key', 'serve', 'receive', 'send', 'agent_socket', 'broadcast_catchup']),
+          'policy', 'consume_config', 'ticket_binding', 'data_key', 'serve', 'receive', 'send', 'agent_socket', 'broadcast_catchup', 'admission']),
         frames: Array.isArray(cause?.frames) ? cause.frames.slice(-8).map(frame => ({
           module: enumValue(frame?.module, ['rpc', 'authority', 'auth_store', 'pairing_store', 'bootstrap',
             'data_key', 'catchup', 'manager', 'channel', 'agent_socket']), line: number(frame?.line),

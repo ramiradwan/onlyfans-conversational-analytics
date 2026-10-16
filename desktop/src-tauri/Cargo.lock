@@ -300,6 +300,7 @@ dependencies = [
  "dotenvy",
  "dunce",
  "getrandom 0.3.4",
+ "quick-xml",
  "serde",
  "serde_json",
  "sha2",
@@ -309,6 +310,8 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "windows",
+ "windows-future",
  "windows-sys 0.61.2",
 ]
 

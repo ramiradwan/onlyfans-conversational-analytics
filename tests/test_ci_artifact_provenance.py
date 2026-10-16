@@ -13,6 +13,7 @@ pytestmark = [pytest.mark.ci_tier("fast")]
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CORE_SOURCE_JOBS = (
+    "desktop-native-contracts",
     "web-build-and-test",
     "backend-fast",
     "analytics-integration",
@@ -99,9 +100,18 @@ def test_stable_consumer_artifacts_can_be_republished_on_an_exact_source_rerun()
                 assert settings["overwrite"] is True
                 observed.add(settings["name"])
             else:
-                assert settings["name"].startswith(("ci-tests-", "browser-e2e-inputs-", "browser-e2e-diagnostics-", "browser-e2e-verified-"))
+                assert settings["name"].startswith(("ci-tests-", "browser-e2e-inputs-", "browser-e2e-diagnostics-", "browser-e2e-verified-", "desktop-native-contracts-"))
                 assert not settings.get("overwrite"), "retained attempt evidence cannot be replaced"
     assert observed == expected
+
+
+def test_native_desktop_outcomes_remain_immutable_and_attempt_specific() -> None:
+    steps = _steps(_workflow_document()["jobs"]["desktop-native-contracts"])
+    retain = next(step for step in steps if step.get("name") == "Retain native contract outcomes")
+    assert retain["if"] == "always()"
+    assert retain["with"]["name"] == "desktop-native-contracts-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+    assert retain["with"]["if-no-files-found"] == "error"
+    assert not retain["with"].get("overwrite")
 
 
 def _assert_browser_publication_is_validated(workflow: dict[str, Any]) -> None:

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "policy_version": "sharded-v3-pr-cutover",
+  "policy_version": "sharded-v4-pr-cutover",
   "workflow": ".github/workflows/ci.yml",
   "job_ids": [
     "analytics-integration",
@@ -11,6 +11,7 @@
     "browser-e2e-serial-control",
     "browser-reporting-safety",
     "build-and-test",
+    "desktop-native-contracts",
     "fixed-sqlcipher-wheel",
     "required-ci-gate",
     "web-build-and-test",
@@ -34,6 +35,7 @@
     "browser-e2e-serial-control",
     "browser-reporting-safety",
     "build-and-test",
+    "desktop-native-contracts",
     "fixed-sqlcipher-wheel",
     "web-build-and-test",
     "windows-browser-e2e",

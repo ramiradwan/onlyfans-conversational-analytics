@@ -2,6 +2,11 @@
   "schema_version": "1.0.0",
   "description": "Customer-visible journey states with executable presentation anchors and evidence. Desktop setup uses the Brain coordinator; browser and hosted tasks retain their domain authorities. Full analytics activation is optional after local setup. Browser tasks return automatically to their native journey, while unknown authentication and operation outcomes remain subject to authoritative reconciliation. Permission return uses an explicit 90-second creator/presentation intent and the native foreground guard; it cannot grant authority.",
   "surfaces": {
+    "desktop.prerequisite": {
+      "implementation": [
+        "desktop/src-tauri/src/prerequisite.rs"
+      ]
+    },
     "desktop.setup": {
       "implementation": [
         "frontend/onboarding/index.html",
@@ -66,9 +71,27 @@
         "extension/ui/presentation.mjs",
         "extension/runtime/customer-journey.mjs"
       ]
+    },
+    "desktop.installation": {
+      "implementation": [
+        "desktop/src-tauri/src/prerequisite.rs"
+      ]
+    },
+    "desktop.runtime": {
+      "implementation": [
+        "desktop/src-tauri/src/host.rs",
+        "desktop/src-tauri/src/policy.rs",
+        "desktop/src-tauri/src/bootstrap.rs",
+        "desktop/shell/data-recovery.html"
+      ]
     }
   },
   "journeys": [
+    {
+      "id": "desktop-runtime-recovery",
+      "entry_state": "desktop.webview_runtime_needed",
+      "success_state": "desktop.setup_loading"
+    },
     {
       "id": "extension-preview",
       "entry_state": "extension.start_choice",
@@ -113,9 +136,61 @@
       "id": "explicit-setup-transfer",
       "entry_state": "extension.setup_code_entry",
       "success_state": "extension.browser_access_ready"
+    },
+    {
+      "id": "native-installation-ownership",
+      "entry_state": "desktop.installation_conflict",
+      "success_state": "desktop.setup_loading"
+    },
+    {
+      "id": "native-startup-recovery",
+      "entry_state": "desktop.installation_unavailable",
+      "success_state": "desktop.setup_loading"
+    },
+    {
+      "id": "desktop-retained-data-recovery",
+      "entry_state": "desktop.retained_data_recovery",
+      "success_state": "desktop.passkey_sign_in"
     }
   ],
   "states": [
+    {
+      "id": "desktop.webview_runtime_needed",
+      "surface": "desktop.prerequisite",
+      "anchor": {
+        "file": "desktop/src-tauri/src/prerequisite.rs",
+        "text": "pub const RECOVERY_STATE: &str = \"desktop.webview_runtime_needed\";"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "Check again after installing the compatible runtime"
+        },
+        {
+          "to": "desktop.passkey_sign_in",
+          "by": "user",
+          "action": "Check again for a configured installation"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/src/prerequisite.rs",
+          "name": "readiness_is_rechecked_before_launch_and_download_is_only_a_fixed_action"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/prerequisite.rs",
+          "name": "real_native_recovery_controls_cover_loader_failure_retry_download_and_close"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/prerequisite.rs",
+          "name": "real_bridge_refuses_missing_runtime_before_creating_a_webview_profile_or_brain_state"
+        }
+      ]
+    },
     {
       "id": "extension.start_choice",
       "surface": "extension.setup",
@@ -176,7 +251,7 @@
         {
           "kind": "browser",
           "file": "tools/e2e-capture/tests/legal-activation.spec.mjs",
-          "name": "Terms \u2192 risk \u2192 Activate Software \u2192 Preview"
+          "name": "Terms → risk → Activate Software → Preview"
         }
       ]
     },
@@ -2497,6 +2572,97 @@
           "kind": "unit",
           "file": "frontend/tests/SettingsView.test.tsx",
           "name": "single-flights duplicate clicks while the browser request is unresolved"
+        }
+      ]
+    },
+    {
+      "id": "desktop.installation_conflict",
+      "surface": "desktop.installation",
+      "anchor": {
+        "file": "desktop/src-tauri/src/prerequisite.rs",
+        "text": "pub const INSTALLATION_CONFLICT_STATE: &str = \"desktop.installation_conflict\";"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "Quit the competing app and reopen this installation"
+        },
+        {
+          "to": "desktop.passkey_sign_in",
+          "by": "user",
+          "action": "Reopen a configured installation after ownership is available"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/prerequisite.rs",
+          "name": "real_native_installation_conflict_has_close_and_guidance"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/process_lifetime.rs",
+          "name": "native_root_ownership_fences_other_namespaces_and_forwards_only_verified_peers"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/process_lifetime.rs",
+          "name": "uncoordinated_legacy_instance_refuses_before_data_or_child_creation"
+        }
+      ]
+    },
+    {
+      "id": "desktop.installation_unavailable",
+      "surface": "desktop.installation",
+      "anchor": {
+        "file": "desktop/src-tauri/src/prerequisite.rs",
+        "text": "pub const FAILURE_STATE: &str = \"desktop.installation_unavailable\";"
+      },
+      "transitions": [
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "Close, restore data-folder access or repair the installation, then reopen"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/tests/prerequisite.rs",
+          "name": "real_native_startup_failure_identifies_data_access_and_installation_errors"
+        }
+      ]
+    },
+    {
+      "id": "desktop.retained_data_recovery",
+      "surface": "desktop.runtime",
+      "anchor": {
+        "file": "desktop/shell/data-recovery.html",
+        "text": "data-journey-state=\"desktop.retained_data_recovery\""
+      },
+      "transitions": [
+        {
+          "to": "desktop.passkey_sign_in",
+          "by": "user",
+          "action": "Quit, restore access with a compatible approved app version, then reopen"
+        },
+        {
+          "to": "desktop.setup_loading",
+          "by": "user",
+          "action": "Reopen a provisioning installation with a compatible approved version"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/src/bootstrap.rs",
+          "name": "refusal_exit_and_status_frame_share_a_closed_recovery_outcome"
+        },
+        {
+          "kind": "unit",
+          "file": "desktop/src-tauri/src/policy.rs",
+          "name": "recovery_guidance_is_a_fixed_unadmitted_shell_document"
         }
       ]
     }

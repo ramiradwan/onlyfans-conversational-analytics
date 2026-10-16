@@ -101,7 +101,7 @@ jobs:
       - name: Install pinned reporting safety dependencies
         run: |
           npm ci --prefix tools/e2e-capture
-          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0
+          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0 starlette==1.8.0
       - name: Test restricted browser reporting
         run: npm run test:ci-tools --prefix tools/e2e-capture
       - name: Probe the actual pinned Playwright reporter

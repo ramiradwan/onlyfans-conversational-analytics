@@ -104,6 +104,8 @@ separate observations reject reloads requested by the extension itself.
 
 The fixture uses synthetic identities and message text. Screenshots, traces, and video are disabled in the Playwright configuration.
 
+Session failure diagnostics capture five admission comparison flags before cleanup, preserving the original exception and clock reads. They retain no raw clock values or payloads. Pause/resume failures use the same bounded state filter; control-session events remain distinct from data-session events.
+
 CI's additional inventory and execution sidecars contain restricted identities, outcomes, retry numbers and timing/provenance fields. They do not include arbitrary test titles, assertion messages, stacks, URLs, attachments or captured page content. The original console reporting remains available in the job log. Failed-job artifacts contain only metadata independently validated by the sanitizer, or a fixed diagnostic code when validation fails. Successful complete input artifacts additionally preserve the existing console and Legal evidence bytes, bound by their hashes; the stable aggregate validates those inputs before generating the final Legal bundle.
 
 Each run creates temporary browser and database state. Teardown closes the resources created by that run and removes its temporary directory.

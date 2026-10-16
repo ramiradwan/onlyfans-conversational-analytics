@@ -13,12 +13,21 @@ app/analytics/sql/** text eol=lf
 
 # The creator disclosure is served and integrity-tested as frozen UTF-8 bytes.
 app/provisioning/creator-platform-data-risk-disclosure.html text eol=lf
+# Prominent activation sections retain their approved rendered UTF-8 bytes.
+extension/setup.html text eol=lf
 
 # Cross-repository attestation vectors are compared as exact published text.
 tests/fixtures/engineering-attestation-v1-ed25519.json text eol=lf
 
 # Vendored Legal evidence JSON is integrity-checked as exact source bytes.
 shared/legal/*.json text eol=lf
+
+# Desktop profile digests and cross-language agreement fixtures bind exact bytes.
+packaging/msix/*.json text eol=lf
+packaging/msix/profiles/*.json text eol=lf
+shared/desktop-release/*.json text eol=lf
+shared/bootstrap-status/** text eol=lf
+frontend/public/setup-theme-init.js text eol=lf
 
 # Onboarding fixtures and their qualification source hashes are byte-stable.
 shared/onboarding/** text eol=lf

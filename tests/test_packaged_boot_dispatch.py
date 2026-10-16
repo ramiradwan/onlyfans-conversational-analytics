@@ -22,6 +22,35 @@ pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
 
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_expected_startup_refusal_returns_a_controlled_process_exit(monkeypatch, capsys):
+    from app.core.startup_maintenance import StartupRefused
+    monkeypatch.setattr(packaged_entry, "hold_running_application_mutex", lambda: True)
+    def refused():
+        raise StartupRefused("retained_state_unavailable")
+    monkeypatch.setattr(packaged_entry, "run_brain", refused)
+    assert packaged_entry.main(("--brain",)) == 78
+    assert capsys.readouterr().err == "retained_state_unavailable\n"
+
+
+def test_startup_refusal_diagnostics_do_not_include_unbounded_exception_material(monkeypatch, capsys):
+    from app.core.startup_maintenance import StartupRefused
+    monkeypatch.setattr(packaged_entry, "hold_running_application_mutex", lambda: True)
+    def refused():
+        raise StartupRefused("synthetic unexpected material " + "x" * 1024)
+    monkeypatch.setattr(packaged_entry, "run_brain", refused)
+    assert packaged_entry.main(("--brain",)) == 78
+    assert capsys.readouterr().err == "startup_refused\n"
+
+
+def test_unexpected_startup_errors_are_not_reclassified_as_retained_state(monkeypatch):
+    monkeypatch.setattr(packaged_entry, "hold_running_application_mutex", lambda: True)
+    def failed():
+        raise RuntimeError("synthetic unexpected startup failure")
+    monkeypatch.setattr(packaged_entry, "run_brain", failed)
+    with pytest.raises(RuntimeError, match="synthetic unexpected startup failure"):
+        packaged_entry.main(("--brain",))
 # Every Settings field name, uppercased: the environment surface cleared from
 # the child process below.
 _SETTINGS_ENVIRONMENT_NAMES = {name.upper() for name in Settings.model_fields}
@@ -99,10 +128,10 @@ def test_missing_runtime_configuration_selects_provisioning_without_main_import(
     assert application.openapi_url is None
 
 
-@pytest.mark.parametrize("hosted_configured", [False, True])
+@pytest.mark.parametrize("hosted_configured", ["none", "api-only", "transfer"])
 @pytest.mark.parametrize("saved_setup", ["absent", "available", "provider-refused"])
 def test_composed_native_admission_resolves_hardware_only_for_saved_setup(
-    tmp_path: Path, monkeypatch, hosted_configured: bool, saved_setup: str,
+    tmp_path: Path, monkeypatch, hosted_configured: str, saved_setup: str,
 ) -> None:
     """Real composition and native admission retain the existing key boundary."""
     from app.core.customer_release import CustomerReleaseConfig
@@ -117,8 +146,8 @@ def test_composed_native_admission_resolves_hardware_only_for_saved_setup(
     token = "t" * 32
     monkeypatch.setenv(packaged_entry.PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE, token)
     release = CustomerReleaseConfig(
-        "https://onboarding.example.test/public/onboarding/setup" if hosted_configured else "",
-        "https://api.example.test" if hosted_configured else "",
+        "https://api.example.test/public/onboarding/setup" if hosted_configured == "transfer" else "",
+        "https://api.example.test" if hosted_configured != "none" else "",
     )
     monkeypatch.setattr(packaged_entry, "load_customer_release_config", lambda: release)
     store = durable_authentication_store(tmp_path)()
@@ -144,6 +173,9 @@ def test_composed_native_admission_resolves_hardware_only_for_saved_setup(
     application = packaged_entry.select_brain_application(tmp_path)
     assert provider_calls == []
     with TestClient(application, base_url=ORIGIN) as client:
+        assert client.get("/api/v1/desktop/setup-transfer/entry").status_code == (
+            405 if hosted_configured == "transfer" else 404
+        )
         issued = client.post("/api/v1/desktop/entry", json={}, headers={"Authorization": "Desktop " + token})
         assert issued.status_code == 200
         consumed = client.post("/api/v1/desktop/entry/consume", json={"code": issued.json()["entry_code"]}, headers={"Origin": ORIGIN})

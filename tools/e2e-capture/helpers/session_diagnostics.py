@@ -2,13 +2,14 @@
 
 from functools import wraps
 import json
+import math
 from threading import Lock
 
 
 METHODS = frozenset({
     "agent.storage.rotate", "agent.storage.unseal", "agent.config.get",
     "capture.state.report", "history.check.begin", "agent.challenge",
-    "agent.authenticate", "agent.analysis.readiness", "session.serve",
+    "agent.authenticate", "agent.analysis.readiness", "session.serve", "session.check",
 })
 ERRORS = frozenset({
     "CompanionSessionError", "CompanionRecordError", "AuthenticationStateError",
@@ -37,10 +38,33 @@ PHASES = {
     "consume_companion_ticket": "consume_config", "_ticket_binding": "ticket_binding",
     "_serve": "serve", "read": "receive", "receive": "receive", "send": "send",
     "_agent_socket": "agent_socket", "broadcast_catchup": "broadcast_catchup",
+    "check": "admission",
 }
 
 
+def _channel_admission(error):
+    trace = error.__traceback__
+    while trace is not None:
+        frame = trace.tb_frame
+        if (frame.f_globals.get("__name__") == "app.transport.companion_channel"
+                and frame.f_code.co_name == "check"):
+            local = frame.f_locals
+            owner = vars(local["self"])
+            values = [local.get("now"), local.get("wall"), owner.get("last_clock"),
+                      owner.get("last_wall"), owner.get("deadline"), owner.get("expires_at")]
+            if (type(owner.get("closed")) is not bool
+                    or any(type(value) not in (int, float) or not math.isfinite(value) for value in values)):
+                return None
+            now, wall, previous, previous_wall, deadline, expires = values
+            return {"closed": owner["closed"], "monotonicRollback": now < previous,
+                    "wallRollback": wall < previous_wall, "deadlinePassed": now >= deadline,
+                    "grantExpired": wall >= expires}
+        trace = trace.tb_next
+    return None
+
+
 def session_failure(method, error):
+    admission = _channel_admission(error) if method == "session.check" else None
     causes, seen = [], set()
     while error is not None and id(error) not in seen and len(causes) < 4:
         seen.add(id(error))
@@ -56,7 +80,10 @@ def session_failure(method, error):
         name = type(error).__name__
         causes.append({"errorName": name if name in ERRORS else "other", "phase": phase, "frames": frames})
         error = error.__cause__ if error.__cause__ is not None else error.__context__
-    return {"method": method if method in METHODS else "other", "causes": causes}
+    result = {"method": method if method in METHODS else "other", "causes": causes}
+    if method == "session.check":
+        result["admission"] = admission
+    return result
 
 
 def install_session_diagnostics(endpoint, *, emit=print, limit=24):
@@ -83,6 +110,21 @@ def install_session_diagnostics(endpoint, *, emit=print, limit=24):
             raise
 
     endpoint.SessionRPC.call = call
+    channel_type = getattr(endpoint, "CompanionChannel", None)
+    if channel_type is not None:
+        original_check = channel_type.check
+
+        @wraps(original_check)
+        def check(self):
+            try:
+                return original_check(self)
+            except Exception as error:
+                # Snapshot before cleanup closes the channel. No extra clock
+                # reads or retained raw times enter the diagnostic.
+                record("session.check", error)
+                raise
+
+        channel_type.check = check
     original_serve = getattr(endpoint, "_serve", None)
     if original_serve is not None:
         @wraps(original_serve)

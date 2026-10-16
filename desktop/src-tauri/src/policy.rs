@@ -67,36 +67,138 @@ pub fn shell_document(url: &Url) -> bool {
         && url.password().is_none()
         && url.query().is_none()
         && url.fragment().is_none()
-        && matches!(url.path(), "/" | "/index.html" | "/unavailable.html")
+        && matches!(
+            url.path(),
+            "/" | "/index.html" | "/unavailable.html" | "/data-recovery.html"
+        )
+}
+
+pub fn failure_document(reason: &str) -> &'static str {
+    match reason {
+        "child_recovery_required" => "http://tauri.localhost/data-recovery.html",
+        _ => "http://tauri.localhost/unavailable.html",
+    }
 }
 
 pub fn window_controls(label: &str, url: &Url, admitted: bool, quitting: bool) -> bool {
     label == "main" && !quitting && (shell_document(url) || (admitted && local_document(url)))
 }
 
-pub fn data_directory(image: &Path) -> Result<PathBuf, &'static str> {
-    let path = if let Some(value) = std::env::var_os("LOCAL_ANALYTICS_DATA_DIR") {
-        PathBuf::from(value)
-    } else {
-        PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("data_directory_unavailable")?)
-            .join("OnlyFans Conversational Analytics")
-    };
+/// Noncreating resolution: aliases and installation containment fail before writes.
+pub(crate) fn safe_data_path(path: &Path) -> Result<PathBuf, &'static str> {
+    use std::path::Component;
     if !path.is_absolute() {
         return Err("invalid_data_directory");
     }
-    std::fs::create_dir_all(&path).map_err(|_| "data_directory_unavailable")?;
-    let path = path
+    let mut current = PathBuf::new();
+    for part in path.components() {
+        if matches!(part, Component::ParentDir | Component::CurDir) {
+            return Err("invalid_data_directory");
+        }
+        #[cfg(windows)]
+        if let Component::Prefix(prefix) = part {
+            if matches!(
+                prefix.kind(),
+                std::path::Prefix::UNC(_, _)
+                    | std::path::Prefix::VerbatimUNC(_, _)
+                    | std::path::Prefix::DeviceNS(_)
+            ) {
+                return Err("invalid_data_directory");
+            }
+        }
+        current.push(part);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                #[cfg(windows)]
+                let reparse = {
+                    use std::os::windows::fs::MetadataExt;
+                    metadata.file_attributes() & 0x400 != 0
+                };
+                #[cfg(not(windows))]
+                let reparse = false;
+                if metadata.file_type().is_symlink() || reparse {
+                    return Err("invalid_data_directory");
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(_) => return Err("data_directory_unavailable"),
+        }
+    }
+    let mut ancestor = current.clone();
+    let mut missing = Vec::new();
+    while !ancestor.exists() {
+        missing.push(
+            ancestor
+                .file_name()
+                .ok_or("invalid_data_directory")?
+                .to_os_string(),
+        );
+        ancestor.pop();
+    }
+    let mut resolved = ancestor
         .canonicalize()
         .map_err(|_| "data_directory_unavailable")?;
+    for part in missing.into_iter().rev() {
+        resolved.push(part);
+    }
+    #[cfg(windows)]
+    {
+        resolved = dunce::simplified(&resolved).to_path_buf();
+    }
+    Ok(resolved)
+}
+
+fn product_data_directory() -> Result<PathBuf, &'static str> {
+    Ok(
+        PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("data_directory_unavailable")?)
+            .join("OnlyFans Conversational Analytics"),
+    )
+}
+
+pub fn uses_customer_data_root(data: &Path) -> Result<bool, &'static str> {
+    let product = safe_data_path(&product_data_directory()?)?;
+    Ok(data.to_string_lossy().to_lowercase() == product.to_string_lossy().to_lowercase())
+}
+
+pub fn data_directory(image: &Path) -> Result<PathBuf, &'static str> {
+    #[cfg(windows)]
+    let release = crate::deployment::load(
+        &image
+            .parent()
+            .ok_or("invalid_installation")?
+            .join("desktop-release.json"),
+        crate::windows::package_identity()?.as_ref(),
+    )?;
+    #[cfg(not(windows))]
+    let release: Option<crate::deployment::DesktopRelease> = None;
+    let product = product_data_directory()?;
+    let path = if let Some(value) = std::env::var_os("LOCAL_ANALYTICS_DATA_DIR") {
+        PathBuf::from(value)
+    } else {
+        release.as_ref().map_or_else(
+            || product.clone(),
+            |release| release.default_data_root(&product),
+        )
+    };
+    let path = safe_data_path(&path)?;
+    if let Some(release) = &release {
+        release.validate_override(&path, &safe_data_path(&product)?)?;
+    }
     let installed = image
         .parent()
         .ok_or("invalid_installation")?
         .canonicalize()
         .map_err(|_| "invalid_installation")?;
+    #[cfg(windows)]
+    let installed = dunce::simplified(&installed);
     if path.starts_with(installed) {
         return Err("invalid_data_directory");
     }
     Ok(path)
+}
+
+pub fn webview_directory(data: &Path) -> Result<PathBuf, &'static str> {
+    safe_data_path(&data.join("webview"))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -149,6 +251,35 @@ impl RestartPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn resolving_a_new_data_and_webview_root_creates_nothing_and_rejects_aliases() {
+        let mut nonce = [0u8; 16];
+        getrandom::fill(&mut nonce).unwrap();
+        let suffix: String = nonce.iter().map(|value| format!("{value:02x}")).collect();
+        let root = std::env::temp_dir().join(format!("ofca-path-contract-{suffix}"));
+        let candidate = root.join("new").join("data");
+        assert!(safe_data_path(&candidate).is_ok());
+        assert!(webview_directory(&candidate).is_ok());
+        assert!(!root.exists());
+        assert!(safe_data_path(&root.join("..").join("escape")).is_err());
+        std::fs::create_dir_all(&root).unwrap();
+        let target = root.join("real");
+        std::fs::create_dir(&target).unwrap();
+        let alias = root.join("alias");
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&target, &alias)
+            .expect("Windows qualification requires symlink permission");
+        #[cfg(not(windows))]
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+        assert!(safe_data_path(&alias.join("data")).is_err());
+        assert!(webview_directory(&alias).is_err());
+        #[cfg(windows)]
+        std::fs::remove_dir(&alias).unwrap();
+        #[cfg(not(windows))]
+        std::fs::remove_file(&alias).unwrap();
+        std::fs::remove_dir(&target).unwrap();
+        std::fs::remove_dir(&root).unwrap();
+    }
     #[test]
     fn every_error_revokes_admission_before_slow_backend_teardown() {
         use std::sync::{
@@ -293,7 +424,12 @@ mod tests {
     }
     #[test]
     fn window_controls_require_own_shell_or_live_local_admission() {
-        for path in ["/", "/index.html", "/unavailable.html"] {
+        for path in [
+            "/",
+            "/index.html",
+            "/unavailable.html",
+            "/data-recovery.html",
+        ] {
             let url = Url::parse(&format!("http://tauri.localhost{path}")).unwrap();
             assert!(window_controls("main", &url, false, false));
             assert!(!window_controls("other", &url, true, false));
@@ -304,6 +440,7 @@ mod tests {
         assert!(!window_controls("main", &local, false, false));
         for denied in [
             "http://tauri.localhost/unavailable.html?redirect=x",
+            "http://tauri.localhost/data-recovery.html?redirect=x",
             "http://tauri.localhost/other.html",
             "http://tauri.localhost:17871/",
             "http://user@tauri.localhost/",
@@ -317,6 +454,27 @@ mod tests {
                 true,
                 false
             ));
+        }
+    }
+
+    #[test]
+    fn recovery_guidance_is_a_fixed_unadmitted_shell_document() {
+        let recovery = Url::parse(failure_document("child_recovery_required")).unwrap();
+        assert_eq!(recovery.path(), "/data-recovery.html");
+        assert!(window_controls("main", &recovery, false, false));
+        assert!(!local_document(&recovery));
+        assert!(!window_controls("other", &recovery, false, false));
+        for reason in [
+            "child_start_failed",
+            "servicing_failed",
+            "port_conflict",
+            "http://attacker.example/",
+            "",
+        ] {
+            assert_eq!(
+                failure_document(reason),
+                "http://tauri.localhost/unavailable.html"
+            );
         }
     }
     #[test]

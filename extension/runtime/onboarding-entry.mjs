@@ -1,6 +1,6 @@
 import { createOnboardingWorkspace } from './onboarding-workspace.mjs';
 import { legalReleaseBindings } from './legal-release-bindings.mjs';
-import { onboardingHostedOrigin } from './onboarding-release-config.mjs';
+import { setupTransferReceiverUrl } from './onboarding-release-config.mjs';
 import { FULL_REVIEW_INTENT_KEY, fullReviewIntent } from './onboarding-full-intent.mjs';
 import { attachInstalledHelpers } from './browser-task-owner.mjs';
 import { BROWSER_TASK_ADOPTION_KEY, BROWSER_TASK_INSTANCE_KEY, createBrowserTaskEntry, desktopAdopted } from './browser-task-entry.mjs';
@@ -8,7 +8,7 @@ export const WORKSPACE_MESSAGE_TYPE = 'ofca.workspace.v1';
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 export function productionWorkspaceRoutes(chromeApi) {
-  return { extension: chromeApi.runtime.getURL('setup.html'), hosted: onboardingHostedOrigin === null ? null : `${onboardingHostedOrigin}/public/onboarding/setup` };
+  return { extension: chromeApi.runtime.getURL('setup.html'), hosted: setupTransferReceiverUrl };
 }
 export function registerOnboardingWorkspace({ chromeApi, consentController, identityBridge,
   routes = productionWorkspaceRoutes(chromeApi) }) {

@@ -24,6 +24,7 @@ def compiled(tmp_path, monkeypatch):
     (tmp_path / "onboarding/index.html").write_text('<h1>Setup</h1><script src="/static/dist/assets/setup.js"></script>', encoding="utf-8")
     (tmp_path / "assets/setup.js").write_text("export {};", encoding="utf-8")
     (tmp_path / "assets/dashboard.js").write_text("export {};", encoding="utf-8")
+    (tmp_path / "setup-theme-init.js").write_text("document.documentElement.dataset.colorScheme = 'dark';", encoding="utf-8")
     (tmp_path / "manifest.json").write_text(json.dumps({
         "index.html": {"isEntry": True, "file": "assets/dashboard.js"},
         "browser-tasks/index.html": {"isEntry": True, "file": "assets/browser.js"},
@@ -58,7 +59,7 @@ def test_browser_task_entry_has_no_native_channel_or_cookie(compiled):
     assert client.get("/browser-tasks?task=1").status_code == 400
 
 
-@pytest.mark.parametrize("missing", ["manifest.json", "onboarding/index.html", "assets/setup.js"])
+@pytest.mark.parametrize("missing", ["manifest.json", "onboarding/index.html", "assets/setup.js", "setup-theme-init.js"])
 def test_missing_generated_setup_assets_are_unavailable(compiled, missing):
     client, directory = compiled
     (directory / missing).unlink()
@@ -86,18 +87,30 @@ def test_packaging_requires_both_named_frontend_entries(tmp_path):
 
 
 @pytest.mark.parametrize("entry", ["/onboarding", "/browser-tasks"])
-def test_real_compiled_entries_load_through_the_configured_static_mount(entry):
-    # Configured Brain mounts its shared static directory before desktop routes.
-    # Exercise the real generated HTML, not a fixture with assumed asset URLs.
+@pytest.mark.parametrize("configured", [False, True], ids=["provisioning", "configured"])
+def test_real_compiled_entries_load_before_admission(entry, configured):
+    # Provisioning admits a closed asset set; configured Brain mounts /static first.
+    # Public Vite files are referenced by HTML but absent from its manifest.
     app = FastAPI()
-    app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parents[1] / "app/static"))
+    if configured:
+        app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parents[1] / "app/static"))
     app.include_router(surface.setup_surface_router())
     client = TestClient(app, base_url=ORIGIN)
     page = client.get(entry)
     assert page.status_code == 200
     paths = re.findall(r'(?:src|href)="(/static/[^\"]+)"', page.text)
     assert paths
+    if entry == "/onboarding":
+        assert "/static/dist/setup-theme-init.js" in paths
     for path in paths:
         response = client.get(path)
         assert response.status_code == 200, path
         assert "html" not in response.headers["content-type"], path
+    if not configured:
+        theme = client.get("/static/dist/setup-theme-init.js")
+        assert "javascript" in theme.headers["content-type"]
+        assert theme.headers["cache-control"] == "no-store"
+        assert theme.headers["x-content-type-options"] == "nosniff"
+        assert "set-cookie" not in theme.headers
+        assert client.get("/static/dist/setup-theme-init.js", headers={"Host": "outside.example"}).status_code == 421
+        assert client.get("/static/dist/manifest.json").status_code == 404

@@ -53,6 +53,7 @@ function buildPalette(scheme: SchemeTokens, contrastThreshold: number): PaletteO
     placeholder: scheme.surface.placeholder,
     surface: {
       subtle: scheme.surface.subtle, glass: scheme.surface.glass,
+      controlBorder: scheme.surface.controlBorder, scrollbarThumb: scheme.surface.scrollbarThumb,
       elevation: scheme.surface.elevation, overlay: scheme.surface.overlay,
       rim: scheme.surface.rim, glow: scheme.surface.glow,
       dominant: scheme.surface.dominant,
@@ -207,6 +208,11 @@ export const theme = createTheme({
           },
           '&:focus-visible': focusRing(theme),
         }),
+        // Outlined buttons rest on the control border, and keyboard focus draws one line over it.
+        outlined: ({ theme }: { theme: Theme }) => ({
+          '--variant-outlinedBorder': theme.vars.palette.surface.controlBorder,
+          '&:focus-visible': { outlineOffset: '-' + effectTokens.borders.thin },
+        }),
         sizeLarge: { minHeight: 48, paddingInline: 22 },
       },
     },
@@ -223,6 +229,13 @@ export const theme = createTheme({
         root: ({ theme }: { theme: Theme }) => ({
           fontWeight: brandTypography.weights.medium,
           '&:focus-visible': focusRing(theme),
+        }),
+        // Clickable outlined chips rest on the control border, and keyboard focus draws one line over it.
+        outlined: ({ theme }: { theme: Theme }) => ({
+          '&.MuiChip-clickable': {
+            borderColor: theme.vars.palette.surface.controlBorder,
+            '&:focus-visible': { outlineOffset: '-' + effectTokens.borders.thin },
+          },
         }),
       },
     },
@@ -267,6 +280,27 @@ export const theme = createTheme({
             ...focusRing(theme),
             outlineOffset: '-' + effectTokens.focus.offset,
           },
+        }),
+      },
+    },
+    MuiMenuItem: {
+      styleOverrides: {
+        // Keyboard focus draws the ring inside the item, so the menu's edge never clips it.
+        root: ({ theme }: { theme: Theme }) => ({
+          '&:focus-visible, &.Mui-focusVisible': { ...focusRing(theme), outlineOffset: '-' + effectTokens.focus.offset },
+        }),
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        // Fields rest on the control border, and MUI's touch reset of the hover colour uses it too.
+        root: ({ theme }: { theme: Theme }) => ({
+          '@media (hover: none)': {
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: theme.vars.palette.surface.controlBorder },
+          },
+        }),
+        notchedOutline: ({ theme }: { theme: Theme }) => ({
+          borderColor: theme.vars.palette.surface.controlBorder,
         }),
       },
     },
@@ -354,16 +388,16 @@ export const theme = createTheme({
       styleOverrides: {
         '*': {
           scrollbarWidth: 'thin',
-          scrollbarColor: 'var(--bridge-palette-divider) transparent',
+          scrollbarColor: 'var(--bridge-palette-surface-scrollbarThumb) transparent',
           '&::-webkit-scrollbar': { width: 10, height: 10 },
           '&::-webkit-scrollbar-track': { background: 'transparent' },
-          '&::-webkit-scrollbar-thumb': { backgroundColor: 'var(--bridge-palette-divider)', borderRadius: 999,
+          '&::-webkit-scrollbar-thumb': { backgroundColor: 'var(--bridge-palette-surface-scrollbarThumb)', borderRadius: 999,
             border: '2px solid transparent', backgroundClip: 'padding-box' },
           '&::-webkit-scrollbar-thumb:hover': { backgroundColor: 'var(--bridge-palette-text-secondary)' },
         },
         '@media (forced-colors: active)': {
           '*': { scrollbarColor: 'auto', scrollbarWidth: 'auto',
-            '&::-webkit-scrollbar-thumb': { backgroundColor: 'ButtonText' } },
+            '&::-webkit-scrollbar-thumb, &::-webkit-scrollbar-thumb:hover': { backgroundColor: 'ButtonText' } },
         },
         '@media (prefers-reduced-motion: reduce)': {
           '*, *::before, *::after': {

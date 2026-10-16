@@ -34,6 +34,34 @@ BACKEND_TEST_COMMAND = "python -m pytest"
 DEPENDENCY_INSTALL_COMMAND = "python -m pip install -r requirements-dev.txt"
 FRONTEND_BUILD_COMMAND = "npm run build --prefix frontend"
 WINDOWS_PRODUCTION_MARKER = "windows_production"
+
+
+def test_native_desktop_contracts_are_required_without_installing_or_publishing_packages():
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    job = jobs["desktop-native-contracts"]
+    assert job["runs-on"] == "windows-latest" and "if" not in job
+    assert job["env"]["RUSTUP_TOOLCHAIN"] == "1.98.1"
+    command = next(step["run"] for step in job["steps"] if "cargo test" in step.get("run", ""))
+    assert "--locked" in command and "--features qualification-tools" in command
+    for selector in ("--bin Bridge", "--test process_lifetime", "--test prerequisite", "--test-threads=1"):
+        assert selector in command
+    assert "$LASTEXITCODE -ne 0" in command
+    assert "--include-ignored" not in command and "Add-AppxPackage" not in command
+    assert "desktop-native-contracts" in jobs["required-ci-gate"]["needs"]
+
+
+def test_required_web_job_qualifies_delivery_without_upload_credentials():
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["web-build-and-test"]
+    steps = job["steps"]
+    install = next(i for i, step in enumerate(steps) if step.get("name") == "Install locked desktop delivery test dependencies")
+    execute = next(i for i, step in enumerate(steps) if step.get("name") == "Test desktop serving and publication boundaries")
+    assert install < execute
+    assert steps[install]["run"] == "npm ci --ignore-scripts --no-audit --no-fund --prefix tools/desktop-delivery"
+    assert steps[execute]["run"] == "npm test --prefix tools/desktop-delivery"
+    assert "if" not in steps[execute] and not steps[execute].get("continue-on-error")
+    assert "secrets." not in json.dumps(job)
 FIXED_SQLCIPHER_BUILDER = "packaging\\sqlcipher\\build-fixed-wheel.ps1"
 STATEFUL_TIER_A_MARKER = "stateful_tier_a"
 STATEFUL_TIER_B_MARKER = "stateful_tier_b"
@@ -437,9 +465,9 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
         _assert_windows_tier_b_qualification(broken)
 
 
-def test_windows_hang_diagnostics_do_not_terminate_tests_or_raise_job_limits() -> None:
+def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution() -> None:
     jobs = _jobs(_workflow_document())
-    expected_limits = {"windows-platform-contract": 20, "analytics-windows-contract": 20,
+    expected_limits = {"windows-platform-contract": 25, "analytics-windows-contract": 20,
                        "windows-full-shards": 60, "analytics-scale-qualification": 45}
     execution_lanes = set()
     for name, minutes in expected_limits.items():
@@ -469,7 +497,7 @@ def test_windows_hang_diagnostics_do_not_terminate_tests_or_raise_job_limits() -
 
 
 def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v3-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v4-pr-cutover"
     triggers = workflow["on"]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
     assert triggers["push"] == {"branches": ["main"]}
@@ -968,6 +996,8 @@ def _assert_web_feedback_keeps_its_checks(workflow: dict[str, Any]) -> None:
         ("", "git diff --exit-code -- frontend/src/theme/generated"),
         ("", "npm test --prefix frontend"),
         ("", "npm test --prefix extension"),
+        ("", "npm ci --ignore-scripts --no-audit --no-fund --prefix tools/desktop-delivery"),
+        ("", "npm test --prefix tools/desktop-delivery"),
         ("", "node --test app/provisioning/*.test.mjs"),
         ("", "npm ci --prefix tools/analytics_cosmos_node"),
         ("", "npm test --prefix tools/analytics_cosmos_node"),
@@ -1120,6 +1150,7 @@ def test_browser_split_cannot_bypass_isolation_or_reporting_safety(mutation: str
 def test_reporting_safety_python_pins_match_the_existing_development_requirements() -> None:
     safety = _jobs(_workflow_document())["browser-reporting-safety"]
     install = next(step["run"] for step in _steps(safety) if step.get("name") == "Install pinned reporting dependencies")
+    assert "starlette==1.8.0" in install
     requirements = (ROOT / "requirements-dev.txt").read_text().splitlines()
     for name in ("pytest", "pytest-asyncio"):
         pin = next(line for line in requirements if line.startswith(f"{name}=="))

@@ -2,12 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { generateInventory } from './inventory.mjs';
-import { CaptureRecorder, parseCaptureOptions, sourceIdentity } from './recording.mjs';
+import { assertSafeCaptureOutput, CaptureRecorder, parseCaptureOptions, sourceIdentity } from './recording.mjs';
 
 const source = { source_commit: 'a'.repeat(40), workflow_run_id: 'local', run_attempt: 1 };
 const inventory = generateInventory();
+
+test('output safety admits a separate Windows drive while refusing repository ancestors and all drive/share roots', () => {
+  const repository = 'C:/workspace/product';
+  for (const output of ['C:/workspace/product', 'c:/WORKSPACE/PRODUCT', 'C:/workspace', 'C:/', 'D:/', 'C:/workspace/product/..', '\\\\server\\share\\']) {
+    assert.throws(() => assertSafeCaptureOutput(output, repository, win32), /unsafe_output_directory/);
+  }
+  for (const output of ['D:/scratch/visual-run', 'C:/scratch/visual-run', 'C:/workspace/product/output', 'C:/workspace/product-other', '\\\\server\\share\\visual-run']) {
+    assert.doesNotThrow(() => assertSafeCaptureOutput(output, repository, win32));
+  }
+  for (const output of ['/', '/workspace', '/workspace/product', '/workspace/product/..']) {
+    assert.throws(() => assertSafeCaptureOutput(output, '/workspace/product', posix), /unsafe_output_directory/);
+  }
+  for (const output of ['/scratch/visual-run', '/workspace/product/output', '/workspace/product-other']) {
+    assert.doesNotThrow(() => assertSafeCaptureOutput(output, '/workspace/product', posix));
+  }
+});
 
 test('independent inventory keeps whole page sequences and covers both groups without overlap', () => {
   const dynamic = inventory.cases.filter(value => value.group === 'dynamic');

@@ -1,0 +1,10 @@
+/* Match the native startup surface while the one-use admission is checked. */
+:root { color-scheme: dark; background: #141916; color: #eff1ee; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; }
+header { display: flex; align-items: center; gap: 1rem; min-height: 72px; padding: 12px 24px 12px 32px; border-bottom: 1px solid #343c36; font-weight: 600; }
+main { max-width: 880px; margin: 0 auto; padding: 56px 32px; }
+h1 { margin: 0 0 16px; font-size: clamp(1.65rem, 3vw, 2rem); line-height: 1.2; font-weight: 600; }
+p { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
+@media (max-width: 600px) { header { padding-inline: 16px 8px; } main { padding: 28px 16px; } }
+@media (forced-colors: active) { :root { background: Canvas; color: CanvasText; } header { border-color: CanvasText; } }

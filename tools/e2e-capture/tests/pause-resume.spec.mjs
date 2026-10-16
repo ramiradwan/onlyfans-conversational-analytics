@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { SyntheticPlatform, SYNTHETIC } from '../fixtures/synthetic-platform.mjs';
-import { BrainProcess } from '../lib/brain.mjs';
+import { BOOTSTRAP_CONFIG_REVISION, BrainProcess } from '../lib/brain.mjs';
 import { establishBrowserWebAuthnSession, readBrainSummary, pairCompanionForCapture } from '../lib/brain-probe.mjs';
 import { connectFullAnalytics, openPopup } from '../lib/consent-ui.mjs';
 import { extensionId, extensionState, extensionWorker,
   launchExtensionBrowser } from '../lib/extension-browser.mjs';
 import { assertBuiltExtension, assertBuiltSpa } from '../lib/paths.mjs';
+import { withCatchupDiagnostics } from '../lib/catchup-diagnostics.mjs';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -44,7 +45,9 @@ async function setCaptureFromBridge(page, action) {
     });
     return { status: response.status, body: await response.json().catch(() => null) };
   }, action);
-  expect(result.status).toBe(202);
+  const reason = ['browser_unreachable', 'pairing_account_refused', 'pairing_state_refused',
+    'pairing_storage_refused'].includes(result.body?.detail) ? result.body.detail : 'unavailable';
+  expect(result.status, `Desktop capture delivery (${reason})`).toBe(202);
   expect(result.body?.delivered).toBeGreaterThan(0);
 }
 
@@ -53,12 +56,45 @@ async function admitted(context, worker, previousToken = null) {
   await expect.poll(async () => {
     const state = await extensionState(worker);
     summary = await readBrainSummary(context);
-    return state.socketOpen && state.sessionBound && summary.agentStatus === 'connected'
+    return state.capturePhase === 'full' && state.socketOpen && state.sessionBound
+      && state.syncRequired === false && state.appliedConfigRevision === BOOTSTRAP_CONFIG_REVISION
+      && state.enabledResources.includes('chats') && state.enabledResources.includes('messages')
+      && summary.agentStatus === 'connected'
       && summary.connectionToken !== null && summary.connectionToken !== previousToken;
   }, { timeout: 90_000,
     message: previousToken === null ? 'wait for initial agent admission' : 'wait for resumed agent admission',
   }).toBe(true);
   return summary;
+}
+
+async function captureDocumentReady(worker, documentToken) {
+  return worker.evaluate(async token => {
+    const tabs = await chrome.tabs.query({ url: ['https://onlyfans.com/*'] });
+    for (const tab of tabs) {
+      if (!Number.isInteger(tab.id)) continue;
+      let document;
+      try {
+        [document] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id, frameIds: [0] }, world: 'MAIN',
+          func: () => globalThis.fixtureDocumentToken ?? null,
+        });
+      } catch { continue; }
+      if (document?.result !== token) continue;
+      try {
+        const status = await chrome.tabs.sendMessage(tab.id, {
+          type: 'ofca.capture.control', version: 1, action: 'status',
+        }, { frameId: 0 });
+        // The isolated bridge combines its consent admission with MAIN status.
+        // A configured MAIN hook alone can still be waiting for that response.
+        return { ready: status?.mode === 'full' && status.active === true && status.forwarding === true,
+          mode: ['identity', 'preview', 'full'].includes(status?.mode) ? status.mode : null,
+          active: typeof status?.active === 'boolean' ? status.active : null,
+          forwarding: typeof status?.forwarding === 'boolean' ? status.forwarding : null,
+          stage: 'status' };
+      } catch { return { ready: false, stage: 'status_failed' }; }
+    }
+    return { ready: false, stage: 'document_missing' };
+  }, documentToken);
 }
 
 async function probeDelivery(page) {
@@ -139,23 +175,39 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     const page = await context.newPage();
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('https://onlyfans.com/', { waitUntil: 'domcontentloaded', timeout: 15_000 });
-    await expect.poll(() => page.evaluate(() => globalThis.__OFCA_PAGE_HOOK_CONTROLLER__?.mode),
-      { timeout: 12_000, message: 'wait for Full page hook' }).toBe('full');
+    const documentToken = await page.evaluate(() => globalThis.fixtureDocumentToken);
+    let captureAdmission = null;
+    try {
+      await expect.poll(async () => {
+        captureAdmission = await captureDocumentReady(worker, documentToken);
+        return captureAdmission.ready;
+      }, { timeout: 12_000, message: 'wait for Full capture in both page worlds' }).toBe(true);
+    } catch (error) {
+      console.error('capture-page-admission: ' + JSON.stringify(captureAdmission));
+      throw error;
+    }
     await page.evaluate(() => globalThis.fixtureRead('/api2/v2/users/me'));
     const before = await admitted(context, worker);
     await page.evaluate(() => globalThis.fixtureRead('/api2/v2/chats'));
     await page.evaluate((pathname) => globalThis.fixtureRead(pathname), `/api2/v2/chats/${SYNTHETIC.chatId}/messages`);
     await page.evaluate(() => globalThis.fixtureOpenSocket());
-    await expect.poll(async () => (await readBrainSummary(context)).messageCount,
-      { timeout: 30_000, message: 'wait for initial message count' }).toBe(3);
-    const documentToken = await page.evaluate(() => globalThis.fixtureDocumentToken);
+    let initialSummary = null;
+    await withCatchupDiagnostics(() => expect.poll(async () => {
+      initialSummary = await readBrainSummary(context);
+      return initialSummary.messageCount;
+    }, { timeout: 30_000, message: 'wait for initial message count' }).toBe(3), {
+      summary: () => initialSummary ?? readBrainSummary(context), platform, context, brain, failureContext: 'capture',
+    });
     const previousInstance = (await extensionState(worker)).workerInstanceId;
     expect(previousInstance).not.toBeNull();
     await expect.poll(async () => (await readBrainSummary(context)).browser?.capture ?? null,
       { timeout: 30_000, message: 'wait for active browser control state' }).toBe('active');
     let controls = await openPopup(context, id, errors);
     await expect(controls.locator('#pause'), 'desktop-owned Pause is hidden').toBeHidden();
-    await setCaptureFromBridge(binding, 'pause');
+    const capture = action => withCatchupDiagnostics(() => setCaptureFromBridge(binding, action), {
+      summary: () => readBrainSummary(context), platform, context, brain, failureContext: 'capture',
+    });
+    await capture('pause');
     await expect(controls.locator('#journey-primary'), 'wait for desktop entry after pause')
       .toHaveText('Continue in the desktop app', { timeout: 8_000 });
     expect(await popupConsent(controls, 'read paused consent')).toEqual({ mode: 'paused', reload: false });
@@ -177,7 +229,7 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     expect((await readBrainSummary(context)).messageCount).toBe(3);
     await expect.poll(async () => (await readBrainSummary(context)).browser?.capture ?? null,
       { timeout: 30_000, message: 'wait for paused browser control state' }).toBe('paused');
-    await setCaptureFromBridge(binding, 'resume');
+    await capture('resume');
     await expect.poll(() => popupConsent(controls, 'read resumed consent'),
       { timeout: 8_000, message: 'wait for Full consent after resume' })
       .toEqual({ mode: 'full', reload: false });

@@ -17,8 +17,8 @@ import {
 
 test('Agent packaging consumes the current desktop release document and closed provider choices', () => {
   const source = JSON.parse(readFileSync(new URL('../../app/core/customer-release.json', import.meta.url), 'utf8'));
-  assert.equal(validateOnboardingReleaseConfig(source), null);
-  const configured = { ...source, hosted_onboarding_url: 'https://setup.example.test/public/onboarding/setup',
+  assert.equal(validateOnboardingReleaseConfig(source), 'https://onboarding-dev.dipsy.fi');
+  const configured = { ...source, setup_transfer_receiver_url: 'https://setup.example.test/public/onboarding/setup',
     hosted_api_origin: 'https://setup.example.test', authentication_providers: ['google', 'microsoft-personal', 'default'] };
   assert.equal(validateOnboardingReleaseConfig(configured, { required: true }), 'https://setup.example.test');
   for (const authentication_providers of [undefined, null, [], ['google'], ['default', 'default'],
@@ -27,6 +27,17 @@ test('Agent packaging consumes the current desktop release document and closed p
   }
   const { authentication_providers: _providers, ...missing } = configured;
   assert.throws(() => validateOnboardingReleaseConfig(missing));
+  assert.equal(validateOnboardingReleaseConfig({ ...configured, setup_transfer_receiver_url: '' }, { required: true }), configured.hosted_api_origin);
+  assert.equal(validateOnboardingReleaseConfig({ ...configured, setup_transfer_receiver_url: '', hosted_api_origin: '' }), null);
+  for (const setup_transfer_receiver_url of ['https://setup.example.test/',
+    'https://setup.example.test/onboarding/browser-ceremonies/{reference}',
+    'https://other.example.test/public/onboarding/setup',
+    'https://setup.example.test/public/onboarding/setup?reference=secret']) {
+    assert.throws(() => validateOnboardingReleaseConfig({ ...configured, setup_transfer_receiver_url }));
+  }
+  assert.throws(() => validateOnboardingReleaseConfig({ ...configured, schema: 'ofca-customer-release/v1' }));
+  assert.throws(() => validateOnboardingReleaseConfig({ ...configured, hosted_api_origin: '' }));
+  assert.throws(() => validateOnboardingReleaseConfig({ ...configured, setup_transfer_receiver_url: '', hosted_api_origin: '' }, { required: true }));
 });
 
 const fixtureRule = validateSigningRuleDocument({

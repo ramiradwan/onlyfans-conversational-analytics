@@ -16,7 +16,9 @@ def _assets(entry_name="onboarding/index.html"):
         entry = manifest[entry_name]
         if entry.get("isEntry") is not True:
             raise ValueError()
-        pending, seen, paths = [entry_name], set(), set()
+        # Vite copies this blocking public script without a manifest entry.
+        # Keep it explicit so provisioning admits it before theme hydration.
+        pending, seen, paths = [entry_name], set(), {"setup-theme-init.js"}
         while pending:
             name = pending.pop()
             if name in seen:

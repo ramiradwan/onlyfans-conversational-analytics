@@ -20,7 +20,7 @@ export function getConfig(): FastAPIConfig {
       USER_ID: undefined,
       CREATOR_ID: undefined,
       BRIDGE_AUTH_TICKET: undefined,
-      SECURE_SETUP_URL: undefined,
+      SETUP_TRANSFER_RECEIVER_URL: undefined,
     };
   }
 
@@ -39,7 +39,7 @@ export function getConfig(): FastAPIConfig {
       USER_ID: injected.USER_ID ?? undefined,
       CREATOR_ID: injected.CREATOR_ID ?? undefined,
       BRIDGE_AUTH_TICKET: injected.BRIDGE_AUTH_TICKET ?? undefined,
-      SECURE_SETUP_URL: secureSetupUrl(injected.SECURE_SETUP_URL),
+      SETUP_TRANSFER_RECEIVER_URL: setupTransferReceiverUrl(injected.SETUP_TRANSFER_RECEIVER_URL),
     };
   } catch (err) {
     console.error('[CONFIG] Failed to parse injected FastAPI config', err);
@@ -47,11 +47,15 @@ export function getConfig(): FastAPIConfig {
   }
 }
 
-/** Accepts only an absolute HTTPS URL; anything else hides the secure setup link. */
-function secureSetupUrl(value: unknown): string | undefined {
+/** Only the explicit transfer receiver can be exposed as a receiving link. */
+function setupTransferReceiverUrl(value: unknown): string | undefined {
   if (typeof value !== 'string' || value === '') return undefined;
   try {
-    return new URL(value).protocol === 'https:' ? value : undefined;
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && !url.username && !url.password && !url.search && !url.hash
+      && url.pathname === '/public/onboarding/setup'
+      ? url.href : undefined;
   } catch {
     return undefined;
   }

@@ -39,10 +39,10 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @lru_cache(maxsize=1)
-def _secure_setup_url() -> str:
-    """Release-owned hosted onboarding URL, or "" when the release has none."""
+def _setup_transfer_receiver_url() -> str:
+    """Explicit setup-transfer receiver; never a generic sign-in destination."""
     try:
-        return load_customer_release_config().hosted_onboarding_url
+        return load_customer_release_config().setup_transfer_receiver_url
     except CustomerReleaseConfigurationError:
         return ""
 
@@ -174,7 +174,7 @@ async def serve_frontend(
         "FASTAPI_WS_URL": ws_url,
         "API_BASE_URL": api_base_url,
         "VERSION": settings.version,
-        "SECURE_SETUP_URL": _secure_setup_url(),
+        "SETUP_TRANSFER_RECEIVER_URL": _setup_transfer_receiver_url(),
         "CREATOR_ID": None if identity is None else identity.creator_account_id,
         "BRIDGE_ROLE": None if identity is None else identity.role,
         "BRIDGE_AUTH_TICKET": (

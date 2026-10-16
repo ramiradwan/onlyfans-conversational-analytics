@@ -1,7 +1,7 @@
 // Workflow continuity only. This dedicated key never pairs a companion,
 // authenticates a creator, accepts consent, or grants installation authority.
 import { b64u, unb64u, digest, toHex, lp, normalizeSignature, publicJwk } from '../transport/pairing-contract.mjs';
-import { onboardingHostedOrigin } from './onboarding-release-config.mjs';
+import { setupTransferReceiverUrl } from './onboarding-release-config.mjs';
 import { FULL_REVIEW_INTENT_KEY, fullReviewIntent } from './onboarding-full-intent.mjs';
 
 export const SETUP_TRANSFER_MESSAGE = 'ofca.setup-transfer.v1';
@@ -57,15 +57,24 @@ export async function transferProofBytes(request, challenge) {
     'urn:bridge-clean:commercial-control-plane:onboarding']);
 }
 
-export async function openSetupTransferStore(indexedDb = globalThis.indexedDB) {
+export async function openSetupTransferStore(indexedDb = globalThis.indexedDB, { create = true } = {}) {
+  if (!create && !(await indexedDb.databases()).some(({ name }) => name === 'ofca-setup-transfer-v1')) return null;
   const db = await new Promise((resolve, reject) => {
-    let closed = false;
+    let closed = false, missing = false;
     const timer = setTimeout(() => { closed = true; reject(new Error('setup_transfer_storage_unavailable')); }, 5000);
     const request = indexedDb.open('ofca-setup-transfer-v1', 1);
-    request.onupgradeneeded = () => { if (closed) request.transaction.abort(); else request.result.createObjectStore('state'); };
-    request.onerror = request.onblocked = () => { clearTimeout(timer); closed = true; reject(new Error('setup_transfer_storage_unavailable')); };
+    request.onupgradeneeded = () => {
+      if (closed || !create) { missing = !create; request.transaction.abort(); }
+      else request.result.createObjectStore('state');
+    };
+    request.onerror = request.onblocked = () => {
+      clearTimeout(timer);
+      if (missing && !closed) { closed = true; resolve(null); }
+      else { closed = true; reject(new Error('setup_transfer_storage_unavailable')); }
+    };
     request.onsuccess = () => { clearTimeout(timer); if (closed) request.result.close(); else resolve(request.result); };
   });
+  if (db === null) return null;
   db.onversionchange = () => db.close();
   const transaction = (update) => new Promise((resolve, reject) => {
     let result, failure;
@@ -156,12 +165,19 @@ export function createSetupTransferOwner({ store, now = Date.now, scheduleExpiry
   };
 }
 
-export function registerSetupTransfer({ chromeApi, workspace, identityBridge, hostedOrigin = onboardingHostedOrigin, openStore = openSetupTransferStore }) {
+export function registerSetupTransfer({ chromeApi, workspace, identityBridge,
+  hostedOrigin = setupTransferReceiverUrl === null ? null : new URL(setupTransferReceiverUrl).origin,
+  openStore = openSetupTransferStore }) {
   let owner, database;
-  const getOwner = () => owner ??= openStore().then((store) => {
-    database = store;
-    return createSetupTransferOwner({ store, scheduleExpiry: (when) => chromeApi.alarms.create(ALARM, { when }) });
-  }).catch((error) => { owner = undefined; throw error; });
+  const getOwner = async (create = true) => {
+    const value = await (owner ??= openStore(globalThis.indexedDB, { create }).then((store) => {
+      if (store === null) { owner = undefined; return null; }
+      database = store;
+      return createSetupTransferOwner({ store, scheduleExpiry: (when) => chromeApi.alarms.create(ALARM, { when }) });
+    }).catch((error) => { owner = undefined; throw error; }));
+    // A concurrent explicit command may follow a non-creating observation.
+    return value === null && create ? getOwner(true) : value;
+  };
   const alarmListener = (alarm) => {
     if (alarm.name === ALARM) void getOwner().then((value) => value.prune()).catch(() => undefined);
   };
@@ -173,7 +189,8 @@ export function registerSetupTransfer({ chromeApi, workspace, identityBridge, ho
       const admitted = await workspace.admit(sender);
       const journeyId = admitted.record.journey_id;
       if (exact(message, ['type', 'action']) && message.action === 'context' && admitted.route === 'extension') {
-        const hint = await (await getOwner()).context(journeyId);
+        const current = await getOwner(false);
+        const hint = current === null ? null : await current.context(journeyId);
         const observed = await identityBridge?.currentAccountId() ?? null;
         require((await workspace.admit(sender)).record.journey_id === journeyId);
         return hint === null ? null : { ...hint, current_creator_id: observed };

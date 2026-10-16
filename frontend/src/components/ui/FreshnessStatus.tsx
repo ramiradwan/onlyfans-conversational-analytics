@@ -6,7 +6,7 @@ import type { CatchupFreshness } from '../../protocol';
 import { browserControlApi } from '../../services/browserControlApi';
 import { desktopOnboardingApi, type DesktopOnboardingApi } from '../../services/desktopOnboarding';
 import type { BridgeConnectionState } from '../../store/transportStore';
-import { componentTokens } from '../../theme';
+import { componentTokens, effectTokens } from '../../theme';
 import { connectionGrace, connectionNote } from '../../utils/connectionGrace';
 import { freshnessRows, presentFreshness, viewerTimeZone, type FreshnessPresentation } from '../../utils/freshnessPresentation';
 
@@ -60,7 +60,8 @@ export function FreshnessStatus({ freshness, bridge, snapshotUsable, now = new D
       aria-label={`Status: ${shown.label}. Show details`} onClick={(event) => setAnchor(event.currentTarget)}
       sx={{ inlineSize: tokens.inlineSize, blockSize: tokens.blockSize, flex: 'none', fontSize: tokens.fontSize, lineHeight: `${tokens.blockSize}px`, px: `${tokens.paddingInline}px`,
         display: 'grid', gridTemplateColumns: `${tokens.iconGutter}px minmax(0,1fr)`, columnGap: `${tokens.gap}px`, whiteSpace: 'nowrap', textAlign: 'start', fontVariantNumeric: 'tabular-nums',
-        borderRadius: '999px', color: shown.tone === 'settled' ? 'text.secondary' : 'text.primary', transition: 'background-color 120ms', '&:hover': { bgcolor: 'action.hover' }, '&:focus-visible': { outline: '2px solid', outlineColor: 'brand.main' } }}>
+        borderRadius: '999px', color: shown.tone === 'settled' ? 'text.secondary' : 'text.primary', transition: 'background-color 120ms', '&:hover': { bgcolor: 'action.hover' },
+        '&:focus-visible': { outline: `${effectTokens.focus.width} solid`, outlineColor: 'primary.main', outlineOffset: effectTokens.focus.offset } }}>
       <Box key={shown.icon} aria-hidden sx={{ display: 'grid', placeItems: 'center', width: tokens.iconGutter, animation: `${fade} 200ms ease-out both`, '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}><Box data-freshness-glyph={shown.icon} sx={{ width: tokens.dotSize, height: tokens.dotSize, color,
         ...(shown.icon === 'pause' ? { borderLeft: '2.5px solid', borderRight: '2.5px solid' } : { borderRadius: '50%', ...(shown.icon === 'dot' ? { bgcolor: color } : { border: '1.5px solid' }) }),
         ...(shown.icon === 'ring-active' ? { animation: `${breathe} 320ms ease-in-out infinite alternate` } : {}), '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} /></Box>

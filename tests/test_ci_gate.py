@@ -671,7 +671,7 @@ def test_pr_cannot_accept_an_unexpected_exhaustive_matrix_result(result):
         gate.validate_needs(needs, jobs, event="pull_request")
 
 
-@pytest.mark.parametrize("job", ["windows-platform-contract", "analytics-windows-contract", "windows-browser-e2e",
+@pytest.mark.parametrize("job", ["desktop-native-contracts", "windows-platform-contract", "analytics-windows-contract", "windows-browser-e2e",
                                  "windows-full-regression"])
 @pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", None])
 def test_pr_cutover_keeps_focused_contracts_browser_and_stable_aggregate_blocking(job, result):

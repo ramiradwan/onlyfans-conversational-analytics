@@ -13,7 +13,9 @@ import { lineArrival, pointArrival } from '../../theme/presentationMotion';
 
 const WIDTH = 640;
 const HEIGHT = 260;
-const LEFT = 52;
+// Keep the negative tick label inside the clipped plot at narrow widths and
+// enlarged text. SVG coordinates shrink with the plot; HTML labels do not.
+const LEFT = 64;
 const RIGHT = 28;
 const TOP = 18;
 const BOTTOM = 38;

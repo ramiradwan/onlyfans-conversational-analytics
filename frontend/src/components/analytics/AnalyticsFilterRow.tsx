@@ -3,6 +3,12 @@ import { Box, Button, Chip, Popover, Stack, TextField, Typography, styled } from
 import { type FormEvent, useEffect, useId, useState } from 'react';
 
 import { type AnalyticsDateRange, formatCalendarDate, formatCalendarRange } from '../../analytics';
+import { effectTokens } from '../../theme';
+
+// The analytics scroll root clips at the button's end edge, so focus draws inside.
+const CHANGE_DATES_SX = {
+  '&:focus-visible': { outlineOffset: '-' + effectTokens.focus.width },
+} as const;
 
 const DateFields = styled(Box)(({ theme }) => ({
   display: 'grid',
@@ -91,6 +97,7 @@ export function AnalyticsFilterRow({ value, onApply, isRefreshing = false }: Ana
         onClick={(event) => setAnchor(event.currentTarget)}
         size="small"
         startIcon={<CalendarMonthOutlinedIcon />}
+        sx={CHANGE_DATES_SX}
         type="button"
         variant="outlined"
       >

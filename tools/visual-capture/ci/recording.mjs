@@ -1,13 +1,24 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import path, { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { generateInventory, inventoryBytes } from './inventory.mjs';
 
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export const GROUPS = ['all', 'dynamic', 'remaining'];
+export function assertSafeCaptureOutput(output, repository, paths = path) {
+  const target = paths.resolve(output);
+  const sourceWithinTarget = paths.relative(target, paths.resolve(repository));
+  // Different Windows drives produce an absolute relative() result. They are
+  // separate trees; reject drive/share roots explicitly on either drive.
+  if (target === paths.parse(target).root || (!paths.isAbsolute(sourceWithinTarget)
+    && sourceWithinTarget.split(/[\\/]/u).every(part => part !== '..'))) {
+    throw new Error('visual_ci_unsafe_output_directory');
+  }
+}
+
 export function parseCaptureOptions(argv, env = process.env, defaultOutput = 'output') {
   let group = 'all', output = defaultOutput, explicit = false, positional = false;
   for (let index = 0; index < argv.length; index += 1) {

@@ -54,24 +54,38 @@
 .onboarding-workspace button:focus-visible, .onboarding-workspace a:focus-visible, .onboarding-workspace input:focus-visible {
   outline: var(--dipsy-focus-width) solid var(--dipsy-color-primary); outline-offset: var(--dipsy-focus-offset);
 }
+.onboarding-progress { list-style: none; counter-reset: setup-step; margin: 0; padding: 0; }
+.onboarding-progress li { counter-increment: setup-step; display: flex; align-items: flex-start; gap: 10px; padding: 10px; color: var(--dipsy-color-text-muted); }
+.onboarding-progress li::before {
+  content: counter(setup-step); display: grid; place-content: center; flex: 0 0 24px; min-height: 24px;
+  border: var(--dipsy-border-thin) solid var(--dipsy-color-divider); border-radius: var(--dipsy-radius-pill); font-size: var(--dipsy-static-caption-size);
+}
+.onboarding-progress [aria-current="step"] { color: var(--dipsy-color-text); background: var(--dipsy-color-paper); border-radius: var(--dipsy-radius-control); font-weight: var(--dipsy-font-weight-semibold); }
+.onboarding-progress [aria-current="step"]::before { background: var(--dipsy-color-primary); color: var(--dipsy-color-on-primary); border-color: transparent; }
+.onboarding-progress [data-complete="true"]::before { content: '✓'; color: var(--dipsy-color-primary); background: var(--dipsy-intent-surface-trust-fill); }
 .onboarding-status-icon { width: 44px; min-height: 44px; border-radius: var(--dipsy-radius-control); display: grid; place-content: center; color: var(--dipsy-color-primary); background: var(--dipsy-intent-surface-trust-fill); font-size: 1.5rem; }
 .onboarding-footer { padding: 12px 28px; margin-top: auto; background: var(--dipsy-color-paper); border-top: var(--dipsy-border-thin) solid var(--dipsy-color-divider); color: var(--dipsy-color-text-muted); font-size: var(--dipsy-static-caption-size); }
 .onboarding-footer span { display: block; }
 .onboarding-card .onboarding-task { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 0; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
 .onboarding-card .onboarding-task > p { margin: 0; }
-
+@media (min-width: 800px) {
+  .onboarding-content:has(.onboarding-layout[data-progress="full"]) { width: min(100%, var(--dipsy-static-full-workspace-width)); }
+  .onboarding-layout[data-progress="full"] { grid-template-columns: var(--dipsy-static-setup-rail-width) minmax(0, 1fr); }
+}
 @media (max-width: 600px) {
   .onboarding-header { padding: 16px; flex-wrap: wrap; }
   .onboarding-content { padding: 20px 16px; }
   .onboarding-card { padding: 20px; }
   .onboarding-card h1, .onboarding-card h2 { font-size: 1.5rem; }
   .onboarding-identity { max-width: 100%; }
+  .onboarding-progress { display: flex; flex-wrap: wrap; }
+  .onboarding-progress li { flex: 1 1 45%; }
   .onboarding-footer { padding: 12px 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .onboarding-workspace * { animation: none !important; transition: none !important; } }
 /* onboarding-layout:end */
 body[data-surface="setup"], body[data-surface="options"] {
-  width: auto; min-width: 0; max-width: none; max-height: none;
+  width: auto; min-width: 0; max-width: none;
   padding: 40px 32px; overflow-wrap: anywhere;
 }
 main { max-width: var(--dipsy-static-setup-max-width); margin: 0 auto; padding: 0; }
@@ -90,6 +104,7 @@ button { min-height: var(--dipsy-static-large-control-height); font-size: var(--
 .check-row { gap: 10px; padding: 8px 0; }
 .check-row input { width: 18px; height: 18px; }
 .points { padding-left: 20px; }
+.points[data-approved-copy] { padding-left: 0; }
 .points li { margin-bottom: 8px; }
 .pairing-code { margin: 20px 0 4px; font-family: var(--dipsy-font-family-numeric); font-size: 2.75rem; line-height: 1.25; }
 #pairing-label { text-align: center; margin: 0 0 20px; }
@@ -131,44 +146,49 @@ dialog::backdrop { background: color-mix(in oklch, var(--dipsy-color-text) 35%, 
 }
 .extension-stage { height: 520px; overflow-y: auto; scrollbar-gutter: stable; }
 .extension-stage > [data-region-content] { min-height: 100%; display: flow-root; }
-.options-frame { height: 480px; overflow-y: auto; scrollbar-gutter: stable; margin-bottom: 24px; }
-.options-frame section { margin-bottom: 0; }
-.options-frame:first-of-type { height: 320px; }
-html:has(body[data-surface="options"]), body[data-surface="options"] .options-frame {
-  scrollbar-width: thin;
-  scrollbar-color: var(--dipsy-color-text-muted) transparent;
-}
-html:has(body[data-surface="options"])::-webkit-scrollbar,
-body[data-surface="options"] .options-frame::-webkit-scrollbar { width: 10px; height: 10px; }
-html:has(body[data-surface="options"])::-webkit-scrollbar-track,
-body[data-surface="options"] .options-frame::-webkit-scrollbar-track { background: transparent; }
-html:has(body[data-surface="options"])::-webkit-scrollbar-thumb,
-body[data-surface="options"] .options-frame::-webkit-scrollbar-thumb { background: var(--dipsy-color-text-muted); border-radius: var(--dipsy-radius-control); }
-html:has(body[data-surface="options"])::-webkit-scrollbar-thumb:hover,
-body[data-surface="options"] .options-frame::-webkit-scrollbar-thumb:hover { background: var(--dipsy-color-text); }
-@media (forced-colors: active) {
-  html:has(body[data-surface="options"]), body[data-surface="options"] .options-frame { scrollbar-color: auto; scrollbar-width: auto; }
-  html:has(body[data-surface="options"])::-webkit-scrollbar-thumb,
-  body[data-surface="options"] .options-frame::-webkit-scrollbar-thumb,
-  html:has(body[data-surface="options"])::-webkit-scrollbar-thumb:hover,
-  body[data-surface="options"] .options-frame::-webkit-scrollbar-thumb:hover { background: ButtonText; }
-}
+/* Each frame holds its card's tallest state at the current width. The card fills the frame, and its shadow paints in the end padding. */
+.options-frame { overflow-y: auto; scrollbar-gutter: stable; padding-block-end: var(--dipsy-space-unit); margin-bottom: calc(2 * var(--dipsy-space-unit)); }
+.options-frame > section { min-height: 100%; margin-bottom: 0; }
+.options-frame[data-reserved-region="options-capture"] { height: 344px; }
+.options-frame[data-reserved-region="options-connection"] { height: 656px; }
+.options-frame[data-reserved-region="options-data"] { height: 488px; }
+/* Holds the one-line loading notice. The reconnecting warning shows only while the cards are hidden, over their empty frames. */
+.reserved-notice { height: calc(1.6 * var(--dipsy-static-label-size)); margin-bottom: calc(2 * var(--dipsy-space-unit)); }
+.reserved-notice #loading { margin: 0; }
 .extension-stage #review-notice { height: 48px; margin: 0; }
 .extension-stage { position: relative; }
 .extension-stage #loading { position: absolute; top: 0; left: 0; margin: 0; }
 body[data-surface="options"] .section-heading { display: grid; grid-template-columns: minmax(0, 1fr) 9em; min-height: 80px; }
-body[data-surface="options"] .section-heading .status-line { width: 9em; }
 body[data-surface="options"] .connection-grid div { display: grid; grid-template-columns: minmax(0, 1fr) 9em; min-height: 48px; }
 body[data-surface="options"] .connection-grid dd { text-align: left; }
 body[data-surface="options"] #brain-status { min-height: 72px; }
 body[data-surface="options"] .settings-row p { min-height: 72px; }
+body[data-surface="options"] #open-dashboard { margin-block-end: calc(2 * var(--dipsy-space-unit)); }
+/* Aligns the text button's label with the section's content edge. */
+body[data-surface="options"] #open-connection-details { margin-inline-start: calc(-1 * var(--dipsy-space-unit)); }
+#connection-details-dialog form > button { margin-block-start: calc(2 * var(--dipsy-space-unit)); }
 body[data-surface="options"] .settings-row button.hidden { display: inline-flex !important; visibility: hidden; }
 body[data-surface="options"] .settings-row.hidden { display: flex !important; visibility: hidden; }
-@media (max-width: 600px) { .extension-stage { height: 640px; } .options-frame { height: 600px; } }
+@media (max-width: 600px) {
+  .extension-stage { height: 640px; }
+  .options-frame[data-reserved-region="options-capture"] { height: 368px; }
+  .options-frame[data-reserved-region="options-connection"] { height: 712px; }
+  .options-frame[data-reserved-region="options-data"] { height: 592px; }
+}
+@media (max-width: 359px) {
+  .options-frame[data-reserved-region="options-capture"] { height: 424px; }
+  .options-frame[data-reserved-region="options-connection"] { height: 768px; }
+  .options-frame[data-reserved-region="options-data"] { height: 640px; }
+}
 
-#setup-transfer-form { display: grid; gap: 12px; }
+#setup-transfer-entry > p { margin-block-end: calc(2 * var(--dipsy-space-unit)); }
+#setup-transfer-form { display: grid; gap: 12px; max-width: var(--dipsy-static-compact-form-max-width); }
+#setup-transfer-form > .field { display: grid; gap: var(--dipsy-space-unit); }
+#setup-transfer-form label { color: var(--dipsy-color-text); font-weight: var(--dipsy-font-weight-medium); }
 #setup-transfer-code { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; font: inherit; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 8px; }
-#setup-transfer-status { min-height: 2.5em; margin: 0; }
+#setup-transfer-code:focus-visible { outline-offset: calc(-1 * var(--dipsy-border-thin)); }
+/* The status keeps its reservation while empty. */
+#setup-transfer-status { display: block; min-height: 2.5em; margin: 0; }
 
 body.onboarding-workspace[data-surface="setup"] { padding: 0; display: flex; flex-direction: column; }
 .onboarding-workspace .onboarding-loading { margin: 0; padding: 28px; }
@@ -227,6 +247,18 @@ body.onboarding-workspace > main { max-width: none; padding: 28px; }
 }
 
 .setup-code-secondary { margin-block-start: 1.5rem; text-align: start; }
+
+/* Approved copy sections sit one level under the task or choice title. */
+:is(#start-disclosure .points, #separate-choices-disclosure) > h2 { margin: calc(2.5 * var(--dipsy-space-unit)) 0 var(--dipsy-space-unit); font-size: var(--dipsy-static-nested-task-heading-size); }
+
+/* Review copy, acknowledgements and their actions keep one owner per gap. */
+#full-disclosure > .points { margin-block-end: calc(3 * var(--dipsy-space-unit)); }
+#full-disclosure > #enable-full { margin-block-start: 0; }
+#pre-mode > .check-row { color: var(--dipsy-color-text); }
+#pre-mode > #start-disclosure + .check-row { margin-block-start: calc(2 * var(--dipsy-space-unit)); }
+#pre-mode > #activate-software { margin-block-start: calc(2 * var(--dipsy-space-unit)); }
+#access-card > #access-body:has(+ #restore-access:not(.hidden)) { margin-block-end: 0; }
+#access-card > #restore-access { margin-block-start: calc(2 * var(--dipsy-space-unit)); }
 
 /* A native history request opens a focused Chrome permission step. */
 main[data-permission-handoff="true"] > header #open-setup,

@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { zipSync } from 'fflate';
 import { validatePackagedSigningRule } from 'local-authenticated-read-connector/browser-signing';
-import { auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
+import { auditActivationDisclosures, auditLegalBindingLiterals } from './qualification/legal-binding-literals.mjs';
 import { readArchiveEntries } from './qualification/archive-entries.mjs';
 import { signingPublicationTrust, SIGNING_PUBLICATION_TRUST_SHA256, SIGNING_PUBLICATION_TRUST_B64 } from './runtime/signing-publication-trust.mjs';
 import { SIGNER_RELEASE, signerReleaseFiles, auditInstalledSigner, auditSignerMetadata } from './qualification/signer-release.mjs';
@@ -66,11 +66,12 @@ const EXPECTED_OPTIONAL_HOST_PERMISSIONS = Object.freeze([
   'https://onlyfans.com/*',
 ]);
 let workspaceHostedOrigin = null;
+let workspaceTransferReceiver = null;
 const workspaceHostPermissions = () => ['http://bridge.localhost/*', ...(workspaceHostedOrigin ? [`${workspaceHostedOrigin}/*`] : [])];
-const workspaceExternalMatches = () => [...EXPECTED_EXTERNAL_MATCHES, ...(workspaceHostedOrigin ? [
-  `${workspaceHostedOrigin}/public/onboarding/setup`,
-  `${workspaceHostedOrigin}/public/onboarding/installation-continuation`,
-] : [])];
+const workspaceExternalMatches = () => [...EXPECTED_EXTERNAL_MATCHES,
+  ...(workspaceTransferReceiver ? [workspaceTransferReceiver] : []),
+  ...(workspaceHostedOrigin ? [`${workspaceHostedOrigin}/public/onboarding/installation-continuation`] : []),
+];
 const EXPECTED_EXTERNAL_MATCHES = Object.freeze(['http://bridge.localhost:17871/*']);
 const EXPECTED_EXTENSION_CSP = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17871; frame-ancestors 'none';";
 const FORBIDDEN_PERMISSIONS = Object.freeze([
@@ -430,7 +431,7 @@ async function compileOnce(signingRule, legalBindings) {
     : [packagedSignerPlugin(signingRule), legalBindingsPlugin(legalBindings)];
   plugins.push({ name: 'onboarding-release-origin', setup(context) {
     context.onLoad({ filter: /[\\/]runtime[\\/]onboarding-release-config\.mjs$/ }, () => ({
-      contents: `export const onboardingHostedOrigin = ${JSON.stringify(workspaceHostedOrigin)};`, loader: 'js',
+      contents: `export const onboardingHostedOrigin = ${JSON.stringify(workspaceHostedOrigin)};\nexport const setupTransferReceiverUrl = ${JSON.stringify(workspaceTransferReceiver)};`, loader: 'js',
     }));
   } });
   const common = {
@@ -820,7 +821,7 @@ async function auditArtifactView(view, {
 
   const popup = TEXT_DECODER.decode(await view.read('popup.html'));
   assert.match(popup, /Observed in this browser/);
-  assert.match(TEXT_DECODER.decode(await view.read('setup.html')), /Preview retains no message text/);
+  auditActivationDisclosures(TEXT_DECODER.decode(await view.read('setup.html')));
   assert.doesNotMatch(popup, /id="(?:pre-mode|mode-choice|companion-pairing|delete-local-data)"/);
   assert.match(popup, /not affiliated with or endorsed by OnlyFans/);
 
@@ -1041,31 +1042,44 @@ async function buildArtifact(
 }
 
 export function validateOnboardingReleaseConfig(document, { required = false } = {}) {
-  assert.deepEqual(Object.keys(document).sort(), ['authentication_providers', 'hosted_api_origin', 'hosted_onboarding_url', 'schema']);
-  assert.equal(document.schema, 'ofca-customer-release/v1');
+  assert.deepEqual(Object.keys(document).sort(), ['authentication_providers', 'hosted_api_origin', 'schema', 'setup_transfer_receiver_url']);
+  assert.equal(document.schema, 'ofca-customer-release/v2');
   const providers = document.authentication_providers;
   assert.ok(Array.isArray(providers) && providers.length > 0
     && new Set(providers).size === providers.length && providers.includes('default')
     && providers.every(provider => ['google', 'microsoft-personal', 'default'].includes(provider)),
   'Customer authentication providers must be distinct approved choices and include default');
-  if (document.hosted_onboarding_url === '' && document.hosted_api_origin === '') {
+  if (document.hosted_api_origin === '') {
+    assert.equal(document.setup_transfer_receiver_url, '', 'Setup transfer requires a hosted API origin');
     assert.equal(required, false, 'Full onboarding packaging requires a hosted release origin');
     return null;
   }
-  const url = new URL(document.hosted_onboarding_url);
-  const api = new URL(document.hosted_api_origin);
-  for (const value of [url, api]) {
-    assert.equal(value.protocol, 'https:');
-    assert.ok(!value.username && !value.password && !value.search && !value.hash && !value.hostname.endsWith('.invalid'));
+  assert.equal(typeof document.setup_transfer_receiver_url, 'string');
+  assert.equal(typeof document.hosted_api_origin, 'string');
+  for (const value of [document.hosted_api_origin, document.setup_transfer_receiver_url]) {
+    assert.ok(!/[\s\\\u0000-\u001f]/.test(value), 'Release URLs must not contain whitespace or backslashes');
   }
-  assert.equal(url.pathname, '/public/onboarding/setup');
+  const api = new URL(document.hosted_api_origin);
+  const receiver = document.setup_transfer_receiver_url === '' ? null : new URL(document.setup_transfer_receiver_url);
+  for (const value of [api, ...(receiver ? [receiver] : [])]) {
+    assert.equal(value.protocol, 'https:');
+    assert.ok(!value.username && !value.password && !value.search && !value.hash
+      && !value.hostname.endsWith('.invalid') && !value.hostname.includes('*'));
+  }
   assert.equal(api.pathname, '/');
-  return url.origin;
+  if (receiver) {
+    assert.equal(receiver.pathname, '/public/onboarding/setup');
+    assert.equal(receiver.origin, api.origin, 'Setup transfer must use the configured API origin');
+  }
+  return api.origin;
 }
 
 async function main() {
-  workspaceHostedOrigin = validateOnboardingReleaseConfig(await readJson(path.resolve(argumentValue('--customer-release-config')
-    ?? path.join(ROOT, '../app/core/customer-release.json'))), { required: process.argv.includes('--package') || process.argv.includes('--audit-package') });
+  const release = await readJson(path.resolve(argumentValue('--customer-release-config')
+    ?? path.join(ROOT, '../app/core/customer-release.json')));
+  workspaceHostedOrigin = validateOnboardingReleaseConfig(release,
+    { required: process.argv.includes('--package') || process.argv.includes('--audit-package') });
+  workspaceTransferReceiver = release.setup_transfer_receiver_url ? new URL(release.setup_transfer_receiver_url).href : null;
   if (process.argv.includes('--audit-package')) {
     const signingRule = await loadSigningRule({ required: true });
     const legalBindings = await verifyLegalReleaseBindings({ required: true });

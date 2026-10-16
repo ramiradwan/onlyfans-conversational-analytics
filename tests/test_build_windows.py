@@ -56,13 +56,11 @@ _STORE_PUBLICATION = """\
     Invoke-ExtensionBuild `
         -Arguments ((Get-ExtensionReleaseArguments -Verb "--audit-package") + "--artifact=$storeCandidate") `
         -FailureMessage "The published Store candidate failed its package audit"
-    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName, $storeCandidateName)
-    Write-Host "Windows installer ready: $installerPath"
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($desktopArtifacts.ToArray() + $storeCandidateName)
     Write-Host "Store candidate ready: $storeCandidate (sha256:$storeCandidateDigest)"
 """
 _STORE_PUBLICATION_REMOVED = """\
-    Write-Sha256Sums -Directory $installerOutput -RelativePaths @($installerName)
-    Write-Host "Windows installer ready: $installerPath"
+    Write-Sha256Sums -Directory $installerOutput -RelativePaths $desktopArtifacts.ToArray()
 """
 _STORE_COPY = """\
     Copy-Item -LiteralPath $storePackage.Archive -Destination $storeCandidate
@@ -290,7 +288,14 @@ def test_policy_gate_rejects_development_configuration_and_is_load_bearing(
     source = BUILD_SCRIPT.read_text(encoding="utf-8")
     policy_call = "Invoke-PackagingPolicy -BuildPython $BuildPython -ProjectRoot $ProjectRoot -StagingRoot $stagingRoot"
     assert policy_call in source, "the executable falsifier must remove the real policy invocation"
-    without_gate.write_text(source.replace(policy_call, "# policy invocation removed for falsifier"), encoding="utf-8")
+    # Installed selection now repeats complete stage qualification. Remove the
+    # whole qualification boundary for this counterexample, while keeping the
+    # declared Inno exclusions. Removing just one call must still refuse it.
+    selection_call = "paths = installed_runtime_files(Path(sys.argv[1]), 'inno')"
+    assert selection_call in source, "the falsifier must bypass the repeated stage qualification too"
+    unqualified_selection = "paths = tuple(path.relative_to(Path(sys.argv[1])).as_posix() for path in Path(sys.argv[1]).rglob('*') if path.is_file() and not path.relative_to(Path(sys.argv[1])).as_posix().startswith('Agent/'))"
+    without_gate.write_text(source.replace(policy_call, "# policy invocation removed for falsifier")
+                           .replace(selection_call, unqualified_selection, 1), encoding="utf-8")
 
     ungated = _run_build(without_gate, pyinstaller, tmp_path / "ungated")
 
@@ -834,13 +839,13 @@ def test_shipped_digest_files_list_only_installed_files(
     _assert_program_payload_removed(prefix)
 
     source = BUILD_SCRIPT.read_text(encoding="utf-8")
-    exclusion = '$InstallerExcludedStagingDirectories = @("Agent")'
+    exclusion = "paths = installed_runtime_files(Path(sys.argv[1]), 'inno')"
     assert exclusion in source, (
-        "the shipped-digest falsifier must empty the real exclusion declaration"
+        "the shipped-digest falsifier must bypass the real installed closure selection"
     )
     staged_only = tmp_path / "build-windows-without-installer-exclusions.ps1"
     staged_only.write_text(
-        source.replace(exclusion, "$InstallerExcludedStagingDirectories = @()", 1),
+        source.replace(exclusion, "paths = sorted(path.relative_to(Path(sys.argv[1])).as_posix() for path in Path(sys.argv[1]).rglob('*') if path.is_file())", 1),
         encoding="utf-8",
     )
 

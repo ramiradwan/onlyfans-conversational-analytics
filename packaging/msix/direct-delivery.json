@@ -1,0 +1,28 @@
+{
+  "schema": "ofca-direct-delivery-inputs/v1",
+  "verified_at_utc": "2026-10-14T16:11:25Z",
+  "profile": "packaging/msix/profiles/production-direct.json",
+  "expected_package_family": "Dipsy.OnlyFansConversationalAnalytics_bvmm2ppd090g2",
+  "signing": {
+    "provider": "azure-artifact-signing",
+    "endpoint": "https://swn.codesigning.azure.net/",
+    "account": "Dipsy",
+    "certificate_profile": "simple-legal-doc-signer",
+    "subject": "CN=Dipsy, O=Dipsy, L=London, C=GB",
+    "timestamp_url": "http://timestamp.acs.microsoft.com",
+    "timestamp_digest": "SHA256",
+    "resource_id": "/subscriptions/f16174c3-f1aa-494b-b813-675d03956f3c/resourceGroups/signing-services-group/providers/Microsoft.CodeSigning/codeSigningAccounts/Dipsy/certificateProfiles/simple-legal-doc-signer"
+  },
+  "hosting": {
+    "public_origin": "https://updates.dipsy.fi",
+    "base_path": "/desktop/v1/",
+    "app_installer_uri": "https://updates.dipsy.fi/desktop/v1/windows/x64/stable/ConversationAnalytics.appinstaller",
+    "worker": "dipsy-desktop-downloads",
+    "bucket": "dipsy-desktop-releases-prod",
+    "qualification_bucket": "dipsy-desktop-qualification",
+    "jurisdiction": "eu",
+    "s3_endpoint": "https://a7c496ed19319911a55d16da6287bbbd.eu.r2.cloudflarestorage.com"
+  },
+  "verification_scope": "Verified nonshipping MSIX public-trust signature and timestamp; live serving mechanics with temporary qualification objects. Not customer installation or release qualification.",
+  "stable_feed_published": false
+}

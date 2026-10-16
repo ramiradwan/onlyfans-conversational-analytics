@@ -384,6 +384,7 @@ export function replaceStaticTokenBlock(consumerSource: string, css: string, mar
 }
 
 export const staticTokenConsumers = ['extension/popup.css'];
+export const onboardingLayoutConsumers = ['extension/setup.css'];
 export const firstPaintConsumers = ['app/templates/index.html', 'frontend/index.html'];
 const repositoryRoot = path.resolve(themeDirectory, '..', '..', '..');
 
@@ -408,7 +409,7 @@ function main(): void {
   writeIfChanged(path.join(themeDirectory, 'generated', 'desktop-tokens.css'), generateStaticTokensCss(tokensSource, true));
   const fonts = generateStaticFontsCss(repositoryRoot);
   writeIfChanged(path.join(themeDirectory, 'generated', 'static-fonts.css'), fonts);
-  const workspace = fs.readFileSync(path.join(themeDirectory, 'onboarding.css'), 'utf8');
+  const workspace = fs.readFileSync(path.join(themeDirectory, 'onboarding.css'), 'utf8').replace(/\r\n/g, '\n');
   writeIfChanged(path.join(themeDirectory, 'generated', 'hosted-onboarding.css'), css + '\n' + fonts + '\n' + workspace);
   console.log('Theme generated deterministically from tokens.json');
   const reportIndex = process.argv.indexOf('--color-report');
@@ -419,7 +420,7 @@ function main(): void {
     writeIfChanged(output, generateColorReport(tokensSource));
   }
   if (process.argv.includes('--static-surfaces')) {
-    for (const consumer of ['extension/setup.css']) {
+    for (const consumer of onboardingLayoutConsumers) {
       const consumerPath = path.join(repositoryRoot, consumer);
       writeIfChanged(consumerPath, replaceStaticTokenBlock(fs.readFileSync(consumerPath, 'utf8'), workspace, 'onboarding-layout'));
     }

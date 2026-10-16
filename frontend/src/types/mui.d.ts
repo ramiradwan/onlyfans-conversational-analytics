@@ -86,6 +86,8 @@ declare module '@mui/material/styles' {
       segment: { track: string; selected: string; elevation: string };
       tooltip: { fill: string; text: string };
       subtle: string;
+      controlBorder: string;
+      scrollbarThumb: string;
       glass: string;
       elevation: string;
       overlay: string;

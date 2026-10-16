@@ -8,12 +8,14 @@
 
 The shared onboarding construction, authentication-task handlers and typed source lifecycle remain within those modules. [ADR 0054](adr/0054-consolidate-onboarding-coordination.md) preserves their separate runtime authority and transport admission boundaries.
 
+The generated `frontend/public/setup-theme-init.js` belongs to `bridge-orchestration`. It runs the existing shared theme rule before onboarding's module entry, with no setup, browser or account authority. Its generator keeps the blocking script and module consumers on the same rule.
+
 The repository contains three runtime components and supporting release controls:
 
 - **Brain (`app/`)**: Local Python backend running on the creator's machine. It hosts the local HTTP and WebSocket endpoints, authenticates sessions, coordinates first-run provisioning, commits canonical conversation state to SQLite, and runs derived analytics. There is no standalone `brain/` directory.
 - **Agent (`extension/`)**: Chrome Manifest V3 extension responsible for creator-visible observation and durable delivery. It normalizes browser events, manages an IndexedDB outbox, evaluates consent, and delivers validated frames to Brain.
 - **Bridge (`frontend/`)**: React and TypeScript single-page application. It consumes Brain-owned state over local WebSockets and authenticated REST endpoints to present real-time dashboards and conversation analytics.
-- **Packaging and release (`packaging/`, `tools/packaged-signing-rule/`, `tools/legal-release-bindings/`, `tools/packaging_policy.py`)**: Build-time scripts, packaging manifests, installer definitions, and release verification tools that qualify and seal release artifacts without participating in normal runtime data flow.
+- **Packaging and release (`packaging/`, `tools/packaged-signing-rule/`, `tools/legal-release-bindings/`, `tools/packaging_policy.py`, `tools/msix_packaging.py`)**: Build-time scripts, packaging manifests, installer definitions, and release verification tools that qualify and seal release artifacts without participating in normal runtime data flow.
 - **Attestation materials (`attestation/`, `tools/engineering_attestation.py`)**: Engineering attestation verification keys, public signer definitions, and attestation CLI tooling.
 - **Architecture governance (`docs/architecture-boundaries.json`, `docs/architecture-boundaries.md`)**: Machine-readable authority manifest and human architecture documentation governing system boundaries and invariants.
 - **Shared contracts (`shared/`, `app/protocol/`, `extension/protocol/`, `frontend/src/protocol/`)**: Protocol v2 schemas, golden wire fixtures, and legal evidence locks implemented across runtimes. External vendored contracts under `contracts/` are snapshot dependencies and excluded from internal architecture modules.
@@ -51,7 +53,7 @@ The following twenty-five modules partition the repository's production namespac
 | Module ID | Zone | Authority | Responsibility |
 |---|---|---|---|
 | `architecture-governance` | Red | Authoritative | Machine architecture authority and human-readable architecture contract governing repository boundaries (`docs/architecture-boundaries.json`, `docs/architecture-boundaries.md`). |
-| `packaging-release` | Red | Authoritative | Windows packaging scripts, installer definitions, PyInstaller spec, runtime file closure manifests, packaging policy, and release signing verification tools (`packaging/**`, `tools/packaged-signing-rule/**`, `tools/legal-release-bindings/**`, `tools/packaging_policy.py`). |
+| `packaging-release` | Red | Authoritative | Windows packaging scripts, installer definitions, PyInstaller spec, runtime file closure manifests, packaging policy, and release signing verification tools (`packaging/**`, `tools/packaged-signing-rule/**`, `tools/legal-release-bindings/**`, `tools/packaging_policy.py`, `tools/msix_packaging.py`). |
 | `attestation-verification` | Red | Authoritative | Engineering attestation verification keys, public signer definitions, and attestation verification CLI tools (`attestation/**`, `tools/engineering_attestation.py`). |
 | `ci-workflows` | Red | Authoritative | Continuous integration and release workflow control plane (`.github/workflows/**`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/**`). |
 | `shared-legal-evidence` | Red | Authoritative | Legal activation evidence schemas, risk disclosure locks, and verified retention acceptance artifacts (`shared/legal/**`, `artifacts/**`). |
@@ -69,7 +71,7 @@ The following twenty-five modules partition the repository's production namespac
 | `brain-vault-api` | Red | Authoritative | Creator vault REST endpoints governing hard deletion closure, vault lifecycle, and authenticated consent actions (`app/api/endpoints/creator_vault.py`). |
 | `brain-auth-api` | Red | Authoritative | WebAuthn ceremony endpoints and local device authentication flows (`app/api/endpoints/webauthn.py`). |
 | `brain-api-presentation` | Yellow | Presentation | HTTP REST endpoints exposing read models, setup routes, and compiled Bridge static asset delivery (`app/api/**`, `app/static/**`, `app/templates/**`). |
-| `brain-runtime-bootstrap` | Red | Composition | Top-level application assembly, FastAPI application lifecycle, CLI entrypoints, core shared models/utilities, and bootstrap composition (`app/main.py`, `app/bootstrap.py`, `app/launcher.py`, `app/core/**`). |
+| `brain-runtime-bootstrap` | Red | Composition | Top-level application assembly, FastAPI application lifecycle, CLI entrypoints, core shared models/utilities, native desktop host, immutable desktop deployment and bounded bootstrap status fixtures, and bootstrap composition (`app/main.py`, `app/bootstrap.py`, `app/launcher.py`, `app/core/**`, `desktop/**`, `shared/desktop-release/**`, `shared/bootstrap-status/**`). |
 | `application-services` | Orange | Derived | Application workflow orchestration for analytics read services, configuration, command execution, and retention maintenance (`app/services/**`). |
 | `signing-parameter-authority` | Red | Authoritative | Independent public publication verification, bounded background delivery and one worker-owned publication source, separate from account signing proof and commercial authority (`app/services/signing_parameters.py`, `extension/runtime/signing-parameters.mjs`, `extension/runtime/signing-publication-trust.mjs`, `extension/protocol/signing-parameters.mjs`). |
 | `analytics-semantic-foundation` | Orange | Derived | Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime (`app/analytics/canonical_source.py`, `app/analytics/pipeline.py`, `app/analytics/runtime.py`). |

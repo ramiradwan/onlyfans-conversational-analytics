@@ -3,6 +3,7 @@
   "sha256": {
     "extension/popup.html": "f98080bfecade155196729367c8276a5dc3cf574347c1236162a6a2885741edf",
     "extension/popup.js": "766b3e930b07a695b499cbfa6db718271f3e0dc054c1478061b8021f6723e057",
-    "app/provisioning/creator-platform-data-risk-disclosure.html": "3532abcaa51189102aaa3e8fc762cf1af06f0564bb1c115bb28ded6c41831246"
-  }
+    "app/provisioning/creator-platform-data-risk-disclosure.html": "e72b5efe378723f53a071f7b576db22c801520e5df6448ed611e89f8c2664572"
+  },
+  "risk_disclosure_revision": "d6175bc23086d2d78e8b953c5bad2130792ce6a2"
 }

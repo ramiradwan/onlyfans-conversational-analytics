@@ -131,6 +131,7 @@ def _write_runtime_configuration(data_directory: Path) -> None:
         data_directory=data_directory.as_posix()
     )
     (data_directory / "runtime.env").write_text(configuration, encoding="utf-8")
+    _seed_retained_setup(data_directory)
 
 
 def _runtime_process_environment(data_directory: Path) -> dict[str, str]:
@@ -433,6 +434,7 @@ def _assert_packaged_runtime_serves_provisioning_surface(
 
         for path, content_type in (
             ("/onboarding/entry", "text/html"),
+            ("/onboarding/entry.css", "text/css"),
             ("/onboarding/entry.js", "text/javascript"),
         ):
             status, headers, content = _raw_request("GET", path, headers=browser_headers)
@@ -450,8 +452,8 @@ def _assert_packaged_runtime_serves_provisioning_surface(
             artifact / "_internal" / "app" / "core" / "customer-release.json"
         )
         status, headers, _ = _raw_request("GET", "/provisioning", headers=browser_headers)
-        assert status == (405 if release.hosted_configured else 404)
-        if release.hosted_configured:
+        assert status == (405 if release.setup_transfer_configured else 404)
+        if release.setup_transfer_configured:
             assert headers["allow"] == "POST"
         for path in (
             "/provisioning/handoff", "/provisioning/provisioning.js",
@@ -740,10 +742,7 @@ def test_packaged_runtime_missing_template_is_a_resource_failure_not_configurati
     )
 
 
-_BOOTSTRAP_TOKEN_MESSAGE = (
-    "Local session mode requires a generated launcher bootstrap token of at "
-    "least 32 characters"
-)
+_BOOTSTRAP_TOKEN_MESSAGE = "retained_bootstrap_token_invalid"
 
 
 def _write_configured_runtime_with_bootstrap_token(
@@ -764,6 +763,29 @@ def _write_configured_runtime_with_bootstrap_token(
     if bootstrap_line is not None:
         lines.append(bootstrap_line)
     (data_directory / "runtime.env").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _seed_retained_setup(data_directory)
+
+
+def _seed_retained_setup(data_directory: Path) -> None:
+    """Configured boot must retain the actual setup store and original DPAPI key.
+
+    A configuration file alone now correctly refuses as missing authority. Use
+    the real authentication constructor in a clean production-style process,
+    then change only the token in the counterexample above.
+    """
+    program = '''
+import sys
+from pathlib import Path
+from app.persistence.auth import SQLiteAuthenticationStore
+from app.persistence.private_files import apply_private_file_security
+root = Path(sys.argv[1])
+apply_private_file_security(root / 'runtime.env')
+SQLiteAuthenticationStore(root / 'auth.sqlite3')
+'''
+    seeded = subprocess.run([sys.executable, "-c", program, str(data_directory)], cwd=ROOT,
+                            env=_runtime_process_environment(data_directory), capture_output=True,
+                            text=True, timeout=30)
+    assert seeded.returncode == 0, seeded.stdout + seeded.stderr
 
 
 def _source_mode_environment(data_directory: Path) -> dict[str, str]:

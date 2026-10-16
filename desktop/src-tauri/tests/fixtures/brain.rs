@@ -1,5 +1,9 @@
 //! OS process qualification only; excluded from production builds and packaging.
 #![allow(dead_code)]
+#[path = "../../src/bootstrap.rs"]
+mod bootstrap;
+#[path = "../../src/deployment.rs"]
+mod deployment;
 #[path = "../../src/policy.rs"]
 mod policy;
 #[path = "../../src/windows.rs"]
@@ -8,6 +12,10 @@ mod windows;
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
     let data = std::path::PathBuf::from(std::env::var_os("LOCAL_ANALYTICS_DATA_DIR").unwrap());
+    if args.get(1).is_some_and(|arg| arg == "--descendant") {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        return;
+    }
     if args.get(1).is_some_and(|arg| arg == "--supervise") {
         let image = std::env::current_exe().unwrap().canonicalize().unwrap();
         assert!(image.as_os_str().to_string_lossy().starts_with(r"\\?\"));
@@ -18,6 +26,41 @@ fn main() {
     }
     assert_eq!(args.len(), 2);
     assert_eq!(args[1], "--brain");
+    let status: usize = std::env::var("BRAIN_BOOTSTRAP_STATUS_HANDLE")
+        .unwrap()
+        .parse()
+        .unwrap();
+    unsafe {
+        use windows_sys::Win32::{Foundation::*, Storage::FileSystem::*};
+        assert_eq!(GetFileType(status as _), FILE_TYPE_PIPE);
+        assert_ne!(SetHandleInformation(status as _, HANDLE_FLAG_INHERIT, 0), 0);
+        let frames = b"{\"schema\":\"ofca-bootstrap-status/v1\",\"seq\":1,\"phase\":\"starting\",\"reason\":null}\n{\"schema\":\"ofca-bootstrap-status/v1\",\"seq\":2,\"phase\":\"checking\",\"reason\":null}\n";
+        let mut written = 0;
+        assert_ne!(
+            WriteFile(
+                status as _,
+                frames.as_ptr(),
+                frames.len() as u32,
+                &mut written,
+                std::ptr::null_mut()
+            ),
+            0
+        );
+        assert_eq!(written as usize, frames.len());
+        if data.join("servicing").exists() {
+            let ready = b"{\"schema\":\"ofca-bootstrap-status/v1\",\"seq\":3,\"phase\":\"ready-to-check-listener\",\"reason\":null}\n";
+            assert_ne!(
+                WriteFile(
+                    status as _,
+                    ready.as_ptr(),
+                    ready.len() as u32,
+                    &mut written,
+                    std::ptr::null_mut()
+                ),
+                0
+            );
+        }
+    }
     // Qualification uses a short ordinary install path. The child must receive
     // that form, so Python resource loaders can safely join relative assets.
     assert!(!std::env::current_exe()
@@ -79,6 +122,16 @@ fn main() {
         std::process::exit(code.parse().unwrap());
     }
     std::fs::write(data.join("started"), std::process::id().to_string()).unwrap();
+    let _descendant = if data.join("spawn-descendant").exists() {
+        Some(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--descendant")
+                .spawn()
+                .unwrap(),
+        )
+    } else {
+        None
+    };
     let raw: usize = std::env::var("BRAIN_PARENT_LIFETIME_HANDLE")
         .unwrap()
         .parse()
@@ -93,6 +146,27 @@ fn main() {
             &mut read,
             std::ptr::null_mut(),
         );
+    }
+    if let Ok(delay) = std::fs::read_to_string(data.join("drain-delay")) {
+        std::thread::sleep(std::time::Duration::from_millis(delay.parse().unwrap()));
+    }
+    if let Ok(tail) = std::fs::read(data.join("servicing")) {
+        if !tail.is_empty() {
+            unsafe {
+                use windows_sys::Win32::Storage::FileSystem::WriteFile;
+                let mut written = 0;
+                assert_ne!(
+                    WriteFile(
+                        status as _,
+                        tail.as_ptr(),
+                        tail.len() as u32,
+                        &mut written,
+                        std::ptr::null_mut()
+                    ),
+                    0
+                );
+            }
+        }
     }
     std::fs::write(data.join("graceful"), b"parent closed").unwrap();
 }

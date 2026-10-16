@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:uap17="http://schemas.microsoft.com/appx/manifest/uap/windows10/17"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:virtualization="http://schemas.microsoft.com/appx/manifest/virtualization/windows10"
+  xmlns:win32dependencies="http://schemas.microsoft.com/appx/manifest/externaldependencies"
+  IgnorableNamespaces="uap uap10 uap17 rescap virtualization win32dependencies">
+  <Identity Name="@NAME@" Publisher="@PUBLISHER@" Version="@PACKAGE_VERSION@" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Conversation Analytics</DisplayName>
+    <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
+    <Description>Conversation analytics on your computer.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <uap17:UpdateWhileInUse>defer</uap17:UpdateWhileInUse>
+    <uap10:PackageIntegrity><uap10:Content Enforcement="on" /></uap10:PackageIntegrity>
+    <virtualization:FileSystemWriteVirtualization>
+      <virtualization:ExcludedDirectories>
+        <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\OnlyFans Conversational Analytics</virtualization:ExcludedDirectory>
+      </virtualization:ExcludedDirectories>
+    </virtualization:FileSystemWriteVirtualization>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="@MINIMUM_OS@" MaxVersionTested="@TESTED_OS@" />
+    <win32dependencies:ExternalDependency Name="Microsoft.WebView2"
+      Publisher="CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+      MinVersion="@WEBVIEW2_MINIMUM@" Optional="@WEBVIEW2_OPTIONAL@" />
+  </Dependencies>
+  <Resources><Resource Language="en-us" /></Resources>
+  <Applications>
+    <Application Id="@APPLICATION_ID@" Executable="app\Bridge.exe" EntryPoint="Windows.FullTrustApplication"
+      uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="mediumIL">
+      <uap:VisualElements DisplayName="Conversation Analytics" Description="Conversation analytics on your computer."
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions><uap10:Extension Category="windows.protocol">
+        <uap10:Protocol Name="ofca" Parameters="--open-workspace &quot;%1&quot;">
+          <uap10:DisplayName>Conversation Analytics</uap10:DisplayName>
+        </uap10:Protocol>
+      </uap10:Extension></Extensions>
+    </Application>
+  </Applications>
+  <Capabilities><rescap:Capability Name="runFullTrust" /><rescap:Capability Name="unvirtualizedResources" /></Capabilities>
+</Package>

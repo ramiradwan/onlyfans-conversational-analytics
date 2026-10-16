@@ -53,14 +53,18 @@ describe('FastAPI runtime config credential boundary', () => {
     expect(config).not.toHaveProperty('AGENT_AUTH_TICKET');
   });
 
-  it('passes only an HTTPS secure setup URL through', () => {
-    injectConfig({ SECURE_SETUP_URL: 'https://setup.example/onboarding' });
-    expect(getConfig().SECURE_SETUP_URL).toBe('https://setup.example/onboarding');
+  it('exposes only the explicit HTTPS setup-transfer receiver', () => {
+    injectConfig({ SETUP_TRANSFER_RECEIVER_URL: 'https://setup.example/public/onboarding/setup' });
+    expect(getConfig().SETUP_TRANSFER_RECEIVER_URL).toBe('https://setup.example/public/onboarding/setup');
     document.getElementById('fastapi-config')?.remove();
 
-    for (const value of ['http://setup.example/', 'javascript:alert(1)', 'not a url', '', 7]) {
-      injectConfig({ SECURE_SETUP_URL: value });
-      expect(getConfig().SECURE_SETUP_URL).toBeUndefined();
+    for (const value of ['http://setup.example/', 'javascript:alert(1)', 'not a url', '', 7,
+      'https://setup.example/', 'https://setup.example/onboarding/browser-ceremonies/reference',
+      'https://user:secret@setup.example/public/onboarding/setup',
+      'https://setup.example/public/onboarding/setup?reference=secret',
+      'https://setup.example/public/onboarding/setup#secret']) {
+      injectConfig({ SETUP_TRANSFER_RECEIVER_URL: value });
+      expect(getConfig().SETUP_TRANSFER_RECEIVER_URL).toBeUndefined();
       document.getElementById('fastapi-config')?.remove();
     }
   });

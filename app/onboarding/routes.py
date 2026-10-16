@@ -75,7 +75,7 @@ class DesktopEventResponse(StreamingResponse):
         signal = self.listener[1]
         previous = None
         try:
-            while True:
+            while not self.coordinator._closed:
                 # Clear before the authoritative read. A commit while reading or
                 # sending the frame remains dirty for the following iteration.
                 signal.clear()

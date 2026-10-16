@@ -105,6 +105,50 @@ async def test_session_task_failure_retains_post_rpc_provenance_and_exception():
     assert 'private_' not in output[0]
 
 
+@pytest.mark.parametrize("failed_check", ["closed", "monotonicRollback", "wallRollback", "deadlinePassed", "grantExpired"])
+def test_channel_admission_captures_failed_comparison_before_cleanup(monkeypatch, failed_check):
+    from app.transport import companion_channel
+    from app.transport.companion_records import CompanionRecordError
+
+    module = load_module()
+    calls = []
+    def clock():
+        calls.append("monotonic")
+        return 100
+    monkeypatch.setattr(companion_channel, "time", SimpleNamespace(time=lambda: 2))
+    class Channel(companion_channel.CompanionChannel):
+        pass
+    class RPC:
+        def call(self, method, params):
+            return params
+    output = []
+    module.install_session_diagnostics(SimpleNamespace(SessionRPC=RPC, CompanionChannel=Channel), emit=output.append)
+    channel = Channel(None, None, None, SimpleNamespace(timestamp=lambda: 10), clock=clock)
+    channel.private_marker = "private_clock_or_payload"
+    if failed_check == "closed":
+        channel.closed = True
+    elif failed_check == "monotonicRollback":
+        channel.last_clock = 101
+    elif failed_check == "wallRollback":
+        channel.last_wall = 3
+    elif failed_check == "deadlinePassed":
+        channel.deadline = 100
+    else:
+        channel.expires_at = 2
+    with pytest.raises(CompanionRecordError) as caught:
+        channel.check()
+    channel.closed = True  # Cleanup must not rewrite the captured cause.
+    assert str(caught.value) == "session_record_refused"
+    assert calls == ["monotonic", "monotonic"]
+    assert len(output) == 1
+    report = json.loads(output[0].split(": ", 1)[1])
+    assert report["method"] == "session.check"
+    assert report["admission"] == {key: key == failed_check for key in (
+        "closed", "monotonicRollback", "wallRollback", "deadlinePassed", "grantExpired")}
+    assert "private_" not in output[0]
+    assert report["causes"][0]["phase"] == "admission"
+
+
 @pytest.mark.asyncio
 async def test_rpc_and_session_task_failures_share_one_output_limit():
     module = load_module()
@@ -125,6 +169,30 @@ async def test_rpc_and_session_task_failures_share_one_output_limit():
         RPC().call('agent.storage.rotate', {})
     assert caught.value is original
     assert len(output) == 2
+
+
+def test_channel_check_wrapper_preserves_result_exception_identity_and_limit():
+    module = load_module()
+    result, original = object(), RuntimeError("private_original")
+    class Channel:
+        failing = False
+        def check(self):
+            if self.failing:
+                raise original
+            return result
+    class RPC:
+        def call(self, method, params):
+            return params
+    output = []
+    module.install_session_diagnostics(SimpleNamespace(SessionRPC=RPC, CompanionChannel=Channel), emit=output.append, limit=2)
+    channel = Channel()
+    assert channel.check() is result and not output
+    channel.failing = True
+    for _ in range(3):
+        with pytest.raises(RuntimeError) as caught:
+            channel.check()
+        assert caught.value is original
+    assert len(output) == 2 and "private_" not in "".join(output)
 
 
 @pytest.mark.asyncio

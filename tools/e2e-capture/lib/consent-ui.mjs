@@ -184,7 +184,13 @@ export async function completePreModeLegalActions(popup, mode = 'preview') {
   }
   await expect(popup.locator('#pre-mode')).toBeVisible();
   if (mode === 'full') await assertFullProminentDisclosure(popup, { initial: true });
-  else await expect(popup.locator('#start-disclosure')).toContainText('Seven-day retention:');
+  else {
+    const preview = popup.locator('#start-disclosure');
+    await expect(preview).toContainText('It keeps local tokens');
+    await expect(preview).toContainText('the key used to create them');
+    await expect(preview).toContainText('today and the previous six days');
+    await expect(preview).toContainText('observation code already attached to a page can still temporarily process');
+  }
   await popup.locator('#terms-accepted').check();
   await expect(popup.locator('#risk-acknowledged')).toBeEnabled();
   await popup.locator('#risk-acknowledged').check();
@@ -268,13 +274,26 @@ export async function assertFullProminentDisclosure(popup, { initial = false } =
   const full = popup.locator(initial ? '#start-disclosure' : '#full-disclosure');
   await expect(full).toBeVisible();
   if (initial) await expect(popup.locator('#activation-title')).toHaveText('Turn on Full analytics');
-  else await expect(full).toContainText('Before choosing Full, review these points:');
-  await expect(full).toContainText('Message content:');
-  await expect(full).toContainText('leaves the Extension but remains on the same computer');
-  await expect(full).toContainText('no general automatic age-based expiry');
-  await expect(full).toContainText('does not delete Full information already retained by the companion analytics service');
-  await expect(full).toContainText('not consent on behalf of a subscriber or another person');
-  await expect(full.getByRole('link', { name: 'read the complete data-handling description' })).toBeVisible();
+  await expect(full).toContainText('Full handles and keeps message text, identifiers, participant details');
+  await expect(full).toContainText('companion analytics app on the same computer');
+  await expect(full).toContainText('no general automatic expiry');
+  await expect(full).toContainText("Deleting extension data does not delete the companion's copies");
+  await expect(full).toContainText("Enabling Full is not consent on anyone else's behalf");
+  const notice = full.getByRole('link', { name: 'Extension Privacy Notice' });
+  const risk = full.getByRole('link', { name: 'Creator platform and data risks' });
+  await expect(notice).toBeVisible();
+  await expect(risk).toBeVisible();
+  await expect(notice).toHaveAttribute('href', /^https:\/\//);
+  await expect(risk).toHaveAttribute('href', /^https:\/\//);
+  const choices = popup.locator(initial
+    ? '#start-disclosure [data-approved-copy="separate-choices"]' : '#separate-choices-disclosure');
+  await expect(choices).toBeVisible();
+  await expect(choices).toContainText('Enabling Full does not enable history access');
+  await expect.poll(async () => {
+    const [copy, action] = await Promise.all([choices.boundingBox(),
+      popup.locator(initial ? '#activate-software' : '#enable-full').boundingBox()]);
+    return copy !== null && action !== null && copy.y + copy.height <= action.y;
+  }, { message: 'Separate choices must appear before the action' }).toBe(true);
   if (!initial) await expect(full.getByRole('button', { name: 'Enable Full analytics' })).toBeVisible();
 }
 

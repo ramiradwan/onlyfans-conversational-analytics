@@ -1,0 +1,9 @@
+{
+  "name": "dipsy-desktop-delivery",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test worker.test.mjs publisher.test.mjs" },
+  "engines": { "node": ">=22" },
+  "dependencies": { "@aws-sdk/client-s3": "3.1152.0" },
+  "devDependencies": { "miniflare": "5.20261006.2-beta" }
+}

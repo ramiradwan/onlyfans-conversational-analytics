@@ -26,8 +26,8 @@ def _release_document(
         json.dumps(
             {
                 "schema": customer_release.CUSTOMER_RELEASE_SCHEMA,
-                "hosted_onboarding_url": (
-                    "https://setup.example.com/public/onboarding/setup" if origin else ""
+                "setup_transfer_receiver_url": (
+                    origin + "/public/onboarding/setup" if origin else ""
                 ),
                 "hosted_api_origin": origin,
                 "authentication_providers": ["default"],
@@ -93,7 +93,7 @@ with tempfile.TemporaryDirectory(dir=temp_parent) as temporary:
     release = root / "customer-release.json"
     release.write_text(json.dumps({
         "schema": customer_release.CUSTOMER_RELEASE_SCHEMA,
-        "hosted_onboarding_url": "https://setup.example.com/public/onboarding/setup",
+        "setup_transfer_receiver_url": "https://api.example.com/public/onboarding/setup",
         "hosted_api_origin": "https://api.example.com",
         "authentication_providers": ["default"],
     }), encoding="utf-8")

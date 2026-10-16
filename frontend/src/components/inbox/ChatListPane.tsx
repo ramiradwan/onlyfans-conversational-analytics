@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 
 import { formatTimestamp, getConversationTitle } from './inboxModel';
+import { PaneHeader } from './PaneHeader';
 import type { ConversationRecord } from '../../protocol';
 import { conversationLatestMessage } from '../../store/transportStore';
 import { componentTokens } from '../../theme';
@@ -29,14 +30,6 @@ const Pane = styled(Paper)(({ theme }) => ({
   minHeight: 0,
   minWidth: componentTokens.inbox.conversationPaneMinWidth,
   overflow: 'hidden',
-}));
-
-const PaneHeader = styled(Box)(({ theme }) => ({
-  alignItems: 'baseline',
-  borderBottom: '1px solid ' + theme.vars.palette.divider,
-  display: 'flex',
-  justifyContent: 'space-between',
-  padding: theme.spacing(2),
 }));
 
 const ScrollArea = styled(Box)({
@@ -109,7 +102,8 @@ export function ChatListPane({
 }: ChatListPaneProps) {
   return (
     <Pane data-reserved-region="chat-list" data-region-role="scroll" variant="outlined" role="region" aria-labelledby="conversations-title">
-      <PaneHeader>
+      {/* The title and count share a baseline in the vertically centered row. */}
+      <PaneHeader sx={{ alignContent: 'center', alignItems: 'baseline', flexWrap: 'wrap' }}>
         <Typography id="conversations-title" component="h2" variant="subtitle1">
           Conversations
         </Typography>

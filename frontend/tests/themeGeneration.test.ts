@@ -11,6 +11,7 @@ import {
   generateFirstPaintCss,
   generateStaticTokensCss,
   generateThemeSource,
+  onboardingLayoutConsumers,
   replaceStaticTokenBlock,
   staticTokenConsumers,
 } from '../src/theme/generate-theme';
@@ -102,6 +103,16 @@ describe('static surface design tokens', () => {
       .replace(/\r\n/g, '\n');
     expect(replaceStaticTokenBlock(source, css)).toBe(source);
     expect(source).not.toContain('color-mix(in srgb');
+  });
+
+  it.each(onboardingLayoutConsumers)('%s carries the current onboarding layout block', (consumer) => {
+    const source = fs
+      .readFileSync(path.resolve(process.cwd(), '..', consumer), 'utf8')
+      .replace(/\r\n/g, '\n');
+    const layout = fs
+      .readFileSync(path.resolve(process.cwd(), 'src/theme/onboarding.css'), 'utf8')
+      .replace(/\r\n/g, '\n');
+    expect(replaceStaticTokenBlock(source, layout, 'onboarding-layout')).toBe(source);
   });
 
   it('detects a hand-edited token value inside the block', () => {

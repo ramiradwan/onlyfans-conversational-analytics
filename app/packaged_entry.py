@@ -34,12 +34,15 @@ def hold_running_application_mutex() -> bool:
     import ctypes
     from ctypes import wintypes
 
-    create_mutex = ctypes.windll.kernel32.CreateMutexW
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_mutex = kernel.CreateMutexW
     create_mutex.argtypes = (wintypes.LPCVOID, wintypes.BOOL, wintypes.LPCWSTR)
     create_mutex.restype = wintypes.HANDLE
     handle = create_mutex(None, False, RUNNING_APPLICATION_MUTEX_NAME)
     if not handle:
         return False
+    # Bridge holds this same installer signal across backend restarts. Its
+    # existence cannot identify a competing writer; the root lease does that.
     _running_application_mutex = handle
     return True
 
@@ -90,44 +93,107 @@ def select_brain_application(
             finalize=finalize_action, completion_ready=completion_ready,
             completed=application.state.request_setup_completion)
         coordinator = attach_desktop_setup(application, core=core, launcher_token=handoff_token)
-        if core.recovery.initial is not None and customer_release.hosted_onboarding_url:
+        if core.recovery.initial is not None and customer_release.setup_transfer_receiver_url:
             from app.provisioning.receiving import install_receiving
             from app.provisioning.setup_transfer import DesktopSetupTransfer
-            install_receiving(application, coordinator, DesktopSetupTransfer(core.recovery.initial, hosted_setup_url=customer_release.hosted_onboarding_url))
+            install_receiving(application, coordinator, DesktopSetupTransfer(core.recovery.initial, hosted_setup_url=customer_release.setup_transfer_receiver_url))
     return application
+
+
+def supervised_server(configuration, application):
+    """End presentation responses before Uvicorn drains owned application work."""
+    import uvicorn
+
+    class OwnedServer(uvicorn.Server):
+        async def shutdown(self, sockets=None):
+            coordinator = getattr(application.state, "desktop_coordinator", None)
+            if coordinator is not None:
+                coordinator.begin_shutdown()
+            await super().shutdown(sockets=sockets)
+
+    return OwnedServer(configuration)
+
+
+class ObservedApplication:
+    """Observe ASGI lifecycle completion without changing domain shutdown owners."""
+
+    def __init__(self, application, status, stopped):
+        self.application, self.status, self.stopped = application, status, stopped
+        self.drained = False
+
+    async def __call__(self, scope, receive, send):
+        async def observed_send(message):
+            if message["type"] == "lifespan.startup.complete":
+                self.status.emit("ready-to-check-listener")
+                if self.stopped.is_set():
+                    await send({"type": "lifespan.startup.failed", "message": "startup_cancelled"})
+                    return
+            await send(message)
+            if message["type"] == "lifespan.shutdown.complete":
+                self.drained = getattr(self.application.state, "runtime_shutdown_drained", False) is True
+            elif message["type"] == "lifespan.shutdown.failed":
+                self.drained = False
+        try:
+            await self.application(scope, receive, observed_send if scope["type"] == "lifespan" else send)
+        except BaseException:
+            self.drained = False
+            raise
 
 
 def run_brain() -> int:
     """Run exactly one fixed-origin ASGI worker for the selected boot mode."""
-    import uvicorn
+    import threading
+    from app.core.process_lifetime import parent_lifetime
+    from app.core.bootstrap_status import bootstrap_status
+    from app.persistence.migrations import startup_migration_supervision
+    from app.core.startup_maintenance import acquire_runtime_ownership, admit_retained_schemas, StartupRefused
 
-    if runtime_configuration_file().exists():
-        application = select_brain_application()
-        configuration = uvicorn.Config(
-            application, host="127.0.0.1", port=17871, workers=1, access_log=False,
-            ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
-        )
-        from app.core.process_lifetime import parent_lifetime
-        server = uvicorn.Server(configuration)
-        with parent_lifetime(lambda: setattr(server, "should_exit", True)):
-            server.run()
-        return 0
+    stopped = threading.Event()
     server: uvicorn.Server | None = None
 
     def request_exit() -> None:
+        stopped.set()
         if server is not None:
             server.should_exit = True
+    # Observe the parent before root inspection or a migrating constructor.
+    with parent_lifetime(request_exit), bootstrap_status(stopped) as status, startup_migration_supervision(status.cancelled):
+        if stopped.is_set():
+            return 1
+        try:
+            state = acquire_runtime_ownership()
+        except StartupRefused as error:
+            status.emit("recovery-required", "writer-conflict" if str(error) == "runtime_writer_conflict" else "retained-data")
+            raise
+        if stopped.is_set():
+            return 1
+        try:
+            admit_retained_schemas(state, should_cancel=status.cancelled, on_phase=status.maintenance_phase)
+        except StartupRefused:
+            if stopped.is_set():
+                return 1
+            status.emit("recovery-required", "maintenance")
+            raise
+        if stopped.is_set():
+            return 1
+        import uvicorn
+        status.emit("validating")
+        application = select_brain_application(provisioning_completion_exit=request_exit)
+        if stopped.is_set():
+            return 1
 
-    application = select_brain_application(provisioning_completion_exit=request_exit)
-    configuration = uvicorn.Config(
-        application, host="127.0.0.1", port=17871, workers=1, access_log=False,
-        ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
-    )
-    server = uvicorn.Server(configuration)
-    from app.core.process_lifetime import parent_lifetime
-    with parent_lifetime(request_exit):
+        observed_application = ObservedApplication(application, status, stopped)
+
+        configuration = uvicorn.Config(
+            observed_application, host="127.0.0.1", port=17871, workers=1, access_log=False, lifespan="on",
+            ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
+        )
+        server = supervised_server(configuration, application)
+        if stopped.is_set():
+            server.should_exit = True
         server.run()
-    return 75 if application.state.completion_requested else 0
+        if status.phase == "ready-to-check-listener":
+            status.shutdown_complete(observed_application.drained)
+    return 75 if state.mode != "configured" and application.state.completion_requested else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -154,9 +220,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(report_path).write_text(rendered_report + "\n", encoding="utf-8")
         print(rendered_report)
         return 0
-    hold_running_application_mutex()
+    published = hold_running_application_mutex()
     if arguments == ("--brain",):
-        return run_brain()
+        if sys.platform == "win32" and not published:
+            return 78
+        from app.core.startup_maintenance import StartupRefused
+        try:
+            return run_brain()
+        except StartupRefused as error:
+            # The status pipe already reports the bounded recovery reason.
+            # An expected refusal must terminate a windowed frozen process,
+            # rather than enter PyInstaller's unhandled-exception dialog.
+            if sys.stderr is not None:
+                import re
+                reason = str(error)
+                print(reason if re.fullmatch(r"[a-z][a-z_]{0,95}", reason) else "startup_refused", file=sys.stderr)
+            return 78
     raise SystemExit("Open Conversation Analytics using Bridge.exe. Brain.exe is an internal service.")
 
 

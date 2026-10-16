@@ -1,6 +1,7 @@
 import { inspectFrames } from './shift-watcher.mjs';
 import { dynamicSequence } from './dynamic-matrix.mjs';
 import { inspectShiftTimeline } from './shift-timeline.mjs';
+import { failureSummary } from './failure-summary.mjs';
 
 const known = new Set(dynamicSequence('settings', 390));
 const contentChanges = new Map([
@@ -40,6 +41,50 @@ const fixtureStable = new Set([
   'fixture:activation-admission-setup', 'fixture:after-admission', 'fixture:activation-code-input',
   'fixture:pairing-companion-notice', 'fixture:pairing-codes-match', 'fixture:scroll-audit',
 ]);
+
+// Emit only source-owned stage IDs and fixed category counts. Raw browser
+// failures, region names, geometry and rendered content stay in local evidence.
+export function settingsFailureSummary(observerErrors) {
+  let remaining = [...observerErrors];
+  const stages = [];
+  for (const id of [...known, ...fixtureContentChanges.keys(), ...fixtureStable]) {
+    const matches = error => typeof error === 'string' && error.startsWith(id + ': ');
+    const errors = remaining.filter(matches);
+    if (!errors.length) continue;
+    stages.push({ id, counts: failureSummary([], errors) });
+    remaining = remaining.filter(error => !matches(error));
+  }
+  return { stages, unassigned: failureSummary([], remaining) };
+}
+
+// Locate an unassigned shift using only closed stage names. Exact timestamps,
+// layout sources and geometry remain in the private capture, never CI output.
+export function settingsUnassignedShiftSummary(attribution, transitions, auxiliary = []) {
+  const windows = [...transitions.map(window => ({ ...window, kind: 'transition' })),
+    ...auxiliary.map(window => ({ ...window, kind: 'fixture' }))]
+    .filter(window => Number.isFinite(window.before?.nativeAt) && Number.isFinite(window.after?.nativeAt))
+    .sort((a, b) => a.before.nativeAt - b.before.nativeAt);
+  const label = window => window && (window.kind === 'transition' ? known.has(window.id)
+    : fixtureContentChanges.has(window.id) || fixtureStable.has(window.id)) ? window.id : null;
+  const groups = new Map();
+  for (const entry of attribution ?? []) {
+    if (entry.classification !== 'unattributed') continue;
+    const at = entry.at;
+    const previous = windows.findLast(window => window.after.nativeAt <= at);
+    const next = windows.find(window => window.before.nativeAt >= at);
+    const owners = windows.filter(window => at > window.before.nativeAt && at < window.after.nativeAt);
+    const boundary = windows.some(window => at === window.before.nativeAt || at === window.after.nativeAt);
+    const position = !Number.isFinite(at) || !windows.length ? 'unknown' : boundary ? 'boundary'
+      : at < windows[0].before.nativeAt ? 'startup' : at > windows.at(-1).after.nativeAt ? 'tail'
+        : owners.length > 1 ? 'overlap' : 'gap';
+    const context = { position, after: label(previous), before: label(next) };
+    const key = JSON.stringify(context);
+    const group = groups.get(key) ?? { ...context, count: 0 };
+    group.count++;
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
 
 // Ordinary screenshots use the same task policy as the causal Settings matrix.
 // They must not treat initial owner responses or an explicit form opening as a

@@ -7,11 +7,13 @@ import { componentTokens } from '../../theme';
 
 const sizes = componentTokens.reserved;
 const labelEnter = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
-type Size = { xs: number; sm?: number };
+type Size = { xs: number; sm?: number; md?: number };
+// Region sizes are px at the default text size, or CSS lengths.
+type RegionSize = { [Key in keyof Size]: Size[Key] | string };
 export function ReservedRegion({ id, size, children, regionRole = 'fixed', grow = false, sx }: {
-  id: string; size: Size; children: ReactNode; regionRole?: 'fixed' | 'scroll'; grow?: boolean; sx?: SxProps<Theme>;
+  id: string; size: RegionSize; children: ReactNode; regionRole?: 'fixed' | 'scroll'; grow?: boolean; sx?: SxProps<Theme>;
 }) {
-  const dimensions = Object.fromEntries(Object.entries(size).map(([key, value]) => [key, `${value / 16}rem`]));
+  const dimensions = Object.fromEntries(Object.entries(size).map(([key, value]) => [key, typeof value === 'number' ? `${value / 16}rem` : value]));
   return <Box data-reserved-region={id} data-region-role={regionRole} sx={[
     { blockSize: grow ? 'auto' : dimensions, minInlineSize: 0, minBlockSize: grow ? dimensions : 0, position: 'relative',
       '& [data-surface-emphasis]': { transform: 'none !important' },
@@ -99,7 +101,7 @@ export function StatusLine({ id, text, tone = 'secondary', essential = false, si
 
 export function ReservedValue({ id, value }: { id: string; value: number | null | undefined }) {
   const label = value == null ? '—' : value > 9_999_999 ? '10M+' : new Intl.NumberFormat('en-US').format(value);
-  return <Box component="span" data-reserved-region={id} sx={{ display: 'inline-block', inlineSize: `${sizes.value.chars}ch`, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+  return <Box component="span" data-reserved-region={id} sx={{ display: 'inline-block', inlineSize: `${sizes.value.chars}ch`, fontVariantNumeric: 'tabular-nums', textAlign: 'end', whiteSpace: 'nowrap' }}>
     <Box component="span" data-region-content>{value === undefined ? <Skeleton animation={false} /> : label}</Box>
   </Box>;
 }
