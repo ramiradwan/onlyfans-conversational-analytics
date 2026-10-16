@@ -41,6 +41,62 @@ test('nonexportable dedicated key and exact request survive worker recreation wi
     await assert.rejects(second.sign(journey, request, proof), /unavailable/u);
   } finally { store.close(); }
 });
+
+test('observing absent receiving context does not create storage; an existing transfer still reopens', async () => {
+  const factory = new FakeIndexedDb();
+  const indexedDb = { open: factory.open.bind(factory),
+    databases: async () => [...factory.databases.keys()].map(name => ({ name })) };
+  assert.equal(await openSetupTransferStore(indexedDb, { create: false }), null);
+  assert.equal(factory.databases.size, 0);
+  const first = await openSetupTransferStore(indexedDb);
+  const request = await createSetupTransferOwner({ store: first, now: () => start }).prepare(journey, '0123456789AB');
+  first.close();
+  const reopened = await openSetupTransferStore(indexedDb, { create: false });
+  assert.deepEqual(await createSetupTransferOwner({ store: reopened, now: () => start }).prepare(journey, '0123456789AB'), request);
+  reopened.close();
+});
+
+test('receiving context is non-creating and an explicit prepare can follow its in-flight read', async () => {
+  const listeners = [], opened = [];
+  const store = await openSetupTransferStore(new FakeIndexedDb());
+  let observe, started;
+  const reading = new Promise(resolve => { started = resolve; });
+  const chromeApi = { alarms: { create() {}, onAlarm: { addListener() {} } }, runtime: {
+    onMessage: { addListener(fn) { listeners.push(fn); } }, onMessageExternal: { addListener() {} },
+  } };
+  registerSetupTransfer({ chromeApi,
+    workspace: { async admit() { return { route: 'extension', record: { journey_id: journey } }; } },
+    hostedOrigin: 'https://setup.example.com',
+    async openStore(_, { create }) {
+      opened.push(create);
+      if (!create) { started(); return new Promise(resolve => { observe = resolve; }); }
+      return store;
+    },
+  });
+  const call = message => new Promise(resolve => listeners[0](message, {}, resolve));
+  const context = call({ type: SETUP_TRANSFER_MESSAGE, action: 'context' });
+  await reading;
+  const prepare = call({ type: SETUP_TRANSFER_MESSAGE, action: 'prepare', setup_code: '0123456789AB' });
+  await new Promise(resolve => setImmediate(resolve));
+  observe(null);
+  try {
+    assert.deepEqual(await context, { ok: true, result: null });
+    assert.equal((await prepare).ok, true);
+    assert.deepEqual(opened, [false, true]);
+  } finally { store.close(); }
+});
+
+test('an unset receiver refuses before opening storage or admitting a workspace', async () => {
+  let listener;
+  const chromeApi = { alarms: { onAlarm: { addListener() {} } }, runtime: {
+    onMessage: { addListener(fn) { listener = fn; } }, onMessageExternal: { addListener() {} },
+  } };
+  registerSetupTransfer({ chromeApi, workspace: { admit() { assert.fail('receiver is disabled'); } },
+    openStore() { assert.fail('receiver is disabled'); } });
+  assert.deepEqual(await new Promise(resolve => listener(
+    { type: SETUP_TRANSFER_MESSAGE, action: 'context' }, {}, resolve)),
+  { ok: false, code: 'setup_transfer_unavailable' });
+});
 test('foreign request, changed destination, stale challenge and expired draft cannot sign', async () => {
   let time = start;
   const store = await openSetupTransferStore(new FakeIndexedDb());

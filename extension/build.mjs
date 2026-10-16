@@ -431,7 +431,7 @@ async function compileOnce(signingRule, legalBindings) {
     : [packagedSignerPlugin(signingRule), legalBindingsPlugin(legalBindings)];
   plugins.push({ name: 'onboarding-release-origin', setup(context) {
     context.onLoad({ filter: /[\\/]runtime[\\/]onboarding-release-config\.mjs$/ }, () => ({
-      contents: `export const onboardingHostedOrigin = ${JSON.stringify(workspaceHostedOrigin)};`, loader: 'js',
+      contents: `export const onboardingHostedOrigin = ${JSON.stringify(workspaceHostedOrigin)};\nexport const setupTransferReceiverUrl = ${JSON.stringify(workspaceTransferReceiver)};`, loader: 'js',
     }));
   } });
   const common = {
