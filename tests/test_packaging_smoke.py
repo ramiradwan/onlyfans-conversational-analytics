@@ -1712,12 +1712,16 @@ def _compile_installer(
     script = tmp_path / f"brain-{version}.iss"
     script.write_text(script_text, encoding="utf-8")
     output = tmp_path / f"compiled-{version}"
+    minimum = json.loads(
+        (ROOT / "shared/desktop-release/prerequisite-policy.json").read_text(encoding="utf-8")
+    )["webview2_minimum_version"]
     built = subprocess.run(
         [
             str(compiler),
             f"/DStagingRoot={staging}",
             f"/DOutputRoot={output}",
             f"/DAppVersion={version}",
+            f"/DWebView2MinimumVersion={minimum}",
             str(script),
         ],
         capture_output=True,
@@ -1764,7 +1768,7 @@ def test_failed_webview_prerequisite_does_not_install_or_open_a_window(tmp_path:
     # Force the absent-runtime branch and return a failed prerequisite receipt.
     # The real silent Inno flow must remain hidden and leave no application.
     installer = _compile_installer(tmp_path, source.replace(detection, "", 1), version="1.0.0-webview",
-        webview_prerequisite="param([string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n")
+        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n")
     prefix = tmp_path / "failed-prerequisite"
     with visible_windows.recording_windows(lambda window: visible_windows.is_inno_setup_image(window.process_image)) as observed:
         assert _install_silently(installer, prefix) != 0
@@ -1784,7 +1788,7 @@ def test_delayed_complete_webview_receipt_is_accepted_without_a_window(tmp_path:
     assert runtime_recheck in source
     source = source.replace(detection, "", 1).replace(runtime_recheck, f"    and {str(runtime_available)} then", 1)
     installer = _compile_installer(tmp_path, source, version="1.0.0-webview-delayed",
-        webview_prerequisite="param([string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '')\n"
+        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '')\n"
         "Start-Sleep -Milliseconds 1500\n[IO.File]::WriteAllText($ResultPath, '0')\nexit 0\n")
     prefix = tmp_path / "successful-prerequisite"
     try:
@@ -1813,7 +1817,7 @@ def test_silent_installer_observer_distinguishes_zero_area_from_foreground(tmp_p
     source = source.replace("    WaitMode := ewNoWait;", "    WaitMode := ewWaitUntilTerminated;", 1)
     installer = _compile_installer(
         tmp_path, source, version="1.0.0-window-observation",
-        webview_prerequisite="param([string] $ResultPath)\nStart-Sleep -Milliseconds 1500\n"
+        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\nStart-Sleep -Milliseconds 1500\n"
         "[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n",
     )
     prefix = tmp_path / "refused-prerequisite"

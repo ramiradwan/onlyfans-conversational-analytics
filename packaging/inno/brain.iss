@@ -10,6 +10,9 @@
 #ifndef AppVersion
   #error AppVersion must be supplied by packaging/build-windows.ps1
 #endif
+#ifndef WebView2MinimumVersion
+  #error WebView2MinimumVersion must come from the shared desktop prerequisite policy
+#endif
 
 #define AppName "Conversation Analytics"
 #define InstallDirectoryName "OnlyFans Conversational Analytics"
@@ -307,17 +310,38 @@ begin
     end;
 end;
 
+function CompatibleWebView2Version(const VersionText: String): Boolean;
+var
+  Version, Minimum: Int64;
+begin
+  // StrToVersion alone accepts partial and extra components. Round-trip the
+  // canonical four-part value, as the native prerequisite gate requires.
+  Result := StrToVersion(VersionText, Version)
+    and (VersionToStr(Version) = VersionText)
+    and (Copy(VersionText, 1, 2) <> '0.')
+    and StrToVersion('{#WebView2MinimumVersion}', Minimum)
+    and (VersionToStr(Minimum) = '{#WebView2MinimumVersion}')
+    and (Copy('{#WebView2MinimumVersion}', 1, 2) <> '0.');
+  if not Result then
+    exit;
+  // Inno 6.7.3 compares packed Int64 values as signed. Major versions
+  // 32768..65535 are valid native u16 values and sort after lower majors.
+  if (Version < 0) <> (Minimum < 0) then
+    Result := Version < 0
+  else
+    Result := ComparePackedVersion(Version, Minimum) >= 0;
+end;
+
 function SharedWebView2Available(): Boolean;
 var
   VersionText: String;
-  Version: Int64;
   Key: String;
 begin
   Key := 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
   Result := (RegQueryStringValue(HKLM32, Key, 'pv', VersionText)
-    and StrToVersion(VersionText, Version) and (Version > 0))
+    and CompatibleWebView2Version(VersionText))
     or (RegQueryStringValue(HKCU64, Key, 'pv', VersionText)
-    and StrToVersion(VersionText, Version) and (Version > 0));
+    and CompatibleWebView2Version(VersionText));
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -342,7 +366,7 @@ begin
     WaitMode := ewNoWait;
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'
-    + ExpandConstant('{tmp}\ensure-webview2.ps1') + '" -ResultPath "'
+    + ExpandConstant('{tmp}\ensure-webview2.ps1') + '" -MinimumVersion "{#WebView2MinimumVersion}" -ResultPath "'
     + ResultPath + '"', '', SW_HIDE, WaitMode, ExitCode) then
     exit;
   if WizardSilent() then

@@ -372,12 +372,16 @@ def _inno_setup_compiler() -> Path:
 def _compile_installer(
     script: Path, staging_root: Path, output: Path, version: str
 ) -> Path:
+    minimum = json.loads(
+        (ROOT / "shared/desktop-release/prerequisite-policy.json").read_text(encoding="utf-8")
+    )["webview2_minimum_version"]
     compiled = subprocess.run(
         [
             str(_inno_setup_compiler()),
             f"/DStagingRoot={staging_root}",
             f"/DOutputRoot={output}",
             f"/DAppVersion={version}",
+            f"/DWebView2MinimumVersion={minimum}",
             str(script),
         ],
         cwd=ROOT,
@@ -505,12 +509,16 @@ def test_installer_excludes_agent_and_uninstall_retains_redirected_user_data(
     compiler = inno_setup_compiler.require_inno_setup_compiler(
         "Inno Setup compiler is required for the retention falsifier"
     )
+    minimum = json.loads(
+        (ROOT / "shared/desktop-release/prerequisite-policy.json").read_text(encoding="utf-8")
+    )["webview2_minimum_version"]
     compiled = subprocess.run(
         [
             str(compiler),
             f"/DStagingRoot={build_output / 'dist' / 'Brain'}",
             f"/DOutputRoot={mutated_output}",
             f"/DAppVersion={version}",
+            f"/DWebView2MinimumVersion={minimum}",
             str(mutated_script),
         ],
         cwd=ROOT,

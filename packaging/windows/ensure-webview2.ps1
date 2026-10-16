@@ -1,11 +1,26 @@
 # Microsoft Evergreen Runtime is shared with other applications. Never remove
 # it on uninstall or package a private browser engine.
 [CmdletBinding()]
-param([string] $ResultPath = '')
+param(
+    [Parameter(Mandatory)] [string] $MinimumVersion,
+    [string] $ResultPath = ''
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function ConvertTo-WebView2Version([string] $Value) {
+    $parsed = $null
+    if (-not [Version]::TryParse($Value, [ref]$parsed) -or $parsed.Revision -lt 0 -or
+        $parsed.Major -eq 0 -or $parsed.ToString(4) -cne $Value -or
+        @($parsed.Major, $parsed.Minor, $parsed.Build, $parsed.Revision | Where-Object { $_ -gt 65535 }).Count) {
+        return $null
+    }
+    return $parsed
+}
+
 function Test-WebView2Runtime {
+    $required = ConvertTo-WebView2Version $MinimumVersion
+    if ($null -eq $required) { throw 'WebView2 minimum version is invalid' }
     $client = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
     foreach ($path in @(
         "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$client",
@@ -13,8 +28,8 @@ function Test-WebView2Runtime {
     )) {
         $entry = Get-ItemProperty -LiteralPath $path -Name pv -ErrorAction SilentlyContinue
         if ($entry) {
-            $parsed = $null
-            if ([Version]::TryParse([string]$entry.pv, [ref]$parsed) -and $parsed -gt [Version]'0.0.0.0') { return $true }
+            $parsed = ConvertTo-WebView2Version ([string]$entry.pv)
+            if ($null -ne $parsed -and $parsed -ge $required) { return $true }
         }
     }
     return $false

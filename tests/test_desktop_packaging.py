@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+import inno_setup_compiler
 from test_packaging_policy import _stage_runtime_tree
 from tools.packaging_policy import verify_runtime_files
 
@@ -48,23 +49,53 @@ def test_release_requires_native_host_as_well_as_frozen_backend(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows prerequisite script")
-@pytest.mark.parametrize("scenario", ["present", "missing", "untrusted", "wrong_publisher", "download_failure", "install_failure", "missing_after_install", "timeout"])
+@pytest.mark.parametrize("scenario", [
+    "present", "present_user", "newer", "maximum_major", "old", "partial", "extra",
+    "leading_zero", "preview", "zero_major", "out_of_range", "missing",
+    "untrusted", "wrong_publisher", "download_failure", "install_failure",
+    "missing_after_install", "old_after_install", "timeout",
+])
 def test_shared_webview_prerequisite_skips_present_and_refuses_failed_install(tmp_path, scenario):
     script = (ROOT / "packaging/windows/ensure-webview2.ps1").read_text(encoding="utf-8")
+    minimum = json.loads((ROOT / "shared/desktop-release/prerequisite-policy.json").read_text(encoding="utf-8"))["webview2_minimum_version"]
     # Run the real installer orchestration with OS/download boundaries replaced.
     # No network or machine-wide runtime changes belong in this unit test.
     definitions = script[:script.index("$resultCode = 0")]
     harness = tmp_path / "prerequisite.ps1"
     harness.write_text(definitions + f"\n$scenario = '{scenario}'\n" + r'''
-$script:installed = $scenario -eq 'present'
+$required = [Version]$MinimumVersion
+$script:runtimeVersion = switch ($scenario) {
+    'present' { $MinimumVersion }
+    'present_user' { $MinimumVersion }
+    'newer' { "$($required.Major + 1).0.0.0" }
+    'maximum_major' { '65535.65535.65535.65535' }
+    'old' { "$($required.Major - 1).65535.65535.65535" }
+    'partial' { "$($required.Major).0" }
+    'extra' { "$MinimumVersion.1" }
+    'leading_zero' { "0$MinimumVersion" }
+    'preview' { "$MinimumVersion dev" }
+    'zero_major' { '0.65535.65535.65535' }
+    'out_of_range' { '65536.0.0.0' }
+    default { $null }
+}
 $script:downloads = 0
 $script:starts = 0
 $script:kills = 0
 $script:disposed = 0
-function Test-WebView2Runtime { return $script:installed }
+$script:downloadPath = $null
+function Get-ItemProperty {
+    param($LiteralPath, $Name, $ErrorAction)
+    if ($Name -ne 'pv' -or $LiteralPath -notin @(
+        'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+        'Registry::HKEY_CURRENT_USER\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+    )) { throw 'unexpected_registry_query' }
+    if ($scenario -eq 'present_user' -and $LiteralPath.StartsWith('Registry::HKEY_LOCAL_MACHINE')) { return $null }
+    if ($script:runtimeVersion) { return [pscustomobject]@{pv=$script:runtimeVersion} }
+}
 function Invoke-WebRequest {
     param($Uri, $OutFile, $TimeoutSec, [switch]$UseBasicParsing)
     $script:downloads++
+    $script:downloadPath = $OutFile
     if ($Uri -ne 'https://go.microsoft.com/fwlink/p/?LinkId=2124703') { throw 'unexpected_download' }
     if ($scenario -eq 'download_failure') { throw 'offline' }
     Set-Content -LiteralPath $OutFile -Value 'fixture'
@@ -78,7 +109,9 @@ function Start-Process {
     param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru)
     $script:starts++
     if ($WindowStyle -ne 'Hidden' -or ($ArgumentList -join ' ') -ne '/silent /install') { throw 'unexpected_invocation' }
-    $script:installed = $scenario -notin @('install_failure','missing_after_install','timeout')
+    $script:runtimeVersion = if ($scenario -eq 'old_after_install') { "$($required.Major - 1).65535.65535.65535" }
+        elseif ($scenario -notin @('install_failure','missing_after_install','timeout')) { $MinimumVersion }
+        else { $null }
     $result = [pscustomobject]@{ExitCode=$(if ($scenario -eq 'install_failure') {1} else {0});HasExited=$scenario -ne 'timeout'}
     $result | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {param($timeout) return $scenario -ne 'timeout' -or $script:kills -gt 0}
     $result | Add-Member -MemberType ScriptMethod -Name Kill -Value {$script:kills++}
@@ -87,17 +120,135 @@ function Start-Process {
 }
 $failed = $false
 try { Install-WebView2Runtime } catch { $failed = $true }
-if ($scenario -eq 'present') {
+if ($scenario -in @('present','present_user','newer','maximum_major')) {
     if ($failed -or $script:downloads -ne 0 -or $script:starts -ne 0) { exit 11 }
-} elseif ($scenario -eq 'missing') {
-    if ($failed -or $script:downloads -ne 1 -or $script:starts -ne 1 -or -not $script:installed) { exit 12 }
+} elseif ($scenario -in @('old','partial','extra','leading_zero','preview','zero_major','out_of_range','missing')) {
+    if ($failed -or $script:downloads -ne 1 -or $script:starts -ne 1 -or -not (Test-WebView2Runtime)) { exit 12 }
 } else {
     if (-not $failed) { exit 13 }
-    if ($scenario -notin @('install_failure','missing_after_install','timeout') -and $script:starts -ne 0) { exit 14 }
+    if ($scenario -notin @('install_failure','missing_after_install','old_after_install','timeout') -and $script:starts -ne 0) { exit 14 }
 }
 if ($script:disposed -ne $script:starts) { exit 15 }
 if ($script:kills -ne $(if ($scenario -eq 'timeout') {1} else {0})) { exit 16 }
+if ($script:downloadPath -and (Test-Path -LiteralPath (Split-Path -Parent $script:downloadPath))) { exit 17 }
 ''', encoding="utf-8")
     result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-File", str(harness)], capture_output=True, text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+        "-File", str(harness), "-MinimumVersion", minimum], capture_output=True, text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows build policy consumer")
+def test_build_passes_validated_shared_webview_floor_to_the_inno_compiler(tmp_path):
+    # Evaluate the actual policy function, assignment and compiler call over a
+    # minimal source root. No runtime build or full source copy is necessary.
+    harness = tmp_path / "build-policy.ps1"
+    harness.write_text(r'''
+param([string]$BuildScript, [string]$PolicySource, [string]$ProjectRoot)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile($BuildScript, [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw 'build_script_parse_failed' }
+$function = $ast.Find({ param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-WebView2MinimumVersion'
+}, $true)
+$assignment = $ast.Find({ param($node)
+    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left.Extent.Text -eq '$webView2MinimumVersion'
+}, $true)
+$compile = $ast.Find({ param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        $node.GetCommandName() -eq 'Invoke-RequiredCommand' -and
+        $node.Extent.Text.Contains('/DWebView2MinimumVersion=')
+}, $true)
+if (-not $function -or -not $assignment -or -not $compile) { throw 'missing_build_policy_consumer' }
+Invoke-Expression $function.Extent.Text
+$policy = Get-Content -Raw -LiteralPath $PolicySource | ConvertFrom-Json
+$original = [Version]$policy.webview2_minimum_version
+$policyPath = Join-Path $ProjectRoot 'shared/desktop-release/prerequisite-policy.json'
+New-Item -ItemType Directory -Path (Split-Path -Parent $policyPath) -Force | Out-Null
+$compiler = 'fixture-iscc.exe'; $stagingRoot = 'fixture-stage'; $installerOutput = 'fixture-output'
+$version = '1.2.3'; $InnoScriptPath = 'fixture.iss'
+function Invoke-RequiredCommand { param($FilePath, $Arguments) $script:compileArguments = $Arguments }
+foreach ($minimum in @($policy.webview2_minimum_version, "$($original.Major + 1).0.0.0")) {
+    $policy.webview2_minimum_version = $minimum
+    $policy | ConvertTo-Json | Set-Content -LiteralPath $policyPath
+    Invoke-Expression $assignment.Extent.Text
+    Invoke-Expression $compile.Extent.Text
+    $bound = @($script:compileArguments | Where-Object { $_.StartsWith('/DWebView2MinimumVersion=') })
+    if ($bound.Count -ne 1 -or $bound[0] -cne "/DWebView2MinimumVersion=$minimum") { throw 'floor_not_bound_to_compiler' }
+}
+foreach ($invalid in @('0.1.2.3', '01.2.3.4', '1.2.3', '1.2.3.4.5', '65536.0.0.0', '1.2.3.4 dev')) {
+    $policy.webview2_minimum_version = $invalid
+    $policy | ConvertTo-Json | Set-Content -LiteralPath $policyPath
+    $refused = $false
+    try { Invoke-Expression $assignment.Extent.Text } catch { $refused = $true }
+    if (-not $refused) { throw 'invalid_floor_accepted' }
+}
+$policy.webview2_minimum_version = $original.ToString(4)
+$policy.schema = 'unexpected-policy'
+$policy | ConvertTo-Json | Set-Content -LiteralPath $policyPath
+$refused = $false
+try { Invoke-Expression $assignment.Extent.Text } catch { $refused = $true }
+if (-not $refused) { throw 'invalid_policy_accepted' }
+''', encoding="utf-8")
+    result = subprocess.run([
+        "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", str(harness), "-BuildScript", str(ROOT / "packaging/build-windows.ps1"),
+        "-PolicySource", str(ROOT / "shared/desktop-release/prerequisite-policy.json"),
+        "-ProjectRoot", str(tmp_path / "source"),
+    ], capture_output=True, text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows Inno version policy consumer")
+@pytest.mark.parametrize("minimum_kind", ["shared", "large_major"])
+def test_inno_webview_floor_uses_canonical_four_part_numeric_versions(tmp_path, minimum_kind):
+    source = (ROOT / "packaging/inno/brain.iss").read_text(encoding="utf-8")
+    start = source.index("function CompatibleWebView2Version(")
+    end = source.index("function SharedWebView2Available()", start)
+    source_minimum = json.loads((ROOT / "shared/desktop-release/prerequisite-policy.json").read_text(encoding="utf-8"))["webview2_minimum_version"]
+    minimum = source_minimum if minimum_kind == "shared" else "65534.0.0.0"
+    major = int(minimum.split(".")[0])
+    cases = {
+        minimum: True,
+        f"{major + 1}.0.0.0": True,
+        "65535.65535.65535.65535": True,
+        f"{major - 1}.65535.65535.65535": False,
+        f"{major}.0": False,
+        minimum + ".1": False,
+        "0" + minimum: False,
+        minimum + " dev": False,
+        "0.65535.65535.65535": False,
+        "65536.0.0.0": False,
+    }
+    if minimum_kind == "large_major":
+        cases[source_minimum] = False
+    receipt = tmp_path / "version-result.txt"
+    checks = "\n".join(
+        f"  if CompatibleWebView2Version('{value}') <> {str(expected)} then RaiseException('case_{index}');"
+        for index, (value, expected) in enumerate(cases.items())
+    )
+    # InitializeSetup refuses before any installation, registration or global
+    # state change. Only the actual Pascal version predicate is exercised.
+    script = tmp_path / "version-probe.iss"
+    script.write_text(
+        "[Setup]\nAppName=WebView2 Policy Probe\nAppVersion=1.0\n"
+        "DefaultDirName={tmp}\\unused-webview-policy-probe\nCreateAppDir=no\n"
+        "Uninstallable=no\nPrivilegesRequired=lowest\nOutputBaseFilename=version-probe\n"
+        "[Code]\n" + source[start:end] + "\nfunction InitializeSetup(): Boolean;\nbegin\n"
+        + checks + f"\n  if not SaveStringToFile('{receipt}', 'versions_verified', False) then RaiseException('receipt_failed');\n"
+        "  Result := False;\nend;\n", encoding="utf-8",
+    )
+    compiler = inno_setup_compiler.require_inno_setup_compiler("Inno Setup is required for the native version policy probe")
+    built = subprocess.run([
+        str(compiler), f"/O{tmp_path}", f"/DWebView2MinimumVersion={minimum}", str(script),
+    ], capture_output=True, text=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+    assert built.returncode == 0, built.stdout + built.stderr
+    log = tmp_path / "version-probe.log"
+    ran = subprocess.run([
+        str(tmp_path / "version-probe.exe"), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
+        f"/LOG={log}",
+    ], capture_output=True, text=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+    assert receipt.is_file(), f"exit={ran.returncode}\n" + ran.stdout + ran.stderr + log.read_text(encoding="utf-8-sig")
+    assert receipt.read_text(encoding="utf-8-sig") == "versions_verified"
