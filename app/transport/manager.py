@@ -17,6 +17,7 @@ from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID, uuid4
 
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
 from app.core.config import settings
 from app.persistence import sqlite_api as sqlite3
@@ -40,6 +41,7 @@ from app.provisioning.progress_reporting import (
 )
 from app.security.account_bindings import eligible_accounts
 from app.security.activation_gate import runtime_is_activated
+from app.transport.companion_records import CompanionRecordError
 from app.utils.logger import logger
 
 
@@ -1717,16 +1719,22 @@ class InMemoryTransportManager:
         if lease is None or lease.status == "disconnected":
             return False
         document = self.required_config_document(account_id)
-        await self.send_agent(
-            lease.websocket,
-            "config.available",
-            {
-                "connection_id": str(lease.connection_id),
-                "creator_account_id": lease.creator_account_id,
-                "required_config_revision": document.config_revision,
-                "digest": document.digest,
-            },
-        )
+        try:
+            await self.send_agent(
+                lease.websocket,
+                "config.available",
+                {
+                    "connection_id": str(lease.connection_id),
+                    "creator_account_id": lease.creator_account_id,
+                    "required_config_revision": document.config_revision,
+                    "digest": document.digest,
+                },
+            )
+        except (CompanionRecordError, WebSocketDisconnect):
+            # The channel can close before its lease cleanup runs. This is a
+            # hint about an already committed document; a later authenticated
+            # session retrieves that document and reports application normally.
+            return False
         return True
 
     async def publish_config(

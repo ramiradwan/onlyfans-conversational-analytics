@@ -155,7 +155,9 @@ for (const enabled of [true, false]) {
         return page;
       };
       let page = await reopen();
-      expect(await enableHistory(bridge)).toBe(200);
+      await withCatchupDiagnostics(async () => {
+        expect(await enableHistory(bridge)).toBe(200);
+      }, { summary, platform, context, brain, failureContext: 'capture' });
       await poll(async () => (await summary()).coverage.status, 'complete', 60_000, 'initial_history');
       if (enabled) await poll(async () => (await summary()).catchupFreshness?.status, 'current');
       await observeFreshness(bridge, await readServedRuntimeConfig(context));
