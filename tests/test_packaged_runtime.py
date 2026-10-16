@@ -576,7 +576,16 @@ def _assert_installed_launcher_listener(
     """Constrain the launch, listener ownership, and smoke cleanup outcomes together."""
 
     installation = _smoke_step(transcript, "install-artifact")
-    assert result.returncode == 40, result.stdout + result.stderr
+    assert result.returncode == 40, (
+        result.stdout + result.stderr
+        + "\nProvisioning listener evidence (first 4096 characters): "
+        + json.dumps(
+            next((step for step in transcript.get("steps", [])
+                  if step.get("step") == "provisioning-listener"),
+                 {"step": "provisioning-listener", "outcome": "missing"}),
+            ensure_ascii=True, sort_keys=True,
+        )[:4096]
+    )
     listener = _assert_launcher_listener_ownership(transcript)
     assert _smoke_step(transcript, "close-bridge")["evidence"]["port_released"] is True
     assert _smoke_step(transcript, "uninstall-artifact")["outcome"] == "pass"
