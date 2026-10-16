@@ -23,37 +23,47 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "packaging" / "pyinstaller" / "brain.spec"
 
 
-def document(onboarding: str = "", api: str = "") -> dict[str, str]:
+def document(receiver: str = "", api: str = "") -> dict[str, object]:
     return {
-        "schema": "ofca-customer-release/v1",
-        "hosted_onboarding_url": onboarding,
+        "schema": "ofca-customer-release/v2",
+        "setup_transfer_receiver_url": receiver,
         "hosted_api_origin": api,
         "authentication_providers": ["default"],
     }
 
 
-def test_checked_in_customer_release_document_is_safe_for_development_only() -> None:
-    config = load_customer_release_config(CUSTOMER_RELEASE_PATH)
-    assert config.hosted_configured is False
-    with pytest.raises(CustomerReleaseConfigurationError, match="production release requires"):
-        load_customer_release_config(CUSTOMER_RELEASE_PATH, require_hosted=True)
+def test_checked_in_release_binds_the_selected_working_api_and_transfer_receiver() -> None:
+    config = load_customer_release_config(CUSTOMER_RELEASE_PATH, require_hosted=True)
+    assert config.hosted_api_origin == "https://onboarding-dev.dipsy.fi"
+    assert config.setup_transfer_receiver_url == config.hosted_api_origin + "/public/onboarding/setup"
+    assert config.authentication_providers == ("google", "microsoft-personal", "default")
 
 
-def test_release_document_accepts_one_customer_entry_and_one_api_origin() -> None:
+def test_api_origin_alone_supports_browser_ceremonies_without_a_generic_page() -> None:
+    config = validate_customer_release_document(document(api="https://api.example.com/"), require_hosted=True)
+    assert config.hosted_configured is True
+    assert config.setup_transfer_configured is False
+    assert config.setup_transfer_receiver_url == ""
+    assert config.hosted_api_origin == "https://api.example.com"
+
+
+def test_receiver_is_explicit_and_bound_to_the_api_origin() -> None:
     config = validate_customer_release_document(
-        document(
-            "https://setup.example.com/start",
-            "https://api.example.com/",
-        ),
+        document("https://API.example.com:443/public/onboarding/setup", "https://api.example.com/"),
         require_hosted=True,
     )
-    assert config.hosted_onboarding_url == "https://setup.example.com/start"
-    assert config.hosted_api_origin == "https://api.example.com"
-    assert config.hosted_configured is True
+    assert config.setup_transfer_receiver_url == "https://api.example.com/public/onboarding/setup"
+    assert config.setup_transfer_configured is True
+
+
+def test_empty_development_document_cannot_be_used_for_a_release() -> None:
+    assert validate_customer_release_document(document()).hosted_configured is False
+    with pytest.raises(CustomerReleaseConfigurationError, match="production release requires"):
+        validate_customer_release_document(document(), require_hosted=True)
 
 
 def test_authentication_choices_are_closed_and_preserve_email_fallback():
-    value = document("https://setup.example.com/public/onboarding/setup", "https://api.example.com")
+    value = document("https://api.example.com/public/onboarding/setup", "https://api.example.com")
     value["authentication_providers"] = ["google", "microsoft-personal", "default"]
     assert validate_customer_release_document(value).authentication_providers == (
         "google", "microsoft-personal", "default")
@@ -65,19 +75,28 @@ def test_authentication_choices_are_closed_and_preserve_email_fallback():
 @pytest.mark.parametrize(
     "candidate",
     [
-        document("https://setup.example.com/start", ""),
-        document("", "https://api.example.com"),
+        document("https://api.example.com/public/onboarding/setup", ""),
+        document("https://api.example.com/", "https://api.example.com"),
+        document("https://api.example.com/onboarding/browser-ceremonies/{reference}", "https://api.example.com"),
+        document("https://api.example.com/onboarding/browser-ceremonies/operation-reference", "https://api.example.com"),
+        document("https://other.example.com/public/onboarding/setup", "https://api.example.com"),
+        document("", "https://api.example.com:invalid"),
+        document("", "https://*.example.com"),
+        document("", " https://api.example.com"),
+        {**document(api="https://api.example.com"), "schema": "ofca-customer-release/v1"},
+        {"schema": "ofca-customer-release/v1", "hosted_onboarding_url": "https://api.example.com/start",
+         "hosted_api_origin": "https://api.example.com", "authentication_providers": ["default"]},
         document("http://setup.example.com/start", "https://api.example.com"),
         document("https://user:secret@setup.example.com/start", "https://api.example.com"),
-        document("https://setup.example.com/start?token=secret", "https://api.example.com"),
-        document("https://setup.example.com/start#resume", "https://api.example.com"),
+        document("https://api.example.com/public/onboarding/setup?token=secret", "https://api.example.com"),
+        document("https://api.example.com/public/onboarding/setup#resume", "https://api.example.com"),
         document("https://setup.example.invalid/start", "https://api.example.com"),
-        document("https://setup.example.com/start", "http://api.example.com"),
-        document("https://setup.example.com/start", "https://api.example.com/v1"),
-        document("https://setup.example.com/start", "https://api.example.invalid"),
+        document("https://api.example.com/public/onboarding/setup", "http://api.example.com"),
+        document("https://api.example.com/public/onboarding/setup", "https://api.example.com/v1"),
+        document("https://api.example.com/public/onboarding/setup", "https://api.example.invalid"),
         {
-            "schema": "ofca-customer-release/v1",
-            "hosted_onboarding_url": "https://setup.example.com/start",
+            "schema": "ofca-customer-release/v2",
+            "setup_transfer_receiver_url": "https://api.example.com/public/onboarding/setup",
             "hosted_api_origin": "https://api.example.com",
             "authentication_providers": ["default"],
             "extra": True,
@@ -91,7 +110,7 @@ def test_release_document_refuses_partial_or_unsafe_customer_routing(candidate: 
 
 def test_customer_release_loader_is_closed_over_exact_json_shape(tmp_path: Path) -> None:
     path = tmp_path / "customer-release.json"
-    path.write_text(json.dumps(document("https://setup.example.com/start", "https://api.example.com")), encoding="utf-8")
+    path.write_text(json.dumps(document("https://api.example.com/public/onboarding/setup", "https://api.example.com")), encoding="utf-8")
     assert load_customer_release_config(path, require_hosted=True).hosted_configured is True
 
     path.write_text("{not-json", encoding="utf-8")
@@ -160,7 +179,7 @@ def spec_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.parametrize("mode", ["development", "release"])
 def test_pyinstaller_binds_and_requires_customer_routing_for_release_artifacts(spec_environment, mode):
     configuration = document() if mode == "development" else document(
-        "https://setup.example.com/start", "https://api.example.com")
+        "https://api.example.com/public/onboarding/setup", "https://api.example.com")
     spec_environment.execute(mode, configuration)
     assert len(spec_environment.calls) == 1
     data = spec_environment.calls[0][1]["datas"]
@@ -177,12 +196,12 @@ def test_release_mode_requires_hosted_routing_independently_of_agent_metadata(sp
 @pytest.mark.parametrize("mode", [None, "", "production", "Release", "false", "0", " development "])
 def test_spec_refuses_missing_or_invalid_build_mode(spec_environment, mode):
     with pytest.raises(ValueError, match="explicit build mode"):
-        spec_environment.execute(mode, document("https://setup.example.com/start", "https://api.example.com"))
+        spec_environment.execute(mode, document("https://api.example.com/public/onboarding/setup", "https://api.example.com"))
     assert spec_environment.calls == []
 
 
 @pytest.mark.parametrize("configuration", [
-    document("https://setup.example.com/start", ""),
+    document("https://api.example.com/public/onboarding/setup", ""),
     document("http://setup.example.com/start", "http://api.example.com"),
     {**document(), "unexpected": True},
 ])
@@ -198,9 +217,10 @@ def test_source_release_override_is_complete_and_ignored_by_frozen_packages(
     import app.core.customer_release as release
 
     path = tmp_path / "customer-release.json"
-    path.write_text(json.dumps(document("https://setup.example.com/start", "https://api.example.com")), encoding="utf-8")
+    path.write_text(json.dumps(document("https://api.example.com/public/onboarding/setup", "https://api.example.com")), encoding="utf-8")
     monkeypatch.setenv(release.DEVELOPMENT_CUSTOMER_RELEASE_ENV, str(path))
     monkeypatch.setattr(release.sys, "frozen", False, raising=False)
-    assert release.load_customer_release_config().hosted_onboarding_url == "https://setup.example.com/start"
+    assert release.load_customer_release_config().setup_transfer_receiver_url == "https://api.example.com/public/onboarding/setup"
     monkeypatch.setattr(release.sys, "frozen", True)
-    assert release.load_customer_release_config().hosted_configured is False
+    assert release.load_customer_release_config() == release.load_customer_release_config(CUSTOMER_RELEASE_PATH)
+    assert release.load_customer_release_config().hosted_api_origin != "https://api.example.com"

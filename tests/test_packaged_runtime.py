@@ -452,8 +452,8 @@ def _assert_packaged_runtime_serves_provisioning_surface(
             artifact / "_internal" / "app" / "core" / "customer-release.json"
         )
         status, headers, _ = _raw_request("GET", "/provisioning", headers=browser_headers)
-        assert status == (405 if release.hosted_configured else 404)
-        if release.hosted_configured:
+        assert status == (405 if release.setup_transfer_configured else 404)
+        if release.setup_transfer_configured:
             assert headers["allow"] == "POST"
         for path in (
             "/provisioning/handoff", "/provisioning/provisioning.js",

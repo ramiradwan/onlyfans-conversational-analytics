@@ -1574,27 +1574,41 @@ def _qualified_workspace_policy(manifest: dict[str, Any]) -> bool:
     try:
         release = load_json_strict(CUSTOMER_RELEASE_CONFIG.read_bytes(), label="customer release")
         if not isinstance(release, dict) or set(release) != {
-            "schema", "hosted_onboarding_url", "hosted_api_origin", "authentication_providers"
-        } or release["schema"] != "ofca-customer-release/v1":
+            "schema", "setup_transfer_receiver_url", "hosted_api_origin", "authentication_providers"
+        } or release["schema"] != "ofca-customer-release/v2":
             return False
-        page = urllib.parse.urlsplit(release["hosted_onboarding_url"])
+        receiver = release["setup_transfer_receiver_url"]
+        if not isinstance(receiver, str) or not isinstance(release["hosted_api_origin"], str):
+            return False
+        page = urllib.parse.urlsplit(receiver) if receiver else None
         api = urllib.parse.urlsplit(release["hosted_api_origin"])
-        for value in (page, api):
+        def origin_of(value):
+            host = value.hostname
+            if ":" in host:
+                host = f"[{host}]"
+            return "https://" + host + (f":{value.port}" if value.port not in (None, 443) else "")
+        for value in ([api, page] if page else [api]):
             if (value.scheme != "https" or not value.hostname
                     or value.username is not None or value.password is not None
                     or value.query or value.fragment or value.hostname.endswith(".invalid")
                     or "*" in value.netloc):
                 return False
-        if page.path != "/public/onboarding/setup" or api.path not in {"", "/"}:
+        for raw in (receiver, release["hosted_api_origin"]):
+            if "\\" in raw or any(character.isspace() or ord(character) < 32 for character in raw):
+                return False
+        origin = origin_of(api)
+        if api.path not in {"", "/"} or (page and (
+            page.path != "/public/onboarding/setup" or origin_of(page) != origin
+        )):
             return False
-        origin = urllib.parse.urlunsplit(("https", page.netloc, "", "", ""))
+        receiver = origin + page.path if page else ""
     except (OSError, TypeError, ValueError):
         return False
     return (
         manifest.get("host_permissions") == ["http://bridge.localhost/*", origin + "/*"]
         and manifest.get("externally_connectable") == {
-            "matches": [local_match, origin + "/public/onboarding/setup",
-                        origin + "/public/onboarding/installation-continuation"]
+            "matches": [local_match] + ([receiver] if receiver else [])
+            + [origin + "/public/onboarding/installation-continuation"]
         }
     )
 

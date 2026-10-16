@@ -57,9 +57,9 @@ const hashTree = async root => {
   await walk(root); return { sha256: sha(Buffer.from(JSON.stringify(values))), files: values.length };
 };
 const before = { brain: await hashTree(frozen), extension: await hashTree(extension) };
-const componentHashes = { brain_executable: sha(await readFile(path.join(frozen, 'Brain.exe'))),
-  extension_archive: sha(await readFile(path.join(extension, 'conversation-analytics-2.0.3.zip'))) };
 const manifest = JSON.parse(await readFile(path.join(extension, 'manifest.json')));
+const componentHashes = { brain_executable: sha(await readFile(path.join(frozen, 'Brain.exe'))),
+  extension_archive: sha(await readFile(path.join(extension, `conversation-analytics-${manifest.version}.zip`))) };
 assert.deepEqual(manifest.background, { service_worker: 'background.js', type: 'module' });
 const producer = await realProducer(signerRoot);
 await producer.publish('frontend-A');

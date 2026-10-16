@@ -1,6 +1,6 @@
 {
-  "schema": "ofca-customer-release/v1",
-  "hosted_onboarding_url": "https://onboarding.example.test/public/onboarding/setup",
+  "schema": "ofca-customer-release/v2",
+  "setup_transfer_receiver_url": "https://onboarding.example.test/public/onboarding/setup",
   "hosted_api_origin": "https://onboarding.example.test",
   "authentication_providers": ["default"]
 }

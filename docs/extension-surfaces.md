@@ -106,8 +106,17 @@ authenticated companion connection; the worker independently verifies them.
 Dynamic builds reject `--packaged-signing-rule` and unsigned static fallbacks.
 Current delivery and installed qualification requirements are in
 [ADR 0055](adr/0055-verified-signing-parameter-delivery.md).
-Customer entry links also require the release-owned `app/core/customer-release.json`
-configuration; the source template has empty hosted URLs.
+The release-owned `app/core/customer-release.json` uses `ofca-customer-release/v2`.
+`hosted_api_origin` selects the fixed HTTPS API origin. Browser ceremonies derive
+each launch URL from that origin and the Provider-returned `entry_reference`;
+there is no generic hosted sign-in page in this configuration.
+`setup_transfer_receiver_url` optionally enables the same origin's explicit
+`/public/onboarding/setup` receiving page. It does not supply ceremony authority.
+An API-only configuration keeps browser ceremonies available while omitting the
+receiver's extension messaging access. The checked-in configuration selects a
+working integration target; it does not declare deployment support or authorize
+publication. Public desktop and extension acquisition links are separate release
+outputs and remain unset until approved artifacts exist.
 
 When attaching Playwright to the dedicated debug profile, use
 `chromium.connectOverCDP('http://127.0.0.1:9222', { noDefaults: true })`.

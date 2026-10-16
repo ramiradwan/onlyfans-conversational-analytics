@@ -1,4 +1,4 @@
-"""Release-owned, nonsecret customer entry points for packaged first run."""
+"""Release-owned API routing and optional explicit setup-transfer receiver."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Mapping
 from urllib.parse import urlsplit, urlunsplit
 
 
-CUSTOMER_RELEASE_SCHEMA = "ofca-customer-release/v1"
+CUSTOMER_RELEASE_SCHEMA = "ofca-customer-release/v2"
 CUSTOMER_RELEASE_PATH = Path(__file__).with_name("customer-release.json")
 DEVELOPMENT_CUSTOMER_RELEASE_ENV = "LOCAL_CUSTOMER_RELEASE_CONFIG"
 HOSTED_ORIGIN_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HOSTED_ORIGIN"
@@ -24,13 +24,17 @@ class CustomerReleaseConfigurationError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class CustomerReleaseConfig:
-    hosted_onboarding_url: str
+    setup_transfer_receiver_url: str
     hosted_api_origin: str
     authentication_providers: tuple[str, ...] = ("default",)
 
     @property
     def hosted_configured(self) -> bool:
-        return bool(self.hosted_onboarding_url and self.hosted_api_origin)
+        return bool(self.hosted_api_origin)
+
+    @property
+    def setup_transfer_configured(self) -> bool:
+        return bool(self.setup_transfer_receiver_url)
 
 
 def _https_url(value: object, *, name: str, origin_only: bool) -> str:
@@ -38,7 +42,11 @@ def _https_url(value: object, *, name: str, origin_only: bool) -> str:
         raise CustomerReleaseConfigurationError(f"{name} must be a string")
     if value == "":
         return ""
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as error:
+        raise CustomerReleaseConfigurationError(f"{name} has an invalid authority") from error
     if (
         parsed.scheme != "https"
         or not parsed.hostname
@@ -47,12 +55,19 @@ def _https_url(value: object, *, name: str, origin_only: bool) -> str:
         or parsed.fragment
         or parsed.query
         or parsed.hostname.endswith(".invalid")
+        or "*" in parsed.netloc
+        or "\\" in value
+        or any(character.isspace() or ord(character) < 32 for character in value)
     ):
         raise CustomerReleaseConfigurationError(f"{name} must be a credential-free HTTPS URL")
     if origin_only and parsed.path not in {"", "/"}:
         raise CustomerReleaseConfigurationError(f"{name} must be an HTTPS origin")
     path = "" if origin_only else (parsed.path or "/")
-    return urlunsplit(("https", parsed.netloc, path, "", ""))
+    host = parsed.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    authority = host + (f":{port}" if port is not None and port != 443 else "")
+    return urlunsplit(("https", authority, path, "", ""))
 
 
 def validate_customer_release_document(
@@ -62,7 +77,7 @@ def validate_customer_release_document(
 ) -> CustomerReleaseConfig:
     if not isinstance(document, Mapping) or set(document) != {
         "schema",
-        "hosted_onboarding_url",
+        "setup_transfer_receiver_url",
         "hosted_api_origin",
         "authentication_providers",
     }:
@@ -75,9 +90,9 @@ def validate_customer_release_document(
             or not set(providers) <= {"google", "microsoft-personal", "default"}):
         raise CustomerReleaseConfigurationError("customer authentication providers are invalid")
 
-    onboarding_url = _https_url(
-        document["hosted_onboarding_url"],
-        name="hosted_onboarding_url",
+    receiver_url = _https_url(
+        document["setup_transfer_receiver_url"],
+        name="setup_transfer_receiver_url",
         origin_only=False,
     )
     api_origin = _https_url(
@@ -85,15 +100,18 @@ def validate_customer_release_document(
         name="hosted_api_origin",
         origin_only=True,
     )
-    if bool(onboarding_url) != bool(api_origin):
+    if receiver_url:
+        receiver = urlsplit(receiver_url)
+        if (not api_origin or receiver.path != "/public/onboarding/setup"
+                or urlunsplit((receiver.scheme, receiver.netloc, "", "", "")) != api_origin):
+            raise CustomerReleaseConfigurationError(
+                "setup transfer receiver must be the API origin's explicit receiving page"
+            )
+    if require_hosted and not api_origin:
         raise CustomerReleaseConfigurationError(
-            "hosted onboarding URL and API origin must be configured together"
+            "a production release requires a hosted API origin"
         )
-    if require_hosted and not onboarding_url:
-        raise CustomerReleaseConfigurationError(
-            "a production release requires hosted customer onboarding"
-        )
-    return CustomerReleaseConfig(onboarding_url, api_origin, tuple(providers))
+    return CustomerReleaseConfig(receiver_url, api_origin, tuple(providers))
 
 
 def load_customer_release_config(
@@ -136,7 +154,7 @@ def main() -> int:
         json.dumps(
             {
                 "schema": CUSTOMER_RELEASE_SCHEMA,
-                "hosted_onboarding_url": config.hosted_onboarding_url,
+                "setup_transfer_receiver_url": config.setup_transfer_receiver_url,
                 "hosted_api_origin": config.hosted_api_origin,
                 "authentication_providers": list(config.authentication_providers),
             },

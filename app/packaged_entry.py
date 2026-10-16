@@ -93,10 +93,10 @@ def select_brain_application(
             finalize=finalize_action, completion_ready=completion_ready,
             completed=application.state.request_setup_completion)
         coordinator = attach_desktop_setup(application, core=core, launcher_token=handoff_token)
-        if core.recovery.initial is not None and customer_release.hosted_onboarding_url:
+        if core.recovery.initial is not None and customer_release.setup_transfer_receiver_url:
             from app.provisioning.receiving import install_receiving
             from app.provisioning.setup_transfer import DesktopSetupTransfer
-            install_receiving(application, coordinator, DesktopSetupTransfer(core.recovery.initial, hosted_setup_url=customer_release.hosted_onboarding_url))
+            install_receiving(application, coordinator, DesktopSetupTransfer(core.recovery.initial, hosted_setup_url=customer_release.setup_transfer_receiver_url))
     return application
 
 
