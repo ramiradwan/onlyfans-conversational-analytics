@@ -54,7 +54,7 @@ const permutations = (values) => values.length ? values.flatMap((value) => permu
 const stable = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
 async function prepare(page, { fontScale, mode, view }) {
-  await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[view], taskTransitions: view === 'setup', nativeTimeline: view === 'settings' });
+  await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[view], taskTransitions: view === 'popup' ? 'popup' : view === 'setup', nativeTimeline: view === 'settings' });
   await page.addInitScript(({ fontScale, mode }) => {
     localStorage.setItem('mui-mode', mode);
     new MutationObserver(() => {

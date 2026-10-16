@@ -601,8 +601,6 @@ body {
   width: min(100vw, var(--dipsy-static-popup-width));
   min-width: var(--dipsy-static-popup-min-width);
   max-width: var(--dipsy-static-popup-width);
-  max-height: var(--dipsy-static-popup-max-height);
-  overflow-y: auto;
   background: var(--dipsy-color-background);
 }
 
@@ -920,8 +918,6 @@ main:has(#mode-choice:not(.hidden)) #journey-primary:hover:not(:disabled) { back
 body[data-surface="popup"] .popup-action-only {
   padding: 0; border: 0; background: transparent; box-shadow: none;
 }
-body[data-surface="popup"] #pause { margin: 0 0 12px; }
-body[data-surface="popup"] #desktop-control-note { margin: 0 0 12px; }
 #preview-metrics { border: var(--dipsy-border-thin) solid var(--dipsy-intent-surface-dominant-border); box-shadow: var(--dipsy-intent-surface-dominant-elevation); }
 #preview-metrics::before { display: none; }
 .feedback { color: var(--dipsy-color-text-secondary); }
@@ -935,18 +931,27 @@ body[data-surface="popup"] #desktop-control-note { margin: 0 0 12px; }
 .reserved-actions { height: 48px; }
 .reserved-actions button { margin: 0; min-height: 40px; }
 .reserved-actions .hidden { display: block !important; visibility: hidden; }
-.popup-content { height: 400px; overflow-y: auto; scrollbar-gutter: stable; }
-.popup-content > [data-region-content] { position: relative; height: 616px; }
-body[data-surface="popup"] #journey-card { position: absolute; top: 0; left: 0; right: 0; margin: 0; padding: 20px; border: 1px solid var(--dipsy-color-divider); }
-body[data-surface="popup"] #preview-metrics,
-body[data-surface="popup"] #ready-details { position: absolute; top: 180px; left: 0; right: 0; margin: 0; }
-body[data-surface="popup"] #pause,
-body[data-surface="popup"] #desktop-control-note { position: absolute; top: 512px; left: 0; right: 0; margin: 0; }
+/* The popup opens at its full height and scrolls as one page. Shorter states keep the menu at the bottom. */
+body[data-surface="popup"] main { display: flex; flex-direction: column; min-height: var(--dipsy-static-popup-max-height); }
+.popup-content { flex: 1 0 auto; overflow-y: auto; }
+.popup-content > [data-region-content] { position: relative; display: flex; flex-direction: column; gap: calc(var(--dipsy-space-unit) * 1.5); }
+.popup-content > [data-region-content] > * { margin: 0; }
+body[data-surface="popup"] #journey-card { padding: 20px; border: 1px solid var(--dipsy-color-divider); }
+@media (max-width: 370px) { body[data-surface="popup"] #journey-card { padding: calc(var(--dipsy-space-unit) * 2); } }
+/* The status region is measurable before the first status arrives. */
+body[data-surface="popup"] #journey-card.hidden { display: block !important; position: absolute; inset: 0 0 auto; visibility: hidden; }
+/* Pause and the desktop control note share one slot, at least one control tall. Paused Preview keeps the slot empty. */
+body[data-surface="popup"] #desktop-control-note {
+  display: flex;
+  align-items: center;
+  min-height: max(var(--dipsy-static-control-height), var(--dipsy-static-popup-body-size) * 1.5 + var(--dipsy-space-unit) * 2 + var(--dipsy-border-thin) * 2);
+}
+body[data-surface="popup"] .popup-content:has(#preview-metrics:not(.hidden)):has(#pause.hidden) .reserved-status {
+  margin-top: calc(max(var(--dipsy-static-control-height), var(--dipsy-static-popup-body-size) * 1.5 + var(--dipsy-space-unit) * 2 + var(--dipsy-border-thin) * 2) + var(--dipsy-space-unit) * 1.5);
+}
 /* The scroll region clips outside the full-width Pause button. */
 body[data-surface="popup"] #pause:focus-visible { outline-offset: calc(-1 * var(--dipsy-focus-width)); }
-body[data-surface="popup"] .reserved-status { position: absolute; top: 568px; left: 0; right: 0; margin: 0; }
 body[data-surface="popup"] #open-connection.hidden { display: block !important; visibility: hidden; }
-body[data-surface="popup"] #journey-card.hidden { display: block !important; visibility: hidden; }
 .popup-status { height: 64px; margin-bottom: 12px; }
 .popup-status #journey-badge { display: none; }
 .popup-status #journey-title { font-size: 14px; line-height: 20px; margin: 0; }

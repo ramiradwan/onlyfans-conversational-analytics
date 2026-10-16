@@ -81,7 +81,7 @@ const SURFACES = [
   ['desktop setup', desktop, desktopSetup],
   ['browser task', desktop, browserTask],
   ['setup code', desktop, setupCode],
-  ['extension popup', { width: 390, height: 600 }, extension(SURFACE_STATES.popup_connect)],
+  ['extension popup', { width: 390, height: 600 }, extension(SURFACE_STATES.preview)],
   ['extension setup', { width: 1280, height: 820 }, extension(SURFACE_STATES.full_review, '#full-disclosure')],
   ['extension options', { width: 640, height: 480 }, extension(SURFACE_STATES.connection)],
 ];

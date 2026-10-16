@@ -199,10 +199,13 @@ export function observeRegions({ requiredRegions = [], taskTransitions = false, 
         state.startedAt = performance.now();
         for (const id of requiredRegions) if (!ids.has(id)) state.errors.push(`${id}: missing on first surface frame`);
       }
+      // The popup's task is the set of sections it shows.
       const task = taskTransitions === 'provisioning'
         ? document.querySelector('.provisioning-stage')?.dataset.complete === 'true' ? 'finalization-complete'
           : document.querySelector('.provisioning-stage .step[aria-current="step"]')?.dataset.step ?? null
-        : taskTransitions ? document.querySelector('main[data-presentation-ready="true"]')?.dataset.requirement ?? null : null;
+        : taskTransitions === 'popup'
+          ? [...document.querySelectorAll('.popup-content > [data-region-content] > *')].filter(visible).map(node => node.id || node.dataset.reservedRegion).join(' ')
+          : taskTransitions ? document.querySelector('main[data-presentation-ready="true"]')?.dataset.requirement ?? null : null;
       const signature = JSON.stringify({ task, regions });
       if (signature !== state.signature || state.shifts.length) {
         state.frames.push({ at: performance.now(), nativeAt: nativeNow(), task, regions, shifts: state.shifts.splice(0), errors: [...state.errors] });

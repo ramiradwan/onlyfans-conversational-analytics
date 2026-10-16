@@ -134,6 +134,80 @@ for (const width of [320, 1280]) for (const [state, title, count] of [
   } finally { await page.close(); }
 });
 
+const popupBoxes = (page, selectors) => page.evaluate((selectors) => selectors.map((selector) => {
+  const { top, bottom } = document.querySelector(selector).getBoundingClientRect();
+  return `${selector} ${top + scrollY}-${bottom + scrollY}`;
+}), selectors);
+
+for (const width of [320, 390]) for (const fontScale of [1, 2]) test(`popup sections stack in one page scroll at ${width} and ${fontScale}x text`, async () => {
+  for (const [name, state] of Object.entries(SURFACE_STATES).filter(([, state]) => state.surface === 'popup')) {
+    const page = await browser.newPage({ viewport: { width, height: 600 }, reducedMotion: 'reduce' });
+    try {
+      await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+      await renderSurfaceState(page, state);
+      await settle(page);
+      const layout = await page.evaluate(() => {
+        const nested = [...document.querySelectorAll('body *')].filter((node) => {
+          if (!/(auto|scroll)/.test(getComputedStyle(node).overflowY)) return false;
+          const start = node.scrollTop;
+          node.scrollTop = start + 40;
+          const moved = node.scrollTop !== start;
+          node.scrollTop = start;
+          return moved;
+        }).map((node) => node.id || node.getAttribute('class') || node.localName);
+        const sections = [...document.querySelectorAll('.popup-content > [data-region-content] > *, nav.menu, footer')]
+          .filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden' && !['absolute', 'fixed'].includes(getComputedStyle(node).position))
+          .map((node) => ({ name: node.id || node.dataset.reservedRegion || node.localName, top: node.getBoundingClientRect().top, bottom: node.getBoundingClientRect().bottom }));
+        const overlaps = sections.slice(1).flatMap((section, index) => section.top < sections[index].bottom - 0.5 ? [`${sections[index].name} and ${section.name}`] : []);
+        return { nested, overlaps };
+      });
+      assert.deepEqual(layout.nested, [], `The ${name} popup scrolls inside the page`);
+      assert.deepEqual(layout.overlaps, [], `The ${name} popup overlaps its sections`);
+    } finally { await page.close(); }
+  }
+});
+
+for (const width of [320, 390]) for (const fontScale of [1, 2]) test(`pausing and resuming Preview keep the popup in place at ${width} and ${fontScale}x text`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 600 }, reducedMotion: 'reduce' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await renderSurfaceState(page, SURFACE_STATES.preview);
+    await settle(page);
+    const selectors = ['#journey-card', '#preview-metrics', '[data-reserved-region="surface-feedback"]', 'nav.menu', 'footer'];
+    const initial = await popupBoxes(page, selectors);
+    await page.locator('#pause').focus();
+    await page.keyboard.press('Enter');
+    await page.locator('main[aria-busy="false"]').waitFor({ state: 'attached' });
+    await page.locator('#pause').waitFor({ state: 'hidden' });
+    await settle(page);
+    assert.deepEqual(await popupBoxes(page, selectors), initial, 'Pausing moves the popup');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'journey-title', 'Pausing must move focus to the status heading');
+    await page.locator('#journey-primary').click();
+    await page.locator('main[aria-busy="false"]').waitFor({ state: 'attached' });
+    await page.locator('#pause').waitFor();
+    await settle(page);
+    assert.deepEqual(await popupBoxes(page, selectors), initial, 'Resuming moves the popup');
+  } finally { await page.close(); }
+});
+
+for (const width of [320, 390]) test(`the desktop control note takes the Pause slot at ${width}`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 600 }, reducedMotion: 'reduce' });
+  try {
+    await renderSurfaceState(page, SURFACE_STATES.full_ready);
+    await settle(page);
+    const selectors = ['#journey-card', '#ready-details', '[data-reserved-region="surface-feedback"]', 'nav.menu', 'footer'];
+    const initial = await popupBoxes(page, selectors);
+    await page.evaluate((state) => window.__surfaceFixture.change(state, true), SURFACE_STATES.desktop_controlled);
+    await page.locator('#desktop-control-note').waitFor();
+    await settle(page);
+    assert.deepEqual(await popupBoxes(page, selectors), initial, 'Desktop control moves the popup');
+    await page.evaluate((state) => window.__surfaceFixture.change(state, true), SURFACE_STATES.full_ready);
+    await page.locator('#pause').waitFor();
+    await settle(page);
+    assert.deepEqual(await popupBoxes(page, selectors), initial, 'Releasing desktop control moves the popup');
+  } finally { await page.close(); }
+});
+
 for (const width of [390, 1440]) {
   for (const content of ['unseen', 'wide']) test(`feedback contains ${content} text at ${width}`, async () => {
     const page = await browser.newPage({ viewport: { width, height: 900 } });

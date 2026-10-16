@@ -126,7 +126,7 @@ export async function captureStaticSurfaces(browser, outDir, recorder = null) {
         console.log('start ' + name);
         const context = await browser.newContext({ viewport, colorScheme: mode, reducedMotion: 'reduce', locale: 'en-US', deviceScaleFactor: 1 });
         const page = await context.newPage();
-        await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[fixture.surface], taskTransitions: fixture.surface === 'setup' });
+        await installWatcher(page, { requiredRegions: REQUIRED_REGIONS[fixture.surface], taskTransitions: fixture.surface === 'popup' ? 'popup' : fixture.surface === 'setup' });
         // Cold-delivery paint probes run without the CSS inspector affecting font discovery.
         const session = fixture.deliveryDelay ? null : await context.newCDPSession(page);
         if (session) { await session.send('DOM.enable'); await session.send('CSS.enable'); }
