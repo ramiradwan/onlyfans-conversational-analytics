@@ -10,7 +10,7 @@
                      "architecture":  "x64"
                  },
     "application_version":  "0.7.5",
-    "release_sequence":  9,
+    "release_sequence":  10,
     "minimum_os_version":  "10.0.26200.0",
     "maximum_os_version_tested":  "10.0.26340.0",
     "webview2_minimum_version":  "134.0.3124.0",
