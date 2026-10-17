@@ -2097,7 +2097,6 @@ class PackagedSigningParameters:
 
 def qualify_packaged_signing_parameters(chrome_zip: QualifiedChromeZip) -> PackagedSigningParameters:
     """Recompute public authority from ZIP bytes and require its runtime binding."""
-    from app.security.signing_parameter_publications import canonical, validate_trust
     expected = {
         "schema": "ofca-signing-parameter-consumer/v1", "mode": "verified",
         "engine": "onlyfans-sha1-checksum/v1", "parameter_schema": "local-packaged-signing-rule/v1",
@@ -2116,8 +2115,12 @@ def qualify_packaged_signing_parameters(chrome_zip: QualifiedChromeZip) -> Packa
         refuse(STEP_SIGNING_PARAMETERS, "packaged public signing release resources exceed their bounds")
     try:
         trust = load_json_strict(trust_bytes, label="publication public trust")
-        validate_trust(trust, production=True)
-        trust_canonical = canonical(trust)
+        # The complete reviewed production trust is pinned below. Any schema,
+        # key or curve substitution changes that digest, so this boundary needs
+        # no application imports or general-purpose EC verifier. The pinned
+        # document contains only ASCII strings; this canonical serialization
+        # therefore matches the runtime's public-trust serialization exactly.
+        trust_canonical = _canonical_json_bytes(trust, label="publication public trust")
         release = load_json_strict(release_bytes, label="signing distribution release binding")
     except (ContractError, ValueError, TypeError, RecursionError):
         refuse(STEP_SIGNING_PARAMETERS, "packaged public signing authority is invalid")

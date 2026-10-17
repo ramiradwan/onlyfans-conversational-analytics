@@ -7,7 +7,11 @@ import base64
 import hashlib
 import io
 import json
+import os
+import shutil
 import struct
+import subprocess
+import sys
 import urllib.parse
 import zipfile
 from pathlib import Path
@@ -832,3 +836,184 @@ def test_missing_required_or_unknown_package_artifacts_are_rejected(ci_policy) -
     unknown.artifacts.append(_artifact("unexpected-evidence", identifier=87))
     with pytest.raises(producer.ContractError, match="artifact identity/count"):
         _qualify_source(unknown)
+
+
+_SPARSE_AUTHORITY_RUNNER = r"""
+import base64, json, runpy, sys
+from pathlib import Path
+assert sys.flags.isolated and sys.flags.no_site
+assert not any('site-packages' in entry for entry in sys.path)
+module = runpy.run_path(sys.argv[1], run_name='sparse_protected_producer')
+payload = json.loads(Path(sys.argv[2]).read_bytes())
+try:
+    if payload['mode'] == 'container':
+        qualified = module['qualify_downloaded_artifact'](
+            base64.b64decode(payload['archive']),
+            expected_server_digest=payload['digest'], release_tag=payload['tag'])
+        result = {'version': qualified.version}
+    else:
+        qualified = module['QualifiedChromeZip'](
+            filename='synthetic-public-authority.zip', version='2.0.4',
+            sha256='0' * 64, size_bytes=1, bytes=b'x',
+            actions_archive_sha256='0' * 64,
+            entries={name: base64.b64decode(value) for name, value in payload['entries'].items()},
+            metadata=payload['metadata'])
+        result = vars(module['qualify_packaged_signing_parameters'](qualified))
+except module['QualificationError'] as error:
+    print(json.dumps({'outcome': 'refused', 'step': error.step}))
+    raise SystemExit(error.exit_code)
+except module['ContractError']:
+    print(json.dumps({'outcome': 'refused', 'step': 'container'}))
+    raise SystemExit(2)
+assert not any(name == 'app' or name.startswith('app.')
+               or name == 'cryptography' or name.startswith('cryptography.')
+               for name in sys.modules)
+print(json.dumps({'outcome': 'accepted', 'result': result,
+                  'isolated': bool(sys.flags.isolated), 'no_site': bool(sys.flags.no_site)}))
+"""
+
+
+def _run_sparse_authority_probe(tmp_path, payload, *, configuration="present"):
+    workflow = yaml.safe_load((ROOT / producer.PRODUCER_WORKFLOW).read_text())
+    checkout = next(step for step in workflow["jobs"]["sign-and-handoff"]["steps"]
+                    if step.get("uses", "").startswith("actions/checkout@"))
+    declared_files = checkout["with"]["sparse-checkout"].split()
+    assert "tools/engineering_attestation.py" in declared_files
+    assert "app/core/customer-release.json" in declared_files
+    sparse = tmp_path / "declared-sparse-checkout"
+    for relative in declared_files:
+        original, copied = ROOT / relative, sparse / relative
+        assert original.is_file()
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original, copied)
+    assert {path.relative_to(sparse).as_posix() for path in sparse.rglob("*.py")} == {
+        "tools/engineering_attestation.py"
+    }
+    config = sparse / "app/core/customer-release.json"
+    if configuration == "missing":
+        config.unlink()
+    elif configuration == "mismatched":
+        value = json.loads(config.read_bytes())
+        value["hosted_api_origin"] = "https://different.example.test"
+        config.write_text(json.dumps(value), encoding="utf-8")
+    request = tmp_path / "public-resource-probe.json"
+    request.write_text(json.dumps(payload), encoding="utf-8")
+    unrelated = tmp_path / "unrelated-working-directory"
+    unrelated.mkdir()
+    environment = {name: os.environ[name] for name in ("SystemRoot", "WINDIR", "ComSpec")
+                   if name in os.environ}
+    environment.update(TEMP=str(unrelated), TMP=str(unrelated))
+    return subprocess.run(
+        [sys.executable, "-I", "-S", "-c", _SPARSE_AUTHORITY_RUNNER,
+         str(sparse / "tools/engineering_attestation.py"), str(request)],
+        cwd=unrelated, env=environment, capture_output=True, text=True, timeout=20,
+    )
+
+
+@pytest.mark.parametrize("variant", [
+    "canonical", "reordered", "whitespace", "escaped-ascii", "invalid-schema",
+    "extra-member", "key-replacement", "wrong-curve", "off-curve", "empty-roots",
+    "duplicate-key", "nan", "missing-runtime", "rebound-runtime",
+])
+def test_protected_signing_authority_qualifies_without_app_or_site_packages(tmp_path, variant):
+    trust = json.loads((ROOT / "app/security/signing-publication-trust.json").read_bytes())
+    canonical = json.dumps(trust, sort_keys=True, separators=(",", ":")).encode()
+    trust_hash = hashlib.sha256(canonical).hexdigest()
+    assert trust_hash == "9a0965a3684afae9b4745d9c36845abb2f0a168ce3b1da3256567720542873c9"
+    encoded = base64.b64encode(canonical)
+    background = b"const publicTrust = '" + encoded + b"';"
+    if variant == "reordered":
+        trust = {"roots": trust["roots"], "schema": trust["schema"]}
+    elif variant == "invalid-schema":
+        trust["schema"] = "signing-publication-trust/v2"
+    elif variant == "extra-member":
+        trust["unreviewed"] = True
+    elif variant == "key-replacement":
+        # Public P-256 generator point: a different valid key must still be refused.
+        trust["roots"][0]["jwk"].update(
+            x=base64.urlsafe_b64encode(bytes.fromhex(
+                "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+            )).rstrip(b"=").decode(),
+            y=base64.urlsafe_b64encode(bytes.fromhex(
+                "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+            )).rstrip(b"=").decode(),
+        )
+    elif variant == "wrong-curve":
+        trust["roots"][0]["jwk"]["crv"] = "P-384"
+    elif variant == "off-curve":
+        trust["roots"][0]["jwk"].update(x="A" * 43, y="A" * 43)
+    elif variant == "empty-roots":
+        trust["roots"] = []
+    trust_bytes = json.dumps(trust, indent=2 if variant == "whitespace" else None).encode()
+    if variant == "escaped-ascii":
+        trust_bytes = trust_bytes.replace(b'"schema"', b'"\\u0073chema"')
+    elif variant == "duplicate-key":
+        trust_bytes = trust_bytes.replace(b'"schema":', b'"schema":"ignored","schema":', 1)
+    elif variant == "nan":
+        trust_bytes = b'{"schema":"signing-publication-trust/v1","roots":[NaN]}'
+    metadata = {"signing_parameters": {
+        "schema": "ofca-signing-parameter-consumer/v1", "mode": "verified",
+        "engine": "onlyfans-sha1-checksum/v1", "parameter_schema": "local-packaged-signing-rule/v1",
+        "trust_sha256": trust_hash, "distribution_origin": "https://updates.dipsy.fi",
+        "distribution_base_path": "/signing-parameters/v1/",
+    }}
+    entries = {
+        "signing-publication-trust.json": trust_bytes,
+        "signing-parameter-release.json": json.dumps({
+            "schema": "ofca-signing-parameter-release/v1", "origin": "https://updates.dipsy.fi",
+            "base_path": "/signing-parameters/v1/", "trust_sha256": trust_hash,
+        }).encode(),
+        "background.js": background,
+    }
+    if variant == "missing-runtime":
+        del entries["background.js"]
+    elif variant == "rebound-runtime":
+        entries["background.js"] = background + background
+    result = _run_sparse_authority_probe(tmp_path, {
+        "mode": "authority", "metadata": metadata,
+        "entries": {name: base64.b64encode(value).decode() for name, value in entries.items()},
+    })
+    valid = variant in {"canonical", "reordered", "whitespace", "escaped-ascii"}
+    assert result.returncode == (0 if valid else 16), result.stdout + result.stderr
+    observation = json.loads(result.stdout)
+    if valid:
+        assert observation == {"outcome": "accepted", "result": metadata["signing_parameters"],
+                               "isolated": True, "no_site": True}
+    else:
+        assert observation == {"outcome": "refused", "step": "signing-parameters"}
+
+
+@pytest.mark.parametrize("configuration", ["present", "missing", "mismatched"])
+def test_protected_sparse_policy_uses_only_declared_public_configuration(tmp_path, configuration):
+    _, chrome = _chrome_zip()
+    with zipfile.ZipFile(io.BytesIO(chrome)) as archive:
+        entries = {name: archive.read(name) for name in archive.namelist()}
+    release = json.loads((ROOT / "app/core/customer-release.json").read_bytes())
+    origin = release["hosted_api_origin"]
+    manifest = json.loads(entries["manifest.json"])
+    manifest["host_permissions"] = ["http://bridge.localhost/*", origin + "/*"]
+    manifest["externally_connectable"] = {"matches": [
+        "http://bridge.localhost:17871/*", release["setup_transfer_receiver_url"],
+        origin + "/public/onboarding/installation-continuation",
+    ]}
+    entries["manifest.json"] = json.dumps(manifest).encode()
+    metadata = json.loads(entries["build-meta.json"])
+    metadata["outputs"]["manifest.json"] = "sha256:" + hashlib.sha256(entries["manifest.json"]).hexdigest()
+    entries["build-meta.json"] = json.dumps(metadata).encode()
+    agent = _zip_bytes(entries)
+    agent_name = f"OnlyFans-Conversational-Analytics-Agent-{RELEASE_VERSION}-chrome.zip"
+    installer_name = "OnlyFans-Conversational-Analytics-Setup-0.7.5-x64.exe"
+    outer = {agent_name: agent, installer_name: b"synthetic installer, no Windows trust claim"}
+    outer["sha256sums.txt"] = "".join(
+        f"{hashlib.sha256(data).hexdigest()} *{name}\n" for name, data in sorted(outer.items())
+    ).encode()
+    archive = _zip_bytes(outer)
+    result = _run_sparse_authority_probe(tmp_path, {
+        "mode": "container", "archive": base64.b64encode(archive).decode(),
+        "digest": "sha256:" + hashlib.sha256(archive).hexdigest(), "tag": RELEASE_TAG,
+    }, configuration=configuration)
+    assert result.returncode == (0 if configuration == "present" else 2), result.stdout + result.stderr
+    observation = json.loads(result.stdout)
+    assert observation["outcome"] == ("accepted" if configuration == "present" else "refused")
+    if configuration == "present":
+        assert observation["result"] == {"version": RELEASE_VERSION}

@@ -72,7 +72,8 @@ def test_release_requires_native_host_as_well_as_frozen_backend(tmp_path):
 def test_webview_helper_uses_builtin_signature_verifier_after_an_intermediate_process(tmp_path, architecture):
     # Python preserves the inherited PS7 search path, unlike a direct PS7 to
     # Windows PowerShell launch. Exercise the actual helper initialization and
-    # real signature command; no network, runtime installation or trust mocks.
+    # real signature command. Windows may retrieve certificate/revocation
+    # metadata under its trust policy; no runtime is installed or trust mocked.
     pwsh = shutil.which("pwsh.exe")
     assert pwsh, "PowerShell 7 is required to reproduce inherited module paths"
     modules = Path(pwsh).resolve().parent / "Modules"
@@ -86,31 +87,66 @@ def test_webview_helper_uses_builtin_signature_verifier_after_an_intermediate_pr
     harness.write_text(r'''
 param([string]$Initialization, [string]$Unsigned)
 $ErrorActionPreference = 'Stop'
+[Console]::WriteLine('signature_probe:ambient:begin'); [Console]::Out.Flush()
 $ambientFailed = $false
 try { $null = Get-AuthenticodeSignature -LiteralPath $Unsigned }
 catch [Management.Automation.CommandNotFoundException] { $ambientFailed = $true }
 if (-not $ambientFailed) { throw 'incompatible_module_context_not_reproduced' }
+[Console]::WriteLine('signature_probe:ambient:complete'); [Console]::Out.Flush()
+[Console]::WriteLine('signature_probe:initialization:begin'); [Console]::Out.Flush()
 . $Initialization -MinimumVersion '134.0.3124.0'
+[Console]::WriteLine('signature_probe:initialization:complete'); [Console]::Out.Flush()
+[Console]::WriteLine('signature_probe:signed:begin'); [Console]::Out.Flush()
 $signed = Get-AuthenticodeSignature -LiteralPath ([IO.Path]::Combine($PSHOME, 'powershell.exe'))
-$unsignedSignature = Get-AuthenticodeSignature -LiteralPath $Unsigned
 if ($signed.Status -ne 'Valid' -or $null -eq $signed.SignerCertificate) { throw 'real_signed_file_not_verified' }
+[Console]::WriteLine('signature_probe:signed:complete'); [Console]::Out.Flush()
+[Console]::WriteLine('signature_probe:unsigned:begin'); [Console]::Out.Flush()
+$unsignedSignature = Get-AuthenticodeSignature -LiteralPath $Unsigned
 if ($unsignedSignature.Status -eq 'Valid' -or $null -ne $unsignedSignature.SignerCertificate) { throw 'unsigned_file_admitted' }
+[Console]::WriteLine('signature_probe:unsigned:complete'); [Console]::Out.Flush()
+[Console]::WriteLine('signature_probe:module:begin'); [Console]::Out.Flush()
 if ($env:PSModulePath -cne [IO.Path]::Combine($PSHOME, 'Modules')) { throw 'module_discovery_not_isolated' }
 $command = Get-Command Get-AuthenticodeSignature
 if ($command.Module.Version.ToString() -ne '3.0.0.0') { throw 'wrong_security_module' }
+[Console]::WriteLine('signature_probe:module:complete'); [Console]::Out.Flush()
 # Also exercise the other built-in modules needed after signature validation.
+[Console]::WriteLine('signature_probe:management:begin'); [Console]::Out.Flush()
 Start-Sleep -Milliseconds 1
 if (-not (Test-Path -LiteralPath $Unsigned)) { throw 'management_module_unavailable' }
+[Console]::WriteLine('signature_probe:management:complete'); [Console]::Out.Flush()
+[Console]::WriteLine('signature_probe:complete'); [Console]::Out.Flush()
 [Console]::Write('builtin_signature_verification_passed')
 ''', encoding="utf-8")
     executable = Path(os.environ["SystemRoot"]) / architecture / "WindowsPowerShell/v1.0/powershell.exe"
-    result = subprocess.run([
-        str(executable), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-File", str(harness), "-Initialization", str(initialization), "-Unsigned", str(unsigned),
-    ], env=os.environ | {"PSModulePath": str(modules)}, capture_output=True, text=True,
-        timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+    try:
+        result = subprocess.run([
+            str(executable), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", str(harness), "-Initialization", str(initialization), "-Unsigned", str(unsigned),
+        ], env=os.environ | {"PSModulePath": str(modules)}, capture_output=True, text=True,
+            timeout=120, creationflags=subprocess.CREATE_NO_WINDOW)
+    except subprocess.TimeoutExpired as exc:
+        stdout, stderr = exc.stdout or "", exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        pytest.fail(
+            f"Signature probe timed out after 120s ({architecture}); "
+            f"partial stdout (last 4096 characters): {stdout[-4096:]!r}; "
+            f"partial stderr (last 4096 characters): {stderr[-4096:]!r}",
+            pytrace=False,
+        )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout == "builtin_signature_verification_passed" and not result.stderr
+    expected_markers = [
+        "signature_probe:ambient:begin", "signature_probe:ambient:complete",
+        "signature_probe:initialization:begin", "signature_probe:initialization:complete",
+        "signature_probe:signed:begin", "signature_probe:signed:complete",
+        "signature_probe:unsigned:begin", "signature_probe:unsigned:complete",
+        "signature_probe:module:begin", "signature_probe:module:complete",
+        "signature_probe:management:begin", "signature_probe:management:complete",
+        "signature_probe:complete", "builtin_signature_verification_passed",
+    ]
+    assert result.stdout.splitlines() == expected_markers and not result.stderr
 
 
 @pytest.mark.skipif(os.name != "nt", reason="actual workflow inherited Windows PowerShell context")
