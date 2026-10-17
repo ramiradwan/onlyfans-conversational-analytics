@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import base64
 import hashlib
 import io
@@ -570,6 +571,86 @@ def test_msix_container_extracts_the_same_agent_without_attesting_desktop_trust(
     assert qualified.sha256 == hashlib.sha256(_chrome_zip()[1]).hexdigest()
     with pytest.raises(producer.ContractError, match="resolved source"):
         producer.qualify_downloaded_artifact(archive, expected_server_digest=digest, release_tag=RELEASE_TAG)
+
+
+@pytest.mark.parametrize("target", ["msix-direct", "msix-store"])
+@pytest.mark.parametrize("profile_matches", [True, False])
+def test_protected_msix_signer_resolves_source_profile_before_key_use(
+    monkeypatch, target, profile_matches
+):
+    """Drive the protected command through the real container/profile gate."""
+    archive, digest, profile = _msix_actions_artifact(target)
+
+    class Api(QualificationApi):
+        downloads = 0
+
+        def get(self, path):
+            if path.endswith("/git/ref/heads/main"):
+                return {"object": {"type": "commit", "sha": SOURCE_COMMIT}}
+            return super().get(path)
+
+        def download(self, path, destination):
+            assert path.endswith("/actions/artifacts/91/zip")
+            self.downloads += 1
+            destination.write_bytes(archive)
+
+    api = Api()
+    api.artifacts[0]["digest"] = digest
+    profile_reads, qualified_agents, sensitive_calls = [], [], []
+    real_fetch = producer.fetch_git_blob
+    profile_path = "packaging/msix/profiles/" + (
+        "production-direct.json" if target == "msix-direct" else "production-store.json"
+    )
+
+    def fetch_profile(client, repository, path, commit):
+        if path != profile_path:
+            return real_fetch(client, repository, path, commit)
+        assert client is api and repository == producer.PRODUCT_REPOSITORY
+        assert commit == SOURCE_COMMIT
+        profile_reads.append(path)
+        selected = json.loads(json.dumps(profile))
+        if not profile_matches:
+            selected["identity"]["publisher"] = "CN=Unapproved"
+        return "7" * 40, json.dumps(selected).encode()
+
+    def refuse_downstream(chrome_zip, coordinates, **kwargs):
+        qualified_agents.append(chrome_zip.sha256)
+        raise producer.ContractError("synthetic downstream qualification refusal")
+
+    def forbid_sensitive_use(*args, **kwargs):
+        sensitive_calls.append(True)
+        pytest.fail("container qualification must precede key, signing and handoff use")
+
+    for name, value in {
+        "GITHUB_TOKEN": "synthetic-product-token",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_SHA": SOURCE_COMMIT,
+        "PRODUCER_WORKFLOW_SHA": SOURCE_COMMIT,
+        "PRODUCER_CONTROL_BASELINE_SHA": BASELINE_COMMIT,
+        "REVIEW_REPOSITORY": "review-owner/evidence-control",
+        "REVIEW_DEFAULT_BRANCH": "main",
+        "REVIEW_PROJECTION_PATH": "projection/review-state.json",
+        "REVIEW_PROJECTION_DIGEST_PATH": "projection/review-state.sha256",
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(producer, "GitHubApi", lambda *args, **kwargs: api)
+    monkeypatch.setattr(producer, "fetch_git_blob", fetch_profile)
+    monkeypatch.setattr(producer, "verify_conformance_vector", lambda *args, **kwargs: None)
+    monkeypatch.setattr(producer, "qualify_store_release", refuse_downstream)
+    for name in ("_decode_secret_to_file", "sign_ed25519", "acquire_handoff_client", "create_evidence_pr"):
+        monkeypatch.setattr(producer, name, forbid_sensitive_use)
+    args = argparse.Namespace(
+        windows_package_run_id=42, release_tag=RELEASE_TAG,
+        legal_repository_revision="c" * 40, legal_bindings_repository_revision="d" * 40,
+        legal_bindings_path=f"compliance/cws/releases/{RELEASE_VERSION}/legal-release-bindings.json",
+        legal_bindings_digest="e" * 64,
+    )
+    expected = "synthetic downstream qualification refusal" if profile_matches else "source-approved"
+    with pytest.raises(producer.ContractError, match=expected):
+        producer.command_sign_and_handoff(args)
+    assert api.downloads == 1 and profile_reads == [profile_path]
+    assert qualified_agents == ([hashlib.sha256(_chrome_zip()[1]).hexdigest()] if profile_matches else [])
+    assert sensitive_calls == []
 
 
 @pytest.mark.parametrize("mutation", ["runtime-source", "source-tree", "wrong-publisher", "agent-link", "channel-scope", "package-bytes", "extra-file", "descriptor-origin", "descriptor-policy"])

@@ -3439,7 +3439,7 @@ def command_sign_and_handoff(args: argparse.Namespace) -> int:
             expected_server_digest=source.artifact_server_digest,
             release_tag=args.release_tag,
             source=source,
-            profile_reader=lambda target: _msix_profile_from_source(client, source, target),
+            profile_reader=lambda target: _msix_profile_from_source(product_client, source, target),
         )
         # Every precondition runs before any key material is decoded, so a
         # refusal cannot reach a signature.
