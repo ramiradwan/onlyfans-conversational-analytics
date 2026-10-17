@@ -27,14 +27,9 @@ fn main() {
             .windows_attributes(
                 tauri_build::WindowsAttributes::new().app_manifest(include_str!("bridge.manifest")),
             )
-            .app_manifest(tauri_build::AppManifest::new().commands(&[
-                "desktop_state",
-                "desktop_update_status",
-                "desktop_refresh_presentation",
-                "desktop_window",
-                "desktop_browser_task",
-                "desktop_setup_code",
-            ])),
+            // Reviewed command permissions are checked-in build inputs. Read
+            // them directly instead of regenerating tracked source files.
+            .app_manifest(tauri_build::AppManifest::new()),
     )
     .expect("desktop application permissions");
 }

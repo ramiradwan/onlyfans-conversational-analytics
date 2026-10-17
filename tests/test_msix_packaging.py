@@ -128,6 +128,96 @@ def test_production_refuses_qualification_or_unverified_template():
         msix.validate_profile(store)
 
 
+def test_production_preparation_admits_only_ignored_workflow_artifacts(stage, tmp_path, monkeypatch):
+    # A tiny standalone Git fixture exercises the producer's actual status
+    # command with the checked-in ignore rules, without copying a checkout.
+    repository = tmp_path / "producer-source"
+    repository.mkdir()
+    empty_template = tmp_path / "empty-git-template"
+    empty_template.mkdir()
+    empty_excludes = tmp_path / "empty-git-excludes"
+    empty_excludes.write_bytes(b"")
+
+    def git(*arguments):
+        return subprocess.check_output(["git", "-C", str(repository), *arguments], text=True)
+
+    git("init", "--quiet", "--template=" + str(empty_template))
+    for name, value in {
+        "user.name": "MSIX synthetic source fixture", "user.email": "msix-fixture@example.invalid",
+        "commit.gpgsign": "false", "core.hooksPath": str(empty_template),
+        "core.excludesFile": str(empty_excludes),
+    }.items():
+        git("config", name, value)
+    (repository / ".gitignore").write_bytes((ROOT / ".gitignore").read_bytes())
+    delivery = repository / "tools/desktop-delivery"
+    delivery.mkdir(parents=True)
+    (delivery / ".gitignore").write_bytes((ROOT / "tools/desktop-delivery/.gitignore").read_bytes())
+    prerequisite = repository / "shared/desktop-release/prerequisite-policy.json"
+    prerequisite.parent.mkdir(parents=True)
+    prerequisite.write_bytes((ROOT / "shared/desktop-release/prerequisite-policy.json").read_bytes())
+    tracked = repository / "source.txt"
+    tracked.write_text("committed source\n", encoding="utf-8")
+    git("add", "--", ".gitignore", "tools/desktop-delivery/.gitignore",
+        "shared/desktop-release/prerequisite-policy.json", "source.txt")
+    git("commit", "--quiet", "-m", "Synthetic producer source")
+    assert git("status", "--porcelain") == ""
+
+    generated = (
+        repository / ".build-venv/pyvenv.cfg",
+        delivery / "node_modules/synthetic/package.json",
+    )
+    for path in generated:
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"synthetic workflow artifact; never executed")
+    monkeypatch.setattr(msix, "ROOT", repository)
+    production = ROOT / "packaging/msix/profiles/production-direct.json"
+    working = tmp_path / "admitted-output"
+    msix.prepare_payload(stage, working, production)
+    assert (working / "preparation.json").is_file()
+    assert git("status", "--porcelain") == ""
+    assert set(git("check-ignore", "--", *(path.relative_to(repository).as_posix() for path in generated)).splitlines()) == {
+        path.relative_to(repository).as_posix() for path in generated
+    }
+
+    # The build-environment exclusion is root-only: a lookalike elsewhere is
+    # unrelated untracked source and must still prevent production admission.
+    unrelated = repository / "elsewhere/.build-venv/unexpected.txt"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("not a declared workflow artifact\n", encoding="utf-8")
+    refused = tmp_path / "untracked-output"
+    with pytest.raises(ValueError, match="committed clean producer source") as error:
+        msix.prepare_payload(stage, refused, production)
+    assert not refused.exists()
+    assert json.loads(str(error.value).split("; producer_status=", 1)[1]) == {
+        "entry_count": 1, "sample": ["?? elsewhere/"], "truncated": False,
+    }
+    assert "not a declared workflow artifact" not in str(error.value)
+    unrelated.unlink()
+    assert git("status", "--porcelain") == ""
+
+    tracked.write_text("changed source\n", encoding="utf-8")
+    refused = tmp_path / "tracked-output"
+    with pytest.raises(ValueError, match="committed clean producer source") as error:
+        msix.prepare_payload(stage, refused, production)
+    assert not refused.exists()
+    assert json.loads(str(error.value).split("; producer_status=", 1)[1])["sample"] == [" M source.txt"]
+    assert "changed source" not in str(error.value)
+
+    # A noisy checkout still refuses before output creation, with bounded,
+    # JSON-escaped path metadata rather than file contents or a raw log dump.
+    for number in range(12):
+        (repository / f"untracked-{number:02d}.txt").write_text("private fixture content\n", encoding="utf-8")
+    refused = tmp_path / "noisy-output"
+    with pytest.raises(ValueError, match="committed clean producer source") as error:
+        msix.prepare_payload(stage, refused, production)
+    assert not refused.exists()
+    diagnostic = json.loads(str(error.value).split("; producer_status=", 1)[1])
+    assert diagnostic["entry_count"] == 13
+    assert len(diagnostic["sample"]) == 8
+    assert diagnostic["truncated"] is True
+    assert "private fixture content" not in str(error.value)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows Appx identity calculation")
 def test_reserved_store_identity_matches_windows_family_without_registration(tmp_path):
     reserved = msix.read_json(ROOT / "packaging/msix/store-reservation.json")

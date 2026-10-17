@@ -239,7 +239,16 @@ def prepare_payload(stage: Path, working: Path, profile_path: Path) -> dict:
     if profile["purpose"] == "production":
         status = subprocess.check_output(["git", "-C", str(ROOT), "status", "--porcelain"], text=True)
         if status.strip():
-            raise ValueError("production MSIX requires committed clean producer source")
+            # Relative names and Git states identify the failing build step;
+            # never print file contents, environment values or an unbounded list.
+            entries = status.splitlines()
+            sample = [entry[:160] for entry in entries[:8]]
+            diagnostic = {
+                "entry_count": len(entries), "sample": sample,
+                "truncated": len(entries) > len(sample) or any(len(entry) > 160 for entry in entries[:8]),
+            }
+            raise ValueError("production MSIX requires committed clean producer source; producer_status="
+                             + json.dumps(diagnostic, ensure_ascii=True, separators=(",", ":")))
     records = [file_record(stage / path, path) for path in paths]
     payload = working / "payload"
     app = payload / "app"

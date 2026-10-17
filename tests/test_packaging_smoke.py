@@ -1059,6 +1059,111 @@ foreach ($definition in $ast.FindAll({ param($node) $node -is [Management.Automa
     }
     Invoke-Expression $definition.Extent.Text
 }
+if ($Scenario -like 'native-diagnostic-*') {
+    Initialize-SmokeProcessInterop
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public static class PackagingSmokeDiagnosticWindowFixture {
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern IntPtr CreateWindowExW(uint ex, string cls, string title, uint style,
+        int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern bool SetPropW(IntPtr window, string name, IntPtr value);
+    [DllImport("user32.dll", SetLastError=true)]
+    public static extern bool DestroyWindow(IntPtr window);
+    public static IntPtr Create() {
+        // Hidden, untitled and owned by this probe; never launches an application.
+        var window = CreateWindowExW(0, "STATIC", "", 0, 0, 0, 1, 1,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        if (window == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        return window;
+    }
+    public static void Property(IntPtr window, string name, int value) {
+        if (!SetPropW(window, name, new IntPtr(value))) throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+}
+'@
+    $record=New-OwnedProcessRecord -Process ([Diagnostics.Process]::GetCurrentProcess())
+    $window=[IntPtr]::Zero
+    try {
+        $window=[PackagingSmokeDiagnosticWindowFixture]::Create()
+        $allowed=@('desktop.webview_runtime_needed','desktop.installation_unavailable','desktop.installation_conflict','OFCA.StartupFailure.synthetic_probe')
+        foreach ($name in $allowed) { [PackagingSmokeDiagnosticWindowFixture]::Property($window, $name, 1) }
+        foreach ($name in @('private.synthetic_unrelated','OFCA.StartupFailure.UPPERCASE','OFCA.Servicing.synthetic_probe')) {
+            [PackagingSmokeDiagnosticWindowFixture]::Property($window, $name, 1)
+        }
+        if ($Scenario -eq 'native-diagnostic-window-markers') {
+            $names=@([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, $record.CreationUtcTicks))
+            if (@(Compare-Object ($allowed | Sort-Object) ($names | Sort-Object)).Count) { throw 'diagnostic marker allowlist changed' }
+            $sorted=[string[]]$names.Clone()
+            [Array]::Sort([Array]$sorted, [Collections.IComparer][StringComparer]::Ordinal)
+            if (($names -join '|') -ne ($sorted -join '|')) { throw 'diagnostic markers not ordinal sorted' }
+            if (@([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, ($record.ProcessId+1), $record.CreationUtcTicks)).Count) { throw 'different PID exposed owned markers' }
+            if (@([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, ($record.CreationUtcTicks+1))).Count) { throw 'different birth exposed owned markers' }
+            for ($index=0; $index -lt 20; $index++) {
+                [PackagingSmokeDiagnosticWindowFixture]::Property($window, ('OFCA.StartupFailure.bound_'+[char]([int][char]'a'+$index)), 1)
+            }
+            if (@([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, $record.CreationUtcTicks)).Count -ne 16) { throw 'diagnostic marker bound changed' }
+        } else {
+            # Controlled managed faults must return through each native callback
+            # before surfacing to PowerShell, rather than terminate the process.
+            $init=$ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Initialize-SmokeProcessInterop' }, $false)[0]
+            $source=$init.FindAll({ param($node) $node -is [Management.Automation.Language.StringConstantExpressionAst] -and $node.Value.Contains('public static class PackagingSmokeNativeProcess') }, $true)[0].Value
+            if ($Scenario -eq 'native-diagnostic-property-callback-error') {
+                [PackagingSmokeDiagnosticWindowFixture]::Property($window, 'private.controlled_callback_fault', 12345)
+                $needle='                    // Atom-valued names are not string pointers.'
+                $injection='                    if (value == new IntPtr(12345)) throw new InvalidOperationException("controlled_callback_fault");'
+            } elseif ($Scenario -eq 'native-diagnostic-window-callback-error') {
+                $needle='                if (owner != processId || !liveOwned()) return true;'
+                $injection='                if (owner == processId) throw new InvalidOperationException("controlled_callback_fault");'
+            } else { throw 'unknown diagnostic native scenario' }
+            if ([regex]::Matches($source, [regex]::Escape($needle)).Count -ne 1) { throw 'diagnostic callback boundary changed' }
+            Add-Type -TypeDefinition $source.Replace('PackagingSmokeNativeProcess','PackagingSmokeCallbackFaultProbe').Replace($needle, $injection+"`n"+$needle)
+            $caught=$false
+            try { [void][PackagingSmokeCallbackFaultProbe]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, $record.CreationUtcTicks) } catch {
+                $failure=$_.Exception
+                while ($null -ne $failure.InnerException) { $failure=$failure.InnerException }
+                $caught=$failure -is [InvalidOperationException] -and $failure.Message -eq 'controlled_callback_fault'
+            }
+            if (-not $caught) { throw 'native callback fault escaped controlled observation' }
+        }
+    } finally {
+        if ($window -ne [IntPtr]::Zero -and -not [PackagingSmokeDiagnosticWindowFixture]::DestroyWindow($window)) { throw 'owned diagnostic window cleanup failed' }
+        Close-OwnedProcessRecord -Record $record
+    }
+    [pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+    exit 0
+}
+if ($Scenario -eq 'diagnostic-failure-observation') {
+    $script:launcherProcessRecord=New-OwnedProcessRecord -Process ([Diagnostics.Process]::GetCurrentProcess())
+    $script:ownedProcessRecords=@{ owned=$script:launcherProcessRecord }
+    try {
+        foreach ($ids in @(@{ values=[int[]]@() }, @{ values=[int[]]@(101,102) }, @{ values=[int[]](1..18) })) {
+            $evidence=Get-ProvisioningFailureObservation -LastListenerProcessIds $ids.values -ListenerQuerySucceeded $true
+            if (-not $evidence.last_successful_listener_query_available -or $evidence.listener_process_count -ne $ids.values.Count -or $evidence.listener_process_ids.Count -ne [Math]::Min(16,$ids.values.Count) -or $evidence.listener_process_ids_truncated -ne ($ids.values.Count -gt 16)) { throw 'last-successful listener observation lost count or bound' }
+            if ($evidence.launcher_has_exited -or $evidence.launcher_exit_code -ne 259 -or $evidence.harness_session_id -ne $script:launcherProcessRecord.Process.SessionId -or $evidence.harness_user_interactive -ne [Environment]::UserInteractive -or $evidence.ContainsKey('diagnostic_exception_type')) { throw 'owned active process/session observation failed' }
+        }
+        $unavailable=Get-ProvisioningFailureObservation -LastListenerProcessIds ([int[]]@()) -ListenerQuerySucceeded $false
+        if ($unavailable.last_successful_listener_query_available -or $unavailable.listener_process_count -ne 0) { throw 'unavailable query became an empty successful query' }
+        # Real rejection helper, with closed synthetic listener/family boundaries:
+        # a diagnostic exception must neither authorize health nor change refusal.
+        function Get-ListeningProcessIdsForPort { param($Port) return @(777) }
+        function Get-LauncherFamilyRecords { param($LauncherRecord,$DeadlineUtc) return @($LauncherRecord) }
+        function Test-ListenerOwnedProcess { param($OwnerProcessId,$OwnedRecords) return $false }
+        function Get-OwnedProcessLifetime { param($Record) throw [InvalidOperationException]::new('synthetic private diagnostic message') }
+        function Invoke-WebRequest { throw 'unrelated listener reached health request' }
+        function Write-SmokeProgress { param($Stage,$Phase,$Details) }
+        $script:results=[Collections.Generic.List[object]]::new()
+        function Add-Result { param($Step,$Outcome,$Evidence) $script:results.Add([pscustomobject]@{step=$Step; outcome=$Outcome; evidence=$Evidence}) }
+        $accepted=Invoke-VerifyProvisioningListener -LauncherProcess $script:launcherProcessRecord.Process
+        if ($accepted -or $script:results.Count -ne 1 -or $script:results[0].outcome -ne 'fail' -or $script:results[0].evidence.finding -ne 'listener_owned_by_unrelated_process' -or $script:results[0].evidence.observation.diagnostic_exception_type -ne 'InvalidOperationException') { throw 'observation exception changed listener refusal' }
+        if (($script:results | ConvertTo-Json -Depth 8) -match 'synthetic private diagnostic message') { throw 'diagnostics exposed exception message' }
+    } finally { Close-OwnedProcessRecord -Record $script:launcherProcessRecord }
+    [pscustomobject]@{ scenario=$Scenario; passed=$true } | ConvertTo-Json -Compress
+    exit 0
+}
 if ($Scenario -like 'interop-*') {
     Initialize-SmokeProcessInterop
     $mode=switch ($Scenario) {
@@ -1224,6 +1329,9 @@ if ($Scenario -in @('native-live-retained-handle','native-exited-retained-handle
         $record=New-OwnedProcessRecord -Process $process
         $before=Get-OwnedProcessLifetime -Record $record
         if ($before.HasExited -ne ($Scenario -eq 'native-exited-retained-handle')) { throw 'native lifetime state differs' }
+        $expectedExitCode=$(if ($before.HasExited) { 0 } else { 259 })
+        if ([PackagingSmokeNativeProcess]::ReadExitCode($record.Handle) -ne $expectedExitCode) { throw 'retained native exit code differs' }
+        if ($before.HasExited -and @([PackagingSmokeNativeProcess]::DiagnosticWindowProperties($record.Handle, $record.ProcessId, $record.CreationUtcTicks)).Count) { throw 'exited process exposed live window markers' }
         Stop-OwnedProcessRecord -Record $record
         if (-not (Wait-OwnedProcessRecord -Record $record -RemainingMilliseconds 5000)) { throw 'retained native handle wait failed' }
         $after=Get-OwnedProcessLifetime -Record $record
@@ -1447,6 +1555,8 @@ if ($Scenario -like 'cleanup-*') {
         "cleanup-retained-instance", "cleanup-wait-failure", "cleanup-stop-failure",
         "cleanup-many-wait-failure", "cleanup-many-stop-failure", "cleanup-shared-wait-budget",
         "native-live-retained-handle", "native-exited-retained-handle",
+        "native-diagnostic-window-markers", "native-diagnostic-property-callback-error",
+        "native-diagnostic-window-callback-error", "diagnostic-failure-observation",
         "cleanup-refresh-finds-child", "cleanup-refresh-query-failure", "cleanup-refresh-deadline",
         "native-parent-waits-child-cleanup", "native-denied-live-retained-handle",
         "interop-exited-unsignaled-wait-refused", "interop-denied-live-refused",
@@ -1602,12 +1712,16 @@ def _compile_installer(
     script = tmp_path / f"brain-{version}.iss"
     script.write_text(script_text, encoding="utf-8")
     output = tmp_path / f"compiled-{version}"
+    minimum = json.loads(
+        (ROOT / "shared/desktop-release/prerequisite-policy.json").read_text(encoding="utf-8")
+    )["webview2_minimum_version"]
     built = subprocess.run(
         [
             str(compiler),
             f"/DStagingRoot={staging}",
             f"/DOutputRoot={output}",
             f"/DAppVersion={version}",
+            f"/DWebView2MinimumVersion={minimum}",
             str(script),
         ],
         capture_output=True,
@@ -1654,13 +1768,68 @@ def test_failed_webview_prerequisite_does_not_install_or_open_a_window(tmp_path:
     # Force the absent-runtime branch and return a failed prerequisite receipt.
     # The real silent Inno flow must remain hidden and leave no application.
     installer = _compile_installer(tmp_path, source.replace(detection, "", 1), version="1.0.0-webview",
-        webview_prerequisite="param([string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n")
-    prefix = tmp_path / "failed-prerequisite"
+        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\n"
+        "[IO.File]::WriteAllText($ResultPath + '.diagnostics', 'phase=wait;outcome=fail;reason=bootstrapper_timeout;bootstrapper_exit_code=none')\n"
+        "[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n")
     with visible_windows.recording_windows(lambda window: visible_windows.is_inno_setup_image(window.process_image)) as observed:
-        assert _install_silently(installer, prefix) != 0
-    assert not (prefix / "Bridge.exe").exists()
-    assert not (prefix / "unins000.exe").exists()
+        result, transcript = _run_smoke(tmp_path / "failed-prerequisite", artifact_path=installer)
+    _assert_install_failure_exit(result, transcript)
+    evidence = _step(transcript, "install-artifact")["evidence"]
+    assert evidence["installer_exit_code"] != 0
+    assert evidence["webview_prerequisite"] == {
+        "status": "recorded", "phase": "wait", "outcome": "fail",
+        "reason": "bootstrapper_timeout", "bootstrapper_exit_code": None,
+    }
+    assert not any(step["step"] == "open-bridge" for step in transcript["steps"])
+    assert _step(transcript, "uninstall-artifact")["outcome"] == "pass"
     assert not [window for window in observed if window.steals_focus()]
+
+
+def test_installer_diagnostics_exclude_unstructured_private_log_data(tmp_path: Path) -> None:
+    private = "private machine path and updater response"
+    logs = [
+        private + "\n2026-10-17 WebView2 prerequisite: phase=wait;outcome=fail;reason=bootstrapper_failed;bootstrapper_exit_code=-2147219187\n",
+        "WebView2 prerequisite: phase=readiness;outcome=fail;reason=runtime_not_ready;bootstrapper_exit_code=0\n",
+        "WebView2 prerequisite: phase=download;outcome=fail;reason=download_failed;bootstrapper_exit_code=none\n",
+        "WebView2 prerequisite: phase=wait;outcome=fail;reason=bootstrapper_failed;bootstrapper_exit_code=2147483648\n",
+        "WebView2 prerequisite: phase=wait;outcome=fail;reason=private;bootstrapper_exit_code=0\n",
+        "WebView2 prerequisite: phase=wait;outcome=fail;reason=bootstrapper_failed;bootstrapper_exit_code=0;private=secret\n",
+        private,
+    ]
+    paths = []
+    for index, content in enumerate(logs):
+        path = tmp_path / f"installer-{index}.log"
+        path.write_text(content, encoding="utf-8")
+        paths.append(str(path))
+    paths.append(str(tmp_path / "missing.log"))
+    inputs = tmp_path / "inputs.json"
+    inputs.write_text(json.dumps(paths), encoding="utf-8")
+    harness = tmp_path / "read-diagnostics.ps1"
+    harness.write_text(r'''
+param([string] $Source, [string] $Inputs)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile($Source, [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw 'smoke_parse_failed' }
+foreach ($name in @('Test-UsableFileIdentity','Get-InstallerPrerequisiteObservation')) {
+    $function = $ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name}, $true)
+    if (-not $function) { throw 'missing_actual_diagnostic_consumer' }
+    Invoke-Expression $function.Extent.Text
+}
+$results = @(foreach ($path in (Get-Content -Raw -LiteralPath $Inputs | ConvertFrom-Json)) {
+    Get-InstallerPrerequisiteObservation -Path $path
+})
+ConvertTo-Json -Depth 5 -InputObject $results
+''', encoding="utf-8")
+    result = subprocess.run(["pwsh.exe", "-NoProfile", "-NonInteractive", "-File", str(harness),
+        "-Source", str(SMOKE_SCRIPT), "-Inputs", str(inputs)], capture_output=True, text=True, timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW)
+    assert result.returncode == 0, result.stdout + result.stderr
+    observations = json.loads(result.stdout)
+    assert [item["status"] for item in observations] == ["recorded"] * 3 + ["not_recorded"] * 5
+    assert [item["bootstrapper_exit_code"] for item in observations[:3]] == [-2147219187, 0, None]
+    assert private not in result.stdout and "secret" not in result.stdout
 
 
 @pytest.mark.parametrize("runtime_available", [True, False])
@@ -1674,7 +1843,7 @@ def test_delayed_complete_webview_receipt_is_accepted_without_a_window(tmp_path:
     assert runtime_recheck in source
     source = source.replace(detection, "", 1).replace(runtime_recheck, f"    and {str(runtime_available)} then", 1)
     installer = _compile_installer(tmp_path, source, version="1.0.0-webview-delayed",
-        webview_prerequisite="param([string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '')\n"
+        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\n[IO.File]::WriteAllText($ResultPath, '')\n"
         "Start-Sleep -Milliseconds 1500\n[IO.File]::WriteAllText($ResultPath, '0')\nexit 0\n")
     prefix = tmp_path / "successful-prerequisite"
     try:
@@ -1703,7 +1872,7 @@ def test_silent_installer_observer_distinguishes_zero_area_from_foreground(tmp_p
     source = source.replace("    WaitMode := ewNoWait;", "    WaitMode := ewWaitUntilTerminated;", 1)
     installer = _compile_installer(
         tmp_path, source, version="1.0.0-window-observation",
-        webview_prerequisite="param([string] $ResultPath)\nStart-Sleep -Milliseconds 1500\n"
+        webview_prerequisite="param([string] $MinimumVersion, [string] $ResultPath)\nStart-Sleep -Milliseconds 1500\n"
         "[IO.File]::WriteAllText($ResultPath, '1')\nexit 1\n",
     )
     prefix = tmp_path / "refused-prerequisite"

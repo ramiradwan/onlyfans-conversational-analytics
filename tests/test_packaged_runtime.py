@@ -6,6 +6,7 @@ import hashlib
 import http.client
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -16,9 +17,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 import pytest
 
@@ -570,19 +573,160 @@ def _assert_launcher_listener_ownership(transcript: dict) -> dict:
     return listener
 
 
+def _webview2_prerequisite_observation() -> dict:
+    """Bounded failure context; registry presence is not loader qualification."""
+
+    names = (
+        "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "WEBVIEW2_RELEASE_CHANNEL_PREFERENCE",
+        "WEBVIEW2_RELEASE_CHANNELS", "WEBVIEW2_CHANNEL_SEARCH_KIND",
+    )
+    registry = {}
+    key_path = r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    for label, hive, view in (
+        ("HKLM32", "HKEY_LOCAL_MACHINE", "KEY_WOW64_32KEY"),
+        ("HKCU64", "HKEY_CURRENT_USER", "KEY_WOW64_64KEY"),
+    ):
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                getattr(winreg, hive), key_path, 0,
+                winreg.KEY_READ | getattr(winreg, view),
+            ) as key:
+                value = winreg.QueryValueEx(key, "pv")[0]
+        except ImportError:
+            registry[label] = {"status": "unsupported"}
+            continue
+        except OSError:
+            registry[label] = {"status": "unavailable"}
+            continue
+        entry = {"status": "invalid"}
+        if isinstance(value, str) and len(value) <= 23 and re.fullmatch(
+            r"(?:0|[1-9][0-9]{0,4})(?:\.(?:0|[1-9][0-9]{0,4})){3}", value
+        ):
+            parts = tuple(map(int, value.split(".")))
+            if parts[0] > 0 and all(part <= 65535 for part in parts):
+                entry = {"status": "canonical_version", "version": ".".join(map(str, parts))}
+        registry[label] = entry
+    return {
+        "registry": registry,
+        "environment_override_present": {name: name in os.environ for name in names},
+    }
+
+
 def _assert_installed_launcher_listener(
     result: subprocess.CompletedProcess[str], transcript: dict
 ) -> dict:
     """Constrain the launch, listener ownership, and smoke cleanup outcomes together."""
 
     installation = _smoke_step(transcript, "install-artifact")
-    assert result.returncode == 40, result.stdout + result.stderr
+    assert result.returncode == 40, (
+        result.stdout + result.stderr
+        + "\nInstallation evidence (first 4096 characters): "
+        + json.dumps(installation, ensure_ascii=True, sort_keys=True)[:4096]
+        + "\nProvisioning listener evidence (first 4096 characters): "
+        + json.dumps(
+            next((step for step in transcript.get("steps", [])
+                  if step.get("step") == "provisioning-listener"),
+                 {"step": "provisioning-listener", "outcome": "missing"}),
+            ensure_ascii=True, sort_keys=True,
+        )[:4096]
+        + "\nWebView prerequisite host observation (first 1024 characters): "
+        + json.dumps(_webview2_prerequisite_observation(), ensure_ascii=True, sort_keys=True)[:1024]
+    )
     listener = _assert_launcher_listener_ownership(transcript)
     assert _smoke_step(transcript, "close-bridge")["evidence"]["port_released"] is True
     assert _smoke_step(transcript, "uninstall-artifact")["outcome"] == "pass"
     assert not Path(installation["evidence"]["installation_prefix"]).exists()
     assert not Path(installation["evidence"]["runtime_data_directory"]).exists()
     return listener
+
+
+def _mock_webview_registry(monkeypatch: pytest.MonkeyPatch, values: dict):
+    calls = []
+
+    @contextmanager
+    def open_key(hive, path, reserved, access):
+        calls.append((hive, path, reserved, access))
+        value = values[hive]
+        if isinstance(value, OSError):
+            raise value
+        yield hive
+
+    fake = SimpleNamespace(
+        HKEY_LOCAL_MACHINE="machine", HKEY_CURRENT_USER="user", KEY_READ=0x20019,
+        KEY_WOW64_32KEY=0x200, KEY_WOW64_64KEY=0x100, OpenKey=open_key,
+        QueryValueEx=lambda key, name: (values[key], 1) if name == "pv" else pytest.fail("Unexpected value"),
+    )
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    return calls
+
+
+@pytest.mark.parametrize("value,status", [
+    ("134.0.3124.0", "canonical_version"), ("65535.65535.65535.65535", "canonical_version"),
+    ("0.1.2.3", "invalid"), ("134.65536.0.0", "invalid"), ("0134.0.1.0", "invalid"),
+    ("155.0.1.0 dev", "invalid"), (155, "invalid"), ("1.2.3", "invalid"),
+])
+def test_webview_prerequisite_observation_canonical_versions(monkeypatch, value, status):
+    _mock_webview_registry(monkeypatch, {"machine": value, "user": FileNotFoundError()})
+    entry = _webview2_prerequisite_observation()["registry"]["HKLM32"]
+    assert entry == ({"status": status, "version": value} if status == "canonical_version" else {"status": status})
+
+
+def test_webview_prerequisite_observation_views_and_private_values(monkeypatch):
+    calls = _mock_webview_registry(monkeypatch, {
+        "machine": PermissionError("private registry failure"), "user": "155.0.1.0",
+    })
+    names = ("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "WEBVIEW2_RELEASE_CHANNEL_PREFERENCE",
+             "WEBVIEW2_RELEASE_CHANNELS", "WEBVIEW2_CHANNEL_SEARCH_KIND")
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(names[0], "private override value")
+    monkeypatch.setenv(names[1], "")
+    result = _webview2_prerequisite_observation()
+    key = r"Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    assert calls == [("machine", key, 0, 0x20019 | 0x200), ("user", key, 0, 0x20019 | 0x100)]
+    assert result["registry"] == {"HKLM32": {"status": "unavailable"}, "HKCU64": {"status": "canonical_version", "version": "155.0.1.0"}}
+    assert result["environment_override_present"] == dict(zip(names, (True, True, False, False)))
+    assert "private" not in json.dumps(result)
+    assert len(json.dumps(result, ensure_ascii=True, sort_keys=True)) < 1024
+
+
+def test_webview_prerequisite_observation_unsupported_registry(monkeypatch):
+    monkeypatch.setitem(sys.modules, "winreg", None)
+    assert _webview2_prerequisite_observation()["registry"] == {
+        "HKLM32": {"status": "unsupported"}, "HKCU64": {"status": "unsupported"},
+    }
+
+
+def test_webview_prerequisite_observation_is_failure_only(monkeypatch, tmp_path):
+    transcript = {"steps": [
+        {"step": "install-artifact", "evidence": {"installation_prefix": str(tmp_path / "absent"), "runtime_data_directory": str(tmp_path / "absent-data")}},
+        {"step": "provisioning-listener", "outcome": "pass", "evidence": {"status_code": 200, "status": "ok", "listener_process_id": 101, "launcher_family_process_ids": [100, 101], "listener_ownership": "launcher_descendant"}},
+        {"step": "close-bridge", "evidence": {"port_released": True}},
+        {"step": "uninstall-artifact", "outcome": "pass"},
+    ]}
+    calls = []
+    monkeypatch.setitem(sys.modules[__name__].__dict__, "_webview2_prerequisite_observation", lambda: calls.append(True) or {"registry": {"HKLM32": {"status": "unavailable"}}})
+    _assert_installed_launcher_listener(subprocess.CompletedProcess([], 40, "", ""), transcript)
+    assert calls == []
+    with pytest.raises(AssertionError, match="WebView prerequisite host observation"):
+        _assert_installed_launcher_listener(subprocess.CompletedProcess([], 41, "", ""), transcript)
+    assert calls == [True]
+
+
+def test_installed_failure_reports_installation_before_missing_listener(monkeypatch):
+    transcript = {"steps": [{"step": "install-artifact", "outcome": "fail", "evidence": {
+        "installer_exit_code": 7,
+        "webview_prerequisite": {"phase": "wait", "reason": "bootstrapper_timeout"},
+    }}]}
+    monkeypatch.setitem(sys.modules[__name__].__dict__, "_webview2_prerequisite_observation", lambda: {})
+    with pytest.raises(AssertionError) as failure:
+        _assert_installed_launcher_listener(subprocess.CompletedProcess([], 32, "", ""), transcript)
+    message = str(failure.value)
+    assert '"installer_exit_code": 7' in message
+    assert '"reason": "bootstrapper_timeout"' in message
+    assert '"outcome": "missing", "step": "provisioning-listener"' in message
 
 
 def _missing_backend_falsifier_installer(tmp_path: Path, real_stage: Path) -> Path:
@@ -593,8 +737,12 @@ def _missing_backend_falsifier_installer(tmp_path: Path, real_stage: Path) -> Pa
     (stage / "Brain.exe").unlink()
     output = tmp_path / "missing-backend-installer"
     compiler = inno_setup_compiler.require_inno_setup_compiler("Installed native falsifier requires Inno Setup")
+    minimum = json.loads(
+        (ROOT / "shared/desktop-release/prerequisite-policy.json").read_text(encoding="utf-8")
+    )["webview2_minimum_version"]
     result = subprocess.run([
         str(compiler), f"/DStagingRoot={stage}", f"/DOutputRoot={output}",
+        f"/DWebView2MinimumVersion={minimum}",
         f"/DAppVersion={Settings.model_fields['version'].default}", str(ROOT / "packaging/inno/brain.iss"),
     ], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr

@@ -81,6 +81,31 @@ $ProjectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 $StoreCandidateSuffix = "-chrome.zip"
 $ReleaseMode = -not $DevelopmentAgentBundle
 
+function Get-WebView2MinimumVersion {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $policy = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
+    $names = @($policy.PSObject.Properties.Name)
+    if ($names.Count -ne 3 -or
+        @($names | Where-Object { $_ -cnotin @('schema', 'webview2_minimum_version', 'webview2_acquisition_uri') }).Count -or
+        $policy.schema -cne 'ofca-desktop-prerequisite-policy/v1') {
+        throw 'Desktop prerequisite policy is invalid'
+    }
+    $version = $null
+    if ($policy.webview2_minimum_version -isnot [string] -or
+        -not [Version]::TryParse($policy.webview2_minimum_version, [ref]$version) -or
+        $version.Revision -lt 0 -or $version.Major -eq 0 -or
+        $version.ToString(4) -cne $policy.webview2_minimum_version -or
+        @($version.Major, $version.Minor, $version.Build, $version.Revision | Where-Object { $_ -gt 65535 }).Count) {
+        throw 'Desktop WebView2 minimum version is invalid'
+    }
+    return $policy.webview2_minimum_version
+}
+
+# One source owns the native and installer compatibility floor. Validate before
+# creating build output, then bind that value into the Inno prerequisite checks.
+$webView2MinimumVersion = Get-WebView2MinimumVersion -Path (Join-Path $ProjectRoot 'shared/desktop-release/prerequisite-policy.json')
+
 # Installed closure is owned by runtime-files/v2. The complete staged Agent is
 # qualified before either adapter is allowed to select installed files.
 
@@ -763,6 +788,7 @@ if ($DesktopPackageTarget -in @('inno', 'both')) {
         "/DStagingRoot=$stagingRoot",
         "/DOutputRoot=$installerOutput",
         "/DAppVersion=$version",
+        "/DWebView2MinimumVersion=$webView2MinimumVersion",
         "/DAppIconFile=$(Join-Path $ProjectRoot 'packaging\windows\conversation-analytics.ico')",
         $InnoScriptPath
     )
