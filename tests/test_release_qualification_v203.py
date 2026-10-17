@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from tools import engineering_attestation as producer
 
@@ -205,6 +206,7 @@ class QualificationApi:
             _artifact(f"windows-package-unsigned-{RELEASE_TAG}", identifier=90),
             _artifact(f"windows-package-sqlcipher-{SOURCE_COMMIT}", identifier=89),
             _artifact(f"windows-package-companion-{SOURCE_COMMIT}", identifier=88),
+            _artifact(f"windows-package-measurements-{SOURCE_COMMIT}", identifier=85),
         ]
 
     def get(self, path: str) -> Any:
@@ -682,6 +684,72 @@ def test_current_publisher_artifacts_are_scoped_to_the_exact_run_and_attempt():
     api.artifacts.append(_artifact(f"desktop-publication-{SOURCE_COMMIT}-42-2", identifier=94))
     assert _qualify_source(api).source_tree == "1" * 40
     api.artifacts[-1]["name"] = f"desktop-publication-{SOURCE_COMMIT}-42-1"
+    with pytest.raises(producer.ContractError, match="artifact identity/count"):
+        _qualify_source(api)
+
+
+def test_measurement_artifact_matches_the_workflow_without_replacing_the_package():
+    workflow = yaml.safe_load((ROOT / producer.WINDOWS_PACKAGE_WORKFLOW).read_text())
+    measurements = next(
+        step for step in workflow["jobs"]["build"]["steps"]
+        if step.get("name") == "Retain package size measurements"
+    )
+    assert measurements["uses"].startswith("actions/upload-artifact@")
+    assert "if" not in measurements
+    assert measurements["with"]["if-no-files-found"] == "error"
+    artifact_name = measurements["with"]["name"].replace(
+        "${{ inputs.product_revision }}", SOURCE_COMMIT
+    )
+    api = QualificationApi()
+    assert api.artifacts[-1]["name"] == artifact_name
+    result = _qualify_source(api)
+    assert result.artifact_name == f"windows-package-{RELEASE_TAG}"
+    assert result.artifact_id == 91
+    assert result.artifact_server_digest == api.artifacts[0]["digest"]
+
+
+def test_historical_package_runs_may_omit_measurement_evidence():
+    api = QualificationApi()
+    api.artifacts = [
+        artifact for artifact in api.artifacts
+        if artifact["name"] != f"windows-package-measurements-{SOURCE_COMMIT}"
+    ]
+    assert _qualify_source(api).artifact_id == 91
+
+
+def test_measurement_evidence_uses_package_source_when_the_producer_is_newer():
+    api = QualificationApi()
+    workflow_sha = "c" * 40
+
+    def qualify():
+        return producer.qualify_windows_package_source(
+            api, run_id=42, release_tag=RELEASE_TAG,
+            baseline_sha=BASELINE_COMMIT, workflow_sha=workflow_sha,
+        )
+
+    assert qualify().source_commit == SOURCE_COMMIT
+    api.artifacts[-1]["name"] = f"windows-package-measurements-{workflow_sha}"
+    with pytest.raises(producer.ContractError, match="artifact identity/count"):
+        qualify()
+
+
+@pytest.mark.parametrize("name", [
+    "windows-package-measurements-" + "e" * 40,
+    f"windows-package-measurements-{RELEASE_TAG}",
+    f"windows-package-measurements-{SOURCE_COMMIT}-42-2",
+])
+def test_measurement_evidence_rejects_any_other_source_or_name(name):
+    api = QualificationApi()
+    api.artifacts[-1]["name"] = name
+    with pytest.raises(producer.ContractError, match="artifact identity/count"):
+        _qualify_source(api)
+
+
+def test_duplicate_measurement_evidence_is_rejected():
+    api = QualificationApi()
+    api.artifacts.append(_artifact(
+        f"windows-package-measurements-{SOURCE_COMMIT}", identifier=86
+    ))
     with pytest.raises(producer.ContractError, match="artifact identity/count"):
         _qualify_source(api)
 
