@@ -185,17 +185,37 @@ def test_production_preparation_admits_only_ignored_workflow_artifacts(stage, tm
     unrelated.parent.mkdir(parents=True)
     unrelated.write_text("not a declared workflow artifact\n", encoding="utf-8")
     refused = tmp_path / "untracked-output"
-    with pytest.raises(ValueError, match="committed clean producer source"):
+    with pytest.raises(ValueError, match="committed clean producer source") as error:
         msix.prepare_payload(stage, refused, production)
     assert not refused.exists()
+    assert json.loads(str(error.value).split("; producer_status=", 1)[1]) == {
+        "entry_count": 1, "sample": ["?? elsewhere/"], "truncated": False,
+    }
+    assert "not a declared workflow artifact" not in str(error.value)
     unrelated.unlink()
     assert git("status", "--porcelain") == ""
 
     tracked.write_text("changed source\n", encoding="utf-8")
     refused = tmp_path / "tracked-output"
-    with pytest.raises(ValueError, match="committed clean producer source"):
+    with pytest.raises(ValueError, match="committed clean producer source") as error:
         msix.prepare_payload(stage, refused, production)
     assert not refused.exists()
+    assert json.loads(str(error.value).split("; producer_status=", 1)[1])["sample"] == [" M source.txt"]
+    assert "changed source" not in str(error.value)
+
+    # A noisy checkout still refuses before output creation, with bounded,
+    # JSON-escaped path metadata rather than file contents or a raw log dump.
+    for number in range(12):
+        (repository / f"untracked-{number:02d}.txt").write_text("private fixture content\n", encoding="utf-8")
+    refused = tmp_path / "noisy-output"
+    with pytest.raises(ValueError, match="committed clean producer source") as error:
+        msix.prepare_payload(stage, refused, production)
+    assert not refused.exists()
+    diagnostic = json.loads(str(error.value).split("; producer_status=", 1)[1])
+    assert diagnostic["entry_count"] == 13
+    assert len(diagnostic["sample"]) == 8
+    assert diagnostic["truncated"] is True
+    assert "private fixture content" not in str(error.value)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Appx identity calculation")
