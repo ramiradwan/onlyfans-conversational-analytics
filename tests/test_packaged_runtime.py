@@ -282,7 +282,12 @@ def _wait_for_response(
 ) -> _HttpResponse:
     deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
-        response = _request(path, host_header=host_header)
+        try:
+            response = _request(path, host_header=host_header)
+        except TimeoutError:
+            # A connected socket can time out before HTTP status or body arrives.
+            # Retry within the same startup budget, as for a connection refusal.
+            response = None
         if response is not None:
             return response
         if process.poll() is not None:
@@ -293,6 +298,122 @@ def _wait_for_response(
             )
         time.sleep(0.1)
     raise AssertionError(f"{description}: Brain.exe did not serve {path} before timeout")
+
+
+@pytest.fixture
+def readiness_clock(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    clock = SimpleNamespace(now=0.0, sleeps=[])
+
+    def sleep(seconds: float) -> None:
+        clock.sleeps.append(seconds)
+        clock.now += seconds
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "time",
+        SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep),
+    )
+    return clock
+
+
+@pytest.mark.parametrize("timeout_stage", ["open", "body"])
+def test_readiness_poll_recovers_from_socket_read_timeout(
+    monkeypatch: pytest.MonkeyPatch, readiness_clock: SimpleNamespace, timeout_stage: str
+) -> None:
+    attempts: list[tuple[str, str | None, int]] = []
+
+    def read() -> bytes:
+        if len(attempts) == 1:
+            raise TimeoutError("response body is not ready")
+        return b"ready"
+
+    @contextmanager
+    def response() -> Iterator[SimpleNamespace]:
+        yield SimpleNamespace(status=200, read=read)
+
+    def urlopen(request: urllib.request.Request, *, timeout: int):
+        attempts.append((request.full_url, request.get_header("Host"), timeout))
+        if len(attempts) == 1 and timeout_stage == "open":
+            raise TimeoutError("HTTP status is not ready")
+        return response()
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    process = SimpleNamespace(poll=lambda: None)
+    result = _wait_for_response(
+        process, "/health", description="control", host_header="bridge.localhost:17871"
+    )
+
+    assert result == _HttpResponse(200, "ready")
+    assert attempts == [
+        (f"http://127.0.0.1:{_BRAIN_PORT}/health", "bridge.localhost:17871", 1)
+    ] * 2
+    assert readiness_clock.sleeps == [0.1]
+
+
+def test_readiness_socket_timeouts_preserve_startup_deadline(
+    monkeypatch: pytest.MonkeyPatch, readiness_clock: SimpleNamespace
+) -> None:
+    attempts = 0
+
+    def request(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts > _STARTUP_TIMEOUT_SECONDS + 1:
+            pytest.fail("Socket timeouts reset the startup deadline")
+        readiness_clock.now += 1
+        raise TimeoutError("HTTP status is not ready")
+
+    monkeypatch.setattr(sys.modules[__name__], "_request", request)
+    with pytest.raises(AssertionError, match="control: Brain.exe did not serve /health before timeout"):
+        _wait_for_response(SimpleNamespace(poll=lambda: None), "/health", description="control")
+    assert 1 < attempts <= _STARTUP_TIMEOUT_SECONDS + 1
+    assert _STARTUP_TIMEOUT_SECONDS <= readiness_clock.now < _STARTUP_TIMEOUT_SECONDS + 2
+
+
+def test_readiness_socket_timeout_still_reports_child_exit(
+    monkeypatch: pytest.MonkeyPatch, readiness_clock: SimpleNamespace
+) -> None:
+    def request(*args, **kwargs):
+        raise TimeoutError("HTTP status is not ready")
+
+    def communicate(*, timeout: int) -> tuple[str, str]:
+        assert timeout == 1
+        return "child output", "child diagnostic"
+
+    monkeypatch.setattr(sys.modules[__name__], "_request", request)
+    process = SimpleNamespace(poll=lambda: 7, returncode=7, communicate=communicate)
+    with pytest.raises(AssertionError, match="control: Brain.exe exited before serving /health") as failure:
+        _wait_for_response(process, "/health", description="control")
+    assert "exit 7" in str(failure.value)
+    assert "child output" in str(failure.value)
+    assert "child diagnostic" in str(failure.value)
+    assert readiness_clock.sleeps == []
+
+
+def test_readiness_poll_does_not_retry_unexpected_errors(
+    monkeypatch: pytest.MonkeyPatch, readiness_clock: SimpleNamespace
+) -> None:
+    failure = ValueError("invalid response")
+
+    def request(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(sys.modules[__name__], "_request", request)
+    with pytest.raises(ValueError) as raised:
+        _wait_for_response(SimpleNamespace(poll=lambda: None), "/health", description="control")
+    assert raised.value is failure
+    assert readiness_clock.sleeps == []
+
+
+@pytest.mark.parametrize("status", [401, 404, 500])
+def test_readiness_poll_preserves_http_failure_status(
+    monkeypatch: pytest.MonkeyPatch, readiness_clock: SimpleNamespace, status: int
+) -> None:
+    response = _HttpResponse(status, "refused")
+    monkeypatch.setattr(sys.modules[__name__], "_request", lambda *args, **kwargs: response)
+    result = _wait_for_response(SimpleNamespace(), "/health", description="control")
+    assert result is response
+    assert readiness_clock.sleeps == []
 
 
 def _assert_packaged_runtime_serves_homepage(
