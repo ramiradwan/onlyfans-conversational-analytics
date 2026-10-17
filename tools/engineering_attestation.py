@@ -1405,6 +1405,7 @@ def qualify_windows_package_source(
     allowed_artifact_names = required_artifact_names | {
         f"windows-package-sqlcipher-{source_commit}",
         f"windows-package-companion-{source_commit}",
+        f"windows-package-measurements-{source_commit}",
         f"desktop-publisher-runtime-{source_commit}-{run_id}-{run_attempt}",
         f"desktop-publication-{source_commit}-{run_id}-{run_attempt}",
     }
