@@ -77,7 +77,11 @@ def validate_provenance(frozen, executable, model, runtime, recipe, inputs):
 
 def source_view_errors(view, freeze, freeze_sha256, reference_identity):
     if (type(reference_identity) is not dict or set(reference_identity) != {"name", "sha256"}
-            or freeze.get("files", {}).get(reference_identity.get("name")) != reference_identity.get("sha256")):
+            or type(reference_identity["name"]) is not str or not reference_identity["name"].strip()
+            or type(reference_identity["sha256"]) is not str or len(reference_identity["sha256"]) != 64
+            or any(character not in "0123456789abcdef" for character in reference_identity["sha256"])
+            or type(freeze.get("files")) is not dict or reference_identity["name"] not in freeze["files"]
+            or freeze["files"][reference_identity["name"]] != reference_identity["sha256"]):
         return ["source_view_origin_mismatch"]
     if (type(view) is not dict or set(view) != {"schema", "origin_reference_sha256", "origin_freeze_sha256", "records"}
             or view["schema"] != "refinement-source-view.v1"

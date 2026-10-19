@@ -110,27 +110,36 @@ class EligibilityTests(unittest.TestCase):
 
 class SourceViewTests(unittest.TestCase):
     def setUp(self):
-        self.freeze = {"files": {"source.json": "reference-hash"},
+        self.freeze = {"files": {"source.json": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
                        "split_members": {"refinement": ["one"]}}
-        self.view = {"schema": "refinement-source-view.v1", "origin_reference_sha256": "reference-hash",
-                     "origin_freeze_sha256": "freeze-hash", "records": [{"example_id": "one",
+        self.view = {"schema": "refinement-source-view.v1", "origin_reference_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                     "origin_freeze_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "records": [{"example_id": "one",
                      "split": "refinement", "text": "echo", "language_assumption": "en", "strata": []}]}
 
     def test_valid_projection(self):
-        self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "freeze-hash", {"name": "source.json", "sha256": "reference-hash"}), [])
+        self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", {"name": "source.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}), [])
+
+    def test_malformed_reference_identity_is_rejected(self):
+        for identity in ({"name": None, "sha256": None}, {"name": "", "sha256": "a" * 64},
+                         {"name": "source.json", "sha256": None}, {"name": "source.json", "sha256": "a" * 63},
+                         {"name": "source.json", "sha256": "G" * 64},
+                         {"name": "missing.json", "sha256": "a" * 64}):
+            with self.subTest(identity=identity):
+                self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "b" * 64, identity),
+                                 ["source_view_origin_mismatch"])
 
     def test_gold_fields_are_rejected(self):
         self.view["records"][0]["topic_ids"] = []
-        self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "freeze-hash", {"name": "source.json", "sha256": "reference-hash"}),
+        self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", {"name": "source.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
                          ["invalid_source_view_fields"])
 
     def test_origin_and_membership_are_exact(self):
         self.view["origin_reference_sha256"] = "changed"
-        self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "freeze-hash", {"name": "source.json", "sha256": "reference-hash"}),
+        self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", {"name": "source.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
                          ["source_view_origin_mismatch"])
-        self.view["origin_reference_sha256"] = "reference-hash"
+        self.view["origin_reference_sha256"] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         self.view["records"][0]["example_id"] = "other"
-        self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "freeze-hash", {"name": "source.json", "sha256": "reference-hash"}),
+        self.assertEqual(MEASURE.source_view_errors(self.view, self.freeze, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", {"name": "source.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
                          ["source_view_membership_mismatch"])
 
 
@@ -180,5 +189,3 @@ class ThresholdTests(unittest.TestCase):
             row["topics"] = self.row()["topics"]
             with self.assertRaisesRegex(ValueError, "findings_without_assessment"):
                 MODULE.normalize(row, 0.5, 0.5)
-
-
