@@ -72,7 +72,7 @@
           }
         ]
       },
-      "calibration_status": "unqualified"
+      "calibration_status": "not_calibrated"
     }
   ]
 }

@@ -408,10 +408,8 @@
           "type": "string"
         },
         "calibration_status": {
-          "enum": [
-            "unqualified",
-            "qualified_per_category"
-          ],
+          "const": "not_calibrated",
+          "default": "not_calibrated",
           "title": "Calibration Status",
           "type": "string"
         }
@@ -419,8 +417,7 @@
       "required": [
         "request_item_id",
         "topics",
-        "mentions",
-        "calibration_status"
+        "mentions"
       ],
       "title": "WorkerItemResult",
       "type": "object"

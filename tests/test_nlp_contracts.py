@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 from jsonschema import Draft202012Validator
-from app.nlp.contracts import (WorkerRequest, Coverage, EnrichmentSnapshot, decode_request,
+from app.nlp.contracts import (EnrichmentSnapshot, decode_request,
                                validate_response, MAX_FRAME_BYTES)
 from tools.generate_nlp_contracts import documents
 
@@ -75,3 +75,55 @@ def test_completion_revision_changes_immutable_snapshot_identity():
     later = value.model_copy(update={"completion_revision": 2})
     assert later.identity_digest() != value.identity_digest()
     with pytest.raises(ValidationError): value.completion_revision = 2
+
+
+@pytest.mark.parametrize("claim", ["qualified_per_category", "unqualified", "calibrated"])
+def test_worker_cannot_assert_quality_approval_or_confidence_calibration(claim):
+    request = decode_request(frame(fixture("request")))
+    response = fixture("response")
+    response["items"][0]["calibration_status"] = claim
+    with pytest.raises(ValidationError, match="calibration_status"):
+        validate_response(request, frame(response))
+
+
+@pytest.mark.parametrize("fault", ["duplicate", "unknown", "missing"])
+def test_response_matches_every_admitted_item_exactly_once(fault):
+    value = fixture("request")
+    value["items"].append(dict(request_item_id="item.2", text=value["items"][0]["text"]))
+    request = decode_request(frame(value))
+    response = fixture("response")
+    second = copy.deepcopy(response["items"][0])
+    second["request_item_id"] = "item.2"
+    response["items"].append(second)
+    assert len(validate_response(request, frame(response)).items) == 2
+    if fault == "duplicate": second["request_item_id"] = "item.1"
+    if fault == "unknown": second["request_item_id"] = "item.3"
+    if fault == "missing": response["items"].pop()
+    with pytest.raises(ValueError, match="missing, duplicate or unknown"):
+        validate_response(request, frame(response))
+
+
+def test_utf16_length_cannot_replace_original_codepoint_length():
+    request = decode_request(frame(fixture("request")))
+    response = fixture("response")
+    # Both task partitions are internally valid, but the astral character counts once.
+    for task in ("topics", "mentions"):
+        coverage = response["items"][0][task]["coverage"]
+        coverage.update(source_codepoints=12, examined=[dict(start=0, end=12)])
+    with pytest.raises(ValueError, match="source codepoint length mismatch"):
+        validate_response(request, frame(response))
+
+
+def test_utf16_span_beyond_original_codepoints_is_rejected():
+    request = decode_request(frame(fixture("request")))
+    response = fixture("response")
+    response["items"][0]["mentions"]["mentions"][-1]["span"] = dict(start=8, end=12)
+    with pytest.raises(ValueError, match="examined original source"):
+        validate_response(request, frame(response))
+
+
+def test_invalid_unicode_input_is_rejected():
+    value = fixture("request")
+    value["items"][0]["text"] = "\ud800"
+    with pytest.raises(ValidationError):
+        decode_request(json.dumps(value).encode())

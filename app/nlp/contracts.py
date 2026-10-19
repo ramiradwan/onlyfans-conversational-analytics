@@ -159,7 +159,7 @@ class WorkerItemResult(Contract):
     topics: TaskResult
     mentions: TaskResult
     score_semantics: Literal["model_score_not_accuracy"] = "model_score_not_accuracy"
-    calibration_status: Literal["unqualified", "qualified_per_category"]
+    calibration_status: Literal["not_calibrated"] = "not_calibrated"
 
     @model_validator(mode="after")
     def separate_tasks(self):
