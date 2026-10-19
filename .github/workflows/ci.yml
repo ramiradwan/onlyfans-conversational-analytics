@@ -57,7 +57,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force artifacts/desktop-native | Out-Null
-          cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml --features qualification-tools --bin Bridge --test process_lifetime --test prerequisite -- --test-threads=1 2>&1 |
+          cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml --features qualification-tools --bin Bridge --test process_lifetime --test prerequisite --test optional_delivery -- --test-threads=1 2>&1 |
             Tee-Object -FilePath artifacts/desktop-native/contracts.log
           if ($LASTEXITCODE -ne 0) { throw 'Native desktop contracts failed' }
       - name: Retain native contract outcomes

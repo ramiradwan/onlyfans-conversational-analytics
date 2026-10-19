@@ -44,7 +44,7 @@ def test_native_desktop_contracts_are_required_without_installing_or_publishing_
     assert job["env"]["RUSTUP_TOOLCHAIN"] == "1.98.1"
     command = next(step["run"] for step in job["steps"] if "cargo test" in step.get("run", ""))
     assert "--locked" in command and "--features qualification-tools" in command
-    for selector in ("--bin Bridge", "--test process_lifetime", "--test prerequisite", "--test-threads=1"):
+    for selector in ("--bin Bridge", "--test process_lifetime", "--test prerequisite", "--test optional_delivery", "--test-threads=1"):
         assert selector in command
     assert "$LASTEXITCODE -ne 0" in command
     assert "--include-ignored" not in command and "Add-AppxPackage" not in command
