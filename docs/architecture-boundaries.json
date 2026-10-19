@@ -178,7 +178,9 @@
         "shared/fixtures/protocol/**",
         "shared/onboarding/**",
         "shared/desktop-onboarding/**",
-        "shared/browser-tasks/**"
+        "shared/browser-tasks/**",
+        "app/nlp/**",
+        "shared/nlp/**"
       ],
       "role": "Cross-runtime protocol and local onboarding schema definitions, golden fixtures, validation, and non-authorizing reference projections.",
       "authority": "authoritative",
@@ -815,6 +817,23 @@
         "independently verified parameter leases",
         "typed bounded dependency waits",
         "coarse history task status"
+      ]
+    },
+    {
+      "id": "optional-nlp-worker",
+      "path_patterns": [
+        "native/nlp-worker/**"
+      ],
+      "role": "Optional native pure computation over bounded authorized inputs; no database, network, authorization or publication authority.",
+      "authority": "derived",
+      "zone": "orange",
+      "protected_invariants": [],
+      "permitted_inputs": [
+        "bounded private-pipe request",
+        "verified immutable model pack"
+      ],
+      "permitted_outputs": [
+        "bounded private-pipe typed findings"
       ]
     }
   ],

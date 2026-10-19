@@ -1,0 +1,77 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "engine_installation": {
+      "enum": [
+        "absent",
+        "installed"
+      ],
+      "title": "Engine Installation",
+      "type": "string"
+    },
+    "verification": {
+      "enum": [
+        "unverified",
+        "verified",
+        "rejected"
+      ],
+      "title": "Verification",
+      "type": "string"
+    },
+    "dependency": {
+      "enum": [
+        "unavailable_channel",
+        "absent",
+        "acquiring",
+        "incompatible",
+        "ready",
+        "withdrawn",
+        "failed"
+      ],
+      "title": "Dependency",
+      "type": "string"
+    },
+    "authorization": {
+      "enum": [
+        "denied",
+        "valid",
+        "expired"
+      ],
+      "title": "Authorization",
+      "type": "string"
+    },
+    "processing": {
+      "enum": [
+        "disabled",
+        "paused",
+        "pending",
+        "running",
+        "idle",
+        "refused"
+      ],
+      "title": "Processing",
+      "type": "string"
+    },
+    "results": {
+      "enum": [
+        "unavailable",
+        "pending",
+        "partial",
+        "current",
+        "stale"
+      ],
+      "title": "Results",
+      "type": "string"
+    }
+  },
+  "required": [
+    "engine_installation",
+    "verification",
+    "dependency",
+    "authorization",
+    "processing",
+    "results"
+  ],
+  "title": "Readiness",
+  "type": "object"
+}
