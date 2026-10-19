@@ -12,7 +12,6 @@ import subprocess
 import sys
 import threading
 import time
-import psutil
 
 
 class MemoryCounters(ctypes.Structure):
@@ -76,10 +75,13 @@ def validate_provenance(frozen, executable, model, runtime, recipe, inputs):
         raise ValueError("runner source mismatch")
 
 
-def source_view_errors(view, freeze, freeze_sha256):
+def source_view_errors(view, freeze, freeze_sha256, reference_identity):
+    if (type(reference_identity) is not dict or set(reference_identity) != {"name", "sha256"}
+            or freeze.get("files", {}).get(reference_identity.get("name")) != reference_identity.get("sha256")):
+        return ["source_view_origin_mismatch"]
     if (type(view) is not dict or set(view) != {"schema", "origin_reference_sha256", "origin_freeze_sha256", "records"}
             or view["schema"] != "refinement-source-view.v1"
-            or view["origin_reference_sha256"] != freeze["files"]["reference.v3.json"]
+            or view["origin_reference_sha256"] != reference_identity["sha256"]
             or view["origin_freeze_sha256"] != freeze_sha256):
         return ["source_view_origin_mismatch"]
     records = view["records"]
@@ -213,6 +215,7 @@ def completion_errors(expected_inputs, rows, recipe, code, timed_out):
 
 
 def measure(executable, model, runtime, recipe, inputs, provenance, output):
+    import psutil
     if os.name != "nt" or output.exists():
         raise ValueError("Windows and a new output directory required")
     output.mkdir(parents=True)
@@ -221,7 +224,7 @@ def measure(executable, model, runtime, recipe, inputs, provenance, output):
     expected_inputs = [json.loads(line) for line in inputs.read_text(encoding="utf-8").splitlines()]
     view = json.loads(Path(frozen["approved_reference"]).read_text(encoding="utf-8"))
     accepted_freeze = json.loads(Path(frozen["approved_freeze"]).read_text(encoding="utf-8"))
-    if source_view_errors(view, accepted_freeze, digest(Path(frozen["approved_freeze"]))):
+    if source_view_errors(view, accepted_freeze, digest(Path(frozen["approved_freeze"])), frozen["reference_identity"]):
         raise ValueError("invalid refinement source view")
     if fixture_eligibility_errors(expected_inputs, view["records"], frozen["reference_split"]):
         raise ValueError("fixture eligibility mismatch")
