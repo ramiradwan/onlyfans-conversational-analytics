@@ -378,10 +378,18 @@
         "selector": "tests/test_bootstrap_status.py",
         "reason": "Inherited child status and parent EOF must cancel pre-listener SQL on Windows without forced process cleanup."
       },
-      {
-        "selector": "tests/test_msix_packaging.py",
-        "reason": "MSIX profiles, target-specific closure and real pinned Windows SDK semantic packing must qualify on Windows."
-      },
+        {
+          "selector": "tests/test_msix_packaging.py",
+          "reason": "MSIX profiles, target-specific closure and real pinned Windows SDK semantic packing must qualify on Windows."
+        },
+        {
+          "selector": "tests/test_optional_msix.py::test_sdk_constructs_exact_external_related_set",
+          "reason": "Optional executable related-set construction requires the pinned Windows SDK."
+        },
+        {
+          "selector": "tests/test_optional_msix.py::test_worker_path_refuses_junction_even_inside_payload",
+          "reason": "Optional executable containment must reject actual Windows directory junctions."
+        },
       {
         "selector": "tests/test_activation_gate.py",
         "reason": "Native Windows packaging, process, path, cryptography or durable SQLite contract; retain all default cases in this family."

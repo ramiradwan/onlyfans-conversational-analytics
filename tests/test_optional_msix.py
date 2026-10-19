@@ -11,7 +11,7 @@ import pytest
 from app.nlp.contracts import EngineIdentity
 from tools import optional_msix as optional
 
-pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
+pytestmark = pytest.mark.ci_tier("fast")
 
 
 def identity(**changes):
@@ -115,6 +115,7 @@ def test_worker_path_must_exist_in_payload(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows reparse points")
+@pytest.mark.windows_compat
 @pytest.mark.parametrize("link_root", [False, True])
 def test_worker_path_refuses_junction_even_inside_payload(tmp_path, link_root):
     root = tmp_path / "payload"
@@ -130,6 +131,7 @@ def test_worker_path_refuses_junction_even_inside_payload(tmp_path, link_root):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows SDK construction")
+@pytest.mark.windows_compat
 def test_sdk_constructs_exact_external_related_set(tmp_path):
     from tools import msix_packaging as msix
     sdk = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Windows Kits/10/bin/10.0.26100.0/x64/makeappx.exe"
