@@ -1,12 +1,13 @@
 """Synthetic protocol failures and Unicode/source identity boundaries."""
 import copy
 import json
+import traceback
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 from jsonschema import Draft202012Validator
-from app.nlp.contracts import (EnrichmentSnapshot, decode_request,
+from app.nlp.contracts import (EnrichmentSnapshot, WorkerResponse, NlpBoundaryError, decode_request,
                                validate_response, MAX_FRAME_BYTES)
 from tools.generate_nlp_contracts import documents
 
@@ -65,7 +66,7 @@ def test_independent_failure_and_partial_do_not_become_no_match():
     with pytest.raises(ValueError): validate_response(request, frame(response))
 
 def test_frame_bound_checked_before_decode():
-    with pytest.raises(ValueError, match="byte limit"):
+    with pytest.raises(ValueError, match="nlp_frame_too_large"):
         decode_request(b" " * (MAX_FRAME_BYTES + 1))
 
 def test_completion_revision_changes_immutable_snapshot_identity():
@@ -83,6 +84,8 @@ def test_worker_cannot_assert_quality_approval_or_confidence_calibration(claim):
     response = fixture("response")
     response["items"][0]["calibration_status"] = claim
     with pytest.raises(ValidationError, match="calibration_status"):
+        WorkerResponse.model_validate_json(frame(response))
+    with pytest.raises(NlpBoundaryError, match="nlp_invalid_response"):
         validate_response(request, frame(response))
 
 
@@ -99,7 +102,7 @@ def test_response_matches_every_admitted_item_exactly_once(fault):
     if fault == "duplicate": second["request_item_id"] = "item.1"
     if fault == "unknown": second["request_item_id"] = "item.3"
     if fault == "missing": response["items"].pop()
-    with pytest.raises(ValueError, match="missing, duplicate or unknown"):
+    with pytest.raises(ValueError, match="nlp_item_set_mismatch"):
         validate_response(request, frame(response))
 
 
@@ -110,7 +113,7 @@ def test_utf16_length_cannot_replace_original_codepoint_length():
     for task in ("topics", "mentions"):
         coverage = response["items"][0][task]["coverage"]
         coverage.update(source_codepoints=12, examined=[dict(start=0, end=12)])
-    with pytest.raises(ValueError, match="source codepoint length mismatch"):
+    with pytest.raises(ValueError, match="nlp_source_length_mismatch"):
         validate_response(request, frame(response))
 
 
@@ -118,12 +121,38 @@ def test_utf16_span_beyond_original_codepoints_is_rejected():
     request = decode_request(frame(fixture("request")))
     response = fixture("response")
     response["items"][0]["mentions"]["mentions"][-1]["span"] = dict(start=8, end=12)
-    with pytest.raises(ValueError, match="examined original source"):
+    with pytest.raises(ValueError, match="nlp_invalid_response"):
         validate_response(request, frame(response))
 
 
 def test_invalid_unicode_input_is_rejected():
     value = fixture("request")
     value["items"][0]["text"] = "\ud800"
-    with pytest.raises(ValidationError):
+    with pytest.raises(NlpBoundaryError, match="nlp_invalid_request"):
         decode_request(json.dumps(value).encode())
+
+
+@pytest.mark.parametrize("boundary", ["request", "response"])
+@pytest.mark.parametrize("malformed", ["typed", "json"])
+def test_public_boundary_errors_never_render_payload_content(boundary, malformed):
+    marker = "SYNTHETIC_PRIVATE_MARKER_5729"
+    value = fixture(boundary)
+    if boundary == "request":
+        value["items"][0]["text"] = marker
+        value["items"][0]["request_item_id"] = "invalid " + marker
+    else:
+        value["items"][0]["calibration_status"] = marker
+    payload = frame(value) if malformed == "typed" else ("{bad:" + marker).encode()
+    request = decode_request(frame(fixture("request")))
+    with pytest.raises(NlpBoundaryError) as caught:
+        if boundary == "request":
+            decode_request(payload)
+        else:
+            validate_response(request, payload)
+    error = caught.value
+    assert str(error) == "nlp_invalid_" + boundary
+    assert marker not in str(error)
+    assert marker not in repr(error)
+    assert marker not in "".join(traceback.format_exception(error))
+    assert error.__cause__ is None
+    assert error.__suppress_context__

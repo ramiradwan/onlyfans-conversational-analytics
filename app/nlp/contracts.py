@@ -222,24 +222,34 @@ class Readiness(Contract):
     results: Literal["unavailable", "pending", "partial", "current", "stale"]
 
 
+class NlpBoundaryError(ValueError):
+    """Fixed diagnostics safe to render without worker payload values."""
+
+
 def decode_request(frame: bytes) -> WorkerRequest:
     if len(frame) > MAX_FRAME_BYTES:
-        raise ValueError("worker frame exceeds byte limit")
-    return WorkerRequest.model_validate_json(frame)
+        raise NlpBoundaryError("nlp_frame_too_large")
+    try:
+        return WorkerRequest.model_validate_json(frame)
+    except ValueError:
+        raise NlpBoundaryError("nlp_invalid_request") from None
 
 
 def validate_response(request: WorkerRequest, frame: bytes) -> WorkerResponse:
-    """Brain checks the exact admitted request; no source text is persisted here."""
+    """Brain checks the exact admitted request; errors never render payload values."""
     if len(frame) > MAX_FRAME_BYTES:
-        raise ValueError("worker frame exceeds byte limit")
-    response = WorkerResponse.model_validate_json(frame)
+        raise NlpBoundaryError("nlp_frame_too_large")
+    try:
+        response = WorkerResponse.model_validate_json(frame)
+    except ValueError:
+        raise NlpBoundaryError("nlp_invalid_response") from None
     if response.request_id != request.request_id or response.execution != request.execution:
-        raise ValueError("stale or mismatched execution")
+        raise NlpBoundaryError("nlp_execution_mismatch")
     originals = {i.request_item_id: i.text for i in request.items}
     returned = [i.request_item_id for i in response.items]
     if len(returned) != len(set(returned)) or set(returned) != set(originals):
-        raise ValueError("missing, duplicate or unknown result item")
+        raise NlpBoundaryError("nlp_item_set_mismatch")
     for item in response.items:
         if item.topics.coverage.source_codepoints != len(originals[item.request_item_id]):
-            raise ValueError("source codepoint length mismatch")
+            raise NlpBoundaryError("nlp_source_length_mismatch")
     return response

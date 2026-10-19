@@ -6,6 +6,8 @@
 
 Frames are UTF-8 JSON payloads, at most 1 MiB before decoding. The private-pipe transport must enforce this bound before allocating or reading a declared frame. Each batch contains at most 16 unique opaque item identifiers. Requests carry no account identifier, storage location or executable path. Byte framing and process launch are separate runtime responsibilities.
 
+Frame boundaries raise fixed-code `NlpBoundaryError` diagnostics and suppress underlying validation chains. Raw typed-model validation errors may include input values; runtime callers use the frame boundaries.
+
 Schemas enforce structural limits. Brain additionally validates the exact request identity, execution profile, item set, source codepoint lengths, coverage partitions, task separation and span containment with `validate_response`. Callers must resolve the current canonical source version, authorization, qualified category allow-list and active execution profile before publication. No worker result grants publication authority.
 
 Span coordinates are half-open Unicode codepoint offsets into the original message. Original slices supply evidence; decoder text cannot become evidence. Occurrence identity is the source binding, concept identifier and coordinates. Overlapping-window duplicates at identical coordinates collapse; repeated text at different coordinates remains distinct. Browser UTF-16 conversion belongs at presentation.

@@ -1,3 +1,5 @@
+<!-- CODE-VERIFY: Check app/nlp/contracts.py, tools/generate_nlp_contracts.py, shared/nlp/v1/ and tests/test_nlp_contracts.py for contract facts; native worker and installed delivery behavior require separate qualification. -->
+
 # ADR 0057: Define optional local NLP computation and shared findings
 
 - Status: Accepted; runtime integration requires separate qualification.
