@@ -2,12 +2,50 @@
 
 use std::{
     path::PathBuf,
-    process::Command,
+    process::{Child, Command, ExitStatus},
     time::{Duration, Instant},
 };
 use windows_sys::Win32::{Foundation::*, System::Threading::*};
 
 struct Directory(PathBuf);
+
+struct Supervisor(Option<Child>);
+impl Supervisor {
+    fn start(image: &PathBuf, root: &PathBuf) -> Self {
+        Self(Some(
+            Command::new(image)
+                .env("LOCAL_ANALYTICS_DATA_DIR", root)
+                .arg("--supervise")
+                .spawn()
+                .unwrap(),
+        ))
+    }
+    fn stop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            if child.try_wait().unwrap().is_none() {
+                child.kill().unwrap();
+            }
+            child.wait().unwrap();
+        }
+    }
+    fn exited(&mut self) -> Option<ExitStatus> {
+        let status = self.0.as_mut().unwrap().try_wait().unwrap();
+        if status.is_some() {
+            self.0.take();
+        }
+        status
+    }
+}
+impl Drop for Supervisor {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            if !matches!(child.try_wait(), Ok(Some(_))) {
+                let _ = child.kill();
+            }
+            let _ = child.wait();
+        }
+    }
+}
 impl Directory {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
@@ -67,22 +105,17 @@ fn run(abrupt: bool, worker: bool) {
         )
         .unwrap();
     }
-    let mut supervisor = Command::new(&image)
-        .env("LOCAL_ANALYTICS_DATA_DIR", &root.0)
-        .arg("--supervise")
-        .spawn()
-        .unwrap();
+    let mut supervisor = Supervisor::start(&image, &root.0);
     root.wait_pid("supervisor-ready");
     let brain = root.wait_pid("brain-started");
     let optional = worker.then(|| root.wait_pid("worker-started"));
     if abrupt {
-        supervisor.kill().unwrap();
-        supervisor.wait().unwrap();
+        supervisor.stop();
     } else {
         std::fs::write(root.0.join("stop"), b"shutdown").unwrap();
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
-            if let Some(code) = supervisor.try_wait().unwrap() {
+            if let Some(code) = supervisor.exited() {
                 assert!(code.success());
                 break;
             }
@@ -112,4 +145,27 @@ fn optional_worker_dies_with_native_supervisor() {
 #[test]
 fn native_supervisor_servicing_without_optional_worker() {
     run(false, false);
+}
+
+#[test]
+fn failed_assertion_releases_native_supervisor_and_owned_workers() {
+    let root = Directory::new();
+    let image = PathBuf::from(env!("CARGO_BIN_EXE_optional-package-fixture"));
+    std::fs::write(
+        root.0.join("approved-worker-path"),
+        image.as_os_str().to_string_lossy().as_bytes(),
+    )
+    .unwrap();
+    let mut pids = Vec::new();
+    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _supervisor = Supervisor::start(&image, &root.0);
+        pids.push(root.wait_pid("supervisor-ready"));
+        pids.push(root.wait_pid("brain-started"));
+        pids.push(root.wait_pid("worker-started"));
+        panic!("synthetic qualification assertion failure");
+    }));
+    assert!(failure.is_err());
+    for pid in pids {
+        ended(pid);
+    }
 }
