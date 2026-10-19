@@ -3,6 +3,9 @@ import copy
 import importlib.util
 from pathlib import Path
 import unittest
+import pytest
+
+pytestmark = pytest.mark.ci_tier("fast")
 
 TOOLS = Path(__file__).resolve().parents[1] / "tools/nlp-native-probe"
 SPEC = importlib.util.spec_from_file_location("native_measure", TOOLS / "measure.py")
