@@ -191,12 +191,14 @@
       "permitted_inputs": [
         "raw wire messages from Agent and Bridge",
         "internal event payloads",
-        "authenticated owner snapshots and scoped onboarding results"
+        "authenticated owner snapshots and scoped onboarding results",
+        "admitted optional-analysis profiles and bounded worker frames"
       ],
       "permitted_outputs": [
         "validated typed protocol frames",
         "protocol error frames",
-        "non-authorizing local onboarding projections"
+        "non-authorizing local onboarding projections",
+        "validated optional-analysis descriptors and task findings"
       ]
     },
     {
@@ -830,7 +832,7 @@
       "protected_invariants": [],
       "permitted_inputs": [
         "bounded private-pipe request",
-        "verified immutable model pack"
+        "verified immutable model artifacts and an admitted task component"
       ],
       "permitted_outputs": [
         "bounded private-pipe typed findings"
