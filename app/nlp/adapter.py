@@ -7,7 +7,8 @@ from pydantic import Field, model_validator
 
 from app.nlp.contracts import Contract, Digest, Identifier, NlpBoundaryError
 from app.nlp.profiles import (AdapterIdentity, AnalysisProfile, Artifact, EngineIdentity,
-                              ScoreKind, TaskContract)
+                              ScoreKind, TaskContract, PositiveInteger, ResourcePolicy,
+                              BASELINE_RESOURCE_POLICY, validate_resource_policy)
 from app.nlp.v2 import WorkerRequest, WorkerResponse, _decode
 
 
@@ -97,8 +98,8 @@ class PrepareRequest(Contract):
     component_id: Identifier
     component_sha256: Digest
     artifacts: Annotated[tuple[Artifact, ...], Field(min_length=1, max_length=256)]
-    max_memory_bytes: Annotated[int, Field(ge=1, le=536_870_912)]
-    inference_threads: Annotated[int, Field(ge=1, le=2)]
+    max_memory_bytes: PositiveInteger
+    inference_threads: PositiveInteger
 
 
 class PreparationResult(Contract):
@@ -117,7 +118,9 @@ class PreparationResult(Contract):
         return self
 
 
-def validate_prepare_request(profile: AnalysisProfile, frame: bytes) -> PrepareRequest:
+def validate_prepare_request(profile: AnalysisProfile, frame: bytes, *,
+                             resource_policy: ResourcePolicy = BASELINE_RESOURCE_POLICY) -> PrepareRequest:
+    validate_resource_policy(profile, resource_policy)
     request = _decode(PrepareRequest, frame, "prepare_request")
     if request.profile_sha256 != profile.identity_digest():
         raise NlpBoundaryError("nlp_profile_mismatch")

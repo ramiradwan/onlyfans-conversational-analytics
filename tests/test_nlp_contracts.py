@@ -345,6 +345,105 @@ def test_v2_independent_task_outcomes_do_not_create_absence(state, reason):
     with pytest.raises(NlpBoundaryError): v2.validate_response(profile, request, frame(response))
 
 
+@pytest.mark.parametrize("field", ["download_bytes", "installed_bytes", "temporary_bytes",
+                                   "transition_peak_memory_bytes", "inference_threads"])
+def test_v2_resource_policy_is_explicit_local_admission(field):
+    raw = v2_profile().model_dump(mode="json")
+    baseline = profiles.BASELINE_RESOURCE_POLICY
+    raw["resources"][field] = getattr(baseline, field) + 1
+    if field == "temporary_bytes":
+        raw["resources"][field] = 2048
+        baseline = baseline.model_copy(update={"temporary_bytes": 1024})
+    profile = profiles.AnalysisProfile.model_validate_json(frame(raw))
+    with pytest.raises(NlpBoundaryError, match="nlp_resource_limit"):
+        profiles.validate_resource_policy(profile, baseline)
+    policy = profiles.ResourcePolicy.model_validate_json(baseline.model_dump_json())
+    policy = policy.model_copy(update={field: raw["resources"][field]})
+    profiles.validate_resource_policy(profile, policy)
+    component = profile.components[0]
+    request = dict(request_id="prepare", profile_sha256=profile.identity_digest(),
+                   component_id=component.component_id, component_sha256=component.identity_digest(),
+                   artifacts=[asset.model_dump(mode="json") for asset in profile.artifacts],
+                   max_memory_bytes=profile.resources.transition_peak_memory_bytes,
+                   inference_threads=profile.resources.inference_threads)
+    adapter.validate_prepare_request(profile, frame(request), resource_policy=policy)
+    if field != "temporary_bytes":
+        with pytest.raises(NlpBoundaryError, match="nlp_resource_limit"):
+            adapter.validate_prepare_request(profile, frame(request))
+
+
+@pytest.mark.parametrize("field", ["download_bytes", "installed_bytes", "rollback_bytes", "temporary_bytes",
+                                   "transition_peak_memory_bytes", "inference_threads"])
+def test_v2_resource_declarations_reject_unsafe_integers(field):
+    raw = v2_profile().model_dump(mode="json")
+    raw["resources"][field] = profiles.MAX_SAFE_INTEGER + 1
+    with pytest.raises(ValidationError):
+        profiles.AnalysisProfile.model_validate_json(frame(raw))
+
+
+def test_v2_aggregate_accounting_and_component_boundaries():
+    exact = v2_profile().model_dump(mode="json")
+    exact["resources"].update(download_bytes=profiles.MAX_DOWNLOAD_BYTES,
+                              installed_bytes=profiles.MAX_INSTALLED_BYTES - 1, rollback_bytes=1,
+                              transition_peak_memory_bytes=profiles.MAX_MEMORY_BYTES, inference_threads=2)
+    profiles.validate_resource_policy(profiles.AnalysisProfile.model_validate_json(frame(exact)),
+                                     profiles.BASELINE_RESOURCE_POLICY)
+    exact["resources"]["rollback_bytes"] = 2
+    with pytest.raises(NlpBoundaryError):
+        profiles.validate_resource_policy(profiles.AnalysisProfile.model_validate_json(frame(exact)),
+                                         profiles.BASELINE_RESOURCE_POLICY)
+    raw = v2_profile().model_dump(mode="json")
+    raw["resources"].update(installed_bytes=profiles.MAX_SAFE_INTEGER - 1, rollback_bytes=1)
+    profile = profiles.AnalysisProfile.model_validate_json(frame(raw))
+    policy = profiles.BASELINE_RESOURCE_POLICY.model_copy(update={"installed_bytes": profiles.MAX_SAFE_INTEGER})
+    profiles.validate_resource_policy(profile, policy)
+    raw["resources"]["rollback_bytes"] = 2
+    with pytest.raises(ValidationError, match="overflow"):
+        profiles.AnalysisProfile.model_validate_json(frame(raw))
+    for field, resource in (("peak_memory_bytes", "transition_peak_memory_bytes"),
+                            ("inference_threads", "inference_threads")):
+        value = v2_profile("split").model_dump(mode="json")
+        value["components"][1][field] = value["resources"][resource] + 1
+        with pytest.raises(ValidationError, match="component exceeds"):
+            profiles.AnalysisProfile.model_validate_json(frame(value))
+
+
+def test_v2_large_artifact_accounting_remains_closed():
+    raw = v2_profile().model_dump(mode="json")
+    raw["artifacts"][-1]["size_bytes"] = profiles.MAX_INSTALLED_BYTES + 1
+    raw["resources"]["installed_bytes"] = sum(asset["size_bytes"] for asset in raw["artifacts"])
+    profile = rehash_v2(raw)
+    with pytest.raises(NlpBoundaryError):
+        profiles.validate_resource_policy(profile, profiles.BASELINE_RESOURCE_POLICY)
+    for value in (profiles.MAX_SAFE_INTEGER + 1, 0):
+        asset = profile.artifacts[-1].model_dump(mode="json")
+        asset["size_bytes"] = value
+        with pytest.raises(ValidationError):
+            profiles.Artifact.model_validate_json(frame(asset))
+    raw["artifacts"][-1]["size_bytes"] = profiles.MAX_SAFE_INTEGER
+    raw["resources"]["installed_bytes"] = profiles.MAX_SAFE_INTEGER
+    with pytest.raises(ValidationError, match="artifact accounting mismatch"):
+        rehash_v2(raw)
+
+
+@pytest.mark.parametrize("kind,field", [("component", "peak_memory_bytes"), ("component", "inference_threads"),
+                                       ("prepare", "max_memory_bytes"), ("prepare", "inference_threads")])
+def test_v2_component_and_prepare_resource_integer_bounds(kind, field):
+    component = v2_profile().components[0]
+    if kind == "component":
+        value = component.model_dump(mode="json")
+        model = profiles.ComponentDescriptor
+    else:
+        value = dict(request_id="prepare", profile_sha256="0" * 64, component_id=component.component_id,
+                     component_sha256=component.identity_digest(), artifacts=[v2_profile().artifacts[0].model_dump(mode="json")],
+                     max_memory_bytes=1024, inference_threads=2)
+        model = adapter.PrepareRequest
+    for invalid in (0, 1.0, profiles.MAX_SAFE_INTEGER + 1):
+        value[field] = invalid
+        with pytest.raises(ValidationError):
+            model.model_validate_json(frame(value))
+
+
 def test_v2_unicode_repeated_positions_partial_coverage_and_window_deduplication():
     profile, request, response = v2_case()
     payload = response["items"][0]["tasks"][1]["payload"]
@@ -509,7 +608,12 @@ def test_v2_compositions_and_aggregate_budgets_are_closed(fault):
     if fault == "format": value["components"][0]["adapter"]["artifact_format"] = "unknown"
     if fault == "tokenizer": value["components"][0]["tokenizer_sha256"] = "0" * 64
     if fault == "engine": value["components"][0]["engine"]["engine_version"] = "other"
-    with pytest.raises(ValidationError): profiles.AnalysisProfile.model_validate_json(frame(value))
+    if fault in ("rollback", "download"):
+        declared = profiles.AnalysisProfile.model_validate_json(frame(value))
+        with pytest.raises(NlpBoundaryError):
+            profiles.validate_resource_policy(declared, profiles.BASELINE_RESOURCE_POLICY)
+    else:
+        with pytest.raises(ValidationError): profiles.AnalysisProfile.model_validate_json(frame(value))
 
 
 def test_v2_enabled_output_mask_does_not_replace_joint_conditioning_identity():

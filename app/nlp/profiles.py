@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from app.nlp.contracts import Contract, Digest, EngineIdentity as V1EngineIdentity, Identifier
+from app.nlp.contracts import Contract, Digest, EngineIdentity as V1EngineIdentity, Identifier, NlpBoundaryError
 
 TaskName = Literal["message_topics", "concept_mentions"]
 TaskContract = Literal["message_topics.v1", "concept_mentions.v1"]
@@ -16,7 +16,9 @@ TASK_CONTRACTS = {"message_topics": "message_topics.v1", "concept_mentions": "co
 MAX_DOWNLOAD_BYTES = 262_144_000
 MAX_INSTALLED_BYTES = 536_870_912
 MAX_MEMORY_BYTES = 536_870_912
-SafeInteger = Annotated[int, Field(ge=0, le=9_007_199_254_740_991)]
+MAX_SAFE_INTEGER = 9_007_199_254_740_991
+SafeInteger = Annotated[int, Field(ge=0, le=MAX_SAFE_INTEGER)]
+PositiveInteger = Annotated[int, Field(ge=1, le=MAX_SAFE_INTEGER)]
 
 
 def canonical_bytes(value: Contract) -> bytes:
@@ -92,7 +94,7 @@ class Artifact(Contract):
     """A logical file identity; no caller-controlled filesystem path."""
     artifact_id: Identifier
     sha256: Digest
-    size_bytes: Annotated[int, Field(ge=1, le=MAX_INSTALLED_BYTES)]
+    size_bytes: PositiveInteger
     role: Literal["engine", "runtime", "weights", "tokenizer", "configuration"]
     format_id: Identifier
 
@@ -134,8 +136,8 @@ class ComponentDescriptor(Descriptor):
     max_windows: Annotated[int, Field(ge=1, le=256)]
     max_candidates: Annotated[int, Field(ge=1, le=8192)]
     max_output_findings: Annotated[int, Field(ge=1, le=576)]
-    peak_memory_bytes: Annotated[int, Field(ge=1, le=MAX_MEMORY_BYTES)]
-    inference_threads: Annotated[int, Field(ge=1, le=2)]
+    peak_memory_bytes: PositiveInteger
+    inference_threads: PositiveInteger
 
     @model_validator(mode="after")
     def closed_component(self):
@@ -158,18 +160,43 @@ class TaskBinding(Contract):
 
 class ResourceAccounting(Contract):
     """Declared complete-closure costs; qualification measures actual costs."""
-    download_bytes: Annotated[int, Field(ge=1, le=MAX_DOWNLOAD_BYTES)]
-    installed_bytes: Annotated[int, Field(ge=1, le=MAX_INSTALLED_BYTES)]
-    rollback_bytes: Annotated[int, Field(ge=0, le=MAX_INSTALLED_BYTES)]
+    download_bytes: PositiveInteger
+    installed_bytes: PositiveInteger
+    rollback_bytes: SafeInteger
     temporary_bytes: SafeInteger
-    transition_peak_memory_bytes: Annotated[int, Field(ge=1, le=MAX_MEMORY_BYTES)]
-    inference_threads: Annotated[int, Field(ge=1, le=2)]
+    transition_peak_memory_bytes: PositiveInteger
+    inference_threads: PositiveInteger
 
     @model_validator(mode="after")
     def installed_budget(self):
-        if self.installed_bytes + self.rollback_bytes > MAX_INSTALLED_BYTES:
-            raise ValueError("aggregate installed budget exceeded")
+        if self.installed_bytes + self.rollback_bytes > MAX_SAFE_INTEGER:
+            raise ValueError("aggregate installed accounting overflow")
         return self
+
+
+class ResourcePolicy(Contract):
+    """Caller-owned admission limits, never taken from profile metadata."""
+    download_bytes: PositiveInteger
+    installed_bytes: PositiveInteger
+    temporary_bytes: SafeInteger
+    transition_peak_memory_bytes: PositiveInteger
+    inference_threads: PositiveInteger
+
+
+BASELINE_RESOURCE_POLICY = ResourcePolicy(
+    download_bytes=MAX_DOWNLOAD_BYTES, installed_bytes=MAX_INSTALLED_BYTES,
+    temporary_bytes=MAX_SAFE_INTEGER, transition_peak_memory_bytes=MAX_MEMORY_BYTES,
+    inference_threads=2,
+)
+
+
+def validate_resource_policy(profile: AnalysisProfile, policy: ResourcePolicy) -> None:
+    """Check declared costs only; this grants no trust or processing authority."""
+    resources = profile.resources
+    if (resources.installed_bytes + resources.rollback_bytes > policy.installed_bytes or
+            any(getattr(resources, name) > getattr(policy, name) for name in
+                ("download_bytes", "temporary_bytes", "transition_peak_memory_bytes", "inference_threads"))):
+        raise NlpBoundaryError("nlp_resource_limit")
 
 
 class AnalysisProfile(Descriptor):

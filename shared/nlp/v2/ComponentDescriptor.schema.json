@@ -453,13 +453,13 @@
       "type": "integer"
     },
     "peak_memory_bytes": {
-      "maximum": 536870912,
+      "maximum": 9007199254740991,
       "minimum": 1,
       "title": "Peak Memory Bytes",
       "type": "integer"
     },
     "inference_threads": {
-      "maximum": 2,
+      "maximum": 9007199254740991,
       "minimum": 1,
       "title": "Inference Threads",
       "type": "integer"
