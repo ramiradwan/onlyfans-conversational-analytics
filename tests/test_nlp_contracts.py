@@ -656,3 +656,30 @@ def test_v2_lifecycle_identity_health_and_compatibility_fail_closed():
     with pytest.raises(NlpBoundaryError): adapter.validate_lifecycle(unload, frame(response))
     response["health"] = "unloaded"
     adapter.validate_lifecycle(unload, frame(response))
+
+
+def test_v2_unreturned_joint_conditioning_remains_part_of_serving_component_identity():
+    original, request, response = v2_case("split", "topics")
+    raw = original.model_dump(mode="json")
+    # This adapter computes topics using both schemas; another component serves mentions.
+    raw["components"][0]["executed_labels"].append(dict(
+        task="concept_mentions", label_id="conditioning.synthetic", description="Synthetic conditioning"))
+    profile = profiles.AnalysisProfile.model_validate_json(frame(raw))
+    assert profile.components[0].identity_digest() != original.components[0].identity_digest()
+    assert profile.components[1] == original.components[1]
+    request, response = bind_v2(profile, request, response)
+    fake = SyntheticAdapter(profile, profile.components[0], response, [])
+    hello = adapter.HandshakeRequest(request_id="hello", expected_engine=profile.components[0].engine)
+    adapter.validate_handshake(profile, hello, fake.describe(hello).model_dump_json().encode())
+    validated = v2.validate_response(profile, request, frame(response))
+    assert [task.payload.task for task in validated.items[0].tasks] == ["message_topics"]
+    revised = profile.model_dump(mode="json")
+    revised["components"][0]["executed_labels"][-1]["description"] = "Revised conditioning"
+    revised = profiles.AnalysisProfile.model_validate_json(frame(revised))
+    assert revised.components[0].identity_digest() != profile.components[0].identity_digest()
+    assert revised.components[1] == profile.components[1]
+    with pytest.raises(NlpBoundaryError): v2.validate_response(revised, request, frame(response))
+    injected = v2_fixture("split-mentions-response")["items"][0]["tasks"][0]
+    injected.update(component_id=profile.components[0].component_id, component_sha256=profile.components[0].identity_digest())
+    response["items"][0]["tasks"].append(injected)
+    with pytest.raises(NlpBoundaryError): v2.validate_response(profile, request, frame(response))

@@ -143,8 +143,8 @@ class ComponentDescriptor(Descriptor):
         if len(set(names)) != len(names) or len(set(self.artifact_ids)) != len(self.artifact_ids):
             raise ValueError("duplicate component member")
         labels = [(label.task, label.label_id) for label in self.executed_labels]
-        if len(set(labels)) != len(labels) or any(task not in names for task, _ in labels):
-            raise ValueError("conditioning label mismatch")
+        if len(set(labels)) != len(labels):
+            raise ValueError("duplicate conditioning label")
         for task in self.tasks:
             if not set(task.enabled_ids) <= {label for name, label in labels if name == task.task}:
                 raise ValueError("enabled category absent from executed schema")
