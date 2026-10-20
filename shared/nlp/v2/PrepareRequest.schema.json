@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "Artifact": {
+      "additionalProperties": false,
+      "description": "A logical file identity; no caller-controlled filesystem path.",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "maximum": 536870912,
+          "minimum": 1,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "role": {
+          "enum": [
+            "engine",
+            "runtime",
+            "weights",
+            "tokenizer",
+            "configuration"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "format_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Format Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "sha256",
+        "size_bytes",
+        "role",
+        "format_id"
+      ],
+      "title": "Artifact",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "nlp-worker.v2",
+      "default": "nlp-worker.v2",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Profile Sha256",
+      "type": "string"
+    },
+    "component_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Component Id",
+      "type": "string"
+    },
+    "component_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Component Sha256",
+      "type": "string"
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/Artifact"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "max_memory_bytes": {
+      "maximum": 536870912,
+      "minimum": 1,
+      "title": "Max Memory Bytes",
+      "type": "integer"
+    },
+    "inference_threads": {
+      "maximum": 2,
+      "minimum": 1,
+      "title": "Inference Threads",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "request_id",
+    "profile_sha256",
+    "component_id",
+    "component_sha256",
+    "artifacts",
+    "max_memory_bytes",
+    "inference_threads"
+  ],
+  "title": "PrepareRequest",
+  "type": "object"
+}

@@ -1,0 +1,1218 @@
+{
+  "$defs": {
+    "AdapterIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "adapter_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "adapter_build_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Adapter Build Sha256",
+          "type": "string"
+        },
+        "abi": {
+          "const": "nlp-adapter.v1",
+          "default": "nlp-adapter.v1",
+          "title": "Abi",
+          "type": "string"
+        },
+        "architecture": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Architecture",
+          "type": "string"
+        },
+        "artifact_format": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Artifact Format",
+          "type": "string"
+        },
+        "tokenizer_format": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Tokenizer Format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_id",
+        "adapter_version",
+        "adapter_build_sha256",
+        "architecture",
+        "artifact_format",
+        "tokenizer_format"
+      ],
+      "title": "AdapterIdentity",
+      "type": "object"
+    },
+    "AnalysisProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "canonicalization": {
+          "const": "nlp-canonical.v1",
+          "default": "nlp-canonical.v1",
+          "title": "Canonicalization",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nlp-profile.v2",
+          "default": "nlp-profile.v2",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "profile_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/ComponentDescriptor"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Components",
+          "type": "array"
+        },
+        "bindings": {
+          "items": {
+            "$ref": "#/$defs/TaskBinding"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Bindings",
+          "type": "array"
+        },
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/Artifact"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "aggregation": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "resources": {
+          "$ref": "#/$defs/ResourceAccounting"
+        },
+        "execution_mode": {
+          "const": "serial_unload",
+          "default": "serial_unload",
+          "title": "Execution Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "revision",
+        "components",
+        "bindings",
+        "artifacts",
+        "aggregation",
+        "presentation",
+        "resources"
+      ],
+      "title": "AnalysisProfile",
+      "type": "object"
+    },
+    "Artifact": {
+      "additionalProperties": false,
+      "description": "A logical file identity; no caller-controlled filesystem path.",
+      "properties": {
+        "artifact_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "maximum": 536870912,
+          "minimum": 1,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "role": {
+          "enum": [
+            "engine",
+            "runtime",
+            "weights",
+            "tokenizer",
+            "configuration"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "format_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Format Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "sha256",
+        "size_bytes",
+        "role",
+        "format_id"
+      ],
+      "title": "Artifact",
+      "type": "object"
+    },
+    "BoundTaskResult": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Component Id",
+          "type": "string"
+        },
+        "component_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Component Sha256",
+          "type": "string"
+        },
+        "text_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Text Sha256",
+          "type": "string"
+        },
+        "payload": {
+          "discriminator": {
+            "mapping": {
+              "concept_mentions": "#/$defs/MentionResult",
+              "message_topics": "#/$defs/TopicResult"
+            },
+            "propertyName": "task"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TopicResult"
+            },
+            {
+              "$ref": "#/$defs/MentionResult"
+            }
+          ],
+          "title": "Payload"
+        }
+      },
+      "required": [
+        "component_id",
+        "component_sha256",
+        "text_sha256",
+        "payload"
+      ],
+      "title": "BoundTaskResult",
+      "type": "object"
+    },
+    "ComponentDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "canonicalization": {
+          "const": "nlp-canonical.v1",
+          "default": "nlp-canonical.v1",
+          "title": "Canonicalization",
+          "type": "string"
+        },
+        "component_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Component Id",
+          "type": "string"
+        },
+        "engine": {
+          "$ref": "#/$defs/EngineIdentity"
+        },
+        "adapter": {
+          "$ref": "#/$defs/AdapterIdentity"
+        },
+        "pack_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "pack_revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Pack Revision",
+          "type": "string"
+        },
+        "pack_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Pack Sha256",
+          "type": "string"
+        },
+        "model_revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Model Revision",
+          "type": "string"
+        },
+        "artifact_ids": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "minItems": 1,
+          "title": "Artifact Ids",
+          "type": "array"
+        },
+        "artifact_closure_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Artifact Closure Sha256",
+          "type": "string"
+        },
+        "tokenizer_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Tokenizer Sha256",
+          "type": "string"
+        },
+        "runtime_requirements": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/TaskDescriptor"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "executed_labels": {
+          "items": {
+            "$ref": "#/$defs/ConditioningLabel"
+          },
+          "maxItems": 128,
+          "title": "Executed Labels",
+          "type": "array"
+        },
+        "preprocessing": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "windowing": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "decoding": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "output_mapping": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "decision": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "language": {
+          "const": "en",
+          "default": "en",
+          "title": "Language",
+          "type": "string"
+        },
+        "max_source_codepoints": {
+          "maximum": 131072,
+          "minimum": 1,
+          "title": "Max Source Codepoints",
+          "type": "integer"
+        },
+        "max_batch_items": {
+          "maximum": 16,
+          "minimum": 1,
+          "title": "Max Batch Items",
+          "type": "integer"
+        },
+        "max_windows": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Max Windows",
+          "type": "integer"
+        },
+        "max_candidates": {
+          "maximum": 8192,
+          "minimum": 1,
+          "title": "Max Candidates",
+          "type": "integer"
+        },
+        "max_output_findings": {
+          "maximum": 576,
+          "minimum": 1,
+          "title": "Max Output Findings",
+          "type": "integer"
+        },
+        "peak_memory_bytes": {
+          "maximum": 536870912,
+          "minimum": 1,
+          "title": "Peak Memory Bytes",
+          "type": "integer"
+        },
+        "inference_threads": {
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Inference Threads",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "component_id",
+        "engine",
+        "adapter",
+        "pack_id",
+        "pack_revision",
+        "pack_sha256",
+        "model_revision",
+        "artifact_ids",
+        "artifact_closure_sha256",
+        "tokenizer_sha256",
+        "runtime_requirements",
+        "tasks",
+        "executed_labels",
+        "preprocessing",
+        "windowing",
+        "decoding",
+        "output_mapping",
+        "decision",
+        "max_source_codepoints",
+        "max_batch_items",
+        "max_windows",
+        "max_candidates",
+        "max_output_findings",
+        "peak_memory_bytes",
+        "inference_threads"
+      ],
+      "title": "ComponentDescriptor",
+      "type": "object"
+    },
+    "ConditioningLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "enum": [
+            "message_topics",
+            "concept_mentions"
+          ],
+          "title": "Task",
+          "type": "string"
+        },
+        "label_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Label Id",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 2048,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "label_id",
+        "description"
+      ],
+      "title": "ConditioningLabel",
+      "type": "object"
+    },
+    "Coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "source_codepoints": {
+          "maximum": 131072,
+          "minimum": 0,
+          "title": "Source Codepoints",
+          "type": "integer"
+        },
+        "examined": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Examined",
+          "type": "array"
+        },
+        "excluded": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Excluded",
+          "type": "array"
+        },
+        "limits_reached": {
+          "items": {
+            "enum": [
+              "tokens",
+              "windows",
+              "candidates",
+              "output"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Limits Reached",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_codepoints",
+        "examined",
+        "excluded",
+        "limits_reached"
+      ],
+      "title": "Coverage",
+      "type": "object"
+    },
+    "EngineIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_family": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Family",
+          "type": "string"
+        },
+        "core_package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Name",
+          "type": "string"
+        },
+        "core_package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Version",
+          "type": "string"
+        },
+        "publisher": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Publisher",
+          "type": "string"
+        },
+        "package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Version",
+          "type": "string"
+        },
+        "related_set_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Related Set Id",
+          "type": "string"
+        },
+        "engine_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "platform": {
+          "const": "windows-x64",
+          "title": "Platform",
+          "type": "string"
+        },
+        "worker_protocol": {
+          "const": "nlp-worker.v2",
+          "default": "nlp-worker.v2",
+          "title": "Worker Protocol",
+          "type": "string"
+        },
+        "engine_build_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Engine Build Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "package_name",
+        "package_family",
+        "core_package_name",
+        "core_package_version",
+        "publisher",
+        "package_version",
+        "related_set_id",
+        "engine_version",
+        "platform",
+        "engine_build_sha256"
+      ],
+      "title": "EngineIdentity",
+      "type": "object"
+    },
+    "LogitScore": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "logit",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "LogitScore",
+      "type": "object"
+    },
+    "MarginScore": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "margin",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "MarginScore",
+      "type": "object"
+    },
+    "MentionFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "concept_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Concept Id",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "logit": "#/$defs/LogitScore",
+                  "margin": "#/$defs/MarginScore",
+                  "probability": "#/$defs/ProbabilityScore"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ProbabilityScore"
+                },
+                {
+                  "$ref": "#/$defs/LogitScore"
+                },
+                {
+                  "$ref": "#/$defs/MarginScore"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        }
+      },
+      "required": [
+        "concept_id",
+        "span"
+      ],
+      "title": "MentionFinding",
+      "type": "object"
+    },
+    "MentionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "assessed_findings",
+            "assessed_no_match",
+            "uncertain",
+            "unsupported",
+            "partial",
+            "failed",
+            "unprocessed"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "below_threshold",
+            "unsupported_input",
+            "dependency_unavailable",
+            "cancelled",
+            "deadline",
+            "worker_failure",
+            "limit_reached"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "task": {
+          "const": "concept_mentions",
+          "title": "Task",
+          "type": "string"
+        },
+        "task_contract": {
+          "const": "concept_mentions.v1",
+          "default": "concept_mentions.v1",
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MentionFinding"
+          },
+          "maxItems": 512,
+          "title": "Findings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "outcome",
+        "coverage",
+        "reason",
+        "task"
+      ],
+      "title": "MentionResult",
+      "type": "object"
+    },
+    "PolicyIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "revision",
+        "sha256"
+      ],
+      "title": "PolicyIdentity",
+      "type": "object"
+    },
+    "ProbabilityScore": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "probability",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "ProbabilityScore",
+      "type": "object"
+    },
+    "ResourceAccounting": {
+      "additionalProperties": false,
+      "description": "Declared complete-closure costs; qualification measures actual costs.",
+      "properties": {
+        "download_bytes": {
+          "maximum": 262144000,
+          "minimum": 1,
+          "title": "Download Bytes",
+          "type": "integer"
+        },
+        "installed_bytes": {
+          "maximum": 536870912,
+          "minimum": 1,
+          "title": "Installed Bytes",
+          "type": "integer"
+        },
+        "rollback_bytes": {
+          "maximum": 536870912,
+          "minimum": 0,
+          "title": "Rollback Bytes",
+          "type": "integer"
+        },
+        "temporary_bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Temporary Bytes",
+          "type": "integer"
+        },
+        "transition_peak_memory_bytes": {
+          "maximum": 536870912,
+          "minimum": 1,
+          "title": "Transition Peak Memory Bytes",
+          "type": "integer"
+        },
+        "inference_threads": {
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Inference Threads",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "download_bytes",
+        "installed_bytes",
+        "rollback_bytes",
+        "temporary_bytes",
+        "transition_peak_memory_bytes",
+        "inference_threads"
+      ],
+      "title": "ResourceAccounting",
+      "type": "object"
+    },
+    "ScorePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "probability",
+            "logit",
+            "margin",
+            "none"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "semantics_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Semantics Id",
+          "type": "string"
+        },
+        "calibration": {
+          "default": "not_calibrated",
+          "enum": [
+            "not_calibrated",
+            "calibrated"
+          ],
+          "title": "Calibration",
+          "type": "string"
+        },
+        "calibration_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Sha256"
+        }
+      },
+      "required": [
+        "kind",
+        "semantics_id"
+      ],
+      "title": "ScorePolicy",
+      "type": "object"
+    },
+    "SourceBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "account_scope": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Account Scope",
+          "type": "string"
+        },
+        "source_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "source_version": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Version",
+          "type": "string"
+        },
+        "speaker_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Speaker Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_scope",
+        "source_ref",
+        "source_version",
+        "speaker_ref"
+      ],
+      "title": "SourceBinding",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Half-open Unicode codepoint offsets into unchanged original source text.",
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    },
+    "StoredTask": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SourceBinding"
+        },
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Sha256",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/BoundTaskResult"
+        }
+      },
+      "required": [
+        "source",
+        "profile_sha256",
+        "result"
+      ],
+      "title": "StoredTask",
+      "type": "object"
+    },
+    "TaskBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "enum": [
+            "message_topics",
+            "concept_mentions"
+          ],
+          "title": "Task",
+          "type": "string"
+        },
+        "component_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Component Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "component_id"
+      ],
+      "title": "TaskBinding",
+      "type": "object"
+    },
+    "TaskDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "enum": [
+            "message_topics",
+            "concept_mentions"
+          ],
+          "title": "Task",
+          "type": "string"
+        },
+        "task_contract": {
+          "enum": [
+            "message_topics.v1",
+            "concept_mentions.v1"
+          ],
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "taxonomy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "enabled_ids": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Enabled Ids",
+          "type": "array"
+        },
+        "score_policy": {
+          "$ref": "#/$defs/ScorePolicy"
+        }
+      },
+      "required": [
+        "task",
+        "task_contract",
+        "taxonomy",
+        "enabled_ids",
+        "score_policy"
+      ],
+      "title": "TaskDescriptor",
+      "type": "object"
+    },
+    "TopicFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "topic_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Topic Id",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "logit": "#/$defs/LogitScore",
+                  "margin": "#/$defs/MarginScore",
+                  "probability": "#/$defs/ProbabilityScore"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ProbabilityScore"
+                },
+                {
+                  "$ref": "#/$defs/LogitScore"
+                },
+                {
+                  "$ref": "#/$defs/MarginScore"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        }
+      },
+      "required": [
+        "topic_id"
+      ],
+      "title": "TopicFinding",
+      "type": "object"
+    },
+    "TopicResult": {
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "assessed_findings",
+            "assessed_no_match",
+            "uncertain",
+            "unsupported",
+            "partial",
+            "failed",
+            "unprocessed"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "below_threshold",
+            "unsupported_input",
+            "dependency_unavailable",
+            "cancelled",
+            "deadline",
+            "worker_failure",
+            "limit_reached"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "task": {
+          "const": "message_topics",
+          "title": "Task",
+          "type": "string"
+        },
+        "task_contract": {
+          "const": "message_topics.v1",
+          "default": "message_topics.v1",
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TopicFinding"
+          },
+          "maxItems": 64,
+          "title": "Findings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "outcome",
+        "coverage",
+        "reason",
+        "task"
+      ],
+      "title": "TopicResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A serialization contract; no storage writer is installed here.",
+  "properties": {
+    "schema_version": {
+      "const": "nlp-result.v2",
+      "default": "nlp-result.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceBinding"
+    },
+    "profile": {
+      "$ref": "#/$defs/AnalysisProfile"
+    },
+    "analyzed_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "title": "Analyzed At",
+      "type": "string"
+    },
+    "tasks": {
+      "items": {
+        "$ref": "#/$defs/StoredTask"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Tasks",
+      "type": "array"
+    }
+  },
+  "required": [
+    "source",
+    "profile",
+    "analyzed_at",
+    "tasks"
+  ],
+  "title": "EnrichmentRecord",
+  "type": "object"
+}

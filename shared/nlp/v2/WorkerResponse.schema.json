@@ -1,0 +1,487 @@
+{
+  "$defs": {
+    "BoundTaskResult": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Component Id",
+          "type": "string"
+        },
+        "component_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Component Sha256",
+          "type": "string"
+        },
+        "text_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Text Sha256",
+          "type": "string"
+        },
+        "payload": {
+          "discriminator": {
+            "mapping": {
+              "concept_mentions": "#/$defs/MentionResult",
+              "message_topics": "#/$defs/TopicResult"
+            },
+            "propertyName": "task"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TopicResult"
+            },
+            {
+              "$ref": "#/$defs/MentionResult"
+            }
+          ],
+          "title": "Payload"
+        }
+      },
+      "required": [
+        "component_id",
+        "component_sha256",
+        "text_sha256",
+        "payload"
+      ],
+      "title": "BoundTaskResult",
+      "type": "object"
+    },
+    "Coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "source_codepoints": {
+          "maximum": 131072,
+          "minimum": 0,
+          "title": "Source Codepoints",
+          "type": "integer"
+        },
+        "examined": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Examined",
+          "type": "array"
+        },
+        "excluded": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Excluded",
+          "type": "array"
+        },
+        "limits_reached": {
+          "items": {
+            "enum": [
+              "tokens",
+              "windows",
+              "candidates",
+              "output"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Limits Reached",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_codepoints",
+        "examined",
+        "excluded",
+        "limits_reached"
+      ],
+      "title": "Coverage",
+      "type": "object"
+    },
+    "LogitScore": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "logit",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "LogitScore",
+      "type": "object"
+    },
+    "MarginScore": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "margin",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "MarginScore",
+      "type": "object"
+    },
+    "MentionFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "concept_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Concept Id",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "logit": "#/$defs/LogitScore",
+                  "margin": "#/$defs/MarginScore",
+                  "probability": "#/$defs/ProbabilityScore"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ProbabilityScore"
+                },
+                {
+                  "$ref": "#/$defs/LogitScore"
+                },
+                {
+                  "$ref": "#/$defs/MarginScore"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        }
+      },
+      "required": [
+        "concept_id",
+        "span"
+      ],
+      "title": "MentionFinding",
+      "type": "object"
+    },
+    "MentionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "assessed_findings",
+            "assessed_no_match",
+            "uncertain",
+            "unsupported",
+            "partial",
+            "failed",
+            "unprocessed"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "below_threshold",
+            "unsupported_input",
+            "dependency_unavailable",
+            "cancelled",
+            "deadline",
+            "worker_failure",
+            "limit_reached"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "task": {
+          "const": "concept_mentions",
+          "title": "Task",
+          "type": "string"
+        },
+        "task_contract": {
+          "const": "concept_mentions.v1",
+          "default": "concept_mentions.v1",
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MentionFinding"
+          },
+          "maxItems": 512,
+          "title": "Findings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "outcome",
+        "coverage",
+        "reason",
+        "task"
+      ],
+      "title": "MentionResult",
+      "type": "object"
+    },
+    "ProbabilityScore": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "probability",
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "ProbabilityScore",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Half-open Unicode codepoint offsets into unchanged original source text.",
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    },
+    "TopicFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "topic_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Topic Id",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "logit": "#/$defs/LogitScore",
+                  "margin": "#/$defs/MarginScore",
+                  "probability": "#/$defs/ProbabilityScore"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ProbabilityScore"
+                },
+                {
+                  "$ref": "#/$defs/LogitScore"
+                },
+                {
+                  "$ref": "#/$defs/MarginScore"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        }
+      },
+      "required": [
+        "topic_id"
+      ],
+      "title": "TopicFinding",
+      "type": "object"
+    },
+    "TopicResult": {
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "assessed_findings",
+            "assessed_no_match",
+            "uncertain",
+            "unsupported",
+            "partial",
+            "failed",
+            "unprocessed"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "below_threshold",
+            "unsupported_input",
+            "dependency_unavailable",
+            "cancelled",
+            "deadline",
+            "worker_failure",
+            "limit_reached"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "task": {
+          "const": "message_topics",
+          "title": "Task",
+          "type": "string"
+        },
+        "task_contract": {
+          "const": "message_topics.v1",
+          "default": "message_topics.v1",
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TopicFinding"
+          },
+          "maxItems": 64,
+          "title": "Findings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "outcome",
+        "coverage",
+        "reason",
+        "task"
+      ],
+      "title": "TopicResult",
+      "type": "object"
+    },
+    "WorkerItemResult": {
+      "additionalProperties": false,
+      "properties": {
+        "request_item_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Request Item Id",
+          "type": "string"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/BoundTaskResult"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "request_item_id",
+        "tasks"
+      ],
+      "title": "WorkerItemResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "nlp-worker.v2",
+      "default": "nlp-worker.v2",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Profile Sha256",
+      "type": "string"
+    },
+    "component_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Component Id",
+      "type": "string"
+    },
+    "component_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Component Sha256",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/WorkerItemResult"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "profile_sha256",
+    "component_id",
+    "component_sha256",
+    "items"
+  ],
+  "title": "WorkerResponse",
+  "type": "object"
+}

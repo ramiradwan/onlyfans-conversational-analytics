@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "WorkerInput": {
+      "additionalProperties": false,
+      "properties": {
+        "request_item_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Request Item Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 131072,
+          "title": "Text",
+          "type": "string"
+        },
+        "text_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Text Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_item_id",
+        "text",
+        "text_sha256"
+      ],
+      "title": "WorkerInput",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "nlp-worker.v2",
+      "default": "nlp-worker.v2",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Profile Sha256",
+      "type": "string"
+    },
+    "component_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Component Id",
+      "type": "string"
+    },
+    "component_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Component Sha256",
+      "type": "string"
+    },
+    "tasks": {
+      "items": {
+        "enum": [
+          "message_topics",
+          "concept_mentions"
+        ],
+        "type": "string"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "title": "Tasks",
+      "type": "array"
+    },
+    "deadline_ms": {
+      "maximum": 120000,
+      "minimum": 1,
+      "title": "Deadline Ms",
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/WorkerInput"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "profile_sha256",
+    "component_id",
+    "component_sha256",
+    "tasks",
+    "deadline_ms",
+    "items"
+  ],
+  "title": "WorkerRequest",
+  "type": "object"
+}
