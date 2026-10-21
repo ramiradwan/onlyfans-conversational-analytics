@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.core.lifecycle_receipts import startup_timed, startup_span, startup_count
 
 import json
+import logging
 from contextlib import contextmanager
 import secrets
 from app.persistence import sqlite_api as sqlite3
@@ -80,6 +81,7 @@ from app.persistence.database import StartupValidationUnavailable
 
 
 PROJECTION_BUILD_VERSION = "analytics.projection.v3"
+LOGGER = logging.getLogger(__name__)
 _SCOPED_PAGE_RETIREMENT_RECLAIM = (
     "DELETE FROM conversation_page_content WHERE creator_account_id=? "
     "AND content_id IN (SELECT content_id FROM retirement_page_content_ids) "
@@ -1852,6 +1854,7 @@ class SQLiteAnalyticsProjectionStore:
                 (partition_ref, self.rollback_retention),
             ).fetchone()
         if eligible is None:
+            self._reclaim_findings_partition(partition_ref)
             return 0
 
         with self.database.transaction() as connection:
@@ -1892,7 +1895,20 @@ class SQLiteAnalyticsProjectionStore:
                     )
                 renewed = finish_transition(connection, transition)
         self._install_enrichment_transition(transition, renewed)
+        self._reclaim_findings_partition(partition_ref)
         return len(rows)
+
+    def _reclaim_findings_partition(self, partition_ref):
+        from app.analytics.nlp_reclamation import reclaim_orphans
+        try:
+            return reclaim_orphans(self.database, partition_ref,
+                proof_candidate=self._enrichment_transition_candidate,
+                install_transition=self._install_enrichment_transition)
+        except Exception:
+            # Optional cleanup cannot revoke an independently validated report
+            # or misreport an already committed generation retirement.
+            LOGGER.warning('analytics_cleanup_event status=incomplete reason_code=findings_reclamation_failed')
+            return 0
 
     def _validate_and_mark_generation(self, generation_id: str) -> None:
         self._validate_persisted_generation(generation_id, allow_building=True)

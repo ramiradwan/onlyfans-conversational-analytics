@@ -707,7 +707,13 @@ def test_corruption_invalidates_existing_content_proof(fixture,corruption):
     with fixture.stores.database.transaction() as db:
         before=content_stamp(db)
         if corruption=='record':
-            db.execute('DELETE FROM nlp_records')
+            # Indexed snapshot ownership refuses ordinary record deletion.
+            with pytest.raises(Exception):
+                db.execute('DELETE FROM nlp_records')
+            trigger=db.execute("SELECT sql FROM sqlite_master WHERE name='nlp_records_immutable'").fetchone()[0]
+            db.execute('DROP TRIGGER nlp_records_immutable')
+            db.execute("UPDATE nlp_records SET document=X'7b7d'")
+            db.execute(trigger)
         elif corruption=='snapshot':
             # Foreign keys refuse deleting a generation's referenced manifest.
             with pytest.raises(Exception):

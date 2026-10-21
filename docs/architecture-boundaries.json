@@ -590,6 +590,7 @@
         "app/analytics/canonical_source.py",
         "app/analytics/nlp_record_validation.py",
         "app/analytics/nlp_findings_store.py",
+        "app/analytics/nlp_reclamation.py",
         "app/analytics/nlp_processing.py",
         "app/analytics/pipeline.py",
         "app/analytics/licensed_pipeline.py",

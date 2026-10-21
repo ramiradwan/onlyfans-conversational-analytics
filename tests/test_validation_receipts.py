@@ -160,7 +160,8 @@ def test_every_tracking_trigger_is_required(fixture):
             "SELECT name FROM sqlite_master WHERE type='trigger' AND name GLOB 'generation_content_*'")]
         # Catalogs 22 and 23 add four cleanup guards and one graph epoch guard.
         # Catalog 26 adds six optional-findings content epoch triggers.
-        assert len(names) == 92
+        # Catalog 27 also tracks immutable membership and backfill progress.
+        assert len(names) == 99
         for name in names:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TRIGGER ' + name)

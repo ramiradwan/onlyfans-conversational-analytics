@@ -326,6 +326,8 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
             # The new empty generation is now the witnessed active generation.
             # The expired predecessor is no longer needed even for rollback.
             with self.database.transaction() as connection:
+                from app.analytics.nlp_reclamation import expire_generation_input
+                expire_generation_input(connection, generation_id)
                 connection.execute(
                     "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
                     (generation_id,),
@@ -363,6 +365,8 @@ class RetentionBoundSQLiteAnalyticsProjectionStore(SQLiteAnalyticsProjectionStor
             return
         with self.database.transaction() as connection:
             for generation_id in expired_ids:
+                from app.analytics.nlp_reclamation import expire_generation_input
+                expire_generation_input(connection, generation_id)
                 connection.execute(
                     "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
                     (generation_id,),
