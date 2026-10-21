@@ -63,16 +63,26 @@ def file_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def apply_private_directory_security(path: str | Path) -> None:
-    """Protect an owned recovery directory without losing POSIX traversal."""
+def apply_private_directory_security(
+    path: str | Path, *, repair_permissions: bool = True
+) -> None:
+    """Protect an owned directory, or verify it without changing descendants' access."""
     target = reject_path_aliases(path)
     if not target.is_dir():
         raise PrivateFileSecurityError("private directory is missing")
     if os.name == "nt":
-        apply_private_file_security(target)
+        if repair_permissions:
+            apply_private_file_security(target)
+        else:
+            try:
+                if not _windows_acl_is_owner_only(target):
+                    raise OSError("read-only private directory verification failed")
+            except OSError as error:
+                raise PrivateFileSecurityError("private directory security failed") from error
     else:
         try:
-            os.chmod(target, 0o700)
+            if repair_permissions:
+                os.chmod(target, 0o700)
             if stat.S_IMODE(target.stat().st_mode) != 0o700:
                 raise OSError("owner-only directory verification failed")
         except OSError as error:

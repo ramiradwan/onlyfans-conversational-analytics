@@ -1,4 +1,4 @@
-<!-- CODE-VERIFY: Check app/nlp/profiles.py, app/nlp/v2.py, app/nlp/adapter.py, tools/generate_nlp_contracts.py and tests/test_nlp_contracts.py. -->
+<!-- CODE-VERIFY: Check app/nlp/profiles.py, app/nlp/v2.py, app/nlp/adapter.py, app/nlp/artifact_store.py, tools/generate_nlp_contracts.py, tests/test_nlp_contracts.py and tests/test_nlp_artifact_store.py. -->
 
 # Message-analysis contracts
 
@@ -9,6 +9,10 @@ Python owns this contract family. Run `python tools/generate_nlp_contracts.py` t
 `validate_request` requires an already admitted profile. `validate_response` checks exact profile, component, item, task, source digest, source length, categories and score policy. Coverage and mention coordinates refer to unchanged original Unicode codepoints. Duplicate occurrence coordinates are rejected; separate repeated occurrences remain distinct. Scores may be omitted. Present scores use finite probability, logit or margin values; only probabilities have a [0, 1] bound. A `none` score policy requires absent scores. Calibration identity belongs to the admitted policy.
 
 `CompiledAdapter` defines describe, prepare, analyze, cancel and unload messages. Handshake validation narrows the admitted adapter, task, format, score, runtime and limit declarations. Compatibility declarations authenticate nothing. Artifact verification, authorization, installer behavior, production worker execution and cross-runtime consumers are not implemented by these contracts.
+
+`app/nlp/artifact_store.py` stores complete weights/tokenizer/configuration closures from caller-owned streams; engine/runtime files remain package-owned. `stage` checks membership, sizes, hashes, private paths, byte quotas (including canonical `Artifact` declarations), disk reserve and cancellation before atomic publication. Data-closure identities allow reuse across profile/engine revisions while retaining distinct logical IDs. `reopen` rehashes every member. Availability grants no authenticity, qualification or activation; no transport, loader or runtime integration is installed.
+
+Use a dedicated directory beneath an existing private parent. Newly created roots receive private permissions; existing roots must already pass read-only private-permission verification, without repairs that could alter descendants' access. Exclusive operations preserve stale locks and foreign staging; failure removes only owned staging files. Existing closures are never overwritten. A parent-directory flush failure after publication preserves complete bytes for reverification. Windows durability retains the limits documented by `app/persistence/private_files.py`.
 
 `read_record` preserves v1 records and validates v2 records without converting identities. V2 records bind each task to source, profile and component provenance. `validate_record` checks an expected profile and source for conservative reuse. Record and snapshot readers enforce 64 KiB bounds. These are serialization contracts, not installed persistence or analytics integration. Snapshot identity includes task completion, availability, coverage, findings and source validity.
 
