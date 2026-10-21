@@ -52,13 +52,21 @@ def test_client_routes_retain_the_owned_native_document_capability(capability):
     assert origin + "/api/*" not in admitted
 
 
-@pytest.mark.parametrize("relative", ["brain-fixture.exe", "prerequisite-fixture.exe", "optional-package-fixture.exe", "tools/optional-package-fixture.exe", "WebView/msedgewebview2.exe"])
+@pytest.mark.parametrize("relative", ["brain-fixture.exe", "prerequisite-fixture.exe", "optional-package-fixture.exe", "tools/optional-package-fixture.exe", "optional-acquisition-profile.json", "app/optional-acquisition-profile.json", "WebView/msedgewebview2.exe"])
 def test_release_rejects_qualification_fixture_and_private_browser_engine(tmp_path, relative):
     stage = _stage_runtime_tree(tmp_path)
     target = stage / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b"not-a-release-payload")
     assert any(item.code == "forbidden_path_present" and item.path == relative for item in verify_runtime_files(stage))
+
+
+@pytest.mark.parametrize("marker", ["--bootstrap-related-source", "--inspect-optional-source", "--acquire-optional", "--cancel-optional", "text-analysis-related-bundle/v1"])
+def test_release_rejects_textual_optional_acquisition_material(tmp_path, marker):
+    stage = _stage_runtime_tree(tmp_path)
+    (stage / "Bridge.exe").write_bytes(b"synthetic executable marker: " + marker.encode("ascii"))
+    assert any(item.code == "forbidden_material_present" and item.path == "Bridge.exe"
+               for item in verify_runtime_files(stage))
 
 
 def test_release_requires_native_host_as_well_as_frozen_backend(tmp_path):

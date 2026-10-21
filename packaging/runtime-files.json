@@ -195,6 +195,8 @@
     "**/prerequisite-fixture.exe",
     "optional-package-fixture.exe",
     "**/optional-package-fixture.exe",
+    "optional-acquisition-profile.json",
+    "**/optional-acquisition-profile.json",
     "msedgewebview2.exe",
     "**/msedgewebview2.exe",
     ".env",
@@ -223,6 +225,10 @@
     "_internal/app/provisioning/native-tokens.css"
   ],
   "forbidden_material": [
+    {
+      "name": "optional_acquisition_fixture",
+      "pattern": "--(?:bootstrap-related-source|inspect-optional-source|acquire-optional|cancel-optional)\\b|text-analysis-related-bundle/v1"
+    },
     {
       "name": "private_key",
       "pattern": "-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----"

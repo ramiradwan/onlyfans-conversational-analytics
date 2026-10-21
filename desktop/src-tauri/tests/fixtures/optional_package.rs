@@ -6,6 +6,12 @@ mod bootstrap;
 mod deployment;
 #[path = "../../src/policy.rs"]
 mod policy;
+#[cfg(debug_assertions)]
+#[path = "../../src/servicing.rs"]
+mod servicing;
+#[cfg(debug_assertions)]
+#[path = "../../src/servicing_feed.rs"]
+mod servicing_feed;
 #[path = "../../src/windows.rs"]
 mod windows;
 
@@ -175,6 +181,27 @@ fn supervise(root: &Path) {
 
 fn main() {
     let root = root();
+    #[cfg(debug_assertions)]
+    {
+        use servicing::optional_acquisition::{self, Action};
+        let arguments: Vec<_> = std::env::args().collect();
+        let action = match arguments.get(1).map(String::as_str) {
+            Some("--bootstrap-related-source") => Some(Action::Bootstrap),
+            Some("--inspect-optional-source") => Some(Action::Inspect),
+            Some("--acquire-optional") => Some(Action::Acquire),
+            Some("--cancel-optional") => Some(Action::CancelAcquire),
+            _ => None,
+        };
+        if let Some(action) = action {
+            if arguments.len() != 2 {
+                std::process::exit(1);
+            }
+            let passed = std::thread::spawn(move || optional_acquisition::run(&root, action))
+                .join()
+                .unwrap_or(false);
+            std::process::exit(if passed { 0 } else { 1 });
+        }
+    }
     std::fs::create_dir_all(&root).unwrap();
     match std::env::args().nth(1).as_deref() {
         Some("--worker") => worker(&root),

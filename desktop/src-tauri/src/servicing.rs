@@ -3,6 +3,14 @@ use crate::deployment::{DesktopRelease, PackageIdentity};
 use serde::Serialize;
 use std::time::{Duration, Instant};
 
+#[cfg(any(windows, test))]
+#[path = "deployment_settlement.rs"]
+mod deployment_settlement;
+
+#[cfg(all(windows, feature = "qualification-tools", debug_assertions))]
+#[path = "optional_acquisition.rs"]
+pub(crate) mod optional_acquisition;
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum UpdateSource {
@@ -236,32 +244,42 @@ fn wait_deployment(
     cancelled: &impl Fn() -> bool,
     budget: Duration,
 ) -> windows_runtime::core::Result<windows_runtime::Management::Deployment::DeploymentResult> {
-    let started = Instant::now();
-    struct CancelOnDrop<F: Fn()>(F);
-    impl<F: Fn()> Drop for CancelOnDrop<F> {
-        fn drop(&mut self) {
-            (self.0)();
-        }
-    }
-    let _cancel = CancelOnDrop(|| {
-        let _ = operation.Cancel();
-    });
-    loop {
-        if cancelled() || started.elapsed() >= budget {
-            let _ = operation.Cancel();
-            return Err(windows_runtime::core::Error::from_hresult(
-                windows_runtime::core::HRESULT(0x800704c7u32 as i32),
-            ));
-        }
-        match operation.Status()? {
-            windows_future::AsyncStatus::Started => std::thread::sleep(Duration::from_millis(100)),
-            _ => {
-                let result = operation.GetResults()?;
-                result.ExtendedErrorCode()?.ok()?;
-                return Ok(result);
+    use deployment_settlement::{Operation, Status};
+    struct Deployment<'a>(
+        &'a windows_future::IAsyncOperationWithProgress<
+            windows_runtime::Management::Deployment::DeploymentResult,
+            windows_runtime::Management::Deployment::DeploymentProgress,
+        >,
+    );
+    impl Operation for Deployment<'_> {
+        type Output = windows_runtime::core::Result<
+            windows_runtime::Management::Deployment::DeploymentResult,
+        >;
+        fn status(&mut self) -> Status {
+            match self.0.Status() {
+                Ok(windows_future::AsyncStatus::Started) => Status::Pending,
+                Ok(windows_future::AsyncStatus::Completed)
+                | Ok(windows_future::AsyncStatus::Canceled)
+                | Ok(windows_future::AsyncStatus::Error) => Status::Terminal,
+                _ => Status::Unobservable,
             }
         }
+        fn cancel(&mut self) {
+            // Cancel is a request; its return value does not establish settlement.
+            let _ = self.0.Cancel();
+        }
+        fn results(&mut self) -> Self::Output {
+            let result = self.0.GetResults()?;
+            result.ExtendedErrorCode()?.ok()?;
+            Ok(result)
+        }
     }
+    let started = Instant::now();
+    deployment_settlement::wait(
+        &mut Deployment(operation),
+        || cancelled() || started.elapsed() >= budget,
+        || std::thread::sleep(Duration::from_millis(100)),
+    )
 }
 
 #[cfg(windows)]

@@ -1,5 +1,15 @@
 #![cfg(all(windows, feature = "qualification-tools"))]
 
+#[allow(dead_code)]
+#[path = "../src/deployment.rs"]
+mod deployment;
+#[allow(dead_code)]
+#[path = "../src/servicing.rs"]
+mod servicing;
+#[allow(dead_code)]
+#[path = "../src/servicing_feed.rs"]
+mod servicing_feed;
+
 use std::{
     path::PathBuf,
     process::{Child, Command, ExitStatus},

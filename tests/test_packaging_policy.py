@@ -527,6 +527,7 @@ def test_per_user_material_declarations_cover_every_required_category() -> None:
     declarations = load_runtime_policy(POLICY_PATH)["forbidden_material"]
 
     assert {declaration["name"] for declaration in declarations} == {
+        "optional_acquisition_fixture",
         "installation_claim",
         "claim_secret",
         "bearer_or_session_token",
