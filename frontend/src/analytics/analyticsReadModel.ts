@@ -94,6 +94,23 @@ export interface AnalyticsReadModel {
 }
 
 export type AnalyticsFrameStatus = 'baseline' | 'model';
+/** Identity and filters of the accepted baseline used to bind supplementary reads. */
+export function findingsBaseline(model: AnalyticsReadModel, range?: AnalyticsDateRange) {
+  const window = model.windowSources.topics.provenance.requested_window;
+  const requested = range ? {
+    start: range.startDate ? new Date(`${range.startDate}T00:00:00.000Z`).toISOString() : null,
+    end: range.endDate ? new Date(`${range.endDate}T23:59:59.999Z`).toISOString() : null,
+  } : window.scope === 'all_time' ? { start: null, end: null } : { start: window.start ?? null, end: window.end ?? null };
+  return {
+    account_ref: model.accountRef, source_revision: model.sourceRevision,
+    projection_generation: model.projectionGeneration, projection_digest: model.projectionDigest,
+    canonical_content_digest: model.canonicalContentDigest, graph_digest: model.graphDigest,
+    pipeline_revision: model.pipelineRevision, pipeline_config_digest: model.pipelineConfigDigest,
+    pipeline_identity_digest: model.pipelineIdentityDigest,
+    requested_window: { scope: 'requested' as const, ...requested },
+  };
+}
+export type FindingsBaseline = ReturnType<typeof findingsBaseline>;
 export type AnalyticsReadState =
   | { status: 'loading'; data: null; isRefreshing: false; message: string }
   | { status: 'building'; data: AnalyticsReadModel | null; isRefreshing: false; message: string; previousStatus: AnalyticsFrameStatus | null }

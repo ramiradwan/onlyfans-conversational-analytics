@@ -24,6 +24,8 @@
         "frontend/src/components/CommercialActivationControls.tsx",
         "frontend/src/components/CreatorVaultControls.tsx",
         "frontend/src/components/NlpDependencyControls.tsx",
+        "frontend/src/components/analytics/TaskFindings.tsx",
+        "frontend/src/components/analytics/MentionEvidenceDialog.tsx",
         "frontend/src/components/analytics/ConversationQuestions.tsx",
         "frontend/src/components/analytics/QuestionSourceDialog.tsx",
         "frontend/src/components/BrowserExtensionControls.tsx",
@@ -88,6 +90,11 @@
     }
   },
   "journeys": [
+    {
+      "id": "profile-findings",
+      "entry_state": "findings.controls",
+      "success_state": "findings.source"
+    },
     {
       "id": "optional-text-analysis",
       "entry_state": "textanalysis.controls",
@@ -165,6 +172,66 @@
     }
   ],
   "states": [
+    {
+      "id": "findings.controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TaskFindings.tsx",
+        "text": "data-journey-state=\"findings.controls\""
+      },
+      "transitions": [
+        { "to": "findings.results", "by": "system" },
+        { "to": "findings.unavailable", "by": "system" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "shows both tasks with distinct counting units and honest label fallback" }
+      ]
+    },
+    {
+      "id": "findings.unavailable",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TaskFindings.tsx",
+        "text": "data-journey-state=\"findings.unavailable\""
+      },
+      "transitions": [
+        { "to": "findings.controls", "by": "user", "action": "Refresh saved findings or choose another analytics window" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "keeps unavailable findings separate from baseline summary" }
+      ]
+    },
+    {
+      "id": "findings.results",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TaskFindings.tsx",
+        "text": "data-journey-state=\"findings.results\""
+      },
+      "transitions": [
+        { "to": "findings.source", "by": "user", "action": "Open a supporting source reference" },
+        { "to": "findings.controls", "by": "user", "action": "Change dates or message direction" },
+        { "to": "findings.unavailable", "by": "system" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "shows both tasks with distinct counting units and honest label fallback" }
+      ]
+    },
+    {
+      "id": "findings.source",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/MentionEvidenceDialog.tsx",
+        "text": "data-journey-state=\"findings.source\""
+      },
+      "transitions": [
+        { "to": "findings.results", "by": "user", "action": "Close the source message" },
+        { "to": "findings.unavailable", "by": "system" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "opens only the selected repeated Unicode mention occurrence" }
+      ]
+    },
     {
       "id": "textanalysis.unavailable",
       "surface": "desktop.app",

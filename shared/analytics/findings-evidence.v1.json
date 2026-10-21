@@ -1,0 +1,28 @@
+{
+  "account_id": "synthetic-continuous-owner",
+  "resolved_evidence": {
+    "reference": {
+      "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+      "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+      "message_ref": "m1:35b2393696d087d98c184ffdbf0fc927080fe00ccf966e6cd30baceb28213f5a",
+      "source_revision": 1,
+      "source_version_digest": "sha256:d65b836cf2f98c2050857afa6d65ea672a258ba6c0ec7d364a4f25d6c79fa585",
+      "sent_at": "2026-09-10T12:00:00Z",
+      "span": {
+        "start": 7,
+        "end": 11
+      }
+    },
+    "location": {
+      "conversation_id": "chat-0",
+      "message_id": "m-0-0"
+    },
+    "text": "😀 echo echo case0",
+    "direction": "inbound",
+    "checked_at": "2026-09-18T12:00:00Z",
+    "browser_span": {
+      "start": 8,
+      "end": 12
+    }
+  }
+}

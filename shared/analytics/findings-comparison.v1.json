@@ -1,0 +1,276 @@
+{
+  "schema_version": "analytics-findings.v1",
+  "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+  "source_revision": 1,
+  "projection_generation": 1,
+  "projection_digest": "sha256:9153bd7b59865dab96098c1ad4f859a0d121b597230d3b5ea92a0a6afee0fb3d",
+  "canonical_content_digest": "sha256:4b8a9f9e3e69489b1a1e81c79833ea0f5c95777859f037a984e1fd1932745351",
+  "graph_digest": "sha256:6988eaead10f5950fd2069e40161904c015d17c12d2b83d8b495508f40472cc9",
+  "pipeline_revision": "analytics.pipeline.v3+rule_based_sentiment@sentiment.rules.v1+rule_based_topics_entities@topics-entities.rules.v1+rule_based_engagement@engagement.rules.v1+graph.relationship.v1+enrichment.units.v1+graph.segment-root.v1+nlp.snapshot.v1",
+  "pipeline_config_digest": "sha256:d283d3cfed55284dd510ba02713081e317ab1babb496cf1630be80afaff17271",
+  "pipeline_identity_digest": "sha256:76e6b8812e4bdb076df67fc398ef9cfe794b592fff408c4f97041fe09e93fe62",
+  "snapshot_sha256": "sha256:622eb37c4844af673ddcbd3a469926a78fff114d33756c8dcd0997b00ca43626",
+  "profile_sha256": "sha256:45fcd0ed19bb6d10fe08ee22471bd756ab38bb1a5eaf1d14c72e9a2652ea1075",
+  "presentation": {
+    "policy_id": "presentation",
+    "revision": "1",
+    "sha256": "bfac314fefdc07451af1792a81cbaeda24a9363f7d4d4b7ff2938c4231ea7e36"
+  },
+  "requested_window": {
+    "scope": "requested",
+    "start": "2026-09-10T12:02:00Z",
+    "end": "2026-09-10T12:04:00Z"
+  },
+  "effective_window": {
+    "scope": "effective",
+    "start": "2026-09-10T12:02:00Z",
+    "end": "2026-09-10T12:03:00Z"
+  },
+  "direction": "all",
+  "conversation_ref": null,
+  "conversation_page": {
+    "offset": 0,
+    "limit": 50,
+    "total": 1,
+    "has_more": false,
+    "items": [
+      {
+        "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+        "eligible_messages": 2
+      }
+    ]
+  },
+  "comparison": {
+    "availability": "available",
+    "unavailable_reason": null,
+    "boundary_policy": "previous_end_exclusive",
+    "requested_window": {
+      "scope": "requested",
+      "start": "2026-09-10T12:00:00Z",
+      "end": "2026-09-10T12:02:00Z"
+    },
+    "effective_window": {
+      "scope": "effective",
+      "start": "2026-09-10T12:00:00Z",
+      "end": "2026-09-10T12:01:00Z"
+    },
+    "tasks": [
+      {
+        "task": "message_topics",
+        "task_contract": "message_topics.v1",
+        "component_id": "joint",
+        "component_sha256": "sha256:84a4f26d85174011c3e57cc99900053b8922158b0cc290621b8af1185fac5b51",
+        "taxonomy": {
+          "policy_id": "taxonomy",
+          "revision": "1",
+          "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+        },
+        "availability": "current",
+        "eligible_messages": 2,
+        "complete_messages": 2,
+        "partial_messages": 0,
+        "pending_messages": 0,
+        "failed_messages": 0,
+        "unsupported_messages": 0,
+        "uncertain_messages": 0,
+        "scan_complete": true,
+        "rows": [
+          {
+            "category_id": "topic.synthetic",
+            "display_label": "Example label",
+            "label_status": "resolved",
+            "label_identity_sha256": "sha256:d28ae18489f89434cecbf302528b62f4a08b43a62fca9a896b52dc1abf8dd808",
+            "supporting_messages": 2,
+            "supporting_conversations": 1,
+            "occurrences": 2,
+            "complete_supporting_messages": 2,
+            "partial_supporting_messages": 0,
+            "share_of_complete_messages": 1.0
+          },
+          {
+            "category_id": "topic.second",
+            "display_label": "topic.second",
+            "label_status": "id_only",
+            "label_identity_sha256": "sha256:1075dbabd100be0a4ac66112cf2df27c1dcfb483d722dd93fa9619b84fdde46e",
+            "supporting_messages": 2,
+            "supporting_conversations": 1,
+            "occurrences": 2,
+            "complete_supporting_messages": 2,
+            "partial_supporting_messages": 0,
+            "share_of_complete_messages": 1.0
+          }
+        ]
+      },
+      {
+        "task": "concept_mentions",
+        "task_contract": "concept_mentions.v1",
+        "component_id": "joint",
+        "component_sha256": "sha256:84a4f26d85174011c3e57cc99900053b8922158b0cc290621b8af1185fac5b51",
+        "taxonomy": {
+          "policy_id": "taxonomy",
+          "revision": "1",
+          "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+        },
+        "availability": "current",
+        "eligible_messages": 2,
+        "complete_messages": 2,
+        "partial_messages": 0,
+        "pending_messages": 0,
+        "failed_messages": 0,
+        "unsupported_messages": 0,
+        "uncertain_messages": 0,
+        "scan_complete": true,
+        "rows": [
+          {
+            "category_id": "concept.synthetic",
+            "display_label": "Example label",
+            "label_status": "resolved",
+            "label_identity_sha256": "sha256:6b179e271f7199ddbb4c8fc1fdee863eace1b50ecd31a532a51a6b0d99e1c073",
+            "supporting_messages": 2,
+            "supporting_conversations": 1,
+            "occurrences": 4,
+            "complete_supporting_messages": 2,
+            "partial_supporting_messages": 0,
+            "share_of_complete_messages": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "processing_mode": "enabled",
+  "tasks": [
+    {
+      "task": "message_topics",
+      "task_contract": "message_topics.v1",
+      "component_id": "joint",
+      "component_sha256": "sha256:84a4f26d85174011c3e57cc99900053b8922158b0cc290621b8af1185fac5b51",
+      "taxonomy": {
+        "policy_id": "taxonomy",
+        "revision": "1",
+        "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+      },
+      "availability": "partial",
+      "eligible_messages": 2,
+      "complete_messages": 0,
+      "partial_messages": 1,
+      "pending_messages": 0,
+      "failed_messages": 0,
+      "unsupported_messages": 0,
+      "uncertain_messages": 1,
+      "scan_complete": true,
+      "rows": [
+        {
+          "category_id": "topic.synthetic",
+          "display_label": "Example label",
+          "label_status": "resolved",
+          "label_identity_sha256": "sha256:d28ae18489f89434cecbf302528b62f4a08b43a62fca9a896b52dc1abf8dd808",
+          "supporting_messages": 1,
+          "supporting_conversations": 1,
+          "occurrences": 1,
+          "complete_supporting_messages": 0,
+          "partial_supporting_messages": 1,
+          "share_of_complete_messages": null
+        },
+        {
+          "category_id": "topic.second",
+          "display_label": "topic.second",
+          "label_status": "id_only",
+          "label_identity_sha256": "sha256:1075dbabd100be0a4ac66112cf2df27c1dcfb483d722dd93fa9619b84fdde46e",
+          "supporting_messages": 1,
+          "supporting_conversations": 1,
+          "occurrences": 1,
+          "complete_supporting_messages": 0,
+          "partial_supporting_messages": 1,
+          "share_of_complete_messages": null
+        }
+      ]
+    },
+    {
+      "task": "concept_mentions",
+      "task_contract": "concept_mentions.v1",
+      "component_id": "joint",
+      "component_sha256": "sha256:84a4f26d85174011c3e57cc99900053b8922158b0cc290621b8af1185fac5b51",
+      "taxonomy": {
+        "policy_id": "taxonomy",
+        "revision": "1",
+        "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+      },
+      "availability": "partial",
+      "eligible_messages": 2,
+      "complete_messages": 0,
+      "partial_messages": 1,
+      "pending_messages": 0,
+      "failed_messages": 0,
+      "unsupported_messages": 1,
+      "uncertain_messages": 0,
+      "scan_complete": true,
+      "rows": [
+        {
+          "category_id": "concept.synthetic",
+          "display_label": "Example label",
+          "label_status": "resolved",
+          "label_identity_sha256": "sha256:6b179e271f7199ddbb4c8fc1fdee863eace1b50ecd31a532a51a6b0d99e1c073",
+          "supporting_messages": 1,
+          "supporting_conversations": 1,
+          "occurrences": 1,
+          "complete_supporting_messages": 0,
+          "partial_supporting_messages": 1,
+          "share_of_complete_messages": null
+        }
+      ]
+    }
+  ],
+  "evidence_page": {
+    "offset": 0,
+    "limit": 50,
+    "total": 3,
+    "has_more": false,
+    "items": [
+      {
+        "task": "concept_mentions",
+        "category_id": "concept.synthetic",
+        "assessment": "partial",
+        "reference": {
+          "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+          "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+          "message_ref": "m1:55c44788f389f56b32b877e91822fbaaca19f284a7ecd1433c985fe3efba73e7",
+          "source_revision": 1,
+          "source_version_digest": "sha256:200be6204f175356f1b21f9a9f2eb3321183d879d125579785328b374b644be4",
+          "sent_at": "2026-09-10T12:02:00Z",
+          "span": {
+            "start": 2,
+            "end": 6
+          }
+        }
+      },
+      {
+        "task": "message_topics",
+        "category_id": "topic.second",
+        "assessment": "partial",
+        "reference": {
+          "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+          "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+          "message_ref": "m1:55c44788f389f56b32b877e91822fbaaca19f284a7ecd1433c985fe3efba73e7",
+          "source_revision": 1,
+          "source_version_digest": "sha256:200be6204f175356f1b21f9a9f2eb3321183d879d125579785328b374b644be4",
+          "sent_at": "2026-09-10T12:02:00Z",
+          "span": null
+        }
+      },
+      {
+        "task": "message_topics",
+        "category_id": "topic.synthetic",
+        "assessment": "partial",
+        "reference": {
+          "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+          "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+          "message_ref": "m1:55c44788f389f56b32b877e91822fbaaca19f284a7ecd1433c985fe3efba73e7",
+          "source_revision": 1,
+          "source_version_digest": "sha256:200be6204f175356f1b21f9a9f2eb3321183d879d125579785328b374b644be4",
+          "sent_at": "2026-09-10T12:02:00Z",
+          "span": null
+        }
+      }
+    ]
+  }
+}

@@ -63,6 +63,7 @@ export interface AnalyticsPresentationProps {
   onRetry?: () => void;
   windowSources?: AnalyticsWindowSources;
   questions?: ReactNode;
+  findings?: ReactNode;
 }
 export function AnalyticsPresentation({
   state,
@@ -71,8 +72,9 @@ export function AnalyticsPresentation({
   onRetry,
   windowSources,
   questions,
+  findings,
 }: AnalyticsPresentationProps) {
-  const [tab, setTab] = useState<'summary' | 'questions'>('summary');
+  const [tab, setTab] = useState<'summary' | 'questions' | 'findings'>('summary');
   const model = state.data;
   const resolvedWindowSources = windowSources ?? model?.windowSources;
   const panelSources = resolvedWindowSources && {
@@ -99,9 +101,10 @@ export function AnalyticsPresentation({
             Message tone, your replies, and what conversations are about.
           </Typography>
         </Box>
-        {questions && <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Analytics views">
+        {(questions || findings) && <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Analytics views">
           <Tab value="summary" label="Summary" />
-          <Tab value="questions" label="Conversation questions" />
+          {questions && <Tab value="questions" label="Conversation questions" />}
+          {findings && <Tab value="findings" label="Text analysis" />}
         </Tabs>}
         {questions && tab === 'questions' ? questions : <>
         <AnalyticsFilterRow
@@ -109,6 +112,7 @@ export function AnalyticsPresentation({
           onApply={onDateRangeChange}
           isRefreshing={state.isRefreshing}
         />
+        {findings && tab === 'findings' ? findings : <>
         {/* Holds the results. The panels stack in one column below md. */}
         <Results><ReservedRegion id="analytics-content" regionRole="scroll" size={resultsSize(topicRegionSize.list)} sx={resultsWithTopicTable}><Box key={state.data ? 'results' : state.status} data-region-content>
         <AnalyticsStateFrame state={state} onRetry={onRetry}>
@@ -145,6 +149,7 @@ export function AnalyticsPresentation({
           )}
         </AnalyticsStateFrame>
         </Box></ReservedRegion></Results>
+        </>}
         </>}
       </Stack>
     </Root>
