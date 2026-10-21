@@ -103,34 +103,60 @@ def _default_recovery_roots() -> tuple[Path, ...]:
 
 
 _DEFAULT_TASK: asyncio.Task[None] | None = None
+_DEFAULT_INFLIGHT: set[asyncio.Task] = set()
+
+
+async def _owned(awaitable):
+    task = asyncio.create_task(awaitable)
+    _DEFAULT_INFLIGHT.add(task)
+
+    def finished(done):
+        _DEFAULT_INFLIGHT.discard(done)
+        if not done.cancelled():
+            done.exception()
+
+    task.add_done_callback(finished)
+    return await asyncio.shield(task)
 
 
 async def start_default_retention_maintenance() -> asyncio.Task[None]:
     """Run one fail-closed sweep, then keep bounded lifecycles enforced."""
 
     global _DEFAULT_TASK
+    if _DEFAULT_TASK is not None and not _DEFAULT_TASK.done():
+        return _DEFAULT_TASK
+    if _DEFAULT_INFLIGHT:
+        raise RuntimeError("retention_maintenance_not_drained")
     from app.bootstrap import transport_manager
     from app.analytics.runtime import invalidate_question_sources
+    from app.analytics.runtime import reconcile_findings_erasure
+    from app.persistence.deletion_operations import ManagedDeletionOperations
+    from app.services.derived_deletion import DerivedDeletionService
 
     maintenance = RetentionMaintenance(
         transport_manager.canonical_database,
         managed_recovery_roots=_default_recovery_roots(),
+        clock=utc_now,
         on_source_change=invalidate_question_sources,
+    )
+    deletions = DerivedDeletionService(
+        ManagedDeletionOperations(transport_manager.canonical_database),
+        project_committed=transport_manager.project_committed_state,
+        reconcile_findings=reconcile_findings_erasure,
     )
 
     # Startup does not become ready until current expiry obligations have been
     # applied successfully. A persistence/schema failure must not be read as
     # an empty retention authority.
-    await asyncio.to_thread(maintenance.run_once)
-
-    if _DEFAULT_TASK is not None and not _DEFAULT_TASK.done():
-        return _DEFAULT_TASK
+    await _owned(asyncio.to_thread(maintenance.run_once))
+    await _owned(deletions.run_pending())
 
     async def run() -> None:
         while True:
             await asyncio.sleep(DEFAULT_MAINTENANCE_INTERVAL_SECONDS)
             try:
-                await asyncio.to_thread(maintenance.run_once)
+                await _owned(asyncio.to_thread(maintenance.run_once))
+                await _owned(deletions.run_pending())
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -144,15 +170,21 @@ async def start_default_retention_maintenance() -> asyncio.Task[None]:
 
 async def shutdown_default_retention_maintenance(*, timeout: float = 5.0) -> bool:
     global _DEFAULT_TASK
+    deadline = asyncio.get_running_loop().time() + timeout
     task = _DEFAULT_TASK
+    if task is not None:
+        task.cancel()
+        done, _ = await asyncio.wait(
+            (task,), timeout=max(0, deadline - asyncio.get_running_loop().time())
+        )
+        if not done:
+            return False
+    if _DEFAULT_INFLIGHT:
+        _, pending = await asyncio.wait(
+            tuple(_DEFAULT_INFLIGHT),
+            timeout=max(0, deadline - asyncio.get_running_loop().time()),
+        )
+        if pending:
+            return False
     _DEFAULT_TASK = None
-    if task is None:
-        return True
-    task.cancel()
-    try:
-        await asyncio.wait_for(task, timeout=timeout)
-    except asyncio.CancelledError:
-        return True
-    except asyncio.TimeoutError:
-        return False
     return True

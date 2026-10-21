@@ -259,16 +259,23 @@ class HistoryAnalyticsSource:
                       AND NOT EXISTS (
                           SELECT 1 FROM deletion_barriers AS b
                            WHERE b.creator_account_id=m.creator_account_id
+                             AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR b.deleted_at>=m.lifecycle_started_at)
                              AND ((b.scope_kind='account' AND b.scope_key='*')
                                OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
                                OR (b.scope_kind='message' AND b.scope_key=m.message_id)
                                OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
                       AND NOT EXISTS (
                           SELECT 1 FROM participant_deletion_chat_scopes AS p
-                           WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id)
+                           WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id
+                             AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR p.deleted_at>=m.lifecycle_started_at))
                     LIMIT 1""",
-                (account_id, location.message_id, location.conversation_id,
-                 MAX_EVIDENCE_TEXT_CHARS, MAX_EVIDENCE_TEXT_CHARS * 4),
+                (
+                    account_id,
+                    location.message_id,
+                    location.conversation_id,
+                    MAX_EVIDENCE_TEXT_CHARS,
+                    MAX_EVIDENCE_TEXT_CHARS * 4,
+                ),
             ).fetchone()
             return row, f"{token.schema}:{token.value}:{token.revision}"
 
@@ -331,6 +338,14 @@ class HistoryAnalyticsSource:
                 'WHERE creator_account_id=? AND message_id>? '
                 'ORDER BY message_id LIMIT ?', (account_id,after[1],limit)).fetchall()
         return tuple(EvidenceLocation(conversation_id=r[0],message_id=r[1]) for r in rows)
+
+    def erasure_source_identity(self, account_id):
+        """Capture guarded source tracking without materializing an account."""
+        with self._read() as db:
+            token = self._identity_cache.token(db, account_id)
+            if token is None:
+                raise ValueError("nlp_erasure_source_tracking_unavailable")
+            return f"{token.schema}:{token.value}:{token.revision}"
 
     def account_revision(self, account_id: str) -> int | None:
         with self._read() as connection:

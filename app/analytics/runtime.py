@@ -219,6 +219,40 @@ def analytics_pipeline(
     return analytics_runtime(source).pipeline
 
 
+def reconcile_findings_erasure(
+    account_id, target_revision, *, account_wide, deadline=None, acknowledge_absence=None
+):
+    """Use the existing storage owner without activating optional analysis."""
+    from app.analytics.opaque_refs import account_ref
+    from app.analytics.nlp_erasure import FindingsErasure
+
+    with _RUNTIME_LOCK:
+        configuration = _DEFAULT_CONFIGURATION
+    if configuration is None:
+        raise ProjectionStorageUnavailable()
+    absent = {
+        "account_ref": account_ref(account_id),
+        "target_revision": target_revision,
+        "store_identity": "absent",
+        "account_revision": int(account_wide),
+    }
+    if configuration.backend == "memory":
+        if acknowledge_absence is not None:
+            acknowledge_absence(absent)
+        return absent
+    runtime = analytics_runtime()
+    with runtime.pipeline.projections.lifecycle_store() as store:
+        if store is None:
+            if acknowledge_absence is not None:
+                acknowledge_absence(absent)
+            return absent
+        return FindingsErasure(
+            runtime.source, store, clock=runtime.pipeline._retention_clock
+        ).step(
+            account_id, target_revision, account_wide=account_wide, deadline=deadline
+        )
+
+
 def projection_scheduler(
     source: CanonicalReadModelSource | None = None,
 ) -> InProcessProjectionScheduler:

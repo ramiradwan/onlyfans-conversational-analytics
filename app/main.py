@@ -235,6 +235,9 @@ async def startup_event():
         app.state.desktop_coordinator.start()
     # Use resources created for this application lifecycle.
     configure_analytics_runtime()
+    from app.services.retention_maintenance import start_default_retention_maintenance
+
+    await start_default_retention_maintenance()
     # Recover every canonical account's analytics projection in the
     # background; readiness must not wait on this potentially slow replay.
     analytics_runtime.launch_default_analytics_runtime()
@@ -243,6 +246,13 @@ async def startup_event():
 async def shutdown_event():
     global _grant_refresh
     app.state.runtime_shutdown_drained = False
+    from app.services.retention_maintenance import (
+        shutdown_default_retention_maintenance,
+    )
+
+    if not await shutdown_default_retention_maintenance():
+        logger.warning("retention_maintenance_event reason_code=shutdown_drain_timeout")
+        return
     from app.services.signing_parameters import stop_signing_parameters
     await stop_signing_parameters()
     if hasattr(app.state, "desktop_coordinator"):

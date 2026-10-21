@@ -1910,6 +1910,60 @@ class SQLiteAnalyticsProjectionStore:
             LOGGER.warning('analytics_cleanup_event status=incomplete reason_code=findings_reclamation_failed')
             return 0
 
+    def retire_findings_for_erasure(self, state, generation, stamp):
+        """Revoke an invalid enhanced output under an exact erasure target."""
+        from app.analytics.validation_receipt import content_stamp, generation_binding
+
+        generation_id = generation["generation_id"]
+        if (
+            generation["creator_account_id"] != state["account_ref"]
+            or "+nlp.snapshot.v1" not in generation["pipeline_revision"]
+        ):
+            raise ValueError("nlp_erasure_generation_invalid")
+        intent = self.activation.get(generation_id)
+        if intent is not None and intent.state == "reserved":
+            self.activation.cancel(intent.intent_id)
+        with self.database.transaction() as db:
+            current = db.execute(
+                "SELECT * FROM nlp_erasure_state WHERE account_ref=?",
+                (state["account_ref"],),
+            ).fetchone()
+            live = db.execute(
+                "SELECT * FROM projection_generations WHERE generation_id=?",
+                (generation_id,),
+            ).fetchone()
+            if (
+                current is None
+                or dict(current) != state
+                or current["phase"] != "erase"
+                or live is None
+                or generation_binding(live) != generation_binding(generation)
+                or content_stamp(db) != stamp
+            ):
+                raise ValueError("nlp_erasure_retry")
+            db.execute(
+                "UPDATE projection_generations SET status='retired',retired_at=? WHERE generation_id=?",
+                (_timestamp(_now()), generation_id),
+            )
+            from app.analytics.shared_graph import supported
+
+            tables = (
+                ("graph_owned_edges", "graph_owned_nodes")
+                if supported(db)
+                else ("graph_edges", "graph_nodes")
+            )
+            for table in tables:
+                db.execute(
+                    "DELETE FROM "
+                    + table
+                    + " WHERE generation_id=? AND creator_account_id=?",
+                    (generation_id, state["account_ref"]),
+                )
+            db.execute(
+                "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
+                (generation_id,),
+            )
+
     def _validate_and_mark_generation(self, generation_id: str) -> None:
         self._validate_persisted_generation(generation_id, allow_building=True)
         with self.database.transaction() as connection:

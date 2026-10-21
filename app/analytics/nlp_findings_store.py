@@ -88,9 +88,12 @@ class Claim:
     expires_at: float
 
 
-def checked_snapshot(db, binding, *, verify_records=True):
+def checked_snapshot(db, binding, *, verify_records=True, deadline=None):
     """Verify immutable stored bytes, without granting live source access."""
-    deadline=time.monotonic()+VERIFICATION_SECONDS
+    deadline = min(
+        deadline if deadline is not None else float("inf"),
+        time.monotonic() + VERIFICATION_SECONDS,
+    )
     row = db.execute('SELECT document FROM nlp_snapshots WHERE account_ref=? AND snapshot_id=?',
         (binding.account_ref, binding.snapshot_id)).fetchone()
     if row is None or hashlib.sha256(bytes(row[0])).hexdigest() != binding.snapshot_id:
@@ -117,9 +120,14 @@ def checked_snapshot(db, binding, *, verify_records=True):
     return value
 
 
-def require_current_snapshot(db, binding, canonical=None, *, verify_records=True):
+def require_current_snapshot(
+    db, binding, canonical=None, *, verify_records=True, deadline=None
+):
     """Fence local findings revisions; callers separately admit live sources."""
-    value = checked_snapshot(db, binding, verify_records=verify_records)
+    require_erasure_idle(db, binding.account_ref)
+    value = checked_snapshot(
+        db, binding, verify_records=verify_records, deadline=deadline
+    )
     state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?', (binding.account_ref,)).fetchone()
     snapshot = value['snapshot']
     if (state is None or state['mode'] in ('withdrawn','removed')
@@ -142,7 +150,9 @@ def bind_generation(db, generation_id, binding, base_config, canonical):
         (generation_id,binding.account_ref,binding.snapshot_id,base_config))
 
 
-def check_generation(db, generation, *, current=False, verify_records=True):
+def check_generation(
+    db, generation, *, current=False, verify_records=True, deadline=None
+):
     if db.execute('PRAGMA user_version').fetchone()[0] < 26:
         if '+nlp.snapshot.v1' in generation['pipeline_revision']:
             raise ValueError('nlp_generation_schema_missing')
@@ -160,10 +170,29 @@ def check_generation(db, generation, *, current=False, verify_records=True):
         effective_config(row['base_config'],row['snapshot_id']) != generation['pipeline_config_digest']):
         raise ValueError('nlp_generation_binding_invalid')
     canonical = CanonicalIdentity(generation['canonical_revision'],generation['canonical_content_digest'])
-    value = (require_current_snapshot(db,binding,canonical,verify_records=verify_records) if current else checked_snapshot(db,binding,verify_records=verify_records))
+    value = (
+        require_current_snapshot(
+            db, binding, canonical, verify_records=verify_records, deadline=deadline
+        )
+        if current
+        else checked_snapshot(
+            db, binding, verify_records=verify_records, deadline=deadline
+        )
+    )
     if (value['snapshot']['canonical_revision'] != canonical.revision or
             value['canonical_content_digest'] != canonical.content_digest):
         raise ValueError('nlp_generation_source_invalid')
+
+
+def require_erasure_idle(db, ref):
+    if (
+        db.execute("PRAGMA user_version").fetchone()[0] >= 28
+        and db.execute(
+            "SELECT 1 FROM nlp_erasure_state WHERE account_ref=? AND phase!='complete'",
+            (ref,),
+        ).fetchone()
+    ):
+        raise ValueError("nlp_erasure_pending")
 
 
 class FindingsStore:
@@ -176,17 +205,36 @@ class FindingsStore:
         profile = AnalysisProfile.model_validate_json(profile.model_dump_json())
         ref = account_ref(account_id)
         with self.database.transaction() as db:
+            require_erasure_idle(db, ref)
             state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
+            ledger = db.execute(
+                "SELECT selection_epoch FROM nlp_epoch_ledger WHERE account_ref=?",
+                (ref,),
+            ).fetchone()
+            epoch = (
+                max(
+                    state["selection_epoch"] if state else 0, ledger[0] if ledger else 0
+                )
+                + 1
+            )
+            db.execute(
+                "INSERT INTO nlp_epoch_ledger VALUES(?,?) ON CONFLICT(account_ref) DO UPDATE SET selection_epoch=excluded.selection_epoch",
+                (ref, epoch),
+            )
             if state is None:
                 if db.execute('SELECT count(*) FROM nlp_accounts').fetchone()[0] >= MAX_ACCOUNTS:
                     raise ValueError('nlp_account_limit')
-                db.execute('INSERT INTO nlp_accounts(account_ref,profile_json,selection_epoch,mode) VALUES(?,?,1,?)',
-                    (ref,profile.model_dump_json(),mode))
+                db.execute(
+                    "INSERT INTO nlp_accounts(account_ref,profile_json,selection_epoch,mode) VALUES(?,?,?,?)",
+                    (ref, profile.model_dump_json(), epoch, mode),
+                )
             else:
-                db.execute('UPDATE nlp_accounts SET profile_json=?,selection_epoch=selection_epoch+1,'
-                    'admission_epoch=admission_epoch+1,availability_revision=availability_revision+1,'
-                    'notification_revision=notification_revision+1,mode=? WHERE account_ref=?',
-                    (profile.model_dump_json(),mode,ref))
+                db.execute(
+                    "UPDATE nlp_accounts SET profile_json=?,selection_epoch=?,"
+                    "admission_epoch=admission_epoch+1,availability_revision=availability_revision+1,"
+                    "notification_revision=notification_revision+1,mode=? WHERE account_ref=?",
+                    (profile.model_dump_json(), epoch, mode, ref),
+                )
                 db.execute('DELETE FROM nlp_jobs WHERE account_ref=?',(ref,))
 
     def mode(self, account_id, mode):
@@ -194,6 +242,7 @@ class FindingsStore:
             raise ValueError('nlp_mode_invalid')
         with self.database.transaction() as db:
             ref = account_ref(account_id)
+            require_erasure_idle(db, ref)
             state = db.execute('SELECT mode FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
             if state is None:
                 raise ValueError('nlp_account_missing')
@@ -225,6 +274,7 @@ class FindingsStore:
         """An explicit retry invalidates current availability, never old manifests."""
         ref=account_ref(account_id)
         with self.database.transaction() as db:
+            require_erasure_idle(db, ref)
             state=db.execute('SELECT mode FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
             if state is None or state[0]!='enabled':
                 raise ValueError('nlp_retry_unavailable')
@@ -256,6 +306,7 @@ class FindingsStore:
         ref = account_ref(account_id)
         identity = encoded([canonical.revision,canonical.content_digest]).decode()
         with self.database.transaction() as db:
+            require_erasure_idle(db, ref)
             state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
             if state is None:
                 raise ValueError('nlp_account_missing')
@@ -279,10 +330,20 @@ class FindingsStore:
                     raise ValueError('nlp_locator_storage_limit')
                 if old and old[0] != binding.source_version:
                     db.execute('DELETE FROM nlp_jobs WHERE account_ref=? AND source_ref=?',(ref,binding.source_ref))
-                db.execute('INSERT INTO nlp_sources VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(account_ref,source_ref) '
-                    'DO UPDATE SET source_version=excluded.source_version,speaker_ref=excluded.speaker_ref,'
-                    'conversation_id=excluded.conversation_id,message_id=excluded.message_id,seen_epoch=excluded.seen_epoch,lane=excluded.lane',
-                    (ref,binding.source_ref,binding.source_version,binding.speaker_ref,*location,state['scan_epoch'],lane))
+                db.execute(
+                    "INSERT INTO nlp_sources(account_ref,source_ref,source_version,speaker_ref,conversation_id,message_id,seen_epoch,lane) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(account_ref,source_ref) "
+                    "DO UPDATE SET source_version=excluded.source_version,speaker_ref=excluded.speaker_ref,"
+                    "conversation_id=excluded.conversation_id,message_id=excluded.message_id,seen_epoch=excluded.seen_epoch,lane=excluded.lane",
+                    (
+                        ref,
+                        binding.source_ref,
+                        binding.source_version,
+                        binding.speaker_ref,
+                        *location,
+                        state["scan_epoch"],
+                        lane,
+                    ),
+                )
                 last = location
             # The caller's cursor includes excluded/expired rows too.
             return state['scan_epoch'],state['scan_cursor']
@@ -290,6 +351,7 @@ class FindingsStore:
     def finish_page(self, account_id, canonical, epoch, cursor, *, complete, expected_cursor):
         ref = account_ref(account_id)
         with self.database.transaction() as db:
+            require_erasure_idle(db, ref)
             state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
             identity = encoded([canonical.revision,canonical.content_digest]).decode()
             if state['scan_epoch'] != epoch or state['scan_identity'] != identity or state['scan_cursor'] != expected_cursor:
@@ -307,6 +369,10 @@ class FindingsStore:
             self._fill(db,ref)
 
     def _fill(self, db, ref):
+        try:
+            require_erasure_idle(db, ref)
+        except ValueError:
+            return
         state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
         if state is None:
             raise ValueError('nlp_account_missing')
@@ -333,6 +399,10 @@ class FindingsStore:
             raise ValueError('nlp_deadline_invalid')
         ref, now = account_ref(account_id), self.clock()
         with self.database.transaction() as db:
+            try:
+                require_erasure_idle(db, ref)
+            except ValueError:
+                return None
             expired = db.execute("SELECT * FROM nlp_jobs WHERE state='running' AND expires_at<=?",(now,)).fetchall()
             for row in expired:
                 db.execute("UPDATE nlp_jobs SET state=?,terminal_reason=?,recoveries=recoveries+1,owner=NULL,expires_at=NULL WHERE account_ref=? AND source_ref=?",
@@ -371,6 +441,10 @@ class FindingsStore:
                 (claim.account_ref,claim.source_ref,claim.owner,self.clock()))
 
     def _valid_claim(self, db, claim):
+        try:
+            require_erasure_idle(db, claim.account_ref)
+        except ValueError:
+            return False
         row = db.execute("SELECT j.*,a.mode,a.selection_epoch AS epoch,a.admission_epoch AS admission FROM nlp_jobs j "
             'JOIN nlp_accounts a USING(account_ref) WHERE j.account_ref=? AND j.source_ref=?',
             (claim.account_ref,claim.source_ref)).fetchone()
@@ -411,6 +485,7 @@ class FindingsStore:
         deadline=time.monotonic()+VERIFICATION_SECONDS
         with self.database.read() as db:
             db.execute('BEGIN')
+            require_erasure_idle(db, ref)
             state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
             if state is None or state['mode'] in ('withdrawn','removed'):
                 raise ValueError('nlp_findings_unavailable')
@@ -464,6 +539,7 @@ class FindingsStore:
                 'canonical_content_digest':canonical.content_digest,'records':keys,'coverage':coverage})
             key=hashlib.sha256(document).hexdigest()
         with self.database.transaction() as db:
+            require_erasure_idle(db, ref)
             current=db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
             fields=('selection_epoch','completion_revision','availability_revision','inventory_digest','scan_complete')
             if current is None or current['mode'] in ('withdrawn','removed') or any(current[k]!=state[k] for k in fields):

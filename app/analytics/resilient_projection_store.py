@@ -28,6 +28,7 @@ from app.persistence.private_files import (
     PrivateFileSecurityError,
     apply_private_file_security,
     reject_path_aliases,
+    private_file_identity,
     sync_directory,
 )
 from app.persistence.projection_activation import ProjectionActivationRepository
@@ -91,6 +92,31 @@ class LazySQLiteAnalyticsProjectionStore:
     def set_failure_callback(self, callback: FailureCallback | None) -> None:
         with self._lock:
             self._failure_callback = callback
+
+    @contextmanager
+    def lifecycle_store(self):
+        """Open existing state strictly; erasure cannot replace or quarantine it."""
+        with self._lock:
+            if self._closed or self._needs_recovery:
+                raise ProjectionStorageUnavailable()
+            if not self.path.exists():
+                if self._store is not None or any(
+                    Path(str(self.path) + suffix).exists()
+                    for suffix in ("-wal", "-shm", "-journal")
+                ):
+                    raise ProjectionStorageUnavailable()
+                yield None
+                return
+            if self._store is None:
+                store, file_identity, store_identity = self._open_checked_store()
+                self._store, self._file_identity, self._store_identity = (
+                    store,
+                    file_identity,
+                    store_identity,
+                )
+            if not self._identity_matches_unlocked(self._store):
+                raise ProjectionStorageUnavailable()
+            yield self._store
 
     @startup_timed("startup.storage_open")
     def ensure_ready(self) -> None:
@@ -487,8 +513,10 @@ class LazySQLiteAnalyticsProjectionStore:
         return True
 
     def _file_identity_for_path(self) -> FileIdentity:
-        metadata = self.path.stat()
-        return int(metadata.st_dev), int(metadata.st_ino)
+        identity = private_file_identity(self.path, repair_permissions=False)
+        if identity is None:
+            raise SQLiteConfigurationError("projection_file_missing")
+        return identity
 
     def _record_recovery_failure_unlocked(self) -> None:
         self._failure_count += 1

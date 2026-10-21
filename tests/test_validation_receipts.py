@@ -161,7 +161,8 @@ def test_every_tracking_trigger_is_required(fixture):
         # Catalogs 22 and 23 add four cleanup guards and one graph epoch guard.
         # Catalog 26 adds six optional-findings content epoch triggers.
         # Catalog 27 also tracks immutable membership and backfill progress.
-        assert len(names) == 99
+        # Catalog 28 tracks erasure progress and historical record bindings.
+        assert len(names) == 105
         for name in names:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TRIGGER ' + name)

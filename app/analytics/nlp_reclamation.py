@@ -105,13 +105,23 @@ def _page(database, account_ref, proof_candidate, install_transition, deadline):
     return True
 
 
-def reclaim_orphans(database, account_ref, *, proof_candidate=None, install_transition=None):
+def reclaim_orphans(
+    database,
+    account_ref,
+    *,
+    proof_candidate=None,
+    install_transition=None,
+    deadline=None,
+):
     """Backfill one page, then reclaim at most one page of each content kind.
 
     Unsealed or inconsistent manifests prevent record deletion. All expensive
     authentication occurs in a reader; the content stamp fences its writer CAS.
     """
-    deadline = time.monotonic()+VERIFICATION_SECONDS
+    deadline = min(
+        deadline if deadline is not None else float("inf"),
+        time.monotonic() + VERIFICATION_SECONDS,
+    )
     with database.read() as db:
         if not _supported(db):
             return 0

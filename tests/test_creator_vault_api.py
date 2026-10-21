@@ -29,6 +29,7 @@ def reset_test_state() -> None:
 
 @pytest.fixture(autouse=True)
 def reset_manager(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("app.services.retention_maintenance.utc_now", lambda: NOW)
     monkeypatch.delenv("OFCA_CREATOR_VAULT_INDEFINITE_GATE", raising=False)
     reset_test_state()
     app.dependency_overrides.clear()
