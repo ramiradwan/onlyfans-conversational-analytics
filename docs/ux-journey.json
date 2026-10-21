@@ -23,6 +23,7 @@
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
         "frontend/src/components/CreatorVaultControls.tsx",
+        "frontend/src/components/NlpDependencyControls.tsx",
         "frontend/src/components/analytics/ConversationQuestions.tsx",
         "frontend/src/components/analytics/QuestionSourceDialog.tsx",
         "frontend/src/components/BrowserExtensionControls.tsx",
@@ -87,6 +88,16 @@
     }
   },
   "journeys": [
+    {
+      "id": "optional-text-analysis",
+      "entry_state": "textanalysis.controls",
+      "success_state": "textanalysis.cost_review"
+    },
+    {
+      "id": "optional-text-analysis-unavailable",
+      "entry_state": "textanalysis.unavailable",
+      "success_state": "textanalysis.unavailable"
+    },
     {
       "id": "desktop-runtime-recovery",
       "entry_state": "desktop.webview_runtime_needed",
@@ -154,6 +165,72 @@
     }
   ],
   "states": [
+    {
+      "id": "textanalysis.unavailable",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/NlpDependencyControls.tsx",
+        "text": "data-journey-state=\"textanalysis.unavailable\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.controls",
+          "by": "user",
+          "action": "Check cached status after a qualified configuration becomes available"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/NlpDependencyControls.test.tsx",
+          "name": "preserves the unavailable baseline without automatic setup actions"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/NlpDependencyControls.tsx",
+        "text": "data-journey-state=\"textanalysis.controls\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.cost_review",
+          "by": "user",
+          "action": "Review a profile download plan"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/NlpDependencyControls.test.tsx",
+          "name": "rediscovers interrupted downloads without automatically resuming them"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.cost_review",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/NlpDependencyControls.tsx",
+        "text": "data-journey-state=\"textanalysis.cost_review\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.controls",
+          "by": "user",
+          "action": "Return or explicitly download the reviewed files"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/NlpDependencyControls.test.tsx",
+          "name": "requires exact cost review before acquiring files"
+        }
+      ]
+    },
     {
       "id": "desktop.webview_runtime_needed",
       "surface": "desktop.prerequisite",

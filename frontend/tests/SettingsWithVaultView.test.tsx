@@ -15,9 +15,9 @@ import { desktopFixture } from './desktopOnboardingFixture';
 
 type Section = 'pairing' | 'history' | 'activation' | 'vault';
 
-it('keeps all four section frames present while one request is pending', () => {
+it('keeps all five section frames present while one request is pending', () => {
   const view = render(<ThemeProvider theme={theme}><SettingsWithVaultView {...apis('vault')} /></ThemeProvider>);
-  expect(view.container.querySelectorAll('[data-settings-section]')).toHaveLength(4);
+  expect(view.container.querySelectorAll('[data-settings-section]')).toHaveLength(5);
 });
 
 const unused = async () => { throw new Error('not used'); };
@@ -95,7 +95,11 @@ function apis(slow: Section) {
     release();
     if (slow === 'activation') desktop.publish({ snapshot: initialDesktop });
   };
-  return { activationApi, historyApi, pairingApi, release: releaseSection, vaultApi, onboardingApi: desktop.api };
+  const nlpApi = {
+    get: vi.fn(async () => ({ configured: false, profiles: [], acquisitions: [], available_profiles: [], selected: null, failure: 'nlp_unavailable', resume_granularity: 'verified_files_current_file_restarts' as const })),
+    observe: vi.fn(unused), command: vi.fn(unused),
+  };
+  return { activationApi, historyApi, pairingApi, release: releaseSection, vaultApi, onboardingApi: desktop.api, nlpApi };
 }
 
 beforeEach(() => {
