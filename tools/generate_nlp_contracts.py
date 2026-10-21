@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.nlp.contracts import (WorkerRequest, WorkerResponse, PackCompatibility,
                                EnrichmentRecord, EnrichmentSnapshot, Readiness, DeploymentResult)
 from app.nlp import adapter, normalization, profiles, v2
+from app.nlp.release_catalog import ReleaseCatalog
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,6 +30,10 @@ def documents_normalization():
               normalization.OccurrenceMapping, normalization.EquivalenceMembership,
               normalization.NormalizationPublication)
     return {model.__name__ + ".schema.json": model.model_json_schema() for model in models}
+
+
+def documents_releases():
+    return {'ReleaseCatalog.schema.json': ReleaseCatalog.model_json_schema()}
 
 
 def fixtures_v2():
@@ -121,6 +126,10 @@ def fixtures_v2():
     return result
 
 if __name__ == "__main__":
+    target = ROOT / 'shared/nlp/releases/v1'
+    target.mkdir(parents=True, exist_ok=True)
+    for name, schema in documents_releases().items():
+        (target / name).write_text(json.dumps(schema, indent=2) + '\n', encoding='utf-8')
     target = ROOT / "shared/nlp/normalization/v1"
     target.mkdir(parents=True, exist_ok=True)
     for name, schema in documents_normalization().items():

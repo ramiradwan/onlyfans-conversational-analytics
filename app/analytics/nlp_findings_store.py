@@ -199,13 +199,28 @@ class FindingsStore:
     def __init__(self, database, *, clock=time.time):
         self.database, self.clock = database, clock
 
-    def select(self, account_id, profile, *, mode='enabled'):
+    def selection_token(self, account_id):
+        with self.database.read() as db:
+            return self._selection_token(db, account_ref(account_id))
+
+    @staticmethod
+    def _selection_token(db, ref):
+        state = db.execute('SELECT selection_epoch,admission_epoch FROM nlp_accounts WHERE account_ref=?', (ref,)).fetchone()
+        ledger = db.execute('SELECT selection_epoch FROM nlp_epoch_ledger WHERE account_ref=?', (ref,)).fetchone()
+        erasure = db.execute('SELECT target_revision,account_wide,phase,covered_account_revision FROM nlp_erasure_state WHERE account_ref=?', (ref,)).fetchone()
+        store = db.execute('SELECT store_id FROM projection_store_identity WHERE singleton=1').fetchone()
+        return {'store': store[0], 'state': list(state) if state else None,
+                'ledger': ledger[0] if ledger else None, 'erasure': list(erasure) if erasure else None}
+
+    def select(self, account_id, profile, *, mode='enabled', expected=None, preserve_previous=False, intent=None):
         if mode not in ('enabled','paused','withdrawn','removed'):
             raise ValueError('nlp_mode_invalid')
         profile = AnalysisProfile.model_validate_json(profile.model_dump_json())
         ref = account_ref(account_id)
         with self.database.transaction() as db:
             require_erasure_idle(db, ref)
+            if expected is not None and self._selection_token(db, ref) != expected:
+                raise ValueError('nlp_selection_stale')
             state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
             ledger = db.execute(
                 "SELECT selection_epoch FROM nlp_epoch_ledger WHERE account_ref=?",
@@ -229,6 +244,8 @@ class FindingsStore:
                     (ref, profile.model_dump_json(), epoch, mode),
                 )
             else:
+                if preserve_previous:
+                    db.execute('UPDATE nlp_accounts SET previous_profile_json=profile_json WHERE account_ref=?', (ref,))
                 db.execute(
                     "UPDATE nlp_accounts SET profile_json=?,selection_epoch=?,"
                     "admission_epoch=admission_epoch+1,availability_revision=availability_revision+1,"
@@ -236,6 +253,30 @@ class FindingsStore:
                     (profile.model_dump_json(), epoch, mode, ref),
                 )
                 db.execute('DELETE FROM nlp_jobs WHERE account_ref=?',(ref,))
+            if intent is not None:
+                db.execute('UPDATE nlp_accounts SET dependency_intent=? WHERE account_ref=?', (intent, ref))
+
+    def selection_completed(self, account_id, intent, digest):
+        with self.database.read() as db:
+            row = db.execute('SELECT dependency_intent,profile_json FROM nlp_accounts WHERE account_ref=?', (account_ref(account_id),)).fetchone()
+        return bool(row and row['dependency_intent'] == intent and
+                    AnalysisProfile.model_validate_json(row['profile_json']).identity_digest() == digest)
+
+    def selected_profiles(self):
+        """Referenced current/rollback closures; callers separately fence retention."""
+        with self.database.read() as db:
+            rows = db.execute('SELECT account_ref,profile_json,previous_profile_json,mode FROM nlp_accounts').fetchall()
+        return [dict(row) for row in rows]
+
+    def withdraw_profile(self, profile_sha256):
+        with self.database.transaction() as db:
+            for row in db.execute('SELECT account_ref,profile_json,mode FROM nlp_accounts').fetchall():
+                if (row['mode'] not in ('withdrawn', 'removed') and
+                        AnalysisProfile.model_validate_json(row['profile_json']).identity_digest() == profile_sha256):
+                    db.execute("UPDATE nlp_accounts SET mode='withdrawn',admission_epoch=admission_epoch+1,"
+                        'availability_revision=availability_revision+1,notification_revision=notification_revision+1 '
+                        'WHERE account_ref=?', (row['account_ref'],))
+                    db.execute('DELETE FROM nlp_jobs WHERE account_ref=?', (row['account_ref'],))
 
     def mode(self, account_id, mode):
         if mode not in ('enabled','paused','withdrawn','removed'):

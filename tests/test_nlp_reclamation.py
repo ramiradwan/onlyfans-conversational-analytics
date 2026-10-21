@@ -243,15 +243,19 @@ def test_catalog_upgrade_preserves_historical_bytes_and_backfills_lazily(fixture
     originals={}
     with fixture.stores.database.read() as source, old.transaction() as target:
         for table in ('nlp_accounts','nlp_records','nlp_snapshots'):
-            rows=[tuple(row) for row in source.execute('SELECT * FROM '+table)]
-            originals[table]=rows
+            # Populate exactly the historical schema, including after later
+            # metadata-only columns have been added to the current fixture.
+            columns=','.join(row[1] for row in target.execute('PRAGMA table_info('+table+')'))
+            rows=[tuple(row) for row in source.execute('SELECT '+columns+' FROM '+table)]
+            originals[table]=(columns,rows)
             target.executemany('INSERT INTO '+table+' VALUES('+','.join('?' for _ in rows[0])+')',rows)
         before=content_stamp(target)
     upgraded=ProjectionsDatabase(old.path)
     with upgraded.read() as c:
         assert content_stamp(c) is not None and content_stamp(c)!=before
-        for table,rows in originals.items():
-            assert [tuple(row) for row in c.execute('SELECT * FROM '+table)]==rows
+        for table,(columns,rows) in originals.items():
+            assert [tuple(row) for row in c.execute('SELECT '+columns+' FROM '+table)]==rows
+        assert tuple(c.execute('SELECT previous_profile_json,dependency_intent FROM nlp_accounts').fetchone())==(None,None)
         assert c.execute('SELECT count(*) FROM nlp_snapshot_members').fetchone()[0]==0
         assert not c.execute('PRAGMA foreign_key_check').fetchall()
     assert reclaim_orphans(upgraded,account_ref(ACCOUNT))==0

@@ -1,6 +1,7 @@
 """FastAPI application for ingestion, analytics, Agent, and Bridge traffic."""
 
 import logging
+import asyncio
 import os
 from functools import lru_cache
 
@@ -16,6 +17,7 @@ from app.api.endpoints import (
     frontend,
     history,
     insights,
+    nlp_dependencies,
     transport_ws,
     webauthn,
 )
@@ -207,6 +209,7 @@ app.mount("/static", StaticFiles(directory=resource_path("app/static")), name="s
 app.include_router(transport_ws.router, tags=["Transport"])
 app.include_router(history.router)
 app.include_router(insights.router)
+app.include_router(nlp_dependencies.router)
 app.include_router(webauthn.router)
 app.include_router(creator_vault.router)
 app.include_router(companion_pairing.router)
@@ -220,11 +223,23 @@ if os.environ.get("LOCAL_PROVISIONING_HANDOFF_TOKEN") is not None:
 # -------------------------------------------------
 # Startup & Shutdown events — manage Broadcast lifecycle
 # -------------------------------------------------
+async def start_optional_dependencies():
+    from app.services.nlp_dependencies import dependency_service
+    dependencies = dependency_service()
+    if dependencies is not None:
+        try:
+            await asyncio.to_thread(dependencies.start)
+        except Exception:
+            dependencies.disable()
+            logger.warning('nlp_dependency_event reason_code=startup_unavailable')
+
+
 @app.on_event("startup")
 async def startup_event():
     app.state.runtime_shutdown_drained = False
     from app.core.lifecycle_receipts import start
     start()
+    await start_optional_dependencies()
     activate_runtime()
     await broadcast.connect()
     await transport_manager.start()
@@ -246,6 +261,9 @@ async def startup_event():
 async def shutdown_event():
     global _grant_refresh
     app.state.runtime_shutdown_drained = False
+    from app.services.nlp_dependencies import dependency_service
+    dependencies = dependency_service()
+    dependency_drained = dependencies is None or await asyncio.to_thread(dependencies.close)
     from app.services.retention_maintenance import (
         shutdown_default_retention_maintenance,
     )
@@ -272,8 +290,8 @@ async def shutdown_event():
         )
     await broadcast.disconnect()
     from app.core.lifecycle_receipts import finish
-    finish(drained)
-    app.state.runtime_shutdown_drained = bool(drained)
+    finish(drained and dependency_drained)
+    app.state.runtime_shutdown_drained = bool(drained and dependency_drained)
 
 # -------------------------------------------------
 # Health Check

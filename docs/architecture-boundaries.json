@@ -361,7 +361,8 @@
         "app/persistence/sql/**",
         "app/persistence/auth_sql/**",
         "app/persistence/json_header.py",
-        "app/persistence/signing_parameters.py"
+        "app/persistence/signing_parameters.py",
+        "app/persistence/nlp_dependencies.py"
       ],
       "role": "Authoritative canonical conversation storage, SQLite database lifecycle and SQLCipher runtime qualification, schema migrations, and irreversible deletion closure.",
       "authority": "authoritative",
@@ -797,6 +798,31 @@
         "Bridge store state",
         "resync requests",
         "authenticated REST requests"
+      ]
+    },
+    {
+      "id": "nlp-dependency-lifecycle",
+      "path_patterns": [
+        "app/services/nlp_dependencies.py",
+        "app/services/nlp_distribution.py"
+      ],
+      "role": "Explicit authenticated profile acquisition, durable withdrawal and account selection coordination; availability grants no release approval.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "release-integrity",
+        "consent-authorization"
+      ],
+      "permitted_inputs": [
+        "release-owned trust and exact approval providers",
+        "fixed-origin signed profile metadata and opaque data",
+        "session-bound explicit commands",
+        "caller-owned resource limits"
+      ],
+      "permitted_outputs": [
+        "durable authority and restart intents",
+        "verified data availability and cached readiness",
+        "epoch-bound account selection requests"
       ]
     },
     {

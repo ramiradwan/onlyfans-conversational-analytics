@@ -47,6 +47,7 @@ GUARD_DIGESTS = {
     26: "c4abd8f129d4ac37eef7de246f7c69a0d18aa04f4833424809cb1bc732859829",
     27: "d089d679878b7b7a0ce49bf5e0cbd60f13e741167dcc2db42ef0d502a78ffafa",
     28: "2a6a23e6939f3ce58d0cfbd234bd5038846babb7fff7005a9c5efad791a0bce5",
+    29: "2a6a23e6939f3ce58d0cfbd234bd5038846babb7fff7005a9c5efad791a0bce5",
 }
 
 

@@ -134,7 +134,7 @@ class ArtifactStore:
             raise ArtifactStoreError("artifact_store_root_changed")
 
     @contextmanager
-    def _operation(self, check):
+    def _operation(self, check, ownership=None):
         check()
         reject_path_aliases(self.root)
         try:
@@ -158,6 +158,8 @@ class ArtifactStore:
             if _identity(_regular(lock)) != lock_id:
                 raise ArtifactStoreError("artifact_store_lock_changed")
             apply_private_file_security(lock)
+            if ownership is not None:
+                ownership({'event': 'lock', 'root_id': list(root_id), 'lock_id': list(lock_id)})
             yield root_id
         finally:
             os.close(descriptor)
@@ -165,6 +167,8 @@ class ArtifactStore:
             if _identity(_regular(lock)) != lock_id:
                 raise ArtifactStoreError("artifact_store_lock_changed")
             lock.unlink()
+            if ownership is not None:
+                ownership({'event': 'closed'})
 
     def _poll(self, check, root_id, *, writing=0):
         check()
@@ -235,7 +239,7 @@ class ArtifactStore:
         return AvailableData(profile.identity_digest(), artifact_closure_digest(members), directory,
                              tuple(AvailableArtifact(asset, directory / _filename(asset)) for asset in members), size)
 
-    def _write_file(self, path, source, size, digest, owned, stage_id, check, root_id):
+    def _write_file(self, path, source, size, digest, owned, stage_id, check, root_id, ownership=None):
         self._poll(check, root_id)
         reject_path_aliases(path)
         if _identity(_directory(path.parent)) != stage_id:
@@ -245,6 +249,8 @@ class ArtifactStore:
         descriptor = os.open(path, flags, 0o600)
         owned[path.name] = _identity(os.fstat(descriptor))
         with os.fdopen(descriptor, "wb") as output:
+            if ownership is not None:
+                ownership({'event': 'member', 'name': path.name, 'identity': list(owned[path.name])})
             if _identity(_regular(path)) != owned[path.name]:
                 raise ArtifactStoreError("artifact_store_file_changed")
             apply_private_file_security(path)
@@ -293,14 +299,14 @@ class ArtifactStore:
                                 cancellation_check, root_id)
 
     def stage(self, profile: AnalysisProfile, streams: Iterable[tuple[str, BinaryIO]], *,
-              cancellation_check: Callable[[], None] = lambda: None) -> AvailableData:
+              cancellation_check: Callable[[], None] = lambda: None, ownership=None) -> AvailableData:
         """Publish all data members or none; existing closures require explicit reopen."""
         from io import BytesIO
 
         profile, members, encoded, size = _expected(profile)
         if size > self.limits.maximum_closure_bytes:
             raise ArtifactStoreError("artifact_store_closure_quota")
-        with self._operation(cancellation_check) as root_id:
+        with self._operation(cancellation_check, ownership) as root_id:
             used, directories = self._used_bytes(cancellation_check, root_id)
             if used + size > self.limits.maximum_store_bytes or directories >= MAX_CLOSURE_DIRECTORIES:
                 raise ArtifactStoreError("artifact_store_quota")
@@ -313,6 +319,8 @@ class ArtifactStore:
             stage_id, owned = _identity(_directory(stage)), {}
             published = False
             try:
+                if ownership is not None:
+                    ownership({'event': 'stage', 'name': stage.name, 'identity': list(stage_id)})
                 apply_private_directory_security(stage)
                 expected = {asset.artifact_id: asset for asset in members}
                 seen = set()
@@ -323,11 +331,11 @@ class ArtifactStore:
                     seen.add(artifact_id)
                     asset = expected[artifact_id]
                     self._write_file(stage / _filename(asset), stream, asset.size_bytes, asset.sha256,
-                                     owned, stage_id, cancellation_check, root_id)
+                                     owned, stage_id, cancellation_check, root_id, ownership)
                 if seen != set(expected):
                     raise ArtifactStoreError("artifact_store_membership")
                 self._write_file(stage / "artifacts.json", BytesIO(encoded), len(encoded), hashlib.sha256(encoded).hexdigest(),
-                                 owned, stage_id, cancellation_check, root_id)
+                                 owned, stage_id, cancellation_check, root_id, ownership)
                 self._verify(stage, profile, members, encoded, size, cancellation_check, root_id)
                 self._poll(cancellation_check, root_id)
                 if _identity(_directory(stage)) != stage_id:
@@ -345,3 +353,56 @@ class ArtifactStore:
             finally:
                 if not published:
                     self._cleanup(stage, stage_id, owned, root_id)
+
+    def recover_interrupted(self, journal, *, owner_absent):
+        """Recover only an externally journaled dead owner's exact flat staging."""
+        if not owner_absent() or not isinstance(journal, dict):
+            raise ArtifactStoreError('artifact_store_owner_live')
+        apply_private_directory_security(self.root, repair_permissions=False)
+        if list(_identity(_directory(self.root))) != journal['root_id']:
+            raise ArtifactStoreError('artifact_store_root_changed')
+        lock = self.root / '.write.lock'
+        if lock.exists() and list(_identity(_regular(lock))) != journal['lock_id']:
+            raise ArtifactStoreError('artifact_store_lock_changed')
+        stage_info = journal.get('stage')
+        if stage_info:
+            name = stage_info['name']
+            removing = stage_info.get('removing', False)
+            if not re.fullmatch(r'[a-f0-9]{64}' if removing else r'\.stage-[a-f0-9]{32}', name):
+                raise ArtifactStoreError('artifact_store_staging_changed')
+            stage = self.root / name
+            if stage.exists():
+                owned = stage_info['owned']
+                present = _names(stage)
+                if (list(_identity(_directory(stage))) != stage_info['identity']
+                        or not present <= set(owned)):
+                    raise ArtifactStoreError('artifact_store_staging_changed')
+                for member, identity in owned.items():
+                    if (member != 'artifacts.json' and not re.fullmatch(r'[a-f0-9]{64}\.data', member)):
+                        raise ArtifactStoreError('artifact_store_staging_changed')
+                    if member in present and list(_identity(_regular(stage / member))) != identity:
+                        raise ArtifactStoreError('artifact_store_staging_changed')
+                if not owner_absent():
+                    raise ArtifactStoreError('artifact_store_owner_live')
+                self._cleanup(stage, tuple(stage_info['identity']),
+                              {k: tuple(v) for k, v in owned.items() if k in present}, tuple(journal['root_id']))
+        if lock.exists():
+            if not owner_absent() or list(_identity(_regular(lock))) != journal['lock_id']:
+                raise ArtifactStoreError('artifact_store_lock_changed')
+            lock.unlink()
+        sync_directory(self.root)
+
+    def remove(self, profile, *, cancellation_check=lambda: None, ownership=None):
+        """Delete one verified closure after its owner has fenced all references."""
+        profile, members, encoded, size = _expected(profile)
+        with self._operation(cancellation_check, ownership) as root_id:
+            value = self._verify(self.root / artifact_closure_digest(members), profile, members,
+                                 encoded, size, cancellation_check, root_id)
+            directory_id = _identity(_directory(value.directory))
+            owned = {p.name: _identity(_regular(p)) for p in value.directory.iterdir()}
+            if ownership is not None:
+                ownership({'event': 'remove', 'name': value.directory.name, 'identity': list(directory_id),
+                           'owned': {k: list(v) for k, v in owned.items()}})
+            cancellation_check()
+            self._cleanup(value.directory, directory_id, owned, root_id)
+            sync_directory(self.root)

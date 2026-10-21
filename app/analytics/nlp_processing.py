@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from contextlib import nullcontext
 import hashlib
 import json
 import time
@@ -22,14 +23,16 @@ _EXECUTION = Lock()
 
 class FrozenFindingsPipeline(AnalyticsPipeline):
     """A publication acknowledges only the notification frozen with its input."""
-    def __init__(self, *args, on_published, **kwargs):
+    def __init__(self, *args, on_published, dependency_guard=nullcontext, **kwargs):
         super().__init__(*args, **kwargs)
         self._on_published = on_published
+        self._dependency_guard = dependency_guard
 
     def publish_candidate(self, candidate):
-        run = super().publish_candidate(candidate)
-        self._on_published()
-        return run
+        with self._dependency_guard():
+            run = super().publish_candidate(candidate)
+            self._on_published()
+            return run
 
 
 class FindingsRunner:
@@ -40,10 +43,11 @@ class FindingsRunner:
     The adapter honors request deadlines and polls the cancellation callback.
     """
     def __init__(self, source, projections, *, authorize, execution_ready, adapter,
-                 clock, enrichment=None, lease_clock=time.time):
+                 clock, enrichment=None, lease_clock=time.time, dependencies=None):
         self.source, self.projections = source, projections
         self.authorize, self.execution_ready, self.adapter = authorize, execution_ready, adapter
         self.clock, self.enrichment = clock, enrichment
+        self.dependencies = dependencies
         self.findings = FindingsStore(projections.database,clock=lease_clock)
 
     def _budget(self):
@@ -57,6 +61,7 @@ class FindingsRunner:
 
     def _publication_admission(self, account_id):
         self.authorize(account_id)
+        self._dependency_admission(account_id)
         budget=self._budget()
         with self.projections.database.read() as db:
             for row in db.execute('SELECT * FROM nlp_sources WHERE account_ref=? ORDER BY source_ref',
@@ -67,8 +72,15 @@ class FindingsRunner:
 
     def _cheap_publication_admission(self, account_id, due):
         self.authorize(account_id)
+        self._dependency_admission(account_id)
         if due is not None and due <= self.clock():
             raise ValueError('nlp_source_expired')
+
+    def _dependency_admission(self, account_id):
+        if self.dependencies is not None:
+            profile = AnalysisProfile.model_validate_json(self.findings.state(account_id)['profile_json'])
+            if not self.dependencies.ready(profile):
+                raise ValueError('nlp_dependency_unavailable')
 
     def reconcile(self, account_id, *, maximum=MAX_SOURCES):
         """Advance a durable scan by a bounded number of locator pages."""
@@ -101,6 +113,16 @@ class FindingsRunner:
         return False
 
     def process_one(self, account_id):
+        if self.dependencies is None:
+            return self._process_one(account_id)
+        self.authorize(account_id)
+        profile = AnalysisProfile.model_validate_json(self.findings.state(account_id)['profile_json'])
+        if not self.dependencies.ready(profile):
+            return False
+        with self.dependencies.retain(profile):
+            return self._process_one(account_id)
+
+    def _process_one(self, account_id):
         """Perform one bounded job; projection reads never call this method."""
         if not _EXECUTION.acquire(blocking=False):
             return False
@@ -125,7 +147,8 @@ class FindingsRunner:
                 return True
             def cancelled():
                 self.authorize(account_id)
-                return not self.findings.valid_claim(claim) or not self.execution_ready(profile)
+                return (not self.findings.valid_claim(claim) or not self.execution_ready(profile)
+                        or (self.dependencies is not None and not self.dependencies.ready(profile)))
             results=[]
             for component in profile.components:
                 if cancelled():
@@ -204,10 +227,12 @@ class FindingsRunner:
             raise ValueError('nlp_source_changed')
         revision=self.findings.state(account_id)['notification_revision']
         frozen=self.findings.freeze(account_id,canonical)
+        profile=AnalysisProfile.model_validate_json(self.findings.state(account_id)['profile_json'])
         return FrozenFindingsPipeline(self.source,projections=self.projections,enrichment=self.enrichment,
             clock=self.clock,nlp_findings=frozen,nlp_authorize=lambda:self._cheap_publication_admission(account_id,due),
             nlp_admit=lambda:self._publication_admission(account_id),
-            on_published=lambda:self.findings.acknowledge(account_id,revision))
+            on_published=lambda:self.findings.acknowledge(account_id,revision),
+            dependency_guard=(lambda:self.dependencies.publication(profile)) if self.dependencies is not None else nullcontext)
 
     async def notify_scheduler(self, scheduler, account_id):
         """Redeliver durable input changes until scheduler publication acknowledges."""

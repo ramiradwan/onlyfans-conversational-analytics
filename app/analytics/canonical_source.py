@@ -347,6 +347,21 @@ class HistoryAnalyticsSource:
                 raise ValueError("nlp_erasure_source_tracking_unavailable")
             return f"{token.schema}:{token.value}:{token.revision}"
 
+    @contextmanager
+    def dependency_selection_guard(self, account_id, expected_token):
+        """Serialize a short dependent selection with canonical lifecycle writers."""
+        if self.connection is not None:
+            raise ValueError('nlp_selection_live_source_required')
+        # The existing canonical writer transaction is only a fence here. No
+        # source fields are copied or changed; dependent storage commits first.
+        with self.history.database.transaction() as db:
+            token = self._identity_cache.token(db, account_id)
+            exists = db.execute('SELECT 1 FROM account_heads WHERE creator_account_id=?', (account_id,)).fetchone()
+            if (exists is None or token is None or
+                    f'{token.schema}:{token.value}:{token.revision}' != expected_token):
+                raise ValueError('nlp_selection_source_changed')
+            yield
+
     def account_revision(self, account_id: str) -> int | None:
         with self._read() as connection:
             row = connection.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?", (account_id,)).fetchone()
