@@ -247,7 +247,8 @@ class FindingsStore:
                     (ref, profile.model_dump_json(), epoch, mode),
                 )
             else:
-                if preserve_previous:
+                if (preserve_previous and
+                        AnalysisProfile.model_validate_json(state['profile_json']).identity_digest() != profile.identity_digest()):
                     db.execute('UPDATE nlp_accounts SET previous_profile_json=profile_json WHERE account_ref=?', (ref,))
                 db.execute(
                     "UPDATE nlp_accounts SET profile_json=?,selection_epoch=?,"

@@ -659,3 +659,69 @@ def test_catalog_rejects_domain_signer_parser_and_shape(fault, env):
         raw = sign(canonical(doc),typ=CATALOG_TYPE)
     with pytest.raises(ValueError):
         verify_catalog(raw, keys())
+
+
+@pytest.mark.parametrize('withdraw_previous', [False, True])
+def test_reselect_current_preserves_distinct_rollback_and_its_artifacts(env, withdraw_previous):
+    from app.nlp.profiles import AnalysisProfile
+    e = env
+    e.selected()
+    previous = e.profile
+    profile, payloads = example('split')
+    document = profile.model_dump(mode='json')
+    document['revision'] = 'next'
+    e.profile = AnalysisProfile.model_validate_json(canonical(document))
+    e.approved.add(e.profile.identity_digest())
+    e.objects['profiles/' + e.profile.identity_digest()] = sign(canonical_bytes(e.profile))
+    e.objects.update({'data/' + hashlib.sha256(raw).hexdigest(): raw for raw in payloads.values()})
+    e.service.learn(e.catalog(sequence=2))
+    e.selected()
+    before = e.findings.state(ACCOUNT)
+    assert AnalysisProfile.model_validate_json(before['previous_profile_json']) == previous
+    from app.analytics.nlp_processing import FindingsRunner
+    runner = FindingsRunner(e.fixture.source, e.fixture.stores.projections, authorize=lambda account: None,
+        execution_ready=e.service.ready, adapter=ConformanceAdapter(e.profile), clock=lambda: e.fixture.clock.now)
+    runner.reconcile(ACCOUNT)
+    claim = e.findings.claim(ACCOUNT)
+    assert claim is not None and e.findings.valid_claim(claim)
+    before = e.findings.state(ACCOUNT)
+    e.service.select(ACCOUNT, e.profile.profile_id, e.profile.revision)
+    repeated = e.findings.state(ACCOUNT)
+    assert repeated['selection_epoch'] == before['selection_epoch'] + 1
+    assert repeated['admission_epoch'] == before['admission_epoch'] + 1
+    assert repeated['availability_revision'] == before['availability_revision'] + 1
+    assert not e.findings.valid_claim(claim)
+    with e.fixture.stores.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_jobs').fetchone()[0] == 0
+    assert AnalysisProfile.model_validate_json(repeated['previous_profile_json']) == previous
+    # A requested collection cannot remove the retained rollback closure.
+    e.service.remove(ACCOUNT, previous.profile_id, previous.revision)
+    assert e.artifacts.reopen(previous).data_closure_sha256 != e.artifacts.reopen(e.profile).data_closure_sha256
+    assert any(p.identity_digest() == previous.identity_digest() and state == 'available'
+               for p, _, state in e.persistence.profiles())
+    if withdraw_previous:
+        e.service.learn(e.catalog(sequence=3, withdrawals=[previous.identity_digest()]))
+        with pytest.raises(ValueError):
+            e.service.select(ACCOUNT, None, None, rollback=True)
+        assert AnalysisProfile.model_validate_json(e.findings.state(ACCOUNT)['profile_json']) == e.profile
+    else:
+        e.service.select(ACCOUNT, None, None, rollback=True)
+        selected = e.findings.state(ACCOUNT)
+        assert AnalysisProfile.model_validate_json(selected['profile_json']) == previous
+        assert AnalysisProfile.model_validate_json(selected['previous_profile_json']) == e.profile
+
+
+def test_reselect_first_profile_does_not_create_self_rollback(env):
+    e = env
+    e.selected()
+    before = e.findings.state(ACCOUNT)
+    assert before['previous_profile_json'] is None
+    with e.fixture.stores.database.transaction() as db:
+        db.execute('UPDATE nlp_accounts SET profile_json=?',
+                   (json.dumps(json.loads(before['profile_json']), indent=2),))
+    e.service.select(ACCOUNT, e.profile.profile_id, e.profile.revision)
+    selected = e.findings.state(ACCOUNT)
+    assert selected['selection_epoch'] == before['selection_epoch'] + 1
+    assert selected['previous_profile_json'] is None
+    with pytest.raises(ValueError):
+        e.service.select(ACCOUNT, None, None, rollback=True)
