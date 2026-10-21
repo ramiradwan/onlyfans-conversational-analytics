@@ -321,6 +321,91 @@ class FindingsErasure:
                 (next_cursor, due, "scan" if page else "erase", ref),
             )
 
+    def _source_page_step(self, account_id, state, deadline):
+        """Check one authenticated historical page under the current erase epoch."""
+        from app.analytics.evidence_contracts import EvidenceLocation
+        from app.analytics.nlp_findings_store import FrozenFindings, checked_snapshot
+        from app.analytics.nlp_read_projection import authenticate_source_page, validate_source_header
+        from app.analytics.opaque_refs import message_ref
+
+        ref = state["account_ref"]
+        chosen = None
+        with self.database.read() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] < 30:
+                return False
+            stamp = content_stamp(db)
+            if stamp is None:
+                raise ValueError("nlp_erasure_guards_invalid")
+            for snapshot in db.execute(
+                "SELECT snapshot_id FROM nlp_snapshots WHERE account_ref=? ORDER BY snapshot_id", (ref,)
+            ):
+                check_deadline(deadline)
+                key = snapshot[0]
+                value = checked_snapshot(db, FrozenFindings(ref, key), verify_records=False, deadline=deadline)
+                header = value.get("read_inventory")
+                counts = db.execute(
+                    "SELECT count(*),min(ordinal),max(ordinal),COALESCE(sum(length(document)),0) "
+                    "FROM nlp_snapshot_source_pages WHERE account_ref=? AND snapshot_id=?", (ref, key)
+                ).fetchone()
+                if header is None:
+                    if counts[0]:
+                        raise ValueError("nlp_read_page_invalid")
+                    continue
+                validate_source_header(header)
+                count = header["source_page_count"]
+                if (counts[0] != count or counts[3] != header["source_bytes"]
+                        or (count and (counts[1] != 0 or counts[2] != count - 1))):
+                    raise ValueError("nlp_read_page_invalid")
+                page = db.execute(
+                    "SELECT ordinal,document,erasure_seen_epoch,erasure_invalid FROM nlp_snapshot_source_pages "
+                    "WHERE account_ref=? AND snapshot_id=? AND erasure_seen_epoch!=? ORDER BY ordinal LIMIT 1",
+                    (ref, key, state["scan_epoch"]),
+                ).fetchone()
+                if page is not None:
+                    chosen = (key, dict(page), authenticate_source_page(header, page["ordinal"], bytes(page["document"])))
+                    break
+        if chosen is None:
+            return False
+        key, old, rows = chosen
+        budget = QuestionBudget(QuestionLimits(max_records=64 * 3, wall_clock_ms=5000))
+        invalid = False
+        due = state["due_at"]
+        for row in rows:
+            check_deadline(deadline)
+            if type(row) is not list or len(row) != 8:
+                raise ValueError("nlp_read_source_invalid")
+            chat, message_id, sent_at, direction, version, speaker, record_index, status = row
+            location = EvidenceLocation(conversation_id=chat, message_id=message_id)
+            message = self.source.read_evidence_message(account_id, location, budget)
+            if message is None:
+                invalid = True
+                continue
+            binding = source_binding(message)
+            expires = (message.sent_at + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)).astimezone(timezone.utc)
+            if (binding.source_ref != message_ref(account_id, chat, message_id)
+                    or binding.source_version != version or binding.speaker_ref != speaker
+                    or message.sent_at.isoformat().replace("+00:00", "Z") != sent_at
+                    or message.direction != direction or expires <= self.clock()):
+                invalid = True
+            else:
+                due = min(due, expires.isoformat()) if due else expires.isoformat()
+        if (self.source.erasure_source_identity(account_id) != state["identity"]
+                or (due and due <= self.clock().isoformat())):
+            raise ValueError("nlp_erasure_source_changed")
+        check_deadline(deadline)
+        with self._write(state) as db:
+            if content_stamp(db) != stamp:
+                raise ValueError("nlp_erasure_retry")
+            changed = db.execute(
+                "UPDATE nlp_snapshot_source_pages SET erasure_seen_epoch=?,erasure_invalid=? "
+                "WHERE account_ref=? AND snapshot_id=? AND ordinal=? AND erasure_seen_epoch=? AND erasure_invalid=?",
+                (state["scan_epoch"], int(invalid), ref, key, old["ordinal"], old["erasure_seen_epoch"], old["erasure_invalid"]),
+            ).rowcount
+            if changed != 1:
+                raise ValueError("nlp_erasure_retry")
+            db.execute("UPDATE nlp_erasure_state SET due_at=? WHERE account_ref=?", (due, ref))
+        return True
+
     def _erase(self, account_id, state, deadline):
         ref = state["account_ref"]
         if not state["account_wide"]:
@@ -349,6 +434,8 @@ class FindingsErasure:
         reclaim_orphans(self.database, ref, deadline=deadline)
         if self._state(ref) != state:
             raise ValueError("nlp_erasure_retry")
+        if not state["account_wide"] and self._source_page_step(account_id, state, deadline):
+            return None
         with self.database.read() as db:
             if content_stamp(db) is None:
                 raise ValueError("nlp_erasure_guards_invalid")
@@ -369,8 +456,10 @@ class FindingsErasure:
                 "SELECT g.* FROM projection_generations g JOIN nlp_generation_refs r USING(generation_id) "
                 "WHERE r.account_ref=? AND (? OR EXISTS(SELECT 1 FROM nlp_snapshot_members m JOIN nlp_record_bindings b "
                 "USING(account_ref,record_digest) WHERE m.account_ref=r.account_ref AND m.snapshot_id=r.snapshot_id "
-                "AND b.seen_epoch!=?)) ORDER BY g.generation_id LIMIT 1",
-                (ref, state["account_wide"], state["scan_epoch"]),
+                "AND b.seen_epoch!=?) OR EXISTS(SELECT 1 FROM nlp_snapshot_source_pages p "
+                "WHERE p.account_ref=r.account_ref AND p.snapshot_id=r.snapshot_id "
+                "AND p.erasure_seen_epoch=? AND p.erasure_invalid=1)) ORDER BY g.generation_id LIMIT 1",
+                (ref, state["account_wide"], state["scan_epoch"], state["scan_epoch"]),
             ).fetchall()
             generation = generations[0] if generations else None
             if generation is not None:

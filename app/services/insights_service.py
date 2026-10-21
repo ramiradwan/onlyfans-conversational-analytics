@@ -860,7 +860,7 @@ async def get_full_snapshot(
     raise ProjectionUnavailable(availability="unavailable")
 
 
-async def _run_question_read(policy, value, *, evidence=False):
+async def _run_question_read(policy, value, *, evidence=False, findings=False):
     """Run bounded reads off the event loop and schedule only permitted recovery."""
 
     from functools import partial
@@ -875,12 +875,16 @@ async def _run_question_read(policy, value, *, evidence=False):
     if resources is None or resources.closed:
         raise ProjectionUnavailable()
     cancelled = Event()
-    operation = resources.resolve if evidence else resources.execute
+    operation = resources.findings if findings else resources.resolve if evidence else resources.execute
     try:
         return await anyio.to_thread.run_sync(
             partial(operation, policy, value, cancellation_check=cancelled.is_set),
             abandon_on_cancel=True)
     except (ProjectionUnavailable, ProjectionStorageUnavailable, EvidenceUnavailable) as error:
+        if findings:
+            # This separate view never schedules analysis or a projection rebuild.
+            resources.discard(account)
+            raise
         refresh = resources.take_refresh(account) or not isinstance(error, EvidenceUnavailable)
         resources.discard(account)
         state = runtime.scheduler.state(account)
@@ -904,6 +908,10 @@ async def _run_question_read(policy, value, *, evidence=False):
 
 async def answer_question(policy, plan):
     return await _run_question_read(policy, plan)
+
+
+async def fetch_findings(policy, request):
+    return await _run_question_read(policy,request,findings=True)
 
 
 async def rebuild_projection(policy):

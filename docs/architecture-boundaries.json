@@ -180,7 +180,8 @@
         "shared/desktop-onboarding/**",
         "shared/browser-tasks/**",
         "app/nlp/**",
-        "shared/nlp/**"
+        "shared/nlp/**",
+        "shared/analytics/**"
       ],
       "role": "Cross-runtime protocol and local onboarding schema definitions, golden fixtures, validation, and non-authorizing reference projections.",
       "authority": "authoritative",
@@ -591,6 +592,7 @@
         "app/analytics/canonical_source.py",
         "app/analytics/nlp_record_validation.py",
         "app/analytics/nlp_findings_store.py",
+        "app/analytics/nlp_read_projection.py",
         "app/analytics/nlp_reclamation.py",
         "app/analytics/nlp_erasure.py",
         "app/analytics/nlp_processing.py",

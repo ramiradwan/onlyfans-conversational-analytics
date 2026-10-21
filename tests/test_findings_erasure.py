@@ -122,7 +122,13 @@ async def test_scoped_cleanup_finds_historical_records_without_locators_and_keep
 
     r, _, _ = runner(fixture)
     assert r.process_one(ACCOUNT)
+    # This retained generation predates optional source-status metadata.
+    original_reconcile = r.reconcile
+    r.reconcile = lambda account: None
+    with fixture.stores.database.transaction() as db:
+        db.execute("UPDATE nlp_sources SET read_metadata=''")
     assert r.publish_pending(ACCOUNT).changed
+    r.reconcile = original_reconcile
     old_id = fixture.stores.database.active_generation(ACCOUNT).generation_id
     with fixture.stores.database.read() as db:
         old_binding = tuple(
@@ -389,15 +395,14 @@ async def test_completed_account_erase_does_not_erase_later_import_on_scoped_del
     )
     with fixture.stores.database.read() as db:
         assert db.execute("SELECT count(*) FROM nlp_records").fetchone()[0] == 1
-        assert (
-            tuple(
-                db.execute(
-                    "SELECT * FROM nlp_generation_refs WHERE generation_id=?",
-                    (retained,),
-                ).fetchone()
-            )
-            == binding
-        )
+        # This generation also froze the subsequently deleted pending source.
+        # Its metadata must retire; the valid imported record/profile remain.
+        assert not db.execute(
+            "SELECT 1 FROM nlp_generation_refs WHERE generation_id=?", (retained,)
+        ).fetchone()
+        assert not db.execute(
+            "SELECT 1 FROM nlp_snapshot_source_pages WHERE snapshot_id=?", (binding[2],)
+        ).fetchone()
         assert (
             db.execute(
                 "SELECT count(*) FROM nlp_jobs WHERE source_ref=?", (keep,)

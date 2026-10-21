@@ -139,7 +139,9 @@ def test_pause_and_temporary_readiness_loss_keep_valid_findings(fixture):
     assert snapshot(r,fixture)==before
     r.findings.mode(ACCOUNT,'paused')
     assert not r.process_one(ACCOUNT)
-    assert snapshot(r,fixture)==before
+    paused = copy.deepcopy(before)
+    paused['read_inventory']['processing_mode'] = 'paused'
+    assert snapshot(r,fixture)==paused
     assert r.publish_pending(ACCOUNT).changed
 
 

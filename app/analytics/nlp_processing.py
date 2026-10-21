@@ -43,11 +43,12 @@ class FindingsRunner:
     The adapter honors request deadlines and polls the cancellation callback.
     """
     def __init__(self, source, projections, *, authorize, execution_ready, adapter,
-                 clock, enrichment=None, lease_clock=time.time, dependencies=None):
+                 clock, enrichment=None, lease_clock=time.time, dependencies=None, label_resolver=None):
         self.source, self.projections = source, projections
         self.authorize, self.execution_ready, self.adapter = authorize, execution_ready, adapter
         self.clock, self.enrichment = clock, enrichment
         self.dependencies = dependencies
+        self.label_resolver = label_resolver
         self.findings = FindingsStore(projections.database,clock=lease_clock)
 
     def _budget(self):
@@ -226,7 +227,7 @@ class FindingsRunner:
         if source_identity(self.source,account_id)!=canonical:
             raise ValueError('nlp_source_changed')
         revision=self.findings.state(account_id)['notification_revision']
-        frozen=self.findings.freeze(account_id,canonical)
+        frozen=self.findings.freeze(account_id,canonical,label_resolver=self.label_resolver)
         profile=AnalysisProfile.model_validate_json(self.findings.state(account_id)['profile_json'])
         return FrozenFindingsPipeline(self.source,projections=self.projections,enrichment=self.enrichment,
             clock=self.clock,nlp_findings=frozen,nlp_authorize=lambda:self._cheap_publication_admission(account_id,due),

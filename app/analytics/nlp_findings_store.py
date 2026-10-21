@@ -88,7 +88,7 @@ class Claim:
     expires_at: float
 
 
-def checked_snapshot(db, binding, *, verify_records=True, deadline=None):
+def checked_snapshot(db, binding, *, verify_records=True, deadline=None, decoded_records=None):
     """Verify immutable stored bytes, without granting live source access."""
     deadline = min(
         deadline if deadline is not None else float("inf"),
@@ -117,6 +117,8 @@ def checked_snapshot(db, binding, *, verify_records=True, deadline=None):
             raise ValueError('nlp_snapshot_source_invalid')
         seen.add(decoded.source.source_ref)
         v2.validate_record(snapshot.profile, decoded.source, bytes(record[0]))
+        if decoded_records is not None:
+            decoded_records[record_digest] = decoded
     return value
 
 
@@ -151,7 +153,7 @@ def bind_generation(db, generation_id, binding, base_config, canonical):
 
 
 def check_generation(
-    db, generation, *, current=False, verify_records=True, deadline=None
+    db, generation, *, current=False, verify_records=True, deadline=None, decoded_records=None
 ):
     if db.execute('PRAGMA user_version').fetchone()[0] < 26:
         if '+nlp.snapshot.v1' in generation['pipeline_revision']:
@@ -176,12 +178,13 @@ def check_generation(
         )
         if current
         else checked_snapshot(
-            db, binding, verify_records=verify_records, deadline=deadline
+            db, binding, verify_records=verify_records, deadline=deadline, decoded_records=decoded_records
         )
     )
     if (value['snapshot']['canonical_revision'] != canonical.revision or
             value['canonical_content_digest'] != canonical.content_digest):
         raise ValueError('nlp_generation_source_invalid')
+    return value
 
 
 def require_erasure_idle(db, ref):
@@ -385,6 +388,11 @@ class FindingsStore:
                         lane,
                     ),
                 )
+                if db.execute('PRAGMA user_version').fetchone()[0] >= 30:
+                    metadata = encoded({'reference': source.reference().model_dump(mode='json'),
+                        'direction': source.direction, 'location': source.location.model_dump(mode='json')})
+                    db.execute('UPDATE nlp_sources SET read_metadata=? WHERE account_ref=? AND source_ref=?',
+                               (metadata.decode(), ref, binding.source_ref))
                 last = location
             # The caller's cursor includes excluded/expired rows too.
             return state['scan_epoch'],state['scan_cursor']
@@ -521,7 +529,7 @@ class FindingsStore:
             self._fill(db,claim.account_ref)
         return True
 
-    def freeze(self, account_id, canonical):
+    def freeze(self, account_id, canonical, *, label_resolver=None):
         ref = account_ref(account_id)
         deadline=time.monotonic()+VERIFICATION_SECONDS
         with self.database.read() as db:
@@ -576,8 +584,42 @@ class FindingsStore:
             snapshot=v2.EnrichmentSnapshot(account_scope=ref,canonical_revision=canonical.revision,
                 completion_revision=state['completion_revision'],availability_revision=state['availability_revision'],
                 profile=profile,source_validity_sha256=state['inventory_digest'],tasks=tuple(tasks))
-            document=encoded({'snapshot':snapshot.model_dump(mode='json'),'selection_epoch':state['selection_epoch'],
-                'canonical_content_digest':canonical.content_digest,'records':keys,'coverage':coverage})
+            value = {'snapshot':snapshot.model_dump(mode='json'),'selection_epoch':state['selection_epoch'],
+                'canonical_content_digest':canonical.content_digest,'records':keys,'coverage':coverage}
+            source_pages = []
+            if db.execute('PRAGMA user_version').fetchone()[0] >= 30:
+                sources = []
+                key_positions = {key:index for index,key in enumerate(keys)}
+                for row in db.execute('SELECT s.*,j.state AS job_state,j.record_digest,j.terminal_reason '
+                    'FROM nlp_sources s LEFT JOIN nlp_jobs j ON j.account_ref=s.account_ref AND j.source_ref=s.source_ref '
+                    'AND j.source_version=s.source_version AND j.selection_epoch=? '
+                    'WHERE s.account_ref=? ORDER BY s.source_ref', (state['selection_epoch'],ref)):
+                    check_deadline(deadline)
+                    if not row['read_metadata']:
+                        sources = None
+                        break
+                    metadata = json.loads(row['read_metadata'])
+                    # The global revision is the exact canonical publication;
+                    # the independently admitted message-version digest is unchanged.
+                    position = key_positions.get(row['record_digest'],-1)
+                    status = 'record' if position >= 0 else ('unsupported' if row['terminal_reason'] == 'unsupported_input'
+                        else 'failed' if row['job_state'] == 'abandoned' else 'pending')
+                    sources.append([metadata['location']['conversation_id'],metadata['location']['message_id'],
+                        metadata['reference']['sent_at'],metadata['direction'],row['source_version'],row['speaker_ref'],position,status])
+                if sources is not None:
+                    from app.analytics.nlp_read_projection import frozen_labels, pack_source_pages
+                    header, source_pages = pack_source_pages(sources,check=lambda:check_deadline(deadline))
+                    if header is not None:
+                        value['read_inventory'] = {'schema_version':'nlp-source-status.v1',
+                            'processing_mode':state['mode'],'scan_complete':bool(state['scan_complete']),
+                            **header,'labels':frozen_labels(profile,label_resolver)}
+            document=encoded(value)
+            if len(document) > 8 * 1024 * 1024 and 'read_inventory' in value:
+                value.pop('read_inventory')
+                source_pages = []
+                document = encoded(value)
+            if len(document) > 8 * 1024 * 1024:
+                raise ValueError('nlp_snapshot_size_limit')
             key=hashlib.sha256(document).hexdigest()
         with self.database.transaction() as db:
             require_erasure_idle(db, ref)
@@ -586,9 +628,27 @@ class FindingsStore:
             if current is None or current['mode'] in ('withdrawn','removed') or any(current[k]!=state[k] for k in fields):
                 raise ValueError('nlp_snapshot_stale')
             exists=db.execute('SELECT 1 FROM nlp_snapshots WHERE account_ref=? AND snapshot_id=?',(ref,key)).fetchone()
-            if not exists and db.execute('SELECT COALESCE(sum(length(document)),0) FROM nlp_snapshots').fetchone()[0] + len(document) > MAX_SNAPSHOT_STORAGE:
+            used = db.execute('SELECT COALESCE(sum(length(document)),0) FROM nlp_snapshots').fetchone()[0]
+            supports_pages = db.execute('PRAGMA user_version').fetchone()[0] >= 30
+            if supports_pages:
+                used += db.execute('SELECT COALESCE(sum(length(document)),0) FROM nlp_snapshot_source_pages').fetchone()[0]
+            if not exists and used + len(document) + sum(map(len,source_pages)) > MAX_SNAPSHOT_STORAGE and 'read_inventory' in value:
+                # Optional read metadata cannot make otherwise admissible core input fail.
+                value.pop('read_inventory')
+                source_pages = []
+                document = encoded(value)
+                key = hashlib.sha256(document).hexdigest()
+                exists = db.execute('SELECT 1 FROM nlp_snapshots WHERE account_ref=? AND snapshot_id=?',(ref,key)).fetchone()
+            if not exists and used + len(document) > MAX_SNAPSHOT_STORAGE:
                 raise ValueError('nlp_snapshot_storage_limit')
             db.execute('INSERT OR IGNORE INTO nlp_snapshots VALUES(?,?,?)',(ref,key,document))
+            if supports_pages and not exists:
+                db.executemany('INSERT INTO nlp_snapshot_source_pages(account_ref,snapshot_id,ordinal,document) VALUES(?,?,?,?)',
+                    [(ref,key,index,page) for index,page in enumerate(source_pages)])
+            elif supports_pages and source_pages:
+                stored = db.execute('SELECT ordinal,document FROM nlp_snapshot_source_pages WHERE account_ref=? AND snapshot_id=? ORDER BY ordinal',(ref,key)).fetchall()
+                if [(r[0],bytes(r[1])) for r in stored] != list(enumerate(source_pages)):
+                    raise ValueError('nlp_read_page_invalid')
         return FrozenFindings(ref,key)
 
     def acknowledge(self, account_id, notification_revision):

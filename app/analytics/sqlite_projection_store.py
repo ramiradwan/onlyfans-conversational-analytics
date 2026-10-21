@@ -6,7 +6,7 @@ from app.core.lifecycle_receipts import startup_timed, startup_span, startup_cou
 
 import json
 import logging
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import secrets
 from app.persistence import sqlite_api as sqlite3
 import time
@@ -716,6 +716,32 @@ class SQLiteAnalyticsProjectionStore:
 
         return published_pricing(self, account_id, snapshot, references, budget)
 
+    def read_findings_snapshot(self, account_id, snapshot, budget, *, connection=None):
+        """Read only the exact witnessed generation's immutable findings input."""
+        from app.analytics.errors import ProjectionUnavailable
+        from app.analytics.nlp_findings_store import check_generation
+        from app.analytics.query_sql import bounded_sql
+
+        if account_ref(account_id) != snapshot.account_ref:
+            raise ProjectionUnavailable()
+        with (self.database.read() if connection is None else nullcontext(connection)) as db, bounded_sql(db, budget):
+            generation = db.execute('SELECT * FROM projection_generations WHERE generation_id=? '
+                "AND creator_account_id=? AND status='active'", (snapshot.generation_id,snapshot.account_ref)).fetchone()
+            if (generation is None or generation['projection_digest'] != snapshot.projection_digest
+                    or generation['canonical_revision'] != snapshot.source_revision
+                    or generation['canonical_content_digest'] != snapshot.canonical_content_digest):
+                raise ProjectionUnavailable(availability='building')
+            records = {}
+            value = check_generation(db,generation,deadline=time.monotonic()+budget.remaining_seconds(),
+                                     decoded_records=records)
+            if value is None or 'read_inventory' not in value:
+                raise ProjectionUnavailable(reason_code='analytics_findings_metadata_unavailable')
+            from app.analytics.nlp_read_projection import load_source_pages
+            sources = load_source_pages(db,account_id,
+                db.execute('SELECT snapshot_id FROM nlp_generation_refs WHERE generation_id=?',(snapshot.generation_id,)).fetchone()[0],
+                value,budget)
+            return value, records, dict(generation), sources
+
     @contextmanager
     def question_publications(self, account_id, budget, *, lease=None):
         """One bounded autocommit connection; both publication reads remain live."""
@@ -748,6 +774,7 @@ class SQLiteAnalyticsProjectionStore:
                     from app.analytics.errors import ProjectionUnavailable
                     raise ProjectionUnavailable(availability="error")
                 return self.question_snapshot(account, identity, budget, connection=connection)
+            read.findings = lambda snapshot: self.read_findings_snapshot(account_id,snapshot,budget,connection=connection)
             yield read
         budget.check()
 
