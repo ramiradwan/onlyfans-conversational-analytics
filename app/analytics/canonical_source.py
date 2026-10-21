@@ -116,27 +116,44 @@ class HistoryAnalyticsSource:
         if self.connection is None:
             self.read_identity(account_id)
 
-    def prepare_question_identity(self, account_id: str, *, cancellation_check=None):
+    def prepare_question_identity(self, account_id: str, *, cancellation_check=None,
+                                  budget=None, return_proof=False):
         """Independently prepare expiring identities on the runtime's owned worker."""
         from app.analytics.cancellation import check_cancelled
 
         if self.connection is not None:
             raise ValueError("question_live_read_required")
+        if budget is not None:
+            original_check = cancellation_check
+            def cancellation_check():
+                budget.check()
+                return original_check is not None and original_check()
         check_cancelled(cancellation_check)
         while not self._question_preparation_lock.acquire(timeout=0.05):
             check_cancelled(cancellation_check)
         try:
-            return self._prepare_question_identity(account_id, cancellation_check)
+            return self._prepare_question_identity(account_id, cancellation_check,
+                                                  budget=budget, return_proof=return_proof)
         finally:
             self._question_preparation_lock.release()
 
-    def _prepare_question_identity(self, account_id, cancellation_check):
+    def _prepare_question_identity(self, account_id, cancellation_check, *, budget=None,
+                                  return_proof=False):
         from app.analytics.cancellation import check_cancelled
         from app.analytics.errors import CanonicalRevisionChanged, ProjectionUnavailable
         from app.analytics.source_snapshot import scan_identity, cancellable_source_read
+        from app.analytics.source_tokens import source_identity_proof
+        from app.analytics.query_sql import bounded_sql
+        from contextlib import nullcontext
 
         check = lambda: check_cancelled(cancellation_check)
-        with self._read() as db, cancellable_source_read(db, cancellation_check):
+        # Background scope preparation shares its owned connection and SQL
+        # budget. Standalone preparation retains its existing cancellation path.
+        scoped = (getattr(self._question_scope_local, 'connection', None)
+                  if budget is not None and getattr(self._question_scope_local, 'lease', None) is None else None)
+        with nullcontext(scoped) if scoped is not None else self._read() as db, \
+                (nullcontext() if scoped is not None else bounded_sql(db, budget)
+                 if budget is not None else cancellable_source_read(db, cancellation_check)):
             db.execute("BEGIN")
             try:
                 row = db.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?",
@@ -150,7 +167,7 @@ class HistoryAnalyticsSource:
                 cached = self._identity_cache.get(account_id, token)
                 if cached is not None and not self._identity_cache.preparation_due(account_id, token):
                     check()
-                    return cached
+                    return source_identity_proof(account_id, token, cached) if return_proof else cached
                 identity, digests, _ = scan_identity(db, account_id, int(row[0]), check=check,
                     consume=self._question_work.background(cancellation_check=cancellation_check))
                 check()
@@ -162,7 +179,7 @@ class HistoryAnalyticsSource:
             check()
             self._identity_cache.put(account_id, token, identity)
             self._catalog_cache.put(account_id, token, identity, digests)
-            return identity
+            return source_identity_proof(account_id, token, identity) if return_proof else identity
 
     def conversation_read_model(self, account_id: str, conversation_id: str, *, cancellation_check=None):
         from app.analytics.cancellation import check_cancelled
@@ -185,7 +202,8 @@ class HistoryAnalyticsSource:
             del self._question_scope_local.lease
 
     @contextmanager
-    def open_question_scope(self, account_id, budget):
+    def open_question_scope(self, account_id, budget, *, verify_source_token=False,
+                            prepare_identity=False):
         """Pin live canonical identity and bound every source read."""
 
         from app.analytics.query_canonical import CanonicalQuestionScope
@@ -202,9 +220,19 @@ class HistoryAnalyticsSource:
             self._question_scope_local.interrupted = interrupted
             try:
                 budget.consume(2)
+                prepared = (self.prepare_question_identity(account_id, budget=budget, return_proof=True)
+                            if prepare_identity else None)
                 scope = CanonicalQuestionScope(connection, account_id, budget)
                 token = self._identity_cache.token(connection, account_id)
-                scope.identity = self._identity_cache.get(account_id, token)
+                if prepare_identity:
+                    from app.analytics.source_tokens import SourceIdentityProof, verify_source_identity_proof
+                    if (not isinstance(prepared, SourceIdentityProof)
+                            or verify_source_identity_proof(account_id, prepared.identity, prepared, token) is not True):
+                        from app.analytics.errors import ProjectionUnavailable
+                        raise ProjectionUnavailable(availability="building")
+                    scope.identity = prepared.identity
+                else:
+                    scope.identity = self._identity_cache.get(account_id, token)
                 if scope.identity is None:
                     from app.analytics.errors import ProjectionUnavailable
                     if token is None:
@@ -218,6 +246,15 @@ class HistoryAnalyticsSource:
                     lease.close_cursors()
                     lease.observe()
                 scope.check(budget)
+                if verify_source_token:
+                    budget.consume(2)
+                    # This scope does not open a transaction: recheck the live
+                    # account token after every admitted source has been read.
+                    current = self._identity_cache.token(connection, account_id)
+                    if current != token or current.revision != scope.identity.revision:
+                        from app.analytics.errors import ProjectionUnavailable
+                        raise ProjectionUnavailable(availability="building")
+                    scope.check(budget)
             finally:
                 del self._question_scope_local.connection
                 del self._question_scope_local.interrupted
@@ -333,7 +370,9 @@ class HistoryAnalyticsSource:
         after = after or ('','')
         if len(after) != 2 or any(type(v) is not str for v in after):
             raise ValueError('nlp_cursor_invalid')
-        with self._read() as db:
+        from contextlib import nullcontext
+        scoped = getattr(self._question_scope_local, 'connection', None)
+        with nullcontext(scoped) if scoped is not None else self._read() as db:
             rows = db.execute('SELECT chat_id,message_id FROM account_messages '
                 'WHERE creator_account_id=? AND message_id>? '
                 'ORDER BY message_id LIMIT ?', (account_id,after[1],limit)).fetchall()

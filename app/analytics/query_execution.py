@@ -45,10 +45,18 @@ class QuestionLimits:
             raise ValueError("question_time_limit_invalid")
 
 
+class WorkLimits(Protocol):
+    @property
+    def max_records(self) -> int: ...
+
+    @property
+    def wall_clock_ms(self) -> int: ...
+
+
 class QuestionBudget:
     def __init__(
         self,
-        limits: QuestionLimits,
+        limits: WorkLimits,
         *,
         cancellation_check: CancellationCheck | None = None,
         monotonic: Callable[[], float] = time.monotonic,

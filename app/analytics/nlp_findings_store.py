@@ -53,11 +53,13 @@ def source_binding(source):
         raise ValueError('nlp_source_invalid') from None
 
 
-def inventory_digest(db, ref, deadline=None):
+def inventory_digest(db, ref, deadline=None, *, check=None):
     deadline=time.monotonic()+VERIFICATION_SECONDS if deadline is None else deadline
     result = hashlib.sha256(b'nlp-source-inventory.v1\0')
     for row in db.execute('SELECT source_ref,source_version,speaker_ref FROM nlp_sources WHERE account_ref=? ORDER BY source_ref',(ref,)):
         check_deadline(deadline)
+        if check is not None:
+            check()
         raw = encoded(tuple(row))
         result.update(len(raw).to_bytes(8,'big'))
         result.update(raw)
@@ -365,15 +367,23 @@ class FindingsStore:
             if list(cursor or ()) != expected:
                 raise ValueError('nlp_scan_cursor_stale')
             last = cursor
+            inventory_changed = False
+            source_count = None
             for source,lane in sources:
                 binding = source_binding(source)
                 location = [source.location.conversation_id,source.location.message_id]
                 if binding.account_scope != ref or lane not in ('live','backfill') or (last and location[1] <= last[1]):
                     raise ValueError('nlp_scan_page_invalid')
-                old = db.execute('SELECT source_version FROM nlp_sources WHERE account_ref=? AND source_ref=?',(ref,binding.source_ref)).fetchone()
-                if not old and db.execute('SELECT count(*) FROM nlp_sources').fetchone()[0] >= MAX_LOCATORS:
-                    raise ValueError('nlp_locator_storage_limit')
-                if old and old[0] != binding.source_version:
+                old = db.execute('SELECT source_version,speaker_ref FROM nlp_sources WHERE account_ref=? AND source_ref=?',(ref,binding.source_ref)).fetchone()
+                if not old:
+                    if source_count is None:
+                        source_count = db.execute('SELECT count(*) FROM nlp_sources').fetchone()[0]
+                    if source_count >= MAX_LOCATORS:
+                        raise ValueError('nlp_locator_storage_limit')
+                    source_count += 1
+                changed = old is None or tuple(old) != (binding.source_version, binding.speaker_ref)
+                inventory_changed = inventory_changed or changed
+                if old and changed:
                     db.execute('DELETE FROM nlp_jobs WHERE account_ref=? AND source_ref=?',(ref,binding.source_ref))
                 db.execute(
                     "INSERT INTO nlp_sources(account_ref,source_ref,source_version,speaker_ref,conversation_id,message_id,seen_epoch,lane) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(account_ref,source_ref) "
@@ -395,10 +405,15 @@ class FindingsStore:
                     db.execute('UPDATE nlp_sources SET read_metadata=? WHERE account_ref=? AND source_ref=?',
                                (metadata.decode(), ref, binding.source_ref))
                 last = location
+            if inventory_changed:
+                # A partial inventory is sealed only when a snapshot needs it.
+                # Cursor-only progress leaves retained generations unchanged.
+                db.execute("UPDATE nlp_accounts SET inventory_digest='',availability_revision=availability_revision+1,"
+                    'notification_revision=notification_revision+1 WHERE account_ref=?', (ref,))
             # The caller's cursor includes excluded/expired rows too.
             return state['scan_epoch'],state['scan_cursor']
 
-    def finish_page(self, account_id, canonical, epoch, cursor, *, complete, expected_cursor):
+    def finish_page(self, account_id, canonical, epoch, cursor, *, complete, expected_cursor, check=None):
         ref = account_ref(account_id)
         with self.database.transaction() as db:
             require_erasure_idle(db, ref)
@@ -406,17 +421,24 @@ class FindingsStore:
             identity = encoded([canonical.revision,canonical.content_digest]).decode()
             if state['scan_epoch'] != epoch or state['scan_identity'] != identity or state['scan_cursor'] != expected_cursor:
                 raise ValueError('nlp_scan_stale')
+            if check is not None:
+                check()
+            removed = 0
             if complete:
                 db.execute('DELETE FROM nlp_jobs WHERE account_ref=? AND NOT EXISTS('
                     'SELECT 1 FROM nlp_sources s WHERE s.account_ref=nlp_jobs.account_ref '
                     'AND s.source_ref=nlp_jobs.source_ref AND s.seen_epoch=?)',(ref,epoch))
-                db.execute('DELETE FROM nlp_sources WHERE account_ref=? AND seen_epoch!=?',(ref,epoch))
-            inventory = inventory_digest(db,ref)
+                removed = db.execute('DELETE FROM nlp_sources WHERE account_ref=? AND seen_epoch!=?',(ref,epoch)).rowcount
+            inventory = state['inventory_digest']
+            if complete and (removed or not inventory):
+                inventory = inventory_digest(db,ref,check=check)
             changed = inventory != state['inventory_digest'] or bool(complete) != bool(state['scan_complete'])
             db.execute('UPDATE nlp_accounts SET scan_cursor=?,scan_complete=?,inventory_digest=?,'
                 'availability_revision=availability_revision+?,notification_revision=notification_revision+? WHERE account_ref=?',
                 (encoded(cursor or []).decode(),int(complete),inventory,int(changed),int(changed),ref))
             self._fill(db,ref)
+            if check is not None:
+                check()
 
     def _fill(self, db, ref):
         try:
@@ -533,6 +555,17 @@ class FindingsStore:
     def freeze(self, account_id, canonical, *, label_resolver=None):
         ref = account_ref(account_id)
         deadline=time.monotonic()+VERIFICATION_SECONDS
+        state = self.state(account_id)
+        if not state['scan_complete'] and not state['inventory_digest']:
+            # The writer lock seals exactly the current partial inventory.
+            # Subsequent source changes clear it and advance visibility before
+            # the snapshot's existing revision checks can accept publication.
+            with self.database.transaction() as db:
+                require_erasure_idle(db, ref)
+                current = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
+                if current is not None and not current['scan_complete'] and not current['inventory_digest']:
+                    db.execute('UPDATE nlp_accounts SET inventory_digest=? WHERE account_ref=?',
+                        (inventory_digest(db,ref,deadline),ref))
         with self.database.read() as db:
             db.execute('BEGIN')
             require_erasure_idle(db, ref)

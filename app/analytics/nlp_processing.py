@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from contextlib import nullcontext
+from dataclasses import dataclass
 import hashlib
 import json
 import time
@@ -12,13 +13,20 @@ from uuid import uuid4
 from app.analytics.evidence_contracts import EvidenceLocation
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.analytics.identity import source_identity
-from app.analytics.nlp_findings_store import FindingsStore, PAGE_SIZE, MAX_SOURCES, source_binding, encoded
+from app.analytics.nlp_findings_store import FindingsStore, PAGE_SIZE, MAX_SOURCES, MAX_LOCATORS, source_binding, encoded
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from app.nlp import v2
 from app.nlp.profiles import AnalysisProfile
 
 _EXECUTION = Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicationLimits:
+    # Two units per source, two for scope entry, two for the final token check.
+    max_records: int = 2 * MAX_LOCATORS + 4
+    wall_clock_ms: int = 30_000
 
 
 class FrozenFindingsPipeline(AnalyticsPipeline):
@@ -43,16 +51,19 @@ class FindingsRunner:
     The adapter honors request deadlines and polls the cancellation callback.
     """
     def __init__(self, source, projections, *, authorize, execution_ready, adapter,
-                 clock, enrichment=None, lease_clock=time.time, dependencies=None, label_resolver=None):
+                 clock, enrichment=None, lease_clock=time.time, dependencies=None, label_resolver=None,
+                 cancellation_check=None):
         self.source, self.projections = source, projections
         self.authorize, self.execution_ready, self.adapter = authorize, execution_ready, adapter
         self.clock, self.enrichment = clock, enrichment
         self.dependencies = dependencies
         self.label_resolver = label_resolver
+        self.cancellation_check = cancellation_check
         self.findings = FindingsStore(projections.database,clock=lease_clock)
 
     def _budget(self):
-        return QuestionBudget(QuestionLimits(max_records=100_000,wall_clock_ms=30_000))
+        return QuestionBudget(QuestionLimits(max_records=100_000,wall_clock_ms=30_000),
+                              cancellation_check=self.cancellation_check)
 
     def _read(self, account_id, location, budget):
         message = self.source.read_evidence_message(account_id,location,budget)
@@ -61,15 +72,45 @@ class FindingsRunner:
         return message
 
     def _publication_admission(self, account_id):
+        self._admit_inventory(account_id)
+
+    def _admit_inventory(self, account_id):
+        """Validate live sources in bounded pages under one connection and deadline."""
+        budget = QuestionBudget(_PublicationLimits(), cancellation_check=self.cancellation_check)
         self.authorize(account_id)
         self._dependency_admission(account_id)
-        budget=self._budget()
-        with self.projections.database.read() as db:
-            for row in db.execute('SELECT * FROM nlp_sources WHERE account_ref=? ORDER BY source_ref',
-                    (self.findings.state(account_id)['account_ref'],)):
-                message=self._read(account_id,EvidenceLocation(conversation_id=row['conversation_id'],message_id=row['message_id']),budget)
-                if message is None or source_binding(message).source_version!=row['source_version']:
-                    raise ValueError('nlp_source_invalid')
+        due, invalid, count = None, None, 0
+        with self.source.open_question_scope(account_id, budget, verify_source_token=True,
+                                              prepare_identity=True) as scope:
+            canonical = scope.identity
+            with self.projections.database.read() as db:
+                cursor = db.execute('SELECT * FROM nlp_sources WHERE account_ref=? ORDER BY source_ref',
+                    (self.findings.state(account_id)['account_ref'],))
+                while page := cursor.fetchmany(PAGE_SIZE):
+                    count += len(page)
+                    if count > MAX_LOCATORS:
+                        from app.analytics.query_execution import QuestionLimitExceeded
+                        raise QuestionLimitExceeded()
+                    self.authorize(account_id)
+                    self._dependency_admission(account_id)
+                    for row in page:
+                        message = self._read(account_id, EvidenceLocation(
+                            conversation_id=row['conversation_id'], message_id=row['message_id']), budget)
+                        binding = source_binding(message) if message is not None else None
+                        if (binding is None or binding.source_version != row['source_version']
+                                or binding.speaker_ref != row['speaker_ref']):
+                            invalid = row['source_ref']
+                            break
+                        expiry = message.sent_at + timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
+                        due = expiry if due is None else min(due, expiry)
+                    if invalid is not None:
+                        break
+        if invalid is not None:
+            self.findings.invalidate_source(account_id, invalid)
+            raise ValueError('nlp_source_invalid')
+        self._cheap_publication_admission(account_id, due)
+        budget.check()
+        return canonical, due
 
     def _cheap_publication_admission(self, account_id, due):
         self.authorize(account_id)
@@ -87,31 +128,34 @@ class FindingsRunner:
         """Advance a durable scan by a bounded number of locator pages."""
         if not 1 <= maximum <= MAX_SOURCES:
             raise ValueError('nlp_scan_limit')
+        budget, count, complete = self._budget(),0,False
         self.authorize(account_id)
-        canonical = source_identity(self.source,account_id)
-        state = self.findings.state(account_id)
-        identity = encoded([canonical.revision,canonical.content_digest]).decode()
-        if state['scan_identity']==identity and state['scan_complete']:
-            return True
-        cursor = json.loads(state['scan_cursor']) if state['scan_identity']==identity else None
-        budget, count = self._budget(),0
-        while count < maximum:
-            page=self.source.nlp_location_page(account_id,cursor,limit=min(PAGE_SIZE,maximum-count))
-            sources=[]
-            for location in page:
-                message=self._read(account_id,location,budget)
-                if message is not None:
-                    sources.append((message,'live' if message.sent_at >= self.clock()-timedelta(days=1) else 'backfill'))
-            epoch,expected_cursor=self.findings.reconcile_page(account_id,canonical,sources,cursor,complete=not page)
-            if source_identity(self.source,account_id)!=canonical:
-                raise ValueError('nlp_source_changed')
-            next_cursor=([page[-1].conversation_id,page[-1].message_id] if page else cursor)
-            self.findings.finish_page(account_id,canonical,epoch,next_cursor,complete=not page,expected_cursor=expected_cursor)
-            if not page:
-                return True
-            cursor=next_cursor
-            count+=len(page)
-        return False
+        with self.source.open_question_scope(account_id, budget, verify_source_token=True,
+                                              prepare_identity=True) as scope:
+            canonical = scope.identity
+            state = self.findings.state(account_id)
+            identity = encoded([canonical.revision,canonical.content_digest]).decode()
+            complete = state['scan_identity']==identity and bool(state['scan_complete'])
+            cursor = json.loads(state['scan_cursor']) if state['scan_identity']==identity else None
+            while not complete and count < maximum:
+                page=self.source.nlp_location_page(account_id,cursor,limit=min(PAGE_SIZE,maximum-count))
+                sources=[]
+                for location in page:
+                    message=self._read(account_id,location,budget)
+                    if message is not None:
+                        sources.append((message,'live' if message.sent_at >= self.clock()-timedelta(days=1) else 'backfill'))
+                epoch,expected_cursor=self.findings.reconcile_page(account_id,canonical,sources,cursor,complete=not page)
+                scope.check(budget)
+                next_cursor=([page[-1].conversation_id,page[-1].message_id] if page else cursor)
+                self.findings.finish_page(account_id,canonical,epoch,next_cursor,complete=not page,
+                                          expected_cursor=expected_cursor,check=budget.check)
+                if not page:
+                    complete = True
+                    break
+                cursor=next_cursor
+                count+=len(page)
+        budget.check()
+        return complete
 
     def process_one(self, account_id):
         if self.dependencies is None:
@@ -205,27 +249,7 @@ class FindingsRunner:
         """Revalidate live eligibility before freezing immutable publication input."""
         self.authorize(account_id)
         self.reconcile(account_id)
-        budget=self._budget()
-        canonical=source_identity(self.source,account_id)
-        due=None
-        with self.projections.database.read() as db:
-            cursor=db.execute('SELECT * FROM nlp_sources WHERE account_ref=? ORDER BY source_ref',
-                (self.findings.state(account_id)['account_ref'],))
-            for row in cursor:
-                message=self._read(account_id,EvidenceLocation(conversation_id=row['conversation_id'],message_id=row['message_id']),budget)
-                if message is None or source_binding(message).source_version!=row['source_version']:
-                    # Release the read connection before changing derived state.
-                    invalid=row['source_ref']
-                    break
-                expiry=message.sent_at+timedelta(days=PARTICIPANT_ANALYTICS_MAX_DAYS)
-                due=expiry if due is None else min(due,expiry)
-            else:
-                invalid=None
-        if invalid is not None:
-            self.findings.invalidate_source(account_id,invalid)
-            raise ValueError('nlp_source_invalid')
-        if source_identity(self.source,account_id)!=canonical:
-            raise ValueError('nlp_source_changed')
+        canonical, due = self._admit_inventory(account_id)
         revision=self.findings.state(account_id)['notification_revision']
         frozen=self.findings.freeze(account_id,canonical,label_resolver=self.label_resolver)
         profile=AnalysisProfile.model_validate_json(self.findings.state(account_id)['profile_json'])
