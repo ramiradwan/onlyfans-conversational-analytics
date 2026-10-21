@@ -319,6 +319,19 @@ class HistoryAnalyticsSource:
             source_state_token=source_state_token,
         )
 
+    def nlp_location_page(self, account_id, after=None, *, limit=64):
+        """Page locators only; live evidence admission remains a separate read."""
+        if type(limit) is not int or not 1 <= limit <= 64:
+            raise ValueError('nlp_page_limit')
+        after = after or ('','')
+        if len(after) != 2 or any(type(v) is not str for v in after):
+            raise ValueError('nlp_cursor_invalid')
+        with self._read() as db:
+            rows = db.execute('SELECT chat_id,message_id FROM account_messages '
+                'WHERE creator_account_id=? AND message_id>? '
+                'ORDER BY message_id LIMIT ?', (account_id,after[1],limit)).fetchall()
+        return tuple(EvidenceLocation(conversation_id=r[0],message_id=r[1]) for r in rows)
+
     def account_revision(self, account_id: str) -> int | None:
         with self._read() as connection:
             row = connection.execute("SELECT canonical_revision FROM account_heads WHERE creator_account_id=?", (account_id,)).fetchone()

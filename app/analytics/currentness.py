@@ -28,6 +28,7 @@ class GenerationCurrentness:
         self.clock = monotonic
         self.entries: OrderedDict[str, CurrentnessProof] = OrderedDict()
         self.lock = RLock()
+        self._nlp_verified = OrderedDict()
 
     def _snapshot(self, store, account, identity, revision, config):
         with store.database.read() as db:
@@ -38,12 +39,34 @@ class GenerationCurrentness:
                     or row['canonical_content_digest'] != identity.content_digest
                     or row['pipeline_revision'] != revision or row['pipeline_config_digest'] != config):
                 return None
+            from app.analytics.nlp_findings_store import check_generation
+            try:
+                check_generation(db, row, current=True, verify_records=False)
+            except ValueError:
+                return None
             witness = store.activation.get(row['generation_id'])
             if (not store._intent_matches(row, witness, require_completed=True)
                     or witness.creator_account_id != account):
                 return None
             stamp = content_stamp(db)
-            return row['generation_id'], generation_binding(row), stamp
+            binding = generation_binding(row)
+            if '+nlp.snapshot.v1' in row['pipeline_revision']:
+                key = row['generation_id']
+                proof = (binding, stamp)
+                with self.lock:
+                    verified = stamp is not None and self._nlp_verified.get(key) == proof
+                if not verified:
+                    try:
+                        check_generation(db, row, current=True, verify_records=True)
+                    except ValueError:
+                        return None
+                    if stamp is not None:
+                        with self.lock:
+                            self._nlp_verified[key] = proof
+                            self._nlp_verified.move_to_end(key)
+                            while len(self._nlp_verified) > MAX_CURRENTNESS:
+                                self._nlp_verified.popitem(last=False)
+            return row['generation_id'], binding, stamp
 
     def _verified_source_due(self, store, snapshot, cancellation_check=None):
         """Recheck existing complete-content proofs under their original bindings."""
