@@ -173,9 +173,9 @@ def admit_retained_schemas(state: RetainedState, *,
             release_id = (json.dumps(asdict(release), sort_keys=True, separators=(",", ":"))
                           if release is not None else "legacy-binary:" + file_sha256(sys.executable))
             if release is not None:
-                identity = asdict(release.identity)
-                version = identity.pop("version")
-                release_coordinate = {"kind": "package", "version": version,
+                identity = {"name": release.identity.name, "publisher": release.identity.publisher,
+                            "architecture": release.identity.architecture}
+                release_coordinate = {"kind": "package", "version": release.identity.version,
                     "identity": {**identity, "purpose": release.purpose,
                         "application_id": release.application_id, "update_owner": release.update_owner,
                         "app_installer_uri": release.app_installer_uri}}
