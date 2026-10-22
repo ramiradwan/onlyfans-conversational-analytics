@@ -598,6 +598,12 @@ impl StagedFiles {
     }
 }
 
+#[cfg(any(windows, test))]
+fn staged_path_matches(observed: &str, expected: &std::path::Path) -> bool {
+    // PathBuf can retain '/' in joined components; the handle API returns '\\'.
+    observed.eq_ignore_ascii_case(&expected.to_string_lossy().replace('/', "\\"))
+}
+
 #[cfg(windows)]
 fn stable_file_path(
     file: &std::fs::File,
@@ -630,7 +636,7 @@ fn stable_file_path(
     }
     let value = String::from_utf16(&value[..size as usize]).map_err(|_| fail())?;
     let value = value.strip_prefix("\\\\?\\").ok_or_else(fail)?;
-    if !value.eq_ignore_ascii_case(&expected.to_string_lossy()) {
+    if !staged_path_matches(value, expected) {
         return Err(fail());
     }
     Ok(())
@@ -1909,6 +1915,37 @@ fn check_availability(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(windows)]
+    fn staged_path_matches_joined_descriptor_separators_and_ascii_case() {
+        let root = std::path::Path::new(r"C:\Program Files\WindowsApps\Example.Main");
+        let expected = root.join("app/desktop-release.json");
+        let observed = r"C:\Program Files\WindowsApps\Example.Main\app\desktop-release.json";
+        assert!(!observed.eq_ignore_ascii_case(&expected.to_string_lossy()));
+        assert!(staged_path_matches(observed, &expected));
+        assert!(staged_path_matches(
+            &observed.to_ascii_uppercase(),
+            &expected
+        ));
+    }
+
+    #[test]
+    fn staged_path_comparison_preserves_drive_components_and_literal_dots() {
+        let observed = r"C:\Program Files\WindowsApps\Example.Main\app\desktop-release.json";
+        for expected in [
+            r"D:\Program Files\WindowsApps\Example.Main\app/desktop-release.json",
+            r"C:\Program Files\WindowsApps\Other.Main\app/desktop-release.json",
+            r"C:\Program Files\WindowsApps\Example.Main\app/other.json",
+            r"C:\Program Files\WindowsApps\Example.Main\app/./desktop-release.json",
+            r"C:\Program Files\WindowsApps\Example.Main\app/sub/../desktop-release.json",
+        ] {
+            assert!(!staged_path_matches(
+                observed,
+                std::path::Path::new(expected)
+            ));
+        }
+    }
+
     fn allow_ace(kind: u8, flags: u8, mask: u32) -> Vec<u8> {
         let mut bytes = vec![kind, flags, 0, 0];
         bytes.extend_from_slice(&mask.to_le_bytes());
