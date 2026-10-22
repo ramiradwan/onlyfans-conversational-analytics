@@ -965,53 +965,32 @@ fn selected_engine(
         {
             return Err("optional_identity_mismatch");
         }
-        let deps = p
-            .Dependencies()
+        let path = p
+            .InstalledPath()
             .map_err(|_| "optional_selection_unavailable")?;
-        if deps.Size().map_err(|_| "optional_selection_unavailable")? > 64 {
-            return Err("optional_relation_mismatch");
-        }
-        let mut relations = 0;
-        for index in 0..deps.Size().map_err(|_| "optional_selection_unavailable")? {
-            let dep = deps
-                .GetAt(index)
-                .and_then(|p| p.Id())
-                .map_err(|_| "optional_selection_unavailable")?;
-            if dep
-                .FamilyName()
-                .map_err(|_| "optional_selection_unavailable")?
-                .to_string()
-                == main.family.as_deref().unwrap_or("")
-            {
-                if dep
-                    .Name()
-                    .map_err(|_| "optional_selection_unavailable")?
-                    .to_string()
-                    != main.name
-                    || dep
-                        .Publisher()
-                        .map_err(|_| "optional_selection_unavailable")?
-                        .to_string()
-                        != main.publisher
-                {
-                    return Err("optional_relation_mismatch");
-                }
-                relations += 1;
-            }
-        }
-        if relations != 1 {
-            return Err("optional_relation_mismatch");
-        }
+        let path = path.to_string();
+        let mut files = StagedFiles {
+            held: Vec::new(),
+            bytes: 0,
+            #[cfg(all(feature = "qualification-tools", debug_assertions))]
+            records: Vec::new(),
+        };
+        let manifest = files
+            .read(
+                std::path::Path::new(&path),
+                "AppxManifest.xml",
+                StagedRole::EngineManifest,
+            )
+            .map_err(|_| "optional_selection_unavailable")?;
+        application_manifest(&manifest, &observed.identity, None, Some(&main.name))
+            .map_err(|_| "optional_relation_mismatch")?;
         result = Some(EngineSelection::Present {
             full_name: id
                 .FullName()
                 .map_err(|_| "optional_selection_unavailable")?
                 .to_string(),
             version: observed.identity.version,
-            path: p
-                .InstalledPath()
-                .map_err(|_| "optional_selection_unavailable")?
-                .to_string(),
+            path,
         });
         iterator
             .MoveNext()
@@ -1915,6 +1894,84 @@ fn check_availability(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn installed_engine_manifest(version: &str) -> (String, PackageIdentity) {
+        let identity = PackageIdentity {
+            name: "Example.Engine".into(),
+            publisher: "CN=Example".into(),
+            version: version.into(),
+            architecture: "x64".into(),
+            family: Some("Example.Engine_0123456789abc".into()),
+        };
+        let manifest = format!(
+            r#"<Package xmlns="{FOUNDATION}" xmlns:uap3="{UAP3}"><Identity Name="Example.Engine" Publisher="CN=Example" Version="{version}" ProcessorArchitecture="x64"/><Dependencies><uap3:MainPackageDependency Name="Example.Main"/></Dependencies></Package>"#
+        );
+        (manifest, identity)
+    }
+
+    #[test]
+    fn installed_engine_declaration_allows_independent_registered_versions() {
+        for version in ["1.0.41.0", "1.0.42.0"] {
+            let (manifest, observed) = installed_engine_manifest(version);
+            assert_eq!(
+                application_manifest(manifest.as_bytes(), &observed, None, Some("Example.Main")),
+                Ok(())
+            );
+        }
+    }
+
+    #[test]
+    fn installed_engine_declaration_requires_one_exact_main_relation() {
+        let (manifest, observed) = installed_engine_manifest("1.0.41.0");
+        let relation = r#"<uap3:MainPackageDependency Name="Example.Main"/>"#;
+        for changed in [
+            manifest.replace(relation, ""),
+            manifest.replace(relation, &format!("{relation}{relation}")),
+            manifest.replace("Example.Main", "Other.Main"),
+            manifest.replace(UAP3, "urn:other"),
+            manifest.replace(
+                relation,
+                r#"<uap3:MainPackageDependency Name="Example.Main" Publisher="CN=Example"/>"#,
+            ),
+        ] {
+            assert!(application_manifest(
+                changed.as_bytes(),
+                &observed,
+                None,
+                Some("Example.Main")
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn installed_engine_manifest_must_match_observed_identity() {
+        let (manifest, observed) = installed_engine_manifest("1.0.41.0");
+        for (name, publisher, version) in [
+            ("Other.Engine", "CN=Example", "1.0.41.0"),
+            ("Example.Engine", "CN=Other", "1.0.41.0"),
+            ("Example.Engine", "CN=Example", "1.0.42.0"),
+        ] {
+            let mut changed = observed.clone();
+            changed.name = name.into();
+            changed.publisher = publisher.into();
+            changed.version = version.into();
+            assert!(application_manifest(
+                manifest.as_bytes(),
+                &changed,
+                None,
+                Some("Example.Main")
+            )
+            .is_err());
+        }
+        assert!(application_manifest(
+            manifest.replace("x64", "arm64").as_bytes(),
+            &observed,
+            None,
+            Some("Example.Main")
+        )
+        .is_err());
+    }
+
     #[test]
     #[cfg(windows)]
     fn staged_path_matches_joined_descriptor_separators_and_ascii_case() {
