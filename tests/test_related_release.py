@@ -1,5 +1,6 @@
 """Invented bytes exercise the v2 producer; no signing or deployment."""
 import copy
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -307,3 +308,88 @@ Write-Output 'PASS'
         str(ROOT/"packaging/msix/release-artifacts.psm1"),str(evidence)],capture_output=True,text=True,timeout=30)
     assert result.returncode==0,result.stdout+result.stderr
     assert "PASS" in result.stdout
+
+
+@pytest.mark.parametrize("namespace", ["http://schemas.microsoft.com/appx/2013/bundle",
+                                      "http://schemas.microsoft.com/appx/2016/bundle"])
+def test_powershell_bundle_reader_engine_namespace_and_closed_shape(tmp_path, namespace):
+    p=profile();core,engine=bundles(tmp_path,p,engine_namespace=namespace)
+    metadata="AppxMetadata/AppxBundleManifest.xml"
+    def entries(path):
+        with zipfile.ZipFile(path) as archive:
+            value={n:archive.read(n) for n in archive.namelist()}
+        value.update({"AppxBlockMap.xml":b"invented block map", "[Content_Types].xml":b"invented content types"})
+        return value
+    engine_entries,main_entries=entries(engine),entries(core)
+    cases=[]
+    def case(name, value, accepted, *, is_engine=True):
+        path=tmp_path/(name+".msixbundle");path.write_bytes(zipped(value))
+        filename=optional.engine_application_filename("1.0.42.0") if is_engine else optional.artifact_filename("main_package","1.0.11.0")
+        cases.append(dict(name=name,path=str(path),engine=is_engine,accepted=accepted,
+                          payload_sha256=hashlib.sha256(value[filename]).hexdigest() if accepted else None))
+    case("engine-valid",engine_entries,True)
+    for mutation in ["schema","namespace","root","mixed_optional","extra_root","duplicate_identity",
+                     "duplicate_packages","extra_application","mixed_application","publisher","version",
+                     "architecture","type","filename","missing_payload","extra_member","missing_footprint",
+                     "unsafe_member","metadata_bound","doctype"]:
+        value=engine_entries.copy();root=ET.fromstring(value[metadata]);packages=root.find(f"{{{namespace}}}Packages")
+        if mutation=="schema": root.set("SchemaVersion","6.0")
+        elif mutation=="namespace": root.tag="{http://schemas.microsoft.com/appx/2019/bundle}Bundle"
+        elif mutation=="root": root.tag=f"{{{namespace}}}Other"
+        elif mutation=="mixed_optional": ET.SubElement(root,"{http://schemas.microsoft.com/appx/2016/bundle}OptionalBundle")
+        elif mutation=="extra_root": ET.SubElement(root,"{urn:other}Extension")
+        elif mutation=="duplicate_identity": root.append(copy.deepcopy(root[0]))
+        elif mutation=="duplicate_packages": ET.SubElement(root,f"{{{namespace}}}Packages")
+        elif mutation=="extra_application": packages.append(copy.deepcopy(packages[0]))
+        elif mutation=="mixed_application": ET.SubElement(packages,"{urn:other}Package")
+        elif mutation=="publisher": root[0].set("Publisher","CN=Other")
+        elif mutation=="version": packages[0].set("Version","1.0.43.0")
+        elif mutation=="architecture": packages[0].set("Architecture","arm64")
+        elif mutation=="type": packages[0].set("Type","resource")
+        elif mutation=="filename": packages[0].set("FileName","engine.msix")
+        elif mutation=="missing_payload": del value[packages[0].get("FileName")]
+        elif mutation=="extra_member": value["extra.txt"]=b"invented"
+        elif mutation=="missing_footprint": del value["AppxBlockMap.xml"]
+        elif mutation=="unsafe_member": value["../other.msix"]=b"invented"
+        value[metadata]=ET.tostring(root)
+        if mutation=="metadata_bound": value[metadata]=b" "*65537
+        elif mutation=="doctype": value[metadata]=b"<!DOCTYPE Bundle>"+value[metadata]
+        case("engine-"+mutation,value,False)
+    case("main-valid",main_entries,True,is_engine=False)
+    for mutation in ["namespace","external_alias","external_version","embedded_engine"]:
+        value=main_entries.copy();root=ET.fromstring(value[metadata])
+        if mutation=="namespace":
+            value[metadata]=value[metadata].replace(b"http://schemas.microsoft.com/appx/2016/bundle",b"http://schemas.microsoft.com/appx/2013/bundle")
+        else:
+            external=root.find("{http://schemas.microsoft.com/appx/2016/bundle}OptionalBundle")
+            if mutation=="external_alias": external.set("FileName","engine.msixbundle")
+            elif mutation=="external_version": external.set("Version","1.0.43.0")
+            else: value[external.get("FileName")]=b"invented embedded Engine"
+            value[metadata]=ET.tostring(root)
+        case("main-"+mutation,value,False,is_engine=False)
+    evidence=tmp_path/"reader-cases.json";evidence.write_text(json.dumps(dict(profile=p,cases=cases)),encoding="utf-8")
+    script=r"""param($Verifier,$InputPath)
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Verifier,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'verifier syntax error'}
+foreach($name in @('Read-ZipBytes','Read-SafeXml','Read-BundleApplication')){
+ $definitions=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)|Where-Object Name -ceq $name)
+ if($definitions.Count -ne 1){throw 'exact reader definition required'}
+ . ([scriptblock]::Create($definitions[0].Extent.Text))
+}
+$v=Get-Content -LiteralPath $InputPath -Raw|ConvertFrom-Json
+foreach($case in $v.cases){
+ $accepted=$false;$payload=$null
+ try{[byte[]]$payload=Read-BundleApplication $case.path $v.profile -Engine:$case.engine;$accepted=$true}catch{}
+ if($accepted -ne $case.accepted){throw ('unexpected reader outcome: '+$case.name)}
+ if($accepted -and [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($payload)).ToLowerInvariant() -cne $case.payload_sha256){throw 'wrong application bytes'}
+}
+Write-Output ('PASS '+$v.cases.Count)
+"""
+    path=tmp_path/"reader-check.ps1";path.write_text(script,encoding="utf-8")
+    result=subprocess.run(["pwsh","-NoProfile","-NonInteractive","-File",str(path),
+        str(ROOT/"packaging/verify-msix.ps1"),str(evidence)],capture_output=True,text=True,timeout=30)
+    assert result.returncode==0,result.stdout+result.stderr
+    assert f"PASS {len(cases)}" in result.stdout

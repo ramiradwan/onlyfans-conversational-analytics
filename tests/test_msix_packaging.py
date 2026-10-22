@@ -673,11 +673,12 @@ def test_real_sdk_produces_and_unpacks_the_same_installed_closure(stage, tmp_pat
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows release verifier")
-@pytest.mark.parametrize("case", ["empty", "exe", "duplicate-profile"])
+@pytest.mark.parametrize("case", ["empty", "exe", "duplicate-profile", "bundle-duplicate-profile"])
 def test_release_verifier_rejects_missing_wrong_or_ambiguous_inputs(tmp_path, case):
     arguments = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "packaging/verify-msix.ps1")]
     if case != "empty":
-        package = tmp_path / ("unrelated.exe" if case == "exe" else "fake.msix")
+        package = tmp_path / ("unrelated.exe" if case == "exe" else
+                              "fake.msixbundle" if case == "bundle-duplicate-profile" else "fake.msix")
         package.write_bytes(b"not-an-msix")
         inventory = tmp_path / "inventory.json"
         inventory.write_text("{}")
@@ -686,7 +687,8 @@ def test_release_verifier_rejects_missing_wrong_or_ambiguous_inputs(tmp_path, ca
         arguments += ["-Package", str(package), "-Inventory", str(inventory), "-PackageProfile", str(selected_profile), "-AllowQualification"]
     result = subprocess.run(arguments, capture_output=True, text=True, check=False)
     assert result.returncode == 2, result.stdout + result.stderr
-    expected = {"empty": "Name an MSIX", "exe": "requires an MSIX", "duplicate-profile": "Duplicate JSON member"}
+    expected = {"empty": "Name an MSIX", "exe": "requires an MSIX", "duplicate-profile": "Duplicate JSON member",
+                "bundle-duplicate-profile": "Duplicate JSON member"}
     assert expected[case] in result.stdout, result.stdout + result.stderr
 
 

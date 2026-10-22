@@ -340,14 +340,21 @@ function Read-BundleApplication {
                 (($entry.ExternalAttributes -shr 16) -band 61440) -eq 40960) { throw 'Bundle path alias or unsafe member' }
         }
         $metadata = Read-SafeXml (Read-ZipBytes ($archive.GetEntry('AppxMetadata/AppxBundleManifest.xml')) 65536)
-        $ns = [Xml.XmlNamespaceManager]::new($metadata.NameTable)
-        $ns.AddNamespace('b','http://schemas.microsoft.com/appx/2016/bundle')
-        if ($metadata.DocumentElement.NamespaceURI -cne 'http://schemas.microsoft.com/appx/2016/bundle' -or
+        $namespace = $metadata.DocumentElement.NamespaceURI
+        if (($namespace -cne 'http://schemas.microsoft.com/appx/2016/bundle' -and
+                (-not $Engine -or $namespace -cne 'http://schemas.microsoft.com/appx/2013/bundle')) -or
             $metadata.DocumentElement.LocalName -cne 'Bundle' -or $metadata.DocumentElement.GetAttribute('SchemaVersion') -cne '5.0') { throw 'Unsupported bundle metadata' }
+        $ns = [Xml.XmlNamespaceManager]::new($metadata.NameTable)
+        $ns.AddNamespace('b',$namespace)
         $ids = @($metadata.SelectNodes('/b:Bundle/b:Identity',$ns))
         $packages = @($metadata.SelectNodes('/b:Bundle/b:Packages/b:Package',$ns))
         $optionals = @($metadata.SelectNodes('/b:Bundle/b:OptionalBundle',$ns))
         if ($ids.Count -ne 1 -or $packages.Count -ne 1 -or $optionals.Count -ne $(if ($Engine) { 0 } else { 1 })) { throw 'Bundle requires its exact application/relation closure' }
+        if ($Engine) {
+            $containers = @($metadata.SelectNodes('/b:Bundle/b:Packages',$ns))
+            if ($metadata.DocumentElement.SelectNodes('*').Count -ne 2 -or $containers.Count -ne 1 -or
+                $containers[0].SelectNodes('*').Count -ne 1) { throw 'Engine bundle requires only identity and one application' }
+        }
         foreach ($pair in @(@('Name',$identity.name),@('Publisher',$identity.publisher),@('Version',$version))) {
             if ($ids[0].GetAttribute($pair[0]) -cne $pair[1]) { throw 'Bundle identity mismatch' }
         }
@@ -451,6 +458,11 @@ function Test-RelatedArtifacts {
 }
 
 try {
+    if (-not $IsWindows) { throw 'MSIX release verification requires Windows' }
+    foreach ($file in @($Package, $Inventory, $PackageProfile)) {
+        if (-not $file -or -not [IO.File]::Exists($file)) { throw 'Name an MSIX, its inventory and its explicit profile' }
+    }
+    if ([IO.Path]::GetExtension($Package).ToLowerInvariant() -cnotin @('.msix', '.msixbundle')) { throw 'Verification requires an MSIX file or MSIX bundle' }
     $profile = Read-BoundedJson $PackageProfile 65536
     if ($profile.schema -ceq 'ofca-msix-package-profile/v2' -and $profile.servicing.installed_artifact.kind -ceq 'related_bundle') {
         $receipt = Test-RelatedArtifacts $profile
