@@ -1,9 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createFindingsClient } from '../src/analytics/findingsClient';
-import { findingsRequest, findingsResponse, findingsSource } from '../src/story-only/findingsFixtures';
+import { findingsRequest, findingsResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 
 describe('findings client', () => {
+  it('reads the explicit subset format through the existing authenticated endpoint', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(findingsSubsetResponse())));
+    const value = await createFindingsClient({ fetcher }).read(findingsRequest);
+    expect(value.schema_version).toBe('analytics-findings.v2');
+    expect(value.tasks.map((task) => task.task)).toEqual(['concept_mentions']);
+    expect(value.evidence_page.items).toHaveLength(2);
+  });
   it('uses a generation-bound cached-forbidden GET without account or mutation credentials', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(findingsResponse())));
     const csrf = vi.fn(); const api = createFindingsClient({ fetcher, csrf });

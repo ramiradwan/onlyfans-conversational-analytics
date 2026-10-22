@@ -17,7 +17,7 @@ from app.analytics.nlp_findings_store import FindingsStore, PAGE_SIZE, MAX_SOURC
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from app.nlp import v2
-from app.nlp.profiles import AnalysisProfile
+from app.nlp.profiles import read_profile
 
 _EXECUTION = Lock()
 
@@ -120,7 +120,7 @@ class FindingsRunner:
 
     def _dependency_admission(self, account_id):
         if self.dependencies is not None:
-            profile = AnalysisProfile.model_validate_json(self.findings.state(account_id)['profile_json'])
+            profile = read_profile(self.findings.state(account_id)['profile_json'])
             if not self.dependencies.ready(profile):
                 raise ValueError('nlp_dependency_unavailable')
 
@@ -161,7 +161,7 @@ class FindingsRunner:
         if self.dependencies is None:
             return self._process_one(account_id)
         self.authorize(account_id)
-        profile = AnalysisProfile.model_validate_json(self.findings.state(account_id)['profile_json'])
+        profile = read_profile(self.findings.state(account_id)['profile_json'])
         if not self.dependencies.ready(profile):
             return False
         with self.dependencies.retain(profile):
@@ -176,7 +176,7 @@ class FindingsRunner:
             self.authorize(account_id)
             self.reconcile(account_id)
             state=self.findings.state(account_id)
-            profile=AnalysisProfile.model_validate_json(state['profile_json'])
+            profile=read_profile(state['profile_json'])
             if state['mode']!='enabled' or not self.execution_ready(profile):
                 return False
             claim=self.findings.claim(account_id)
@@ -229,7 +229,8 @@ class FindingsRunner:
             if latest is None or source_binding(latest)!=source_binding(original):
                 self.findings.invalidate_source(account_id,claim.source_ref)
                 return False
-            record=v2.EnrichmentRecord(source=source_binding(latest),profile=profile,
+            record_model = v2.SubsetEnrichmentRecord if profile.schema_version == 'nlp-profile.v3' else v2.EnrichmentRecord
+            record=record_model(source=source_binding(latest),profile=profile,
                 analyzed_at=self.clock().strftime('%Y-%m-%dT%H:%M:%SZ'),
                 tasks=tuple(v2.StoredTask(source=source_binding(latest),profile_sha256=profile.identity_digest(),result=r) for r in results))
             try:
@@ -252,7 +253,7 @@ class FindingsRunner:
         canonical, due = self._admit_inventory(account_id)
         revision=self.findings.state(account_id)['notification_revision']
         frozen=self.findings.freeze(account_id,canonical,label_resolver=self.label_resolver)
-        profile=AnalysisProfile.model_validate_json(self.findings.state(account_id)['profile_json'])
+        profile=read_profile(self.findings.state(account_id)['profile_json'])
         return FrozenFindingsPipeline(self.source,projections=self.projections,enrichment=self.enrichment,
             clock=self.clock,nlp_findings=frozen,nlp_authorize=lambda:self._cheap_publication_admission(account_id,due),
             nlp_admit=lambda:self._publication_admission(account_id),

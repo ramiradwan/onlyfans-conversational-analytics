@@ -32,7 +32,7 @@ from app.models.insights import (
     SentimentTrendResponse,
     TopicMetricsCollection,
     FindingsRequest,
-    FindingsResponse,
+    FindingsReadResponse,
 )
 from app.services import insights_service
 
@@ -216,7 +216,7 @@ async def get_projection(
 
 
 
-@router.get('/findings', response_model=FindingsResponse, operation_id='fetchTaskFindings',
+@router.get('/findings', response_model=FindingsReadResponse, operation_id='fetchTaskFindings',
             responses=PROTECTED_ERROR_RESPONSES)
 async def get_findings(request: Request, response: Response,
         expected_generation: int = Query(...,ge=1), expected_projection_digest: str = Query(...,pattern=r'^sha256:[0-9a-f]{64}$'),

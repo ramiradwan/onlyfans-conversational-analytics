@@ -219,7 +219,10 @@ class AnalysisProfile(Descriptor):
             raise ValueError("duplicate profile member")
         if any(component.engine != self.components[0].engine for component in self.components):
             raise ValueError("profile requires one engine")
-        if {binding.task for binding in self.bindings} != set(TASK_CONTRACTS):
+        names = {binding.task for binding in self.bindings}
+        if len(names) != len(self.bindings):
+            raise ValueError("duplicate task binding")
+        if self.schema_version == "nlp-profile.v2" and names != set(TASK_CONTRACTS):
             raise ValueError("profile requires both tasks exactly once")
         expected = {(binding.component_id, binding.task) for binding in self.bindings}
         actual = {(component.component_id, task.task) for component in self.components for task in component.tasks}
@@ -265,3 +268,31 @@ class AnalysisProfile(Descriptor):
             if component.component_id == component_id:
                 return component
         raise ValueError("unknown component")
+
+
+class SubsetAnalysisProfile(AnalysisProfile):
+    """An explicit nonempty task selection, without undeclared capabilities."""
+    schema_version: Literal["nlp-profile.v3"] = "nlp-profile.v3"
+    bindings: Annotated[tuple[TaskBinding, ...], Field(min_length=1, max_length=2)]
+
+
+def read_profile(frame: bytes | str) -> AnalysisProfile | SubsetAnalysisProfile:
+    """Dispatch without broadening the original profile's accepted shape."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate profile member")
+            result[key] = value
+        return result
+
+    value = json.loads(frame, object_pairs_hook=unique)
+    if not isinstance(value, dict):
+        raise ValueError("invalid profile")
+    family = value.get("schema_version")
+    if type(family) is not str:
+        raise ValueError("invalid profile version")
+    model = {"nlp-profile.v2": AnalysisProfile, "nlp-profile.v3": SubsetAnalysisProfile}.get(family)
+    if model is None:
+        raise ValueError("unknown profile version")
+    return model.model_validate_json(frame)

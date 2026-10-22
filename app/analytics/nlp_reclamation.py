@@ -10,7 +10,7 @@ from app.analytics.nlp_findings_store import (
 )
 from app.analytics.validation_receipt import content_stamp
 from app.nlp import v2
-from app.nlp.profiles import AnalysisProfile
+from app.nlp.profiles import read_profile
 
 BATCH_SIZE = 64
 
@@ -89,7 +89,7 @@ def _page(database, account_ref, proof_candidate, install_transition, deadline):
             decoded = v2.read_record(bytes(record[0]))
             if decoded.source.account_scope != account_ref:
                 raise ValueError('nlp_record_invalid')
-            v2.validate_record(AnalysisProfile.model_validate_json(encoded(value['snapshot']['profile'])),
+            v2.validate_record(read_profile(encoded(value['snapshot']['profile'])),
                 decoded.source, bytes(record[0]))
     check_deadline(deadline)
     with _writing(database,account_ref,proof_candidate,install_transition) as db:

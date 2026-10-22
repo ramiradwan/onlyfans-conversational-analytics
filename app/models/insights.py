@@ -291,3 +291,36 @@ class FindingsResponse(QuestionRecord):
     processing_mode: Literal['enabled', 'paused']
     tasks: Annotated[tuple[FindingsTask, ...], Field(min_length=2, max_length=2)]
     evidence_page: FindingsEvidencePage
+
+
+class FindingsTaskAvailability(QuestionRecord):
+    task: TaskName
+    availability: Literal['declared', 'not_declared']
+
+
+class SubsetFindingsResponse(FindingsResponse):
+    """Only declared tasks carry results; absent capabilities have no outcome."""
+    schema_version: Literal['analytics-findings.v2'] = 'analytics-findings.v2'
+    task_availability: Annotated[tuple[FindingsTaskAvailability, ...], Field(min_length=2, max_length=2)]
+    tasks: Annotated[tuple[FindingsTask, ...], Field(min_length=1, max_length=2)]
+
+    @model_validator(mode='after')
+    def declared_tasks(self):
+        names = {item.task for item in self.task_availability}
+        if names != {'message_topics', 'concept_mentions'}:
+            raise ValueError('findings task availability mismatch')
+        declared = {item.task for item in self.task_availability if item.availability == 'declared'}
+        if {item.task for item in self.tasks} != declared or len(self.tasks) != len(declared):
+            raise ValueError('findings declared task mismatch')
+        previous = self.comparison.tasks
+        if self.comparison.availability == 'available':
+            if {item.task for item in previous} != declared or len(previous) != len(declared):
+                raise ValueError('findings comparison task mismatch')
+        elif previous:
+            raise ValueError('unavailable comparison has tasks')
+        if any(item.task not in declared for item in self.evidence_page.items):
+            raise ValueError('findings evidence task mismatch')
+        return self
+
+
+FindingsReadResponse = Annotated[FindingsResponse | SubsetFindingsResponse, Field(discriminator='schema_version')]

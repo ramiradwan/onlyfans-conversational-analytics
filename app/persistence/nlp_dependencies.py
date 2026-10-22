@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from app.nlp.profiles import AnalysisProfile, canonical_bytes, artifact_closure_digest
+from app.nlp.profiles import canonical_bytes, artifact_closure_digest, read_profile
 from app.nlp.release_catalog import canonical, require, MAX_PROFILES
 
 
@@ -92,7 +92,7 @@ class DependencyPersistence:
             rows = db.execute('SELECT * FROM nlp_dependency_profiles').fetchall()
         values = []
         for row in rows:
-            profile = AnalysisProfile.model_validate_json(bytes(row['document']))
+            profile = read_profile(bytes(row['document']))
             require(profile.identity_digest() == row['digest'] and artifact_closure_digest(tuple(
                 a for a in profile.artifacts if a.role in ('weights','tokenizer','configuration'))) == row['closure_digest'],
                 'nlp_profile_storage')

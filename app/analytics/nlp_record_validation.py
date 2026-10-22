@@ -6,7 +6,7 @@ import hashlib
 from app.analytics.evidence_contracts import EvidenceMessage, MAX_EVIDENCE_TEXT_CHARS
 from app.analytics.opaque_refs import participant_ref
 from app.nlp.contracts import NlpBoundaryError, SourceBinding
-from app.nlp.profiles import AnalysisProfile
+from app.nlp.profiles import AnalysisProfile, SubsetAnalysisProfile, read_profile
 from app.nlp import v2
 
 
@@ -24,7 +24,7 @@ def _check_unicode(value):
 
 def validate_source_bound_record(profile: AnalysisProfile, source: EvidenceMessage,
                                  frame: bytes) -> v2.EnrichmentRecord:
-    """Validate both tasks against unchanged original text and source identity.
+    """Validate declared tasks against unchanged original text and source identity.
 
     The caller supplies the trusted canonical snapshot. This performs no live
     source lookup, authorization, qualification, persistence or publication.
@@ -32,13 +32,13 @@ def validate_source_bound_record(profile: AnalysisProfile, source: EvidenceMessa
     try:
         if type(frame) is not bytes or not 0 < len(frame) <= v2.MAX_RECORD_BYTES:
             raise ValueError()
-        if type(profile) is not AnalysisProfile or type(source) is not EvidenceMessage:
+        if type(profile) not in (AnalysisProfile, SubsetAnalysisProfile) or type(source) is not EvidenceMessage:
             raise ValueError()
         if type(source.text) is not str or len(source.text) > MAX_EVIDENCE_TEXT_CHARS:
             raise ValueError()
         # Dump to ordinary values so unchecked instances and nested models must
         # pass their contracts again, without rendering serializer warnings.
-        profile = AnalysisProfile.model_validate(profile.model_dump(mode="python", warnings=False))
+        profile = read_profile(profile.model_dump_json(warnings=False))
         source = EvidenceMessage.model_validate(source.model_dump(mode="python", warnings=False))
         _check_unicode(profile.model_dump(mode="python", warnings=False))
         _check_unicode(source.model_dump(mode="python", warnings=False))

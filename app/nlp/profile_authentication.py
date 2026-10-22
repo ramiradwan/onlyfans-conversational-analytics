@@ -10,12 +10,13 @@ import json
 import re
 
 from app.nlp.profiles import (
-    AnalysisProfile, BASELINE_RESOURCE_POLICY, ResourcePolicy, canonical_bytes,
+    AnalysisProfile, BASELINE_RESOURCE_POLICY, ResourcePolicy, canonical_bytes, read_profile,
     validate_resource_policy,
 )
 from app.security import signed_objects
 
 PROFILE_JWS_TYPE = "nlp-profile.v2+jws"
+SUBSET_PROFILE_JWS_TYPE = "nlp-profile.v3+jws"
 MAX_PROFILE_BYTES = 8 * 1024 * 1024
 MAX_ENVELOPE_BYTES = ((MAX_PROFILE_BYTES * 4 + 2) // 3
                       + (512 * 4 + 2) // 3 + (64 * 4 + 2) // 3 + 2)
@@ -57,7 +58,7 @@ def _header_bytes(value):
 
 def _profile(raw):
     signed_objects.parse(raw, maximum=MAX_PROFILE_BYTES)
-    profile = AnalysisProfile.model_validate_json(raw)
+    profile = read_profile(raw)
     signed_objects.require(canonical_bytes(profile) == raw)
     return profile
 
@@ -77,10 +78,22 @@ def authenticate_profile(compact_jws: bytes, *, trusted_nlp_keys,
         signed_objects.require(type(resource_policy) is ResourcePolicy)
         policy = ResourcePolicy.model_validate(resource_policy.model_dump(mode="python", warnings=False))
         keys = _keys(trusted_nlp_keys)
+        # The untrusted header selects only a closed verifier domain. The exact
+        # same protected header is authenticated before its payload is admitted.
+        segments = compact_jws.decode("ascii").split(".")
+        signed_objects.require(len(segments) == 3)
+        header = signed_objects.parse(signed_objects.decode(segments[0], 512), maximum=512)
+        signed_objects.require(type(header) is dict)
+        typ = header.get("typ")
+        signed_objects.require(typ in (PROFILE_JWS_TYPE, SUBSET_PROFILE_JWS_TYPE))
+        def payload(raw):
+            profile = _profile(raw)
+            signed_objects.require(typ == profile.schema_version + "+jws")
+            return profile
         verified = signed_objects.verify_compact(
-            compact_jws.decode("ascii"), typ=PROFILE_JWS_TYPE, keys=keys,
+            compact_jws.decode("ascii"), typ=typ, keys=keys,
             maximum=MAX_PROFILE_BYTES, envelope_limit=MAX_ENVELOPE_BYTES,
-            header_canonicalizer=_header_bytes, payload_validator=_profile,
+            header_canonicalizer=_header_bytes, payload_validator=payload,
         )
         signed_objects.require(verified.payload_sha256 == expected_profile_sha256)
         validate_resource_policy(verified.payload, policy)

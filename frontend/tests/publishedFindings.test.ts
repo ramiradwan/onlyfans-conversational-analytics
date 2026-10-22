@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import comparison from '../../shared/analytics/findings-comparison.v1.json';
 import evidence from '../../shared/analytics/findings-evidence.v1.json';
 import published from '../../shared/analytics/findings-response.v1.json';
+import subsetComparison from '../../shared/analytics/findings-comparison-mentions.v2.json';
+import subsetEvidence from '../../shared/analytics/findings-evidence-mentions.v2.json';
+import subsetPublished from '../../shared/analytics/findings-response-mentions.v2.json';
+import jointComparison from '../../shared/analytics/findings-comparison-joint.v2.json';
+import jointEvidence from '../../shared/analytics/findings-evidence-joint.v2.json';
+import jointPublished from '../../shared/analytics/findings-response-joint.v2.json';
 import type { AccountRef } from '../src/analytics/analyticsContract';
 import { parseFindings, type FindingsRequest } from '../src/analytics/findingsContract';
 import { expectedAccountRef, parseSourceEvidence } from '../src/analytics/questionContract';
@@ -22,6 +28,29 @@ function requestFor(value: typeof published | typeof comparison): FindingsReques
   direction: 'all', conversation_ref: null, evidence_offset: 0, evidence_limit: 50, conversation_offset: 0, conversation_limit: 50 };
 }
 describe('published findings response fixtures', () => {
+  it.each([
+    ['mentions', subsetPublished, subsetComparison, subsetEvidence, ['concept_mentions']],
+    ['joint', jointPublished, jointComparison, jointEvidence, ['message_topics', 'concept_mentions']],
+  ] as const)('accepts the published %s task set and exact live Unicode evidence', async (_name, current, previous, source, tasks) => {
+    const result = parseFindings(current, requestFor(current));
+    expect(result.schema_version).toBe('analytics-findings.v2');
+    expect(result.account_ref).toBe(await expectedAccountRef(source.account_id));
+    expect(result.tasks.map((task) => task.task)).toEqual(tasks);
+    for (const task of result.tasks) {
+      expect(task.eligible_messages).toBe(2); expect(task.complete_messages).toBe(2);
+      expect(task.rows[0].supporting_messages).toBe(task.task === 'concept_mentions' ? 2 : 0);
+      expect(task.rows[0].occurrences).toBe(task.task === 'concept_mentions' ? 4 : 0);
+    }
+    const comparisonResult = parseFindings(previous, requestFor(previous));
+    expect(comparisonResult.comparison.availability).toBe('available');
+    expect(comparisonResult.comparison.tasks.map((task) => task.task)).toEqual(tasks);
+    const reference = result.evidence_page.items.find((item) => item.task === 'concept_mentions'
+      && item.reference.message_ref === source.resolved_evidence.reference.message_ref && item.reference.span?.start === 7)!.reference;
+    const resolved = parseSourceEvidence(source.resolved_evidence, reference);
+    expect(resolved.reference.span).toEqual({ start: 7, end: 11 });
+    expect(resolved.browser_span).toEqual({ start: 8, end: 12 });
+    expect(resolved.text.slice(resolved.browser_span!.start, resolved.browser_span!.end)).toBe('echo');
+  });
   it('accepts actual published-generation counts labels and independent prior coverage', async () => {
     const result = parseFindings(published, requestFor(published));
     expect(result.account_ref).toBe(await expectedAccountRef(evidence.account_id));

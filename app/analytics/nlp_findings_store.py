@@ -13,7 +13,7 @@ from app.analytics.opaque_refs import account_ref, participant_ref
 from app.analytics.nlp_record_validation import validate_source_bound_record
 from app.nlp import v2
 from app.nlp.contracts import SourceBinding
-from app.nlp.profiles import AnalysisProfile, TASK_CONTRACTS
+from app.nlp.profiles import TASK_CONTRACTS, read_profile
 
 MAX_SOURCES = 4096
 MAX_PENDING = 256
@@ -139,8 +139,8 @@ def require_current_snapshot(
         or state['completion_revision'] != snapshot['completion_revision']
         or state['availability_revision'] != snapshot['availability_revision']
         or state['inventory_digest'] != snapshot['source_validity_sha256']
-        or AnalysisProfile.model_validate_json(state['profile_json']).identity_digest() !=
-            AnalysisProfile.model_validate_json(encoded(snapshot['profile'])).identity_digest()
+        or read_profile(state['profile_json']).identity_digest() !=
+            read_profile(encoded(snapshot['profile'])).identity_digest()
 
         or (canonical is not None and (canonical.revision != snapshot['canonical_revision']
             or canonical.content_digest != value['canonical_content_digest']))):
@@ -220,7 +220,7 @@ class FindingsStore:
     def select(self, account_id, profile, *, mode='enabled', expected=None, preserve_previous=False, intent=None):
         if mode not in ('enabled','paused','withdrawn','removed'):
             raise ValueError('nlp_mode_invalid')
-        profile = AnalysisProfile.model_validate_json(profile.model_dump_json())
+        profile = read_profile(profile.model_dump_json())
         ref = account_ref(account_id)
         with self.database.transaction() as db:
             require_erasure_idle(db, ref)
@@ -250,7 +250,7 @@ class FindingsStore:
                 )
             else:
                 if (preserve_previous and
-                        AnalysisProfile.model_validate_json(state['profile_json']).identity_digest() != profile.identity_digest()):
+                        read_profile(state['profile_json']).identity_digest() != profile.identity_digest()):
                     db.execute('UPDATE nlp_accounts SET previous_profile_json=profile_json WHERE account_ref=?', (ref,))
                 db.execute(
                     "UPDATE nlp_accounts SET profile_json=?,selection_epoch=?,"
@@ -266,7 +266,7 @@ class FindingsStore:
         with self.database.read() as db:
             row = db.execute('SELECT dependency_intent,profile_json FROM nlp_accounts WHERE account_ref=?', (account_ref(account_id),)).fetchone()
         return bool(row and row['dependency_intent'] == intent and
-                    AnalysisProfile.model_validate_json(row['profile_json']).identity_digest() == digest)
+                    read_profile(row['profile_json']).identity_digest() == digest)
 
     def selected_profiles(self):
         """Referenced current/rollback closures; callers separately fence retention."""
@@ -278,7 +278,7 @@ class FindingsStore:
         with self.database.transaction() as db:
             for row in db.execute('SELECT account_ref,profile_json,mode FROM nlp_accounts').fetchall():
                 if (row['mode'] not in ('withdrawn', 'removed') and
-                        AnalysisProfile.model_validate_json(row['profile_json']).identity_digest() == profile_sha256):
+                        read_profile(row['profile_json']).identity_digest() == profile_sha256):
                     db.execute("UPDATE nlp_accounts SET mode='withdrawn',admission_epoch=admission_epoch+1,"
                         'availability_revision=availability_revision+1,notification_revision=notification_revision+1 '
                         'WHERE account_ref=?', (row['account_ref'],))
@@ -540,7 +540,7 @@ class FindingsStore:
             if not self._valid_claim(db,claim):
                 raise ValueError('nlp_claim_stale')
             state = db.execute('SELECT profile_json FROM nlp_accounts WHERE account_ref=?',(claim.account_ref,)).fetchone()
-            if AnalysisProfile.model_validate_json(state[0]).identity_digest()!=profile.identity_digest():
+            if read_profile(state[0]).identity_digest()!=profile.identity_digest():
                 raise ValueError('nlp_profile_stale')
             if db.execute('SELECT COALESCE(sum(length(document)),0) FROM nlp_records').fetchone()[0] + len(raw) > MAX_RECORD_STORAGE:
                 raise ValueError('nlp_record_storage_limit')
@@ -572,7 +572,7 @@ class FindingsStore:
             state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
             if state is None or state['mode'] in ('withdrawn','removed'):
                 raise ValueError('nlp_findings_unavailable')
-            profile = AnalysisProfile.model_validate_json(state['profile_json'])
+            profile = read_profile(state['profile_json'])
             eligible = db.execute('SELECT count(*) FROM nlp_sources WHERE account_ref=?',(ref,)).fetchone()[0]
             if inventory_digest(db,ref,deadline) != state['inventory_digest']:
                 raise ValueError('nlp_inventory_invalid')
@@ -615,7 +615,8 @@ class FindingsStore:
                     completion_revision=state['completion_revision'],availability_revision=state['availability_revision'],
                     findings_sha256=hashes[binding.task].hexdigest(),
                     coverage_sha256=digest(coverage[binding.task])))
-            snapshot=v2.EnrichmentSnapshot(account_scope=ref,canonical_revision=canonical.revision,
+            snapshot_model = v2.SubsetEnrichmentSnapshot if profile.schema_version == 'nlp-profile.v3' else v2.EnrichmentSnapshot
+            snapshot=snapshot_model(account_scope=ref,canonical_revision=canonical.revision,
                 completion_revision=state['completion_revision'],availability_revision=state['availability_revision'],
                 profile=profile,source_validity_sha256=state['inventory_digest'],tasks=tuple(tasks))
             value = {'snapshot':snapshot.model_dump(mode='json'),'selection_epoch':state['selection_epoch'],

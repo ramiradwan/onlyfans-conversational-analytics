@@ -32,6 +32,42 @@ def documents_normalization():
     return {model.__name__ + ".schema.json": model.model_json_schema() for model in models}
 
 
+def documents_v3():
+    return {name + '.schema.json': model.model_json_schema() for name, model in (
+        ('AnalysisProfile', profiles.SubsetAnalysisProfile),
+        ('EnrichmentRecord', v2.SubsetEnrichmentRecord),
+        ('EnrichmentSnapshot', v2.SubsetEnrichmentSnapshot))}
+
+
+def fixtures_v3():
+    """Versioned task selections over the same invented original source."""
+    import copy
+    originals = fixtures_v2()
+    result = {}
+    for name, tasks in (('mentions', {'concept_mentions'}), ('joint', set(profiles.TASK_CONTRACTS))):
+        document = copy.deepcopy(originals['joint-profile.json'])
+        document['schema_version'] = 'nlp-profile.v3'
+        document['bindings'] = [x for x in document['bindings'] if x['task'] in tasks]
+        component = document['components'][0]
+        component['tasks'] = [x for x in component['tasks'] if x['task'] in tasks]
+        component['executed_labels'] = [x for x in component['executed_labels'] if x['task'] in tasks]
+        profile = profiles.read_profile(json.dumps(document))
+        result[name + '-profile.json'] = profile.model_dump(mode='json')
+        request = copy.deepcopy(originals['joint-joint-request.json'])
+        request.update(profile_sha256=profile.identity_digest(), component_sha256=profile.components[0].identity_digest(),
+                       tasks=[b.task for b in profile.bindings])
+        response = copy.deepcopy(originals['joint-joint-response.json'])
+        response.update(profile_sha256=request['profile_sha256'], component_sha256=request['component_sha256'])
+        response['items'][0]['tasks'] = [x for x in response['items'][0]['tasks'] if x['payload']['task'] in tasks]
+        for task in response['items'][0]['tasks']:
+            task['component_sha256'] = request['component_sha256']
+        parsed = v2.validate_request(profile, json.dumps(request).encode())
+        v2.validate_response(profile, parsed, json.dumps(response).encode())
+        result[name + '-request.json'] = request
+        result[name + '-response.json'] = response
+    return result
+
+
 def documents_releases():
     return {'ReleaseCatalog.schema.json': ReleaseCatalog.model_json_schema()}
 
@@ -126,6 +162,13 @@ def fixtures_v2():
     return result
 
 if __name__ == "__main__":
+    target = ROOT / 'shared/nlp/v3'
+    target.mkdir(parents=True, exist_ok=True)
+    for name, schema in documents_v3().items():
+        (target / name).write_text(json.dumps(schema, indent=2) + '\n', encoding='utf-8')
+    (target / 'fixtures').mkdir(exist_ok=True)
+    for name, value in fixtures_v3().items():
+        (target / 'fixtures' / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     target = ROOT / 'shared/nlp/releases/v1'
     target.mkdir(parents=True, exist_ok=True)
     for name, schema in documents_releases().items():

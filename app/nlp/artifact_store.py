@@ -15,7 +15,7 @@ from typing import BinaryIO
 import uuid
 
 from app.nlp.profiles import (
-    AnalysisProfile, Artifact, MAX_SAFE_INTEGER, artifact_closure_digest, canonical_bytes,
+    AnalysisProfile, Artifact, MAX_SAFE_INTEGER, artifact_closure_digest, canonical_bytes, read_profile,
 )
 from app.persistence.private_files import (
     apply_private_directory_security, apply_private_file_security,
@@ -93,7 +93,7 @@ def _expected(profile: AnalysisProfile):
     if not isinstance(profile, AnalysisProfile):
         raise ArtifactStoreError("artifact_store_profile")
     # Also reject unchecked model_copy updates before any filesystem effects.
-    profile = AnalysisProfile.model_validate_json(canonical_bytes(profile))
+    profile = read_profile(canonical_bytes(profile))
     members = tuple(sorted((asset for asset in profile.artifacts if asset.role in DATA_ROLES),
                            key=lambda asset: asset.artifact_id))
     if not members:

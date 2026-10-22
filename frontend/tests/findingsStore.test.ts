@@ -6,7 +6,7 @@ import type { FindingsClient } from '../src/analytics/findingsClient';
 import { parseFindings, type FindingsResponse } from '../src/analytics/findingsContract';
 import type { SourceEvidence } from '../src/analytics/questionContract';
 import { createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
-import { findingsBaselineFixture as baseline, findingsResponse, findingsSource } from '../src/story-only/findingsFixtures';
+import { findingsBaselineFixture as baseline, findingsResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 import { context } from './questionFixture';
 
 let store: FindingsStore;
@@ -82,6 +82,15 @@ describe('findings store', () => {
   it('refuses mixed immutable snapshots across evidence pages', async () => {
     const api = setup(); await ready();
     vi.mocked(api.read).mockImplementationOnce(async (request) => ({ ...findingsResponse(request), snapshot_sha256: `sha256:${'9'.repeat(64)}` }));
+    await store.actions.read(1);
+    expect(store.getState().result).toBeNull(); expect(store.getState().status).toBe('error');
+  });
+  it('retains a subset snapshot across pages and rejects a changed task declaration', async () => {
+    const api = setup({ read: vi.fn(async (request) => parseFindings(findingsSubsetResponse(request), request)) }); await ready();
+    expect(store.getState().result?.tasks.map((task) => task.task)).toEqual(['concept_mentions']);
+    await store.actions.read(1); await ready();
+    expect(store.getState().result?.evidence_page.items[0].reference.span).toEqual({ start: 14, end: 18 });
+    vi.mocked(api.read).mockImplementationOnce(async (request) => parseFindings(findingsSubsetResponse(request, ['message_topics', 'concept_mentions']), request));
     await store.actions.read(1);
     expect(store.getState().result).toBeNull(); expect(store.getState().status).toBe('error');
   });

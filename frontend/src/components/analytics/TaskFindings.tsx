@@ -5,7 +5,7 @@ import { useStore } from 'zustand';
 import { ChartPanel } from './ChartPanel';
 import { MentionEvidenceDialog } from './MentionEvidenceDialog';
 import type { FindingsBaseline } from '../../analytics/analyticsReadModel';
-import type { FindingsDirection, FindingsTask } from '../../analytics/findingsContract';
+import { findingsTaskAvailability, type FindingsDirection, type FindingsTask } from '../../analytics/findingsContract';
 import { formatCount, formatRatioPercent } from '../../analytics/formatAnalytics';
 import { createFindingsStore, findingsBinding, type FindingsStore } from '../../store/findingsStore';
 import { bridgeTransportStore, type BridgeTransportStore } from '../../store/transportStore';
@@ -62,7 +62,7 @@ function FindingsSession({ baseline, controller, transport = bridgeTransportStor
   const result = state.binding === binding ? state.result : null;
   return <Stack component="section" spacing={2} aria-label="Profile text analysis" data-journey-state="findings.controls">
     <Box><Typography component="h2" variant="h6">Profile text analysis</Typography>
-      <Typography>Saved topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
+      <Typography>Available topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
     <TextField select label="Message direction" value={direction} onChange={(event) => { store.actions.invalidate(); setDirection(event.target.value as FindingsDirection); }} sx={{ maxWidth: '20rem' }}>
       <MenuItem value="all">All messages</MenuItem><MenuItem value="inbound">Received messages</MenuItem><MenuItem value="outbound">Sent messages</MenuItem>
     </TextField>
@@ -84,7 +84,11 @@ function FindingsSession({ baseline, controller, transport = bridgeTransportStor
         <Button disabled={result.conversation_page.offset === 0} onClick={() => void store.actions.read(0, Math.max(0, result.conversation_page.offset - result.conversation_page.limit))}>Previous conversations</Button>
         <Button disabled={!result.conversation_page.has_more || result.conversation_page.offset + result.conversation_page.limit > 1_000_000} onClick={() => void store.actions.read(0, result.conversation_page.offset + result.conversation_page.limit)}>Next conversations</Button>
       </Stack>
-      {result.tasks.map((task) => <TaskSection key={task.task} task={task} />)}
+      {findingsTaskAvailability(result).map((item) => item.availability === 'declared'
+        ? <TaskSection key={item.task} task={result.tasks.find((task) => task.task === item.task)!} />
+        : <ChartPanel key={item.task} title={taskLabel(item.task)}>
+          <Typography>{taskLabel(item.task)} are unavailable for this analysis profile.</Typography>
+        </ChartPanel>)}
       <Box component="section" aria-label="Previous equal-duration window"><Stack spacing={2}>
         <Typography component="h2" variant="h6">Previous equal-duration window</Typography>
         {result.comparison.availability === 'available' ? <>

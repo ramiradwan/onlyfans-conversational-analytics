@@ -1,0 +1,83 @@
+{
+  "protocol": "nlp-worker.v2",
+  "request_id": "request.joint",
+  "profile_sha256": "b393ce0e82d4462847fe37cd3ce41bc689c01d94403c141a5f52ccad4dfa59d9",
+  "component_id": "joint",
+  "component_sha256": "9c9f8deb0c69e9e28d5a66fdc97946249065412c9e17220007bd3b5ce3588dac",
+  "items": [
+    {
+      "request_item_id": "item.1",
+      "tasks": [
+        {
+          "component_id": "joint",
+          "component_sha256": "9c9f8deb0c69e9e28d5a66fdc97946249065412c9e17220007bd3b5ce3588dac",
+          "text_sha256": "9d56af6fa9d8ba654d6a9309104779b68e61cc3357cd1870cac306c245b35e1b",
+          "payload": {
+            "outcome": "assessed_no_match",
+            "coverage": {
+              "source_codepoints": 11,
+              "examined": [
+                {
+                  "start": 0,
+                  "end": 11
+                }
+              ],
+              "excluded": [],
+              "limits_reached": []
+            },
+            "reason": "none",
+            "task": "message_topics",
+            "task_contract": "message_topics.v1",
+            "findings": []
+          }
+        },
+        {
+          "component_id": "joint",
+          "component_sha256": "9c9f8deb0c69e9e28d5a66fdc97946249065412c9e17220007bd3b5ce3588dac",
+          "text_sha256": "9d56af6fa9d8ba654d6a9309104779b68e61cc3357cd1870cac306c245b35e1b",
+          "payload": {
+            "outcome": "assessed_findings",
+            "coverage": {
+              "source_codepoints": 11,
+              "examined": [
+                {
+                  "start": 0,
+                  "end": 11
+                }
+              ],
+              "excluded": [],
+              "limits_reached": []
+            },
+            "reason": "none",
+            "task": "concept_mentions",
+            "task_contract": "concept_mentions.v1",
+            "findings": [
+              {
+                "concept_id": "concept.synthetic",
+                "span": {
+                  "start": 2,
+                  "end": 6
+                },
+                "score": {
+                  "kind": "probability",
+                  "value": 0.95
+                }
+              },
+              {
+                "concept_id": "concept.synthetic",
+                "span": {
+                  "start": 7,
+                  "end": 11
+                },
+                "score": {
+                  "kind": "probability",
+                  "value": 0.95
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

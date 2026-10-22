@@ -9,7 +9,7 @@ import { parseFindings } from '../src/analytics/findingsContract';
 import { AnalyticsPresentation } from '../src/components/analytics/AnalyticsPresentation';
 import { TaskFindings } from '../src/components/analytics/TaskFindings';
 import { createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
-import { findingsBaselineFixture as baseline, findingsResponse, findingsSource, findingsSourceText } from '../src/story-only/findingsFixtures';
+import { findingsBaselineFixture as baseline, findingsResponse, findingsSource, findingsSourceText, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 import { storyBaselineState, storyDateRange } from '../src/story-only/analyticsFixtures';
 import { theme } from '../src/theme';
 import { context } from './questionFixture';
@@ -51,6 +51,21 @@ describe('TaskFindings', () => {
     expect(dialog.querySelector('blockquote')?.textContent).toBe(findingsSourceText);
     expect(dialog.querySelector('mark')?.previousSibling?.textContent).toBe('😀 e\u0301 item and ');
     expect(dialog.querySelector('img')).toBeNull();
+    expect(api.evidence).toHaveBeenCalledWith(expect.objectContaining({ span: { start: 14, end: 18 } }), expect.any(AbortSignal));
+  });
+  it('shows unavailable topics without fabricated coverage or absence counts', async () => {
+    const { api } = setup({ read: async (request) => parseFindings(findingsSubsetResponse(request), request) });
+    const topics = await screen.findByRole('region', { name: 'Topics' });
+    expect(within(topics).getByText('Topics are unavailable for this analysis profile.')).toBeTruthy();
+    expect(within(topics).queryByText(/Eligible:|Assessment pending|No supported categories/)).toBeNull();
+    expect(within(topics).queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('table', { name: 'Topics findings' })).toBeNull();
+    expect(screen.queryByRole('table', { name: 'Previous Topics findings' })).toBeNull();
+    expect(screen.getByRole('table', { name: 'Mentions findings' })).toBeTruthy();
+    expect(screen.getByRole('table', { name: 'Previous Mentions findings' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Mentions source 2: synthetic-mention (complete)' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Finding source' });
+    await waitFor(() => expect(dialog.querySelector('mark')?.textContent).toBe('item'));
     expect(api.evidence).toHaveBeenCalledWith(expect.objectContaining({ span: { start: 14, end: 18 } }), expect.any(AbortSignal));
   });
   it('clears sources and results on account change', async () => {

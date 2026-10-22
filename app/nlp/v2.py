@@ -9,7 +9,7 @@ from pydantic import Field, model_validator
 
 from app.nlp import contracts as v1
 from app.nlp.contracts import Contract, Coverage, Digest, Identifier, NlpBoundaryError, SourceBinding, Span
-from app.nlp.profiles import (AnalysisProfile, ComponentDescriptor, Descriptor,
+from app.nlp.profiles import (AnalysisProfile, SubsetAnalysisProfile, ComponentDescriptor, Descriptor,
                               TASK_CONTRACTS, TaskName, canonical_bytes)
 
 MAX_FRAME_BYTES = v1.MAX_FRAME_BYTES
@@ -269,8 +269,12 @@ class EnrichmentRecord(Contract):
 
     @model_validator(mode="after")
     def coherent(self):
+        expected_profile = "nlp-profile.v3" if self.schema_version == "nlp-result.v3" else "nlp-profile.v2"
+        if self.profile.schema_version != expected_profile:
+            raise ValueError("record profile version mismatch")
         bindings = {binding.task: binding.component_id for binding in self.profile.bindings}
-        if {task.result.payload.task for task in self.tasks} != set(bindings):
+        if (len({task.result.payload.task for task in self.tasks}) != len(self.tasks) or
+                {task.result.payload.task for task in self.tasks} != set(bindings)):
             raise ValueError("record task set mismatch")
         text_digests = {task.result.text_sha256 for task in self.tasks}
         lengths = {task.result.payload.coverage.source_codepoints for task in self.tasks}
@@ -285,6 +289,12 @@ class EnrichmentRecord(Contract):
                    if task.result.component_id == component.component_id) > component.max_output_findings:
                 raise ValueError("record output limit")
         return self
+
+
+class SubsetEnrichmentRecord(EnrichmentRecord):
+    schema_version: Literal["nlp-result.v3"] = "nlp-result.v3"
+    profile: SubsetAnalysisProfile
+    tasks: Annotated[tuple[StoredTask, ...], Field(min_length=1, max_length=2)]
 
 
 class TaskSnapshot(Contract):
@@ -310,8 +320,11 @@ class EnrichmentSnapshot(Descriptor):
 
     @model_validator(mode="after")
     def coherent(self):
+        expected_profile = "nlp-profile.v3" if self.schema_version == "nlp-snapshot.v3" else "nlp-profile.v2"
+        if self.profile.schema_version != expected_profile:
+            raise ValueError("snapshot profile version mismatch")
         bindings = {binding.task: binding.component_id for binding in self.profile.bindings}
-        if {task.task for task in self.tasks} != set(bindings):
+        if len({task.task for task in self.tasks}) != len(self.tasks) or {task.task for task in self.tasks} != set(bindings):
             raise ValueError("snapshot task set mismatch")
         for task in self.tasks:
             if (task.task_contract != TASK_CONTRACTS[task.task] or task.component_sha256 !=
@@ -320,8 +333,25 @@ class EnrichmentSnapshot(Descriptor):
         return self
 
 
-def decode_snapshot(frame: bytes) -> EnrichmentSnapshot:
-    return _decode(EnrichmentSnapshot, frame, "snapshot", MAX_RECORD_BYTES)
+class SubsetEnrichmentSnapshot(EnrichmentSnapshot):
+    schema_version: Literal["nlp-snapshot.v3"] = "nlp-snapshot.v3"
+    profile: SubsetAnalysisProfile
+    tasks: Annotated[tuple[TaskSnapshot, ...], Field(min_length=1, max_length=2)]
+
+
+def decode_snapshot(frame: bytes) -> EnrichmentSnapshot | SubsetEnrichmentSnapshot:
+    if len(frame) > MAX_RECORD_BYTES:
+        raise NlpBoundaryError("nlp_frame_too_large")
+    try:
+        family = json.loads(frame, object_pairs_hook=_unique_object).get("schema_version", "nlp-snapshot.v2")
+    except (ValueError, AttributeError, RecursionError):
+        raise NlpBoundaryError("nlp_invalid_snapshot") from None
+    if type(family) is not str:
+        raise NlpBoundaryError("nlp_invalid_snapshot")
+    model = {"nlp-snapshot.v2": EnrichmentSnapshot, "nlp-snapshot.v3": SubsetEnrichmentSnapshot}.get(family)
+    if model is None:
+        raise NlpBoundaryError("nlp_invalid_snapshot")
+    return _decode(model, frame, "snapshot", MAX_RECORD_BYTES)
 
 
 def read_record(frame: bytes) -> v1.EnrichmentRecord | EnrichmentRecord:
@@ -336,6 +366,8 @@ def read_record(frame: bytes) -> v1.EnrichmentRecord | EnrichmentRecord:
         return _decode(v1.EnrichmentRecord, frame, "record", MAX_RECORD_BYTES)
     if family == "nlp-result.v2":
         return _decode(EnrichmentRecord, frame, "record", MAX_RECORD_BYTES)
+    if family == "nlp-result.v3":
+        return _decode(SubsetEnrichmentRecord, frame, "record", MAX_RECORD_BYTES)
     raise NlpBoundaryError("nlp_invalid_record")
 
 

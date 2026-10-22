@@ -16,7 +16,7 @@ from uuid import uuid4
 from app.nlp import adapter
 from app.nlp.artifact_store import DATA_ROLES, ArtifactStoreError
 from app.nlp.profile_authentication import authenticate_profile, MAX_ENVELOPE_BYTES
-from app.nlp.profiles import AnalysisProfile, ResourcePolicy, canonical_bytes, validate_resource_policy
+from app.nlp.profiles import ResourcePolicy, canonical_bytes, validate_resource_policy, read_profile
 from app.nlp.release_catalog import (verify_catalog, canonical, require, DependencyRejected,
                                     CATALOG_ENVELOPE_BYTES, MAX_WITHDRAWALS)
 from app.persistence.private_files import (reject_path_aliases, apply_private_directory_security,
@@ -281,7 +281,7 @@ class DependencyService:
                 except ValueError:
                     pass
                 else:
-                    p = AnalysisProfile.model_validate_json(row['profile_json'])
+                    p = read_profile(row['profile_json'])
                     selected = {'profile_id': p.profile_id, 'revision': p.revision,
                         'profile_sha256': p.identity_digest(), 'mode': row['mode'],
                         'selection_epoch': row['selection_epoch'], 'admission_epoch': row['admission_epoch']}
@@ -634,7 +634,7 @@ class DependencyService:
             if rollback:
                 previous = self.findings.state(account).get('previous_profile_json')
                 require(previous is not None, 'nlp_rollback_unavailable')
-                profile = AnalysisProfile.model_validate_json(previous)
+                profile = read_profile(previous)
             else:
                 profile = self._profile(self._entry(profile_id, revision).profile_sha256)
             self._admit(profile, fresh=True)
@@ -670,7 +670,7 @@ class DependencyService:
                 targets = [matches[0].identity_digest()]
             else:
                 state = self.findings.state(account)
-                targets = [AnalysisProfile.model_validate_json(state[k]).identity_digest()
+                targets = [read_profile(state[k]).identity_digest()
                            for k in ('profile_json', 'previous_profile_json') if state[k]]
                 self.findings.mode(account, 'removed')
             self.persistence.operation({'id': uuid4().hex, 'kind': 'gc', 'state': 'pending', 'profiles': targets})
@@ -687,7 +687,7 @@ class DependencyService:
                 row = self.findings.state(account)
                 require(row['mode'] in ('paused', 'enabled'), 'nlp_account_unavailable')
                 if mode == 'enabled':
-                    profile = AnalysisProfile.model_validate_json(row['profile_json'])
+                    profile = read_profile(row['profile_json'])
                     require(self.ready(profile), 'nlp_dependency_unavailable')
                 self.findings.mode(account, mode)
 
@@ -715,7 +715,7 @@ class DependencyService:
                 if row['mode'] != 'removed':
                     for key in ('profile_json', 'previous_profile_json'):
                         if row[key]:
-                            referenced.add(AnalysisProfile.model_validate_json(row[key]).identity_digest())
+                            referenced.add(read_profile(row[key]).identity_digest())
             for op in self.persistence.operations():
                 if op['kind'] == 'pin' and op['state'] == 'running' and not self.owners.absent(op['owner']):
                     referenced.add(op['profile'])

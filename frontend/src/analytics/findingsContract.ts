@@ -40,8 +40,16 @@ const response = z.object({ schema_version: z.literal('analytics-findings.v1'),
     total: count, has_more: z.boolean(), items: z.array(z.object({ task: taskName, category_id: identifier,
       assessment: z.enum(['complete', 'partial']), reference: questionEvidence }).strict()).max(100) }).strict(),
 }).strict();
-export type FindingsResponse = z.infer<typeof response>;
+const taskAvailability = z.object({ task: taskName,
+  availability: z.enum(['declared', 'not_declared']) }).strict();
+const subsetResponse = response.extend({ schema_version: z.literal('analytics-findings.v2'),
+  tasks: z.array(task).min(1).max(2), task_availability: z.array(taskAvailability).length(2) });
+const versionedResponse = z.discriminatedUnion('schema_version', [response, subsetResponse]);
+export type FindingsResponseV1 = z.infer<typeof response>;
+export type FindingsResponseV2 = z.infer<typeof subsetResponse>;
+export type FindingsResponse = z.infer<typeof versionedResponse>;
 export type FindingsTask = FindingsResponse['tasks'][number];
+export type FindingsTaskAvailability = z.infer<typeof taskAvailability>;
 export type FindingsDirection = FindingsResponse['direction'];
 export interface FindingsRequest {
   baseline: FindingsBaseline;
@@ -71,7 +79,7 @@ function checkEffective(window: FindingsResponse['effective_window'], start: big
   }
 }
 export function parseFindings(value: unknown, request: FindingsRequest): FindingsResponse {
-  const checked = response.safeParse(value);
+  const checked = versionedResponse.safeParse(value);
   if (!checked.success) throw new FindingsContractError();
   const result = checked.data;
   const { requested_window: requested, ...identity } = request.baseline;
@@ -82,6 +90,10 @@ export function parseFindings(value: unknown, request: FindingsRequest): Finding
   }
   const page = result.evidence_page;
   const conversations = result.conversation_page;
+  const declaredTasks = new Set(result.tasks.map((item) => item.task));
+  if (declaredTasks.size !== result.tasks.length || (result.schema_version === 'analytics-findings.v2'
+    && (new Set(result.task_availability.map((item) => item.task)).size !== 2
+      || result.task_availability.some((item) => (item.availability === 'declared') !== declaredTasks.has(item.task))))) throw new FindingsContractError();
   if (result.direction !== request.direction || result.requested_window.scope !== requested.scope
     || !sameInstant(result.requested_window.start, requested.start) || !sameInstant(result.requested_window.end, requested.end)
     || page.offset !== request.evidence_offset || page.limit !== request.evidence_limit
@@ -92,7 +104,7 @@ export function parseFindings(value: unknown, request: FindingsRequest): Finding
     || (result.effective_window.start === null) !== (result.effective_window.end === null)
     || (result.effective_window.start !== null && result.effective_window.end !== null
       && Date.parse(result.effective_window.start) > Date.parse(result.effective_window.end))
-    || new Set(result.tasks.map((item) => item.task)).size !== 2) throw new FindingsContractError();
+    ) throw new FindingsContractError();
   checkEffective(result.effective_window, start, end);
   if (result.conversation_ref !== request.conversation_ref || conversations.offset !== request.conversation_offset
     || conversations.limit !== request.conversation_limit || conversations.items.length > conversations.limit
@@ -102,11 +114,12 @@ export function parseFindings(value: unknown, request: FindingsRequest): Finding
     || new Set(conversations.items.map((item) => item.conversation_ref)).size !== conversations.items.length) throw new FindingsContractError();
   const comparison = result.comparison;
   if (comparison.availability === 'available') {
-    if (start === null || end === null || end <= start || comparison.unavailable_reason !== null || comparison.tasks.length !== 2
+    if (start === null || end === null || end <= start || comparison.unavailable_reason !== null || comparison.tasks.length !== declaredTasks.size
       || comparison.requested_window?.scope !== 'requested' || !comparison.effective_window
       || comparison.requested_window.start === null || instantMicros(comparison.requested_window.start) !== start - (end - start)
       || !sameInstant(comparison.requested_window.end, requested.start)
-      || new Set(comparison.tasks.map((item) => item.task)).size !== 2) throw new FindingsContractError();
+      || new Set(comparison.tasks.map((item) => item.task)).size !== declaredTasks.size
+      || comparison.tasks.some((item) => !declaredTasks.has(item.task))) throw new FindingsContractError();
     checkEffective(comparison.effective_window, start - (end - start), start, true);
     for (const previous of comparison.tasks) {
       const main = result.tasks.find((item) => item.task === previous.task);
@@ -150,4 +163,9 @@ export function parseFindings(value: unknown, request: FindingsRequest): Finding
 
 export function findingsSnapshot(result: FindingsResponse): string {
   return JSON.stringify({ ...result, evidence_page: undefined, conversation_page: undefined });
+}
+
+export function findingsTaskAvailability(result: FindingsResponse): FindingsTaskAvailability[] {
+  return result.schema_version === 'analytics-findings.v2' ? result.task_availability
+    : (['message_topics', 'concept_mentions'] as const).map((task) => ({ task, availability: 'declared' }));
 }

@@ -1,7 +1,7 @@
 /** STORY ONLY: invented response and source text for isolated visual inspection. */
 import type { AccountRef } from '../analytics/analyticsContract';
 import type { FindingsBaseline } from '../analytics/analyticsReadModel';
-import type { FindingsRequest, FindingsResponse } from '../analytics/findingsContract';
+import type { FindingsRequest, FindingsResponse, FindingsResponseV1, FindingsResponseV2, FindingsTask } from '../analytics/findingsContract';
 import type { QuestionEvidence, SourceEvidence } from '../analytics/questionContract';
 
 export const findingsAccount = 'synthetic-question-account';
@@ -22,7 +22,7 @@ export function findingsSource(value: QuestionEvidence): SourceEvidence {
     location: { conversation_id: 'synthetic-conversation', message_id: 'synthetic-message' },
     browser_span: value.span ? { start: points.slice(0, value.span.start).join('').length, end: points.slice(0, value.span.end).join('').length } : null };
 }
-export function findingsResponse(request = findingsRequest): FindingsResponse {
+export function findingsResponse(request = findingsRequest): FindingsResponseV1 {
   const tasks: FindingsResponse['tasks'] = (['message_topics', 'concept_mentions'] as const).map((task) => ({
     task, task_contract: `${task}.v1`, component_id: 'synthetic-component', component_sha256: digest, taxonomy: policy,
     availability: 'pending', eligible_messages: 7, complete_messages: 2, partial_messages: 1,
@@ -48,4 +48,20 @@ export function findingsResponse(request = findingsRequest): FindingsResponse {
     evidence_page: { offset: request.evidence_offset, limit: request.evidence_limit, total: evidence.length,
       has_more: request.evidence_offset + request.evidence_limit < evidence.length,
       items: evidence.slice(request.evidence_offset, request.evidence_offset + request.evidence_limit) } });
+}
+
+export function findingsSubsetResponse(request = findingsRequest,
+  declared: FindingsTask['task'][] = ['concept_mentions']): FindingsResponseV2 {
+  const value = findingsResponse(request);
+  const evidence = findingsResponse({ ...request, evidence_offset: 0, evidence_limit: 100 })
+    .evidence_page.items.filter((item) => declared.includes(item.task));
+  return { ...value, schema_version: 'analytics-findings.v2',
+    task_availability: (['message_topics', 'concept_mentions'] as const).map((task) => ({
+      task, availability: declared.includes(task) ? 'declared' : 'not_declared' })),
+    tasks: value.tasks.filter((task) => declared.includes(task.task)),
+    comparison: { ...value.comparison, tasks: value.comparison.tasks.filter((task) => declared.includes(task.task)) },
+    evidence_page: { ...value.evidence_page, total: evidence.length,
+      has_more: request.evidence_offset + request.evidence_limit < evidence.length,
+      items: evidence.slice(request.evidence_offset, request.evidence_offset + request.evidence_limit) },
+  };
 }

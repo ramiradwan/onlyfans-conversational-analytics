@@ -1,5 +1,4 @@
 """Bounded findings from one immutable published generation, without inference."""
-
 from collections import Counter, defaultdict
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -23,9 +22,9 @@ from app.analytics.query_execution import (
     QuestionLimitExceeded,
 )
 from app.models.analytics import AnalyticsWindow, WindowScope
-from app.models.insights import FindingsRequest, FindingsResponse
+from app.models.insights import FindingsRequest, FindingsResponse, SubsetFindingsResponse
 from app.nlp.contracts import SourceBinding
-from app.nlp.profiles import AnalysisProfile
+from app.nlp.profiles import read_profile
 
 SOURCE_PAGE_BYTES = 65_536
 SOURCE_PAGE_ROWS = 64
@@ -474,7 +473,7 @@ def _select(sources, start, end, direction, *, end_exclusive=False, conversation
 
 def aggregate(value, records, generation, snapshot, request, budget, source_rows):
     """Return counts and one exact evidence page, plus private locator bindings."""
-    profile = AnalysisProfile.model_validate_json(encoded(value["snapshot"]["profile"]))
+    profile = read_profile(encoded(value["snapshot"]["profile"]))
     inventory, labels, sources = _inventory(
         value, records, profile, budget, source_rows
     )
@@ -549,7 +548,12 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
     page = evidence[
         request.evidence_offset : request.evidence_offset + request.evidence_limit
     ]
-    response = FindingsResponse(
+    response_model = SubsetFindingsResponse if profile.schema_version == 'nlp-profile.v3' else FindingsResponse
+    availability = ({'task_availability': [
+        {'task': task, 'availability': 'declared' if task in {b.task for b in profile.bindings} else 'not_declared'}
+        for task in ('message_topics', 'concept_mentions')]} if profile.schema_version == 'nlp-profile.v3' else {})
+    response = response_model(
+        **availability,
         **{
             key: generation[column]
             for key, column in (

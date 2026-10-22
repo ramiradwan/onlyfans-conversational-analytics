@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseFindings } from '../src/analytics/findingsContract';
+import { findingsTaskAvailability, parseFindings, type FindingsResponseV2 } from '../src/analytics/findingsContract';
 import { parseSourceEvidence } from '../src/analytics/questionContract';
-import { findingsRequest, findingsResponse, findingsSource } from '../src/story-only/findingsFixtures';
+import { findingsRequest, findingsResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 
 describe('findings contract', () => {
   it('validates both tasks and retains separate coverage and counting units', () => {
@@ -10,6 +10,54 @@ describe('findings contract', () => {
     expect(value.tasks[1].rows[0].occurrences).toBe(2);
     expect(value.tasks[1].rows[0].supporting_messages).toBe(1);
     expect(value.tasks[0].uncertain_messages).toBe(1);
+  });
+  it('accepts declared subsets without inventing results for an unavailable task', () => {
+    for (const declared of [['concept_mentions'], ['message_topics'], ['message_topics', 'concept_mentions']] as const) {
+      const value = parseFindings(findingsSubsetResponse(findingsRequest, [...declared]), findingsRequest);
+      expect(value.schema_version).toBe('analytics-findings.v2');
+      expect(value.tasks.map((item) => item.task)).toEqual(declared);
+      expect(value.comparison.tasks.map((item) => item.task)).toEqual(declared);
+      expect(findingsTaskAvailability(value).filter((item) => item.availability === 'declared').map((item) => item.task)).toEqual(declared);
+      expect(value.evidence_page.items.every((item) => value.tasks.some((task) => task.task === item.task))).toBe(true);
+    }
+  });
+  it('keeps the legacy format strict and requires the explicit new version', () => {
+    const legacy = findingsResponse(); legacy.tasks = legacy.tasks.slice(1);
+    expect(() => parseFindings(legacy, findingsRequest)).toThrow();
+    const current = findingsSubsetResponse();
+    expect(() => parseFindings({ ...current, schema_version: 'analytics-findings.v1' }, findingsRequest)).toThrow();
+    expect(() => parseFindings({ ...current, schema_version: 'analytics-findings.v3' }, findingsRequest)).toThrow();
+    const { task_availability: ignored, ...missing } = current;
+    expect(ignored).toHaveLength(2);
+    expect(() => parseFindings(missing, findingsRequest)).toThrow();
+    expect(findingsTaskAvailability(parseFindings(findingsResponse(), findingsRequest)).every((item) => item.availability === 'declared')).toBe(true);
+  });
+  it('rejects empty or contradictory task declarations and mismatched comparisons', () => {
+    const changes: ((value: FindingsResponseV2) => void)[] = [
+      (value) => { value.tasks = []; },
+      (value) => { value.tasks.push(value.tasks[0]); },
+      (value) => { value.task_availability = []; },
+      (value) => { value.task_availability[0] = value.task_availability[1]; },
+      (value) => { value.task_availability[0].availability = 'declared'; },
+      (value) => { value.task_availability[1].availability = 'not_declared'; },
+      (value) => { value.comparison.tasks = []; },
+      (value) => { value.comparison.tasks = [findingsResponse().comparison.tasks[0]]; },
+      (value) => { value.comparison.tasks.push(value.comparison.tasks[0]); },
+    ];
+    for (const change of changes) { const value = findingsSubsetResponse(); change(value); expect(() => parseFindings(value, findingsRequest)).toThrow(); }
+  });
+  it('rejects evidence for undeclared tasks and preserves separate repeated occurrences', () => {
+    const value = findingsSubsetResponse();
+    const parsed = parseFindings(value, findingsRequest);
+    expect(parsed.evidence_page.items.map((item) => item.reference.span)).toEqual([{ start: 5, end: 9 }, { start: 14, end: 18 }]);
+    value.evidence_page.items.push(findingsResponse().evidence_page.items[2]); value.evidence_page.total += 1;
+    expect(() => parseFindings(value, findingsRequest)).toThrow();
+  });
+  it('checks subset evidence pagination against the complete declared task inventory', () => {
+    const request = { ...findingsRequest, evidence_offset: 1, evidence_limit: 1 };
+    const value = parseFindings(findingsSubsetResponse(request), request);
+    expect(value.evidence_page).toMatchObject({ offset: 1, limit: 1, total: 2, has_more: false });
+    expect(value.evidence_page.items[0].reference.span).toEqual({ start: 14, end: 18 });
   });
   it.each(['account_ref', 'source_revision', 'projection_generation', 'projection_digest', 'canonical_content_digest', 'graph_digest', 'pipeline_revision', 'pipeline_config_digest', 'pipeline_identity_digest'] as const)('rejects mismatched %s', (field) => {
     const value = findingsResponse();

@@ -17,9 +17,11 @@ Model packs are authenticated immutable data, never executable extensions. Exact
 
 An analysis profile binds message-local topic classification and concept extraction to one joint component or two serial components. Each component identifies its compiled adapter, engine, complete artifact closure, conditioning schema and preprocessing/decoding policies. Compatible data changes require a new profile; a different adapter requires a compatible signed engine. Packs cannot supply executable adapters or arbitrary task graphs.
 
+The `nlp-profile.v3`, `nlp-result.v3` and `nlp-snapshot.v3` families permit a nonempty declared subset of supported tasks. Earlier families retain their required task sets. Results and comparisons cover exactly the declared tasks. `analytics-findings.v2` reports each supported task as declared or unavailable; an undeclared capability has no outcome or coverage. The worker protocol remains v2. Profile signatures use distinct version-bound protected types.
+
 Stable topic and concept identifiers remain distinct from model labels. Findings describe text, including negated or quoted mentions; they do not establish participant preferences or intentions. Future tone uses a separate qualified task profile and does not alter baseline sentiment.
 
-`app/nlp/contracts.py` retains v1 semantics. The profile, v2 result and adapter modules define the new boundary; the generator owns schemas under `shared/nlp/`. Requests declare exact tasks and component/profile identities. Brain rejects mismatched, missing, extra or duplicate task results. Compatibility declarations and handshake results do not authenticate a release.
+`app/nlp/contracts.py` retains v1 semantics. The profile, versioned result and adapter modules define the boundary; the generator owns schemas under `shared/nlp/`. Requests declare exact tasks and component/profile identities. Brain rejects mismatched, missing, extra or duplicate task results. Compatibility declarations and handshake results do not authenticate a release.
 
 Each task has an independent outcome and coverage. Missing dependencies, uncertainty, failure and partial examination never become successful empty findings. Scores are optional, finite and explicitly typed; model scores are not measured accuracy. Evidence uses half-open original Unicode codepoint offsets. Deduplicate only identical source/concept/coordinate occurrences; repeated phrases at different positions remain distinct.
 
