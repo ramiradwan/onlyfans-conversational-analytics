@@ -212,9 +212,10 @@ fn process_package(process: HANDLE, family: bool) -> Result<String> {
     }
 }
 fn same_path(a: &Path, b: &Path) -> bool {
-    a.to_string_lossy()
+    dunce::simplified(a)
+        .to_string_lossy()
         .replace('/', "\\")
-        .eq_ignore_ascii_case(&b.to_string_lossy().replace('/', "\\"))
+        .eq_ignore_ascii_case(&dunce::simplified(b).to_string_lossy().replace('/', "\\"))
 }
 fn parent_pid() -> Result<u32> {
     unsafe {
@@ -320,6 +321,62 @@ fn hash_file(file: &mut File, artifact: &Artifact) -> Result<()> {
         return Err("artifact_mismatch");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_process_image_matches_ordinary_local_path() {
+        let image = crate::windows::process_image(unsafe { GetCurrentProcess() }).unwrap();
+        let ordinary = dunce::simplified(&image);
+        assert_ne!(image.as_os_str(), ordinary.as_os_str());
+        assert!(same_path(&image, ordinary));
+        assert!(same_path(ordinary, &image));
+        assert!(same_path(&image, &std::env::current_exe().unwrap()));
+    }
+
+    #[test]
+    fn local_path_representations_preserve_package_and_namespace_boundaries() {
+        let image =
+            Path::new(r"C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe");
+        let equivalent =
+            Path::new(r"\\?\C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe");
+        assert!(same_path(image, equivalent));
+        assert!(same_path(equivalent, image));
+        assert!(same_path(
+            image,
+            Path::new("c:/program files/windowsapps/example.main_1.0.3.0_x64/app/brain.exe")
+        ));
+        for other in [
+            r"\\?\D:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe",
+            r"\\?\C:\Program Files\WindowsApps\Example.Main_1.0.4.0_x64\app\Brain.exe",
+            r"\\?\C:\Program Files\WindowsApps\Example.Engine_1.0.3.0_x64\app\Brain.exe",
+            r"\\?\C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Bridge.exe",
+            r"\\server\C$\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe",
+            r"\\?\UNC\server\C$\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe",
+            r"\\.\C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe",
+            r"\??\C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe",
+            r"\\?\C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\.\Brain.exe",
+            r"\\?\C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\other\..\Brain.exe",
+            r"\\?\C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe.",
+            r"\\?\C:\Program Files\WindowsApps\Example.Main_1.0.3.0_x64\app\Brain.exe ",
+        ] {
+            assert!(!same_path(image, Path::new(other)), "{other}");
+        }
+        for (verbatim, ordinary) in [
+            (r"\\?\C:\app\NUL", r"C:\app\NUL"),
+            (r"\\?\C:\app\Brain.exe.", r"C:\app\Brain.exe."),
+            (r"\\?\C:\app\Brain.exe ", r"C:\app\Brain.exe "),
+            (
+                r"\\?\C:\app\other\..\Brain.exe",
+                r"C:\app\other\..\Brain.exe",
+            ),
+        ] {
+            assert!(!same_path(Path::new(verbatim), Path::new(ordinary)));
+        }
+    }
 }
 fn data_handle(binding: &Binding) -> Result<File> {
     unsafe {
