@@ -173,11 +173,16 @@ def verify_engine_bundle(path: Path, profile: dict) -> None:
     """Exact external bundle relation, without installing or admitting a worker."""
     import io
     relation = _release_relation(profile)
-    namespace = "http://schemas.microsoft.com/appx/2016/bundle"
     with zipfile.ZipFile(path) as archive:
         root = _bounded_bundle_xml(archive, "AppxMetadata/AppxBundleManifest.xml")
-        if root.tag != f"{{{namespace}}}Bundle" or root.get("SchemaVersion") != "5.0":
+        namespaces = ("http://schemas.microsoft.com/appx/2013/bundle",
+                      "http://schemas.microsoft.com/appx/2016/bundle")
+        namespace = next((ns for ns in namespaces if root.tag == f"{{{ns}}}Bundle"), None)
+        if namespace is None or root.get("SchemaVersion") != "5.0":
             raise ValueError("unsupported Engine bundle")
+        if len(root) != 2 or {child.tag for child in root} != {
+                f"{{{namespace}}}Identity", f"{{{namespace}}}Packages"}:
+            raise ValueError("Engine bundle requires only identity and packages")
         identities = root.findall(f"{{{namespace}}}Identity")
         packages = root.findall(f"{{{namespace}}}Packages/{{{namespace}}}Package")
         if len(identities) != 1 or len(packages) != 1 or root.findall(f"{{{namespace}}}OptionalBundle"):

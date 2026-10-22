@@ -44,10 +44,11 @@ def zipped(entries):
     return result.getvalue()
 
 
-def bundles(tmp_path, selected):
+def bundles(tmp_path, selected, *, engine_namespace="http://schemas.microsoft.com/appx/2016/bundle"):
     relation = optional._release_relation(selected)
     ns = "http://schemas.microsoft.com/appx/2016/bundle"
     def metadata(engine):
+        ns = engine_namespace if engine else "http://schemas.microsoft.com/appx/2016/bundle"
         root = ET.Element(f"{{{ns}}}Bundle",SchemaVersion="5.0")
         ET.SubElement(root,f"{{{ns}}}Identity",Name=relation.package_name if engine else relation.core_package_name,
             Publisher=relation.publisher,Version=relation.package_version if engine else relation.core_package_version)
@@ -71,8 +72,10 @@ def bundles(tmp_path, selected):
     return core, engine
 
 
-def test_related_producer_keeps_independent_version_filename_hash_and_external_relation(tmp_path):
-    p = profile(); core,engine = bundles(tmp_path,p)
+@pytest.mark.parametrize("engine_namespace", ["http://schemas.microsoft.com/appx/2013/bundle",
+                                             "http://schemas.microsoft.com/appx/2016/bundle"])
+def test_related_producer_keeps_independent_version_filename_hash_and_external_relation(tmp_path, engine_namespace):
+    p = profile(); core,engine = bundles(tmp_path,p,engine_namespace=engine_namespace)
     artifacts = optional.release_artifact_set(p,core,engine)
     assert artifacts["core"]["file"] == "ConversationAnalytics_1.0.11.0_x64.msixbundle"
     assert artifacts["engine"]["artifact"]["file"] == "TextAnalysisEngine_1.0.42.0_x64.msixbundle"
@@ -82,6 +85,53 @@ def test_related_producer_keeps_independent_version_filename_hash_and_external_r
     assert "/"+artifacts["core"]["sha256"]+"/" in main.get("Uri")
     assert "/"+artifacts["engine"]["artifact"]["sha256"]+"/" in child.get("Uri")
     assert child.get("Version") == "1.0.42.0" and main.get("Version") == "1.0.11.0"
+
+
+@pytest.mark.parametrize("namespace", ["http://schemas.microsoft.com/appx/2013/bundle",
+                                      "http://schemas.microsoft.com/appx/2016/bundle"])
+@pytest.mark.parametrize("mutation", ["schema", "namespace", "mixed_packages", "mixed_optional",
+                                      "duplicate_packages", "extra_application", "publisher",
+                                      "version", "architecture", "filename", "dependency", "worker"])
+def test_engine_bundle_namespace_support_retains_closed_relation_checks(tmp_path, namespace, mutation):
+    p=profile(); _,engine=bundles(tmp_path,p,engine_namespace=namespace)
+    with zipfile.ZipFile(engine) as archive:
+        entries={name:archive.read(name) for name in archive.namelist()}
+    name="AppxMetadata/AppxBundleManifest.xml"
+    root=ET.fromstring(entries[name]); packages=root.find(f"{{{namespace}}}Packages")
+    if mutation=="schema": root.set("SchemaVersion","6.0")
+    elif mutation=="namespace": root.tag="{http://schemas.microsoft.com/appx/2019/bundle}Bundle"
+    elif mutation=="mixed_packages": packages.tag="{urn:other}Packages"
+    elif mutation=="mixed_optional":
+        ET.SubElement(root,"{http://schemas.microsoft.com/appx/2016/bundle}OptionalBundle")
+    elif mutation=="duplicate_packages": ET.SubElement(root,f"{{{namespace}}}Packages")
+    elif mutation=="extra_application": packages.append(copy.deepcopy(packages[0]))
+    elif mutation=="publisher": root.find(f"{{{namespace}}}Identity").set("Publisher","CN=Other")
+    elif mutation=="version": packages[0].set("Version","1.0.43.0")
+    elif mutation=="architecture": packages[0].set("Architecture","arm64")
+    elif mutation=="filename": packages[0].set("FileName","engine.msix")
+    else:
+        app_name=packages[0].get("FileName")
+        with zipfile.ZipFile(io.BytesIO(entries[app_name])) as archive:
+            payload={n:archive.read(n) for n in archive.namelist()}
+        if mutation=="worker": del payload[optional.WORKER_PATH]
+        else:
+            app=ET.fromstring(payload["AppxManifest.xml"])
+            app.find(f"{{{optional.FOUNDATION}}}Dependencies/{{{optional.UAP3}}}MainPackageDependency").set("Name","Other.Main")
+            payload["AppxManifest.xml"]=ET.tostring(app)
+        entries[app_name]=zipped(payload)
+    entries[name]=ET.tostring(root);engine.write_bytes(zipped(entries))
+    with pytest.raises(ValueError): optional.verify_engine_bundle(engine,p)
+
+
+def test_engine_namespace_support_does_not_widen_related_main_namespace(tmp_path):
+    p=profile();core,_=bundles(tmp_path,p)
+    with zipfile.ZipFile(core) as archive:
+        entries={name:archive.read(name) for name in archive.namelist()}
+    name="AppxMetadata/AppxBundleManifest.xml"
+    entries[name]=entries[name].replace(b"http://schemas.microsoft.com/appx/2016/bundle",
+                                      b"http://schemas.microsoft.com/appx/2013/bundle")
+    core.write_bytes(zipped(entries))
+    with pytest.raises(ValueError,match="unsupported bundle"): optional.verify_release_bundle(core,p)
 
 
 @pytest.mark.parametrize("mutation",["alias","version","publisher","extra","missing","size","hash"])
