@@ -164,10 +164,11 @@ class FindingsRunner:
         profile = read_profile(self.findings.state(account_id)['profile_json'])
         if not self.dependencies.ready(profile):
             return False
-        with self.dependencies.retain(profile):
-            return self._process_one(account_id)
+        with self.dependencies.retain(profile) as execute:
+            return self._process_one(account_id, bound_adapter=execute if self.adapter is None else self.adapter,
+                                     expected_profile=profile.identity_digest())
 
-    def _process_one(self, account_id):
+    def _process_one(self, account_id, *, bound_adapter=None, expected_profile=None):
         """Perform one bounded job; projection reads never call this method."""
         if not _EXECUTION.acquire(blocking=False):
             return False
@@ -177,10 +178,14 @@ class FindingsRunner:
             self.reconcile(account_id)
             state=self.findings.state(account_id)
             profile=read_profile(state['profile_json'])
+            if expected_profile is not None and profile.identity_digest() != expected_profile:
+                return False
             if state['mode']!='enabled' or not self.execution_ready(profile):
                 return False
             claim=self.findings.claim(account_id)
             if claim is None:
+                return False
+            if claim.selection_epoch != state['selection_epoch'] or claim.admission_epoch != state['admission_epoch']:
                 return False
             location=EvidenceLocation(conversation_id=claim.conversation_id,message_id=claim.message_id)
             original=self._read(account_id,location,self._budget())
@@ -209,7 +214,8 @@ class FindingsRunner:
                 v2.validate_request(profile,request.model_dump_json().encode())
                 failed=False
                 try:
-                    response=v2.validate_response(profile,request,self.adapter(request,cancelled))
+                    execute = self.adapter if bound_adapter is None else bound_adapter
+                    response=v2.validate_response(profile,request,execute(request,cancelled))
                     results.extend(response.items[0].tasks)
                 except Exception:
                     failed=True

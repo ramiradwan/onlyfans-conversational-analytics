@@ -88,6 +88,8 @@ class DependencyService:
         self.blocked = False
         self.cached_profiles = []
         self.withdrawals = set()
+        self.active = threading.Condition(self.gate)
+        self.pins = {}
 
     def disable(self):
         """Isolate optional startup failure without modifying durable authority."""
@@ -95,6 +97,7 @@ class DependencyService:
             self.blocked = True
             self.failure = 'nlp_dependency_unavailable'
             self.available.clear()
+        return self.close()
 
     def start(self):
         # Startup revalidates disk only. No HTTP, acquisition, warmup or analysis.
@@ -200,6 +203,7 @@ class DependencyService:
         return matches[0]
 
     def _admit(self, profile, *, fresh=False):
+        self._running()
         state, _ = self._authority(fresh=fresh)
         digest = profile.identity_digest()
         require(digest not in state['withdrawals'], 'nlp_profile_withdrawn')
@@ -229,7 +233,32 @@ class DependencyService:
     @contextmanager
     def retain(self, profile):
         with self._retention(profile, ready=True):
-            yield
+            def execute(request, cancelled):
+                deadline = self.monotonic() + request.deadline_ms / 1000
+
+                def check():
+                    self._running()
+                    require(self.monotonic() < deadline, 'nlp_deadline')
+                    require(not cancelled(), 'nlp_cancelled')
+                    with self.gate:
+                        self._admit(profile)
+
+                from app.nlp import v2
+                v2.validate_request(profile, request.model_dump_json().encode())
+                available = self.artifacts.reopen(profile, cancellation_check=check)
+                with self.engine.open(profile, available, check, deadline=deadline) as session:
+                    hello = adapter.HandshakeRequest(request_id=uuid4().hex, expected_engine=profile.components[0].engine)
+                    adapter.validate_handshake(profile, hello, session.handshake(hello, deadline=deadline))
+                    component = profile.component(request.component_id)
+                    self._prepare_component(profile, component, session, check, deadline)
+                    try:
+                        check()
+                        remaining = max(1, int((deadline - self.monotonic()) * 1000))
+                        dispatched = request.model_copy(update={'deadline_ms': min(request.deadline_ms, remaining)})
+                        return session.analyze(dispatched, cancelled, deadline=deadline)
+                    finally:
+                        self._unload(profile, component, session)
+            yield execute
 
     @contextmanager
     def _retention(self, profile, *, ready):
@@ -241,13 +270,23 @@ class DependencyService:
             operation = {'id': uuid4().hex, 'kind': 'pin', 'owner': self.owner,
                          'profile': profile.identity_digest(), 'state': 'running'}
             self.persistence.operation(operation)
+            self.pins[operation['id']] = (operation, profile, True)
         try:
             yield
         finally:
             with self.gate:
+                self.pins[operation['id']] = (operation, profile, False)
+                self._release_pins()
+                self.active.notify_all()
+            if not self.stopping.is_set():
+                self.collect()
+
+    def _release_pins(self):
+        for key, (operation, profile, active) in tuple(self.pins.items()):
+            if not active and self.engine.drained(profile):
                 operation['state'] = 'complete'
                 self.persistence.operation(operation)
-            self.collect()
+                self.pins.pop(key)
 
     def status(self, account=None):
         # A cached observation; read endpoints never refresh or hash model data.
@@ -587,19 +626,35 @@ class DependencyService:
         return total
 
     def _prepare(self, profile, available, check):
+        deadline = self.monotonic() + 120
         request = adapter.HandshakeRequest(request_id=uuid4().hex, expected_engine=profile.components[0].engine)
-        with self.engine.open(profile, available, check) as session:
-            adapter.validate_handshake(profile, request, session.handshake(request))
+        with self.engine.open(profile, available, check, deadline=deadline) as session:
+            adapter.validate_handshake(profile, request, session.handshake(request, deadline=deadline))
             for component in profile.components:
-                check()
-                artifacts = tuple(a for a in profile.artifacts if a.artifact_id in component.artifact_ids or a.role in ('engine', 'runtime'))
-                req = adapter.PrepareRequest(request_id=uuid4().hex, profile_sha256=profile.identity_digest(),
-                    component_id=component.component_id, component_sha256=component.identity_digest(), artifacts=artifacts,
-                    max_memory_bytes=profile.resources.transition_peak_memory_bytes, inference_threads=profile.resources.inference_threads)
-                adapter.validate_prepare_request(profile, req.model_dump_json().encode(), resource_policy=self.policy)
-                result = adapter.validate_preparation(req, session.prepare(req))
-                require(result.outcome == 'ready', 'nlp_prepare_failed')
+                self._prepare_component(profile, component, session, check, deadline)
+                self._unload(profile, component, session)
             check()
+
+    def _prepare_component(self, profile, component, session, check, deadline):
+        check()
+        require(self.monotonic() < deadline, 'nlp_deadline')
+        artifacts = tuple(a for a in profile.artifacts if a.artifact_id in component.artifact_ids or a.role in ('engine', 'runtime'))
+        request = adapter.PrepareRequest(request_id=uuid4().hex, profile_sha256=profile.identity_digest(),
+            component_id=component.component_id, component_sha256=component.identity_digest(), artifacts=artifacts,
+            max_memory_bytes=profile.resources.transition_peak_memory_bytes, inference_threads=profile.resources.inference_threads)
+        adapter.validate_prepare_request(profile, request.model_dump_json().encode(), resource_policy=self.policy)
+        def cancelled():
+            check()
+            return False
+
+        result = adapter.validate_preparation(request, session.prepare(request, deadline=deadline, cancelled=cancelled))
+        require(result.outcome == 'ready', 'nlp_prepare_failed')
+
+    def _unload(self, profile, component, session):
+        request = adapter.UnloadRequest(request_id=uuid4().hex,
+            profile_sha256=profile.identity_digest(), component_sha256=component.identity_digest())
+        result = adapter.validate_lifecycle(request, session.unload(request, deadline=self.monotonic() + 5))
+        require(result.outcome == 'completed' and result.health == 'unloaded', 'nlp_unload_failed')
 
     def reconcile(self):
         with self.gate:
@@ -761,10 +816,16 @@ class DependencyService:
             self._removed(op)
 
     def close(self, timeout=5):
+        deadline = self.monotonic() + max(0, timeout)
         self.stopping.set()
+        engine_drained = self.engine is None or self.engine.close(max(0, deadline - self.monotonic()))
         if self.thread is not None:
-            self.thread.join(timeout=timeout)
-        return self.thread is None or not self.thread.is_alive()
+            self.thread.join(timeout=max(0, deadline - self.monotonic()))
+        with self.active:
+            while any(active for _, _, active in self.pins.values()) and self.monotonic() < deadline:
+                self.active.wait(min(.02, max(0, deadline - self.monotonic())))
+            self._release_pins()
+            return engine_drained and not self.pins and (self.thread is None or not self.thread.is_alive())
 
 
 # No origin, keys, approval or engine provider is supplied by default construction.

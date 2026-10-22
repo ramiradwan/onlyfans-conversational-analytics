@@ -138,7 +138,7 @@ def test_read_only_private_observation_never_repairs_a_broad_acl(tmp_path, monke
 
 def test_parent_observation_precedes_root_inspection_or_application_import(monkeypatch):
     @contextmanager
-    def closed_parent(request):
+    def closed_parent(request, *, drained):
         request()
         yield
     from app.core import process_lifetime, startup_maintenance

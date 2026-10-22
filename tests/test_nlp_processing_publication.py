@@ -61,6 +61,24 @@ def runner(f, kind='joint', **kwargs):
     return r,profile,adapter
 
 
+@pytest.mark.parametrize('change', ['selection', 'admission'])
+def test_claim_does_not_execute_under_an_earlier_selected_epoch(fixture, monkeypatch, change):
+    r, profile, adapter = runner(fixture)
+    claim = r.findings.claim
+
+    def changed(account):
+        if change == 'selection':
+            r.findings.select(account, profile.model_copy(update={'revision': 'changed'}))
+        else:
+            r.findings.mode(account, 'paused')
+            r.findings.mode(account, 'enabled')
+        return claim(account)
+
+    monkeypatch.setattr(r.findings, 'claim', changed)
+    assert r.process_one(ACCOUNT) is False
+    assert not adapter.requests
+
+
 def snapshot(r,f):
     binding=r.findings.freeze(ACCOUNT,source_identity(f.source,ACCOUNT))
     with f.stores.database.read() as db:

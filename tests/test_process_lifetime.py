@@ -8,9 +8,19 @@ import time
 
 import pytest
 
-from app.core.process_lifetime import HANDLE_ENV, parent_lifetime
+from app.core.process_lifetime import HANDLE_ENV, parent_lifetime, _shutdown_watchdog
 
 pytestmark = [pytest.mark.ci_tier("fast"), pytest.mark.windows_compat]
+
+
+@pytest.mark.parametrize('completed', [False, True])
+def test_parent_loss_watchdog_forces_only_when_shutdown_has_not_completed(completed):
+    import threading
+    stopped, exits = threading.Event(), []
+    if completed:
+        stopped.set()
+    _shutdown_watchdog(stopped, force_exit=exits.append, timeout=.001)
+    assert exits == ([] if completed else [1])
 
 
 def test_absent_parent_does_not_request_shutdown(monkeypatch):

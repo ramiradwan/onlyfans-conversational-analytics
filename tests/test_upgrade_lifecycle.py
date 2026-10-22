@@ -118,7 +118,7 @@ def test_packaged_boot_constructs_application_only_after_pending_auth_maintenanc
     root = tmp_path / "retained"
     seed(root, catalog=catalog)
     @contextmanager
-    def parent(_callback):
+    def parent(_callback, *, drained):
         yield
     monkeypatch.setattr(process_lifetime, "parent_lifetime", parent)
     monkeypatch.setattr(startup_maintenance, "acquire_runtime_ownership",

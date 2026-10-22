@@ -42,16 +42,17 @@ class Owners:
 class Engine:
     def __init__(self):
         self.present, self.prepares, self.before_prepare = True, 0, None
+        self.events = []
 
     def current(self, engine):
         return self.present
 
     @contextmanager
-    def open(self, profile, available, check):
+    def open(self, profile, available, check, *, deadline=None):
         owner = self
 
         class Session:
-            def handshake(self, request):
+            def handshake(self, request, *, deadline=None):
                 caps = tuple(adapter.AdapterCapability(adapter=c.adapter,
                     task_contracts=tuple(t.task_contract for t in c.tasks),
                     score_kinds=tuple(dict.fromkeys(t.score_policy.kind for t in c.tasks)),
@@ -62,8 +63,9 @@ class Engine:
                 return adapter.WorkerHandshake(request_id=request.request_id, engine=request.expected_engine,
                                                adapters=caps).model_dump_json().encode()
 
-            def prepare(self, request):
+            def prepare(self, request, *, deadline=None, cancelled=None):
                 owner.prepares += 1
+                owner.events.append(('prepare', request.component_sha256))
                 if owner.before_prepare:
                     owner.before_prepare()
                 check()
@@ -71,7 +73,22 @@ class Engine:
                     ('request_id', 'profile_sha256', 'component_id', 'component_sha256')},
                     outcome='ready', reason='none').model_dump_json().encode()
 
+            def unload(self, request, *, deadline=None):
+                owner.events.append(('unload', request.component_sha256))
+                return adapter.LifecycleResult(operation='unload', request_id=request.request_id,
+                    profile_sha256=request.profile_sha256, component_sha256=request.component_sha256,
+                    outcome='completed', health='unloaded').model_dump_json().encode()
+
+            def analyze(self, request, cancelled, *, deadline=None):
+                return ConformanceAdapter(profile)(request, cancelled)
+
         yield Session()
+
+    def drained(self, profile):
+        return True
+
+    def close(self, timeout=5):
+        return True
 
 
 class Environment:
@@ -132,6 +149,76 @@ class Environment:
         assert self.service._operation(op)['state'] == 'complete'
         self.service.select(ACCOUNT, self.profile.profile_id, self.profile.revision)
         return op
+
+
+def test_bound_process_session_is_used_without_adapter_override(env):
+    from app.analytics.nlp_processing import FindingsRunner
+    e = env
+    e.selected()
+    before = e.engine.prepares
+    runner = FindingsRunner(e.fixture.source, e.fixture.stores.projections, authorize=lambda _: None,
+        execution_ready=e.service.ready, dependencies=e.service, adapter=None,
+        clock=lambda: e.fixture.clock.now, enrichment=e.fixture.pipeline.enrichment)
+    assert runner.process_one(ACCOUNT)
+    assert e.engine.prepares == before + len(e.profile.components)
+    assert e.engine.events[-1][0] == 'unload'
+
+
+def test_warmup_unloads_each_serial_component(tmp_path):
+    e = Environment(tmp_path, 'split')
+    try:
+        e.selected()
+        expected = [event for component in e.profile.components for event in
+            [('prepare', component.identity_digest()), ('unload', component.identity_digest())]]
+        assert e.engine.events == expected
+    finally:
+        assert e.service.close()
+        cleanup(e.fixture)
+
+
+def test_close_tracks_synchronous_prepare_and_closes_readiness(env):
+    e = env
+    e.selected()
+    entered, release, errors = threading.Event(), threading.Event(), []
+
+    def block():
+        entered.set()
+        assert release.wait(3)
+
+    def prepare():
+        try:
+            e.service.prepare_installed(e.profile.identity_digest())
+        except ValueError:
+            errors.append('stopped')
+
+    e.engine.before_prepare = block
+    thread = threading.Thread(target=prepare)
+    thread.start()
+    assert entered.wait(3)
+    try:
+        assert not e.service.close(0)
+        assert not e.service.ready(e.profile)
+    finally:
+        release.set()
+        thread.join(3)
+    assert not thread.is_alive() and errors == ['stopped']
+    assert e.service.close()
+
+
+def test_failed_process_drain_keeps_durable_pin(env):
+    e = env
+    e.selected()
+    e.engine.drained = lambda _: False
+    with e.service.retain(e.profile):
+        pass
+    pins = [op for op in e.persistence.operations() if op['kind'] == 'pin' and op['state'] == 'running']
+    assert len(pins) == 1
+    assert not e.service.close(0)
+    assert e.service.pins
+    e.engine.drained = lambda _: True
+    assert e.service.close()
+    assert not e.service.pins
+    assert e.service._operation(pins[0]['id'])['state'] == 'complete'
 
 
 @pytest.fixture

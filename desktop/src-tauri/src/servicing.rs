@@ -451,6 +451,15 @@ impl StagedFiles {
         relative: &str,
         role: StagedRole,
     ) -> Result<Vec<u8>, StagedReadError> {
+        self.read_bounded(root, relative, role, STAGED_FILE_LIMIT)
+    }
+    fn read_bounded(
+        &mut self,
+        root: &std::path::Path,
+        relative: &str,
+        role: StagedRole,
+        limit: usize,
+    ) -> Result<Vec<u8>, StagedReadError> {
         use std::{
             fs::OpenOptions,
             io::Read,
@@ -550,7 +559,7 @@ impl StagedFiles {
         use std::os::windows::fs::MetadataExt;
         if !metadata.is_file()
             || metadata.len() == 0
-            || metadata.len() > STAGED_FILE_LIMIT as u64
+            || metadata.len() > limit as u64
             || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
         {
             return Err(fail(
@@ -562,7 +571,7 @@ impl StagedFiles {
         stable_file_path(&file, &path, role)?;
         let mut bytes = Vec::new();
         (&mut file)
-            .take(STAGED_FILE_LIMIT as u64 + 1)
+            .take(limit as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(|e| {
                 StagedReadError::io(
@@ -572,10 +581,7 @@ impl StagedFiles {
                     e,
                 )
             })?;
-        if bytes.is_empty()
-            || bytes.len() > STAGED_FILE_LIMIT
-            || bytes.len() as u64 != metadata.len()
-        {
+        if bytes.is_empty() || bytes.len() > limit || bytes.len() as u64 != metadata.len() {
             return Err(fail(
                 "staged_evidence_size_invalid",
                 StagedOperation::BoundedRead,
@@ -997,6 +1003,131 @@ fn selected_engine(
             .map_err(|_| "optional_selection_unavailable")?;
     }
     Ok(result.unwrap_or(EngineSelection::Absent))
+}
+
+/// Retained installed package reads use the same origin, relation and file policy.
+#[cfg(windows)]
+pub(crate) struct WorkerPackages {
+    pub main: Observation,
+    pub main_root: std::path::PathBuf,
+    pub engine: Observation,
+    pub engine_root: std::path::PathBuf,
+    pub related_set_id: String,
+    files: StagedFiles,
+}
+#[cfg(windows)]
+impl WorkerPackages {
+    pub fn read_main(&mut self, name: &str, limit: usize) -> Result<Vec<u8>, &'static str> {
+        self.files
+            .read_bounded(&self.main_root, name, StagedRole::MainDescriptor, limit)
+            .map_err(|_| "identity_mismatch")
+    }
+    pub fn read_engine(
+        &mut self,
+        name: &str,
+        limit: usize,
+    ) -> Result<(Vec<u8>, std::fs::File), &'static str> {
+        let bytes = self
+            .files
+            .read_bounded(&self.engine_root, name, StagedRole::EngineManifest, limit)
+            .map_err(|_| "artifact_mismatch")?;
+        let file = self
+            .files
+            .held
+            .last()
+            .ok_or("artifact_mismatch")?
+            .try_clone()
+            .map_err(|_| "artifact_mismatch")?;
+        Ok((bytes, file))
+    }
+}
+#[cfg(windows)]
+pub(crate) fn worker_packages() -> Result<WorkerPackages, &'static str> {
+    let _apartment = Apartment::new().map_err(|_| "identity_mismatch")?;
+    let (package, main) = observe().map_err(|_| "identity_mismatch")?;
+    if main.origin != Origin::SignedDirect
+        || main.signature != Signature::SignedDirect
+        || package.IsOptional().map_err(|_| "identity_mismatch")?
+        || package.IsBundle().map_err(|_| "identity_mismatch")?
+        || !package
+            .Status()
+            .and_then(|s| s.VerifyIsOK())
+            .map_err(|_| "identity_mismatch")?
+    {
+        return Err("identity_mismatch");
+    }
+    let main_root = std::path::PathBuf::from(
+        package
+            .InstalledPath()
+            .map_err(|_| "identity_mismatch")?
+            .to_string(),
+    );
+    let mut files = StagedFiles {
+        held: Vec::new(),
+        bytes: 0,
+        #[cfg(all(feature = "qualification-tools", debug_assertions))]
+        records: Vec::new(),
+    };
+    let bytes = files
+        .read(
+            &main_root,
+            "app/desktop-release.json",
+            StagedRole::MainDescriptor,
+        )
+        .map_err(|_| "identity_mismatch")?;
+    let release: DesktopRelease =
+        serde_json::from_slice(&bytes).map_err(|_| "identity_mismatch")?;
+    release
+        .validate(&main.identity)
+        .map_err(|_| "identity_mismatch")?;
+    let (related_set_id, declared) = match &release
+        .servicing
+        .as_ref()
+        .ok_or("identity_mismatch")?
+        .installed_artifact
+    {
+        InstalledArtifact::RelatedBundle {
+            related_set_id,
+            engine,
+        } => (related_set_id.clone(), engine),
+        _ => return Err("identity_mismatch"),
+    };
+    let manager = activate_owned().map_err(|_| "identity_mismatch")?;
+    let (full_name, engine_root) = match selected_engine(&manager, &release, &main.identity)? {
+        EngineSelection::Present {
+            full_name, path, ..
+        } => (full_name, std::path::PathBuf::from(path)),
+        EngineSelection::Absent => return Err("identity_mismatch"),
+    };
+    let (engine, path) = installed(&full_name)?;
+    if std::path::Path::new(&path) != engine_root
+        || engine.identity.version != declared.package_version
+    {
+        return Err("identity_mismatch");
+    }
+    let bytes = files
+        .read(&main_root, "AppxManifest.xml", StagedRole::MainManifest)
+        .map_err(|_| "identity_mismatch")?;
+    application_manifest(
+        &bytes,
+        &main.identity,
+        Some(&release.identity.application_id),
+        None,
+    )
+    .map_err(|_| "identity_mismatch")?;
+    let bytes = files
+        .read(&engine_root, "AppxManifest.xml", StagedRole::EngineManifest)
+        .map_err(|_| "identity_mismatch")?;
+    application_manifest(&bytes, &engine.identity, None, Some(&main.identity.name))
+        .map_err(|_| "identity_mismatch")?;
+    Ok(WorkerPackages {
+        main,
+        main_root,
+        engine,
+        engine_root,
+        related_set_id,
+        files,
+    })
 }
 
 #[cfg(all(windows, feature = "qualification-tools", debug_assertions))]

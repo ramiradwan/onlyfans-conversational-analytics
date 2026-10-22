@@ -1,0 +1,9 @@
+# Optional computation worker
+
+This executable implements the private `nlp-child.v1` framed transport and existing `nlp-worker.v2` messages. It is started only by the installed native owner with explicit inherited pipes and an owner-context handle. It has no standalone activation, listener, database or network authority. Default application construction does not configure it.
+
+`boundary_entities` version1 accepts one closed shared-boundary entity graph ABI, CPU execution and authenticated logical data bindings. It advertises only concept mentions. Labels, descriptions, conservative output mappings and supported settings belong to the admitted profile/configuration. Missing tasks are unavailable, not empty results. Graph/tokenizer changes require a new admitted component identity.
+
+Prepare outside the source checkout with `tools/nlp-worker/prepare.py --source <clean pinned upstream checkout> --target <fresh build directory>`. Then use Cargo with `--locked --offline -j2`; the preparation receipt binds every copied source and license. No download feature, model acquisition or runtime environment override is used. The prepared crate contains the pinned upstream source and its Apache2.0 notices; application source remains independently versioned. Ordinary application builds do not invoke this preparation or enable the provider.
+
+The native owner must retain read-only, identity-checked artifacts and executable/runtime package observations through child drain, enforce the caller's memory/deadline policy and join the exact worker Job. An unload drops the component sessions/tokenizer; closing the process releases its CPU runtime. Cancellation cooperates between stages; an uninterruptible stage remains subject to the owner's bounded termination/join. Neither a handshake nor a preparation response grants release approval or user authorization.

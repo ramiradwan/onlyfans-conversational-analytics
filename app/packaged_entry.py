@@ -150,13 +150,14 @@ def run_brain() -> int:
 
     stopped = threading.Event()
     server: uvicorn.Server | None = None
+    observed_application = None
 
     def request_exit() -> None:
         stopped.set()
         if server is not None:
             server.should_exit = True
     # Observe the parent before root inspection or a migrating constructor.
-    with parent_lifetime(request_exit), bootstrap_status(stopped) as status, startup_migration_supervision(status.cancelled):
+    with parent_lifetime(request_exit, drained=lambda: observed_application is not None and observed_application.drained), bootstrap_status(stopped) as status, startup_migration_supervision(status.cancelled):
         if stopped.is_set():
             return 1
         try:

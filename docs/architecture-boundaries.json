@@ -170,6 +170,32 @@
       ]
     },
     {
+      "id": "nlp-execution-lifetime",
+      "path_patterns": [
+        "app/nlp/child_client.py",
+        "app/nlp/engine_provider.py",
+        "app/nlp/retained_artifacts.py",
+        "app/nlp/windows_host.py"
+      ],
+      "role": "Explicit optional-worker process composition, retained artifact handles and verified shutdown drain; no analysis or release authority.",
+      "authority": "composition",
+      "zone": "red",
+      "protected_invariants": [
+        "release-integrity",
+        "consent-authorization",
+        "protocol-compatibility"
+      ],
+      "permitted_inputs": [
+        "admitted immutable profiles and caller-owned resource limits",
+        "retained verified data and installed Engine observations",
+        "authorized bounded requests and cancellation checks"
+      ],
+      "permitted_outputs": [
+        "owned private worker channels and validated typed replies",
+        "physical process, reader and artifact drain observations"
+      ]
+    },
+    {
       "id": "protocol-core",
       "path_patterns": [
         "app/protocol/**",

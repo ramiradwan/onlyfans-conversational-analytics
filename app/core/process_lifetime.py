@@ -10,6 +10,12 @@ import threading
 
 
 HANDLE_ENV = "BRAIN_PARENT_LIFETIME_HANDLE"
+PARENT_SHUTDOWN_SECONDS = 30
+
+
+def _shutdown_watchdog(stopped, *, force_exit=os._exit, timeout=PARENT_SHUTDOWN_SECONDS):
+    if not stopped.wait(timeout):
+        force_exit(1)
 
 
 def _pipe_descriptor(value):
@@ -60,7 +66,7 @@ def _parent_closed(descriptor):
 
 
 @contextmanager
-def parent_lifetime(request_exit):
+def parent_lifetime(request_exit, *, drained=lambda: True):
     """Request normal shutdown when the supervising parent closes its pipe."""
     value = os.environ.pop(HANDLE_ENV, None)
     if value is None:
@@ -68,6 +74,14 @@ def parent_lifetime(request_exit):
         return
     descriptor = _pipe_descriptor(value)
     stopped = threading.Event()
+    shutdown_finished = threading.Event()
+    watchdogs = []
+
+    def arm_watchdog():
+        watchdog = threading.Thread(target=_shutdown_watchdog, args=(shutdown_finished,),
+            name="parent-shutdown-watchdog", daemon=True)
+        watchdogs.append(watchdog)
+        watchdog.start()
 
     def observe():
         while not stopped.is_set():
@@ -76,6 +90,7 @@ def parent_lifetime(request_exit):
             except OSError:
                 closed = True
             if closed:
+                arm_watchdog()
                 request_exit()
                 return
             stopped.wait(.05)
@@ -86,8 +101,19 @@ def parent_lifetime(request_exit):
         yield
     finally:
         stopped.set()
+        try:
+            complete = drained() is True
+        except Exception:
+            complete = False
+        if complete:
+            shutdown_finished.set()
         if thread.ident is not None:
             thread.join(timeout=1)
+        if not complete and not watchdogs:
+            arm_watchdog()
+        if complete:
+            for watchdog in watchdogs:
+                watchdog.join(timeout=1)
         os.close(descriptor)
-        if thread.is_alive():
+        if thread.is_alive() or (complete and any(watchdog.is_alive() for watchdog in watchdogs)):
             raise RuntimeError("parent lifetime observer did not join")
