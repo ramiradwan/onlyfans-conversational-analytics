@@ -55,6 +55,7 @@ struct Graphs {
 #[serde(deny_unknown_fields)]
 struct Mapping {
     label_id: String,
+    model_label: String,
     concept_id: String,
 }
 #[derive(Deserialize)]
@@ -85,6 +86,58 @@ pub struct EntityAdapter {
     config: Config,
     conditioning: Vec<(String, String)>,
     component: Value,
+}
+fn bind_labels(component: &Value, mappings: &[Mapping]) -> Result<Vec<(String, String)>> {
+    let executed = component["executed_labels"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
+    let tasks = component["tasks"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
+    ensure!(
+        tasks.len() == 1
+            && tasks[0]["task"] == "concept_mentions"
+            && tasks[0]["task_contract"] == "concept_mentions.v1",
+        "incompatible"
+    );
+    let enabled = tasks[0]["enabled_ids"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
+    ensure!(
+        !executed.is_empty() && executed.len() <= 16 && mappings.len() == executed.len(),
+        "incompatible"
+    );
+    let bounded = |s: &str| !s.trim().is_empty() && s.chars().count() <= 256;
+    let mut ids = std::collections::BTreeSet::new();
+    let mut model_labels = std::collections::BTreeSet::new();
+    let mut conditioning = Vec::new();
+    for (label, mapping) in executed.iter().zip(mappings) {
+        // This adapter binds each stable ID to the same output category.
+        ensure!(
+            bounded(&mapping.label_id)
+                && bounded(&mapping.concept_id)
+                && bounded(&mapping.model_label)
+                && mapping.label_id == mapping.concept_id
+                && label["task"] == "concept_mentions"
+                && label["label_id"] == mapping.label_id
+                && ids.insert(mapping.label_id.as_str())
+                && model_labels.insert(mapping.model_label.as_str()),
+            "binding_mismatch"
+        );
+        let description = label["description"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
+        ensure!(description.chars().count() <= 2048, "incompatible");
+        conditioning.push((mapping.model_label.clone(), description.to_owned()));
+    }
+    let mut enabled_seen = std::collections::BTreeSet::new();
+    ensure!(
+        enabled.iter().all(|id| id
+            .as_str()
+            .is_some_and(|id| ids.contains(id) && enabled_seen.insert(id))),
+        "binding_mismatch"
+    );
+    Ok(conditioning)
 }
 fn normalized_words(text: &str) -> Result<(String, Vec<String>, Vec<WordOffset>)> {
     ensure!(text.len() <= 65536, "source_bound");
@@ -277,37 +330,7 @@ impl EntityAdapter {
                     .all(|k| cfg.policies.get(*k) == Some(&component[*k])),
             "binding_mismatch"
         );
-        let executed = component["executed_labels"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
-        ensure!(
-            !executed.is_empty() && executed.len() <= 16 && cfg.labels.len() == executed.len(),
-            "incompatible"
-        );
-        let enabled = component["tasks"][0]["enabled_ids"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
-        let mut conditioning = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
-        for (label, mapping) in executed.iter().zip(&cfg.labels) {
-            ensure!(
-                label["task"] == "concept_mentions"
-                    && label["label_id"] == mapping.label_id
-                    && seen.insert(mapping.label_id.clone()),
-                "binding_mismatch"
-            );
-            let description = label["description"]
-                .as_str()
-                .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
-            ensure!(description.chars().count() <= 2048, "incompatible");
-            conditioning.push((mapping.label_id.clone(), description.to_owned()));
-        }
-        ensure!(
-            enabled
-                .iter()
-                .all(|e| cfg.labels.iter().any(|m| e == &m.concept_id)),
-            "binding_mismatch"
-        );
+        let conditioning = bind_labels(&component, &cfg.labels)?;
         let score = &component["tasks"][0]["score_policy"];
         ensure!(
             (score["kind"] == "probability" || score["kind"] == "none")
@@ -524,22 +547,73 @@ fn enabled_concept(component: &Value, concept: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture() -> (Value, Vec<Mapping>) {
+        let component = json!({"executed_labels":[
+            {"task":"concept_mentions","label_id":"opaque.7","description":"First"},
+            {"task":"concept_mentions","label_id":"opaque.9","description":"Second"}],
+            "tasks":[{"task":"concept_mentions","task_contract":"concept_mentions.v1",
+                "enabled_ids":["opaque.9"]}]});
+        let mappings = serde_json::from_value(json!([
+            {"label_id":"opaque.7","concept_id":"opaque.7","model_label":"one"},
+            {"label_id":"opaque.9","concept_id":"opaque.9","model_label":"two"}]))
+        .unwrap();
+        (component, mappings)
+    }
     #[test]
-    fn enabled_subset_never_changes_conditioning() {
-        let conditioning = vec![
+    fn binding_preserves_full_model_conditioning_for_output_subsets() {
+        let (mut component, mut mappings) = fixture();
+        let expected = vec![
             ("one".to_owned(), "First".to_owned()),
             ("two".to_owned(), "Second".to_owned()),
         ];
-        let before = conditioning.clone();
-        for enabled in [json!([]), json!(["two"])] {
-            let c = json!({"tasks":[{"enabled_ids":enabled}]});
-            assert!(!enabled_concept(&c, "one"));
-            assert_eq!(
-                enabled_concept(&c, "two"),
-                c["tasks"][0]["enabled_ids"] == json!(["two"])
-            );
-            assert_eq!(conditioning, before);
+        for enabled in [
+            json!([]),
+            json!(["opaque.9"]),
+            json!(["opaque.7", "opaque.9"]),
+        ] {
+            component["tasks"][0]["enabled_ids"] = enabled;
+            assert_eq!(bind_labels(&component, &mappings).unwrap(), expected);
         }
+        component["executed_labels"][0]["label_id"] = json!("other.1");
+        mappings[0].label_id = "other.1".into();
+        mappings[0].concept_id = "other.1".into();
+        component["tasks"][0]["enabled_ids"] = json!([]);
+        assert_eq!(bind_labels(&component, &mappings).unwrap(), expected);
+        assert!(!enabled_concept(&component, "other.1"));
+    }
+    #[test]
+    fn invalid_bindings_fail_without_model_construction() {
+        for case in 0..12 {
+            let (mut c, mut m) = fixture();
+            match case {
+                0 => m[1].model_label = m[0].model_label.clone(),
+                1 => m[1].label_id = m[0].label_id.clone(),
+                2 => m[0].concept_id = "opaque.9".into(),
+                3 => m[0].model_label = " ".into(),
+                4 => m[0].model_label = "x".repeat(257),
+                5 => {
+                    m.pop();
+                }
+                6 => c["executed_labels"][0]["task"] = json!("other"),
+                7 => c["tasks"][0]["enabled_ids"] = json!(["missing"]),
+                8 => c["tasks"][0]["enabled_ids"] = json!(["opaque.9", "opaque.9"]),
+                9 => m.swap(0, 1),
+                10 => c["tasks"][0]["task"] = json!("other"),
+                _ => m[0].label_id.clear(),
+            }
+            assert!(bind_labels(&c, &m).is_err(), "case {case}");
+        }
+        assert!(
+            serde_json::from_value::<Mapping>(json!({
+            "label_id":"opaque.7", "concept_id":"opaque.7"}))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<Mapping>(json!({
+            "label_id":"opaque.7", "concept_id":"opaque.7", "model_label":"one",
+            "extra":true}))
+            .is_err()
+        );
     }
     #[test]
     fn terminal_gather_preserves_raw_routes() {
