@@ -60,7 +60,7 @@ class NativeHostLauncher:
             owner.abort(max(0, deadline - self.monotonic()))
             with self._lock:
                 self._observed = None
-            raise
+            raise OwnedLaunchError(owner) from None
 
     def open(self, profile, files, nonce, check, *, deadline):
         if not self.current(profile.components[0].engine):

@@ -1,5 +1,5 @@
 """Invented private frames, retained data and owned-session failure cases."""
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 import hashlib
 from io import BytesIO
@@ -8,12 +8,13 @@ import os
 import struct
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
-from app.nlp import adapter
+from app.nlp import adapter, windows_host
 from app.nlp.child_client import ChildClient
-from app.nlp.child_protocol import (BootstrapResult, CloseResult, HostControl, HostStatus,
+from app.nlp.child_protocol import (BootstrapResult, CloseResult, HostControl, HostStatus, OwnedLaunchError,
     decode_envelope, encode_envelope, payload_bytes, read_frame, write_frame)
 from app.nlp.engine_provider import ProcessEngineProvider
 from app.nlp.profiles import BASELINE_RESOURCE_POLICY
@@ -24,6 +25,54 @@ from tests.test_nlp_processing_publication import ConformanceAdapter
 
 pytestmark = pytest.mark.ci_tier('fast')
 NONCE = 'a' * 32
+
+
+@pytest.mark.parametrize('failure', ['status', 'cancelled', 'deadline'])
+def test_failed_observation_retains_exact_drained_owner_after_launcher_removal(monkeypatch, failure):
+    profile, _ = example()
+    identity = profile.components[0].engine
+    launcher = windows_host.NativeHostLauncher.__new__(windows_host.NativeHostLauncher)
+    launcher._lock, launcher._owners = threading.Lock(), set()
+    launcher._observed, launcher._stopping = identity, False
+    launcher.monotonic = time.monotonic
+    owners, closed = [], []
+
+    def spawn(nonce, artifacts, check):
+        check()
+        status = BytesIO()
+        write_frame(status, payload_bytes(HostStatus(schema='nlp-host-status.v1', channel_nonce=nonce, state='failed',
+            reason='identity_mismatch', worker_pid=None, tree_drained=True)))
+        status.seek(0)
+        resources = ExitStack()
+        resources.callback(lambda: closed.append(True))
+        owner = windows_host._HostOwner(nonce, resources, BytesIO(), status,
+            BytesIO(), BytesIO(), BytesIO(), (), time.monotonic, launcher._finished)
+        owner.process = SimpleNamespace(returncode=1, wait=lambda **kwargs: 1)
+        launcher._owners.add(owner)
+        owners.append(owner)
+        owner.start()
+        owner._reader.join(1)
+        assert not owner._reader.is_alive()
+        return owner
+
+    calls = []
+    def check():
+        calls.append(True)
+        if len(calls) > 1 and failure == 'cancelled':
+            raise RuntimeError('invented cancellation detail')
+
+    monkeypatch.setattr(launcher, '_spawn', spawn)
+    with pytest.raises(OwnedLaunchError) as raised:
+        launcher.observe(identity, timeout=0 if failure == 'deadline' else 1, check=check)
+    owner = raised.value.owner
+    assert owner is owners[0] and owner._closed and closed == [True]
+    assert owner._terminal.state == 'failed' and owner._terminal.reason == 'identity_mismatch'
+    assert owner._terminal.tree_drained and not owner._failure and not owner.graceful
+    assert not owner._reader.is_alive() and all(not thread.is_alive() for thread in owner._writers)
+    assert launcher._owners == set() and not launcher.current(identity)
+    assert str(raised.value) == 'nlp_host_launch_failed' and raised.value.__cause__ is None
+    assert 'invented cancellation detail' not in str(raised.value)
+    assert owner.abort(0) and launcher.close(0)
 
 
 def capabilities(profile):
