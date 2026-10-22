@@ -636,6 +636,33 @@ fn stable_file_path(
     Ok(())
 }
 
+#[cfg(any(windows, test))]
+fn package_allow_ace(bytes: &[u8]) -> Option<(u32, &[u8], bool)> {
+    // Basic and callback allow ACEs share the mask/SID prefix. Conditions can
+    // restrict a grant, so their unevaluated mask is a conservative upper bound.
+    if bytes.len() < 16
+        || !matches!(bytes[0], 0 | 9)
+        || usize::from(u16::from_le_bytes([bytes[2], bytes[3]])) != bytes.len()
+        || bytes.len() % 4 != 0
+        || bytes[8] != 1
+        || bytes[9] > 15
+    {
+        return None;
+    }
+    let sid_end = 16 + usize::from(bytes[9]) * 4;
+    let sid = bytes.get(8..sid_end)?;
+    Some((
+        u32::from_le_bytes(bytes[4..8].try_into().ok()?),
+        sid,
+        bytes[0] == 9,
+    ))
+}
+
+#[cfg(any(windows, test))]
+fn package_grant_protected(mask: u32, callback: bool, trusted: bool) -> bool {
+    mask & 0x500d0156 == 0 || (!callback && trusted)
+}
+
 #[cfg(windows)]
 fn protected_package_file(
     handle: std::os::windows::io::RawHandle,
@@ -746,13 +773,13 @@ fn protected_package_file(
         if header.AceType == 1 {
             continue;
         }
-        if header.AceType != 0 || header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
-            return Err(fail());
-        }
-        let ace = unsafe { &*pointer.cast::<ACCESS_ALLOWED_ACE>() };
-        let sid = sid_text((&ace.SidStart as *const u32) as _)?;
+        let bytes = unsafe {
+            std::slice::from_raw_parts(pointer.cast::<u8>(), usize::from(header.AceSize))
+        };
+        let (mask, sid, callback) = package_allow_ace(bytes).ok_or_else(fail)?;
+        let sid = sid_text(sid.as_ptr() as _)?;
         // Content, deletion and ACL writes are reserved to Windows servicing.
-        if ace.Mask & 0x500d0156 != 0 && !trusted(&sid) && sid != "S-1-3-4" {
+        if !package_grant_protected(mask, callback, trusted(&sid) || sid == "S-1-3-4") {
             return Err(fail());
         }
     }
@@ -1882,6 +1909,71 @@ fn check_availability(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn allow_ace(kind: u8, flags: u8, mask: u32) -> Vec<u8> {
+        let mut bytes = vec![kind, flags, 0, 0];
+        bytes.extend_from_slice(&mask.to_le_bytes());
+        bytes.extend_from_slice(&[1, 2, 0, 0, 0, 0, 0, 5]);
+        bytes.extend_from_slice(&32u32.to_le_bytes());
+        bytes.extend_from_slice(&545u32.to_le_bytes());
+        if kind == 9 {
+            bytes.extend_from_slice(b"artx");
+        }
+        let size = (bytes.len() as u16).to_le_bytes();
+        bytes[2..4].copy_from_slice(&size);
+        bytes
+    }
+
+    #[test]
+    fn package_callback_read_grant_uses_mask_upper_bound() {
+        for flags in [3, 19, 16] {
+            let bytes = allow_ace(9, flags, 0x1200a9);
+            let (mask, sid, callback) = package_allow_ace(&bytes).unwrap();
+            assert_eq!(sid.len(), 16);
+            assert!(callback);
+            assert!(package_grant_protected(mask, callback, false));
+        }
+    }
+
+    #[test]
+    fn package_callback_protected_writes_are_always_refused() {
+        for mask in [
+            2, 4, 0x10, 0x40, 0x100, 0x10000, 0x40000, 0x80000, 0x10000000, 0x40000000,
+        ] {
+            let bytes = allow_ace(9, 3, 0x1200a9 | mask);
+            let (mask, _, callback) = package_allow_ace(&bytes).unwrap();
+            for trusted in [false, true] {
+                assert!(!package_grant_protected(mask, callback, trusted));
+            }
+        }
+    }
+
+    #[test]
+    fn package_basic_grants_keep_existing_write_policy() {
+        assert!(package_grant_protected(0x1200a9, false, false));
+        assert!(!package_grant_protected(0x1f01ff, false, false));
+        assert!(package_grant_protected(0x1f01ff, false, true));
+        assert!(!package_grant_protected(0x1f01ff, true, true));
+    }
+
+    #[test]
+    fn package_allow_ace_requires_bounded_supported_sid_layout() {
+        let good = allow_ace(9, 3, 0x1200a9);
+        for length in 0..good.len() {
+            assert!(package_allow_ace(&good[..length]).is_none());
+        }
+        for (offset, value) in [(0, 11), (2, 0), (8, 2), (9, 16), (9, 15)] {
+            let mut bad = good.clone();
+            bad[offset] = value;
+            assert!(package_allow_ace(&bad).is_none());
+        }
+        let mut basic = allow_ace(0, 3, 0x1200a9);
+        assert!(!package_allow_ace(&basic).unwrap().2);
+        basic.push(0);
+        let size = (basic.len() as u16).to_le_bytes();
+        basic[2..4].copy_from_slice(&size);
+        assert!(package_allow_ace(&basic).is_none());
+    }
+
     fn release(store: bool) -> DesktopRelease {
         serde_json::from_str(if store {
             include_str!("../../../shared/desktop-release/qualification-store.json")
