@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +16,42 @@ from tests.continuous_analytics_fixture import (
 )
 
 pytestmark = [pytest.mark.ci_tier('integration')]
+
+
+@pytest.mark.parametrize('version', [26, 27, 28, 29, 30])
+def test_canonical_catalog_has_the_exact_recorded_guard_fingerprint(version):
+    from app.analytics.enrichment_proof_transition import _guards_match
+    from app.persistence import sqlite_api
+    from app.persistence.json_header import configure_json_functions
+    catalog = Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+    connection = sqlite_api.connect(':memory:')
+    try:
+        configure_json_functions(connection)
+        connection.execute('PRAGMA foreign_keys=ON')
+        for path in sorted(catalog.glob('*.sql')):
+            if int(path.name[:4]) <= version:
+                connection.executescript(path.read_bytes().decode('utf-8'))
+        connection.execute(f'PRAGMA user_version={version}')
+        assert _guards_match(connection)
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize('mutation', ['condition', 'line_endings'])
+def test_one_changed_guard_invalidates_receipts_without_normalization(fixture, mutation):
+    from app.analytics.enrichment_proof_transition import _guards_match
+    with fixture.stores.database.transaction() as db:
+        assert _guards_match(db) and content_stamp(db) is not None
+        original = db.execute("SELECT sql FROM sqlite_master WHERE name='nlp_generation_refs_building'").fetchone()[0]
+        changed = (original.replace('creator_account_id=NEW.account_ref', 'creator_account_id<>NEW.account_ref')
+                   if mutation == 'condition' else original.replace('\n', '\r\n'))
+        assert changed != original
+        db.execute('SAVEPOINT original_guard')
+        db.execute('DROP TRIGGER nlp_generation_refs_building')
+        db.execute(changed)
+        assert not _guards_match(db) and content_stamp(db) is None
+        db.execute('ROLLBACK TO original_guard')
+        assert _guards_match(db) and content_stamp(db) is not None
 
 
 @pytest.fixture
