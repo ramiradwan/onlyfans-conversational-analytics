@@ -672,6 +672,56 @@ def test_real_sdk_produces_and_unpacks_the_same_installed_closure(stage, tmp_pat
         assert verified.returncode == 2 and "requires an MSIX signature" in verified.stdout, verified.stdout + verified.stderr
 
 
+@pytest.mark.skipif(os.name != "nt", reason="requires Windows SDK")
+@pytest.mark.ci_tier("integration")
+@pytest.mark.serial
+def test_real_sdk_wrapper_preserves_related_bundle_release_version(stage, tmp_path):
+    from test_related_release import profile as related_profile
+    from tools import optional_msix as optional
+
+    assert MAKEAPPX.is_file(), "Install the pinned Windows SDK 10.0.26100.0"
+    selected = related_profile()
+    relation = optional._release_relation(selected)
+    executable = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    for name in ("Bridge.exe", "Brain.exe"):
+        shutil.copyfile(executable, stage / name)
+    selected_path = tmp_path / "related-profile.json"
+    selected_path.write_bytes(msix.canonical_json(selected))
+    engine_stage = tmp_path / "engine-payload"
+    (engine_stage / "worker").mkdir(parents=True)
+    shutil.copyfile(executable, engine_stage / optional.WORKER_PATH)
+    shutil.copytree(msix.CONFIG_ROOT / "Assets", engine_stage / "Assets")
+    (engine_stage / "AppxManifest.xml").write_bytes(optional.optional_manifest(
+        relation, minimum_os="10.0.26100.0", tested_os="10.0.26340.0"))
+    engine_app = optional.engine_application_filename(relation.package_version)
+    engine_bundle = tmp_path / optional.artifact_filename("engine", relation.package_version)
+    mapping = tmp_path / "engine.map"
+    mapping.write_text(f'[Files]\n"{engine_app}" "{engine_app}"\n', encoding="utf-8")
+    for arguments in [
+        ["pack", "/d", str(engine_stage), "/p", engine_app],
+        ["bundle", "/f", str(mapping), "/p", str(engine_bundle), "/bv", relation.package_version],
+    ]:
+        result = subprocess.run([str(MAKEAPPX), *arguments], cwd=tmp_path,
+                                capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0, result.stdout + result.stderr
+    output = tmp_path / "package"
+    result = subprocess.run([
+        "powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "packaging/build-msix.ps1"),
+        "-BuildPython", sys.executable, "-StagingRoot", str(stage), "-PackageProfile", str(selected_path),
+        "-OutputRoot", str(output), "-EngineBundle", str(engine_bundle),
+    ], capture_output=True, text=True, check=False, timeout=180)
+    assert result.returncode == 0, result.stdout + result.stderr
+    bundle = output / optional.artifact_filename("related_bundle", relation.core_package_version)
+    optional.verify_release_bundle(bundle, selected)
+    with zipfile.ZipFile(bundle) as archive:
+        root = ET.fromstring(archive.read("AppxMetadata/AppxBundleManifest.xml"))
+    ns = {"b": "http://schemas.microsoft.com/appx/2016/bundle"}
+    assert root.find("b:Identity", ns).get("Version") == relation.core_package_version
+    assert root.find("b:Packages/b:Package", ns).get("Version") == relation.core_package_version
+    assert relation.package_version != relation.core_package_version
+    optional.verify_engine_bundle(output / engine_bundle.name, selected)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows release verifier")
 @pytest.mark.parametrize("case", ["empty", "exe", "duplicate-profile", "bundle-duplicate-profile"])
 def test_release_verifier_rejects_missing_wrong_or_ambiguous_inputs(tmp_path, case):

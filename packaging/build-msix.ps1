@@ -92,7 +92,7 @@ if ($v2) {
         Copy-Item -LiteralPath $enginePath -Destination (Join-Path $bundleInputs $engineName)
         $bundlePath = Join-Path $OutputRoot ('ConversationAnalytics_' + $profile.package_version + '_x64.msixbundle')
         Push-Location $bundleInputs
-        try { Invoke-MakeAppx -Arguments @('bundle','/f',$mapping,'/p',$bundlePath) }
+        try { Invoke-MakeAppx -Arguments @('bundle','/f',$mapping,'/p',$bundlePath,'/bv',$profile.package_version) }
         finally { Pop-Location }
         $packagePath = $bundlePath
         $artifactArguments += @('--engine-bundle',$enginePath)
