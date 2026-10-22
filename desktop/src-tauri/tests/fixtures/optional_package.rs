@@ -185,6 +185,16 @@ fn main() {
     {
         use servicing::optional_acquisition::{self, Action};
         let arguments: Vec<_> = std::env::args().collect();
+        if arguments.get(1).map(String::as_str) == Some("--inspect-staged-target") {
+            if arguments.len() != 2 {
+                std::process::exit(1);
+            }
+            let passed =
+                std::thread::spawn(move || servicing::staged_readback_qualification::run(&root))
+                    .join()
+                    .unwrap_or(false);
+            std::process::exit(if passed { 0 } else { 1 });
+        }
         let action = match arguments.get(1).map(String::as_str) {
             Some("--bootstrap-related-source") => Some(Action::Bootstrap),
             Some("--inspect-optional-source") => Some(Action::Inspect),

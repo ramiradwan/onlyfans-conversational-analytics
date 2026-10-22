@@ -346,14 +346,111 @@ fn target_descriptor(
     Ok(target_release)
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum StagedRole {
+    MainManifest,
+    MainDescriptor,
+    MainBundle,
+    EngineManifest,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    CaseInput,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    CurrentPackage,
+}
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum StagedOperation {
+    OriginLookup,
+    PathLookup,
+    OpenAncestor,
+    Attributes,
+    Security,
+    StablePath,
+    OpenFile,
+    BoundedRead,
+    Validate,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    CaseRead,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    Identity,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    Selection,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    FeedParse,
+}
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum StagedNativeError {
+    Win32 {
+        code: u32,
+    },
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    Hresult {
+        code: i32,
+    },
+}
+#[derive(Debug, Serialize)]
+struct StagedReadError {
+    reason: &'static str,
+    role: StagedRole,
+    operation: StagedOperation,
+    native_error: Option<StagedNativeError>,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    files_read: Option<Vec<(StagedRole, usize)>>,
+}
+impl StagedReadError {
+    fn new(reason: &'static str, role: StagedRole, operation: StagedOperation) -> Self {
+        Self {
+            reason,
+            role,
+            operation,
+            native_error: None,
+            #[cfg(all(feature = "qualification-tools", debug_assertions))]
+            files_read: None,
+        }
+    }
+    fn win32(
+        reason: &'static str,
+        role: StagedRole,
+        operation: StagedOperation,
+        code: u32,
+    ) -> Self {
+        Self {
+            native_error: Some(StagedNativeError::Win32 { code }),
+            ..Self::new(reason, role, operation)
+        }
+    }
+    fn io(
+        reason: &'static str,
+        role: StagedRole,
+        operation: StagedOperation,
+        error: std::io::Error,
+    ) -> Self {
+        Self {
+            native_error: error
+                .raw_os_error()
+                .map(|code| StagedNativeError::Win32 { code: code as u32 }),
+            ..Self::new(reason, role, operation)
+        }
+    }
+}
+
 #[cfg(windows)]
 struct StagedFiles {
     held: Vec<std::fs::File>,
     bytes: usize,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    records: Vec<(StagedRole, usize)>,
 }
 #[cfg(windows)]
 impl StagedFiles {
-    fn read(&mut self, root: &std::path::Path, relative: &str) -> Result<Vec<u8>, &'static str> {
+    fn read(
+        &mut self,
+        root: &std::path::Path,
+        relative: &str,
+        role: StagedRole,
+    ) -> Result<Vec<u8>, StagedReadError> {
         use std::{
             fs::OpenOptions,
             io::Read,
@@ -363,6 +460,7 @@ impl StagedFiles {
             FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
             FILE_SHARE_READ,
         };
+        let fail = |reason, operation| StagedReadError::new(reason, role, operation);
         if !root.is_absolute()
             || root.to_string_lossy().starts_with("\\\\")
             || root.components().any(|p| {
@@ -372,7 +470,7 @@ impl StagedFiles {
                 )
             })
         {
-            return Err("staged_path_unprotected");
+            return Err(fail("staged_path_unprotected", StagedOperation::Attributes));
         }
         let path = root.join(relative);
         if !path.starts_with(root)
@@ -380,11 +478,11 @@ impl StagedFiles {
                 .split('/')
                 .any(|s| s.is_empty() || matches!(s, "." | "..") || s.contains([':', '\\']))
         {
-            return Err("staged_path_unprotected");
+            return Err(fail("staged_path_unprotected", StagedOperation::Attributes));
         }
         for parent in path
             .parent()
-            .ok_or("staged_path_unprotected")?
+            .ok_or_else(|| fail("staged_path_unprotected", StagedOperation::Attributes))?
             .ancestors()
             .collect::<Vec<_>>()
             .into_iter()
@@ -401,17 +499,31 @@ impl StagedFiles {
                 .share_mode(FILE_SHARE_READ)
                 .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
                 .open(parent)
-                .map_err(|_| "staged_path_unprotected")?;
-            let metadata = file.metadata().map_err(|_| "staged_path_unprotected")?;
+                .map_err(|e| {
+                    StagedReadError::io(
+                        "staged_path_unprotected",
+                        role,
+                        StagedOperation::OpenAncestor,
+                        e,
+                    )
+                })?;
+            let metadata = file.metadata().map_err(|e| {
+                StagedReadError::io(
+                    "staged_path_unprotected",
+                    role,
+                    StagedOperation::Attributes,
+                    e,
+                )
+            })?;
             use std::os::windows::fs::MetadataExt;
             if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
             {
-                return Err("staged_path_unprotected");
+                return Err(fail("staged_path_unprotected", StagedOperation::Attributes));
             }
             if parent.starts_with(root) {
-                protected_package_file(file.as_raw_handle())?;
+                protected_package_file(file.as_raw_handle(), role)?;
             }
-            stable_file_path(&file, parent)?;
+            stable_file_path(&file, parent, role)?;
             self.held.push(file);
         }
         let mut file = OpenOptions::new()
@@ -419,43 +531,79 @@ impl StagedFiles {
             .share_mode(FILE_SHARE_READ)
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(&path)
-            .map_err(|_| "staged_package_unavailable")?;
-        let metadata = file.metadata().map_err(|_| "staged_package_unavailable")?;
+            .map_err(|e| {
+                StagedReadError::io(
+                    "staged_package_unavailable",
+                    role,
+                    StagedOperation::OpenFile,
+                    e,
+                )
+            })?;
+        let metadata = file.metadata().map_err(|e| {
+            StagedReadError::io(
+                "staged_package_unavailable",
+                role,
+                StagedOperation::Attributes,
+                e,
+            )
+        })?;
         use std::os::windows::fs::MetadataExt;
         if !metadata.is_file()
             || metadata.len() == 0
             || metadata.len() > STAGED_FILE_LIMIT as u64
             || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
         {
-            return Err("staged_evidence_size_invalid");
+            return Err(fail(
+                "staged_evidence_size_invalid",
+                StagedOperation::BoundedRead,
+            ));
         }
-        protected_package_file(file.as_raw_handle())?;
-        stable_file_path(&file, &path)?;
+        protected_package_file(file.as_raw_handle(), role)?;
+        stable_file_path(&file, &path, role)?;
         let mut bytes = Vec::new();
         (&mut file)
             .take(STAGED_FILE_LIMIT as u64 + 1)
             .read_to_end(&mut bytes)
-            .map_err(|_| "staged_package_unavailable")?;
+            .map_err(|e| {
+                StagedReadError::io(
+                    "staged_package_unavailable",
+                    role,
+                    StagedOperation::BoundedRead,
+                    e,
+                )
+            })?;
         if bytes.is_empty()
             || bytes.len() > STAGED_FILE_LIMIT
             || bytes.len() as u64 != metadata.len()
         {
-            return Err("staged_evidence_size_invalid");
+            return Err(fail(
+                "staged_evidence_size_invalid",
+                StagedOperation::BoundedRead,
+            ));
         }
         self.bytes = self
             .bytes
             .checked_add(bytes.len())
-            .ok_or("staged_evidence_size_invalid")?;
+            .ok_or_else(|| fail("staged_evidence_size_invalid", StagedOperation::BoundedRead))?;
         if self.bytes > 4 * STAGED_FILE_LIMIT {
-            return Err("staged_evidence_size_invalid");
+            return Err(fail(
+                "staged_evidence_size_invalid",
+                StagedOperation::BoundedRead,
+            ));
         }
         self.held.push(file);
+        #[cfg(all(feature = "qualification-tools", debug_assertions))]
+        self.records.push((role, bytes.len()));
         Ok(bytes)
     }
 }
 
 #[cfg(windows)]
-fn stable_file_path(file: &std::fs::File, expected: &std::path::Path) -> Result<(), &'static str> {
+fn stable_file_path(
+    file: &std::fs::File,
+    expected: &std::path::Path,
+    role: StagedRole,
+) -> Result<(), StagedReadError> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
     let mut value = vec![0u16; 32768];
@@ -467,22 +615,32 @@ fn stable_file_path(file: &std::fs::File, expected: &std::path::Path) -> Result<
             0,
         )
     };
-    if size == 0 || size as usize >= value.len() {
-        return Err("staged_path_unprotected");
+    let fail =
+        || StagedReadError::new("staged_path_unprotected", role, StagedOperation::StablePath);
+    if size == 0 {
+        return Err(StagedReadError::win32(
+            "staged_path_unprotected",
+            role,
+            StagedOperation::StablePath,
+            unsafe { windows_sys::Win32::Foundation::GetLastError() },
+        ));
     }
-    let value =
-        String::from_utf16(&value[..size as usize]).map_err(|_| "staged_path_unprotected")?;
-    let value = value
-        .strip_prefix("\\\\?\\")
-        .ok_or("staged_path_unprotected")?;
+    if size as usize >= value.len() {
+        return Err(fail());
+    }
+    let value = String::from_utf16(&value[..size as usize]).map_err(|_| fail())?;
+    let value = value.strip_prefix("\\\\?\\").ok_or_else(fail)?;
     if !value.eq_ignore_ascii_case(&expected.to_string_lossy()) {
-        return Err("staged_path_unprotected");
+        return Err(fail());
     }
     Ok(())
 }
 
 #[cfg(windows)]
-fn protected_package_file(handle: std::os::windows::io::RawHandle) -> Result<(), &'static str> {
+fn protected_package_file(
+    handle: std::os::windows::io::RawHandle,
+    role: StagedRole,
+) -> Result<(), StagedReadError> {
     use std::{
         mem::{size_of, zeroed},
         ptr::null_mut,
@@ -493,6 +651,15 @@ fn protected_package_file(handle: std::os::windows::io::RawHandle) -> Result<(),
             Authorization::{ConvertSidToStringSidW, GetSecurityInfo, SE_FILE_OBJECT},
             *,
         },
+    };
+    let fail = || StagedReadError::new("staged_path_unprotected", role, StagedOperation::Security);
+    let native = || {
+        StagedReadError::win32(
+            "staged_path_unprotected",
+            role,
+            StagedOperation::Security,
+            unsafe { windows_sys::Win32::Foundation::GetLastError() },
+        )
     };
     let (mut owner, mut acl, mut descriptor) = (null_mut(), null_mut(), null_mut());
     let code = unsafe {
@@ -508,7 +675,12 @@ fn protected_package_file(handle: std::os::windows::io::RawHandle) -> Result<(),
         )
     };
     if code != 0 {
-        return Err("staged_path_unprotected");
+        return Err(StagedReadError::win32(
+            "staged_path_unprotected",
+            role,
+            StagedOperation::Security,
+            code,
+        ));
     }
     struct Allocation(*mut std::ffi::c_void);
     impl Drop for Allocation {
@@ -519,13 +691,13 @@ fn protected_package_file(handle: std::os::windows::io::RawHandle) -> Result<(),
         }
     }
     let _descriptor = Allocation(descriptor);
-    let sid_text = |sid: PSID| -> Result<String, &'static str> {
+    let sid_text = |sid: PSID| -> Result<String, StagedReadError> {
         let mut text = null_mut();
-        if sid.is_null()
-            || unsafe { IsValidSid(sid) } == 0
-            || unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0
-        {
-            return Err("staged_path_unprotected");
+        if sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
+            return Err(fail());
+        }
+        if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+            return Err(native());
         }
         let _text = Allocation(text.cast());
         let mut n = 0;
@@ -535,10 +707,9 @@ fn protected_package_file(handle: std::os::windows::io::RawHandle) -> Result<(),
             }
         }
         if n == 256 {
-            return Err("staged_path_unprotected");
+            return Err(fail());
         }
-        String::from_utf16(unsafe { std::slice::from_raw_parts(text, n) })
-            .map_err(|_| "staged_path_unprotected")
+        String::from_utf16(unsafe { std::slice::from_raw_parts(text, n) }).map_err(|_| fail())
     };
     let trusted = |sid: &str| {
         matches!(
@@ -549,7 +720,7 @@ fn protected_package_file(handle: std::os::windows::io::RawHandle) -> Result<(),
         )
     };
     if !trusted(&sid_text(owner)?) || acl.is_null() || unsafe { IsValidAcl(acl) } == 0 {
-        return Err("staged_path_unprotected");
+        return Err(fail());
     }
     let mut information: ACL_SIZE_INFORMATION = unsafe { zeroed() };
     if unsafe {
@@ -560,27 +731,29 @@ fn protected_package_file(handle: std::os::windows::io::RawHandle) -> Result<(),
             AclSizeInformation,
         )
     } == 0
-        || information.AceCount > 256
     {
-        return Err("staged_path_unprotected");
+        return Err(native());
+    }
+    if information.AceCount > 256 {
+        return Err(fail());
     }
     for index in 0..information.AceCount {
         let mut pointer = null_mut();
         if unsafe { GetAce(acl, index, &mut pointer) } == 0 {
-            return Err("staged_path_unprotected");
+            return Err(native());
         }
         let header = unsafe { &*pointer.cast::<ACE_HEADER>() };
         if header.AceType == 1 {
             continue;
         }
         if header.AceType != 0 || header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
-            return Err("staged_path_unprotected");
+            return Err(fail());
         }
         let ace = unsafe { &*pointer.cast::<ACCESS_ALLOWED_ACE>() };
         let sid = sid_text((&ace.SidStart as *const u32) as _)?;
         // Content, deletion and ACL writes are reserved to Windows servicing.
         if ace.Mask & 0x500d0156 != 0 && !trusted(&sid) && sid != "S-1-3-4" {
-            return Err("staged_path_unprotected");
+            return Err(fail());
         }
     }
     Ok(())
@@ -592,76 +765,117 @@ fn validate_staged_target(
     actual: &PackageIdentity,
     target: &crate::servicing_feed::Target,
     selection: &EngineSelection,
-) -> Result<(String, StagedFiles), &'static str> {
-    use crate::servicing_feed::Target;
-    let family = actual.family.as_deref().ok_or("staged_identity_mismatch")?;
-    let suffix = family
-        .strip_prefix(&(actual.name.clone() + "_"))
-        .ok_or("staged_identity_mismatch")?;
-    let core = target.core();
-    let main = PackageIdentity {
-        name: actual.name.clone(),
-        publisher: actual.publisher.clone(),
-        version: core.version.clone(),
-        architecture: "x64".into(),
-        family: actual.family.clone(),
-    };
-    let root = staged_root(&format!("{}_{}_x64__{}", actual.name, core.version, suffix))?;
+) -> Result<(String, StagedFiles), StagedReadError> {
     let mut files = StagedFiles {
         held: Vec::new(),
         bytes: 0,
+        #[cfg(all(feature = "qualification-tools", debug_assertions))]
+        records: Vec::new(),
     };
-    let app = files.read(&root, "AppxManifest.xml")?;
-    application_manifest(&app, &main, Some(&current.identity.application_id), None)?;
-    let descriptor = files.read(&root, "app/desktop-release.json")?;
-    target_descriptor(&descriptor, current, &main, target)?;
-    if let Target::RelatedBundle {
-        engine_identity,
-        engine,
-        ..
-    } = target
-    {
-        let bundle = staged_root(&format!(
-            "{}_{}_neutral_~_{}",
-            actual.name, core.version, suffix
-        ))?;
-        bundle_manifest(
-            &files.read(&bundle, "AppxMetadata/AppxBundleManifest.xml")?,
-            &main,
-            engine,
-            engine_identity,
-        )?;
-        if matches!(selection, EngineSelection::Present { .. }) {
-            let engine_root = staged_root(&format!(
-                "{}_{}_x64__{}",
-                engine_identity.name, engine.version, suffix
-            ))?;
-            application_manifest(
-                &files.read(&engine_root, "AppxManifest.xml")?,
-                &PackageIdentity {
-                    name: engine_identity.name.clone(),
-                    publisher: engine_identity.publisher.clone(),
-                    version: engine.version.clone(),
-                    architecture: "x64".into(),
-                    family: Some(engine_identity.family.clone()),
-                },
-                None,
-                Some(&actual.name),
-            )?;
-        }
-        let maximum = if matches!(selection, EngineSelection::Absent) {
-            3
-        } else {
-            4
+    let result = (|| -> Result<String, StagedReadError> {
+        use crate::servicing_feed::Target;
+        let failure = |reason, role| StagedReadError::new(reason, role, StagedOperation::Validate);
+        let family = actual
+            .family
+            .as_deref()
+            .ok_or_else(|| failure("staged_identity_mismatch", StagedRole::MainManifest))?;
+        let suffix = family
+            .strip_prefix(&(actual.name.clone() + "_"))
+            .ok_or_else(|| failure("staged_identity_mismatch", StagedRole::MainManifest))?;
+        let core = target.core();
+        let main = PackageIdentity {
+            name: actual.name.clone(),
+            publisher: actual.publisher.clone(),
+            version: core.version.clone(),
+            architecture: "x64".into(),
+            family: actual.family.clone(),
         };
-        if files.bytes > maximum * STAGED_FILE_LIMIT {
-            return Err("staged_evidence_size_invalid");
+        let root = staged_root(
+            &format!("{}_{}_x64__{}", actual.name, core.version, suffix),
+            StagedRole::MainManifest,
+        )?;
+        let app = files.read(&root, "AppxManifest.xml", StagedRole::MainManifest)?;
+        application_manifest(&app, &main, Some(&current.identity.application_id), None)
+            .map_err(|r| failure(r, StagedRole::MainManifest))?;
+        let descriptor = files.read(
+            &root,
+            "app/desktop-release.json",
+            StagedRole::MainDescriptor,
+        )?;
+        target_descriptor(&descriptor, current, &main, target)
+            .map_err(|r| failure(r, StagedRole::MainDescriptor))?;
+        if let Target::RelatedBundle {
+            engine_identity,
+            engine,
+            ..
+        } = target
+        {
+            let bundle = staged_root(
+                &format!("{}_{}_neutral_~_{}", actual.name, core.version, suffix),
+                StagedRole::MainBundle,
+            )?;
+            bundle_manifest(
+                &files.read(
+                    &bundle,
+                    "AppxMetadata/AppxBundleManifest.xml",
+                    StagedRole::MainBundle,
+                )?,
+                &main,
+                engine,
+                engine_identity,
+            )
+            .map_err(|r| failure(r, StagedRole::MainBundle))?;
+            if matches!(selection, EngineSelection::Present { .. }) {
+                let engine_root = staged_root(
+                    &format!(
+                        "{}_{}_x64__{}",
+                        engine_identity.name, engine.version, suffix
+                    ),
+                    StagedRole::EngineManifest,
+                )?;
+                application_manifest(
+                    &files.read(&engine_root, "AppxManifest.xml", StagedRole::EngineManifest)?,
+                    &PackageIdentity {
+                        name: engine_identity.name.clone(),
+                        publisher: engine_identity.publisher.clone(),
+                        version: engine.version.clone(),
+                        architecture: "x64".into(),
+                        family: Some(engine_identity.family.clone()),
+                    },
+                    None,
+                    Some(&actual.name),
+                )
+                .map_err(|r| failure(r, StagedRole::EngineManifest))?;
+            }
+            let maximum = if matches!(selection, EngineSelection::Absent) {
+                3
+            } else {
+                4
+            };
+            if files.bytes > maximum * STAGED_FILE_LIMIT {
+                return Err(failure(
+                    "staged_evidence_size_invalid",
+                    StagedRole::MainBundle,
+                ));
+            }
+        }
+        let uri = url::Url::from_file_path(root.join("AppxManifest.xml"))
+            .map_err(|_| failure("staged_package_unavailable", StagedRole::MainManifest))?
+            .into();
+        Ok(uri)
+    })();
+    match result {
+        Ok(uri) => Ok((uri, files)),
+        Err(error) => {
+            #[cfg(all(feature = "qualification-tools", debug_assertions))]
+            let error = {
+                let mut error = error;
+                error.files_read = Some(files.records.clone());
+                error
+            };
+            Err(error)
         }
     }
-    let uri = url::Url::from_file_path(root.join("AppxManifest.xml"))
-        .map_err(|_| "staged_package_unavailable")?
-        .into();
-    Ok((uri, files))
 }
 
 #[cfg(windows)]
@@ -773,6 +987,10 @@ fn selected_engine(
     Ok(result.unwrap_or(EngineSelection::Absent))
 }
 
+#[cfg(all(windows, feature = "qualification-tools", debug_assertions))]
+#[path = "staged_readback_qualification.rs"]
+pub(crate) mod staged_readback_qualification;
+
 /// Windows downloads and validates the package. Only descriptor bytes cross
 /// this process; a successful deferred registration is required before drain.
 #[cfg(windows)]
@@ -870,7 +1088,8 @@ pub fn prepare_direct(
             .map_err(|_| "staged_identity_mismatch")?
     ));
     let (manifest, _staged_evidence) = if release.servicing.is_some() {
-        let (uri, files) = validate_staged_target(release, &actual.identity, &target, &selection)?;
+        let (uri, files) = validate_staged_target(release, &actual.identity, &target, &selection)
+            .map_err(|error| error.reason)?;
         (uri, Some(files))
     } else {
         (staged_manifest(&full_name.to_string())?, None)
@@ -957,13 +1176,17 @@ pub fn prepare_direct(
 
 #[cfg(windows)]
 fn staged_manifest(full_name: &str) -> Result<String, &'static str> {
-    url::Url::from_file_path(staged_root(full_name)?.join("AppxManifest.xml"))
-        .map(|uri| uri.into())
-        .map_err(|_| "staged_package_unavailable")
+    url::Url::from_file_path(
+        staged_root(full_name, StagedRole::MainManifest)
+            .map_err(|error| error.reason)?
+            .join("AppxManifest.xml"),
+    )
+    .map(|uri| uri.into())
+    .map_err(|_| "staged_package_unavailable")
 }
 
 #[cfg(windows)]
-fn staged_root(full_name: &str) -> Result<std::path::PathBuf, &'static str> {
+fn staged_root(full_name: &str, role: StagedRole) -> Result<std::path::PathBuf, StagedReadError> {
     use std::{os::windows::ffi::OsStringExt, ptr::null_mut};
     use windows_sys::Win32::{
         Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
@@ -972,6 +1195,7 @@ fn staged_root(full_name: &str) -> Result<std::path::PathBuf, &'static str> {
             PackageOrigin_DeveloperSigned as SIGNED, PackageOrigin_LineOfBusiness as ENTERPRISE,
         },
     };
+    let fail = |reason, operation| StagedReadError::new(reason, role, operation);
     let name: Vec<u16> = full_name.encode_utf16().chain(Some(0)).collect();
     let mut origin = 0;
     let mut length = 0;
@@ -979,30 +1203,59 @@ fn staged_root(full_name: &str) -> Result<std::path::PathBuf, &'static str> {
     // package enumeration. StagePackageByUriAsync above retains signature
     // validation; developer-unsigned and unknown staged origins are refused.
     unsafe {
-        if GetStagedPackageOrigin(name.as_ptr(), &mut origin) != ERROR_SUCCESS
-            || !matches!(origin, SIGNED | ENTERPRISE)
-        {
-            return Err("staged_identity_mismatch");
+        let code = GetStagedPackageOrigin(name.as_ptr(), &mut origin);
+        if code != ERROR_SUCCESS {
+            return Err(StagedReadError::win32(
+                "staged_identity_mismatch",
+                role,
+                StagedOperation::OriginLookup,
+                code,
+            ));
         }
-        if GetStagedPackagePathByFullName(name.as_ptr(), &mut length, null_mut())
-            != ERROR_INSUFFICIENT_BUFFER
-            || !(2..=32768).contains(&length)
-        {
-            return Err("staged_package_unavailable");
+        if !matches!(origin, SIGNED | ENTERPRISE) {
+            return Err(fail(
+                "staged_identity_mismatch",
+                StagedOperation::OriginLookup,
+            ));
+        }
+        let code = GetStagedPackagePathByFullName(name.as_ptr(), &mut length, null_mut());
+        if code != ERROR_INSUFFICIENT_BUFFER {
+            return Err(StagedReadError::win32(
+                "staged_package_unavailable",
+                role,
+                StagedOperation::PathLookup,
+                code,
+            ));
+        }
+        if !(2..=32768).contains(&length) {
+            return Err(fail(
+                "staged_package_unavailable",
+                StagedOperation::PathLookup,
+            ));
         }
         let mut path = vec![0u16; length as usize];
-        if GetStagedPackagePathByFullName(name.as_ptr(), &mut length, path.as_mut_ptr())
-            != ERROR_SUCCESS
-            || length < 2
-            || length as usize > path.len()
-            || path[length as usize - 1] != 0
-        {
-            return Err("staged_package_unavailable");
+        let code = GetStagedPackagePathByFullName(name.as_ptr(), &mut length, path.as_mut_ptr());
+        if code != ERROR_SUCCESS {
+            return Err(StagedReadError::win32(
+                "staged_package_unavailable",
+                role,
+                StagedOperation::PathLookup,
+                code,
+            ));
+        }
+        if length < 2 || length as usize > path.len() || path[length as usize - 1] != 0 {
+            return Err(fail(
+                "staged_package_unavailable",
+                StagedOperation::PathLookup,
+            ));
         }
         let path =
             std::path::PathBuf::from(std::ffi::OsString::from_wide(&path[..length as usize - 1]));
         if !path.is_absolute() {
-            return Err("staged_package_unavailable");
+            return Err(fail(
+                "staged_package_unavailable",
+                StagedOperation::PathLookup,
+            ));
         }
         Ok(path)
     }
