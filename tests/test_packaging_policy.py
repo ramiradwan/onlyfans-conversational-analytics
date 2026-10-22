@@ -670,8 +670,13 @@ def test_fixture_admission_hashes_the_same_raw_bytes_that_are_scanned(
 
 
 def test_sql_catalog_declaration_is_a_complete_derived_closure() -> None:
-    """Removing any declared SQL file makes this exact-set assertion fail."""
+    """Catalog pins must hold for the LF bytes produced by a fresh checkout."""
 
+    for catalog in SQL_CATALOGS:
+        for path in (ROOT / catalog).rglob("*.sql"):
+            assert b"\r" not in path.read_bytes(), (
+                f"{path.relative_to(ROOT)} must retain its declared LF bytes"
+            )
     assert _declared_sql_digests(load_runtime_policy(POLICY_PATH)) == _source_sql_digests()
 
 
