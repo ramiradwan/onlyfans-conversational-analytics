@@ -398,7 +398,7 @@ jobs:
           signing-account-name: Dipsy
           certificate-profile-name: simple-legal-doc-signer
           files-folder: ${{ github.workspace }}\release
-          files-folder-filter: ${{ inputs.desktop_target == 'msix-direct' && 'msix' || 'exe' }}
+          files-folder-filter: ${{ inputs.desktop_target == 'msix-direct' && 'msix,msixbundle' || 'exe' }}
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256

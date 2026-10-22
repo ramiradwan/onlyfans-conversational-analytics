@@ -503,7 +503,7 @@ def _assert_msix_build_and_sign_boundaries(workflow):
     verified = next(index for index, step in enumerate(sign) if step.get("id") == VERIFICATION_STEP_ID)
     assert inputs[0] < login < signer < verified, "Validate immutable inputs before Azure and verify the signed output"
     assert sign[login]["if"] == sign[signer]["if"] == "inputs.desktop_target != 'msix-store'", "Store candidate must remain unsigned"
-    assert sign[signer]["with"]["files-folder-filter"] == "${{ inputs.desktop_target == 'msix-direct' && 'msix' || 'exe' }}", "Direct signing must include MSIX"
+    assert sign[signer]["with"]["files-folder-filter"] == "${{ inputs.desktop_target == 'msix-direct' && 'msix,msixbundle' || 'exe' }}", "Direct signing must include MSIX and MSIX bundle artifacts"
     for index in (inputs[0], verified):
         command = sign[index]["run"]
         assert '-Target "$env:DESKTOP_RELEASE_TARGET"' in command

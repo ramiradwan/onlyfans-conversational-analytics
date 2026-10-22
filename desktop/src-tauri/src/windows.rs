@@ -465,6 +465,7 @@ pub fn package_identity() -> Result<Option<crate::deployment::PackageIdentity>> 
         let version = identity.version.Anonymous.Version;
         Ok(Some(crate::deployment::PackageIdentity {
             name: read(identity.name)?,
+            family: Some(format!("{}_{}", read(identity.name)?, read(identity.publisherId)?)),
             publisher: read(identity.publisher)?,
             version: format!(
                 "{}.{}.{}.{}",

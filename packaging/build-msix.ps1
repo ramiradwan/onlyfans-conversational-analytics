@@ -6,7 +6,8 @@ param(
     [Parameter(Mandatory)] [string] $OutputRoot,
     [string] $WindowsSdkVersion = '10.0.26100.0',
     [string] $MakeAppx = '',
-    [string] $PackageUri = ''
+    [string] $PackageUri = '',
+    [string] $EngineBundle = ''
 )
 
 Set-StrictMode -Version Latest
@@ -53,12 +54,16 @@ function Get-MsixFileDigest {
 }
 
 $profile = Invoke-MsixPython -Arguments @('validate-profile', '--profile', $PackageProfile)
+$profileDocument = Get-Content -Raw -LiteralPath $PackageProfile | ConvertFrom-Json
+$v2 = $profileDocument.schema -ceq 'ofca-msix-package-profile/v2'
+if (-not $v2 -and $EngineBundle) { throw 'V1 release cannot carry an optional Engine artifact' }
 $working = Join-Path $OutputRoot 'working'
 $prepared = Invoke-MsixPython -Arguments @('prepare', '--stage', $StagingRoot, '--working', $working, '--profile', $PackageProfile)
 & (Join-Path $projectRoot 'packaging/write-digests.ps1') -Directory (Join-Path $prepared.payload 'app')
 $sealed = Invoke-MsixPython -Arguments @('seal', '--working', $working, '--profile', $PackageProfile, '--makeappx', $MakeAppx)
 $stem = "$($profile.identity.name)_$($profile.package_version)_x64"
 $packagePath = Join-Path $OutputRoot "$stem.msix"
+if ($v2) { $packagePath = Join-Path $OutputRoot ("ConversationAnalytics_" + $profile.package_version + '_x64.msix') }
 # Semantic validation is mandatory; never pass /nv. The protected signing job
 # receives these final packed contents and never rebuilds them.
 Invoke-MakeAppx -Arguments @('pack', '/d', $prepared.payload, '/p', $packagePath)
@@ -69,20 +74,63 @@ Copy-Item -LiteralPath $sealed.inventory -Destination $inventoryPath
 Copy-Item -LiteralPath $PackageProfile -Destination $profilePath
 $verified = Invoke-MsixPython -Arguments @('verify', '--package', $packagePath, '--inventory', $inventoryPath, '--profile', $profilePath)
 $null = Invoke-MsixPython -Arguments @('verify-unpacked', '--directory', (Join-Path $working 'unpacked'), '--inventory', $inventoryPath, '--profile', $profilePath)
+$artifactSet = $null
+$artifactSetPath = Join-Path $OutputRoot "$stem.artifact-set.json"
+if ($v2) {
+    $artifactArguments = @('artifact-set','--profile',$profilePath,'--output',$artifactSetPath)
+    if ($profileDocument.servicing.installed_artifact.kind -ceq 'related_bundle') {
+        if (-not $EngineBundle) { throw 'Related release requires an explicit external Engine bundle' }
+        $engineVersion = $profileDocument.servicing.installed_artifact.engine.package_version
+        $engineName = 'TextAnalysisEngine_' + $engineVersion + '_x64.msixbundle'
+        $enginePath = Join-Path $OutputRoot $engineName
+        Copy-Item -LiteralPath $EngineBundle -Destination $enginePath
+        $mapping = Join-Path $working 'related.map'
+        $null = Invoke-MsixPython -Arguments @('related-mapping','--profile',$profilePath,'--engine-bundle',$enginePath,'--output',$mapping)
+        $bundleInputs = Join-Path $working 'bundle-inputs'
+        $null = New-Item -ItemType Directory -Path $bundleInputs
+        Copy-Item -LiteralPath $packagePath -Destination (Join-Path $bundleInputs ([IO.Path]::GetFileName($packagePath)))
+        Copy-Item -LiteralPath $enginePath -Destination (Join-Path $bundleInputs $engineName)
+        $bundlePath = Join-Path $OutputRoot ('ConversationAnalytics_' + $profile.package_version + '_x64.msixbundle')
+        Push-Location $bundleInputs
+        try { Invoke-MakeAppx -Arguments @('bundle','/f',$mapping,'/p',$bundlePath) }
+        finally { Pop-Location }
+        $packagePath = $bundlePath
+        $artifactArguments += @('--engine-bundle',$enginePath)
+    } elseif ($EngineBundle) { throw 'MainPackage profile cannot acquire an Engine artifact' }
+    $null = Invoke-MsixPython -Arguments ($artifactArguments + @('--package',$packagePath))
+    $artifactSet = Get-Content -Raw -LiteralPath $artifactSetPath | ConvertFrom-Json
+    # Finalize the external unsigned byte inventory after packing. The sealed
+    # payload file closure stays unchanged; signatures have a separate record.
+    $packedInventory = Get-Content -Raw -LiteralPath $inventoryPath | ConvertFrom-Json
+    $packedInventory | Add-Member -NotePropertyName artifact_set -NotePropertyValue $artifactSet
+    $packedInventory | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $inventoryPath -Encoding utf8
+    $verified.package_sha256 = Get-MsixFileDigest $packagePath
+    $verified.inventory_sha256 = Get-MsixFileDigest $inventoryPath
+}
 $receiptPath = Join-Path $OutputRoot "$stem.build.json"
 $producerCommit = (& git -C $projectRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the producer source revision' }
 $producerDirty = [bool]((& git -C $projectRoot status --porcelain) -join "`n")
-[ordered]@{
+$buildReceipt = [ordered]@{
     schema = 'ofca-msix-build/v1'
     verification = $verified
     windows_sdk = $WindowsSdkVersion
     makeappx_file_version = $tool.VersionInfo.FileVersion
     uap17_schema_sha256 = Get-MsixFileDigest -FilePath $schemaPath
     producer_source = [ordered]@{ base_commit = $producerCommit; dirty = $producerDirty }
-} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $receiptPath -Encoding utf8
+}
+if ($v2) { $buildReceipt.schema = 'ofca-msix-build/v2'; $buildReceipt.artifact_set = $artifactSet }
+$buildReceipt | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $receiptPath -Encoding utf8
 $appInstallerPath = $null
-if ($PackageUri) {
+if ($v2 -and $profileDocument.distribution -ceq 'direct-appinstaller') {
+    $templateSet = Get-Content -Raw -LiteralPath $artifactSetPath | ConvertFrom-Json
+    $templateSet.core.sha256 = '0' * 64
+    if ($templateSet.kind -ceq 'related_bundle') { $templateSet.engine.artifact.sha256 = '0' * 64 }
+    $templateSetPath = Join-Path $working 'template-artifact-set.json'
+    $templateSet | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $templateSetPath -Encoding utf8
+    $appInstallerPath = Join-Path $OutputRoot "$stem.appinstaller"
+    $null = Invoke-MsixPython -Arguments @('release-appinstaller','--profile',$profilePath,'--artifact-set',$templateSetPath,'--output',$appInstallerPath)
+} elseif ($PackageUri) {
     $appInstallerPath = Join-Path $OutputRoot "$stem.appinstaller"
     $null = Invoke-MsixPython -Arguments @('appinstaller', '--profile', $profilePath, '--package-uri', $PackageUri, '--output', $appInstallerPath)
 }

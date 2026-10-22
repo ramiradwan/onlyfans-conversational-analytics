@@ -72,6 +72,50 @@ for(const mutation of ['store','source','qualification','unsigned','publisher','
   });
 }
 
+async function v2Intake(t, mutation) {
+  const f=await intake(t);
+  const recordPath=join(f.root,'desktop.artifact-release.json');
+  const record=JSON.parse(await readFile(recordPath));
+  const verification=JSON.parse(await readFile(f.verificationPath));
+  const admission=JSON.parse(await readFile(f.admissionPath));
+  const set={kind:'main_package',core:{file:record.package_file,sha256:record.package_sha256,
+    size:(await readFile(join(f.root,record.package_file))).length}};
+  Object.assign(record,{schema:'ofca-desktop-artifact-release/v2',artifact_set:set,
+    application_version:'0.7.5',profile_sha256:'c'.repeat(64),inventory_sha256:'d'.repeat(64),
+    build_sha256:'e'.repeat(64),verification_sha256:'f'.repeat(64),agent_file:'synthetic-chrome.zip',
+    agent_sha256:'1'.repeat(64),resolved_direct_inputs_sha256:'2'.repeat(64)});
+  delete record.package_file;delete record.package_sha256;
+  Object.assign(verification,{schema:'ofca-msix-release-verification/v2',artifact_set:structuredClone(set),
+    file_count:1,profile_sha256:record.profile_sha256,inventory_sha256:record.inventory_sha256});
+  verification.identity.FullName='Dipsy.OnlyFansConversationalAnalytics_1.0.9.0_x64__bvmm2ppd090g2';
+  Object.assign(admission,{schema:'ofca-direct-publication-admission/v2',artifact_set:structuredClone(set),identity:verification.identity});
+  delete admission.package_sha256;
+  if(mutation==='related')record.artifact_set={kind:'related_bundle'};
+  if(mutation==='size')record.artifact_set.core.size++;
+  if(mutation==='alias')record.package_file='legacy.msix';
+  if(mutation==='extra-verification')verification.fallback=true;
+  let verificationBytes=Buffer.from(JSON.stringify(verification));
+  if(mutation==='duplicate-verification')verificationBytes=Buffer.from(JSON.stringify(verification).replace('"file_count":1','"file_count":0,"file_count":1'));
+  admission.verification_sha256=digest(verificationBytes);record.verification_sha256=admission.verification_sha256;
+  let recordBytes=Buffer.from(JSON.stringify(record));
+  if(mutation==='duplicate-record')recordBytes=Buffer.from(JSON.stringify(record).replace('"package_version":','"package_version":"1.0.8.0","package_version":'));
+  if(mutation==='nonfinite')recordBytes=Buffer.from(JSON.stringify(record).replace('"size":'+set.core.size,'"size":1e400'));
+  admission.artifact_record_sha256=digest(recordBytes);
+  await writeFile(recordPath,recordBytes);await writeFile(f.verificationPath,verificationBytes);
+  await writeFile(f.admissionPath,JSON.stringify(admission));return f;
+}
+
+test('v2 MainPackage intake binds the closed signed artifact set',async t=>{
+  const f=await v2Intake(t),result=await loadRelease(f.root,f.admissionPath,f.verificationPath,f.deliveryPath,f.context);
+  try{assert.equal(result.sha256,f.sha);}finally{await result.file.close();}
+});
+for(const mutation of ['related','size','alias','extra-verification','duplicate-verification','duplicate-record','nonfinite']) {
+  test('v2 intake refuses '+mutation+' before storage access',async t=>{
+    const f=await v2Intake(t,mutation);
+    await assert.rejects(loadRelease(f.root,f.admissionPath,f.verificationPath,f.deliveryPath,f.context));
+  });
+}
+
 async function fixture(t, options = {}) {
   const root = await mkdtemp(join(tmpdir(), 'desktop-publication-'));
   const bytes = Buffer.from('synthetic nonshipping package data '.repeat(100));

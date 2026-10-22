@@ -22,6 +22,50 @@ const requireValue = (ok, code) => { if (!ok) throw new PublicationError(code); 
 const status = error => error?.$metadata?.httpStatusCode;
 const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+function closed(value, names) {
+  requireValue(value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).length === names.length && Object.keys(value).every(key => names.includes(key)), 'release_members');
+}
+function sameJson(left, right) {
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return left === right;
+  const keys = Object.keys(left).sort(), other = Object.keys(right).sort();
+  return JSON.stringify(keys) === JSON.stringify(other) && keys.every(key => sameJson(left[key], right[key]));
+}
+
+function closedJson(bytes) {
+  const text = new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+  const value = JSON.parse(text), stack = [];
+  // JSON.parse establishes grammar first. Inspect original keys before any
+  // duplicate could disappear, including escaped spellings of the same key.
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '{' || c === '[') {
+      stack.push(c === '{' ? new Set() : null);
+      requireValue(stack.length <= 64, 'release_json_depth');
+    } else if (c === '}' || c === ']') stack.pop();
+    else if (c === '"') {
+      const start = i++;
+      for (; i < text.length; i++) {
+        if (text[i] === '\\') i++;
+        else if (text[i] === '"') break;
+      }
+      let next = i + 1;
+      while (/\s/.test(text[next] ?? '') && next < text.length) next++;
+      if (text[next] === ':') {
+        const key = JSON.parse(text.slice(start, i + 1)), keys = stack.at(-1);
+        requireValue(keys !== null && !keys.has(key), 'release_duplicate_key');
+        keys.add(key);
+      }
+    }
+  }
+  function finite(item) {
+    requireValue(typeof item !== 'number' || Number.isFinite(item), 'release_nonfinite');
+    if (item && typeof item === 'object') Object.values(item).forEach(finite);
+  }
+  finite(value);
+  return value;
+}
+
 export function contextFromEnvironment(env) {
   requireValue(env.GITHUB_ACTIONS === 'true' && env.GITHUB_EVENT_NAME === 'workflow_dispatch'
     && env.GITHUB_REPOSITORY === 'ramiradwan/onlyfans-conversational-analytics', 'unauthorized_execution');
@@ -94,15 +138,45 @@ async function digest(stream, expectedSize, maximum) {
 export async function loadRelease(directory, admissionPath, verificationPath, deliveryPath, context) {
   const recordBytes = await small(join(directory, 'desktop.artifact-release.json'));
   const record = JSON.parse(recordBytes);
-  const admission = JSON.parse(await small(admissionPath));
+  const admissionBytes = await small(admissionPath);
+  const admission = JSON.parse(admissionBytes);
   const verifiedBytes = await small(verificationPath);
   const verified = JSON.parse(verifiedBytes);
   const deliveryBytes = await small(deliveryPath);
   const delivery = JSON.parse(deliveryBytes);
-  requireValue(record.schema === 'ofca-desktop-artifact-release/v1' && record.target === 'msix-direct'
+  const v2 = record.schema === 'ofca-desktop-artifact-release/v2';
+  if (v2) {
+    closedJson(recordBytes); closedJson(admissionBytes); closedJson(verifiedBytes);
+    closed(record, ['schema','source_commit','source_tree','target','application_version','package_version',
+      'profile_sha256','inventory_sha256','build_sha256','expected_family','verification_sha256',
+      'signature_scope','agent_file','agent_sha256','resolved_direct_inputs_sha256','descriptor_sha256','artifact_set']);
+    requireValue(record.artifact_set?.kind !== 'related_bundle', 'related_stable_rollout_not_configured');
+    closed(record.artifact_set, ['kind','core']);
+    closed(record.artifact_set.core, ['file','sha256','size']);
+    const core = record.artifact_set.core;
+    requireValue(record.artifact_set.kind === 'main_package'
+      && core.file === `ConversationAnalytics_${record.package_version}_x64.msix` && SHA.test(core.sha256 ?? '')
+      && Number.isSafeInteger(core.size) && core.size > 0 && core.size <= MAX_PACKAGE, 'release_artifact_set');
+    closed(admission, ['schema','source_commit','source_tree','artifact_record_sha256','descriptor_sha256',
+      'verification_sha256','signature','identity','direct_delivery_sha256','artifact_set']);
+    closed(verified, ['schema','purpose','distribution','mode','identity','file_count','package_sha256',
+      'profile_sha256','inventory_sha256','signature','artifact_set']);
+    closed(verified.identity, ['Name','Publisher','Version','Architecture','FullName','FamilyName']);
+    requireValue(['profile_sha256','inventory_sha256','build_sha256','verification_sha256','agent_sha256',
+      'resolved_direct_inputs_sha256'].every(key => SHA.test(record[key] ?? ''))
+      && record.verification_sha256 === hash(verifiedBytes)
+      && record.profile_sha256 === verified.profile_sha256 && record.inventory_sha256 === verified.inventory_sha256
+      && sameJson(admission.identity, verified.identity), 'v2_verification_binding');
+    requireValue(sameJson(admission.artifact_set, record.artifact_set)
+      && sameJson(verified.artifact_set, record.artifact_set), 'artifact_set_verification_mismatch');
+    // Derived aliases do not change the serialized versioned records.
+    record.package_file = core.file; record.package_sha256 = core.sha256;
+    admission.package_sha256 = core.sha256;
+  }
+  requireValue(record.schema === (v2 ? 'ofca-desktop-artifact-release/v2' : 'ofca-desktop-artifact-release/v1') && record.target === 'msix-direct'
     && record.signature_scope === 'trusted-timestamped' && record.expected_family === FAMILY, 'release_scope');
   requireValue(record.source_commit === context.sourceCommit && COMMIT.test(record.source_tree ?? ''), 'release_source');
-  requireValue(admission.schema === 'ofca-direct-publication-admission/v1' && admission.source_commit === context.sourceCommit
+  requireValue(admission.schema === (v2 ? 'ofca-direct-publication-admission/v2' : 'ofca-direct-publication-admission/v1') && admission.source_commit === context.sourceCommit
     && admission.source_tree === record.source_tree && admission.artifact_record_sha256 === hash(recordBytes)
     && admission.signature === 'trusted-timestamped' && admission.verification_sha256 === hash(verifiedBytes)
     && admission.direct_delivery_sha256 === hash(deliveryBytes), 'independent_admission_mismatch');
@@ -110,7 +184,7 @@ export async function loadRelease(directory, admissionPath, verificationPath, de
     && delivery.hosting.app_installer_uri === FEED_URI && delivery.signing?.subject === PUBLISHER
     && delivery.expected_package_family === FAMILY, 'delivery_source_mismatch');
   const identity = verified.identity;
-  requireValue(verified.schema === 'ofca-msix-release-verification/v1' && verified.mode === 'DirectSigned'
+  requireValue(verified.schema === (v2 ? 'ofca-msix-release-verification/v2' : 'ofca-msix-release-verification/v1') && verified.mode === 'DirectSigned'
     && verified.purpose === 'production' && verified.distribution === 'direct-appinstaller'
     && verified.signature === 'trusted-timestamped' && identity?.Name === NAME && identity.Publisher === PUBLISHER
     && identity.FamilyName === FAMILY && identity.Architecture === 'x64' && identity.Version === record.package_version,
@@ -126,6 +200,7 @@ export async function loadRelease(directory, admissionPath, verificationPath, de
     && fields.packageSha256 === record.package_sha256, 'descriptor_release_mismatch');
   const packagePath = join(directory, record.package_file);
   const info = await regular(packagePath, MAX_PACKAGE);
+  if (v2) requireValue(info.size === record.artifact_set.core.size, 'artifact_size_mismatch');
   const file = await open(packagePath, 'r');
   try {
     const observed = await digest(file.createReadStream({ autoClose: false }), info.size, MAX_PACKAGE);

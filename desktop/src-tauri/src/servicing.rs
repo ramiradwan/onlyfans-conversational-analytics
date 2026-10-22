@@ -1,5 +1,7 @@
 //! Windows owns executable updates. Only the installed, approved source is used.
-use crate::deployment::{DesktopRelease, PackageIdentity};
+use crate::deployment::{
+    DesktopRelease, EngineWindowsIdentity, InstalledArtifact, PackageIdentity,
+};
 use serde::Serialize;
 use std::time::{Duration, Instant};
 
@@ -42,6 +44,735 @@ pub struct PreparedUpdate {
     pub version: String,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum EngineSelection {
+    Absent,
+    Present {
+        full_name: String,
+        version: String,
+        path: String,
+    },
+}
+
+fn selection_after_register(
+    before: &EngineSelection,
+    after: &EngineSelection,
+    target: Option<&str>,
+) -> bool {
+    match (before, after) {
+        (EngineSelection::Absent, EngineSelection::Absent) => true,
+        (
+            EngineSelection::Present { version: old, .. },
+            EngineSelection::Present { version: now, .. },
+        ) => now == old || target == Some(now.as_str()),
+        _ => false,
+    }
+}
+
+fn version_tuple(text: &str) -> Option<[u16; 4]> {
+    let values: Vec<_> = text.split('.').collect();
+    if values.len() != 4 {
+        return None;
+    }
+    let mut result = [0; 4];
+    for (value, slot) in values.iter().zip(&mut result) {
+        *slot = value.parse().ok()?;
+        if slot.to_string() != *value {
+            return None;
+        }
+    }
+    Some(result)
+}
+
+const STAGED_FILE_LIMIT: usize = 65536;
+const FOUNDATION: &str = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";
+const BUNDLE: &str = "http://schemas.microsoft.com/appx/2016/bundle";
+const UAP3: &str = "http://schemas.microsoft.com/appx/manifest/uap/windows10/3";
+#[derive(Debug)]
+struct ManifestNode {
+    name: String,
+    namespace: String,
+    attributes: std::collections::BTreeMap<String, String>,
+    children: Vec<ManifestNode>,
+}
+impl ManifestNode {
+    fn one(&self, ns: &str, name: &str) -> Result<&Self, &'static str> {
+        let mut found = self
+            .children
+            .iter()
+            .filter(|n| n.namespace == ns && n.name == name);
+        let result = found.next().ok_or("staged_identity_mismatch")?;
+        if found.next().is_some() {
+            return Err("staged_identity_mismatch");
+        }
+        Ok(result)
+    }
+    fn has(&self, key: &str, value: &str) -> bool {
+        self.attributes.get(key).is_some_and(|x| x == value)
+    }
+}
+fn manifest_xml(bytes: &[u8]) -> Result<ManifestNode, &'static str> {
+    use quick_xml::{events::Event, Reader};
+    use std::collections::BTreeMap;
+    if bytes.is_empty() || bytes.len() > STAGED_FILE_LIMIT {
+        return Err("staged_evidence_size_invalid");
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| "staged_manifest_invalid")?;
+    let mut reader = Reader::from_str(text.trim_start_matches('\u{feff}'));
+    let mut stack: Vec<(ManifestNode, BTreeMap<String, String>)> = Vec::new();
+    let mut root = None;
+    let mut count = 0;
+    loop {
+        let event = reader.read_event().map_err(|_| "staged_manifest_invalid")?;
+        let empty = matches!(&event, Event::Empty(_));
+        match event {
+            Event::Start(e) | Event::Empty(e) => {
+                count += 1;
+                if count > 1024 || stack.len() > 64 || (stack.is_empty() && root.is_some()) {
+                    return Err("staged_manifest_invalid");
+                }
+                let mut namespaces = stack.last().map(|x| x.1.clone()).unwrap_or_default();
+                let mut attrs = BTreeMap::new();
+                for a in e.attributes() {
+                    let a = a.map_err(|_| "staged_manifest_invalid")?;
+                    let key = a.key.as_ref().to_owned();
+                    let value = a
+                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                        .map_err(|_| "staged_manifest_invalid")?
+                        .into_owned();
+                    if attrs.insert(key.clone(), value.clone()).is_some() {
+                        return Err("staged_manifest_invalid");
+                    }
+                    if key == "xmlns" {
+                        namespaces.insert(String::new(), value);
+                    } else if let Some(prefix) = key.strip_prefix("xmlns:") {
+                        namespaces.insert(prefix.into(), value);
+                    }
+                }
+                let name = e.name().as_ref().to_owned();
+                let (prefix, local) = name.split_once(':').unwrap_or(("", name.as_str()));
+                let namespace = namespaces
+                    .get(prefix)
+                    .ok_or("staged_manifest_invalid")?
+                    .clone();
+                let node = ManifestNode {
+                    name: local.into(),
+                    namespace,
+                    attributes: attrs,
+                    children: Vec::new(),
+                };
+                if empty {
+                    if let Some(parent) = stack.last_mut() {
+                        parent.0.children.push(node)
+                    } else {
+                        root = Some(node)
+                    }
+                } else {
+                    stack.push((node, namespaces));
+                }
+            }
+            Event::End(_) => {
+                let (node, _) = stack.pop().ok_or("staged_manifest_invalid")?;
+                if let Some(parent) = stack.last_mut() {
+                    parent.0.children.push(node)
+                } else {
+                    root = Some(node)
+                }
+            }
+            Event::Eof => {
+                if !stack.is_empty() {
+                    return Err("staged_manifest_invalid");
+                }
+                return root.ok_or("staged_manifest_invalid");
+            }
+            Event::DocType(_) | Event::GeneralRef(_) => return Err("staged_manifest_invalid"),
+            Event::Decl(d) => {
+                if root.is_some()
+                    || !stack.is_empty()
+                    || d.version().map_err(|_| "staged_manifest_invalid")?.as_ref() != "1.0"
+                    || d.encoding()
+                        .transpose()
+                        .map_err(|_| "staged_manifest_invalid")?
+                        .is_some_and(|v| v.as_ref() != "utf-8" && v.as_ref() != "UTF-8")
+                {
+                    return Err("staged_manifest_invalid");
+                }
+            }
+            Event::Text(t)
+                if stack.is_empty() && !t.as_ref().bytes().all(|b| b.is_ascii_whitespace()) =>
+            {
+                return Err("staged_manifest_invalid")
+            }
+            _ => (),
+        }
+    }
+}
+
+fn application_manifest(
+    bytes: &[u8],
+    actual: &PackageIdentity,
+    application: Option<&str>,
+    main: Option<&str>,
+) -> Result<(), &'static str> {
+    let root = manifest_xml(bytes)?;
+    if root.name != "Package" || root.namespace != FOUNDATION {
+        return Err("staged_identity_mismatch");
+    }
+    let id = root.one(FOUNDATION, "Identity")?;
+    if !id.has("Name", &actual.name)
+        || !id.has("Publisher", &actual.publisher)
+        || !id.has("Version", &actual.version)
+        || !id.has("ProcessorArchitecture", "x64")
+    {
+        return Err("staged_identity_mismatch");
+    }
+    if let Some(application) = application {
+        let apps = root.one(FOUNDATION, "Applications")?;
+        if apps.children.len() != 1 || !apps.one(FOUNDATION, "Application")?.has("Id", application)
+        {
+            return Err("staged_identity_mismatch");
+        }
+    }
+    if let Some(main) = main {
+        let deps = root.one(FOUNDATION, "Dependencies")?;
+        let relation = deps.one(UAP3, "MainPackageDependency")?;
+        if relation.attributes.len() != 1 || !relation.has("Name", main) {
+            return Err("staged_relation_mismatch");
+        }
+    }
+    Ok(())
+}
+
+fn bundle_manifest(
+    bytes: &[u8],
+    main: &PackageIdentity,
+    engine: &crate::servicing_feed::Coordinate,
+    identity: &EngineWindowsIdentity,
+) -> Result<(), &'static str> {
+    let root = manifest_xml(bytes)?;
+    if root.name != "Bundle"
+        || root.namespace != BUNDLE
+        || !root.has("SchemaVersion", "5.0")
+        || root.children.len() != 3
+    {
+        return Err("staged_relation_mismatch");
+    }
+    let id = root.one(BUNDLE, "Identity")?;
+    let optional = root.one(BUNDLE, "OptionalBundle")?;
+    let main_file = format!("ConversationAnalytics_{}_x64.msix", main.version);
+    let engine_file = format!("TextAnalysisEngine_{}_x64.msix", engine.version);
+    let bundle_file = engine
+        .package_uri
+        .rsplit('/')
+        .next()
+        .ok_or("staged_relation_mismatch")?;
+    if !id.has("Name", &main.name)
+        || !id.has("Publisher", &main.publisher)
+        || !id.has("Version", &main.version)
+        || !optional.has("Name", &identity.name)
+        || !optional.has("Publisher", &identity.publisher)
+        || !optional.has("Version", &engine.version)
+        || !optional.has("FileName", bundle_file)
+    {
+        return Err("staged_relation_mismatch");
+    }
+    let packages = root.one(BUNDLE, "Packages")?;
+    if packages.children.len() != 1 || optional.children.len() != 1 {
+        return Err("staged_relation_mismatch");
+    }
+    for (node, version, file) in [
+        (
+            packages.one(BUNDLE, "Package")?,
+            main.version.as_str(),
+            main_file.as_str(),
+        ),
+        (
+            optional.one(BUNDLE, "Package")?,
+            engine.version.as_str(),
+            engine_file.as_str(),
+        ),
+    ] {
+        if !node.has("Type", "application")
+            || !node.has("Architecture", "x64")
+            || !node.has("Version", version)
+            || !node.has("FileName", file)
+        {
+            return Err("staged_relation_mismatch");
+        }
+    }
+    Ok(())
+}
+
+fn target_descriptor(
+    bytes: &[u8],
+    current: &DesktopRelease,
+    actual: &PackageIdentity,
+    target: &crate::servicing_feed::Target,
+) -> Result<DesktopRelease, &'static str> {
+    if bytes.is_empty() || bytes.len() > STAGED_FILE_LIMIT {
+        return Err("staged_evidence_size_invalid");
+    }
+    let target_release: DesktopRelease =
+        serde_json::from_slice(bytes).map_err(|_| "desktop_descriptor_invalid")?;
+    target_release.validate_target(actual)?;
+    if !target_release.target_matches(current) {
+        return Err("staged_identity_mismatch");
+    }
+    match (target, &target_release.servicing) {
+        (
+            crate::servicing_feed::Target::RelatedBundle {
+                engine_identity,
+                engine,
+                ..
+            },
+            Some(s),
+        ) => match &s.installed_artifact {
+            InstalledArtifact::RelatedBundle {
+                engine: declared, ..
+            } if &declared.identity == engine_identity
+                && declared.package_version == engine.version =>
+            {
+                ()
+            }
+            _ => return Err("staged_relation_mismatch"),
+        },
+        (crate::servicing_feed::Target::MainPackage { .. }, Some(s))
+            if matches!(s.installed_artifact, InstalledArtifact::MainPackage { .. }) =>
+        {
+            ()
+        }
+        _ => return Err("staged_relation_mismatch"),
+    }
+    Ok(target_release)
+}
+
+#[cfg(windows)]
+struct StagedFiles {
+    held: Vec<std::fs::File>,
+    bytes: usize,
+}
+#[cfg(windows)]
+impl StagedFiles {
+    fn read(&mut self, root: &std::path::Path, relative: &str) -> Result<Vec<u8>, &'static str> {
+        use std::{
+            fs::OpenOptions,
+            io::Read,
+            os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
+        };
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+            FILE_SHARE_READ,
+        };
+        if !root.is_absolute()
+            || root.to_string_lossy().starts_with("\\\\")
+            || root.components().any(|p| {
+                matches!(
+                    p,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )
+            })
+        {
+            return Err("staged_path_unprotected");
+        }
+        let path = root.join(relative);
+        if !path.starts_with(root)
+            || relative
+                .split('/')
+                .any(|s| s.is_empty() || matches!(s, "." | "..") || s.contains([':', '\\']))
+        {
+            return Err("staged_path_unprotected");
+        }
+        for parent in path
+            .parent()
+            .ok_or("staged_path_unprotected")?
+            .ancestors()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            let access = windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES
+                | if parent.starts_with(root) {
+                    windows_sys::Win32::Storage::FileSystem::READ_CONTROL
+                } else {
+                    0
+                };
+            let file = OpenOptions::new()
+                .access_mode(access)
+                .share_mode(FILE_SHARE_READ)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+                .open(parent)
+                .map_err(|_| "staged_path_unprotected")?;
+            let metadata = file.metadata().map_err(|_| "staged_path_unprotected")?;
+            use std::os::windows::fs::MetadataExt;
+            if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            {
+                return Err("staged_path_unprotected");
+            }
+            if parent.starts_with(root) {
+                protected_package_file(file.as_raw_handle())?;
+            }
+            stable_file_path(&file, parent)?;
+            self.held.push(file);
+        }
+        let mut file = OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(&path)
+            .map_err(|_| "staged_package_unavailable")?;
+        let metadata = file.metadata().map_err(|_| "staged_package_unavailable")?;
+        use std::os::windows::fs::MetadataExt;
+        if !metadata.is_file()
+            || metadata.len() == 0
+            || metadata.len() > STAGED_FILE_LIMIT as u64
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        {
+            return Err("staged_evidence_size_invalid");
+        }
+        protected_package_file(file.as_raw_handle())?;
+        stable_file_path(&file, &path)?;
+        let mut bytes = Vec::new();
+        (&mut file)
+            .take(STAGED_FILE_LIMIT as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "staged_package_unavailable")?;
+        if bytes.is_empty()
+            || bytes.len() > STAGED_FILE_LIMIT
+            || bytes.len() as u64 != metadata.len()
+        {
+            return Err("staged_evidence_size_invalid");
+        }
+        self.bytes = self
+            .bytes
+            .checked_add(bytes.len())
+            .ok_or("staged_evidence_size_invalid")?;
+        if self.bytes > 4 * STAGED_FILE_LIMIT {
+            return Err("staged_evidence_size_invalid");
+        }
+        self.held.push(file);
+        Ok(bytes)
+    }
+}
+
+#[cfg(windows)]
+fn stable_file_path(file: &std::fs::File, expected: &std::path::Path) -> Result<(), &'static str> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
+    let mut value = vec![0u16; 32768];
+    let size = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle(),
+            value.as_mut_ptr(),
+            value.len() as u32,
+            0,
+        )
+    };
+    if size == 0 || size as usize >= value.len() {
+        return Err("staged_path_unprotected");
+    }
+    let value =
+        String::from_utf16(&value[..size as usize]).map_err(|_| "staged_path_unprotected")?;
+    let value = value
+        .strip_prefix("\\\\?\\")
+        .ok_or("staged_path_unprotected")?;
+    if !value.eq_ignore_ascii_case(&expected.to_string_lossy()) {
+        return Err("staged_path_unprotected");
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn protected_package_file(handle: std::os::windows::io::RawHandle) -> Result<(), &'static str> {
+    use std::{
+        mem::{size_of, zeroed},
+        ptr::null_mut,
+    };
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
+        Security::{
+            Authorization::{ConvertSidToStringSidW, GetSecurityInfo, SE_FILE_OBJECT},
+            *,
+        },
+    };
+    let (mut owner, mut acl, mut descriptor) = (null_mut(), null_mut(), null_mut());
+    let code = unsafe {
+        GetSecurityInfo(
+            handle,
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            &mut owner,
+            null_mut(),
+            &mut acl,
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    if code != 0 {
+        return Err("staged_path_unprotected");
+    }
+    struct Allocation(*mut std::ffi::c_void);
+    impl Drop for Allocation {
+        fn drop(&mut self) {
+            unsafe {
+                LocalFree(self.0);
+            }
+        }
+    }
+    let _descriptor = Allocation(descriptor);
+    let sid_text = |sid: PSID| -> Result<String, &'static str> {
+        let mut text = null_mut();
+        if sid.is_null()
+            || unsafe { IsValidSid(sid) } == 0
+            || unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0
+        {
+            return Err("staged_path_unprotected");
+        }
+        let _text = Allocation(text.cast());
+        let mut n = 0;
+        unsafe {
+            while n < 256 && *text.add(n) != 0 {
+                n += 1;
+            }
+        }
+        if n == 256 {
+            return Err("staged_path_unprotected");
+        }
+        String::from_utf16(unsafe { std::slice::from_raw_parts(text, n) })
+            .map_err(|_| "staged_path_unprotected")
+    };
+    let trusted = |sid: &str| {
+        matches!(
+            sid,
+            "S-1-5-18"
+                | "S-1-5-32-544"
+                | "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+        )
+    };
+    if !trusted(&sid_text(owner)?) || acl.is_null() || unsafe { IsValidAcl(acl) } == 0 {
+        return Err("staged_path_unprotected");
+    }
+    let mut information: ACL_SIZE_INFORMATION = unsafe { zeroed() };
+    if unsafe {
+        GetAclInformation(
+            acl,
+            &mut information as *mut _ as _,
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
+        )
+    } == 0
+        || information.AceCount > 256
+    {
+        return Err("staged_path_unprotected");
+    }
+    for index in 0..information.AceCount {
+        let mut pointer = null_mut();
+        if unsafe { GetAce(acl, index, &mut pointer) } == 0 {
+            return Err("staged_path_unprotected");
+        }
+        let header = unsafe { &*pointer.cast::<ACE_HEADER>() };
+        if header.AceType == 1 {
+            continue;
+        }
+        if header.AceType != 0 || header.AceSize < size_of::<ACCESS_ALLOWED_ACE>() as u16 {
+            return Err("staged_path_unprotected");
+        }
+        let ace = unsafe { &*pointer.cast::<ACCESS_ALLOWED_ACE>() };
+        let sid = sid_text((&ace.SidStart as *const u32) as _)?;
+        // Content, deletion and ACL writes are reserved to Windows servicing.
+        if ace.Mask & 0x500d0156 != 0 && !trusted(&sid) && sid != "S-1-3-4" {
+            return Err("staged_path_unprotected");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn validate_staged_target(
+    current: &DesktopRelease,
+    actual: &PackageIdentity,
+    target: &crate::servicing_feed::Target,
+    selection: &EngineSelection,
+) -> Result<(String, StagedFiles), &'static str> {
+    use crate::servicing_feed::Target;
+    let family = actual.family.as_deref().ok_or("staged_identity_mismatch")?;
+    let suffix = family
+        .strip_prefix(&(actual.name.clone() + "_"))
+        .ok_or("staged_identity_mismatch")?;
+    let core = target.core();
+    let main = PackageIdentity {
+        name: actual.name.clone(),
+        publisher: actual.publisher.clone(),
+        version: core.version.clone(),
+        architecture: "x64".into(),
+        family: actual.family.clone(),
+    };
+    let root = staged_root(&format!("{}_{}_x64__{}", actual.name, core.version, suffix))?;
+    let mut files = StagedFiles {
+        held: Vec::new(),
+        bytes: 0,
+    };
+    let app = files.read(&root, "AppxManifest.xml")?;
+    application_manifest(&app, &main, Some(&current.identity.application_id), None)?;
+    let descriptor = files.read(&root, "app/desktop-release.json")?;
+    target_descriptor(&descriptor, current, &main, target)?;
+    if let Target::RelatedBundle {
+        engine_identity,
+        engine,
+        ..
+    } = target
+    {
+        let bundle = staged_root(&format!(
+            "{}_{}_neutral_~_{}",
+            actual.name, core.version, suffix
+        ))?;
+        bundle_manifest(
+            &files.read(&bundle, "AppxMetadata/AppxBundleManifest.xml")?,
+            &main,
+            engine,
+            engine_identity,
+        )?;
+        if matches!(selection, EngineSelection::Present { .. }) {
+            let engine_root = staged_root(&format!(
+                "{}_{}_x64__{}",
+                engine_identity.name, engine.version, suffix
+            ))?;
+            application_manifest(
+                &files.read(&engine_root, "AppxManifest.xml")?,
+                &PackageIdentity {
+                    name: engine_identity.name.clone(),
+                    publisher: engine_identity.publisher.clone(),
+                    version: engine.version.clone(),
+                    architecture: "x64".into(),
+                    family: Some(engine_identity.family.clone()),
+                },
+                None,
+                Some(&actual.name),
+            )?;
+        }
+        let maximum = if matches!(selection, EngineSelection::Absent) {
+            3
+        } else {
+            4
+        };
+        if files.bytes > maximum * STAGED_FILE_LIMIT {
+            return Err("staged_evidence_size_invalid");
+        }
+    }
+    let uri = url::Url::from_file_path(root.join("AppxManifest.xml"))
+        .map_err(|_| "staged_package_unavailable")?
+        .into();
+    Ok((uri, files))
+}
+
+#[cfg(windows)]
+fn selected_engine(
+    manager: &windows_runtime::Management::Deployment::PackageManager,
+    release: &DesktopRelease,
+    main: &PackageIdentity,
+) -> Result<EngineSelection, &'static str> {
+    use windows_runtime::{core::HSTRING, Management::Deployment::PackageTypes};
+    let Some(expected) = release.engine_identity() else {
+        return Ok(EngineSelection::Absent);
+    };
+    expected.validate(main)?;
+    let found = manager
+        .FindPackagesByUserSecurityIdNamePublisherWithPackageTypes(
+            &HSTRING::new(),
+            &HSTRING::from(&expected.name),
+            &HSTRING::from(&expected.publisher),
+            PackageTypes::Optional,
+        )
+        .map_err(|_| "optional_selection_unavailable")?;
+    let iterator = found
+        .First()
+        .map_err(|_| "optional_selection_unavailable")?;
+    let mut result = None;
+    while iterator
+        .HasCurrent()
+        .map_err(|_| "optional_selection_unavailable")?
+    {
+        if result.is_some() {
+            return Err("optional_selection_ambiguous");
+        }
+        let p = iterator
+            .Current()
+            .map_err(|_| "optional_selection_unavailable")?;
+        let id = p.Id().map_err(|_| "optional_selection_unavailable")?;
+        let (_, observed) =
+            observe_package(p.clone()).map_err(|_| "optional_selection_unavailable")?;
+        if observed.identity.name != expected.name
+            || observed.identity.publisher != expected.publisher
+            || observed.identity.family.as_deref() != Some(expected.family.as_str())
+            || observed.identity.architecture != "x64"
+            || !crate::deployment::engine_version(&observed.identity.version)
+            || observed.origin != Origin::SignedDirect
+            || observed.signature != Signature::SignedDirect
+            || !p
+                .IsOptional()
+                .map_err(|_| "optional_selection_unavailable")?
+            || p.IsBundle().map_err(|_| "optional_selection_unavailable")?
+            || !p
+                .Status()
+                .and_then(|s| s.VerifyIsOK())
+                .map_err(|_| "optional_selection_unavailable")?
+        {
+            return Err("optional_identity_mismatch");
+        }
+        let deps = p
+            .Dependencies()
+            .map_err(|_| "optional_selection_unavailable")?;
+        if deps.Size().map_err(|_| "optional_selection_unavailable")? > 64 {
+            return Err("optional_relation_mismatch");
+        }
+        let mut relations = 0;
+        for index in 0..deps.Size().map_err(|_| "optional_selection_unavailable")? {
+            let dep = deps
+                .GetAt(index)
+                .and_then(|p| p.Id())
+                .map_err(|_| "optional_selection_unavailable")?;
+            if dep
+                .FamilyName()
+                .map_err(|_| "optional_selection_unavailable")?
+                .to_string()
+                == main.family.as_deref().unwrap_or("")
+            {
+                if dep
+                    .Name()
+                    .map_err(|_| "optional_selection_unavailable")?
+                    .to_string()
+                    != main.name
+                    || dep
+                        .Publisher()
+                        .map_err(|_| "optional_selection_unavailable")?
+                        .to_string()
+                        != main.publisher
+                {
+                    return Err("optional_relation_mismatch");
+                }
+                relations += 1;
+            }
+        }
+        if relations != 1 {
+            return Err("optional_relation_mismatch");
+        }
+        result = Some(EngineSelection::Present {
+            full_name: id
+                .FullName()
+                .map_err(|_| "optional_selection_unavailable")?
+                .to_string(),
+            version: observed.identity.version,
+            path: p
+                .InstalledPath()
+                .map_err(|_| "optional_selection_unavailable")?
+                .to_string(),
+        });
+        iterator
+            .MoveNext()
+            .map_err(|_| "optional_selection_unavailable")?;
+    }
+    Ok(result.unwrap_or(EngineSelection::Absent))
+}
+
 /// Windows downloads and validates the package. Only descriptor bytes cross
 /// this process; a successful deferred registration is required before drain.
 #[cfg(windows)]
@@ -77,8 +808,53 @@ pub fn prepare_direct(
         return Err("deployment_cancelled");
     }
     let manager: PackageManager = activate_owned().map_err(|_| "windows_stage_failed")?;
-    let uri = owned_uri(&target.package_uri).map_err(|_| "windows_stage_failed")?;
+    let selection = selected_engine(&manager, release, &actual.identity)?;
+    if let (
+        EngineSelection::Present { version, .. },
+        crate::servicing_feed::Target::RelatedBundle { engine, .. },
+    ) = (&selection, &target)
+    {
+        if version_tuple(&engine.version) < version_tuple(version) {
+            return Err("optional_target_downgrade");
+        }
+    }
+    let uri = owned_uri(&target.core().package_uri).map_err(|_| "windows_stage_failed")?;
     let options: StagePackageOptions = activate_owned().map_err(|_| "windows_stage_failed")?;
+    if let (
+        EngineSelection::Present { .. },
+        crate::servicing_feed::Target::RelatedBundle { engine, .. },
+    ) = (&selection, &target)
+    {
+        options
+            .RelatedPackageUris()
+            .and_then(|v| v.Append(&owned_uri(&engine.package_uri)?))
+            .map_err(|_| "windows_stage_failed")?;
+    }
+    let related_count = u32::from(matches!(
+        (&selection, &target),
+        (
+            EngineSelection::Present { .. },
+            crate::servicing_feed::Target::RelatedBundle { .. }
+        )
+    ));
+    if options
+        .OptionalPackageFamilyNames()
+        .and_then(|v| v.Size())
+        .map_err(|_| "windows_stage_failed")?
+        != 0
+        || options
+            .OptionalPackageUris()
+            .and_then(|v| v.Size())
+            .map_err(|_| "windows_stage_failed")?
+            != 0
+        || options
+            .RelatedPackageUris()
+            .and_then(|v| v.Size())
+            .map_err(|_| "windows_stage_failed")?
+            != related_count
+    {
+        return Err("windows_stage_options_invalid");
+    }
     let staged = manager
         .StagePackageByUriAsync(&uri, &options)
         .map_err(|_| "windows_stage_failed")?;
@@ -87,19 +863,29 @@ pub fn prepare_direct(
     let full_name = HSTRING::from(format!(
         "{}_{}_x64__{}",
         actual.identity.name,
-        target.version,
+        target.core().version,
         current
             .Id()
             .and_then(|id| id.PublisherId())
             .map_err(|_| "staged_identity_mismatch")?
     ));
-    let manifest = staged_manifest(&full_name.to_string())?;
+    let (manifest, _staged_evidence) = if release.servicing.is_some() {
+        let (uri, files) = validate_staged_target(release, &actual.identity, &target, &selection)?;
+        (uri, Some(files))
+    } else {
+        (staged_manifest(&full_name.to_string())?, None)
+    };
     // Recheck effective settings after the potentially long Windows download.
     let (again, actual_again) = observe().map_err(|_| "windows_source_unavailable")?;
     if bind(release, &actual_again) != UpdateSource::DirectAppinstaller {
         return Err("direct_source_required");
     }
     automatic_policy(&again)?;
+    if actual_again.identity != actual.identity
+        || selected_engine(&manager, release, &actual_again.identity)? != selection
+    {
+        return Err("update_selection_changed");
+    }
     if cancelled() {
         return Err("deployment_cancelled");
     }
@@ -111,6 +897,27 @@ pub fn prepare_direct(
     options
         .SetDeferRegistrationWhenPackagesAreInUse(true)
         .map_err(|_| "windows_registration_failed")?;
+    if matches!(selection, EngineSelection::Present { .. }) {
+        let family = &release
+            .engine_identity()
+            .ok_or("optional_identity_mismatch")?
+            .family;
+        options
+            .OptionalPackageFamilyNames()
+            .and_then(|v| v.Append(&HSTRING::from(family)))
+            .map_err(|_| "windows_registration_failed")?;
+    }
+    if !options
+        .DeferRegistrationWhenPackagesAreInUse()
+        .map_err(|_| "windows_registration_failed")?
+        || options
+            .OptionalPackageFamilyNames()
+            .and_then(|v| v.Size())
+            .map_err(|_| "windows_registration_failed")?
+            != u32::from(matches!(selection, EngineSelection::Present { .. }))
+    {
+        return Err("windows_registration_options_invalid");
+    }
     let registration = manager
         .RegisterPackageByUriAsync(&manifest, &options)
         .map_err(|_| "windows_registration_failed")?;
@@ -122,14 +929,41 @@ pub fn prepare_direct(
     {
         return Err("windows_registration_not_deferred");
     }
+    let (after, actual_after) = observe().map_err(|_| "windows_source_unavailable")?;
+    if actual_after.identity != actual.identity
+        || bind(release, &actual_after) != UpdateSource::DirectAppinstaller
+    {
+        return Err("update_selection_changed");
+    }
+    automatic_policy(&after)?;
+    let target_engine = match &target {
+        crate::servicing_feed::Target::RelatedBundle { engine, .. } => {
+            Some(engine.version.as_str())
+        }
+        _ => None,
+    };
+    if !selection_after_register(
+        &selection,
+        &selected_engine(&manager, release, &actual_after.identity)?,
+        target_engine,
+    ) {
+        return Err("update_selection_changed");
+    }
     Ok(PreparedUpdate {
         package_full_name: full_name.to_string(),
-        version: target.version,
+        version: target.core().version.clone(),
     })
 }
 
 #[cfg(windows)]
 fn staged_manifest(full_name: &str) -> Result<String, &'static str> {
+    url::Url::from_file_path(staged_root(full_name)?.join("AppxManifest.xml"))
+        .map(|uri| uri.into())
+        .map_err(|_| "staged_package_unavailable")
+}
+
+#[cfg(windows)]
+fn staged_root(full_name: &str) -> Result<std::path::PathBuf, &'static str> {
     use std::{os::windows::ffi::OsStringExt, ptr::null_mut};
     use windows_sys::Win32::{
         Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
@@ -170,9 +1004,7 @@ fn staged_manifest(full_name: &str) -> Result<String, &'static str> {
         if !path.is_absolute() {
             return Err("staged_package_unavailable");
         }
-        url::Url::from_file_path(path.join("AppxManifest.xml"))
-            .map(|uri| uri.into())
-            .map_err(|_| "staged_package_unavailable")
+        Ok(path)
     }
 }
 
@@ -667,6 +1499,7 @@ fn observe_package(
         Observation {
             identity: PackageIdentity {
                 name: id.Name()?.to_string(),
+                family: Some(id.FamilyName()?.to_string()),
                 publisher: id.Publisher()?.to_string(),
                 version: format!(
                     "{}.{}.{}.{}",
@@ -808,6 +1641,7 @@ mod tests {
         let value = release(store);
         Observation {
             identity: PackageIdentity {
+                family: None,
                 name: value.identity.name,
                 publisher: value.identity.publisher,
                 version: "1.0.1.0".into(),
@@ -826,6 +1660,123 @@ mod tests {
             app_installer_uri: value.app_installer_uri,
         }
     }
+    #[test]
+    fn alias_movement_is_limited_to_own_registration_and_stable_choice() {
+        let old = EngineSelection::Present {
+            full_name: "Engine_old".into(),
+            version: "42.0.0.0".into(),
+            path: "C:/old".into(),
+        };
+        let new = EngineSelection::Present {
+            full_name: "Engine_new".into(),
+            version: "43.0.0.0".into(),
+            path: "C:/new".into(),
+        };
+        assert!(selection_after_register(&old, &old, Some("43.0.0.0")));
+        assert!(selection_after_register(&old, &new, Some("43.0.0.0")));
+        assert!(!selection_after_register(&old, &new, None));
+        assert!(!selection_after_register(
+            &old,
+            &EngineSelection::Absent,
+            Some("43.0.0.0")
+        ));
+        assert!(!selection_after_register(
+            &EngineSelection::Absent,
+            &new,
+            Some("43.0.0.0")
+        ));
+        assert!(selection_after_register(
+            &EngineSelection::Absent,
+            &EngineSelection::Absent,
+            Some("43.0.0.0")
+        ));
+        assert_ne!(old, new);
+    }
+
+    #[test]
+    fn staged_bundle_relation_is_required_even_without_an_engine_object() {
+        let main = PackageIdentity {
+            name: "Example.Main".into(),
+            publisher: "CN=Example".into(),
+            version: "1.0.11.0".into(),
+            architecture: "x64".into(),
+            family: Some("Example.Main_0123456789abc".into()),
+        };
+        let identity = EngineWindowsIdentity {
+            name: "Example.Engine".into(),
+            publisher: main.publisher.clone(),
+            family: "Example.Engine_0123456789abc".into(),
+            architecture: "x64".into(),
+        };
+        let engine = crate::servicing_feed::Coordinate {
+            version: "42.0.2.3".into(),
+            package_uri: "https://example.test/TextAnalysisEngine_42.0.2.3_x64.msixbundle".into(),
+        };
+        let bundle = format!(
+            r#"<Bundle xmlns="{BUNDLE}" SchemaVersion="5.0"><Identity Name="Example.Main" Publisher="CN=Example" Version="1.0.11.0"/><Packages><Package Type="application" Architecture="x64" Version="1.0.11.0" FileName="ConversationAnalytics_1.0.11.0_x64.msix"/></Packages><OptionalBundle Name="Example.Engine" Publisher="CN=Example" Version="42.0.2.3" FileName="TextAnalysisEngine_42.0.2.3_x64.msixbundle"><Package Type="application" Architecture="x64" Version="42.0.2.3" FileName="TextAnalysisEngine_42.0.2.3_x64.msix"/></OptionalBundle></Bundle>"#
+        );
+        assert_eq!(
+            bundle_manifest(bundle.as_bytes(), &main, &engine, &identity),
+            Ok(())
+        );
+        for bad in [
+            bundle.replace("42.0.2.3", "42.0.2.4"),
+            bundle.replace("2016/bundle", "2013/bundle"),
+            bundle.replace("Example.Engine", "Other.Engine"),
+            bundle.replace("<Packages>", "<Packages><Package/>"),
+            bundle.replace("x64.msix\"", "arm64.msix\""),
+        ] {
+            assert!(bundle_manifest(bad.as_bytes(), &main, &engine, &identity).is_err());
+        }
+    }
+
+    #[test]
+    fn signed_fixed_manifest_identity_relation_and_bounds_are_required() {
+        let main = PackageIdentity {
+            name: "Example.Main".into(),
+            publisher: "CN=Example".into(),
+            version: "1.0.11.0".into(),
+            architecture: "x64".into(),
+            family: Some("Example.Main_0123456789abc".into()),
+        };
+        let manifest = format!(
+            r#"<Package xmlns="{FOUNDATION}" xmlns:uap3="{UAP3}"><Identity Name="Example.Main" Publisher="CN=Example" Version="1.0.11.0" ProcessorArchitecture="x64"/><Applications><Application Id="Bridge"/></Applications><Dependencies><uap3:MainPackageDependency Name="Example.Parent"/></Dependencies></Package>"#
+        );
+        assert_eq!(
+            application_manifest(
+                manifest.as_bytes(),
+                &main,
+                Some("Bridge"),
+                Some("Example.Parent")
+            ),
+            Ok(())
+        );
+        assert!(application_manifest(
+            manifest
+                .replace("Example.Parent", "Wrong.Parent")
+                .as_bytes(),
+            &main,
+            Some("Bridge"),
+            Some("Example.Parent")
+        )
+        .is_err());
+        assert!(application_manifest(
+            manifest
+                .replace(
+                    "<Application Id=\"Bridge\"/>",
+                    "<Application Id=\"Bridge\"/><Application Id=\"Other\"/>"
+                )
+                .as_bytes(),
+            &main,
+            Some("Bridge"),
+            None
+        )
+        .is_err());
+        assert!(manifest_xml(&vec![b' '; STAGED_FILE_LIMIT + 1]).is_err());
+        assert!(manifest_xml(b"<!DOCTYPE Package><Package/>").is_err());
+        assert!(manifest_xml(manifest.replace("xmlns:uap3=", "unbound=").as_bytes()).is_err());
+    }
+
     #[test]
     fn direct_binding_requires_exact_registered_source_and_signed_origin() {
         let release = release(false);
