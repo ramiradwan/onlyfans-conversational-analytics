@@ -85,6 +85,7 @@ $diagnostic = [ordered]@{schema='native-permission-diagnostic/v1';stage='started
 function Write-NativePermissionStage([string]$Stage) {
   $diagnostic.stage = $Stage
   [Console]::Out.WriteLine(($diagnostic | ConvertTo-Json -Compress))
+  [Console]::Out.Flush()
 }
 Write-NativePermissionStage 'started'
 Add-Type -AssemblyName UIAutomationClient
