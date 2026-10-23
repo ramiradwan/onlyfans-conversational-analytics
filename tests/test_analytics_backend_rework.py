@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -92,7 +93,7 @@ from app.protocol.payloads import (
     SnapshotRecordCounts,
 )
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
-from app.services import insights_service
+from app.services import insights_service, retention_maintenance
 from app.transport.manager import DEV_AGENT_AUTH_TICKET
 from app.canonical.read_models import AccountReadModel
 from tests.analytics_fixture_clock import fixture_clock
@@ -407,7 +408,8 @@ def test_protected_analytics_openapi_requires_auth_and_structured_errors() -> No
 
 
 @pytest.fixture(autouse=True)
-def isolated_default_runtime():
+def isolated_default_runtime(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(retention_maintenance, "utc_now", fixture_clock)
     transport_manager.reset()
     analytics_runtime.reset_analytics_runtimes()
     app.dependency_overrides.clear()
@@ -823,11 +825,15 @@ async def test_app_shutdown_awaits_scheduler_and_logs_fixed_timeout(
 ) -> None:
     calls: list[str] = []
 
+    async def close_maintenance() -> bool:
+        calls.append("maintenance")
+        return True
+
     async def stop_transport() -> None:
         calls.append("transport")
 
     async def close_scheduler(*, timeout: float) -> bool:
-        assert timeout == 5.0
+        assert timeout == 4.75
         await asyncio.sleep(0)
         calls.append("scheduler")
         return False
@@ -835,6 +841,15 @@ async def test_app_shutdown_awaits_scheduler_and_logs_fixed_timeout(
     async def disconnect_broadcast() -> None:
         calls.append("broadcast")
 
+    ticks = iter((100.0, 100.25))
+    monkeypatch.setattr(
+        main_module, "time", SimpleNamespace(monotonic=lambda: next(ticks))
+    )
+    monkeypatch.setattr(
+        retention_maintenance,
+        "shutdown_default_retention_maintenance",
+        close_maintenance,
+    )
     monkeypatch.setattr(main_module.transport_manager, "stop", stop_transport)
     monkeypatch.setattr(
         main_module.analytics_runtime,
@@ -850,7 +865,7 @@ async def test_app_shutdown_awaits_scheduler_and_logs_fixed_timeout(
 
     await main_module.shutdown_event()
 
-    assert calls == ["transport", "scheduler", "broadcast"]
+    assert calls == ["maintenance", "scheduler", "transport", "broadcast"]
     assert main_module.app.state.runtime_shutdown_drained is False
     assert "reason_code=analytics_projection_shutdown_timeout" in caplog.text
     assert "event_type=shutdown count=1" in caplog.text

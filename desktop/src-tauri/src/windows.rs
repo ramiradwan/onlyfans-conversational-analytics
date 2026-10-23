@@ -23,8 +23,9 @@ use windows_sys::Win32::{
 };
 
 type Result<T> = std::result::Result<T, &'static str>;
+pub(crate) const OUTER_JOB_QUERY: u32 = 0x0004;
 
-pub struct Handle(HANDLE);
+pub struct Handle(pub(crate) HANDLE);
 // Kernel handles are process-wide. Ownership still has exactly one Drop.
 unsafe impl Send for Handle {}
 impl Drop for Handle {
@@ -35,7 +36,7 @@ impl Drop for Handle {
     }
 }
 impl Handle {
-    fn checked(raw: HANDLE, error: &'static str) -> Result<Self> {
+    pub(crate) fn checked(raw: HANDLE, error: &'static str) -> Result<Self> {
         if raw.is_null() || raw == INVALID_HANDLE_VALUE {
             Err(error)
         } else {
@@ -44,7 +45,7 @@ impl Handle {
     }
 }
 
-fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
+pub(crate) fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
 }
 
@@ -465,6 +466,11 @@ pub fn package_identity() -> Result<Option<crate::deployment::PackageIdentity>> 
         let version = identity.version.Anonymous.Version;
         Ok(Some(crate::deployment::PackageIdentity {
             name: read(identity.name)?,
+            family: Some(format!(
+                "{}_{}",
+                read(identity.name)?,
+                read(identity.publisherId)?
+            )),
             publisher: read(identity.publisher)?,
             version: format!(
                 "{}.{}.{}.{}",
@@ -596,12 +602,12 @@ pub fn listeners() -> Result<Vec<Listener>> {
     Ok(result)
 }
 
-struct Attributes {
+pub(crate) struct Attributes {
     storage: Vec<usize>,
     initialized: bool,
 }
 impl Attributes {
-    fn new(handles: &mut [HANDLE]) -> Result<Self> {
+    pub(crate) fn new(handles: &mut [HANDLE]) -> Result<Self> {
         unsafe {
             let mut size = 0;
             InitializeProcThreadAttributeList(null_mut(), 1, 0, &mut size);
@@ -628,7 +634,7 @@ impl Attributes {
             Ok(this)
         }
     }
-    fn raw(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+    pub(crate) fn raw(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
         self.storage.as_mut_ptr().cast()
     }
 }
@@ -675,6 +681,20 @@ impl Brain {
             {
                 return Err("child_start_failed");
             }
+            let mut query = null_mut();
+            if DuplicateHandle(
+                GetCurrentProcess(),
+                job.0,
+                GetCurrentProcess(),
+                &mut query,
+                OUTER_JOB_QUERY,
+                1,
+                0,
+            ) == 0
+            {
+                return Err("child_start_failed");
+            }
+            let query = Handle::checked(query, "child_start_failed")?;
             let security = SECURITY_ATTRIBUTES {
                 nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
                 lpSecurityDescriptor: null_mut(),
@@ -705,8 +725,8 @@ impl Brain {
                 return Err("child_start_failed");
             }
             // A windowless Python process still needs valid standard handles.
-            // Inherit only the null device, parent-lifetime reader and
-            // child-owned bootstrap writer. The status reader stays here.
+            // Inherit the null device, lifetime reader, bootstrap writer and
+            // query-only Job reference. The status reader stays here.
             let null_device = Handle::checked(
                 CreateFileW(
                     wide(std::ffi::OsStr::new("NUL")).as_ptr(),
@@ -719,7 +739,7 @@ impl Brain {
                 ),
                 "child_start_failed",
             )?;
-            let mut inherited = [read.0, status_write.0, null_device.0];
+            let mut inherited = [read.0, status_write.0, null_device.0, query.0];
             let mut attributes = Attributes::new(&mut inherited)?;
             let mut startup: STARTUPINFOEXW = zeroed();
             startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
@@ -738,6 +758,7 @@ impl Brain {
                                 | "LOCAL_ANALYTICS_DATA_DIR"
                                 | "BRAIN_PARENT_LIFETIME_HANDLE"
                                 | "BRAIN_BOOTSTRAP_STATUS_HANDLE"
+                                | "BRAIN_OUTER_JOB_QUERY_HANDLE"
                                 | "LOCAL_PROVISIONING_HANDOFF_TOKEN"
                                 | "LOCAL_PROVISIONING_EXTENSION_ID"
                         )
@@ -754,6 +775,10 @@ impl Brain {
             environment.insert(
                 "BRAIN_BOOTSTRAP_STATUS_HANDLE".into(),
                 (status_write.0 as usize).to_string().into(),
+            );
+            environment.insert(
+                "BRAIN_OUTER_JOB_QUERY_HANDLE".into(),
+                (query.0 as usize).to_string().into(),
             );
             environment.insert("LOCAL_PROVISIONING_HANDOFF_TOKEN".into(), handoff.into());
             environment.insert(

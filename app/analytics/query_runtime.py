@@ -113,6 +113,19 @@ class QuestionResources:
             unavailable = self.closed or account not in self._policies
         return unavailable or (external is not None and external())
 
+    def findings(self, policy, request, *, cancellation_check=None):
+        """Use the existing read slots, cancellation and evidence owner."""
+        from app.analytics.errors import ProjectionBackpressure
+        from app.analytics.nlp_read_projection import read
+
+        if not self._slots.acquire(blocking=False):
+            raise ProjectionBackpressure()
+        try:
+            with self._work.foreground():
+                return read(self,policy,request,cancellation_check=cancellation_check)
+        finally:
+            self._slots.release()
+
     def _request_refresh(self, account):
         with self._lock:
             if account in self._policies:

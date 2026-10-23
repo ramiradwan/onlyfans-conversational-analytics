@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "EngineIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_family": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Family",
+          "type": "string"
+        },
+        "core_package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Name",
+          "type": "string"
+        },
+        "core_package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Version",
+          "type": "string"
+        },
+        "publisher": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Publisher",
+          "type": "string"
+        },
+        "package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Version",
+          "type": "string"
+        },
+        "related_set_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Related Set Id",
+          "type": "string"
+        },
+        "engine_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "platform": {
+          "const": "windows-x64",
+          "title": "Platform",
+          "type": "string"
+        },
+        "worker_protocol": {
+          "const": "nlp-worker.v1",
+          "default": "nlp-worker.v1",
+          "title": "Worker Protocol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "package_name",
+        "package_family",
+        "core_package_name",
+        "core_package_version",
+        "publisher",
+        "package_version",
+        "related_set_id",
+        "engine_version",
+        "platform"
+      ],
+      "title": "EngineIdentity",
+      "type": "object"
+    },
+    "ExecutionIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/EngineIdentity"
+        },
+        "pack_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "pack_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Pack Sha256",
+          "type": "string"
+        },
+        "checkpoint_revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Checkpoint Revision",
+          "type": "string"
+        },
+        "tokenizer_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Tokenizer Sha256",
+          "type": "string"
+        },
+        "recipe_id": {
+          "const": "topics_mentions_v1",
+          "title": "Recipe Id",
+          "type": "string"
+        },
+        "recipe_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Recipe Sha256",
+          "type": "string"
+        },
+        "taxonomy_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Taxonomy Version",
+          "type": "string"
+        },
+        "taxonomy_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Taxonomy Sha256",
+          "type": "string"
+        },
+        "result_schema": {
+          "const": "nlp-result.v1",
+          "default": "nlp-result.v1",
+          "title": "Result Schema",
+          "type": "string"
+        },
+        "language_assumption": {
+          "const": "en",
+          "default": "en",
+          "title": "Language Assumption",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "pack_id",
+        "pack_sha256",
+        "checkpoint_revision",
+        "tokenizer_sha256",
+        "recipe_id",
+        "recipe_sha256",
+        "taxonomy_version",
+        "taxonomy_sha256"
+      ],
+      "title": "ExecutionIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Immutable generation input; completion advances even without canonical edits.",
+  "properties": {
+    "account_scope": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Account Scope",
+      "type": "string"
+    },
+    "canonical_revision": {
+      "minimum": 0,
+      "title": "Canonical Revision",
+      "type": "integer"
+    },
+    "completion_revision": {
+      "minimum": 0,
+      "title": "Completion Revision",
+      "type": "integer"
+    },
+    "availability_revision": {
+      "minimum": 0,
+      "title": "Availability Revision",
+      "type": "integer"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionIdentity"
+    },
+    "findings_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Findings Sha256",
+      "type": "string"
+    },
+    "source_validity_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Validity Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_scope",
+    "canonical_revision",
+    "completion_revision",
+    "availability_revision",
+    "execution",
+    "findings_sha256",
+    "source_validity_sha256"
+  ],
+  "title": "EnrichmentSnapshot",
+  "type": "object"
+}

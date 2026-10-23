@@ -88,7 +88,14 @@ _STORE_AUDIT = """\
 
 @pytest.fixture(scope="module", autouse=True)
 def _isolated_release_source(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest):
-    with configured_release_source(request.module, tmp_path_factory.mktemp("release-source")):
+    with configured_release_source(request.module, tmp_path_factory.mktemp("release-source")) as source:
+        for relative in (
+            "__pycache__/synthetic.cpython-311.pyc", "__pycache__/metadata.json",
+            "synthetic.pyc", "synthetic.pyo", "synthetic-uppercase.PYC",
+        ):
+            cache = source / "contracts" / relative
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_bytes(b"synthetic generated cache")
         yield
 
 
@@ -140,6 +147,10 @@ dist = Path(arguments[arguments.index('--distpath') + 1])
 stage = dist / 'Brain'
 (stage / '_internal').mkdir(parents=True)
 (stage / 'Brain.exe').write_bytes(b'frozen-brain')
+def ignored_data(directory, names):
+    return [name for name in names if name == '__pycache__' or (
+        (Path(directory) / name).is_file() and Path(name).suffix.lower() in ('.pyc', '.pyo')
+    )]
 for relative in (
     'app/templates',
     'app/onboarding',
@@ -154,7 +165,7 @@ for relative in (
     'shared/browser-tasks',
 ):
     source = root / relative
-    shutil.copytree(source, stage / '_internal' / relative)
+    shutil.copytree(source, stage / '_internal' / relative, ignore=ignored_data)
 provisioning = stage / '_internal' / 'app' / 'provisioning'
 provisioning.mkdir()
 shutil.copyfile(root / 'app' / 'provisioning' / 'creator-platform-data-risk-disclosure.html', provisioning / 'creator-platform-data-risk-disclosure.html')

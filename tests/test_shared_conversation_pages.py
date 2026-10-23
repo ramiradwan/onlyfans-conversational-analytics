@@ -7,6 +7,7 @@ import shutil
 
 import pytest
 
+from app.persistence.migrations import load_migration_catalog
 from app.analytics.conversation_pages import ConversationPageReference
 from app.analytics.conversation_reuse import ConversationBuild
 from app.analytics.opaque_refs import account_ref
@@ -15,6 +16,10 @@ from app.persistence import sqlite_api as sqlite3
 from tests.continuous_analytics_fixture import (
     ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message, make_fixture,
 )
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier('integration')]
 
@@ -198,7 +203,7 @@ def test_legacy_pages_survive_migration_and_convert_on_next_publication(fixture,
         assert before > 0
     upgraded = ProjectionsDatabase(path)
     with upgraded.read() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 25
+        assert db.execute('PRAGMA user_version').fetchone()[0] == CURRENT_SCHEMA_VERSION
         assert content_stamp(db) is not None
         assert db.execute('SELECT COUNT(*) FROM conversation_owned_pages').fetchone()[0] == before
         assert db.execute('SELECT COUNT(*) FROM conversation_page_content').fetchone()[0] == 0

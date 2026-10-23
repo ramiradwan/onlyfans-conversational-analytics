@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "release_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Release Id",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "completed",
+        "refused",
+        "restart_required",
+        "cancelled",
+        "failed"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "reason": {
+      "enum": [
+        "none",
+        "unavailable_channel",
+        "identity_mismatch",
+        "incompatible",
+        "untrusted",
+        "busy",
+        "withdrawn",
+        "platform_failure"
+      ],
+      "title": "Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "release_id",
+    "outcome",
+    "reason"
+  ],
+  "title": "DeploymentResult",
+  "type": "object"
+}

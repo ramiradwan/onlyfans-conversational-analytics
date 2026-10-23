@@ -83,7 +83,8 @@
         "legacy_analytics_v9/0009_analytics_source_tokens.sql": "74043156dce6ef81f2fca8db3d4ccd47772f2cd862afdbd05baf00d621b4a772",
         "legacy_analytics_v9/0010_message_catchup.sql": "16dd7b5eabaff870a1313140123cd3081ccd50790ea1d3c3f6bf5dfadfbf7239",
         "0011_analytics_coverage_tokens.sql": "f266f5221562feacd88a55dbdde65b30f4e9c1b9362012bbfc8f9dccee98c804",
-        "0012_history_record_kind.sql": "2f1bfd9ccabdc313b1848e2d8a0f5d18e7776ba92f190ac448961808ba312001"
+        "0012_history_record_kind.sql": "2f1bfd9ccabdc313b1848e2d8a0f5d18e7776ba92f190ac448961808ba312001",
+        "0013_derived_deletion_acknowledgements.sql": "e5798eeb09600bfe8bc03fde3f79c03415c78e1c29ba0f3979fc548f0784e087"
       }
     },
     {
@@ -121,7 +122,8 @@
         "0030_desktop_authentication_closure.sql": "4a6b73d306d3a54f70dbdfd23e3f8964437fdeaa01966c5e5edd884887b6a50d",
         "0031_activation_delivery_recovery.sql": "27a963a4d5fb38a83c12b89aaf8e85331643fb18b6ecd1bc3d728361b0e2d678",
         "0032_desktop_presentation_refresh.sql": "8c4b006eb8cd438c8a92eee68b58921a1257d845a4ea8d148d57be1d62d5f096",
-        "0033_signing_publication_authority.sql": "ca65ce8cfc02108d0d8a249499d206c5246bb3b7fa942e4c9a6bd2381ba216bb"
+        "0033_signing_publication_authority.sql": "ca65ce8cfc02108d0d8a249499d206c5246bb3b7fa942e4c9a6bd2381ba216bb",
+        "0034_nlp_dependencies.sql": "1337162d5f43f0b34a509ef298965807450362ae52ffc8b08a153fac95e25a67"
       }
     },
     {
@@ -157,7 +159,14 @@
         "0022_batched_page_retirement.sql": "4bc92595193024c3ee054d285328f796f4347364af4bff13019eb2b7da215dd2",
         "0023_batched_graph_retirement.sql": "fc48e3ba86b1eb4322c2d57735a0c872962c5b6fddb1f34722381912899bd22a",
         "0024_graph_unit_identity_index.sql": "271f3a910bac865af2f66ccc706de602e990c91c90d3d7f72128d6a12de4115a",
-        "0025_enrichment_unit_identity_index.sql": "637c4628a73441db50ad91e780b8ba577419ff571896b168f0dca4cee16b1778"
+        "0025_enrichment_unit_identity_index.sql": "637c4628a73441db50ad91e780b8ba577419ff571896b168f0dca4cee16b1778",
+        "0026_nlp_findings.sql": "73ccf200da823b22dd955f4142f70d254d65203e243b6a7fee17963acbca4062",
+        "0027_nlp_reclamation.sql": "ac5bbf489ced16fad9128a5e4c9184799e7782cf54aa0a71810634b88efee54b",
+        "0028_nlp_erasure.sql": "6a2922a85a781e613b881b790bb589f8e2f38e53f5b979e8f067a062344a4cb2",
+        "0029_nlp_dependencies.sql": "efe83bfc570ae02ad9188f35955c64a1a8d12deae89c6240de6a53000150df63",
+        "0030_nlp_read_metadata.sql": "64ab2ffdc2ff9127784d482abba16d4abe5569a1fe2f7fb43539bb73ec134ac0",
+        "0031_nlp_source_lane_index.sql": "5e67b0bf3153098aeeef7baed204a294c66f76fcff8c86de75ddae7585a14956",
+        "0032_graph_chunk_encoding.sql": "1a6f97c378237c336f4b607de0c803db9335da7fb5ddded0175cc210aa5297b9"
       }
     }
   ],
@@ -193,6 +202,10 @@
     "**/brain-fixture.exe",
     "prerequisite-fixture.exe",
     "**/prerequisite-fixture.exe",
+    "optional-package-fixture.exe",
+    "**/optional-package-fixture.exe",
+    "optional-acquisition-profile.json",
+    "**/optional-acquisition-profile.json",
     "msedgewebview2.exe",
     "**/msedgewebview2.exe",
     ".env",
@@ -221,6 +234,10 @@
     "_internal/app/provisioning/native-tokens.css"
   ],
   "forbidden_material": [
+    {
+      "name": "optional_acquisition_fixture",
+      "pattern": "--(?:bootstrap-related-source|inspect-optional-source|acquire-optional|cancel-optional)\\b|text-analysis-related-bundle/v1"
+    },
     {
       "name": "private_key",
       "pattern": "-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----"

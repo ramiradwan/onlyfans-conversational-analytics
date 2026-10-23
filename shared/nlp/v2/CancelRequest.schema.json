@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "nlp-worker.v2",
+      "default": "nlp-worker.v2",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "operation": {
+      "const": "cancel",
+      "default": "cancel",
+      "title": "Operation",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "target_request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Target Request Id",
+      "type": "string"
+    },
+    "profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Profile Sha256",
+      "type": "string"
+    },
+    "component_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Component Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "target_request_id",
+    "profile_sha256",
+    "component_sha256"
+  ],
+  "title": "CancelRequest",
+  "type": "object"
+}

@@ -1,0 +1,62 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "canonicalization": {
+      "const": "nlp-canonical.v1",
+      "default": "nlp-canonical.v1",
+      "title": "Canonicalization",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nlp-literal-node.v1",
+      "default": "nlp-literal-node.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "key_schema": {
+      "const": "nlp-literal-key.v1",
+      "default": "nlp-literal-key.v1",
+      "title": "Key Schema",
+      "type": "string"
+    },
+    "account_namespace": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Account Namespace",
+      "type": "string"
+    },
+    "type_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Type Id",
+      "type": "string"
+    },
+    "literal_key": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Literal Key",
+      "type": "string"
+    },
+    "node_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Node Id",
+      "type": "string"
+    },
+    "resolution": {
+      "const": "provisional",
+      "default": "provisional",
+      "title": "Resolution",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_namespace",
+    "type_id",
+    "literal_key",
+    "node_id"
+  ],
+  "title": "LiteralNode",
+  "type": "object"
+}

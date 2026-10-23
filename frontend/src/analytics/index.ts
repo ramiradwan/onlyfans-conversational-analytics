@@ -4,3 +4,5 @@ export * from './analyticsReadModel';
 export * from './analyticsRefs';
 export * from './analyticsWindow';
 export * from './formatAnalytics';
+export * from './findingsContract';
+export * from './findingsClient';

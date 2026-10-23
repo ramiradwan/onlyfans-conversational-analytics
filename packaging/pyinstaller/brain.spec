@@ -64,7 +64,15 @@ def _add_tree(
     source = _PROJECT_ROOT / source_relative
     if not source.is_dir():
         raise FileNotFoundError(f"declared runtime directory is absent: {source}")
-    entries.append((str(source), str(source_relative)))
+    for member in sorted(source.rglob("*")):
+        relative = member.relative_to(source)
+        if (
+            not member.is_file()
+            or "__pycache__" in relative.parts
+            or member.suffix.lower() in {".pyc", ".pyo"}
+        ):
+            continue
+        entries.append((str(member), str(source_relative / relative.parent)))
     seen.add(source_relative)
 
 

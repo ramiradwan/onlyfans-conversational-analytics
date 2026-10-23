@@ -1,0 +1,31 @@
+{
+  "request_id": "request.1",
+  "execution": {
+    "engine": {
+      "package_name": "Example.Nlp",
+      "package_family": "Example.Nlp_test",
+      "core_package_name": "Example.Core",
+      "core_package_version": "1.0.0.0",
+      "publisher": "CN=Synthetic",
+      "package_version": "1.0.0.0",
+      "related_set_id": "synthetic.1",
+      "engine_version": "1",
+      "platform": "windows-x64"
+    },
+    "pack_id": "synthetic",
+    "pack_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "checkpoint_revision": "synthetic",
+    "tokenizer_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "recipe_id": "topics_mentions_v1",
+    "recipe_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "taxonomy_version": "synthetic.1",
+    "taxonomy_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "deadline_ms": 1000,
+  "items": [
+    {
+      "request_item_id": "item.1",
+      "text": "😀 echo echo"
+    }
+  ]
+}

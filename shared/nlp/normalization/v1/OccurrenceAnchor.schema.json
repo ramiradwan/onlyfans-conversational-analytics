@@ -1,0 +1,95 @@
+{
+  "$defs": {
+    "SourceBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "account_scope": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Account Scope",
+          "type": "string"
+        },
+        "source_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "source_version": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Version",
+          "type": "string"
+        },
+        "speaker_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Speaker Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_scope",
+        "source_ref",
+        "source_version",
+        "speaker_ref"
+      ],
+      "title": "SourceBinding",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Half-open Unicode codepoint offsets into unchanged original source text.",
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Source occurrence identity deliberately excludes execution identity.",
+  "properties": {
+    "canonicalization": {
+      "const": "nlp-canonical.v1",
+      "default": "nlp-canonical.v1",
+      "title": "Canonicalization",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceBinding"
+    },
+    "category_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Category Id",
+      "type": "string"
+    },
+    "span": {
+      "$ref": "#/$defs/Span"
+    }
+  },
+  "required": [
+    "source",
+    "category_id",
+    "span"
+  ],
+  "title": "OccurrenceAnchor",
+  "type": "object"
+}

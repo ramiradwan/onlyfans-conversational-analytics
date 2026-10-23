@@ -1,0 +1,31 @@
+{
+  "additionalProperties": false,
+  "description": "Reviewed membership input only; this contract performs no merge.",
+  "properties": {
+    "member_node_ids": {
+      "items": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Member Node Ids",
+      "type": "array"
+    },
+    "decision_refs": {
+      "items": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Decision Refs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "member_node_ids",
+    "decision_refs"
+  ],
+  "title": "EquivalenceMembership",
+  "type": "object"
+}

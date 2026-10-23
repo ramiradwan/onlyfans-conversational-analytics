@@ -1,5 +1,5 @@
 //! The one producer's closed descriptor. This module never downloads package bytes.
-use crate::deployment::{DesktopRelease, PackageIdentity};
+use crate::deployment::{DesktopRelease, EngineWindowsIdentity, PackageIdentity};
 use quick_xml::{
     events::{BytesStart, Event},
     Reader,
@@ -8,9 +8,27 @@ use std::collections::BTreeMap;
 
 pub const MAX_DESCRIPTOR: usize = 16_384;
 #[derive(Clone, Debug, PartialEq)]
-pub struct Target {
+pub struct Coordinate {
     pub version: String,
     pub package_uri: String,
+}
+#[derive(Clone, Debug, PartialEq)]
+pub enum Target {
+    MainPackage {
+        core: Coordinate,
+    },
+    RelatedBundle {
+        core: Coordinate,
+        engine_identity: EngineWindowsIdentity,
+        engine: Coordinate,
+    },
+}
+impl Target {
+    pub fn core(&self) -> &Coordinate {
+        match self {
+            Self::MainPackage { core } | Self::RelatedBundle { core, .. } => core,
+        }
+    }
 }
 type Result<T> = std::result::Result<T, &'static str>;
 
@@ -118,20 +136,32 @@ pub fn parse(bytes: &[u8], release: &DesktopRelease, actual: &PackageIdentity) -
     {
         return Err("update_source_mismatch");
     }
-    let package = empty(
-        &mut reader,
-        "MainPackage",
-        &[
-            "Name",
-            "Publisher",
-            "Version",
-            "ProcessorArchitecture",
-            "Uri",
-        ],
-    )?;
+    let (related, package) = match next(&mut reader)? {
+        Event::Empty(e) if e.name().as_ref() == "MainPackage" => (
+            false,
+            attributes(
+                &e,
+                &[
+                    "Name",
+                    "Publisher",
+                    "Version",
+                    "ProcessorArchitecture",
+                    "Uri",
+                ],
+            )?,
+        ),
+        Event::Empty(e) if e.name().as_ref() == "MainBundle" && release.servicing.is_some() => (
+            true,
+            attributes(&e, &["Name", "Publisher", "Version", "Uri"])?,
+        ),
+        _ => return Err("update_descriptor_invalid"),
+    };
+    if !release.allows_target(related) {
+        return Err("update_target_layout_not_allowed");
+    }
     if package["Name"] != actual.name
         || package["Publisher"] != actual.publisher
-        || package["ProcessorArchitecture"] != "x64"
+        || (!related && package["ProcessorArchitecture"] != "x64")
         || package["Version"] != root["Version"]
     {
         return Err("update_identity_mismatch");
@@ -139,6 +169,40 @@ pub fn parse(bytes: &[u8], release: &DesktopRelease, actual: &PackageIdentity) -
     if version(&package["Version"])? <= version(&actual.version)? {
         return Err("update_not_newer");
     }
+    let engine = if related {
+        match next(&mut reader)? {
+            Event::Start(e)
+                if e.name().as_ref() == "RelatedPackages" && e.attributes().next().is_none() =>
+            {
+                ()
+            }
+            _ => return Err("update_descriptor_invalid"),
+        };
+        let e = empty(
+            &mut reader,
+            "Bundle",
+            &["Name", "Publisher", "Version", "Uri"],
+        )?;
+        end(&mut reader, "RelatedPackages")?;
+        let identity = release
+            .engine_identity()
+            .ok_or("update_target_layout_not_allowed")?;
+        if e["Name"] != identity.name || e["Publisher"] != identity.publisher {
+            return Err("update_identity_mismatch");
+        }
+        if !crate::deployment::engine_version(&e["Version"]) {
+            return Err("update_version_invalid");
+        }
+        Some((
+            identity.clone(),
+            Coordinate {
+                version: e["Version"].clone(),
+                package_uri: e["Uri"].clone(),
+            },
+        ))
+    } else {
+        None
+    };
     match next(&mut reader)? {
         Event::Start(element)
             if element.name().as_ref() == "UpdateSettings"
@@ -168,9 +232,57 @@ pub fn parse(bytes: &[u8], release: &DesktopRelease, actual: &PackageIdentity) -
     }
     let source = root["Uri"].as_str();
     let uri = package["Uri"].as_str();
-    let approved = if release.purpose == "production" {
+    artifact_uri(
+        source,
+        uri,
+        &package["Version"],
+        release,
+        if related {
+            "main_bundle"
+        } else {
+            "main_package"
+        },
+    )?;
+    if let Some((identity, engine)) = engine {
+        artifact_uri(
+            source,
+            &engine.package_uri,
+            &engine.version,
+            release,
+            "engine",
+        )?;
+        Ok(Target::RelatedBundle {
+            core: Coordinate {
+                version: package["Version"].clone(),
+                package_uri: uri.into(),
+            },
+            engine_identity: identity,
+            engine,
+        })
+    } else {
+        Ok(Target::MainPackage {
+            core: Coordinate {
+                version: package["Version"].clone(),
+                package_uri: uri.into(),
+            },
+        })
+    }
+}
+
+fn artifact_uri(
+    source: &str,
+    uri: &str,
+    version: &str,
+    release: &DesktopRelease,
+    kind: &str,
+) -> Result<()> {
+    let approved = if release.purpose == "production" || release.servicing.is_some() {
         source
-            .strip_suffix("windows/x64/stable/ConversationAnalytics.appinstaller")
+            .strip_suffix(if release.purpose == "production" {
+                "windows/x64/stable/ConversationAnalytics.appinstaller"
+            } else {
+                "probe.appinstaller"
+            })
             .is_some_and(|base| {
                 let Some(rest) = uri.strip_prefix(&(base.to_owned() + "packages/")) else {
                     return false;
@@ -182,12 +294,28 @@ pub fn parse(bytes: &[u8], release: &DesktopRelease, actual: &PackageIdentity) -
                     && hash
                         .bytes()
                         .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-                    && file == format!("ConversationAnalytics_{}_x64.msix", package["Version"])
+                    && file
+                        == match kind {
+                            "main_package" => format!("ConversationAnalytics_{version}_x64.msix"),
+                            "main_bundle" => {
+                                format!("ConversationAnalytics_{version}_x64.msixbundle")
+                            }
+                            "engine" => format!("TextAnalysisEngine_{version}_x64.msixbundle"),
+                            _ => return false,
+                        }
             })
     } else {
         source
             .strip_suffix("probe.appinstaller")
-            .is_some_and(|base| uri == base.to_owned() + "probe.msix")
+            .is_some_and(|base| {
+                uri == base.to_owned()
+                    + match kind {
+                        "main_package" => "probe.msix",
+                        "main_bundle" => "probe.msixbundle",
+                        "engine" => "engine.msixbundle",
+                        _ => return false,
+                    }
+            })
     };
     let parsed = url::Url::parse(uri).map_err(|_| "update_package_uri_invalid")?;
     let source_url = url::Url::parse(source).map_err(|_| "update_source_mismatch")?;
@@ -199,13 +327,14 @@ pub fn parse(bytes: &[u8], release: &DesktopRelease, actual: &PackageIdentity) -
         || parsed.fragment().is_some()
         || !parsed.username().is_empty()
         || parsed.password().is_some()
+        || (release.servicing.is_some()
+            && (uri.contains('%')
+                || uri.contains('\\')
+                || uri.split('/').any(|s| matches!(s, "." | ".."))))
     {
         return Err("update_package_uri_invalid");
     }
-    Ok(Target {
-        version: package["Version"].clone(),
-        package_uri: uri.into(),
-    })
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -408,6 +537,7 @@ mod tests {
             publisher: release.identity.publisher.clone(),
             version: "1.0.1.0".into(),
             architecture: "x64".into(),
+            family: None,
         };
         let xml = format!(
             r#"<?xml version="1.0" encoding="utf-8"?><AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2018" Version="1.0.2.0" Uri="{}"><MainPackage Name="{}" Publisher="{}" Version="1.0.2.0" ProcessorArchitecture="x64" Uri="https://updates.example.test/desktop/v1/qualification/1234/probe.msix"/><UpdateSettings><OnLaunch HoursBetweenUpdateChecks="6" ShowPrompt="false" UpdateBlocksActivation="false"/><AutomaticBackgroundTask/></UpdateSettings></AppInstaller>"#,
@@ -418,10 +548,58 @@ mod tests {
         (release, actual, xml)
     }
     #[test]
+    fn related_feed_keeps_engine_version_independent_and_closed() {
+        let mut release: DesktopRelease = serde_json::from_str(include_str!(
+            "../../../shared/desktop-release/qualification-direct-v2-bridge.json"
+        ))
+        .unwrap();
+        release.app_installer_uri =
+            Some("https://updates.example.test/qualification/probe.appinstaller".into());
+        let actual = PackageIdentity {
+            name: release.identity.name.clone(),
+            publisher: release.identity.publisher.clone(),
+            version: "1.0.10.0".into(),
+            architecture: "x64".into(),
+            family: Some(format!("{}_0123456789abc", release.identity.name)),
+        };
+        let engine = release.engine_identity().unwrap();
+        let xml = format!(
+            r#"<AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2018" Version="1.0.11.0" Uri="{}"><MainBundle Name="{}" Publisher="{}" Version="1.0.11.0" Uri="https://updates.example.test/qualification/packages/{}/ConversationAnalytics_1.0.11.0_x64.msixbundle"/><RelatedPackages><Bundle Name="{}" Publisher="{}" Version="42.0.2.3" Uri="https://updates.example.test/qualification/packages/{}/TextAnalysisEngine_42.0.2.3_x64.msixbundle"/></RelatedPackages><UpdateSettings><OnLaunch HoursBetweenUpdateChecks="6" ShowPrompt="false" UpdateBlocksActivation="false"/><AutomaticBackgroundTask/></UpdateSettings></AppInstaller>"#,
+            release.app_installer_uri.as_ref().unwrap(),
+            actual.name,
+            actual.publisher,
+            "a".repeat(64),
+            engine.name,
+            engine.publisher,
+            "b".repeat(64)
+        );
+        let target = parse(xml.as_bytes(), &release, &actual).unwrap();
+        assert!(matches!(target,Target::RelatedBundle{engine,..} if engine.version=="42.0.2.3"));
+        for bad in [
+            xml.replace("42.0.2.3", "0.0.2.3"),
+            xml.replace("RelatedPackages", "OptionalPackages"),
+            xml.replace("TextAnalysisEngine_42.0.2.3", "TextAnalysisEngine_42.0.3.0"),
+            xml.replace("/packages/", "/packages/%61/"),
+            xml.replace("<Bundle Name=", "<Bundle Extra=\"x\" Name="),
+        ] {
+            assert!(parse(bad.as_bytes(), &release, &actual).is_err());
+        }
+        release.servicing.as_mut().unwrap().allowed_targets =
+            crate::deployment::AllowedTargets::MainPackageOnly {};
+        assert_eq!(
+            parse(xml.as_bytes(), &release, &actual),
+            Err("update_target_layout_not_allowed")
+        );
+    }
+
+    #[test]
     fn closed_feed_binds_exact_source_identity_version_and_policy() {
         let (release, actual, xml) = fixture();
         assert_eq!(
-            parse(xml.as_bytes(), &release, &actual).unwrap().version,
+            parse(xml.as_bytes(), &release, &actual)
+                .unwrap()
+                .core()
+                .version,
             "1.0.2.0"
         );
         for changed in [
@@ -478,6 +656,7 @@ mod tests {
         assert_eq!(
             parse(xml.as_bytes(), &release, &actual)
                 .unwrap()
+                .core()
                 .package_uri,
             package
         );

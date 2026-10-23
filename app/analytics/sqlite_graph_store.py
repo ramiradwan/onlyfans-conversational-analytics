@@ -2366,6 +2366,30 @@ class SQLiteGraphGenerationWriter:
                 connection.close()
         self._check_heartbeat()
 
+    def _checkpoint_committed_batch(self) -> tuple[int, ...] | None:
+        """Attempt passive WAL progress between owned batch transactions."""
+
+        self._check_heartbeat()
+        with self._state_lock:
+            connection = self._write_connection
+            if connection is None:
+                raise GraphStoreError("graph_checkpoint_session_missing")
+            if self._lease_session_owner != threading.get_ident():
+                raise GraphStoreError("graph_lease_session_busy")
+        if connection.in_transaction:
+            raise GraphStoreError("graph_checkpoint_transaction_active")
+        with self._write_gate:
+            self._check_heartbeat()
+            if connection.in_transaction:
+                raise GraphStoreError("graph_checkpoint_transaction_active")
+            cursor = connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            try:
+                row = cursor.fetchone()
+            finally:
+                cursor.close()
+        self._check_heartbeat()
+        return None if row is None else tuple(row)
+
     def _renew_on_connection(
         self,
         connection: sqlite3.Connection,

@@ -84,7 +84,7 @@ function safeRequestShape(request) {
 }
 
 export class SyntheticPlatform {
-  constructor({ activityDay = '2026-07-19' } = {}) {
+  constructor({ activityDay = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10) } = {}) {
     this.activityDay = activityDay;
     this.httpReads = [];
     this.mutationAttempts = [];
@@ -221,7 +221,7 @@ export class SyntheticPlatform {
       api2_chat_message: {
         id: SYNTHETIC.messageOnlyMessageId,
         text: SYNTHETIC.messageOnlyText,
-        createdAt: '2026-07-19T08:03:00Z',
+        createdAt: `${this.activityDay}T08:03:00Z`,
         fromUser: { id: SYNTHETIC.messageOnlyPeerId, isMe: false },
         chatUserId: SYNTHETIC.messageOnlyPeerId,
       },
@@ -255,7 +255,7 @@ export class SyntheticPlatform {
       new_message: {
         id: SYNTHETIC.offlineMessageId,
         text: SYNTHETIC.offlineText,
-        createdAt: '2026-07-19T08:04:00Z',
+        createdAt: `${this.activityDay}T08:04:00Z`,
         fromUser: { id: SYNTHETIC.offlinePeerId, isMe: false },
         chatUserId: SYNTHETIC.offlinePeerId,
       },
@@ -268,7 +268,7 @@ export class SyntheticPlatform {
         new_message: {
           id: `fixture-replay-burst-${index}`,
           text: `Synthetic backlog message ${index}`,
-          createdAt: '2026-07-19T08:05:00Z',
+          createdAt: `${this.activityDay}T08:05:00Z`,
           fromUser: { id: SYNTHETIC.offlinePeerId, isMe: false },
           chatUserId: SYNTHETIC.offlinePeerId,
         },

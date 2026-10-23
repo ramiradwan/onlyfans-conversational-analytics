@@ -1,0 +1,232 @@
+{
+  "$defs": {
+    "EngineIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_family": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Family",
+          "type": "string"
+        },
+        "core_package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Name",
+          "type": "string"
+        },
+        "core_package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Version",
+          "type": "string"
+        },
+        "publisher": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Publisher",
+          "type": "string"
+        },
+        "package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Version",
+          "type": "string"
+        },
+        "related_set_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Related Set Id",
+          "type": "string"
+        },
+        "engine_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "platform": {
+          "const": "windows-x64",
+          "title": "Platform",
+          "type": "string"
+        },
+        "worker_protocol": {
+          "const": "nlp-worker.v1",
+          "default": "nlp-worker.v1",
+          "title": "Worker Protocol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "package_name",
+        "package_family",
+        "core_package_name",
+        "core_package_version",
+        "publisher",
+        "package_version",
+        "related_set_id",
+        "engine_version",
+        "platform"
+      ],
+      "title": "EngineIdentity",
+      "type": "object"
+    },
+    "ExecutionIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/EngineIdentity"
+        },
+        "pack_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "pack_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Pack Sha256",
+          "type": "string"
+        },
+        "checkpoint_revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Checkpoint Revision",
+          "type": "string"
+        },
+        "tokenizer_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Tokenizer Sha256",
+          "type": "string"
+        },
+        "recipe_id": {
+          "const": "topics_mentions_v1",
+          "title": "Recipe Id",
+          "type": "string"
+        },
+        "recipe_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Recipe Sha256",
+          "type": "string"
+        },
+        "taxonomy_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Taxonomy Version",
+          "type": "string"
+        },
+        "taxonomy_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Taxonomy Sha256",
+          "type": "string"
+        },
+        "result_schema": {
+          "const": "nlp-result.v1",
+          "default": "nlp-result.v1",
+          "title": "Result Schema",
+          "type": "string"
+        },
+        "language_assumption": {
+          "const": "en",
+          "default": "en",
+          "title": "Language Assumption",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "pack_id",
+        "pack_sha256",
+        "checkpoint_revision",
+        "tokenizer_sha256",
+        "recipe_id",
+        "recipe_sha256",
+        "taxonomy_version",
+        "taxonomy_sha256"
+      ],
+      "title": "ExecutionIdentity",
+      "type": "object"
+    },
+    "WorkerInput": {
+      "additionalProperties": false,
+      "properties": {
+        "request_item_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Request Item Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 131072,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_item_id",
+        "text"
+      ],
+      "title": "WorkerInput",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "nlp-worker.v1",
+      "default": "nlp-worker.v1",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionIdentity"
+    },
+    "deadline_ms": {
+      "maximum": 120000,
+      "minimum": 1,
+      "title": "Deadline Ms",
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/WorkerInput"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "execution",
+    "deadline_ms",
+    "items"
+  ],
+  "title": "WorkerRequest",
+  "type": "object"
+}

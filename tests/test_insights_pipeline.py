@@ -22,7 +22,7 @@ from app.protocol.payloads import (
     IngestSnapshotCommitPayload,
     SnapshotRecordCounts,
 )
-from app.services import insights_service
+from app.services import insights_service, retention_maintenance
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from tests.analytics_fixture_clock import fixture_clock
 
@@ -144,7 +144,8 @@ def seed_canonical_snapshot(history: HistoryRepository, payload: FixtureSnapshot
 
 
 @pytest.fixture(autouse=True)
-def reset_runtime():
+def reset_runtime(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(retention_maintenance, "utc_now", fixture_clock)
     transport_manager.reset()
     analytics_runtime.reset_analytics_runtimes()
     app.dependency_overrides.clear()

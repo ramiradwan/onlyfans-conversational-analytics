@@ -160,15 +160,15 @@ async def _finish_deletion(
     operation_id: str,
     operations: ManagedDeletionOperations,
 ) -> ManagedDeletionOperation:
-    try:
-        await transport_manager.project_committed_state(account_id)
-    except Exception:
-        return operations.mark_incomplete(
-            account_id,
-            operation_id,
-            "dependent_state_cleanup_failed",
-        )
-    operation = operations.get(account_id, operation_id)
+    from app.services.derived_deletion import DerivedDeletionService
+    from app.analytics.runtime import reconcile_findings_erasure
+
+    service = DerivedDeletionService(
+        operations,
+        project_committed=transport_manager.project_committed_state,
+        reconcile_findings=reconcile_findings_erasure,
+    )
+    operation = await service.finish(account_id, operation_id)
     if operation is None:
         raise RuntimeError("managed deletion operation disappeared")
     return operation

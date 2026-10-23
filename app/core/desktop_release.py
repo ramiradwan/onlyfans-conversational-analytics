@@ -23,6 +23,50 @@ class PackageIdentity:
     publisher: str
     version: str
     architecture: str
+    family: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EngineWindowsIdentity:
+    name: str
+    publisher: str
+    family: str
+    architecture: str
+
+
+@dataclass(frozen=True, slots=True)
+class EngineRelease:
+    identity: EngineWindowsIdentity
+    package_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class MainPackage:
+    kind: str
+
+
+@dataclass(frozen=True, slots=True)
+class RelatedBundle:
+    kind: str
+    related_set_id: str
+    engine: EngineRelease
+
+
+@dataclass(frozen=True, slots=True)
+class MainPackageOnly:
+    kind: str
+
+
+@dataclass(frozen=True, slots=True)
+class MainPackageAndRelatedBundle:
+    kind: str
+    engine_identity: EngineWindowsIdentity
+
+
+@dataclass(frozen=True, slots=True)
+class Servicing:
+    installed_artifact: MainPackage | RelatedBundle
+    allowed_targets: MainPackageOnly | MainPackageAndRelatedBundle
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +76,79 @@ class DesktopRelease:
     application_id: str
     update_owner: str
     app_installer_uri: str | None
+    schema: str = "ofca-desktop-release/v1"
+    application_version: str | None = None
+    servicing: Servicing | None = None
+
+    def allowed_target_kinds(self) -> frozenset[str]:
+        if self.servicing is None or isinstance(self.servicing.allowed_targets, MainPackageOnly):
+            declared = {"main_package"}
+        else:
+            declared = {"main_package", "related_bundle"}
+        layout = ({"related_bundle"} if self.servicing is not None
+                  and isinstance(self.servicing.installed_artifact, RelatedBundle)
+                  else {"main_package", "related_bundle"})
+        return frozenset(declared & layout)
+
+    def admit_target(self, kind: str) -> None:
+        if kind not in self.allowed_target_kinds():
+            raise DesktopReleaseError("update_target_layout_not_allowed")
+
+
+def parse_servicing(value: object, *, main_name: str, publisher: str,
+                    main_family: str | None = None) -> Servicing:
+    """Closed structure; family authority, when supplied, comes from Windows."""
+    if main_family is not None and (
+            not isinstance(main_family, str) or
+            re.fullmatch(re.escape(main_name) + r"_[a-z0-9]{13}", main_family) is None):
+        raise ValueError("invalid Windows Main family")
+    def closed(item, keys):
+        if type(item) is not dict or set(item) != set(keys):
+            raise ValueError("invalid servicing members")
+    def engine(item):
+        closed(item, ("name", "publisher", "family", "architecture"))
+        name, family = item["name"], item["family"]
+        if (not isinstance(name, str) or re.fullmatch(r"[A-Za-z0-9.-]{3,50}", name) is None
+                or name.casefold() == main_name.casefold() or item["publisher"] != publisher
+                or item["architecture"] != "x64" or not isinstance(family, str)
+                or re.fullmatch(re.escape(name) + r"_[a-z0-9]{13}", family) is None):
+            raise ValueError("invalid engine identity")
+        if main_family is not None:
+            prefix = main_name + "_"
+            if (not isinstance(main_family, str) or not main_family.startswith(prefix)
+                    or re.fullmatch(r"[a-z0-9]{13}", main_family[len(prefix):]) is None
+                    or family != name + "_" + main_family[len(prefix):]):
+                raise ValueError("engine publisher family mismatch")
+        return EngineWindowsIdentity(**item)
+    closed(value, ("installed_artifact", "allowed_targets"))
+    allowed, installed = value["allowed_targets"], value["installed_artifact"]
+    if type(allowed) is dict and allowed.get("kind") == "main_package_only":
+        closed(allowed, ("kind",))
+        capability = MainPackageOnly(**allowed)
+    else:
+        closed(allowed, ("kind", "engine_identity"))
+        if allowed["kind"] != "main_package_and_related_bundle":
+            raise ValueError("unknown target capability")
+        capability = MainPackageAndRelatedBundle(allowed["kind"], engine(allowed["engine_identity"]))
+    if type(installed) is dict and installed.get("kind") == "main_package":
+        closed(installed, ("kind",))
+        layout = MainPackage(**installed)
+    else:
+        closed(installed, ("kind", "related_set_id", "engine"))
+        if (installed["kind"] != "related_bundle" or not isinstance(installed["related_set_id"], str)
+                or re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", installed["related_set_id"]) is None):
+            raise ValueError("invalid related set")
+        item = installed["engine"]
+        closed(item, ("identity", "package_version"))
+        version = item["package_version"]
+        if (not isinstance(version, str) or re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){3}", version) is None
+                or any(int(n) > 65535 for n in version.split(".")) or int(version.split(".")[0]) == 0):
+            raise ValueError("invalid engine version")
+        release = EngineRelease(engine(item["identity"]), version)
+        if not isinstance(capability, MainPackageAndRelatedBundle) or release.identity != capability.engine_identity:
+            raise ValueError("related layout requires its exact engine capability")
+        layout = RelatedBundle(installed["kind"], installed["related_set_id"], release)
+    return Servicing(layout, capability)
 
 
 def windows_package_identity() -> PackageIdentity | None:
@@ -72,7 +189,8 @@ def windows_package_identity() -> PackageIdentity | None:
     version = package.version
     return PackageIdentity(bounded_string(package.name), bounded_string(package.publisher),
                            ".".join(str((version >> shift) & 65535) for shift in (48, 32, 16, 0)),
-                           "x64" if package.architecture == 9 else "unsupported")
+                           "x64" if package.architecture == 9 else "unsupported",
+                           bounded_string(package.name) + "_" + bounded_string(package.publisher_id))
 
 
 def load_desktop_release(path: Path, identity: PackageIdentity | None) -> DesktopRelease | None:
@@ -84,6 +202,19 @@ def load_desktop_release(path: Path, identity: PackageIdentity | None) -> Deskto
         raise DesktopReleaseError("descriptor_without_package_identity")
     if path.stat().st_size > 65536:
         raise DesktopReleaseError("desktop_descriptor_invalid")
+    try:
+        return parse_desktop_release(path.read_bytes(), identity)
+    except OSError as error:
+        raise DesktopReleaseError("desktop_descriptor_invalid") from error
+
+
+def parse_desktop_release(body: bytes, identity: PackageIdentity, *,
+                          expected_application_version: str | None = None) -> DesktopRelease:
+    """Parse against an actual identity; future targets omit the old build version.
+
+    The current-process native caller supplies its compiled build version.
+    A staged target is validated against its own Windows package identity.
+    """
     def unique(pairs):
         result = {}
         for key, value in pairs:
@@ -92,9 +223,14 @@ def load_desktop_release(path: Path, identity: PackageIdentity | None) -> Deskto
             result[key] = value
         return result
     try:
-        value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
+        if not 0 < len(body) <= 65536:
+            raise ValueError()
+        value = json.loads(body.decode("utf-8"), object_pairs_hook=unique,
+                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
         fields = {"schema", "purpose", "identity", "application_version", "package_version", "profile_sha256",
                   "update_owner", "app_installer_uri", "storage_policy", "executable_family", "webview2_minimum_version"}
+        if isinstance(value, dict) and value.get("schema") == "ofca-desktop-release/v2":
+            fields.add("servicing")
         if not isinstance(value, dict) or set(value) != fields:
             raise ValueError()
         declared = value["identity"]
@@ -105,7 +241,7 @@ def load_desktop_release(path: Path, identity: PackageIdentity | None) -> Deskto
                 or re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,63}", declared["application_id"]) is None
                 or len(declared["publisher"]) > 8192 or len(declared["publisher_display_name"]) > 256):
             raise ValueError()
-        if (value["schema"] != "ofca-desktop-release/v1" or value["purpose"] not in {"production", "qualification"}
+        if (value["schema"] not in {"ofca-desktop-release/v1", "ofca-desktop-release/v2"} or value["purpose"] not in {"production", "qualification"}
                 or value["storage_policy"] != "retained-product-root/v1" or value["executable_family"] != "brain-bridge/v1"
                 or re.fullmatch(r"[0-9a-f]{64}", value["profile_sha256"]) is None
                 or not isinstance(value["application_version"], str)
@@ -117,7 +253,9 @@ def load_desktop_release(path: Path, identity: PackageIdentity | None) -> Deskto
                     or any(int(part) > 65535 for part in text.split("."))):
                 raise ValueError()
         expected = PackageIdentity(declared["name"], declared["publisher"], value["package_version"], declared["architecture"])
-        if expected != identity or identity.architecture != "x64":
+        if ((expected.name, expected.publisher, expected.version, expected.architecture) !=
+                (identity.name, identity.publisher, identity.version, identity.architecture)
+                or identity.architecture != "x64"):
             raise DesktopReleaseError("desktop_identity_mismatch")
         synthetic_name = identity.name.lower().startswith("ofca.qualification.")
         synthetic_publisher = identity.publisher.lower().startswith("cn=ofca msix qualification")
@@ -138,7 +276,16 @@ def load_desktop_release(path: Path, identity: PackageIdentity | None) -> Deskto
                 raise ValueError()
         else:
             raise ValueError()
-        return DesktopRelease(value["purpose"], identity, declared["application_id"], owner, uri)
+        servicing = None
+        if value["schema"] == "ofca-desktop-release/v2":
+            if owner != "direct-appinstaller" or identity.family is None or len(value["application_version"]) > 64:
+                raise ValueError()
+            servicing = parse_servicing(value["servicing"], main_name=identity.name,
+                                        publisher=identity.publisher, main_family=identity.family)
+        if expected_application_version is not None and value["application_version"] != expected_application_version:
+            raise ValueError()
+        return DesktopRelease(value["purpose"], identity, declared["application_id"], owner, uri,
+                              value["schema"], value["application_version"], servicing)
     except (OSError, ValueError, TypeError, KeyError) as error:
         raise DesktopReleaseError("desktop_descriptor_invalid") from error
 

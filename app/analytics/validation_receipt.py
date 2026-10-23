@@ -23,7 +23,16 @@ TRIGGER_DIGESTS = {12: TRIGGER_DIGEST,
     # Catalog 24 adds only an index; all content-tracking triggers are unchanged.
     24: '5058b0b5da2d3a0b5b6eb13688dca9413108f13d1a4ea14237f9f26ed2256172',
     # Catalog 25 is index-only too; schema_version still invalidates old receipts.
-    25: '5058b0b5da2d3a0b5b6eb13688dca9413108f13d1a4ea14237f9f26ed2256172'}
+    25: '5058b0b5da2d3a0b5b6eb13688dca9413108f13d1a4ea14237f9f26ed2256172',
+    26: 'bfde9b3ebee64045f29fc3ad468cebb6273f7bbc2083925cfb27f66d6bda89cc',
+    27: 'cecb07ef1e88c5b91de4356f9806cdf27e5d1ff4d396085fb587eb0397600b16',
+    28: 'da68337a06aa101b5e9db7f39feb31ed27722200093182dc78d61a32009ac3ab',
+    # Catalog 29 adds selection metadata columns; content triggers are unchanged.
+    29: 'da68337a06aa101b5e9db7f39feb31ed27722200093182dc78d61a32009ac3ab',
+    30: 'e7fbe6a0a251160574b1b6e2b82f96c4f111d460b9a41522e597b01b4d37c31d',
+    31: 'e7fbe6a0a251160574b1b6e2b82f96c4f111d460b9a41522e597b01b4d37c31d',
+    # Catalog 32 admits chunk encoding without changing tracked SQL or the schema cookie.
+    32: 'e7fbe6a0a251160574b1b6e2b82f96c4f111d460b9a41522e597b01b4d37c31d'}
 MAX_RECEIPTS = 8
 RECEIPT_SECONDS = 60.0
 _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',

@@ -378,6 +378,17 @@ def _check_contracts(
         return
     relative = contracts["path"]
     contracts_root = root / relative
+    for candidate in sorted(contracts_root.rglob("*")):
+        contract_relative = candidate.relative_to(contracts_root)
+        if candidate.is_file() and (
+            "__pycache__" in contract_relative.parts
+            or candidate.suffix.lower() in {".pyc", ".pyo"}
+        ):
+            findings.append(PackagingFinding(
+                "contracts_cached_data_present",
+                candidate.relative_to(root).as_posix(),
+                "cached bytecode is not contract data",
+            ))
     expected_root_files = contracts.get("root_files")
     if not isinstance(expected_root_files, list) or not all(
         isinstance(filename, str) and filename for filename in expected_root_files

@@ -1,0 +1,60 @@
+{
+  "protocol": "nlp-worker.v2",
+  "request_id": "request.joint",
+  "profile_sha256": "fecb7782ae8d66b5176c24b18d06c61d7acb9abf34de652a67407b8986aee13b",
+  "component_id": "joint",
+  "component_sha256": "8726e13cf3b472bb404187bb94b0995b134ec68b64b077d787c01636a9d12c7e",
+  "items": [
+    {
+      "request_item_id": "item.1",
+      "tasks": [
+        {
+          "component_id": "joint",
+          "component_sha256": "8726e13cf3b472bb404187bb94b0995b134ec68b64b077d787c01636a9d12c7e",
+          "text_sha256": "9d56af6fa9d8ba654d6a9309104779b68e61cc3357cd1870cac306c245b35e1b",
+          "payload": {
+            "outcome": "assessed_findings",
+            "coverage": {
+              "source_codepoints": 11,
+              "examined": [
+                {
+                  "start": 0,
+                  "end": 11
+                }
+              ],
+              "excluded": [],
+              "limits_reached": []
+            },
+            "reason": "none",
+            "task": "concept_mentions",
+            "task_contract": "concept_mentions.v1",
+            "findings": [
+              {
+                "concept_id": "concept.synthetic",
+                "span": {
+                  "start": 2,
+                  "end": 6
+                },
+                "score": {
+                  "kind": "probability",
+                  "value": 0.95
+                }
+              },
+              {
+                "concept_id": "concept.synthetic",
+                "span": {
+                  "start": 7,
+                  "end": 11
+                },
+                "score": {
+                  "kind": "probability",
+                  "value": 0.95
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

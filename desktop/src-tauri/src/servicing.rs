@@ -1,7 +1,17 @@
 //! Windows owns executable updates. Only the installed, approved source is used.
-use crate::deployment::{DesktopRelease, PackageIdentity};
+use crate::deployment::{
+    DesktopRelease, EngineWindowsIdentity, InstalledArtifact, PackageIdentity,
+};
 use serde::Serialize;
 use std::time::{Duration, Instant};
+
+#[cfg(any(windows, test))]
+#[path = "deployment_settlement.rs"]
+mod deployment_settlement;
+
+#[cfg(all(windows, feature = "qualification-tools", debug_assertions))]
+#[path = "optional_acquisition.rs"]
+pub(crate) mod optional_acquisition;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -33,6 +43,1124 @@ pub struct PreparedUpdate {
     pub package_full_name: String,
     pub version: String,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+enum EngineSelection {
+    Absent,
+    Present {
+        full_name: String,
+        version: String,
+        path: String,
+    },
+}
+
+fn selection_after_register(
+    before: &EngineSelection,
+    after: &EngineSelection,
+    target: Option<&str>,
+) -> bool {
+    match (before, after) {
+        (EngineSelection::Absent, EngineSelection::Absent) => true,
+        (
+            EngineSelection::Present { version: old, .. },
+            EngineSelection::Present { version: now, .. },
+        ) => now == old || target == Some(now.as_str()),
+        _ => false,
+    }
+}
+
+fn version_tuple(text: &str) -> Option<[u16; 4]> {
+    let values: Vec<_> = text.split('.').collect();
+    if values.len() != 4 {
+        return None;
+    }
+    let mut result = [0; 4];
+    for (value, slot) in values.iter().zip(&mut result) {
+        *slot = value.parse().ok()?;
+        if slot.to_string() != *value {
+            return None;
+        }
+    }
+    Some(result)
+}
+
+const STAGED_FILE_LIMIT: usize = 65536;
+const STAGED_METADATA_TOTAL_LIMIT: usize = 4 * STAGED_FILE_LIMIT;
+#[cfg(any(windows, test))]
+const WORKER_CODE_TOTAL_LIMIT: usize = 256 * 1024 * 1024;
+const FOUNDATION: &str = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";
+const BUNDLE: &str = "http://schemas.microsoft.com/appx/2016/bundle";
+const UAP3: &str = "http://schemas.microsoft.com/appx/manifest/uap/windows10/3";
+#[derive(Debug)]
+struct ManifestNode {
+    name: String,
+    namespace: String,
+    attributes: std::collections::BTreeMap<String, String>,
+    children: Vec<ManifestNode>,
+}
+impl ManifestNode {
+    fn one(&self, ns: &str, name: &str) -> Result<&Self, &'static str> {
+        let mut found = self
+            .children
+            .iter()
+            .filter(|n| n.namespace == ns && n.name == name);
+        let result = found.next().ok_or("staged_identity_mismatch")?;
+        if found.next().is_some() {
+            return Err("staged_identity_mismatch");
+        }
+        Ok(result)
+    }
+    fn has(&self, key: &str, value: &str) -> bool {
+        self.attributes.get(key).is_some_and(|x| x == value)
+    }
+}
+fn manifest_xml(bytes: &[u8]) -> Result<ManifestNode, &'static str> {
+    use quick_xml::{events::Event, Reader};
+    use std::collections::BTreeMap;
+    if bytes.is_empty() || bytes.len() > STAGED_FILE_LIMIT {
+        return Err("staged_evidence_size_invalid");
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| "staged_manifest_invalid")?;
+    let mut reader = Reader::from_str(text.trim_start_matches('\u{feff}'));
+    let mut stack: Vec<(ManifestNode, BTreeMap<String, String>)> = Vec::new();
+    let mut root = None;
+    let mut count = 0;
+    loop {
+        let event = reader.read_event().map_err(|_| "staged_manifest_invalid")?;
+        let empty = matches!(&event, Event::Empty(_));
+        match event {
+            Event::Start(e) | Event::Empty(e) => {
+                count += 1;
+                if count > 1024 || stack.len() > 64 || (stack.is_empty() && root.is_some()) {
+                    return Err("staged_manifest_invalid");
+                }
+                let mut namespaces = stack.last().map(|x| x.1.clone()).unwrap_or_default();
+                let mut attrs = BTreeMap::new();
+                for a in e.attributes() {
+                    let a = a.map_err(|_| "staged_manifest_invalid")?;
+                    let key = a.key.as_ref().to_owned();
+                    let value = a
+                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                        .map_err(|_| "staged_manifest_invalid")?
+                        .into_owned();
+                    if attrs.insert(key.clone(), value.clone()).is_some() {
+                        return Err("staged_manifest_invalid");
+                    }
+                    if key == "xmlns" {
+                        namespaces.insert(String::new(), value);
+                    } else if let Some(prefix) = key.strip_prefix("xmlns:") {
+                        namespaces.insert(prefix.into(), value);
+                    }
+                }
+                let name = e.name().as_ref().to_owned();
+                let (prefix, local) = name.split_once(':').unwrap_or(("", name.as_str()));
+                let namespace = namespaces
+                    .get(prefix)
+                    .ok_or("staged_manifest_invalid")?
+                    .clone();
+                let node = ManifestNode {
+                    name: local.into(),
+                    namespace,
+                    attributes: attrs,
+                    children: Vec::new(),
+                };
+                if empty {
+                    if let Some(parent) = stack.last_mut() {
+                        parent.0.children.push(node)
+                    } else {
+                        root = Some(node)
+                    }
+                } else {
+                    stack.push((node, namespaces));
+                }
+            }
+            Event::End(_) => {
+                let (node, _) = stack.pop().ok_or("staged_manifest_invalid")?;
+                if let Some(parent) = stack.last_mut() {
+                    parent.0.children.push(node)
+                } else {
+                    root = Some(node)
+                }
+            }
+            Event::Eof => {
+                if !stack.is_empty() {
+                    return Err("staged_manifest_invalid");
+                }
+                return root.ok_or("staged_manifest_invalid");
+            }
+            Event::DocType(_) | Event::GeneralRef(_) => return Err("staged_manifest_invalid"),
+            Event::Decl(d) => {
+                if root.is_some()
+                    || !stack.is_empty()
+                    || d.version().map_err(|_| "staged_manifest_invalid")?.as_ref() != "1.0"
+                    || d.encoding()
+                        .transpose()
+                        .map_err(|_| "staged_manifest_invalid")?
+                        .is_some_and(|v| v.as_ref() != "utf-8" && v.as_ref() != "UTF-8")
+                {
+                    return Err("staged_manifest_invalid");
+                }
+            }
+            Event::Text(t)
+                if stack.is_empty() && !t.as_ref().bytes().all(|b| b.is_ascii_whitespace()) =>
+            {
+                return Err("staged_manifest_invalid")
+            }
+            _ => (),
+        }
+    }
+}
+
+fn application_manifest(
+    bytes: &[u8],
+    actual: &PackageIdentity,
+    application: Option<&str>,
+    main: Option<&str>,
+) -> Result<(), &'static str> {
+    let root = manifest_xml(bytes)?;
+    if root.name != "Package" || root.namespace != FOUNDATION {
+        return Err("staged_identity_mismatch");
+    }
+    let id = root.one(FOUNDATION, "Identity")?;
+    if !id.has("Name", &actual.name)
+        || !id.has("Publisher", &actual.publisher)
+        || !id.has("Version", &actual.version)
+        || !id.has("ProcessorArchitecture", "x64")
+    {
+        return Err("staged_identity_mismatch");
+    }
+    if let Some(application) = application {
+        let apps = root.one(FOUNDATION, "Applications")?;
+        if apps.children.len() != 1 || !apps.one(FOUNDATION, "Application")?.has("Id", application)
+        {
+            return Err("staged_identity_mismatch");
+        }
+    }
+    if let Some(main) = main {
+        let deps = root.one(FOUNDATION, "Dependencies")?;
+        let relation = deps.one(UAP3, "MainPackageDependency")?;
+        if relation.attributes.len() != 1 || !relation.has("Name", main) {
+            return Err("staged_relation_mismatch");
+        }
+    }
+    Ok(())
+}
+
+fn bundle_manifest(
+    bytes: &[u8],
+    main: &PackageIdentity,
+    engine: &crate::servicing_feed::Coordinate,
+    identity: &EngineWindowsIdentity,
+) -> Result<(), &'static str> {
+    let root = manifest_xml(bytes)?;
+    if root.name != "Bundle"
+        || root.namespace != BUNDLE
+        || !root.has("SchemaVersion", "5.0")
+        || root.children.len() != 3
+    {
+        return Err("staged_relation_mismatch");
+    }
+    let id = root.one(BUNDLE, "Identity")?;
+    let optional = root.one(BUNDLE, "OptionalBundle")?;
+    let main_file = format!("ConversationAnalytics_{}_x64.msix", main.version);
+    let engine_file = format!("TextAnalysisEngine_{}_x64.msix", engine.version);
+    let bundle_file = engine
+        .package_uri
+        .rsplit('/')
+        .next()
+        .ok_or("staged_relation_mismatch")?;
+    if !id.has("Name", &main.name)
+        || !id.has("Publisher", &main.publisher)
+        || !id.has("Version", &main.version)
+        || !optional.has("Name", &identity.name)
+        || !optional.has("Publisher", &identity.publisher)
+        || !optional.has("Version", &engine.version)
+        || !optional.has("FileName", bundle_file)
+    {
+        return Err("staged_relation_mismatch");
+    }
+    let packages = root.one(BUNDLE, "Packages")?;
+    if packages.children.len() != 1 || optional.children.len() != 1 {
+        return Err("staged_relation_mismatch");
+    }
+    for (node, version, file) in [
+        (
+            packages.one(BUNDLE, "Package")?,
+            main.version.as_str(),
+            main_file.as_str(),
+        ),
+        (
+            optional.one(BUNDLE, "Package")?,
+            engine.version.as_str(),
+            engine_file.as_str(),
+        ),
+    ] {
+        if !node.has("Type", "application")
+            || !node.has("Architecture", "x64")
+            || !node.has("Version", version)
+            || !node.has("FileName", file)
+        {
+            return Err("staged_relation_mismatch");
+        }
+    }
+    Ok(())
+}
+
+fn target_descriptor(
+    bytes: &[u8],
+    current: &DesktopRelease,
+    actual: &PackageIdentity,
+    target: &crate::servicing_feed::Target,
+) -> Result<DesktopRelease, &'static str> {
+    if bytes.is_empty() || bytes.len() > STAGED_FILE_LIMIT {
+        return Err("staged_evidence_size_invalid");
+    }
+    let target_release: DesktopRelease =
+        serde_json::from_slice(bytes).map_err(|_| "desktop_descriptor_invalid")?;
+    target_release.validate_target(actual)?;
+    if !target_release.target_matches(current) {
+        return Err("staged_identity_mismatch");
+    }
+    match (target, &target_release.servicing) {
+        (
+            crate::servicing_feed::Target::RelatedBundle {
+                engine_identity,
+                engine,
+                ..
+            },
+            Some(s),
+        ) => match &s.installed_artifact {
+            InstalledArtifact::RelatedBundle {
+                engine: declared, ..
+            } if &declared.identity == engine_identity
+                && declared.package_version == engine.version =>
+            {
+                ()
+            }
+            _ => return Err("staged_relation_mismatch"),
+        },
+        (crate::servicing_feed::Target::MainPackage { .. }, Some(s))
+            if matches!(s.installed_artifact, InstalledArtifact::MainPackage { .. }) =>
+        {
+            ()
+        }
+        _ => return Err("staged_relation_mismatch"),
+    }
+    Ok(target_release)
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum StagedRole {
+    MainManifest,
+    MainDescriptor,
+    MainBundle,
+    EngineManifest,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    CaseInput,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    CurrentPackage,
+}
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum StagedOperation {
+    OriginLookup,
+    PathLookup,
+    OpenAncestor,
+    Attributes,
+    Security,
+    StablePath,
+    OpenFile,
+    BoundedRead,
+    Validate,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    CaseRead,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    Identity,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    Selection,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    FeedParse,
+}
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum StagedNativeError {
+    Win32 {
+        code: u32,
+    },
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    Hresult {
+        code: i32,
+    },
+}
+#[derive(Debug, Serialize)]
+struct StagedReadError {
+    reason: &'static str,
+    role: StagedRole,
+    operation: StagedOperation,
+    native_error: Option<StagedNativeError>,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    files_read: Option<Vec<(StagedRole, usize)>>,
+}
+impl StagedReadError {
+    fn new(reason: &'static str, role: StagedRole, operation: StagedOperation) -> Self {
+        Self {
+            reason,
+            role,
+            operation,
+            native_error: None,
+            #[cfg(all(feature = "qualification-tools", debug_assertions))]
+            files_read: None,
+        }
+    }
+    fn win32(
+        reason: &'static str,
+        role: StagedRole,
+        operation: StagedOperation,
+        code: u32,
+    ) -> Self {
+        Self {
+            native_error: Some(StagedNativeError::Win32 { code }),
+            ..Self::new(reason, role, operation)
+        }
+    }
+    fn io(
+        reason: &'static str,
+        role: StagedRole,
+        operation: StagedOperation,
+        error: std::io::Error,
+    ) -> Self {
+        Self {
+            native_error: error
+                .raw_os_error()
+                .map(|code| StagedNativeError::Win32 { code: code as u32 }),
+            ..Self::new(reason, role, operation)
+        }
+    }
+}
+
+#[cfg(any(windows, test))]
+struct ReadBudget {
+    bytes: usize,
+    limit: usize,
+}
+#[cfg(any(windows, test))]
+impl ReadBudget {
+    fn total_after(&self, length: u64, file_limit: usize) -> Option<usize> {
+        let length = usize::try_from(length).ok()?;
+        if length == 0 || length > file_limit {
+            return None;
+        }
+        self.bytes
+            .checked_add(length)
+            .filter(|total| *total <= self.limit)
+    }
+}
+
+#[cfg(windows)]
+struct StagedFiles {
+    held: Vec<std::fs::File>,
+    budget: ReadBudget,
+    #[cfg(all(feature = "qualification-tools", debug_assertions))]
+    records: Vec<(StagedRole, usize)>,
+}
+#[cfg(windows)]
+impl StagedFiles {
+    fn metadata() -> Self {
+        Self::with_budget(STAGED_METADATA_TOTAL_LIMIT)
+    }
+    fn worker() -> Self {
+        Self::with_budget(WORKER_CODE_TOTAL_LIMIT)
+    }
+    fn with_budget(limit: usize) -> Self {
+        Self {
+            held: Vec::new(),
+            budget: ReadBudget { bytes: 0, limit },
+            #[cfg(all(feature = "qualification-tools", debug_assertions))]
+            records: Vec::new(),
+        }
+    }
+    fn read(
+        &mut self,
+        root: &std::path::Path,
+        relative: &str,
+        role: StagedRole,
+    ) -> Result<Vec<u8>, StagedReadError> {
+        self.read_bounded(root, relative, role, STAGED_FILE_LIMIT)
+    }
+    fn read_bounded(
+        &mut self,
+        root: &std::path::Path,
+        relative: &str,
+        role: StagedRole,
+        limit: usize,
+    ) -> Result<Vec<u8>, StagedReadError> {
+        use std::{
+            fs::OpenOptions,
+            io::Read,
+            os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
+        };
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+            FILE_SHARE_READ,
+        };
+        let fail = |reason, operation| StagedReadError::new(reason, role, operation);
+        if !root.is_absolute()
+            || root.to_string_lossy().starts_with("\\\\")
+            || root.components().any(|p| {
+                matches!(
+                    p,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )
+            })
+        {
+            return Err(fail("staged_path_unprotected", StagedOperation::Attributes));
+        }
+        let path = root.join(relative);
+        if !path.starts_with(root)
+            || relative
+                .split('/')
+                .any(|s| s.is_empty() || matches!(s, "." | "..") || s.contains([':', '\\']))
+        {
+            return Err(fail("staged_path_unprotected", StagedOperation::Attributes));
+        }
+        for parent in path
+            .parent()
+            .ok_or_else(|| fail("staged_path_unprotected", StagedOperation::Attributes))?
+            .ancestors()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            let access = windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES
+                | if parent.starts_with(root) {
+                    windows_sys::Win32::Storage::FileSystem::READ_CONTROL
+                } else {
+                    0
+                };
+            let file = OpenOptions::new()
+                .access_mode(access)
+                .share_mode(FILE_SHARE_READ)
+                .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+                .open(parent)
+                .map_err(|e| {
+                    StagedReadError::io(
+                        "staged_path_unprotected",
+                        role,
+                        StagedOperation::OpenAncestor,
+                        e,
+                    )
+                })?;
+            let metadata = file.metadata().map_err(|e| {
+                StagedReadError::io(
+                    "staged_path_unprotected",
+                    role,
+                    StagedOperation::Attributes,
+                    e,
+                )
+            })?;
+            use std::os::windows::fs::MetadataExt;
+            if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            {
+                return Err(fail("staged_path_unprotected", StagedOperation::Attributes));
+            }
+            if parent.starts_with(root) {
+                protected_package_file(file.as_raw_handle(), role)?;
+            }
+            stable_file_path(&file, parent, role)?;
+            self.held.push(file);
+        }
+        let mut file = OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(&path)
+            .map_err(|e| {
+                StagedReadError::io(
+                    "staged_package_unavailable",
+                    role,
+                    StagedOperation::OpenFile,
+                    e,
+                )
+            })?;
+        let metadata = file.metadata().map_err(|e| {
+            StagedReadError::io(
+                "staged_package_unavailable",
+                role,
+                StagedOperation::Attributes,
+                e,
+            )
+        })?;
+        use std::os::windows::fs::MetadataExt;
+        if !metadata.is_file()
+            || metadata.len() == 0
+            || metadata.len() > limit as u64
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        {
+            return Err(fail(
+                "staged_evidence_size_invalid",
+                StagedOperation::BoundedRead,
+            ));
+        }
+        protected_package_file(file.as_raw_handle(), role)?;
+        stable_file_path(&file, &path, role)?;
+        let total = self
+            .budget
+            .total_after(metadata.len(), limit)
+            .ok_or_else(|| fail("staged_evidence_size_invalid", StagedOperation::BoundedRead))?;
+        let mut bytes = Vec::new();
+        (&mut file)
+            .take(limit as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| {
+                StagedReadError::io(
+                    "staged_package_unavailable",
+                    role,
+                    StagedOperation::BoundedRead,
+                    e,
+                )
+            })?;
+        if bytes.is_empty() || bytes.len() > limit || bytes.len() as u64 != metadata.len() {
+            return Err(fail(
+                "staged_evidence_size_invalid",
+                StagedOperation::BoundedRead,
+            ));
+        }
+        self.budget.bytes = total;
+        self.held.push(file);
+        #[cfg(all(feature = "qualification-tools", debug_assertions))]
+        self.records.push((role, bytes.len()));
+        Ok(bytes)
+    }
+}
+
+#[cfg(any(windows, test))]
+fn staged_path_matches(observed: &str, expected: &std::path::Path) -> bool {
+    // PathBuf can retain '/' in joined components; the handle API returns '\\'.
+    observed.eq_ignore_ascii_case(&expected.to_string_lossy().replace('/', "\\"))
+}
+
+#[cfg(windows)]
+fn stable_file_path(
+    file: &std::fs::File,
+    expected: &std::path::Path,
+    role: StagedRole,
+) -> Result<(), StagedReadError> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
+    let mut value = vec![0u16; 32768];
+    let size = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle(),
+            value.as_mut_ptr(),
+            value.len() as u32,
+            0,
+        )
+    };
+    let fail =
+        || StagedReadError::new("staged_path_unprotected", role, StagedOperation::StablePath);
+    if size == 0 {
+        return Err(StagedReadError::win32(
+            "staged_path_unprotected",
+            role,
+            StagedOperation::StablePath,
+            unsafe { windows_sys::Win32::Foundation::GetLastError() },
+        ));
+    }
+    if size as usize >= value.len() {
+        return Err(fail());
+    }
+    let value = String::from_utf16(&value[..size as usize]).map_err(|_| fail())?;
+    let value = value.strip_prefix("\\\\?\\").ok_or_else(fail)?;
+    if !staged_path_matches(value, expected) {
+        return Err(fail());
+    }
+    Ok(())
+}
+
+#[cfg(any(windows, test))]
+fn package_allow_ace(bytes: &[u8]) -> Option<(u32, &[u8], bool)> {
+    // Basic and callback allow ACEs share the mask/SID prefix. Conditions can
+    // restrict a grant, so their unevaluated mask is a conservative upper bound.
+    if bytes.len() < 16
+        || !matches!(bytes[0], 0 | 9)
+        || usize::from(u16::from_le_bytes([bytes[2], bytes[3]])) != bytes.len()
+        || bytes.len() % 4 != 0
+        || bytes[8] != 1
+        || bytes[9] > 15
+    {
+        return None;
+    }
+    let sid_end = 16 + usize::from(bytes[9]) * 4;
+    let sid = bytes.get(8..sid_end)?;
+    Some((
+        u32::from_le_bytes(bytes[4..8].try_into().ok()?),
+        sid,
+        bytes[0] == 9,
+    ))
+}
+
+#[cfg(any(windows, test))]
+fn package_grant_protected(mask: u32, callback: bool, trusted: bool) -> bool {
+    mask & 0x500d0156 == 0 || (!callback && trusted)
+}
+
+#[cfg(windows)]
+fn protected_package_file(
+    handle: std::os::windows::io::RawHandle,
+    role: StagedRole,
+) -> Result<(), StagedReadError> {
+    use std::{
+        mem::{size_of, zeroed},
+        ptr::null_mut,
+    };
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
+        Security::{
+            Authorization::{ConvertSidToStringSidW, GetSecurityInfo, SE_FILE_OBJECT},
+            *,
+        },
+    };
+    let fail = || StagedReadError::new("staged_path_unprotected", role, StagedOperation::Security);
+    let native = || {
+        StagedReadError::win32(
+            "staged_path_unprotected",
+            role,
+            StagedOperation::Security,
+            unsafe { windows_sys::Win32::Foundation::GetLastError() },
+        )
+    };
+    let (mut owner, mut acl, mut descriptor) = (null_mut(), null_mut(), null_mut());
+    let code = unsafe {
+        GetSecurityInfo(
+            handle,
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            &mut owner,
+            null_mut(),
+            &mut acl,
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    if code != 0 {
+        return Err(StagedReadError::win32(
+            "staged_path_unprotected",
+            role,
+            StagedOperation::Security,
+            code,
+        ));
+    }
+    struct Allocation(*mut std::ffi::c_void);
+    impl Drop for Allocation {
+        fn drop(&mut self) {
+            unsafe {
+                LocalFree(self.0);
+            }
+        }
+    }
+    let _descriptor = Allocation(descriptor);
+    let sid_text = |sid: PSID| -> Result<String, StagedReadError> {
+        let mut text = null_mut();
+        if sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
+            return Err(fail());
+        }
+        if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+            return Err(native());
+        }
+        let _text = Allocation(text.cast());
+        let mut n = 0;
+        unsafe {
+            while n < 256 && *text.add(n) != 0 {
+                n += 1;
+            }
+        }
+        if n == 256 {
+            return Err(fail());
+        }
+        String::from_utf16(unsafe { std::slice::from_raw_parts(text, n) }).map_err(|_| fail())
+    };
+    let trusted = |sid: &str| {
+        matches!(
+            sid,
+            "S-1-5-18"
+                | "S-1-5-32-544"
+                | "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+        )
+    };
+    if !trusted(&sid_text(owner)?) || acl.is_null() || unsafe { IsValidAcl(acl) } == 0 {
+        return Err(fail());
+    }
+    let mut information: ACL_SIZE_INFORMATION = unsafe { zeroed() };
+    if unsafe {
+        GetAclInformation(
+            acl,
+            &mut information as *mut _ as _,
+            size_of::<ACL_SIZE_INFORMATION>() as u32,
+            AclSizeInformation,
+        )
+    } == 0
+    {
+        return Err(native());
+    }
+    if information.AceCount > 256 {
+        return Err(fail());
+    }
+    for index in 0..information.AceCount {
+        let mut pointer = null_mut();
+        if unsafe { GetAce(acl, index, &mut pointer) } == 0 {
+            return Err(native());
+        }
+        let header = unsafe { &*pointer.cast::<ACE_HEADER>() };
+        if header.AceType == 1 {
+            continue;
+        }
+        let bytes = unsafe {
+            std::slice::from_raw_parts(pointer.cast::<u8>(), usize::from(header.AceSize))
+        };
+        let (mask, sid, callback) = package_allow_ace(bytes).ok_or_else(fail)?;
+        let sid = sid_text(sid.as_ptr() as _)?;
+        // Content, deletion and ACL writes are reserved to Windows servicing.
+        if !package_grant_protected(mask, callback, trusted(&sid) || sid == "S-1-3-4") {
+            return Err(fail());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn validate_staged_target(
+    current: &DesktopRelease,
+    actual: &PackageIdentity,
+    target: &crate::servicing_feed::Target,
+    selection: &EngineSelection,
+) -> Result<(String, StagedFiles), StagedReadError> {
+    let mut files = StagedFiles::metadata();
+    let result = (|| -> Result<String, StagedReadError> {
+        use crate::servicing_feed::Target;
+        let failure = |reason, role| StagedReadError::new(reason, role, StagedOperation::Validate);
+        let family = actual
+            .family
+            .as_deref()
+            .ok_or_else(|| failure("staged_identity_mismatch", StagedRole::MainManifest))?;
+        let suffix = family
+            .strip_prefix(&(actual.name.clone() + "_"))
+            .ok_or_else(|| failure("staged_identity_mismatch", StagedRole::MainManifest))?;
+        let core = target.core();
+        let main = PackageIdentity {
+            name: actual.name.clone(),
+            publisher: actual.publisher.clone(),
+            version: core.version.clone(),
+            architecture: "x64".into(),
+            family: actual.family.clone(),
+        };
+        let root = staged_root(
+            &format!("{}_{}_x64__{}", actual.name, core.version, suffix),
+            StagedRole::MainManifest,
+        )?;
+        let app = files.read(&root, "AppxManifest.xml", StagedRole::MainManifest)?;
+        application_manifest(&app, &main, Some(&current.identity.application_id), None)
+            .map_err(|r| failure(r, StagedRole::MainManifest))?;
+        let descriptor = files.read(
+            &root,
+            "app/desktop-release.json",
+            StagedRole::MainDescriptor,
+        )?;
+        target_descriptor(&descriptor, current, &main, target)
+            .map_err(|r| failure(r, StagedRole::MainDescriptor))?;
+        if let Target::RelatedBundle {
+            engine_identity,
+            engine,
+            ..
+        } = target
+        {
+            let bundle = staged_root(
+                &format!("{}_{}_neutral_~_{}", actual.name, core.version, suffix),
+                StagedRole::MainBundle,
+            )?;
+            bundle_manifest(
+                &files.read(
+                    &bundle,
+                    "AppxMetadata/AppxBundleManifest.xml",
+                    StagedRole::MainBundle,
+                )?,
+                &main,
+                engine,
+                engine_identity,
+            )
+            .map_err(|r| failure(r, StagedRole::MainBundle))?;
+            if matches!(selection, EngineSelection::Present { .. }) {
+                let engine_root = staged_root(
+                    &format!(
+                        "{}_{}_x64__{}",
+                        engine_identity.name, engine.version, suffix
+                    ),
+                    StagedRole::EngineManifest,
+                )?;
+                application_manifest(
+                    &files.read(&engine_root, "AppxManifest.xml", StagedRole::EngineManifest)?,
+                    &PackageIdentity {
+                        name: engine_identity.name.clone(),
+                        publisher: engine_identity.publisher.clone(),
+                        version: engine.version.clone(),
+                        architecture: "x64".into(),
+                        family: Some(engine_identity.family.clone()),
+                    },
+                    None,
+                    Some(&actual.name),
+                )
+                .map_err(|r| failure(r, StagedRole::EngineManifest))?;
+            }
+            let maximum = if matches!(selection, EngineSelection::Absent) {
+                3
+            } else {
+                4
+            };
+            if files.budget.bytes > maximum * STAGED_FILE_LIMIT {
+                return Err(failure(
+                    "staged_evidence_size_invalid",
+                    StagedRole::MainBundle,
+                ));
+            }
+        }
+        let uri = url::Url::from_file_path(root.join("AppxManifest.xml"))
+            .map_err(|_| failure("staged_package_unavailable", StagedRole::MainManifest))?
+            .into();
+        Ok(uri)
+    })();
+    match result {
+        Ok(uri) => Ok((uri, files)),
+        Err(error) => {
+            #[cfg(all(feature = "qualification-tools", debug_assertions))]
+            let error = {
+                let mut error = error;
+                error.files_read = Some(files.records.clone());
+                error
+            };
+            Err(error)
+        }
+    }
+}
+
+#[cfg(windows)]
+fn selected_engine(
+    manager: &windows_runtime::Management::Deployment::PackageManager,
+    release: &DesktopRelease,
+    main: &PackageIdentity,
+) -> Result<EngineSelection, &'static str> {
+    use windows_runtime::{core::HSTRING, Management::Deployment::PackageTypes};
+    let Some(expected) = release.engine_identity() else {
+        return Ok(EngineSelection::Absent);
+    };
+    expected.validate(main)?;
+    let found = manager
+        .FindPackagesByUserSecurityIdNamePublisherWithPackageTypes(
+            &HSTRING::new(),
+            &HSTRING::from(&expected.name),
+            &HSTRING::from(&expected.publisher),
+            PackageTypes::Optional,
+        )
+        .map_err(|_| "optional_selection_unavailable")?;
+    let iterator = found
+        .First()
+        .map_err(|_| "optional_selection_unavailable")?;
+    let mut result = None;
+    while iterator
+        .HasCurrent()
+        .map_err(|_| "optional_selection_unavailable")?
+    {
+        if result.is_some() {
+            return Err("optional_selection_ambiguous");
+        }
+        let p = iterator
+            .Current()
+            .map_err(|_| "optional_selection_unavailable")?;
+        let id = p.Id().map_err(|_| "optional_selection_unavailable")?;
+        let (_, observed) =
+            observe_package(p.clone()).map_err(|_| "optional_selection_unavailable")?;
+        if observed.identity.name != expected.name
+            || observed.identity.publisher != expected.publisher
+            || observed.identity.family.as_deref() != Some(expected.family.as_str())
+            || observed.identity.architecture != "x64"
+            || !crate::deployment::engine_version(&observed.identity.version)
+            || observed.origin != Origin::SignedDirect
+            || observed.signature != Signature::SignedDirect
+            || !p
+                .IsOptional()
+                .map_err(|_| "optional_selection_unavailable")?
+            || p.IsBundle().map_err(|_| "optional_selection_unavailable")?
+            || !p
+                .Status()
+                .and_then(|s| s.VerifyIsOK())
+                .map_err(|_| "optional_selection_unavailable")?
+        {
+            return Err("optional_identity_mismatch");
+        }
+        let path = p
+            .InstalledPath()
+            .map_err(|_| "optional_selection_unavailable")?;
+        let path = path.to_string();
+        let mut files = StagedFiles::metadata();
+        let manifest = files
+            .read(
+                std::path::Path::new(&path),
+                "AppxManifest.xml",
+                StagedRole::EngineManifest,
+            )
+            .map_err(|_| "optional_selection_unavailable")?;
+        application_manifest(&manifest, &observed.identity, None, Some(&main.name))
+            .map_err(|_| "optional_relation_mismatch")?;
+        result = Some(EngineSelection::Present {
+            full_name: id
+                .FullName()
+                .map_err(|_| "optional_selection_unavailable")?
+                .to_string(),
+            version: observed.identity.version,
+            path,
+        });
+        iterator
+            .MoveNext()
+            .map_err(|_| "optional_selection_unavailable")?;
+    }
+    Ok(result.unwrap_or(EngineSelection::Absent))
+}
+
+/// Retained installed package reads use the same origin, relation and file policy.
+#[cfg(windows)]
+pub(crate) struct WorkerPackages {
+    pub main: Observation,
+    pub main_root: std::path::PathBuf,
+    pub engine: Observation,
+    pub engine_root: std::path::PathBuf,
+    pub related_set_id: String,
+    files: StagedFiles,
+}
+#[cfg(windows)]
+impl WorkerPackages {
+    pub fn read_main(&mut self, name: &str, limit: usize) -> Result<Vec<u8>, &'static str> {
+        self.files
+            .read_bounded(&self.main_root, name, StagedRole::MainDescriptor, limit)
+            .map_err(|_| "identity_mismatch")
+    }
+    pub fn read_engine(
+        &mut self,
+        name: &str,
+        limit: usize,
+    ) -> Result<(Vec<u8>, std::fs::File), &'static str> {
+        let bytes = self
+            .files
+            .read_bounded(&self.engine_root, name, StagedRole::EngineManifest, limit)
+            .map_err(|_| "artifact_mismatch")?;
+        let file = self
+            .files
+            .held
+            .last()
+            .ok_or("artifact_mismatch")?
+            .try_clone()
+            .map_err(|_| "artifact_mismatch")?;
+        Ok((bytes, file))
+    }
+}
+#[cfg(windows)]
+pub(crate) fn worker_packages(
+    stage: &mut crate::worker_diagnostics::FailureStage,
+) -> Result<WorkerPackages, &'static str> {
+    use crate::worker_diagnostics::FailureStage;
+    *stage = FailureStage::PackageObservation;
+    let _apartment = Apartment::new().map_err(|_| "identity_mismatch")?;
+    let (package, main) = observe().map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::PackageTrust;
+    if main.origin != Origin::SignedDirect
+        || main.signature != Signature::SignedDirect
+        || package.IsOptional().map_err(|_| "identity_mismatch")?
+        || package.IsBundle().map_err(|_| "identity_mismatch")?
+        || !package
+            .Status()
+            .and_then(|s| s.VerifyIsOK())
+            .map_err(|_| "identity_mismatch")?
+    {
+        return Err("identity_mismatch");
+    }
+    let main_root = std::path::PathBuf::from(
+        package
+            .InstalledPath()
+            .map_err(|_| "identity_mismatch")?
+            .to_string(),
+    );
+    let mut files = StagedFiles::worker();
+    *stage = FailureStage::DescriptorRead;
+    let bytes = files
+        .read(
+            &main_root,
+            "app/desktop-release.json",
+            StagedRole::MainDescriptor,
+        )
+        .map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::DescriptorParse;
+    let release: DesktopRelease =
+        serde_json::from_slice(&bytes).map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::DescriptorValidation;
+    release
+        .validate(&main.identity)
+        .map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::DeclaredEngine;
+    let (related_set_id, declared) = match &release
+        .servicing
+        .as_ref()
+        .ok_or("identity_mismatch")?
+        .installed_artifact
+    {
+        InstalledArtifact::RelatedBundle {
+            related_set_id,
+            engine,
+        } => (related_set_id.clone(), engine),
+        _ => return Err("identity_mismatch"),
+    };
+    *stage = FailureStage::EngineSelection;
+    let manager = activate_owned().map_err(|_| "identity_mismatch")?;
+    let (full_name, engine_root) = match selected_engine(&manager, &release, &main.identity)? {
+        EngineSelection::Present {
+            full_name, path, ..
+        } => (full_name, std::path::PathBuf::from(path)),
+        EngineSelection::Absent => return Err("identity_mismatch"),
+    };
+    *stage = FailureStage::InstalledEngine;
+    let (engine, path) = installed(&full_name)?;
+    if std::path::Path::new(&path) != engine_root
+        || engine.identity.version != declared.package_version
+    {
+        return Err("identity_mismatch");
+    }
+    *stage = FailureStage::MainManifest;
+    let bytes = files
+        .read(&main_root, "AppxManifest.xml", StagedRole::MainManifest)
+        .map_err(|_| "identity_mismatch")?;
+    application_manifest(
+        &bytes,
+        &main.identity,
+        Some(&release.identity.application_id),
+        None,
+    )
+    .map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::EngineManifest;
+    let bytes = files
+        .read(&engine_root, "AppxManifest.xml", StagedRole::EngineManifest)
+        .map_err(|_| "identity_mismatch")?;
+    application_manifest(&bytes, &engine.identity, None, Some(&main.identity.name))
+        .map_err(|_| "identity_mismatch")?;
+    Ok(WorkerPackages {
+        main,
+        main_root,
+        engine,
+        engine_root,
+        related_set_id,
+        files,
+    })
+}
+
+#[cfg(all(windows, feature = "qualification-tools", debug_assertions))]
+#[path = "staged_readback_qualification.rs"]
+pub(crate) mod staged_readback_qualification;
 
 /// Windows downloads and validates the package. Only descriptor bytes cross
 /// this process; a successful deferred registration is required before drain.
@@ -69,8 +1197,53 @@ pub fn prepare_direct(
         return Err("deployment_cancelled");
     }
     let manager: PackageManager = activate_owned().map_err(|_| "windows_stage_failed")?;
-    let uri = owned_uri(&target.package_uri).map_err(|_| "windows_stage_failed")?;
+    let selection = selected_engine(&manager, release, &actual.identity)?;
+    if let (
+        EngineSelection::Present { version, .. },
+        crate::servicing_feed::Target::RelatedBundle { engine, .. },
+    ) = (&selection, &target)
+    {
+        if version_tuple(&engine.version) < version_tuple(version) {
+            return Err("optional_target_downgrade");
+        }
+    }
+    let uri = owned_uri(&target.core().package_uri).map_err(|_| "windows_stage_failed")?;
     let options: StagePackageOptions = activate_owned().map_err(|_| "windows_stage_failed")?;
+    if let (
+        EngineSelection::Present { .. },
+        crate::servicing_feed::Target::RelatedBundle { engine, .. },
+    ) = (&selection, &target)
+    {
+        options
+            .RelatedPackageUris()
+            .and_then(|v| v.Append(&owned_uri(&engine.package_uri)?))
+            .map_err(|_| "windows_stage_failed")?;
+    }
+    let related_count = u32::from(matches!(
+        (&selection, &target),
+        (
+            EngineSelection::Present { .. },
+            crate::servicing_feed::Target::RelatedBundle { .. }
+        )
+    ));
+    if options
+        .OptionalPackageFamilyNames()
+        .and_then(|v| v.Size())
+        .map_err(|_| "windows_stage_failed")?
+        != 0
+        || options
+            .OptionalPackageUris()
+            .and_then(|v| v.Size())
+            .map_err(|_| "windows_stage_failed")?
+            != 0
+        || options
+            .RelatedPackageUris()
+            .and_then(|v| v.Size())
+            .map_err(|_| "windows_stage_failed")?
+            != related_count
+    {
+        return Err("windows_stage_options_invalid");
+    }
     let staged = manager
         .StagePackageByUriAsync(&uri, &options)
         .map_err(|_| "windows_stage_failed")?;
@@ -79,19 +1252,30 @@ pub fn prepare_direct(
     let full_name = HSTRING::from(format!(
         "{}_{}_x64__{}",
         actual.identity.name,
-        target.version,
+        target.core().version,
         current
             .Id()
             .and_then(|id| id.PublisherId())
             .map_err(|_| "staged_identity_mismatch")?
     ));
-    let manifest = staged_manifest(&full_name.to_string())?;
+    let (manifest, _staged_evidence) = if release.servicing.is_some() {
+        let (uri, files) = validate_staged_target(release, &actual.identity, &target, &selection)
+            .map_err(|error| error.reason)?;
+        (uri, Some(files))
+    } else {
+        (staged_manifest(&full_name.to_string())?, None)
+    };
     // Recheck effective settings after the potentially long Windows download.
     let (again, actual_again) = observe().map_err(|_| "windows_source_unavailable")?;
     if bind(release, &actual_again) != UpdateSource::DirectAppinstaller {
         return Err("direct_source_required");
     }
     automatic_policy(&again)?;
+    if actual_again.identity != actual.identity
+        || selected_engine(&manager, release, &actual_again.identity)? != selection
+    {
+        return Err("update_selection_changed");
+    }
     if cancelled() {
         return Err("deployment_cancelled");
     }
@@ -103,6 +1287,27 @@ pub fn prepare_direct(
     options
         .SetDeferRegistrationWhenPackagesAreInUse(true)
         .map_err(|_| "windows_registration_failed")?;
+    if matches!(selection, EngineSelection::Present { .. }) {
+        let family = &release
+            .engine_identity()
+            .ok_or("optional_identity_mismatch")?
+            .family;
+        options
+            .OptionalPackageFamilyNames()
+            .and_then(|v| v.Append(&HSTRING::from(family)))
+            .map_err(|_| "windows_registration_failed")?;
+    }
+    if !options
+        .DeferRegistrationWhenPackagesAreInUse()
+        .map_err(|_| "windows_registration_failed")?
+        || options
+            .OptionalPackageFamilyNames()
+            .and_then(|v| v.Size())
+            .map_err(|_| "windows_registration_failed")?
+            != u32::from(matches!(selection, EngineSelection::Present { .. }))
+    {
+        return Err("windows_registration_options_invalid");
+    }
     let registration = manager
         .RegisterPackageByUriAsync(&manifest, &options)
         .map_err(|_| "windows_registration_failed")?;
@@ -114,14 +1319,45 @@ pub fn prepare_direct(
     {
         return Err("windows_registration_not_deferred");
     }
+    let (after, actual_after) = observe().map_err(|_| "windows_source_unavailable")?;
+    if actual_after.identity != actual.identity
+        || bind(release, &actual_after) != UpdateSource::DirectAppinstaller
+    {
+        return Err("update_selection_changed");
+    }
+    automatic_policy(&after)?;
+    let target_engine = match &target {
+        crate::servicing_feed::Target::RelatedBundle { engine, .. } => {
+            Some(engine.version.as_str())
+        }
+        _ => None,
+    };
+    if !selection_after_register(
+        &selection,
+        &selected_engine(&manager, release, &actual_after.identity)?,
+        target_engine,
+    ) {
+        return Err("update_selection_changed");
+    }
     Ok(PreparedUpdate {
         package_full_name: full_name.to_string(),
-        version: target.version,
+        version: target.core().version.clone(),
     })
 }
 
 #[cfg(windows)]
 fn staged_manifest(full_name: &str) -> Result<String, &'static str> {
+    url::Url::from_file_path(
+        staged_root(full_name, StagedRole::MainManifest)
+            .map_err(|error| error.reason)?
+            .join("AppxManifest.xml"),
+    )
+    .map(|uri| uri.into())
+    .map_err(|_| "staged_package_unavailable")
+}
+
+#[cfg(windows)]
+fn staged_root(full_name: &str, role: StagedRole) -> Result<std::path::PathBuf, StagedReadError> {
     use std::{os::windows::ffi::OsStringExt, ptr::null_mut};
     use windows_sys::Win32::{
         Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
@@ -130,6 +1366,7 @@ fn staged_manifest(full_name: &str) -> Result<String, &'static str> {
             PackageOrigin_DeveloperSigned as SIGNED, PackageOrigin_LineOfBusiness as ENTERPRISE,
         },
     };
+    let fail = |reason, operation| StagedReadError::new(reason, role, operation);
     let name: Vec<u16> = full_name.encode_utf16().chain(Some(0)).collect();
     let mut origin = 0;
     let mut length = 0;
@@ -137,34 +1374,61 @@ fn staged_manifest(full_name: &str) -> Result<String, &'static str> {
     // package enumeration. StagePackageByUriAsync above retains signature
     // validation; developer-unsigned and unknown staged origins are refused.
     unsafe {
-        if GetStagedPackageOrigin(name.as_ptr(), &mut origin) != ERROR_SUCCESS
-            || !matches!(origin, SIGNED | ENTERPRISE)
-        {
-            return Err("staged_identity_mismatch");
+        let code = GetStagedPackageOrigin(name.as_ptr(), &mut origin);
+        if code != ERROR_SUCCESS {
+            return Err(StagedReadError::win32(
+                "staged_identity_mismatch",
+                role,
+                StagedOperation::OriginLookup,
+                code,
+            ));
         }
-        if GetStagedPackagePathByFullName(name.as_ptr(), &mut length, null_mut())
-            != ERROR_INSUFFICIENT_BUFFER
-            || !(2..=32768).contains(&length)
-        {
-            return Err("staged_package_unavailable");
+        if !matches!(origin, SIGNED | ENTERPRISE) {
+            return Err(fail(
+                "staged_identity_mismatch",
+                StagedOperation::OriginLookup,
+            ));
+        }
+        let code = GetStagedPackagePathByFullName(name.as_ptr(), &mut length, null_mut());
+        if code != ERROR_INSUFFICIENT_BUFFER {
+            return Err(StagedReadError::win32(
+                "staged_package_unavailable",
+                role,
+                StagedOperation::PathLookup,
+                code,
+            ));
+        }
+        if !(2..=32768).contains(&length) {
+            return Err(fail(
+                "staged_package_unavailable",
+                StagedOperation::PathLookup,
+            ));
         }
         let mut path = vec![0u16; length as usize];
-        if GetStagedPackagePathByFullName(name.as_ptr(), &mut length, path.as_mut_ptr())
-            != ERROR_SUCCESS
-            || length < 2
-            || length as usize > path.len()
-            || path[length as usize - 1] != 0
-        {
-            return Err("staged_package_unavailable");
+        let code = GetStagedPackagePathByFullName(name.as_ptr(), &mut length, path.as_mut_ptr());
+        if code != ERROR_SUCCESS {
+            return Err(StagedReadError::win32(
+                "staged_package_unavailable",
+                role,
+                StagedOperation::PathLookup,
+                code,
+            ));
+        }
+        if length < 2 || length as usize > path.len() || path[length as usize - 1] != 0 {
+            return Err(fail(
+                "staged_package_unavailable",
+                StagedOperation::PathLookup,
+            ));
         }
         let path =
             std::path::PathBuf::from(std::ffi::OsString::from_wide(&path[..length as usize - 1]));
         if !path.is_absolute() {
-            return Err("staged_package_unavailable");
+            return Err(fail(
+                "staged_package_unavailable",
+                StagedOperation::PathLookup,
+            ));
         }
-        url::Url::from_file_path(path.join("AppxManifest.xml"))
-            .map(|uri| uri.into())
-            .map_err(|_| "staged_package_unavailable")
+        Ok(path)
     }
 }
 
@@ -236,32 +1500,42 @@ fn wait_deployment(
     cancelled: &impl Fn() -> bool,
     budget: Duration,
 ) -> windows_runtime::core::Result<windows_runtime::Management::Deployment::DeploymentResult> {
-    let started = Instant::now();
-    struct CancelOnDrop<F: Fn()>(F);
-    impl<F: Fn()> Drop for CancelOnDrop<F> {
-        fn drop(&mut self) {
-            (self.0)();
-        }
-    }
-    let _cancel = CancelOnDrop(|| {
-        let _ = operation.Cancel();
-    });
-    loop {
-        if cancelled() || started.elapsed() >= budget {
-            let _ = operation.Cancel();
-            return Err(windows_runtime::core::Error::from_hresult(
-                windows_runtime::core::HRESULT(0x800704c7u32 as i32),
-            ));
-        }
-        match operation.Status()? {
-            windows_future::AsyncStatus::Started => std::thread::sleep(Duration::from_millis(100)),
-            _ => {
-                let result = operation.GetResults()?;
-                result.ExtendedErrorCode()?.ok()?;
-                return Ok(result);
+    use deployment_settlement::{Operation, Status};
+    struct Deployment<'a>(
+        &'a windows_future::IAsyncOperationWithProgress<
+            windows_runtime::Management::Deployment::DeploymentResult,
+            windows_runtime::Management::Deployment::DeploymentProgress,
+        >,
+    );
+    impl Operation for Deployment<'_> {
+        type Output = windows_runtime::core::Result<
+            windows_runtime::Management::Deployment::DeploymentResult,
+        >;
+        fn status(&mut self) -> Status {
+            match self.0.Status() {
+                Ok(windows_future::AsyncStatus::Started) => Status::Pending,
+                Ok(windows_future::AsyncStatus::Completed)
+                | Ok(windows_future::AsyncStatus::Canceled)
+                | Ok(windows_future::AsyncStatus::Error) => Status::Terminal,
+                _ => Status::Unobservable,
             }
         }
+        fn cancel(&mut self) {
+            // Cancel is a request; its return value does not establish settlement.
+            let _ = self.0.Cancel();
+        }
+        fn results(&mut self) -> Self::Output {
+            let result = self.0.GetResults()?;
+            result.ExtendedErrorCode()?.ok()?;
+            Ok(result)
+        }
     }
+    let started = Instant::now();
+    deployment_settlement::wait(
+        &mut Deployment(operation),
+        || cancelled() || started.elapsed() >= budget,
+        || std::thread::sleep(Duration::from_millis(100)),
+    )
 }
 
 #[cfg(windows)]
@@ -649,6 +1923,7 @@ fn observe_package(
         Observation {
             identity: PackageIdentity {
                 name: id.Name()?.to_string(),
+                family: Some(id.FamilyName()?.to_string()),
                 publisher: id.Publisher()?.to_string(),
                 version: format!(
                     "{}.{}.{}.{}",
@@ -778,6 +2053,234 @@ fn check_availability(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn worker_reads_have_a_separate_finite_code_budget() {
+        let mut metadata = StagedFiles::metadata();
+        let mut worker = StagedFiles::worker();
+        let per_file = 128 * 1024 * 1024;
+        for length in [4096, 13_740_803, 6_661_120, 4_635_648, 15_809_848] {
+            let total = worker.budget.total_after(length, per_file).unwrap();
+            worker.budget.bytes = total;
+        }
+        metadata.budget.bytes = metadata
+            .budget
+            .total_after(4096, STAGED_FILE_LIMIT)
+            .unwrap();
+        assert!(metadata.budget.total_after(13_740_803, per_file).is_none());
+        assert_eq!(metadata.budget.bytes, 4096);
+        assert!(worker
+            .budget
+            .total_after((per_file + 1) as u64, per_file)
+            .is_none());
+        assert!(worker
+            .budget
+            .total_after((STAGED_FILE_LIMIT + 1) as u64, STAGED_FILE_LIMIT)
+            .is_none());
+        assert_eq!(metadata.budget.limit, STAGED_METADATA_TOTAL_LIMIT);
+        assert_eq!(worker.budget.limit, WORKER_CODE_TOTAL_LIMIT);
+    }
+
+    #[test]
+    fn read_budget_accepts_exact_total_and_failures_do_not_advance() {
+        for (limit, per_file) in [
+            (STAGED_METADATA_TOTAL_LIMIT, STAGED_FILE_LIMIT),
+            (WORKER_CODE_TOTAL_LIMIT, 128 * 1024 * 1024),
+        ] {
+            let mut budget = ReadBudget { bytes: 0, limit };
+            assert!(budget.total_after(0, per_file).is_none());
+            assert!(budget
+                .total_after((per_file + 1) as u64, per_file)
+                .is_none());
+            assert_eq!(budget.bytes, 0);
+            for _ in 0..limit / per_file {
+                budget.bytes = budget.total_after(per_file as u64, per_file).unwrap();
+            }
+            assert_eq!(budget.bytes, limit);
+            assert!(budget.total_after(1, per_file).is_none());
+            assert_eq!(budget.bytes, limit);
+        }
+        let budget = ReadBudget {
+            bytes: usize::MAX - 1,
+            limit: usize::MAX,
+        };
+        assert!(budget.total_after(2, 2).is_none());
+        assert_eq!(budget.bytes, usize::MAX - 1);
+    }
+    fn installed_engine_manifest(version: &str) -> (String, PackageIdentity) {
+        let identity = PackageIdentity {
+            name: "Example.Engine".into(),
+            publisher: "CN=Example".into(),
+            version: version.into(),
+            architecture: "x64".into(),
+            family: Some("Example.Engine_0123456789abc".into()),
+        };
+        let manifest = format!(
+            r#"<Package xmlns="{FOUNDATION}" xmlns:uap3="{UAP3}"><Identity Name="Example.Engine" Publisher="CN=Example" Version="{version}" ProcessorArchitecture="x64"/><Dependencies><uap3:MainPackageDependency Name="Example.Main"/></Dependencies></Package>"#
+        );
+        (manifest, identity)
+    }
+
+    #[test]
+    fn installed_engine_declaration_allows_independent_registered_versions() {
+        for version in ["1.0.41.0", "1.0.42.0"] {
+            let (manifest, observed) = installed_engine_manifest(version);
+            assert_eq!(
+                application_manifest(manifest.as_bytes(), &observed, None, Some("Example.Main")),
+                Ok(())
+            );
+        }
+    }
+
+    #[test]
+    fn installed_engine_declaration_requires_one_exact_main_relation() {
+        let (manifest, observed) = installed_engine_manifest("1.0.41.0");
+        let relation = r#"<uap3:MainPackageDependency Name="Example.Main"/>"#;
+        for changed in [
+            manifest.replace(relation, ""),
+            manifest.replace(relation, &format!("{relation}{relation}")),
+            manifest.replace("Example.Main", "Other.Main"),
+            manifest.replace(UAP3, "urn:other"),
+            manifest.replace(
+                relation,
+                r#"<uap3:MainPackageDependency Name="Example.Main" Publisher="CN=Example"/>"#,
+            ),
+        ] {
+            assert!(application_manifest(
+                changed.as_bytes(),
+                &observed,
+                None,
+                Some("Example.Main")
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn installed_engine_manifest_must_match_observed_identity() {
+        let (manifest, observed) = installed_engine_manifest("1.0.41.0");
+        for (name, publisher, version) in [
+            ("Other.Engine", "CN=Example", "1.0.41.0"),
+            ("Example.Engine", "CN=Other", "1.0.41.0"),
+            ("Example.Engine", "CN=Example", "1.0.42.0"),
+        ] {
+            let mut changed = observed.clone();
+            changed.name = name.into();
+            changed.publisher = publisher.into();
+            changed.version = version.into();
+            assert!(application_manifest(
+                manifest.as_bytes(),
+                &changed,
+                None,
+                Some("Example.Main")
+            )
+            .is_err());
+        }
+        assert!(application_manifest(
+            manifest.replace("x64", "arm64").as_bytes(),
+            &observed,
+            None,
+            Some("Example.Main")
+        )
+        .is_err());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn staged_path_matches_joined_descriptor_separators_and_ascii_case() {
+        let root = std::path::Path::new(r"C:\Program Files\WindowsApps\Example.Main");
+        let expected = root.join("app/desktop-release.json");
+        let observed = r"C:\Program Files\WindowsApps\Example.Main\app\desktop-release.json";
+        assert!(!observed.eq_ignore_ascii_case(&expected.to_string_lossy()));
+        assert!(staged_path_matches(observed, &expected));
+        assert!(staged_path_matches(
+            &observed.to_ascii_uppercase(),
+            &expected
+        ));
+    }
+
+    #[test]
+    fn staged_path_comparison_preserves_drive_components_and_literal_dots() {
+        let observed = r"C:\Program Files\WindowsApps\Example.Main\app\desktop-release.json";
+        for expected in [
+            r"D:\Program Files\WindowsApps\Example.Main\app/desktop-release.json",
+            r"C:\Program Files\WindowsApps\Other.Main\app/desktop-release.json",
+            r"C:\Program Files\WindowsApps\Example.Main\app/other.json",
+            r"C:\Program Files\WindowsApps\Example.Main\app/./desktop-release.json",
+            r"C:\Program Files\WindowsApps\Example.Main\app/sub/../desktop-release.json",
+        ] {
+            assert!(!staged_path_matches(
+                observed,
+                std::path::Path::new(expected)
+            ));
+        }
+    }
+
+    fn allow_ace(kind: u8, flags: u8, mask: u32) -> Vec<u8> {
+        let mut bytes = vec![kind, flags, 0, 0];
+        bytes.extend_from_slice(&mask.to_le_bytes());
+        bytes.extend_from_slice(&[1, 2, 0, 0, 0, 0, 0, 5]);
+        bytes.extend_from_slice(&32u32.to_le_bytes());
+        bytes.extend_from_slice(&545u32.to_le_bytes());
+        if kind == 9 {
+            bytes.extend_from_slice(b"artx");
+        }
+        let size = (bytes.len() as u16).to_le_bytes();
+        bytes[2..4].copy_from_slice(&size);
+        bytes
+    }
+
+    #[test]
+    fn package_callback_read_grant_uses_mask_upper_bound() {
+        for flags in [3, 19, 16] {
+            let bytes = allow_ace(9, flags, 0x1200a9);
+            let (mask, sid, callback) = package_allow_ace(&bytes).unwrap();
+            assert_eq!(sid.len(), 16);
+            assert!(callback);
+            assert!(package_grant_protected(mask, callback, false));
+        }
+    }
+
+    #[test]
+    fn package_callback_protected_writes_are_always_refused() {
+        for mask in [
+            2, 4, 0x10, 0x40, 0x100, 0x10000, 0x40000, 0x80000, 0x10000000, 0x40000000,
+        ] {
+            let bytes = allow_ace(9, 3, 0x1200a9 | mask);
+            let (mask, _, callback) = package_allow_ace(&bytes).unwrap();
+            for trusted in [false, true] {
+                assert!(!package_grant_protected(mask, callback, trusted));
+            }
+        }
+    }
+
+    #[test]
+    fn package_basic_grants_keep_existing_write_policy() {
+        assert!(package_grant_protected(0x1200a9, false, false));
+        assert!(!package_grant_protected(0x1f01ff, false, false));
+        assert!(package_grant_protected(0x1f01ff, false, true));
+        assert!(!package_grant_protected(0x1f01ff, true, true));
+    }
+
+    #[test]
+    fn package_allow_ace_requires_bounded_supported_sid_layout() {
+        let good = allow_ace(9, 3, 0x1200a9);
+        for length in 0..good.len() {
+            assert!(package_allow_ace(&good[..length]).is_none());
+        }
+        for (offset, value) in [(0, 11), (2, 0), (8, 2), (9, 16), (9, 15)] {
+            let mut bad = good.clone();
+            bad[offset] = value;
+            assert!(package_allow_ace(&bad).is_none());
+        }
+        let mut basic = allow_ace(0, 3, 0x1200a9);
+        assert!(!package_allow_ace(&basic).unwrap().2);
+        basic.push(0);
+        let size = (basic.len() as u16).to_le_bytes();
+        basic[2..4].copy_from_slice(&size);
+        assert!(package_allow_ace(&basic).is_none());
+    }
+
     fn release(store: bool) -> DesktopRelease {
         serde_json::from_str(if store {
             include_str!("../../../shared/desktop-release/qualification-store.json")
@@ -790,6 +2293,7 @@ mod tests {
         let value = release(store);
         Observation {
             identity: PackageIdentity {
+                family: None,
                 name: value.identity.name,
                 publisher: value.identity.publisher,
                 version: "1.0.1.0".into(),
@@ -808,6 +2312,123 @@ mod tests {
             app_installer_uri: value.app_installer_uri,
         }
     }
+    #[test]
+    fn alias_movement_is_limited_to_own_registration_and_stable_choice() {
+        let old = EngineSelection::Present {
+            full_name: "Engine_old".into(),
+            version: "42.0.0.0".into(),
+            path: "C:/old".into(),
+        };
+        let new = EngineSelection::Present {
+            full_name: "Engine_new".into(),
+            version: "43.0.0.0".into(),
+            path: "C:/new".into(),
+        };
+        assert!(selection_after_register(&old, &old, Some("43.0.0.0")));
+        assert!(selection_after_register(&old, &new, Some("43.0.0.0")));
+        assert!(!selection_after_register(&old, &new, None));
+        assert!(!selection_after_register(
+            &old,
+            &EngineSelection::Absent,
+            Some("43.0.0.0")
+        ));
+        assert!(!selection_after_register(
+            &EngineSelection::Absent,
+            &new,
+            Some("43.0.0.0")
+        ));
+        assert!(selection_after_register(
+            &EngineSelection::Absent,
+            &EngineSelection::Absent,
+            Some("43.0.0.0")
+        ));
+        assert_ne!(old, new);
+    }
+
+    #[test]
+    fn staged_bundle_relation_is_required_even_without_an_engine_object() {
+        let main = PackageIdentity {
+            name: "Example.Main".into(),
+            publisher: "CN=Example".into(),
+            version: "1.0.11.0".into(),
+            architecture: "x64".into(),
+            family: Some("Example.Main_0123456789abc".into()),
+        };
+        let identity = EngineWindowsIdentity {
+            name: "Example.Engine".into(),
+            publisher: main.publisher.clone(),
+            family: "Example.Engine_0123456789abc".into(),
+            architecture: "x64".into(),
+        };
+        let engine = crate::servicing_feed::Coordinate {
+            version: "42.0.2.3".into(),
+            package_uri: "https://example.test/TextAnalysisEngine_42.0.2.3_x64.msixbundle".into(),
+        };
+        let bundle = format!(
+            r#"<Bundle xmlns="{BUNDLE}" SchemaVersion="5.0"><Identity Name="Example.Main" Publisher="CN=Example" Version="1.0.11.0"/><Packages><Package Type="application" Architecture="x64" Version="1.0.11.0" FileName="ConversationAnalytics_1.0.11.0_x64.msix"/></Packages><OptionalBundle Name="Example.Engine" Publisher="CN=Example" Version="42.0.2.3" FileName="TextAnalysisEngine_42.0.2.3_x64.msixbundle"><Package Type="application" Architecture="x64" Version="42.0.2.3" FileName="TextAnalysisEngine_42.0.2.3_x64.msix"/></OptionalBundle></Bundle>"#
+        );
+        assert_eq!(
+            bundle_manifest(bundle.as_bytes(), &main, &engine, &identity),
+            Ok(())
+        );
+        for bad in [
+            bundle.replace("42.0.2.3", "42.0.2.4"),
+            bundle.replace("2016/bundle", "2013/bundle"),
+            bundle.replace("Example.Engine", "Other.Engine"),
+            bundle.replace("<Packages>", "<Packages><Package/>"),
+            bundle.replace("x64.msix\"", "arm64.msix\""),
+        ] {
+            assert!(bundle_manifest(bad.as_bytes(), &main, &engine, &identity).is_err());
+        }
+    }
+
+    #[test]
+    fn signed_fixed_manifest_identity_relation_and_bounds_are_required() {
+        let main = PackageIdentity {
+            name: "Example.Main".into(),
+            publisher: "CN=Example".into(),
+            version: "1.0.11.0".into(),
+            architecture: "x64".into(),
+            family: Some("Example.Main_0123456789abc".into()),
+        };
+        let manifest = format!(
+            r#"<Package xmlns="{FOUNDATION}" xmlns:uap3="{UAP3}"><Identity Name="Example.Main" Publisher="CN=Example" Version="1.0.11.0" ProcessorArchitecture="x64"/><Applications><Application Id="Bridge"/></Applications><Dependencies><uap3:MainPackageDependency Name="Example.Parent"/></Dependencies></Package>"#
+        );
+        assert_eq!(
+            application_manifest(
+                manifest.as_bytes(),
+                &main,
+                Some("Bridge"),
+                Some("Example.Parent")
+            ),
+            Ok(())
+        );
+        assert!(application_manifest(
+            manifest
+                .replace("Example.Parent", "Wrong.Parent")
+                .as_bytes(),
+            &main,
+            Some("Bridge"),
+            Some("Example.Parent")
+        )
+        .is_err());
+        assert!(application_manifest(
+            manifest
+                .replace(
+                    "<Application Id=\"Bridge\"/>",
+                    "<Application Id=\"Bridge\"/><Application Id=\"Other\"/>"
+                )
+                .as_bytes(),
+            &main,
+            Some("Bridge"),
+            None
+        )
+        .is_err());
+        assert!(manifest_xml(&vec![b' '; STAGED_FILE_LIMIT + 1]).is_err());
+        assert!(manifest_xml(b"<!DOCTYPE Package><Package/>").is_err());
+        assert!(manifest_xml(manifest.replace("xmlns:uap3=", "unbound=").as_bytes()).is_err());
+    }
+
     #[test]
     fn direct_binding_requires_exact_registered_source_and_signed_origin() {
         let release = release(false);

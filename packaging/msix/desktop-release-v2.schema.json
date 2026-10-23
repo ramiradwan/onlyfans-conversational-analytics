@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ofca-desktop-release/v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "purpose",
+    "identity",
+    "application_version",
+    "package_version",
+    "profile_sha256",
+    "update_owner",
+    "app_installer_uri",
+    "storage_policy",
+    "executable_family",
+    "webview2_minimum_version",
+    "servicing"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ofca-desktop-release/v2"
+    },
+    "purpose": {
+      "enum": [
+        "production",
+        "qualification"
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "publisher",
+        "publisher_display_name",
+        "application_id",
+        "architecture"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 50,
+          "pattern": "^[A-Za-z0-9.-]+$"
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 8192,
+          "pattern": "^CN=.+$"
+        },
+        "publisher_display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "application_id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+        },
+        "architecture": {
+          "const": "x64"
+        }
+      }
+    },
+    "application_version": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.+-]+)?$"
+    },
+    "package_version": {
+      "$ref": "#/$defs/version"
+    },
+    "profile_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "update_owner": {
+      "const": "direct-appinstaller"
+    },
+    "app_installer_uri": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2048
+    },
+    "storage_policy": {
+      "const": "retained-product-root/v1"
+    },
+    "executable_family": {
+      "const": "brain-bridge/v1"
+    },
+    "webview2_minimum_version": {
+      "$ref": "#/$defs/version"
+    },
+    "servicing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installed_artifact",
+        "allowed_targets"
+      ],
+      "properties": {
+        "installed_artifact": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "main_package"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "related_set_id",
+                "engine"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "related_bundle"
+                },
+                "related_set_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "^[A-Za-z0-9_.:-]+$"
+                },
+                "engine": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "identity",
+                    "package_version"
+                  ],
+                  "properties": {
+                    "identity": {
+                      "$ref": "#/$defs/engineIdentity"
+                    },
+                    "package_version": {
+                      "$ref": "#/$defs/version"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "allowed_targets": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "main_package_only"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "engine_identity"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "main_package_and_related_bundle"
+                },
+                "engine_identity": {
+                  "$ref": "#/$defs/engineIdentity"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "installed_artifact": {
+                "properties": {
+                  "kind": {
+                    "const": "related_bundle"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "allowed_targets": {
+                "properties": {
+                  "kind": {
+                    "const": "main_package_and_related_bundle"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 23
+    },
+    "engineIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "publisher",
+        "family",
+        "architecture"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 50,
+          "pattern": "^[A-Za-z0-9.-]+$"
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 8192,
+          "pattern": "^CN=.+$"
+        },
+        "family": {
+          "type": "string",
+          "minLength": 17,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9.-]+_[a-z0-9]{13}$"
+        },
+        "architecture": {
+          "const": "x64"
+        }
+      }
+    }
+  }
+}

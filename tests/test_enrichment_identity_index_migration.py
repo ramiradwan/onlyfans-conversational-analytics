@@ -10,8 +10,12 @@ from app.analytics.validation_receipt import content_stamp,ValidationReceipt,Val
 from app.analytics.enrichment_proof_transition import _guards_match
 from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
 from app.persistence import sqlite_api as sqlite3
-from app.persistence.migrations import SchemaCompatibilityError
+from app.persistence.migrations import SchemaCompatibilityError, load_migration_catalog
 from tests.continuous_analytics_fixture import make_fixture,cleanup,ACCOUNT,NOW,cold_equal,insert_message,advance
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier("integration")]
 ROOT=Path(__file__).resolve().parents[1]
@@ -39,7 +43,7 @@ def test_upgrade_preserves_enrichment_bytes_backup_and_invalidates_receipt(tmp_p
             payloads=[tuple(r) for r in db.execute('SELECT * FROM conversation_enrichment_units ORDER BY creator_account_id,unit_id')]
         upgraded=ProjectionsDatabase(old.path)
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==25
+            assert db.execute('PRAGMA user_version').fetchone()[0]==CURRENT_SCHEMA_VERSION
             assert [tuple(r) for r in db.execute('SELECT * FROM conversation_enrichment_units ORDER BY creator_account_id,unit_id')]==payloads
             after=content_stamp(db)
             assert before!=after and before[:2]==after[:2] and before[3]==after[3]
@@ -124,7 +128,7 @@ def test_normal_migration_uses_compact_index_and_preserves_real_transition(tmp_p
     from tools.analytics_insertion_diagnostic import Attribution
     fixture=EnrichmentReferenceFixture(tmp_path,1000,NOW)
     try:
-        assert fixture.configuration['user_version']==25
+        assert fixture.configuration['user_version']==CURRENT_SCHEMA_VERSION
         assert fixture.index_creation_seconds is None  # No diagnostic DDL injection.
         plans=fixture.plans()
         reads=[r['object'] for r in plans['copy']['opened_objects'] if r['opcode']=='OpenRead']

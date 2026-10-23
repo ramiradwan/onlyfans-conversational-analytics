@@ -170,6 +170,32 @@
       ]
     },
     {
+      "id": "nlp-execution-lifetime",
+      "path_patterns": [
+        "app/nlp/child_client.py",
+        "app/nlp/engine_provider.py",
+        "app/nlp/retained_artifacts.py",
+        "app/nlp/windows_host.py"
+      ],
+      "role": "Explicit optional-worker process composition, retained artifact handles and verified shutdown drain; no analysis or release authority.",
+      "authority": "composition",
+      "zone": "red",
+      "protected_invariants": [
+        "release-integrity",
+        "consent-authorization",
+        "protocol-compatibility"
+      ],
+      "permitted_inputs": [
+        "admitted immutable profiles and caller-owned resource limits",
+        "retained verified data and installed Engine observations",
+        "authorized bounded requests and cancellation checks"
+      ],
+      "permitted_outputs": [
+        "owned private worker channels and validated typed replies",
+        "physical process, reader and artifact drain observations"
+      ]
+    },
+    {
       "id": "protocol-core",
       "path_patterns": [
         "app/protocol/**",
@@ -178,7 +204,10 @@
         "shared/fixtures/protocol/**",
         "shared/onboarding/**",
         "shared/desktop-onboarding/**",
-        "shared/browser-tasks/**"
+        "shared/browser-tasks/**",
+        "app/nlp/**",
+        "shared/nlp/**",
+        "shared/analytics/**"
       ],
       "role": "Cross-runtime protocol and local onboarding schema definitions, golden fixtures, validation, and non-authorizing reference projections.",
       "authority": "authoritative",
@@ -189,12 +218,14 @@
       "permitted_inputs": [
         "raw wire messages from Agent and Bridge",
         "internal event payloads",
-        "authenticated owner snapshots and scoped onboarding results"
+        "authenticated owner snapshots and scoped onboarding results",
+        "admitted optional-analysis profiles and bounded worker frames"
       ],
       "permitted_outputs": [
         "validated typed protocol frames",
         "protocol error frames",
-        "non-authorizing local onboarding projections"
+        "non-authorizing local onboarding projections",
+        "validated optional-analysis descriptors and task findings"
       ]
     },
     {
@@ -357,7 +388,8 @@
         "app/persistence/sql/**",
         "app/persistence/auth_sql/**",
         "app/persistence/json_header.py",
-        "app/persistence/signing_parameters.py"
+        "app/persistence/signing_parameters.py",
+        "app/persistence/nlp_dependencies.py"
       ],
       "role": "Authoritative canonical conversation storage, SQLite database lifecycle and SQLCipher runtime qualification, schema migrations, and irreversible deletion closure.",
       "authority": "authoritative",
@@ -584,6 +616,13 @@
       "id": "analytics-semantic-foundation",
       "path_patterns": [
         "app/analytics/canonical_source.py",
+        "app/analytics/nlp_record_validation.py",
+        "app/analytics/nlp_findings_store.py",
+        "app/analytics/nlp_read_projection.py",
+        "app/analytics/nlp_reclamation.py",
+        "app/analytics/nlp_erasure.py",
+        "app/analytics/nlp_processing.py",
+        "app/analytics/nlp_runtime.py",
         "app/analytics/pipeline.py",
         "app/analytics/licensed_pipeline.py",
         "app/analytics/graph_*.py",
@@ -791,6 +830,31 @@
       ]
     },
     {
+      "id": "nlp-dependency-lifecycle",
+      "path_patterns": [
+        "app/services/nlp_dependencies.py",
+        "app/services/nlp_distribution.py"
+      ],
+      "role": "Explicit authenticated profile acquisition, durable withdrawal and account selection coordination; availability grants no release approval.",
+      "authority": "authoritative",
+      "zone": "red",
+      "protected_invariants": [
+        "release-integrity",
+        "consent-authorization"
+      ],
+      "permitted_inputs": [
+        "release-owned trust and exact approval providers",
+        "fixed-origin signed profile metadata and opaque data",
+        "session-bound explicit commands",
+        "caller-owned resource limits"
+      ],
+      "permitted_outputs": [
+        "durable authority and restart intents",
+        "verified data availability and cached readiness",
+        "epoch-bound account selection requests"
+      ]
+    },
+    {
       "id": "signing-parameter-authority",
       "path_patterns": [
         "app/services/signing_parameters.py",
@@ -815,6 +879,23 @@
         "independently verified parameter leases",
         "typed bounded dependency waits",
         "coarse history task status"
+      ]
+    },
+    {
+      "id": "optional-nlp-worker",
+      "path_patterns": [
+        "native/nlp-worker/**"
+      ],
+      "role": "Optional native pure computation over bounded authorized inputs; no database, network, authorization or publication authority.",
+      "authority": "derived",
+      "zone": "orange",
+      "protected_invariants": [],
+      "permitted_inputs": [
+        "bounded private-pipe request",
+        "verified immutable model artifacts and an admitted task component"
+      ],
+      "permitted_outputs": [
+        "bounded private-pipe typed findings"
       ]
     }
   ],
@@ -1516,6 +1597,7 @@
           "app/analytics/question_work.py",
           "app/analytics/pipeline.py",
           "app/analytics/runtime.py",
+          "app/analytics/nlp_runtime.py",
           "app/analytics/rebuild.*",
           "app/analytics/analyzers.py",
           "app/analytics/metrics.py",

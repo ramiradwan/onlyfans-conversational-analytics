@@ -10,7 +10,7 @@ import threading
 import time
 from collections import OrderedDict, deque
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, TypeVar, cast
 from uuid import uuid4
 
@@ -56,6 +56,7 @@ class _AccountWork:
     requested_revision: int
     force_requested: int = 0
     attempted_revision: int | None = None
+    requested_input_revision: int = 0
     cancellation: _CancellationToken | None = None
 
 
@@ -131,6 +132,7 @@ class InProcessProjectionScheduler:
         queue_capacity: int = 64,
         failure_state_capacity: int | None = None,
         reconciliation_interval: float = 0,
+        generation_pipeline: Callable[[str], AnalyticsPipeline] | None = None,
     ) -> None:
         if worker_count <= 0:
             raise ValueError("worker_count must be positive")
@@ -142,6 +144,7 @@ class InProcessProjectionScheduler:
         self._reconciliation_task = None
         self._identity_preparation_task = None
         self.pipeline = pipeline
+        self.generation_pipeline = generation_pipeline
         self.worker_count = worker_count
         self.queue_capacity = queue_capacity
         self.failure_state_capacity = (
@@ -290,7 +293,7 @@ class InProcessProjectionScheduler:
                     raise ProjectionCoordinatorClosed()
                 self._active_publications += 1
             try:
-                self.pipeline.publish_candidate(candidate)
+                (candidate.publication_pipeline or self.pipeline).publish_candidate(candidate)
             finally:
                 with self._state_lock:
                     self._active_publications -= 1
@@ -560,6 +563,13 @@ class InProcessProjectionScheduler:
                     # only after admitted work has had an opportunity to finish.
                     await asyncio.sleep(0.001)
 
+    async def request_findings(self, creator_account_id: str, canonical_revision: int, input_revision: int) -> None:
+        """Invalidate canonical-only availability after a durable findings change."""
+        if self.generation_pipeline is None or type(input_revision) is not int or input_revision < 1:
+            raise ValueError('findings_scheduler_provider_required')
+        await self.schedule(creator_account_id, canonical_revision, retry_failed=True,
+                            input_revision=input_revision)
+
     async def schedule(
         self,
         creator_account_id: str,
@@ -567,6 +577,7 @@ class InProcessProjectionScheduler:
         *,
         retry_failed: bool = False,
         force: bool = False,
+        input_revision: int | None = None,
     ) -> None:
         """Admit immediately, coalesce an account, or reject with backpressure."""
 
@@ -578,6 +589,7 @@ class InProcessProjectionScheduler:
             existing = self._work.get(creator_account_id)
             if existing is not None:
                 existing.force_requested += int(force)
+                existing.requested_input_revision = max(existing.requested_input_revision, input_revision or 0)
                 existing.requested_revision = max(
                     existing.requested_revision,
                     canonical_revision,
@@ -592,7 +604,7 @@ class InProcessProjectionScheduler:
             ):
                 return
             available = self._available.get(creator_account_id)
-            if not force and available is not None and available >= canonical_revision:
+            if input_revision is None and not force and available is not None and available >= canonical_revision:
                 return
         loop = asyncio.get_running_loop()
         with self._state_lock:
@@ -601,6 +613,7 @@ class InProcessProjectionScheduler:
             existing = self._work.get(creator_account_id)
             if existing is not None:
                 existing.force_requested += int(force)
+                existing.requested_input_revision = max(existing.requested_input_revision, input_revision or 0)
                 existing.requested_revision = max(
                     existing.requested_revision,
                     canonical_revision,
@@ -619,7 +632,8 @@ class InProcessProjectionScheduler:
             self._failures.pop(creator_account_id, None)
             self._available.pop(creator_account_id, None)
             self._work[creator_account_id] = _AccountWork(
-                requested_revision=canonical_revision, force_requested=int(force)
+                requested_revision=canonical_revision, force_requested=int(force),
+                requested_input_revision=input_revision or 0
             )
             self._pending.append(creator_account_id)
             self._launch_workers_locked(loop)
@@ -629,6 +643,12 @@ class InProcessProjectionScheduler:
         creator_account_id: str,
         canonical_revision: int,
     ) -> bool:
+        if self.generation_pipeline is not None:
+            def current():
+                pipeline = self.generation_pipeline(creator_account_id)
+                return pipeline.prepare_questions(creator_account_id, canonical_revision,
+                    cancellation_check=self._publication_closed.is_set)
+            return await self._run_owned(current)
         return await self._run_owned(
             functools.partial(
                 self.pipeline.prepare_questions,
@@ -703,13 +723,16 @@ class InProcessProjectionScheduler:
                       attempt_id=attempt, full_rebuild=bool(force))
         emit("build_started", **fields)
         try:
-            candidate = self.pipeline.build_candidate(
+            pipeline = self.generation_pipeline(account) if self.generation_pipeline else self.pipeline
+            candidate = pipeline.build_candidate(
                 account, publication_epoch=epoch, cancellation_check=token.cancelled,
                 **({"force": True, "full_rebuild": True} if force else {}),
             )
         except ProjectionBuildCancelled:
             emit("build_cancelled", **fields)
             raise
+        if self.generation_pipeline is not None:
+            candidate = replace(candidate, publication_pipeline=pipeline)
         fields["canonical_revision"] = candidate.source_revision
         emit("build_completed", generation_id=candidate.staged_generation_id, **fields)
         return candidate
@@ -726,6 +749,7 @@ class InProcessProjectionScheduler:
                     return
                 attempted_revision = work.requested_revision
                 force_attempted = work.force_requested
+                input_attempted = work.requested_input_revision
                 work.attempted_revision = attempted_revision
                 token = _CancellationToken()
                 work.cancellation = token
@@ -793,6 +817,7 @@ class InProcessProjectionScheduler:
                     and candidate is not None
                     and candidate.source_revision >= work.requested_revision
                     and force_attempted == work.force_requested
+                    and input_attempted == work.requested_input_revision
                 ):
                     self._work.pop(creator_account_id, None)
                     self._failures.pop(creator_account_id, None)
@@ -807,7 +832,8 @@ class InProcessProjectionScheduler:
                          recovery_requests=len(self._recovery_requests),
                          active_publications=self._active_publications)
                     return
-                if work.requested_revision > attempted_revision or work.force_requested > force_attempted:
+                if (work.requested_revision > attempted_revision or work.force_requested > force_attempted
+                        or work.requested_input_revision > input_attempted):
                     continue
                 self._work.pop(creator_account_id, None)
                 failure = ProjectionScheduleState(

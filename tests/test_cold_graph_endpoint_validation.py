@@ -204,23 +204,43 @@ def test_exact_content_faults_reject_in_both_paths(first_candidate, monkeypatch,
 
 @pytest.mark.parametrize('endpoint', ['source_id', 'target_id'])
 def test_retained_predecessor_node_cannot_satisfy_new_generation(tmp_path, monkeypatch, endpoint):
+    from app.analytics import graph_membership_pages
+
     fixture = make_fixture(tmp_path)
     try:
         old = fixture.pipeline.project_account(ACCOUNT)
         before = fixture.stores.database.active_generation(ACCOUNT).generation_id
         absent = getattr(old.artifact.edges[0], endpoint)
         fixture.stores.projections._conversation_graph_proofs.clear()
-        original = shared_graph._records
-        def omit(graph, plan, check):
-            for value, member in original(graph, plan, check):
-                if plan.kind != 'node' or member[2] != absent:
-                    yield value, member
+        omitted = []
+        selected_node = """SELECT 1 FROM generation_graph_segments m
+            CROSS JOIN graph_segment_nodes r USING(creator_account_id,segment_id)
+            WHERE m.generation_id=? AND m.creator_account_id=?
+              AND m.kind='node' AND r.node_id=?"""
+        write_members = graph_membership_pages.write_members
+        def omit(db, kind, members, pages):
+            missing = [member for member in members if kind == 'node' and member[2] == absent]
+            kept = [member for member in members if kind != 'node' or member[2] != absent]
+            result = write_members(db, kind, kept, pages)
+            for account, segment, node, _ in missing:
+                generations = db.execute(
+                    "SELECT generation_id FROM generation_graph_segments "
+                    "WHERE creator_account_id=? AND segment_id=? AND kind='node'",
+                    (account, segment)).fetchall()
+                assert len(generations) == 1
+                generation = generations[0][0]
+                assert generation != before
+                assert db.execute(selected_node, (generation, account, node)).fetchone() is None
+                assert db.execute(selected_node, (before, account, node)).fetchone() is not None
+                omitted.append(generation)
+            return result
         monkeypatch.setattr(shared_graph, '_predecessor_segments', lambda *args: {})
-        monkeypatch.setattr(shared_graph, '_records', omit)
+        monkeypatch.setattr(graph_membership_pages, 'write_members', omit)
         with fixture.repositories.database.transaction() as db:
             advance(db)
         with pytest.raises(GraphReferentialIntegrityError, match='graph_endpoint_absent'):
             fixture.pipeline.build_candidate(ACCOUNT)
+        assert len(omitted) == 1
         assert fixture.stores.database.active_generation(ACCOUNT).generation_id == before
     finally:
         cleanup(fixture)

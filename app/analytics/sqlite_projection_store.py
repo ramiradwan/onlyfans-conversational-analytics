@@ -5,7 +5,8 @@ from __future__ import annotations
 from app.core.lifecycle_receipts import startup_timed, startup_span, startup_count
 
 import json
-from contextlib import contextmanager
+import logging
+from contextlib import contextmanager, nullcontext
 import secrets
 from app.persistence import sqlite_api as sqlite3
 import time
@@ -80,6 +81,7 @@ from app.persistence.database import StartupValidationUnavailable
 
 
 PROJECTION_BUILD_VERSION = "analytics.projection.v3"
+LOGGER = logging.getLogger(__name__)
 _SCOPED_PAGE_RETIREMENT_RECLAIM = (
     "DELETE FROM conversation_page_content WHERE creator_account_id=? "
     "AND content_id IN (SELECT content_id FROM retirement_page_content_ids) "
@@ -714,6 +716,32 @@ class SQLiteAnalyticsProjectionStore:
 
         return published_pricing(self, account_id, snapshot, references, budget)
 
+    def read_findings_snapshot(self, account_id, snapshot, budget, *, connection=None):
+        """Read only the exact witnessed generation's immutable findings input."""
+        from app.analytics.errors import ProjectionUnavailable
+        from app.analytics.nlp_findings_store import check_generation
+        from app.analytics.query_sql import bounded_sql
+
+        if account_ref(account_id) != snapshot.account_ref:
+            raise ProjectionUnavailable()
+        with (self.database.read() if connection is None else nullcontext(connection)) as db, bounded_sql(db, budget):
+            generation = db.execute('SELECT * FROM projection_generations WHERE generation_id=? '
+                "AND creator_account_id=? AND status='active'", (snapshot.generation_id,snapshot.account_ref)).fetchone()
+            if (generation is None or generation['projection_digest'] != snapshot.projection_digest
+                    or generation['canonical_revision'] != snapshot.source_revision
+                    or generation['canonical_content_digest'] != snapshot.canonical_content_digest):
+                raise ProjectionUnavailable(availability='building')
+            records = {}
+            value = check_generation(db,generation,deadline=time.monotonic()+budget.remaining_seconds(),
+                                     decoded_records=records)
+            if value is None or 'read_inventory' not in value:
+                raise ProjectionUnavailable(reason_code='analytics_findings_metadata_unavailable')
+            from app.analytics.nlp_read_projection import load_source_pages
+            sources = load_source_pages(db,account_id,
+                db.execute('SELECT snapshot_id FROM nlp_generation_refs WHERE generation_id=?',(snapshot.generation_id,)).fetchone()[0],
+                value,budget)
+            return value, records, dict(generation), sources
+
     @contextmanager
     def question_publications(self, account_id, budget, *, lease=None):
         """One bounded autocommit connection; both publication reads remain live."""
@@ -746,6 +774,7 @@ class SQLiteAnalyticsProjectionStore:
                     from app.analytics.errors import ProjectionUnavailable
                     raise ProjectionUnavailable(availability="error")
                 return self.question_snapshot(account, identity, budget, connection=connection)
+            read.findings = lambda snapshot: self.read_findings_snapshot(account_id,snapshot,budget,connection=connection)
             yield read
         budget.check()
 
@@ -946,6 +975,8 @@ class SQLiteAnalyticsProjectionStore:
         conversation_pages: tuple = (),
         conversation_graph_units: tuple = (),
         conversation_enrichment_units: tuple = (),
+        nlp_findings=None,
+        nlp_base_config=None,
         _copy_graph: bool = True,
         _trusted_graph_units: bool = False,
     ) -> str:
@@ -1207,6 +1238,11 @@ class SQLiteAnalyticsProjectionStore:
                     _timestamp(now),
                 ),
             )
+            if nlp_findings is not None:
+                from app.analytics.nlp_findings_store import bind_generation, effective_config
+                if effective_config(nlp_base_config, nlp_findings.snapshot_id) != projection.pipeline_config_digest:
+                    raise ProjectionValidationError('nlp_config_mismatch')
+                bind_generation(connection, generation_id, nlp_findings, nlp_base_config, canonical_identity)
             connection.execute(
                 """
                 INSERT INTO analytics_projections (
@@ -1418,6 +1454,8 @@ class SQLiteAnalyticsProjectionStore:
         canonical_identity: CanonicalIdentity,
         cancellation_check: CancellationCheck | None = None,
         source_identity_proof: object | None = None,
+        nlp_authorize=None,
+        nlp_admit=None,
     ) -> bool:
         """Reserve, complete, then locally activate after observing the witness."""
 
@@ -1455,6 +1493,14 @@ class SQLiteAnalyticsProjectionStore:
             ).fetchone()
         if epoch is None:
             raise ProjectionActivationConflict("publication epoch revoked")
+        from app.analytics.nlp_findings_store import check_generation
+        if '+nlp.snapshot.v1' in generation['pipeline_revision']:
+            if not callable(nlp_authorize) or not callable(nlp_admit):
+                raise ProjectionActivationConflict('nlp_live_authorization_required')
+            nlp_admit()
+            nlp_authorize()
+        with self.database.read() as connection:
+            check_generation(connection, generation, current=True)
         intent = self.activation.reserve(
             creator_account_id=creator_account_id,
             account_ref=partition_ref,
@@ -1512,6 +1558,12 @@ class SQLiteAnalyticsProjectionStore:
             self.activation.cancel(intent.intent_id)
             self._retire(generation_id)
             raise ProjectionActivationConflict("local activation identity changed")
+        if nlp_admit is not None:
+            nlp_admit()
+        if nlp_authorize is not None:
+            nlp_authorize()
+        with self.database.read() as connection:
+            check_generation(connection, observed_generation, current=True)
         completed = self.activation.complete(
             intent, source_identity_proof=source_identity_proof
         )
@@ -1524,6 +1576,7 @@ class SQLiteAnalyticsProjectionStore:
                 generation_id,
                 creator_account_id=creator_account_id,
                 canonical_identity=canonical_identity,
+                nlp_authorize=nlp_authorize,
             )
         except BaseException:
             try:
@@ -1828,6 +1881,7 @@ class SQLiteAnalyticsProjectionStore:
                 (partition_ref, self.rollback_retention),
             ).fetchone()
         if eligible is None:
+            self._reclaim_findings_partition(partition_ref)
             return 0
 
         with self.database.transaction() as connection:
@@ -1868,7 +1922,74 @@ class SQLiteAnalyticsProjectionStore:
                     )
                 renewed = finish_transition(connection, transition)
         self._install_enrichment_transition(transition, renewed)
+        self._reclaim_findings_partition(partition_ref)
         return len(rows)
+
+    def _reclaim_findings_partition(self, partition_ref):
+        from app.analytics.nlp_reclamation import reclaim_orphans
+        try:
+            return reclaim_orphans(self.database, partition_ref,
+                proof_candidate=self._enrichment_transition_candidate,
+                install_transition=self._install_enrichment_transition)
+        except Exception:
+            # Optional cleanup cannot revoke an independently validated report
+            # or misreport an already committed generation retirement.
+            LOGGER.warning('analytics_cleanup_event status=incomplete reason_code=findings_reclamation_failed')
+            return 0
+
+    def retire_findings_for_erasure(self, state, generation, stamp):
+        """Revoke an invalid enhanced output under an exact erasure target."""
+        from app.analytics.validation_receipt import content_stamp, generation_binding
+
+        generation_id = generation["generation_id"]
+        if (
+            generation["creator_account_id"] != state["account_ref"]
+            or "+nlp.snapshot.v1" not in generation["pipeline_revision"]
+        ):
+            raise ValueError("nlp_erasure_generation_invalid")
+        intent = self.activation.get(generation_id)
+        if intent is not None and intent.state == "reserved":
+            self.activation.cancel(intent.intent_id)
+        with self.database.transaction() as db:
+            current = db.execute(
+                "SELECT * FROM nlp_erasure_state WHERE account_ref=?",
+                (state["account_ref"],),
+            ).fetchone()
+            live = db.execute(
+                "SELECT * FROM projection_generations WHERE generation_id=?",
+                (generation_id,),
+            ).fetchone()
+            if (
+                current is None
+                or dict(current) != state
+                or current["phase"] != "erase"
+                or live is None
+                or generation_binding(live) != generation_binding(generation)
+                or content_stamp(db) != stamp
+            ):
+                raise ValueError("nlp_erasure_retry")
+            db.execute(
+                "UPDATE projection_generations SET status='retired',retired_at=? WHERE generation_id=?",
+                (_timestamp(_now()), generation_id),
+            )
+            from app.analytics.shared_graph import supported
+
+            tables = (
+                ("graph_owned_edges", "graph_owned_nodes")
+                if supported(db)
+                else ("graph_edges", "graph_nodes")
+            )
+            for table in tables:
+                db.execute(
+                    "DELETE FROM "
+                    + table
+                    + " WHERE generation_id=? AND creator_account_id=?",
+                    (generation_id, state["account_ref"]),
+                )
+            db.execute(
+                "DELETE FROM projection_generations WHERE generation_id=? AND status='retired'",
+                (generation_id,),
+            )
 
     def _validate_and_mark_generation(self, generation_id: str) -> None:
         self._validate_persisted_generation(generation_id, allow_building=True)
@@ -2087,6 +2208,7 @@ class SQLiteAnalyticsProjectionStore:
         creator_account_id: str,
         canonical_identity: CanonicalIdentity,
         require_current_owner: bool = True,
+        nlp_authorize=None,
     ) -> bool:
         generation = self._generation(generation_id)
         if generation is None:
@@ -2121,6 +2243,12 @@ class SQLiteAnalyticsProjectionStore:
             ).fetchone()
             if not self._intent_matches(candidate, intent, require_completed=True):
                 raise ProjectionReconciliationError("activation witness CAS differs")
+            from app.analytics.nlp_findings_store import check_generation
+            if '+nlp.snapshot.v1' in candidate['pipeline_revision']:
+                if not callable(nlp_authorize):
+                    raise ProjectionActivationConflict('nlp_live_authorization_required')
+                nlp_authorize()
+            check_generation(connection, candidate, current=True, verify_records=False)
             reused = self.reuse_validation_receipts and self._validation_receipts.take(connection, candidate)
             if not reused:
                 self._validate_persisted_generation(generation_id, materialize_projection=False)
@@ -2699,6 +2827,8 @@ def _recompute_generation(
     ).fetchone()
     if generation is None:
         raise KeyError("projection_generation_missing")
+    from app.analytics.nlp_findings_store import check_generation
+    check_generation(connection, generation)
     run_check()
     account_id = generation["creator_account_id"]
     projection_row = connection.execute(

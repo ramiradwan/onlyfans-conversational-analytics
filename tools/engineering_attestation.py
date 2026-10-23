@@ -1626,6 +1626,181 @@ def _msix_profile_from_source(client: GitHubApi, source: QualifiedSource, target
     return profile
 
 
+def _msix_v2_agent_container(
+    outer: Mapping[str, bytes], agent_names: list[str], source: QualifiedSource,
+    profile_reader: Callable[[str], dict[str, Any]],
+) -> set[str]:
+    """Bind the tagged signed artifact inventory; no Windows trust claim here."""
+    def document(name: str, maximum: int = 32768) -> dict[str, Any]:
+        data = outer.get(name, b"")
+        if not data or len(data) > maximum:
+            raise ContractError("missing or oversized v2 MSIX metadata")
+        value = load_json_strict(data, label=name)
+        if not isinstance(value, dict):
+            raise ContractError("v2 MSIX metadata must be objects")
+        return value
+    def closed(value, keys):
+        if not isinstance(value, dict) or set(value) != set(keys):
+            raise ContractError("v2 MSIX object is not its closed variant")
+    def require(ok):
+        if not ok:
+            raise ContractError("v2 MSIX source, artifact or verification binding differs")
+    final, candidate = document("desktop.artifact-release.json"), document("desktop.release-inputs.json")
+    final_keys = {"schema","source_commit","source_tree","target","application_version","package_version",
+        "profile_sha256","inventory_sha256","build_sha256","expected_family","verification_sha256",
+        "signature_scope","agent_file","agent_sha256","resolved_direct_inputs_sha256","descriptor_sha256","artifact_set"}
+    candidate_keys = {"schema","target","source_commit","source_tree","package_version","application_version",
+        "profile_sha256","inventory_sha256","build_sha256","agent_file","agent_sha256","expected_family",
+        "direct_delivery_sha256","appinstaller_template_sha256","artifact_set"}
+    closed(final, final_keys); closed(candidate, candidate_keys)
+    require(final["schema"] == "ofca-desktop-artifact-release/v2"
+        and candidate["schema"] == "ofca-msix-release-inputs/v2" and final["target"] == "msix-direct"
+        and final["signature_scope"] == "trusted-timestamped")
+    for key in (final_keys & candidate_keys) - {"schema", "artifact_set"}:
+        require(final[key] == candidate[key])
+    require(final["source_commit"] == source.source_commit and final["source_tree"] == source.source_tree
+            and len(agent_names) == 1 and final["agent_file"] == agent_names[0])
+    profile = document("desktop.profile.json")
+    require(profile == profile_reader("msix-direct") and profile.get("schema") == "ofca-msix-package-profile/v2"
+            and profile.get("purpose") == "production" and profile.get("distribution") == "direct-appinstaller")
+    sequence = profile.get("release_sequence")
+    require(type(sequence) is int and 1 <= sequence <= 4294967295)
+    version = f"1.{sequence // 65536}.{sequence % 65536}.0"
+    require(final["package_version"] == version and final["application_version"] == profile["application_version"])
+    servicing = profile["servicing"]
+    closed(servicing, {"installed_artifact","allowed_targets"})
+    layout, capability = servicing["installed_artifact"], servicing["allowed_targets"]
+    related = layout["kind"] == "related_bundle"
+    closed(layout, {"kind","related_set_id","engine"} if related else {"kind"})
+    require(layout["kind"] in {"main_package","related_bundle"})
+    if capability["kind"] == "main_package_only":
+        closed(capability, {"kind"}); require(not related)
+    else:
+        closed(capability, {"kind","engine_identity"})
+        require(capability["kind"] == "main_package_and_related_bundle")
+        engine_identity = capability["engine_identity"]
+        closed(engine_identity, {"name","publisher","family","architecture"})
+        family = final["expected_family"]
+        prefix = profile["identity"]["name"] + "_"
+        require(isinstance(family, str) and family.startswith(prefix)
+                and re.fullmatch(r"[a-z0-9]{13}", family[len(prefix):]) is not None)
+        require(engine_identity["publisher"] == profile["identity"]["publisher"]
+                and engine_identity["architecture"] == "x64"
+                and isinstance(engine_identity["name"], str)
+                and re.fullmatch(r"[A-Za-z0-9.-]{3,50}", engine_identity["name"]) is not None
+                and engine_identity["name"].casefold() != profile["identity"]["name"].casefold()
+                and engine_identity["family"] == engine_identity["name"] + "_" + family[len(prefix):])
+    if related:
+        closed(layout["engine"], {"identity","package_version"})
+        require(layout["engine"]["identity"] == capability["engine_identity"]
+                and isinstance(layout["related_set_id"], str)
+                and re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", layout["related_set_id"]) is not None)
+        engine_version = layout["engine"]["package_version"]
+        require(isinstance(engine_version, str) and re.fullmatch(r"[1-9][0-9]*(?:\.(?:0|[1-9][0-9]*)){3}", engine_version) is not None
+                and all(int(x) <= 65535 for x in engine_version.split(".")))
+    def artifact_set(value):
+        closed(value, {"kind","core","related_set_id","engine"} if related else {"kind","core"})
+        require(value["kind"] == layout["kind"])
+        records = [(value["core"], "ConversationAnalytics", version, ".msixbundle" if related else ".msix")]
+        if related:
+            closed(value["engine"], {"identity","package_version","artifact"})
+            require(value["related_set_id"] == layout["related_set_id"] and
+                    value["engine"]["identity"] == layout["engine"]["identity"] and
+                    value["engine"]["package_version"] == engine_version)
+            records.append((value["engine"]["artifact"], "TextAnalysisEngine", engine_version, ".msixbundle"))
+        for record, prefix, v, suffix in records:
+            closed(record, {"file","size","sha256"})
+            require(record["file"] == f"{prefix}_{v}_x64{suffix}" and type(record["size"]) is int
+                    and 0 < record["size"] <= 4294967295
+                    and isinstance(record["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is not None)
+        return [r[0] for r in records]
+    signed, unsigned = artifact_set(final["artifact_set"]), artifact_set(candidate["artifact_set"])
+    names = {r["file"] for r in signed} | {agent_names[0],"sha256sums.txt","desktop.artifact-release.json",
+        "desktop.release-inputs.json","desktop.profile.json","desktop.inventory.json","desktop.build.json",
+        "desktop.verification.json","desktop.appinstaller-template.xml","ConversationAnalytics.appinstaller",
+        "desktop.resolved-direct-inputs.json"}
+    require(set(outer) == names)
+    for record in signed:
+        require(len(outer[record["file"]]) == record["size"] and sha256_bytes(outer[record["file"]]) == record["sha256"])
+    for name, key in ((agent_names[0],"agent_sha256"),("desktop.profile.json","profile_sha256"),
+            ("desktop.inventory.json","inventory_sha256"),("desktop.build.json","build_sha256"),
+            ("desktop.verification.json","verification_sha256"),("ConversationAnalytics.appinstaller","descriptor_sha256"),
+            ("desktop.resolved-direct-inputs.json","resolved_direct_inputs_sha256")):
+        require(sha256_bytes(outer[name]) == final[key])
+    require(sha256_bytes(outer["desktop.appinstaller-template.xml"]) == candidate["appinstaller_template_sha256"])
+    inventory, build, verification = document("desktop.inventory.json",16*1024**2), document("desktop.build.json"), document("desktop.verification.json")
+    closed(inventory, {"schema","profile_sha256","identity","purpose","distribution","application_version",
+        "package_version","runtime_release","linked_agent","runtime_policy_sha256","manifest_template_sha256",
+        "asset_source_sha256","makeappx_sha256","files","installed_artifact","desktop_descriptor_sha256","artifact_set"})
+    closed(build, {"schema","verification","windows_sdk","makeappx_file_version","uap17_schema_sha256","producer_source","artifact_set"})
+    closed(verification, {"schema","purpose","distribution","mode","identity","file_count","package_sha256",
+        "profile_sha256","inventory_sha256","signature","artifact_set"} | ({"engine_identity"} if related else set()))
+    closed(build["producer_source"], {"base_commit","dirty"})
+    descriptor = dict(schema="ofca-desktop-release/v2",purpose="production",identity=profile["identity"],
+        application_version=profile["application_version"],package_version=version,profile_sha256=final["profile_sha256"],
+        update_owner="direct-appinstaller",app_installer_uri=profile["app_installer_uri"],
+        storage_policy="retained-product-root/v1",executable_family="brain-bridge/v1",
+        webview2_minimum_version=profile["webview2_minimum_version"],servicing=servicing)
+    descriptor_hash = sha256_bytes((json.dumps(descriptor,ensure_ascii=False,sort_keys=True,separators=(",",":"))+"\n").encode("utf-8"))
+    files = inventory["files"]
+    require(isinstance(files,list) and len(files) > 0)
+    for item in files:
+        closed(item,{"path","size","sha256"})
+    descriptor_files = [item for item in files if item["path"] == "app/desktop-release.json"]
+    require(len(descriptor_files) == 1 and descriptor_files[0]["sha256"] == descriptor_hash
+        and inventory["desktop_descriptor_sha256"] == descriptor_hash and inventory["artifact_set"] == candidate["artifact_set"])
+    require(inventory.get("schema") == "ofca-msix-inventory/v2"
+        and inventory.get("installed_artifact") == layout and inventory.get("identity") == profile["identity"]
+        and inventory.get("profile_sha256") == final["profile_sha256"]
+        and inventory.get("package_version") == version and inventory.get("application_version") == final["application_version"]
+        and inventory.get("runtime_release",{}).get("source_commit") == source.source_commit
+        and build.get("schema") == "ofca-msix-build/v2" and build.get("artifact_set") == candidate["artifact_set"]
+        and build.get("verification",{}).get("package_sha256") == unsigned[0]["sha256"]
+        and build.get("producer_source",{}).get("base_commit") == source.source_commit
+        and build.get("producer_source",{}).get("dirty") is False)
+    expected_identity = dict(Name=profile["identity"]["name"],Publisher=profile["identity"]["publisher"],
+        Version=version,Architecture="x64",FamilyName=final["expected_family"])
+    require(verification.get("schema") == "ofca-msix-release-verification/v2"
+        and verification.get("mode") == "DirectSigned" and verification.get("purpose") == "production"
+        and verification.get("distribution") == "direct-appinstaller" and verification.get("signature") == "trusted-timestamped"
+        and verification.get("artifact_set") == final["artifact_set"]
+        and verification.get("package_sha256") == signed[0]["sha256"]
+        and verification.get("profile_sha256") == final["profile_sha256"]
+        and verification.get("inventory_sha256") == final["inventory_sha256"]
+        and all(verification.get("identity",{}).get(k) == v for k,v in expected_identity.items()))
+    if related:
+        require(all(verification.get("engine_identity",{}).get(k) == v for k,v in dict(
+            Name=layout["engine"]["identity"]["name"],Publisher=layout["engine"]["identity"]["publisher"],
+            FamilyName=layout["engine"]["identity"]["family"],Architecture="x64",Version=engine_version).items()))
+    descriptor = outer["ConversationAnalytics.appinstaller"]
+    require(len(descriptor) <= 16384 and b"<!" not in descriptor)
+    try:
+        root = ET.fromstring(descriptor)
+    except ET.ParseError as error:
+        raise ContractError("v2 MSIX feed is not closed XML") from error
+    ns = "{http://schemas.microsoft.com/appx/appinstaller/2018}"
+    tags = (["AppInstaller","MainBundle","RelatedPackages","Bundle","UpdateSettings","OnLaunch","AutomaticBackgroundTask"]
+            if related else ["AppInstaller","MainPackage","UpdateSettings","OnLaunch","AutomaticBackgroundTask"])
+    nodes = list(root.iter()); require([n.tag for n in nodes] == [ns+t for t in tags])
+    uri = profile["app_installer_uri"]; suffix = "windows/x64/stable/ConversationAnalytics.appinstaller"
+    require(uri.endswith(suffix)); base = uri[:-len(suffix)]
+    attrs = [dict(Version=version,Uri=uri),
+        dict(Name=expected_identity["Name"],Publisher=expected_identity["Publisher"],Version=version,
+             Uri=base+"packages/"+signed[0]["sha256"]+"/"+signed[0]["file"])]
+    if related:
+        attrs += [{},dict(Name=layout["engine"]["identity"]["name"],Publisher=layout["engine"]["identity"]["publisher"],
+            Version=engine_version,Uri=base+"packages/"+signed[1]["sha256"]+"/"+signed[1]["file"])]
+    else:
+        attrs[1]["ProcessorArchitecture"] = "x64"
+    attrs += [{},dict(HoursBetweenUpdateChecks="6",ShowPrompt="false",UpdateBlocksActivation="false"),{}]
+    require(all(node.attrib == expected for node,expected in zip(nodes,attrs))
+        and not any((n.text or "").strip() or (n.tail or "").strip() for n in nodes))
+    require(list(root) == ([nodes[1],nodes[2],nodes[4]] if related else nodes[1:3]))
+    if related: require(list(nodes[2]) == [nodes[3]] and list(nodes[4]) == nodes[5:])
+    else: require(list(nodes[2]) == nodes[3:])
+    return names
+
+
 def _msix_agent_container(
     outer: dict[str, bytes], agent_names: list[str], source: QualifiedSource | None,
     profile_reader: Callable[[str], dict[str, Any]] | None,
@@ -1646,6 +1821,8 @@ def _msix_agent_container(
             raise ContractError("MSIX Agent container metadata must be objects")
         return value
     final = document("desktop.artifact-release.json")
+    if final.get("schema") == "ofca-desktop-artifact-release/v2":
+        return _msix_v2_agent_container(outer, agent_names, source, profile_reader)
     final_keys = {"schema","source_commit","source_tree","target","application_version","package_version",
         "package_file","package_sha256","profile_sha256","inventory_sha256","build_sha256","expected_family",
         "verification_sha256","signature_scope","agent_file","agent_sha256","resolved_direct_inputs_sha256","descriptor_sha256"}

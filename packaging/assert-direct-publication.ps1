@@ -13,9 +13,30 @@ $final = Read-ReleaseJson $finalPath 32768
 $keys = @('schema','source_commit','source_tree','target','application_version','package_version',
     'package_file','package_sha256','profile_sha256','inventory_sha256','build_sha256','expected_family',
     'verification_sha256','signature_scope','agent_file','agent_sha256','resolved_direct_inputs_sha256','descriptor_sha256')
+$v2 = $final.schema -ceq 'ofca-desktop-artifact-release/v2'
+if ($v2) { $keys = @($keys | Where-Object { $_ -cnotin @('package_file','package_sha256') }) + 'artifact_set' }
 if ($final.Count -ne $keys.Count -or @($final.Keys | Where-Object { $_ -cnotin $keys }).Count -or
-    $final.schema -cne 'ofca-desktop-artifact-release/v1' -or $final.target -cne 'msix-direct' -or
+    $final.schema -cnotin @('ofca-desktop-artifact-release/v1','ofca-desktop-artifact-release/v2') -or $final.target -cne 'msix-direct' -or
     $final.signature_scope -cne 'trusted-timestamped') { throw 'Require the closed final direct release record' }
+if ($v2) {
+    if ($candidate.schema -cne 'ofca-msix-release-inputs/v2' -or
+        $final.artifact_set.kind -cne $candidate.artifact_set.kind) { throw 'Final artifact-set variant differs' }
+    $members = @(Get-ReleaseArtifactRecords $final.artifact_set $final.package_version)
+    foreach ($member in $members) {
+        $path = Join-Path $Directory $member.file
+        if ((Get-Item -LiteralPath $path).Length -ne $member.size -or (Get-ReleaseHash $path) -cne $member.sha256) { throw 'Final artifact-set bytes changed' }
+    }
+    if ($final.artifact_set.kind -ceq 'related_bundle') {
+        if ($final.artifact_set.related_set_id -cne $candidate.artifact_set.related_set_id -or
+            $final.artifact_set.engine.package_version -cne $candidate.artifact_set.engine.package_version -or
+            -not (Test-ReleaseJsonEqual $final.artifact_set.engine.identity $candidate.artifact_set.engine.identity)) { throw 'Final related pairing differs' }
+        # Stable v1 clients cannot consume MainBundle. No inferred migration
+        # policy, fallback feed, or publication permit is created here.
+        throw 'Related stable publication requires an explicit supported-client migration policy'
+    }
+    $final.package_file = $final.artifact_set.core.file
+    $final.package_sha256 = $final.artifact_set.core.sha256
+} elseif ($candidate.schema -cne 'ofca-msix-release-inputs/v1') { throw 'Final release version differs from its candidate' }
 foreach ($name in @('source_commit','source_tree','target','application_version','package_version','package_file',
     'profile_sha256','inventory_sha256','build_sha256','expected_family','agent_file','agent_sha256')) {
     if ($final[$name] -cne $candidate[$name]) { throw 'Final direct release differs from its immutable candidate' }
@@ -55,6 +76,8 @@ try {
         -ExpectedFamilyName $final.expected_family -VerificationMode DirectSigned -ReceiptPath $FreshVerificationPath
     if ($LASTEXITCODE -ne 0) { throw 'Independent final MSIX verification refused publication' }
     $fresh = Read-ReleaseJson $FreshVerificationPath 32768
+    if ($v2 -and ($fresh.schema -cne 'ofca-msix-release-verification/v2' -or
+        -not (Test-ReleaseJsonEqual $fresh.artifact_set $final.artifact_set))) { throw 'Fresh v2 verification differs' }
     if ($fresh.package_sha256 -cne $final.package_sha256 -or $fresh.signature -cne 'trusted-timestamped' -or
         $fresh.purpose -cne 'production' -or $fresh.distribution -cne 'direct-appinstaller') { throw 'Publication signature scope differs' }
     $admission = [ordered]@{
@@ -62,6 +85,11 @@ try {
         artifact_record_sha256=(Get-ReleaseHash $finalPath); package_sha256=$fresh.package_sha256
         descriptor_sha256=$final.descriptor_sha256; verification_sha256=(Get-ReleaseHash $FreshVerificationPath)
         signature='trusted-timestamped'; identity=$fresh.identity; direct_delivery_sha256=$candidate.direct_delivery_sha256
+    }
+    if ($v2) {
+        $admission.schema = 'ofca-direct-publication-admission/v2'
+        $admission.Remove('package_sha256')
+        $admission.artifact_set = $final.artifact_set
     }
     [IO.File]::WriteAllText([IO.Path]::GetFullPath($AdmissionPath),($admission | ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
 } finally {

@@ -288,7 +288,7 @@ def build_incremental_graph(
 
         records, record_categories = {}, {}
         if previous is not None:
-            opened = chunk_reader(kind, bucket)
+            opened = chunk_reader(kind, bucket, check=check)
             if opened is None:
                 return None
             selected, chunk = opened
@@ -480,6 +480,8 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
                     statistics[kind + "_content_written"] += cursor.rowcount
 
         for segment, members in segment_members:
+            from app.analytics.graph_chunk_encoding import encode
+
             kind = segment.kind
             relation = "node_id" if kind == "node" else "edge_id"
             with writer._owned_transaction() as db:
@@ -493,7 +495,7 @@ def write_incremental_graph(writer, graph: IncrementalCompactGraph, store, *, ch
                        VALUES (?,?,?,?,?,?)""",
                     (
                         graph.account_ref, segment.segment_id, kind, segment.count,
-                        segment.chunk, segment.chunk_digest,
+                        encode(db, segment.chunk, check=check), segment.chunk_digest,
                     ),
                 )
                 db.execute(

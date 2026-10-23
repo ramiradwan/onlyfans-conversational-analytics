@@ -2,9 +2,10 @@
 const ORIGIN = 'https://updates.dipsy.fi';
 const PREFIX = '/desktop/v1/';
 const FEED = 'windows/x64/stable/ConversationAnalytics.appinstaller';
-const PACKAGE = /^packages\/[a-f0-9]{64}\/ConversationAnalytics_[1-9][0-9]*(?:\.[0-9]+){3}_x64\.msix$/;
-const PROBE = /^qualification\/[a-f0-9]{32}\/(?:bytes\.bin|probe\.msix|probe\.appinstaller)$/;
-const TYPES = {msix: 'application/msix', appinstaller: 'application/appinstaller', bin: 'application/octet-stream'};
+const ARTIFACT = '(?:ConversationAnalytics_[1-9][0-9]*(?:\\.[0-9]+){3}_x64\\.msix|(?:ConversationAnalytics|TextAnalysisEngine)_[1-9][0-9]*(?:\\.(?:0|[1-9][0-9]*)){3}_x64\\.msixbundle)';
+const PACKAGE = new RegExp('^packages/[a-f0-9]{64}/' + ARTIFACT + '$');
+const PROBE = new RegExp('^qualification/[a-f0-9]{32}/(?:bytes\\.bin|probe\\.msix|probe\\.appinstaller|packages/[a-f0-9]{64}/' + ARTIFACT + ')$');
+const TYPES = {msix: 'application/msix', msixbundle: 'application/msixbundle', appinstaller: 'application/appinstaller', bin: 'application/octet-stream'};
 
 function reply(request, status, text, extra = {}) {
   const body = new TextEncoder().encode(text);

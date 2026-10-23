@@ -4,15 +4,13 @@ No transport or account authority lives here. Errors contain no rejected bytes.
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import math
 import re
 from dataclasses import dataclass
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec, utils
+from app.security import signed_objects
 
 ENGINE = "onlyfans-sha1-checksum/v1"
 PARAMETER_SCHEMA = "local-packaged-signing-rule/v1"
@@ -62,66 +60,27 @@ def sha256(value):
 
 
 def encode(value):
-    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+    return signed_objects.encode(value)
 
 
 def decode(value, maximum):
-    require(type(value) is str and re.fullmatch(r"[A-Za-z0-9_-]+", value) is not None
-            and len(value) <= (maximum * 4 + 2) // 3 and len(value) % 4 != 1)
     try:
-        result = base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
-    except (ValueError, TypeError):
+        return signed_objects.decode(value, maximum)
+    except signed_objects.SignedObjectRejected:
         raise PublicationRejected() from None
-    require(len(result) <= maximum and encode(result) == value)
-    return result
 
 
 def parse(value, *, maximum, signed=False):
-    require(type(value) is bytes and 0 < len(value) <= maximum)
-
-    def pairs(items):
-        result = {}
-        for name, child in items:
-            require(name not in result)
-            result[name] = child
-        return result
-
-    def walk(child, depth=0):
-        require(depth <= 16)
-        if type(child) is str:
-            require(not any(0xD800 <= ord(c) <= 0xDFFF for c in child))
-        elif type(child) is int:
-            require(abs(child) <= MAX_SAFE_INTEGER)
-        elif type(child) is float:
-            require(math.isfinite(child) and (child != int(child) or abs(child) <= MAX_SAFE_INTEGER))
-        elif type(child) is dict:
-            for name, item in child.items():
-                walk(name, depth + 1)
-                walk(item, depth + 1)
-        elif type(child) is list:
-            for item in child:
-                walk(item, depth + 1)
-
     try:
-        text = value.decode("utf-8", errors="strict")
-        require(not text.startswith("\ufeff"))
-        result = json.loads(text, object_pairs_hook=pairs, parse_constant=lambda _: require(False))
-        walk(result)
-        if signed:
-            require(canonical(result) == value)
-        return result
-    except (UnicodeError, ValueError, TypeError, RecursionError):
+        return signed_objects.parse(value, maximum=maximum, canonicalizer=canonical if signed else None)
+    except signed_objects.SignedObjectRejected:
         raise PublicationRejected() from None
 
 
 def public_key(value):
-    closed(value, ("kty", "crv", "x", "y"))
-    require(value["kty"] == "EC" and value["crv"] == "P-256")
-    x, y = decode(value["x"], 32), decode(value["y"], 32)
-    require(len(x) == len(y) == 32)
     try:
-        return ec.EllipticCurvePublicNumbers(int.from_bytes(x, "big"), int.from_bytes(y, "big"), ec.SECP256R1()).public_key()
-    except ValueError:
+        return signed_objects.public_key(value)
+    except signed_objects.SignedObjectRejected:
         raise PublicationRejected() from None
 
 
@@ -149,23 +108,16 @@ class VerifiedPublication:
 
 
 def signature(jws, typ, keys, maximum):
-    require(type(jws) is str and len(jws) <= (maximum * 4 + 2) // 3 + 1024)
-    segments = jws.split(".")
-    require(len(segments) == 3)
-    header = parse(decode(segments[0], 512), maximum=512, signed=True)
-    raw = decode(segments[1], maximum)
-    sig = decode(segments[2], 64)
-    closed(header, ("alg", "kid", "typ"))
-    require(header["alg"] == "ES256" and header["typ"] == typ and len(sig) == 64
-            and type(header["kid"]) is str and IDENTIFIER.fullmatch(header["kid"]) is not None)
-    signer = next((key for key in keys if key["kid"] == header["kid"]), None)
-    require(signer is not None)
     try:
-        der = utils.encode_dss_signature(int.from_bytes(sig[:32], "big"), int.from_bytes(sig[32:], "big"))
-        public_key(signer["jwk"]).verify(der, (segments[0] + "." + segments[1]).encode("ascii"), ec.ECDSA(hashes.SHA256()))
-    except Exception:
+        verified = signed_objects.verify_compact(
+            jws, typ=typ, keys=keys, maximum=maximum,
+            envelope_limit=(maximum * 4 + 2) // 3 + 1024,
+            header_canonicalizer=canonical,
+            payload_validator=lambda raw: parse(raw, maximum=maximum, signed=True),
+        )
+    except signed_objects.SignedObjectRejected:
         raise PublicationRejected() from None
-    return VerifiedPublication(parse(raw, maximum=maximum, signed=True), sha256(raw), header["kid"], jws)
+    return VerifiedPublication(verified.payload, verified.payload_sha256, verified.kid, jws)
 
 
 def lifetime(value, now, maximum, allow_expired=False):

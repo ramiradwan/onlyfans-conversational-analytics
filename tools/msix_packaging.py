@@ -80,7 +80,11 @@ def package_version(sequence: int) -> str:
 
 
 def validate_profile(profile: dict, *, production: bool = False) -> dict:
-    schema = read_json(CONFIG_ROOT / "package-profile.schema.json")
+    schemas = {"ofca-msix-package-profile/v1": "package-profile.schema.json",
+               "ofca-msix-package-profile/v2": "package-profile-v2.schema.json"}
+    if not isinstance(profile, dict) or profile.get("schema") not in schemas:
+        raise ValueError("unsupported package profile")
+    schema = read_json(CONFIG_ROOT / schemas[profile["schema"]])
     errors = sorted(Draft202012Validator(schema).iter_errors(profile), key=lambda item: str(item.path))
     if errors:
         raise ValueError("invalid package profile: " + errors[0].message)
@@ -137,6 +141,13 @@ def validate_profile(profile: dict, *, production: bool = False) -> dict:
         if not qualification and (parsed.hostname.endswith((".example", ".test", ".invalid", ".example.com"))
                                    or parsed.hostname in {"example.com", "example.org", "example.net"}):
             raise ValueError("production profiles require actual hosting coordinates")
+    if profile["schema"] == "ofca-msix-package-profile/v2":
+        from app.core.desktop_release import parse_servicing
+        family = None
+        if not qualification:
+            family = read_json(CONFIG_ROOT / "direct-delivery.json")["expected_package_family"]
+        parse_servicing(profile["servicing"], main_name=profile["identity"]["name"],
+                        publisher=profile["identity"]["publisher"], main_family=family)
     return profile
 
 
@@ -184,6 +195,7 @@ def file_record(path: Path, relative: str) -> dict:
 
 
 def desktop_descriptor(profile: dict, profile_sha256: str) -> dict:
+    validate_profile(profile)
     descriptor = {
         "schema": "ofca-desktop-release/v1", "purpose": profile["purpose"],
         "identity": profile["identity"], "application_version": profile["application_version"],
@@ -192,7 +204,11 @@ def desktop_descriptor(profile: dict, profile_sha256: str) -> dict:
         "storage_policy": "retained-product-root/v1", "executable_family": "brain-bridge/v1",
         "webview2_minimum_version": profile["webview2_minimum_version"],
     }
-    Draft202012Validator(read_json(CONFIG_ROOT / "desktop-release.schema.json")).validate(descriptor)
+    schema = "desktop-release.schema.json"
+    if profile["schema"] == "ofca-msix-package-profile/v2":
+        descriptor.update(schema="ofca-desktop-release/v2", servicing=profile["servicing"])
+        schema = "desktop-release-v2.schema.json"
+    Draft202012Validator(read_json(CONFIG_ROOT / schema)).validate(descriptor)
     return descriptor
 
 
@@ -317,6 +333,10 @@ def seal_payload(working: Path, profile_path: Path, makeappx: Path) -> dict:
         "makeappx_sha256": sha256(makeappx),
         "files": [file_record(payload / path, path) for path in sorted(actual)],
     }
+    if profile["schema"] == "ofca-msix-package-profile/v2":
+        inventory.update(schema="ofca-msix-inventory/v2",
+                         installed_artifact=profile["servicing"]["installed_artifact"],
+                         desktop_descriptor_sha256=sha256(app / "desktop-release.json"))
     (working / "inventory.json").write_bytes(canonical_json(inventory))
     return inventory
 
@@ -348,7 +368,9 @@ def verify_archive(package: Path, inventory_path: Path, profile_path: Path, *, p
         raise ValueError("verification requires an MSIX file")
     profile = load_profile(profile_path, production=production)
     inventory = read_json(inventory_path, maximum=16 * 1024 * 1024)
-    if (inventory.get("schema") != "ofca-msix-inventory/v1"
+    expected_schema = ("ofca-msix-inventory/v2" if profile["schema"] == "ofca-msix-package-profile/v2"
+                       else "ofca-msix-inventory/v1")
+    if (inventory.get("schema") != expected_schema
             or inventory.get("profile_sha256") != sha256(profile_path)
             or inventory.get("identity") != profile["identity"]
             or inventory.get("package_version") != package_version(profile["release_sequence"])
@@ -393,6 +415,10 @@ def verify_archive(package: Path, inventory_path: Path, profile_path: Path, *, p
             raise ValueError("package manifest differs from the expected identity and policy")
         if archive.read("app/desktop-release.json") != canonical_json(desktop_descriptor(profile, sha256(profile_path))):
             raise ValueError("package desktop descriptor disagrees with its profile")
+        if expected_schema.endswith("/v2") and (
+                inventory.get("installed_artifact") != profile["servicing"]["installed_artifact"]
+                or inventory.get("desktop_descriptor_sha256") != hashlib.sha256(archive.read("app/desktop-release.json")).hexdigest()):
+            raise ValueError("v2 descriptor or artifact layout differs from its inventory")
     return {"schema": "ofca-msix-verification/v1", "verification_scope": "payload-inventory", "signature": "not-checked",
             "package_sha256": sha256(package),
             "profile_sha256": sha256(profile_path), "inventory_sha256": sha256(inventory_path),
@@ -439,7 +465,8 @@ def render_appinstaller(profile: dict, package_uri: str) -> bytes:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("validate-profile", "prepare", "seal", "verify", "verify-unpacked", "appinstaller", "desktop-descriptor"))
+    parser.add_argument("operation", choices=("validate-profile", "prepare", "seal", "verify", "verify-unpacked", "appinstaller", "desktop-descriptor",
+                                             "related-mapping", "artifact-set", "release-appinstaller"))
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--stage", type=Path)
     parser.add_argument("--working", type=Path)
@@ -450,11 +477,35 @@ def main() -> int:
     parser.add_argument("--production", action="store_true")
     parser.add_argument("--package-uri")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--engine-bundle", type=Path)
+    parser.add_argument("--artifact-set", type=Path)
     options = parser.parse_args()
     try:
         if options.operation == "validate-profile":
             profile = load_profile(options.profile, production=options.production)
             result = {"package_version": package_version(profile["release_sequence"]), "identity": profile["identity"]}
+        elif options.operation in {"related-mapping", "artifact-set", "release-appinstaller"}:
+            from tools import optional_msix as optional
+            profile = load_profile(options.profile, production=options.production)
+            if profile["schema"] != "ofca-msix-package-profile/v2" or options.output is None:
+                raise ValueError("v2 artifact operation requires an output and explicit profile")
+            if options.operation == "related-mapping":
+                if options.engine_bundle is None or profile["servicing"]["installed_artifact"]["kind"] != "related_bundle":
+                    raise ValueError("related mapping requires the external Engine bundle")
+                optional.verify_engine_bundle(options.engine_bundle, profile)
+                engine = profile["servicing"]["installed_artifact"]["engine"]
+                options.output.write_bytes(optional.bundle_mapping(
+                    optional.artifact_filename("main_package", package_version(profile["release_sequence"])),
+                    optional.artifact_filename("engine", engine["package_version"])))
+            elif options.operation == "artifact-set":
+                if options.package is None:
+                    raise ValueError("artifact-set requires the actual core artifact")
+                options.output.write_bytes(canonical_json(optional.release_artifact_set(profile, options.package, options.engine_bundle)))
+            else:
+                if options.artifact_set is None:
+                    raise ValueError("release-appinstaller requires the frozen artifact set")
+                options.output.write_bytes(optional.release_appinstaller(profile, read_json(options.artifact_set)))
+            result = {"output": str(options.output)}
         elif options.operation == "desktop-descriptor":
             if options.output is None:
                 raise ValueError("desktop-descriptor requires an output file")

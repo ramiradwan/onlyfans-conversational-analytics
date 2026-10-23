@@ -1,0 +1,422 @@
+{
+  "$defs": {
+    "Coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "source_codepoints": {
+          "maximum": 131072,
+          "minimum": 0,
+          "title": "Source Codepoints",
+          "type": "integer"
+        },
+        "examined": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Examined",
+          "type": "array"
+        },
+        "excluded": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Excluded",
+          "type": "array"
+        },
+        "limits_reached": {
+          "items": {
+            "enum": [
+              "tokens",
+              "windows",
+              "candidates",
+              "output"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Limits Reached",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_codepoints",
+        "examined",
+        "excluded",
+        "limits_reached"
+      ],
+      "title": "Coverage",
+      "type": "object"
+    },
+    "EngineIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_family": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Family",
+          "type": "string"
+        },
+        "core_package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Name",
+          "type": "string"
+        },
+        "core_package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Version",
+          "type": "string"
+        },
+        "publisher": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Publisher",
+          "type": "string"
+        },
+        "package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Version",
+          "type": "string"
+        },
+        "related_set_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Related Set Id",
+          "type": "string"
+        },
+        "engine_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "platform": {
+          "const": "windows-x64",
+          "title": "Platform",
+          "type": "string"
+        },
+        "worker_protocol": {
+          "const": "nlp-worker.v1",
+          "default": "nlp-worker.v1",
+          "title": "Worker Protocol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "package_name",
+        "package_family",
+        "core_package_name",
+        "core_package_version",
+        "publisher",
+        "package_version",
+        "related_set_id",
+        "engine_version",
+        "platform"
+      ],
+      "title": "EngineIdentity",
+      "type": "object"
+    },
+    "ExecutionIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/EngineIdentity"
+        },
+        "pack_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "pack_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Pack Sha256",
+          "type": "string"
+        },
+        "checkpoint_revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Checkpoint Revision",
+          "type": "string"
+        },
+        "tokenizer_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Tokenizer Sha256",
+          "type": "string"
+        },
+        "recipe_id": {
+          "const": "topics_mentions_v1",
+          "title": "Recipe Id",
+          "type": "string"
+        },
+        "recipe_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Recipe Sha256",
+          "type": "string"
+        },
+        "taxonomy_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Taxonomy Version",
+          "type": "string"
+        },
+        "taxonomy_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Taxonomy Sha256",
+          "type": "string"
+        },
+        "result_schema": {
+          "const": "nlp-result.v1",
+          "default": "nlp-result.v1",
+          "title": "Result Schema",
+          "type": "string"
+        },
+        "language_assumption": {
+          "const": "en",
+          "default": "en",
+          "title": "Language Assumption",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "pack_id",
+        "pack_sha256",
+        "checkpoint_revision",
+        "tokenizer_sha256",
+        "recipe_id",
+        "recipe_sha256",
+        "taxonomy_version",
+        "taxonomy_sha256"
+      ],
+      "title": "ExecutionIdentity",
+      "type": "object"
+    },
+    "MentionFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "concept_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Concept Id",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "concept_id",
+        "span",
+        "score"
+      ],
+      "title": "MentionFinding",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Half-open Unicode codepoint offsets into unchanged original source text.",
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    },
+    "TaskResult": {
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "enum": [
+            "assessed_findings",
+            "assessed_no_match",
+            "uncertain",
+            "unsupported",
+            "partial",
+            "failed",
+            "unprocessed"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "below_threshold",
+            "unsupported_input",
+            "dependency_unavailable",
+            "cancelled",
+            "deadline",
+            "worker_failure",
+            "limit_reached"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "topics": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TopicFinding"
+          },
+          "maxItems": 64,
+          "title": "Topics",
+          "type": "array"
+        },
+        "mentions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MentionFinding"
+          },
+          "maxItems": 512,
+          "title": "Mentions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "outcome",
+        "coverage",
+        "reason"
+      ],
+      "title": "TaskResult",
+      "type": "object"
+    },
+    "TopicFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "topic_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Topic Id",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "topic_id",
+        "score"
+      ],
+      "title": "TopicFinding",
+      "type": "object"
+    },
+    "WorkerItemResult": {
+      "additionalProperties": false,
+      "properties": {
+        "request_item_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Request Item Id",
+          "type": "string"
+        },
+        "topics": {
+          "$ref": "#/$defs/TaskResult"
+        },
+        "mentions": {
+          "$ref": "#/$defs/TaskResult"
+        },
+        "score_semantics": {
+          "const": "model_score_not_accuracy",
+          "default": "model_score_not_accuracy",
+          "title": "Score Semantics",
+          "type": "string"
+        },
+        "calibration_status": {
+          "const": "not_calibrated",
+          "default": "not_calibrated",
+          "title": "Calibration Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_item_id",
+        "topics",
+        "mentions"
+      ],
+      "title": "WorkerItemResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "nlp-worker.v1",
+      "default": "nlp-worker.v1",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionIdentity"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/WorkerItemResult"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "execution",
+    "items"
+  ],
+  "title": "WorkerResponse",
+  "type": "object"
+}

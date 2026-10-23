@@ -21,7 +21,9 @@ from app.persistence.history import StreamKey
 from app.protocol import AGENT_TO_BRAIN_ADAPTER
 from app.security.runtime_policy import AuthorizationEpoch, RuntimePolicy
 from app.security.account_bindings import AccountResolutionRefused, EligibleAccount
+from app.services import retention_maintenance
 from app.services.agent_configuration import BOOTSTRAP_CONFIG_REVISION
+from tests.analytics_fixture_clock import fixture_clock
 from app.transport.manager import (
     DEV_ACCOUNT_ID,
     DEV_AGENT_AUTH_TICKET,
@@ -42,7 +44,8 @@ PUBLISHED_CONFIG_REVISION = (
 
 
 @pytest.fixture(autouse=True)
-def reset_manager(inner_protocol_app):
+def reset_manager(inner_protocol_app, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(retention_maintenance, "utc_now", fixture_clock)
     transport_manager.reset()
     app.dependency_overrides.clear()
     yield

@@ -18,6 +18,8 @@ mod servicing_feed;
 mod servicing_handoff;
 #[path = "../../src/windows.rs"]
 mod windows;
+#[path = "../../src/worker_diagnostics.rs"]
+mod worker_diagnostics;
 
 use prerequisite::{Platform, RecoveryAction, RecoveryReason, Version};
 use std::time::{Duration, Instant};

@@ -23,6 +23,9 @@
         "frontend/src/components/dashboard/DashboardOverview.tsx",
         "frontend/src/components/CommercialActivationControls.tsx",
         "frontend/src/components/CreatorVaultControls.tsx",
+        "frontend/src/components/NlpDependencyControls.tsx",
+        "frontend/src/components/analytics/TaskFindings.tsx",
+        "frontend/src/components/analytics/MentionEvidenceDialog.tsx",
         "frontend/src/components/analytics/ConversationQuestions.tsx",
         "frontend/src/components/analytics/QuestionSourceDialog.tsx",
         "frontend/src/components/BrowserExtensionControls.tsx",
@@ -87,6 +90,21 @@
     }
   },
   "journeys": [
+    {
+      "id": "profile-findings",
+      "entry_state": "findings.controls",
+      "success_state": "findings.source"
+    },
+    {
+      "id": "optional-text-analysis",
+      "entry_state": "textanalysis.controls",
+      "success_state": "textanalysis.cost_review"
+    },
+    {
+      "id": "optional-text-analysis-unavailable",
+      "entry_state": "textanalysis.unavailable",
+      "success_state": "textanalysis.unavailable"
+    },
     {
       "id": "desktop-runtime-recovery",
       "entry_state": "desktop.webview_runtime_needed",
@@ -154,6 +172,132 @@
     }
   ],
   "states": [
+    {
+      "id": "findings.controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TaskFindings.tsx",
+        "text": "data-journey-state=\"findings.controls\""
+      },
+      "transitions": [
+        { "to": "findings.results", "by": "system" },
+        { "to": "findings.unavailable", "by": "system" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "shows both tasks with distinct counting units and honest label fallback" }
+      ]
+    },
+    {
+      "id": "findings.unavailable",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TaskFindings.tsx",
+        "text": "data-journey-state=\"findings.unavailable\""
+      },
+      "transitions": [
+        { "to": "findings.controls", "by": "user", "action": "Refresh saved findings or choose another analytics window" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "keeps unavailable findings separate from baseline summary" }
+      ]
+    },
+    {
+      "id": "findings.results",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TaskFindings.tsx",
+        "text": "data-journey-state=\"findings.results\""
+      },
+      "transitions": [
+        { "to": "findings.source", "by": "user", "action": "Open a supporting source reference" },
+        { "to": "findings.controls", "by": "user", "action": "Change dates or message direction" },
+        { "to": "findings.unavailable", "by": "system" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "shows both tasks with distinct counting units and honest label fallback" }
+      ]
+    },
+    {
+      "id": "findings.source",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/MentionEvidenceDialog.tsx",
+        "text": "data-journey-state=\"findings.source\""
+      },
+      "transitions": [
+        { "to": "findings.results", "by": "user", "action": "Close the source message" },
+        { "to": "findings.unavailable", "by": "system" }
+      ],
+      "evidence": [
+        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "opens only the selected repeated Unicode mention occurrence" }
+      ]
+    },
+    {
+      "id": "textanalysis.unavailable",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/NlpDependencyControls.tsx",
+        "text": "data-journey-state=\"textanalysis.unavailable\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.controls",
+          "by": "user",
+          "action": "Check cached status after a qualified configuration becomes available"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/NlpDependencyControls.test.tsx",
+          "name": "preserves the unavailable baseline without automatic setup actions"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/NlpDependencyControls.tsx",
+        "text": "data-journey-state=\"textanalysis.controls\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.cost_review",
+          "by": "user",
+          "action": "Review a profile download plan"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/NlpDependencyControls.test.tsx",
+          "name": "rediscovers interrupted downloads without automatically resuming them"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.cost_review",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/NlpDependencyControls.tsx",
+        "text": "data-journey-state=\"textanalysis.cost_review\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.controls",
+          "by": "user",
+          "action": "Return or explicitly download the reviewed files"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/NlpDependencyControls.test.tsx",
+          "name": "requires exact cost review before acquiring files"
+        }
+      ]
+    },
     {
       "id": "desktop.webview_runtime_needed",
       "surface": "desktop.prerequisite",

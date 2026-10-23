@@ -120,6 +120,7 @@ class ProjectionCandidate:
 
     reference: GenerationReference | None = None
     source_identity_proof: object | None = field(default=None, repr=False, compare=False)
+    publication_pipeline: object | None = field(default=None, repr=False, compare=False)
     _artifact_reader: Callable[[], RebuildArtifact] | None = field(default=None, repr=False, compare=False)
 
     def artifact(self) -> RebuildArtifact:
@@ -146,6 +147,9 @@ class AnalyticsPipeline:
         reuse_enrichment: bool = True,
         reuse_conversations: bool = True,
         compact_graph: bool = True,
+        nlp_findings=None,
+        nlp_authorize=None,
+        nlp_admit=None,
     ) -> None:
         if max_revision_retries <= 0:
             raise ValueError("max_revision_retries must be positive")
@@ -206,6 +210,18 @@ class AnalyticsPipeline:
                 "historical_derivation_provenance": HISTORICAL_DERIVATION_SCHEMA,
             },
         )
+        self.base_pipeline_config_digest = self.pipeline_config_digest
+        self.nlp_findings = nlp_findings
+        self.nlp_authorize = nlp_authorize
+        self.nlp_admit = nlp_admit
+        if nlp_findings is not None:
+            from app.analytics.nlp_findings_store import effective_config
+            if not callable(nlp_authorize) or not callable(nlp_admit):
+                raise ValueError('nlp_live_authorization_required')
+            if not hasattr(self.projections, 'database'):
+                raise ValueError('nlp_sqlite_store_required')
+            self.pipeline_revision += "+nlp.snapshot.v1"
+            self.pipeline_config_digest = effective_config(self.base_pipeline_config_digest, nlp_findings.snapshot_id)
         self._account_locks: dict[str, tuple[RLock, int]] = {}
         self._account_locks_guard = RLock()
         self._direct_publication_capability = secrets.token_hex(32)
@@ -332,6 +348,10 @@ class AnalyticsPipeline:
         """Compute an immutable candidate without mutating active stores."""
 
         check_cancelled(cancellation_check)
+        if self.nlp_findings is not None:
+            from app.analytics.nlp_findings_store import require_current_snapshot
+            with self.projections.database.read() as db:
+                require_current_snapshot(db, self.nlp_findings, source_identity(self.source, creator_account_id))
         if not creator_account_id.strip():
             raise CanonicalAccountNotFound()
         if not self.account_exists(creator_account_id):
@@ -444,6 +464,8 @@ class AnalyticsPipeline:
                     canonical_identity=account_identity,
                     publication_epoch=publication_epoch,
                     cancellation_check=cancellation_check,
+                    **({'nlp_findings': self.nlp_findings,
+                        'nlp_base_config': self.base_pipeline_config_digest} if self.nlp_findings is not None else {}),
                     **({"enrichment_entries": tuple(reuse.entries.values())}
                        if reuse and not enrichment_units_complete else {}),
                     **({"conversation_pages": tuple(conversation_state.page_sets)}
@@ -484,6 +506,10 @@ class AnalyticsPipeline:
     def publish_candidate(self, candidate: ProjectionCandidate) -> PipelineRun:
         """Perform the scheduler-approved canonical witness/CAS publication."""
 
+        if self.nlp_findings is not None:
+            from app.analytics.nlp_findings_store import require_current_snapshot
+            with self.projections.database.read() as db:
+                require_current_snapshot(db, self.nlp_findings, source_identity(self.source, candidate.creator_account_id))
         reference = candidate.reference
         artifact = None if reference is not None else candidate.artifact()
         projection = reference if reference is not None else artifact.projection
@@ -524,6 +550,7 @@ class AnalyticsPipeline:
                     creator_account_id=candidate.creator_account_id,
                     canonical_identity=expected_identity,
                     source_identity_proof=candidate.source_identity_proof,
+                    **({'nlp_authorize': self.nlp_authorize, 'nlp_admit': self.nlp_admit} if self.nlp_findings is not None else {}),
                 )
                 refresh = getattr(self.source, "refresh_identity_cache", None)
                 if callable(refresh):

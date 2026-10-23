@@ -1,0 +1,217 @@
+{
+  "schema_version": "analytics-findings.v2",
+  "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+  "source_revision": 1,
+  "projection_generation": 1,
+  "projection_digest": "sha256:ece0805655a63af3a2602a18176fdb091e262781be98fa0b19f66702cccc1d5b",
+  "canonical_content_digest": "sha256:a8369e27e4d024da7102fecca481baeaef739e33d20372335e745d8a848eda4d",
+  "graph_digest": "sha256:05db63e6361060313a257987c50713e12803d2881c1a32bc4827d78db3ccd86e",
+  "pipeline_revision": "analytics.pipeline.v3+rule_based_sentiment@sentiment.rules.v1+rule_based_topics_entities@topics-entities.rules.v1+rule_based_engagement@engagement.rules.v1+graph.relationship.v1+enrichment.units.v1+graph.segment-root.v1+nlp.snapshot.v1",
+  "pipeline_config_digest": "sha256:e5a57e35a51b7a2f5ea5166b57e88814a722795490e6723479419e55f0cd62ba",
+  "pipeline_identity_digest": "sha256:5ebbd9637dc677b88a366804b03b3ec007f15a83fc2bfa08674aeb45bd0e79ce",
+  "snapshot_sha256": "sha256:9fc40d7dabea8ec6b4c0dbf79fb66a2acc76db98fe7e576f6ef60584a70c8d56",
+  "profile_sha256": "sha256:fecb7782ae8d66b5176c24b18d06c61d7acb9abf34de652a67407b8986aee13b",
+  "presentation": {
+    "policy_id": "presentation",
+    "revision": "1",
+    "sha256": "bfac314fefdc07451af1792a81cbaeda24a9363f7d4d4b7ff2938c4231ea7e36"
+  },
+  "requested_window": {
+    "scope": "requested",
+    "start": "2026-09-09T12:00:00Z",
+    "end": "2026-09-18T12:00:00Z"
+  },
+  "effective_window": {
+    "scope": "effective",
+    "start": "2026-09-10T12:00:00Z",
+    "end": "2026-09-10T12:01:00Z"
+  },
+  "direction": "all",
+  "conversation_ref": null,
+  "conversation_page": {
+    "offset": 0,
+    "limit": 50,
+    "total": 1,
+    "has_more": false,
+    "items": [
+      {
+        "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+        "eligible_messages": 2
+      }
+    ]
+  },
+  "comparison": {
+    "availability": "available",
+    "unavailable_reason": null,
+    "boundary_policy": "previous_end_exclusive",
+    "requested_window": {
+      "scope": "requested",
+      "start": "2026-08-31T12:00:00Z",
+      "end": "2026-09-09T12:00:00Z"
+    },
+    "effective_window": {
+      "scope": "effective",
+      "start": null,
+      "end": null
+    },
+    "tasks": [
+      {
+        "task": "concept_mentions",
+        "task_contract": "concept_mentions.v1",
+        "component_id": "joint",
+        "component_sha256": "sha256:8726e13cf3b472bb404187bb94b0995b134ec68b64b077d787c01636a9d12c7e",
+        "taxonomy": {
+          "policy_id": "taxonomy",
+          "revision": "1",
+          "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+        },
+        "availability": "current",
+        "eligible_messages": 0,
+        "complete_messages": 0,
+        "partial_messages": 0,
+        "pending_messages": 0,
+        "failed_messages": 0,
+        "unsupported_messages": 0,
+        "uncertain_messages": 0,
+        "scan_complete": true,
+        "rows": [
+          {
+            "category_id": "concept.synthetic",
+            "display_label": "concept.synthetic",
+            "label_status": "id_only",
+            "label_identity_sha256": "sha256:df7edbd333beac958d70f196fdfb381ed48090e67a3db8a17252b903e2d52e8f",
+            "supporting_messages": 0,
+            "supporting_conversations": 0,
+            "occurrences": 0,
+            "complete_supporting_messages": 0,
+            "partial_supporting_messages": 0,
+            "share_of_complete_messages": null
+          }
+        ]
+      }
+    ]
+  },
+  "processing_mode": "enabled",
+  "tasks": [
+    {
+      "task": "concept_mentions",
+      "task_contract": "concept_mentions.v1",
+      "component_id": "joint",
+      "component_sha256": "sha256:8726e13cf3b472bb404187bb94b0995b134ec68b64b077d787c01636a9d12c7e",
+      "taxonomy": {
+        "policy_id": "taxonomy",
+        "revision": "1",
+        "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+      },
+      "availability": "current",
+      "eligible_messages": 2,
+      "complete_messages": 2,
+      "partial_messages": 0,
+      "pending_messages": 0,
+      "failed_messages": 0,
+      "unsupported_messages": 0,
+      "uncertain_messages": 0,
+      "scan_complete": true,
+      "rows": [
+        {
+          "category_id": "concept.synthetic",
+          "display_label": "concept.synthetic",
+          "label_status": "id_only",
+          "label_identity_sha256": "sha256:df7edbd333beac958d70f196fdfb381ed48090e67a3db8a17252b903e2d52e8f",
+          "supporting_messages": 2,
+          "supporting_conversations": 1,
+          "occurrences": 4,
+          "complete_supporting_messages": 2,
+          "partial_supporting_messages": 0,
+          "share_of_complete_messages": 1.0
+        }
+      ]
+    }
+  ],
+  "evidence_page": {
+    "offset": 0,
+    "limit": 50,
+    "total": 4,
+    "has_more": false,
+    "items": [
+      {
+        "task": "concept_mentions",
+        "category_id": "concept.synthetic",
+        "assessment": "complete",
+        "reference": {
+          "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+          "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+          "message_ref": "m1:35b2393696d087d98c184ffdbf0fc927080fe00ccf966e6cd30baceb28213f5a",
+          "source_revision": 1,
+          "source_version_digest": "sha256:ccf585475651089c53743a0eb566fb9290ac3135ac0bd03af00304ddceebb785",
+          "sent_at": "2026-09-10T12:00:00Z",
+          "span": {
+            "start": 2,
+            "end": 6
+          }
+        }
+      },
+      {
+        "task": "concept_mentions",
+        "category_id": "concept.synthetic",
+        "assessment": "complete",
+        "reference": {
+          "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+          "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+          "message_ref": "m1:35b2393696d087d98c184ffdbf0fc927080fe00ccf966e6cd30baceb28213f5a",
+          "source_revision": 1,
+          "source_version_digest": "sha256:ccf585475651089c53743a0eb566fb9290ac3135ac0bd03af00304ddceebb785",
+          "sent_at": "2026-09-10T12:00:00Z",
+          "span": {
+            "start": 7,
+            "end": 11
+          }
+        }
+      },
+      {
+        "task": "concept_mentions",
+        "category_id": "concept.synthetic",
+        "assessment": "complete",
+        "reference": {
+          "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+          "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+          "message_ref": "m1:807f7cac607bd67b256fc9b5c7090e4370390a3e9418e309484d3dcd18d188ee",
+          "source_revision": 1,
+          "source_version_digest": "sha256:54e2ee392c809f1849a1505962b853d2680e381b51f6e7ff34f449e3f4ec29de",
+          "sent_at": "2026-09-10T12:01:00Z",
+          "span": {
+            "start": 2,
+            "end": 6
+          }
+        }
+      },
+      {
+        "task": "concept_mentions",
+        "category_id": "concept.synthetic",
+        "assessment": "complete",
+        "reference": {
+          "account_ref": "a1:a231a5f280f928e98c6644b87db387eeb9f571d46b97be9be132fc654bcf1def",
+          "conversation_ref": "c1:412e4ed1529273184f1be7f461d902c8cdd44d4674a5ddc4d0e18a0cc2be8956",
+          "message_ref": "m1:807f7cac607bd67b256fc9b5c7090e4370390a3e9418e309484d3dcd18d188ee",
+          "source_revision": 1,
+          "source_version_digest": "sha256:54e2ee392c809f1849a1505962b853d2680e381b51f6e7ff34f449e3f4ec29de",
+          "sent_at": "2026-09-10T12:01:00Z",
+          "span": {
+            "start": 7,
+            "end": 11
+          }
+        }
+      }
+    ]
+  },
+  "task_availability": [
+    {
+      "task": "message_topics",
+      "availability": "not_declared"
+    },
+    {
+      "task": "concept_mentions",
+      "availability": "declared"
+    }
+  ]
+}

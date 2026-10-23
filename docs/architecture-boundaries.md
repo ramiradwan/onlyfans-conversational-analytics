@@ -4,6 +4,9 @@
 
 ## System components
 
+[ADR 0057](adr/0057-optional-local-nlp-contracts.md) assigns `native/nlp-worker/**` to the derived `optional-nlp-worker` module with computation authority only. Descriptors and messages under `app/nlp/` and `shared/nlp/` belong to `protocol-core`. [ADR 0059](adr/0059-owned-optional-worker-lifetime.md) assigns the explicit client, Engine provider, retained files and installed-host adapter to `nlp-execution-lifetime`. Brain remains the sole writer. Default construction enables no runtime; installed execution requires separate qualification.
+
+
 [ADR 0050](adr/0050-desktop-onboarding-and-browser-tasks.md) assigns the native host under `desktop/` to `brain-runtime-bootstrap`, the coordinator under `app/onboarding/` to `provisioning-surface`, and the desktop/browser-task schemas under `shared/` to `protocol-core`. Separately built setup, browser-task and shared-setup frontend entries belong to `bridge-orchestration`; only browser-task entries may import Chrome adapters. These declarations govern the implementation of that decision and do not attest installed qualification.
 
 The shared onboarding construction, authentication-task handlers and typed source lifecycle remain within those modules. [ADR 0054](adr/0054-consolidate-onboarding-coordination.md) preserves their separate runtime authority and transport admission boundaries.
@@ -48,7 +51,7 @@ Changes to enforced rules, exceptions, or authority relationships require a rati
 
 ## Classified architectural modules
 
-The following twenty-five modules partition the repository's production namespaces:
+The following modules partition the repository's production namespaces:
 
 | Module ID | Zone | Authority | Responsibility |
 |---|---|---|---|
@@ -58,7 +61,7 @@ The following twenty-five modules partition the repository's production namespac
 | `ci-workflows` | Red | Authoritative | Continuous integration and release workflow control plane (`.github/workflows/**`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/**`). |
 | `shared-legal-evidence` | Red | Authoritative | Legal activation evidence schemas, risk disclosure locks, and verified retention acceptance artifacts (`shared/legal/**`, `artifacts/**`). |
 | `agent-capture` | Red | Authoritative | Browser-side observation and normalization of creator-visible platform activity under consent control (`extension/capture/**`). |
-| `protocol-core` | Red | Authoritative | Cross-runtime protocol and local onboarding schema definitions, golden fixtures, validation, and non-authorizing reference projections (`app/protocol/**`, `extension/protocol/**`, `frontend/src/protocol/**`, `shared/fixtures/protocol/**`, `shared/onboarding/**`). Schema ownership does not grant a projection authority over its source. |
+| `protocol-core` | Red | Authoritative | Cross-runtime protocol and local onboarding schema definitions, golden fixtures, validation, and non-authorizing reference projections (`app/protocol/**`, `extension/protocol/**`, `frontend/src/protocol/**`, `shared/fixtures/protocol/**`, `shared/onboarding/**`, `app/nlp/**`, `shared/nlp/**`). Schema ownership does not grant a projection authority over its source. |
 | `agent-runtime` | Red | Authoritative | Agent durable delivery, WebSocket connection management, outbox persistence, signing/history coordination, preview UI, and MV3 service worker runtime (`extension/**` excluding `capture/` and `protocol/`). |
 | `canonical-read-models` | Orange | Authoritative | Neutral canonical read-model type ownership shared by canonical persistence, analytics, and transport without assigning ingestion behavior to the type namespace (`app/canonical/**`). |
 | `brain-transport` | Red | Authoritative | Brain network admission, WebSocket connection lifecycle, protocol framing, and session dispatch to canonical persistence (`app/transport/**`, `app/api/endpoints/transport_ws.py`, `app/api/endpoints/companion_pairing.py`, `app/api/endpoints/companion_session.py`). |
@@ -73,10 +76,13 @@ The following twenty-five modules partition the repository's production namespac
 | `brain-api-presentation` | Yellow | Presentation | HTTP REST endpoints exposing read models, setup routes, and compiled Bridge static asset delivery (`app/api/**`, `app/static/**`, `app/templates/**`). |
 | `brain-runtime-bootstrap` | Red | Composition | Top-level application assembly, FastAPI application lifecycle, CLI entrypoints, core shared models/utilities, native desktop host, immutable desktop deployment and bounded bootstrap status fixtures, and bootstrap composition (`app/main.py`, `app/bootstrap.py`, `app/launcher.py`, `app/core/**`, `desktop/**`, `shared/desktop-release/**`, `shared/bootstrap-status/**`). |
 | `application-services` | Orange | Derived | Application workflow orchestration for analytics read services, configuration, command execution, and retention maintenance (`app/services/**`). |
+| `nlp-dependency-lifecycle` | Red | Authoritative | Explicit authenticated profile acquisition, durable withdrawal and account selection coordination; availability grants no release approval (`app/services/nlp_dependencies.py`, `app/services/nlp_distribution.py`). |
+| `nlp-execution-lifetime` | Red | Composition | Explicit optional-worker channels, retained data handles and physical shutdown drain (`app/nlp/child_client.py`, `app/nlp/engine_provider.py`, `app/nlp/retained_artifacts.py`, `app/nlp/windows_host.py`); no analysis or release authority. |
 | `signing-parameter-authority` | Red | Authoritative | Independent public publication verification, bounded background delivery and one worker-owned publication source, separate from account signing proof and commercial authority (`app/services/signing_parameters.py`, `extension/runtime/signing-parameters.mjs`, `extension/runtime/signing-publication-trust.mjs`, `extension/protocol/signing-parameters.mjs`). |
 | `analytics-semantic-foundation` | Orange | Derived | Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime (`app/analytics/canonical_source.py`, `app/analytics/pipeline.py`, `app/analytics/runtime.py`). |
 | `analytics-analyzers-metrics` | Orange | Derived | Derived feature analytics, metrics calculations, and enrichment analyzers consuming canonical read models or graph projections (`app/analytics/analyzers/**`, `app/analytics/metrics/**`). |
 | `bridge-presentation` | Green | Presentation | User-facing React presentation components, views, layouts, design system elements, and visual harnesses (`frontend/src/components/**`, `frontend/src/views/**`). |
+| `optional-nlp-worker` | Orange | Derived | Optional native computation only, with bounded private-pipe inputs and outputs (`native/nlp-worker/**`); no writer or publication authority. |
 | `bridge-orchestration` | Yellow | Presentation | Bridge client-side state management, WebSocket session synchronization, authenticated REST API integration, test suites, and build tooling (`frontend/src/store/**`, `frontend/src/services/**`). |
 
 ## Non-production policy

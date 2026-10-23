@@ -195,13 +195,14 @@ def fragment_reader(store, account_id):
             from app.analytics.graph_membership_pages import supported as pages_supported
             page_layout = pages_supported(db)
             chunk_cache = {}
-            def graph_segment_chunk(kind, bucket):
+            def graph_segment_chunk(kind, bucket, *, check=lambda: None):
+                check()
                 if not reader_open[0]:
                     raise ValueError('conversation_reader_closed')
                 key = (kind, bucket)
                 if key not in chunk_cache:
                     chunk_cache[key] = verified_segment_chunk(
-                        db, partition, graph_segment_proof, kind, bucket
+                        db, partition, graph_segment_proof, kind, bucket, check=check
                     )
                 return chunk_cache[key]
             def graph_content_ids(kind, keys, check=lambda: None):
@@ -226,7 +227,7 @@ def fragment_reader(store, account_id):
                 result = {}
                 for bucket, selected in sorted(grouped.items()):
                     check()
-                    opened = graph_segment_chunk(kind, bucket)
+                    opened = graph_segment_chunk(kind, bucket, check=check)
                     if opened is None:
                         return {}
                     segment, encoded = opened

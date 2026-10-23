@@ -5,11 +5,16 @@ import shutil
 
 import pytest
 
+from app.persistence.migrations import load_migration_catalog
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
 from app.persistence import sqlite_api
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier('integration')]
 
@@ -65,7 +70,7 @@ def test_populated_metadata_trigger_upgrade_preserves_artifact(tmp_path):
             assert db.execute('PRAGMA user_version').fetchone()[0]==7
             assert [tuple(row) for row in db.execute('SELECT * FROM projection_query_metadata')]==before
         with updated.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0]==25
+            assert db.execute('PRAGMA user_version').fetchone()[0]==CURRENT_SCHEMA_VERSION
             assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
             assert [tuple(row) for row in db.execute('SELECT * FROM projection_query_metadata')]==before
         reopened=SQLiteAnalyticsProjectionStore(updated,activation=f.repositories.projection_activation,

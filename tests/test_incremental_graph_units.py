@@ -172,9 +172,9 @@ def test_incremental_graph_root_reads_only_changed_predecessor_chunks(
     opened = []
     original = shared.verified_segment_chunk
 
-    def observed(connection, account_id, proof, kind, bucket):
+    def observed(connection, account_id, proof, kind, bucket, *, check=lambda: None):
         opened.append((kind, bucket))
-        return original(connection, account_id, proof, kind, bucket)
+        return original(connection, account_id, proof, kind, bucket, check=check)
 
     monkeypatch.setattr(shared, "verified_segment_chunk", observed)
     with fixture.repositories.database.transaction() as db:

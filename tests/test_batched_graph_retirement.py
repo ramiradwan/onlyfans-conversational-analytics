@@ -4,6 +4,7 @@ import shutil
 
 import pytest
 
+from app.persistence.migrations import load_migration_catalog
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.enrichment_proof_transition import _guards_match
 from app.analytics.pipeline import AnalyticsPipeline
@@ -13,6 +14,10 @@ from app.persistence import sqlite_api as sqlite3
 from tests.continuous_analytics_fixture import (
     ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message, make_fixture,
 )
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier("integration")]
 
@@ -164,7 +169,7 @@ def test_schema23_upgrade_preserves_published_graph_and_backup(tmp_path):
             assert before > 0
         upgraded = ProjectionsDatabase(database.path)
         with upgraded.read() as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 25
+            assert db.execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
             assert db.execute("SELECT COUNT(*) FROM conversation_graph_refs").fetchone()[0] == before
             assert tuple(db.execute(
                 "SELECT page_retirement,graph_retirement "

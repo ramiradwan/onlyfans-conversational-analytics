@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "protocol": {
+      "const": "nlp-worker.v2",
+      "default": "nlp-worker.v2",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Profile Sha256",
+      "type": "string"
+    },
+    "component_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Component Id",
+      "type": "string"
+    },
+    "component_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Component Sha256",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "ready",
+        "refused",
+        "cancelled",
+        "failed"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "reason": {
+      "enum": [
+        "none",
+        "incompatible",
+        "artifact_mismatch",
+        "resource_limit",
+        "cancelled",
+        "adapter_failure"
+      ],
+      "title": "Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "profile_sha256",
+    "component_id",
+    "component_sha256",
+    "outcome",
+    "reason"
+  ],
+  "title": "PreparationResult",
+  "type": "object"
+}

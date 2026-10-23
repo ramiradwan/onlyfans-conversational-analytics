@@ -37,6 +37,42 @@ def test_fresh_inspection_does_not_create_root_key_configuration_or_database(tmp
     assert not root.exists()
 
 
+def test_packaged_v2_fresh_admission_uses_durable_release_coordinate(tmp_path, monkeypatch):
+    from app.core import desktop_release, startup_maintenance
+    from app.persistence import sqlite_api, upgrade_lifecycle
+
+    identity = desktop_release.PackageIdentity(
+        "OFCA.Qualification.Example", "CN=OFCA MSIX Qualification Example", "1.0.3.0", "x64",
+        "OFCA.Qualification.Example_0123456789abc")
+    release = desktop_release.DesktopRelease(
+        "qualification", identity, "Bridge", "direct-appinstaller",
+        "https://qualification.example.test/release.appinstaller",
+        schema="ofca-desktop-release/v2", application_version="0.7.5",
+        servicing=desktop_release.Servicing(desktop_release.MainPackage("main_package"),
+                                           desktop_release.MainPackageOnly("main_package_only")))
+    monkeypatch.setattr(startup_maintenance.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(desktop_release, "current_desktop_release", lambda: release)
+    validated = []
+    validate = upgrade_lifecycle._validate_release
+
+    def observe_validation(value):
+        validate(value)
+        validated.append(value)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("fresh admission opened a database or application graph")
+
+    monkeypatch.setattr(upgrade_lifecycle, "_validate_release", observe_validation)
+    monkeypatch.setattr(sqlite_api, "connect", forbidden)
+    monkeypatch.setattr(packaged_entry, "select_brain_application", forbidden)
+    phases = []
+    startup_maintenance.admit_retained_schemas(
+        startup_maintenance.RetainedState(tmp_path, "fresh", ()), on_phase=phases.append)
+    assert len(validated) == 1 and validated[0]["version"] == identity.version
+    assert phases == ["checking"]
+    assert snapshot(tmp_path) == {}
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows installer mutex contract")
 def test_brain_can_publish_installer_signal_already_held_by_its_bridge(monkeypatch):
     import ctypes
@@ -138,7 +174,7 @@ def test_read_only_private_observation_never_repairs_a_broad_acl(tmp_path, monke
 
 def test_parent_observation_precedes_root_inspection_or_application_import(monkeypatch):
     @contextmanager
-    def closed_parent(request):
+    def closed_parent(request, *, drained):
         request()
         yield
     from app.core import process_lifetime, startup_maintenance

@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ofca-msix-package-profile/v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "purpose",
+    "distribution",
+    "identity",
+    "application_version",
+    "release_sequence",
+    "minimum_os_version",
+    "maximum_os_version_tested",
+    "webview2_minimum_version",
+    "app_installer_uri",
+    "servicing"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ofca-msix-package-profile/v2"
+    },
+    "purpose": {
+      "enum": [
+        "production",
+        "qualification"
+      ]
+    },
+    "distribution": {
+      "const": "direct-appinstaller"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "publisher",
+        "publisher_display_name",
+        "application_id",
+        "architecture"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 50,
+          "pattern": "^[A-Za-z0-9.-]+$",
+          "default": "Dipsy.OnlyFansConversationalAnalytics"
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 8192,
+          "pattern": "^CN=.+$"
+        },
+        "publisher_display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "default": "Dipsy"
+        },
+        "application_id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+          "default": "Bridge"
+        },
+        "architecture": {
+          "const": "x64"
+        }
+      }
+    },
+    "application_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.+-]+)?$",
+      "maxLength": 64
+    },
+    "release_sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "minimum_os_version": {
+      "$ref": "#/$defs/version"
+    },
+    "maximum_os_version_tested": {
+      "$ref": "#/$defs/version"
+    },
+    "webview2_minimum_version": {
+      "$ref": "#/$defs/version"
+    },
+    "app_installer_uri": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2048
+    },
+    "servicing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installed_artifact",
+        "allowed_targets"
+      ],
+      "properties": {
+        "installed_artifact": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "main_package"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "related_set_id",
+                "engine"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "related_bundle"
+                },
+                "related_set_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "pattern": "^[A-Za-z0-9_.:-]+$"
+                },
+                "engine": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "identity",
+                    "package_version"
+                  ],
+                  "properties": {
+                    "identity": {
+                      "$ref": "#/$defs/engineIdentity"
+                    },
+                    "package_version": {
+                      "$ref": "#/$defs/version"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "allowed_targets": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "main_package_only"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "engine_identity"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "main_package_and_related_bundle"
+                },
+                "engine_identity": {
+                  "$ref": "#/$defs/engineIdentity"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "installed_artifact": {
+                "properties": {
+                  "kind": {
+                    "const": "related_bundle"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "allowed_targets": {
+                "properties": {
+                  "kind": {
+                    "const": "main_package_and_related_bundle"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 23
+    },
+    "engineIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "publisher",
+        "family",
+        "architecture"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 50,
+          "pattern": "^[A-Za-z0-9.-]+$"
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 8192,
+          "pattern": "^CN=.+$"
+        },
+        "family": {
+          "type": "string",
+          "minLength": 17,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9.-]+_[a-z0-9]{13}$"
+        },
+        "architecture": {
+          "const": "x64"
+        }
+      }
+    }
+  }
+}

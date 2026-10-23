@@ -3,13 +3,16 @@
 param([Parameter(Mandatory)] [ValidateSet('msix-direct','msix-store', IgnoreCase=$false)] [string] $Target,
       [Parameter(Mandatory)] [string] $BuildRoot,
       [Parameter(Mandatory)] [string] $BuildPython,
-      [Parameter(Mandatory)] [string] $ProductRevision)
+      [Parameter(Mandatory)] [string] $ProductRevision,
+      [string] $EngineBundle = '')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'msix/release-artifacts.psm1') -Force
 $configuration = Join-Path $PSScriptRoot 'msix'
 $profileName = if ($Target -ceq 'msix-direct') { 'production-direct.json' } else { 'production-store.json' }
 $profile = Read-ReleaseJson (Join-Path $configuration ('profiles/' + $profileName)) 16384
+$v2 = $profile.schema -ceq 'ofca-msix-package-profile/v2'
+if (-not $v2 -and $EngineBundle) { throw 'V1 release cannot carry an optional Engine artifact' }
 $runtime = Join-Path $BuildRoot 'dist/Brain'
 $release = Read-ReleaseJson (Join-Path $runtime 'release-manifest.json') 16384
 if ($ProductRevision -cnotmatch '^[0-9a-f]{40}$' -or $release.source_commit -cne $ProductRevision) { throw 'Runtime source differs from dispatch revision' }
@@ -24,18 +27,24 @@ if ($Target -ceq 'msix-direct') {
     $descriptorArguments.PackageUri = $delivery.hosting.public_origin + $delivery.hosting.base_path + 'packages/' + ('0' * 64) + '/' + $filename
 }
 & (Join-Path $PSScriptRoot 'build-msix.ps1') -BuildPython $BuildPython -StagingRoot $runtime `
-    -PackageProfile (Join-Path $configuration ('profiles/' + $profileName)) -OutputRoot $output @descriptorArguments
+    -PackageProfile (Join-Path $configuration ('profiles/' + $profileName)) -OutputRoot $output -EngineBundle $EngineBundle @descriptorArguments
 if ($LASTEXITCODE -ne 0) { throw 'MSIX release construction failed' }
 $packages = @(Get-ChildItem -LiteralPath $output -Filter '*.msix' -File)
 $agents = @(Get-ChildItem -LiteralPath (Join-Path $BuildRoot 'installer') -Filter '*-chrome.zip' -File)
 if ($packages.Count -ne 1 -or $agents.Count -ne 1) { throw 'Require one complete package and one qualified Agent artifact' }
 $stem = [IO.Path]::GetFileNameWithoutExtension($packages[0].Name)
+if ($v2) { $stem = $profile.identity.name + '_' + $version + '_x64' }
 $inventory = Read-ReleaseJson (Join-Path $output ($stem + '.inventory.json'))
 $directory = Join-Path $BuildRoot 'msix-release'
 if (Test-Path -LiteralPath $directory) { throw 'Require a fresh MSIX release directory' }
 $null = New-Item -ItemType Directory -Path $directory
 $filename = 'ConversationAnalytics_' + $inventory.package_version + '_x64.msix'
-Copy-Item -LiteralPath $packages[0].FullName -Destination (Join-Path $directory $filename)
+if ($v2) {
+    $artifacts = Read-ReleaseJson (Join-Path $output ($stem + '.artifact-set.json')) 32768
+    $members = @(Get-ReleaseArtifactRecords $artifacts $inventory.package_version)
+    foreach ($member in $members) { Copy-Item -LiteralPath (Join-Path $output $member.file) -Destination (Join-Path $directory $member.file) }
+    $filename = $artifacts.core.file
+} else { Copy-Item -LiteralPath $packages[0].FullName -Destination (Join-Path $directory $filename) }
 Copy-Item -LiteralPath $agents[0].FullName -Destination (Join-Path $directory $agents[0].Name)
 foreach ($kind in @('profile','inventory','build')) {
     Copy-Item -LiteralPath (Join-Path $output ($stem + '.' + $kind + '.json')) -Destination (Join-Path $directory ('desktop.' + $kind + '.json'))
@@ -60,6 +69,11 @@ $record = [ordered]@{
     unsigned_package_sha256=(Get-ReleaseHash (Join-Path $directory $filename))
     agent_file=$agents[0].Name; agent_sha256=(Get-ReleaseHash (Join-Path $directory $agents[0].Name))
     expected_family=$family; direct_delivery_sha256=$directHash; appinstaller_template_sha256=$templateHash
+}
+if ($v2) {
+    $record.schema = 'ofca-msix-release-inputs/v2'
+    $record.Remove('package_file'); $record.Remove('unsigned_package_sha256')
+    $record.artifact_set = $artifacts
 }
 [IO.File]::WriteAllText((Join-Path $directory 'desktop.release-inputs.json'),($record | ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
 $null = Get-MsixReleaseCandidate $directory $Target $ProductRevision -BeforeSigning

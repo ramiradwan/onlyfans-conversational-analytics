@@ -15,12 +15,14 @@ param(
     [switch] $AllowQualification,
     [string] $ExpectedFamilyName = '',
     [string] $SignTool = '',
-    [string] $ReceiptPath = ''
+    [string] $ReceiptPath = '',
+    [string] $EngineBundle = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $msixConfiguration = Join-Path $PSScriptRoot 'msix'
+Import-Module (Join-Path $msixConfiguration 'release-artifacts.psm1') -Force
 
 function Get-ByteDigest {
     param([byte[]] $Bytes)
@@ -126,17 +128,25 @@ function Get-XmlShape {
     return ,@($Node.NamespaceURI, $Node.LocalName, $attributes.ToArray(), $children.ToArray())
 }
 
-try {
+function Test-MsixPayload {
+    param([string] $Package, [string] $SignatureContainer = '')
     if (-not $IsWindows) { throw 'MSIX release verification requires Windows' }
     foreach ($file in @($Package, $Inventory, $PackageProfile)) {
         if (-not $file -or -not [IO.File]::Exists($file)) { throw 'Name an MSIX, its inventory and its explicit profile' }
     }
     if ([IO.Path]::GetExtension($Package).ToLowerInvariant() -cne '.msix') { throw 'Verification requires an MSIX file' }
     $profile = Read-BoundedJson $PackageProfile 65536
-    Assert-ClosedObject $profile @('schema', 'purpose', 'distribution', 'identity', 'application_version', 'release_sequence', 'minimum_os_version', 'maximum_os_version_tested', 'webview2_minimum_version', 'app_installer_uri')
+    $v2 = $profile.schema -ceq 'ofca-msix-package-profile/v2'
+    $profileKeys = @('schema', 'purpose', 'distribution', 'identity', 'application_version', 'release_sequence', 'minimum_os_version', 'maximum_os_version_tested', 'webview2_minimum_version', 'app_installer_uri')
+    if ($v2) { $profileKeys += 'servicing' }
+    Assert-ClosedObject $profile $profileKeys
     Assert-ClosedObject $profile.identity @('name', 'publisher', 'publisher_display_name', 'application_id', 'architecture')
-    if ($profile.schema -cne 'ofca-msix-package-profile/v1' -or $profile.purpose -cnotin @('production', 'qualification') -or
+    if ($profile.schema -cnotin @('ofca-msix-package-profile/v1','ofca-msix-package-profile/v2') -or $profile.purpose -cnotin @('production', 'qualification') -or
         $profile.distribution -cnotin @('direct-appinstaller', 'microsoft-store')) { throw 'Invalid desktop profile' }
+    if ($v2) {
+        if ($profile.distribution -cne 'direct-appinstaller') { throw 'V2 requires direct delivery' }
+        Assert-DesktopServicing $profile.servicing $profile.identity
+    }
     $qualification = $profile.purpose -ceq 'qualification'
     if ($qualification -and -not $AllowQualification) { throw 'Production verification refuses qualification profiles' }
     $identity = $profile.identity
@@ -173,9 +183,12 @@ try {
         ($VerificationMode -ceq 'StoreSubmission' -and $profile.distribution -cne 'microsoft-store')) { throw 'Verification mode disagrees with distribution' }
 
     $inventoryDocument = Read-BoundedJson $Inventory 16777216
-    Assert-ClosedObject $inventoryDocument @('schema', 'profile_sha256', 'identity', 'purpose', 'distribution', 'application_version', 'package_version', 'runtime_release', 'linked_agent', 'runtime_policy_sha256', 'manifest_template_sha256', 'asset_source_sha256', 'makeappx_sha256', 'files')
+    $inventoryKeys = @('schema', 'profile_sha256', 'identity', 'purpose', 'distribution', 'application_version', 'package_version', 'runtime_release', 'linked_agent', 'runtime_policy_sha256', 'manifest_template_sha256', 'asset_source_sha256', 'makeappx_sha256', 'files')
+    if ($v2) { $inventoryKeys += @('installed_artifact','desktop_descriptor_sha256','artifact_set') }
+    Assert-ClosedObject $inventoryDocument $inventoryKeys
+    $inventorySchema = if ($v2) { 'ofca-msix-inventory/v2' } else { 'ofca-msix-inventory/v1' }
     $profileDigest = Get-ByteDigest ([IO.File]::ReadAllBytes($PackageProfile))
-    if ($inventoryDocument.schema -cne 'ofca-msix-inventory/v1' -or $inventoryDocument.profile_sha256 -cne $profileDigest -or
+    if ($inventoryDocument.schema -cne $inventorySchema -or $inventoryDocument.profile_sha256 -cne $profileDigest -or
         $inventoryDocument.package_version -cne $packageVersion -or $inventoryDocument.purpose -cne $profile.purpose -or
         $inventoryDocument.distribution -cne $profile.distribution -or $inventoryDocument.application_version -cne $profile.application_version) { throw 'Inventory disagrees with the profile' }
     Assert-ClosedObject $inventoryDocument.identity @('name', 'publisher', 'publisher_display_name', 'application_id', 'architecture')
@@ -193,6 +206,7 @@ try {
         $expected.Add($record.path, $record)
     }
     if (-not ('Ofca.Msix.IdentityReader' -as [type])) { Add-Type -Path (Join-Path $msixConfiguration 'ReadPackageIdentity.cs') }
+    $signatureArchive = $null
     $archive = [IO.Compression.ZipFile]::OpenRead([IO.Path]::GetFullPath($Package))
     try {
         $footprints = @('AppxBlockMap.xml', '[Content_Types].xml', 'AppxSignature.p7x', 'AppxMetadata/CodeIntegrity.cat')
@@ -235,10 +249,13 @@ try {
         $expectedShape = ConvertTo-Json -InputObject (Get-XmlShape $template.DocumentElement) -Depth 64 -Compress
         if ($actualShape -cne $expectedShape) { throw 'Manifest identity or policy differs from the approved template' }
         $desktop = Convert-CheckedJson (Read-ZipBytes ($archive.GetEntry('app/desktop-release.json')) 65536) 65536
-        Assert-ClosedObject $desktop @('schema', 'purpose', 'identity', 'application_version', 'package_version', 'profile_sha256', 'update_owner', 'app_installer_uri', 'storage_policy', 'executable_family', 'webview2_minimum_version')
+        $desktopKeys = @('schema', 'purpose', 'identity', 'application_version', 'package_version', 'profile_sha256', 'update_owner', 'app_installer_uri', 'storage_policy', 'executable_family', 'webview2_minimum_version')
+        if ($v2) { $desktopKeys += 'servicing' }
+        Assert-ClosedObject $desktop $desktopKeys
+        $desktopSchema = if ($v2) { 'ofca-desktop-release/v2' } else { 'ofca-desktop-release/v1' }
         Assert-ClosedObject $desktop.identity @('name', 'publisher', 'publisher_display_name', 'application_id', 'architecture')
         foreach ($key in $identity.Keys) { if ($identity[$key] -cne $desktop.identity[$key]) { throw 'Desktop descriptor identity mismatch' } }
-        if ($desktop.schema -cne 'ofca-desktop-release/v1' -or $desktop.purpose -cne $profile.purpose -or
+        if ($desktop.schema -cne $desktopSchema -or $desktop.purpose -cne $profile.purpose -or
             $desktop.application_version -cne $profile.application_version -or $desktop.package_version -cne $packageVersion -or
             $desktop.profile_sha256 -cne $profileDigest -or $desktop.update_owner -cne $profile.distribution -or
             $desktop.app_installer_uri -cne $profile.app_installer_uri -or $desktop.storage_policy -cne 'retained-product-root/v1' -or
@@ -249,7 +266,24 @@ try {
         if ($osIdentity.Name -cne $identity.name -or $osIdentity.Publisher -cne $identity.publisher -or
             $osIdentity.Version -cne $packageVersion -or $osIdentity.Architecture -cne 'x64') { throw 'Windows-derived package identity mismatch' }
         if ($ExpectedFamilyName -and $ExpectedFamilyName -cne $osIdentity.FamilyName) { throw 'Expected package family mismatch' }
-        $signed = $null -ne $archive.GetEntry('AppxSignature.p7x')
+        if ($v2) {
+            Assert-DesktopServicing $desktop.servicing $profile.identity $osIdentity.FamilyName
+            $null = Get-ReleaseArtifactRecords $inventoryDocument.artifact_set $packageVersion
+            if (-not (Test-ReleaseJsonEqual $desktop.servicing $profile.servicing) -or
+                -not (Test-ReleaseJsonEqual $inventoryDocument.installed_artifact $profile.servicing.installed_artifact) -or
+                $inventoryDocument.artifact_set.kind -cne $profile.servicing.installed_artifact.kind -or
+                $inventoryDocument.desktop_descriptor_sha256 -cne (Get-ByteDigest (Read-ZipBytes ($archive.GetEntry('app/desktop-release.json')) 65536))) { throw 'V2 descriptor and inventory pairing differs' }
+            if ($inventoryDocument.artifact_set.kind -ceq 'related_bundle') {
+                $set = $inventoryDocument.artifact_set
+                $layout = $profile.servicing.installed_artifact
+                if ($set.related_set_id -cne $layout.related_set_id -or
+                    $set.engine.package_version -cne $layout.engine.package_version -or
+                    -not (Test-ReleaseJsonEqual $set.engine.identity $layout.engine.identity)) { throw 'V2 unsigned related inventory differs' }
+            }
+        }
+        $signatureArchive = $archive
+        if ($SignatureContainer) { $signatureArchive = [IO.Compression.ZipFile]::OpenRead($SignatureContainer) }
+        $signed = $null -ne $signatureArchive.GetEntry('AppxSignature.p7x')
         if ($VerificationMode -ceq 'StoreSubmission') {
             if ($signed) { throw 'Store submission expects the unsigned candidate; qualify test-signed copies separately' }
         } else {
@@ -259,9 +293,10 @@ try {
             }
             if (-not [IO.File]::Exists($SignTool)) { throw 'Pinned SignTool is unavailable' }
             # Exit 2 (warnings, including /tw missing timestamp) is also refusal.
-            $signatureOutput = & $SignTool verify /pa /all /v /tw $Package 2>&1
+            $signatureTarget = if ($SignatureContainer) { $SignatureContainer } else { $Package }
+            $signatureOutput = & $SignTool verify /pa /all /v /tw $signatureTarget 2>&1
             if ($LASTEXITCODE -ne 0) { throw 'SignTool rejected the package signature, timestamp or trust chain' }
-            $signatureBytes = Read-ZipBytes ($archive.GetEntry('AppxSignature.p7x')) 16777216
+            $signatureBytes = Read-ZipBytes ($signatureArchive.GetEntry('AppxSignature.p7x')) 16777216
             if ($signatureBytes.Length -le 4 -or [Text.Encoding]::ASCII.GetString($signatureBytes, 0, 4) -cne 'PKCX') { throw 'Invalid package signature header' }
             $cms = [Security.Cryptography.Pkcs.SignedCms]::new()
             $cms.Decode($signatureBytes[4..($signatureBytes.Length - 1)])
@@ -273,8 +308,11 @@ try {
             }
             if (-not $hasTimestamp) { throw 'Direct release requires a countersignature timestamp' }
         }
-    } finally { $archive.Dispose() }
-    $packageStream = [IO.File]::OpenRead($Package)
+    } finally {
+        if ($SignatureContainer -and $null -ne $signatureArchive) { $signatureArchive.Dispose() }
+        $archive.Dispose()
+    }
+    $packageStream = [IO.File]::OpenRead($(if ($SignatureContainer) { $SignatureContainer } else { $Package }))
     try { $packageDigest = Get-StreamDigest $packageStream } finally { $packageStream.Dispose() }
     $receipt = [ordered]@{
         schema = 'ofca-msix-release-verification/v1'; purpose = $profile.purpose; distribution = $profile.distribution
@@ -283,7 +321,162 @@ try {
         inventory_sha256 = Get-ByteDigest ([IO.File]::ReadAllBytes($Inventory))
         signature = $(if ($VerificationMode -ceq 'DirectSigned') { 'trusted-timestamped' } else { 'unsigned-store-submission' })
     }
-    $json = $receipt | ConvertTo-Json -Depth 8
+    return $receipt
+}
+
+function Read-BundleApplication {
+    param([string] $Path, $Profile, [switch] $Engine)
+    $layout = $Profile.servicing.installed_artifact
+    $version = if ($Engine) { $layout.engine.package_version } else {
+        '1.{0}.{1}.0' -f ([long][Math]::Floor($Profile.release_sequence / 65536)), ($Profile.release_sequence % 65536)
+    }
+    $identity = if ($Engine) { $layout.engine.identity } else { $Profile.identity }
+    $filename = if ($Engine) { 'TextAnalysisEngine_' + $version + '_x64.msix' } else { 'ConversationAnalytics_' + $version + '_x64.msix' }
+    $archive = [IO.Compression.ZipFile]::OpenRead($Path)
+    try {
+        $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach ($entry in $archive.Entries) {
+            if (-not $names.Add($entry.FullName) -or $entry.FullName -match '(^/|[\\:\x00-\x1f%]|//|(^|/)\.{1,2}(/|$))' -or
+                (($entry.ExternalAttributes -shr 16) -band 61440) -eq 40960) { throw 'Bundle path alias or unsafe member' }
+        }
+        $metadata = Read-SafeXml (Read-ZipBytes ($archive.GetEntry('AppxMetadata/AppxBundleManifest.xml')) 65536)
+        $namespace = $metadata.DocumentElement.NamespaceURI
+        if (($namespace -cne 'http://schemas.microsoft.com/appx/2016/bundle' -and
+                (-not $Engine -or $namespace -cne 'http://schemas.microsoft.com/appx/2013/bundle')) -or
+            $metadata.DocumentElement.LocalName -cne 'Bundle' -or $metadata.DocumentElement.GetAttribute('SchemaVersion') -cne '5.0') { throw 'Unsupported bundle metadata' }
+        $ns = [Xml.XmlNamespaceManager]::new($metadata.NameTable)
+        $ns.AddNamespace('b',$namespace)
+        $ids = @($metadata.SelectNodes('/b:Bundle/b:Identity',$ns))
+        $packages = @($metadata.SelectNodes('/b:Bundle/b:Packages/b:Package',$ns))
+        $optionals = @($metadata.SelectNodes('/b:Bundle/b:OptionalBundle',$ns))
+        if ($ids.Count -ne 1 -or $packages.Count -ne 1 -or $optionals.Count -ne $(if ($Engine) { 0 } else { 1 })) { throw 'Bundle requires its exact application/relation closure' }
+        if ($Engine) {
+            $containers = @($metadata.SelectNodes('/b:Bundle/b:Packages',$ns))
+            if ($metadata.DocumentElement.SelectNodes('*').Count -ne 2 -or $containers.Count -ne 1 -or
+                $containers[0].SelectNodes('*').Count -ne 1) { throw 'Engine bundle requires only identity and one application' }
+        }
+        foreach ($pair in @(@('Name',$identity.name),@('Publisher',$identity.publisher),@('Version',$version))) {
+            if ($ids[0].GetAttribute($pair[0]) -cne $pair[1]) { throw 'Bundle identity mismatch' }
+        }
+        foreach ($pair in @(@('FileName',$filename),@('Version',$version),@('Architecture','x64'),@('Type','application'))) {
+            if ($packages[0].GetAttribute($pair[0]) -cne $pair[1]) { throw 'Bundle application mismatch' }
+        }
+        if (-not $Engine) {
+            $engineName = 'TextAnalysisEngine_' + $layout.engine.package_version + '_x64.msixbundle'
+            foreach ($pair in @(@('Name',$layout.engine.identity.name),@('Publisher',$layout.engine.identity.publisher),
+                    @('Version',$layout.engine.package_version),@('FileName',$engineName))) {
+                if ($optionals[0].GetAttribute($pair[0]) -cne $pair[1]) { throw 'External Engine bundle mismatch' }
+            }
+            $external = @($optionals[0].SelectNodes('b:Package',$ns))
+            $engineApplication = 'TextAnalysisEngine_' + $layout.engine.package_version + '_x64.msix'
+            if ($external.Count -ne 1 -or $archive.GetEntry($engineName) -or $archive.GetEntry($engineApplication)) { throw 'Engine must remain external' }
+            foreach ($pair in @(@('FileName',$engineApplication),@('Version',$layout.engine.package_version),@('Architecture','x64'),@('Type','application'))) {
+                if ($external[0].GetAttribute($pair[0]) -cne $pair[1]) { throw 'External Engine application mismatch' }
+            }
+        }
+        $allowed = @($filename,'AppxMetadata/AppxBundleManifest.xml','AppxBlockMap.xml','[Content_Types].xml','AppxSignature.p7x')
+        if (@($archive.Entries | Where-Object { $_.FullName -cnotin $allowed }).Count -or
+            -not $archive.GetEntry('AppxBlockMap.xml') -or -not $archive.GetEntry('[Content_Types].xml')) { throw 'Unexpected bundle file closure' }
+        return ,(Read-ZipBytes ($archive.GetEntry($filename)) 536870912)
+    } finally { $archive.Dispose() }
+}
+
+function Test-EngineSignature {
+    param([string] $Path, [string] $Publisher)
+    $tool = $SignTool
+    if (-not $tool) { $tool = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Windows Kits/10/bin/10.0.26100.0/x64/signtool.exe' }
+    if (-not [IO.File]::Exists($tool)) { throw 'Pinned SignTool is unavailable' }
+    $signatureOutput = & $tool verify /pa /all /v /tw $Path 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'SignTool rejected the Engine bundle signature, timestamp or trust chain' }
+    $archive = [IO.Compression.ZipFile]::OpenRead($Path)
+    try { $bytes = Read-ZipBytes ($archive.GetEntry('AppxSignature.p7x')) 16777216 }
+    finally { $archive.Dispose() }
+    if ($bytes.Length -le 4 -or [Text.Encoding]::ASCII.GetString($bytes,0,4) -cne 'PKCX') { throw 'Invalid Engine signature header' }
+    $cms = [Security.Cryptography.Pkcs.SignedCms]::new()
+    $cms.Decode($bytes[4..($bytes.Length-1)]); $cms.CheckSignature($true)
+    if ($cms.SignerInfos.Count -ne 1 -or $cms.SignerInfos[0].Certificate.Subject -cne $Publisher) { throw 'Engine signing Publisher differs' }
+    $timestamp = $false
+    foreach ($attribute in $cms.SignerInfos[0].UnsignedAttributes) {
+        if ($attribute.Oid.Value -in @('1.2.840.113549.1.9.6','1.3.6.1.4.1.311.3.3.1')) { $timestamp = $true }
+    }
+    if (-not $timestamp) { throw 'Engine requires a timestamp' }
+}
+
+function Test-RelatedArtifacts {
+    param($Profile)
+    if ($VerificationMode -cne 'DirectSigned' -or -not $EngineBundle -or
+        [IO.Path]::GetExtension($Package) -cne '.msixbundle' -or
+        [IO.Path]::GetExtension($EngineBundle) -cne '.msixbundle') { throw 'Related verification requires both signed bundles' }
+    Assert-DesktopServicing $Profile.servicing $Profile.identity $ExpectedFamilyName
+    $mainBytes = Read-BundleApplication $Package $Profile
+    $engineBytes = Read-BundleApplication $EngineBundle $Profile -Engine
+    $temporary = Join-Path ([IO.Path]::GetTempPath()) ('msix-related-verify-' + [Guid]::NewGuid().ToString('N'))
+    if ([IO.Directory]::Exists($temporary)) { throw 'Require a fresh verification directory' }
+    $null = [IO.Directory]::CreateDirectory($temporary)
+    try {
+        $corePath = Join-Path $temporary 'core.msix'
+        [IO.File]::WriteAllBytes($corePath,$mainBytes)
+        # Only this private call can substitute a signed enclosing container.
+        # Its exact embedded bytes were read from that same approved bundle.
+        $receipt = Test-MsixPayload $corePath $Package
+        $stream = [IO.MemoryStream]::new($engineBytes,$false)
+        $archive = [IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Read)
+        try {
+            $manifestBytes = Read-ZipBytes ($archive.GetEntry('AppxManifest.xml')) 65536
+            $manifest = Read-SafeXml $manifestBytes
+            $ns = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
+            $ns.AddNamespace('f','http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+            $ns.AddNamespace('u','http://schemas.microsoft.com/appx/manifest/uap/windows10/3')
+            $dependencies = @($manifest.SelectNodes('/f:Package/f:Dependencies/u:MainPackageDependency',$ns))
+            if ($dependencies.Count -ne 1 -or $dependencies[0].Attributes.Count -ne 1 -or
+                $dependencies[0].GetAttribute('Name') -cne $Profile.identity.name -or
+                $manifest.SelectSingleNode('/f:Package/f:Applications',$ns) -or
+                @($archive.Entries | Where-Object FullName -CEQ 'worker/TextAnalysisWorker.exe').Count -ne 1) { throw 'Engine dependency/worker closure differs' }
+            $engineIdentity = [Ofca.Msix.IdentityReader]::Read($manifestBytes)
+            $engine = $Profile.servicing.installed_artifact.engine
+            foreach ($pair in @(@('Name',$engine.identity.name),@('Publisher',$engine.identity.publisher),
+                    @('FamilyName',$engine.identity.family),@('Version',$engine.package_version),@('Architecture','x64'))) {
+                if ($engineIdentity.($pair[0]) -cne $pair[1]) { throw 'Windows Engine identity differs' }
+            }
+        } finally { $archive.Dispose(); $stream.Dispose() }
+        Test-EngineSignature $EngineBundle $Profile.identity.publisher
+        $version = '1.{0}.{1}.0' -f ([long][Math]::Floor($Profile.release_sequence/65536)),($Profile.release_sequence%65536)
+        $set = [ordered]@{kind='related_bundle';related_set_id=$Profile.servicing.installed_artifact.related_set_id
+            core=@{file=('ConversationAnalytics_'+$version+'_x64.msixbundle');sha256=$receipt.package_sha256;size=([IO.FileInfo]::new($Package).Length)}
+            engine=@{identity=$engine.identity;package_version=$engine.package_version;artifact=@{
+                file=('TextAnalysisEngine_'+$engine.package_version+'_x64.msixbundle')
+                sha256=(Get-ReleaseHash $EngineBundle);size=([IO.FileInfo]::new($EngineBundle).Length)}}}
+        $null = Get-ReleaseArtifactRecords $set $version
+        $receipt.schema = 'ofca-msix-release-verification/v2'
+        $receipt.artifact_set = $set
+        $receipt.engine_identity = $engineIdentity
+        return $receipt
+    } finally {
+        if (-not ([IO.Path]::GetFullPath($temporary)).StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()),[StringComparison]::OrdinalIgnoreCase)) { throw 'Verification cleanup path refused' }
+        [IO.Directory]::Delete($temporary,$true)
+    }
+}
+
+try {
+    if (-not $IsWindows) { throw 'MSIX release verification requires Windows' }
+    foreach ($file in @($Package, $Inventory, $PackageProfile)) {
+        if (-not $file -or -not [IO.File]::Exists($file)) { throw 'Name an MSIX, its inventory and its explicit profile' }
+    }
+    if ([IO.Path]::GetExtension($Package).ToLowerInvariant() -cnotin @('.msix', '.msixbundle')) { throw 'Verification requires an MSIX file or MSIX bundle' }
+    $profile = Read-BoundedJson $PackageProfile 65536
+    if ($profile.schema -ceq 'ofca-msix-package-profile/v2' -and $profile.servicing.installed_artifact.kind -ceq 'related_bundle') {
+        $receipt = Test-RelatedArtifacts $profile
+    } else {
+        if ($EngineBundle) { throw 'MainPackage verification cannot carry an Engine bundle' }
+        $receipt = Test-MsixPayload $Package
+        if ($profile.schema -ceq 'ofca-msix-package-profile/v2') {
+            $receipt.schema = 'ofca-msix-release-verification/v2'
+            $receipt.artifact_set = @{kind='main_package';core=@{
+                file=('ConversationAnalytics_'+$receipt.identity.Version+'_x64.msix');sha256=$receipt.package_sha256
+                size=([IO.FileInfo]::new($Package).Length)}}
+        }
+    }
+    $json = $receipt | ConvertTo-Json -Depth 16
     if ($ReceiptPath) {
         if ([IO.File]::Exists($ReceiptPath)) { throw 'Verification receipt requires a fresh path' }
         [IO.File]::WriteAllText([IO.Path]::GetFullPath($ReceiptPath), $json + "`n", [Text.UTF8Encoding]::new($false))

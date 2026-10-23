@@ -6,9 +6,13 @@ from app.analytics.database import ProjectionsDatabase
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
 from app.analytics.validation_receipt import content_stamp
-from app.persistence.migrations import SchemaCompatibilityError
+from app.persistence.migrations import SchemaCompatibilityError, load_migration_catalog
 from app.persistence import sqlite_api as sqlite3
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier("integration")]
 
@@ -39,7 +43,7 @@ def test_schema22_keeps_legacy_units_and_published_output(tmp_path):
             assert db.execute('PRAGMA user_version').fetchone()[0] == 20
         upgraded = ProjectionsDatabase(database.path)
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 25
+            assert db.execute('PRAGMA user_version').fetchone()[0] == CURRENT_SCHEMA_VERSION
             assert content_stamp(db) is not None
             assert not db.execute('PRAGMA foreign_key_check').fetchall()
             rows = [tuple(r) for r in db.execute('SELECT * FROM conversation_graph_units ORDER BY unit_id')]

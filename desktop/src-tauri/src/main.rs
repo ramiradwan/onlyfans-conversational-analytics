@@ -22,6 +22,8 @@ mod servicing_feed;
 mod servicing_handoff;
 #[cfg(windows)]
 mod windows;
+mod worker_diagnostics;
+mod worker_host;
 
 #[cfg(windows)]
 #[tauri::command]
@@ -90,6 +92,13 @@ fn main() {
         WebviewUrl, WebviewWindowBuilder,
     };
     let args: Vec<String> = std::env::args().collect();
+    if worker_host::requested(&args) {
+        std::process::exit(if worker_host::run(&args).is_ok() {
+            0
+        } else {
+            1
+        });
+    }
     if servicing_handoff::helper_requested(&args) {
         std::process::exit(if servicing_handoff::helper_main(&args).is_ok() {
             0

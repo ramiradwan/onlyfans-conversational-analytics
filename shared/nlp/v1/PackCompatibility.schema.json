@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "EngineIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Name",
+          "type": "string"
+        },
+        "package_family": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Family",
+          "type": "string"
+        },
+        "core_package_name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Name",
+          "type": "string"
+        },
+        "core_package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Core Package Version",
+          "type": "string"
+        },
+        "publisher": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Publisher",
+          "type": "string"
+        },
+        "package_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Package Version",
+          "type": "string"
+        },
+        "related_set_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Related Set Id",
+          "type": "string"
+        },
+        "engine_version": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "platform": {
+          "const": "windows-x64",
+          "title": "Platform",
+          "type": "string"
+        },
+        "worker_protocol": {
+          "const": "nlp-worker.v1",
+          "default": "nlp-worker.v1",
+          "title": "Worker Protocol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "package_name",
+        "package_family",
+        "core_package_name",
+        "core_package_version",
+        "publisher",
+        "package_version",
+        "related_set_id",
+        "engine_version",
+        "platform"
+      ],
+      "title": "EngineIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Authenticated exact allow-list, not arbitrary independently versioned engines.",
+  "properties": {
+    "pack_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Pack Id",
+      "type": "string"
+    },
+    "pack_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Pack Sha256",
+      "type": "string"
+    },
+    "compatible_engines": {
+      "items": {
+        "$ref": "#/$defs/EngineIdentity"
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "title": "Compatible Engines",
+      "type": "array"
+    },
+    "download_bytes": {
+      "maximum": 262144000,
+      "minimum": 1,
+      "title": "Download Bytes",
+      "type": "integer"
+    },
+    "installed_bytes": {
+      "maximum": 536870912,
+      "minimum": 1,
+      "title": "Installed Bytes",
+      "type": "integer"
+    },
+    "temporary_bytes": {
+      "minimum": 0,
+      "title": "Temporary Bytes",
+      "type": "integer"
+    },
+    "enabled_topic_ids": {
+      "items": {
+        "maxLength": 160,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_.:-]+$",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Enabled Topic Ids",
+      "type": "array"
+    },
+    "enabled_concept_ids": {
+      "items": {
+        "maxLength": 160,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9_.:-]+$",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "title": "Enabled Concept Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "pack_id",
+    "pack_sha256",
+    "compatible_engines",
+    "download_bytes",
+    "installed_bytes",
+    "temporary_bytes",
+    "enabled_topic_ids",
+    "enabled_concept_ids"
+  ],
+  "title": "PackCompatibility",
+  "type": "object"
+}

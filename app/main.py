@@ -1,7 +1,9 @@
 """FastAPI application for ingestion, analytics, Agent, and Bridge traffic."""
 
 import logging
+import asyncio
 import os
+import time
 from functools import lru_cache
 
 from fastapi import FastAPI
@@ -16,6 +18,7 @@ from app.api.endpoints import (
     frontend,
     history,
     insights,
+    nlp_dependencies,
     transport_ws,
     webauthn,
 )
@@ -100,19 +103,28 @@ def start_grant_refresh() -> None:
     _grant_refresh.start()
 
 
-def configure_analytics_runtime():
+_findings_configuration = None
+_UNSET_FINDINGS = object()
+
+
+def configure_analytics_runtime(*, findings=_UNSET_FINDINGS):
     """Build the analytics runtime from application-owned resources."""
 
-    return analytics_runtime.configure_default_analytics_runtime(
+    global _findings_configuration
+    requested_findings = _findings_configuration if findings is _UNSET_FINDINGS else findings
+    configured = analytics_runtime.configure_default_analytics_runtime(
         history_source,
         backend=settings.canonical_persistence_backend,
         projections_path=settings.analytics_projection_database_path,
         canonical_path=settings.canonical_database_path,
         activation=transport_manager.projection_activation,
+        findings=requested_findings,
         post_commit_rebuild_enabled=(
             settings.canonical_persistence_backend == "sqlite"
         ),
     )
+    _findings_configuration = requested_findings
+    return configured
 
 
 # Register dependencies before handlers request the default runtime.
@@ -207,6 +219,7 @@ app.mount("/static", StaticFiles(directory=resource_path("app/static")), name="s
 app.include_router(transport_ws.router, tags=["Transport"])
 app.include_router(history.router)
 app.include_router(insights.router)
+app.include_router(nlp_dependencies.router)
 app.include_router(webauthn.router)
 app.include_router(creator_vault.router)
 app.include_router(companion_pairing.router)
@@ -220,11 +233,23 @@ if os.environ.get("LOCAL_PROVISIONING_HANDOFF_TOKEN") is not None:
 # -------------------------------------------------
 # Startup & Shutdown events — manage Broadcast lifecycle
 # -------------------------------------------------
+async def start_optional_dependencies():
+    from app.services.nlp_dependencies import dependency_service
+    dependencies = dependency_service()
+    if dependencies is not None:
+        try:
+            await asyncio.to_thread(dependencies.start)
+        except Exception:
+            dependencies.disable()
+            logger.warning('nlp_dependency_event reason_code=startup_unavailable')
+
+
 @app.on_event("startup")
 async def startup_event():
     app.state.runtime_shutdown_drained = False
     from app.core.lifecycle_receipts import start
     start()
+    await start_optional_dependencies()
     activate_runtime()
     await broadcast.connect()
     await transport_manager.start()
@@ -235,6 +260,9 @@ async def startup_event():
         app.state.desktop_coordinator.start()
     # Use resources created for this application lifecycle.
     configure_analytics_runtime()
+    from app.services.retention_maintenance import start_default_retention_maintenance
+
+    await start_default_retention_maintenance()
     # Recover every canonical account's analytics projection in the
     # background; readiness must not wait on this potentially slow replay.
     analytics_runtime.launch_default_analytics_runtime()
@@ -243,6 +271,23 @@ async def startup_event():
 async def shutdown_event():
     global _grant_refresh
     app.state.runtime_shutdown_drained = False
+    from app.services.retention_maintenance import (
+        shutdown_default_retention_maintenance,
+    )
+
+    if not await shutdown_default_retention_maintenance():
+        logger.warning("retention_maintenance_event reason_code=shutdown_drain_timeout")
+        return
+    deadline = time.monotonic() + 5.0
+    drained = await analytics_runtime.shutdown_default_analytics_runtime(timeout=max(0, deadline-time.monotonic()))
+    from app.services.nlp_dependencies import dependency_service
+    dependencies = dependency_service()
+    dependency_drained = dependencies is None
+    if dependencies is not None and drained:
+        try:
+            dependency_drained = await asyncio.to_thread(dependencies.close, max(0, deadline-time.monotonic()))
+        except Exception:
+            logger.warning('nlp_dependency_event reason_code=shutdown_drain_failed')
     from app.services.signing_parameters import stop_signing_parameters
     await stop_signing_parameters()
     if hasattr(app.state, "desktop_coordinator"):
@@ -251,9 +296,6 @@ async def shutdown_event():
         await _grant_refresh.stop()
         _grant_refresh = None
     await transport_manager.stop()
-    drained = await analytics_runtime.shutdown_default_analytics_runtime(
-        timeout=5.0
-    )
     if not drained:
         logger.warning(
             "analytics_scheduler_event "
@@ -262,8 +304,8 @@ async def shutdown_event():
         )
     await broadcast.disconnect()
     from app.core.lifecycle_receipts import finish
-    finish(drained)
-    app.state.runtime_shutdown_drained = bool(drained)
+    finish(drained and dependency_drained)
+    app.state.runtime_shutdown_drained = bool(drained and dependency_drained)
 
 # -------------------------------------------------
 # Health Check

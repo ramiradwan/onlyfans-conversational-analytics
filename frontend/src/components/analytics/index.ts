@@ -7,3 +7,4 @@ export * from './MetricCard';
 export * from './ResponseOverview';
 export * from './SentimentEngagementTrend';
 export * from './TopicsTable';
+export * from './TaskFindings';
