@@ -44,7 +44,7 @@ class FrozenFindingsPipeline(AnalyticsPipeline):
 
 
 class FindingsRunner:
-    """Providers are explicit dependencies; no default runtime installs this runner.
+    """Providers and background scheduling require explicit runtime configuration.
 
     Authorization raises on refusal. Execution readiness returns a boolean for
     the exact profile; it cannot confer authorization or release qualification.

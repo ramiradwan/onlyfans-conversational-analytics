@@ -3,6 +3,7 @@
 import logging
 import asyncio
 import os
+import time
 from functools import lru_cache
 
 from fastapi import FastAPI
@@ -102,19 +103,28 @@ def start_grant_refresh() -> None:
     _grant_refresh.start()
 
 
-def configure_analytics_runtime():
+_findings_configuration = None
+_UNSET_FINDINGS = object()
+
+
+def configure_analytics_runtime(*, findings=_UNSET_FINDINGS):
     """Build the analytics runtime from application-owned resources."""
 
-    return analytics_runtime.configure_default_analytics_runtime(
+    global _findings_configuration
+    requested_findings = _findings_configuration if findings is _UNSET_FINDINGS else findings
+    configured = analytics_runtime.configure_default_analytics_runtime(
         history_source,
         backend=settings.canonical_persistence_backend,
         projections_path=settings.analytics_projection_database_path,
         canonical_path=settings.canonical_database_path,
         activation=transport_manager.projection_activation,
+        findings=requested_findings,
         post_commit_rebuild_enabled=(
             settings.canonical_persistence_backend == "sqlite"
         ),
     )
+    _findings_configuration = requested_findings
+    return configured
 
 
 # Register dependencies before handlers request the default runtime.
@@ -261,9 +271,16 @@ async def startup_event():
 async def shutdown_event():
     global _grant_refresh
     app.state.runtime_shutdown_drained = False
+    deadline = time.monotonic() + 5.0
+    drained = await analytics_runtime.shutdown_default_analytics_runtime(timeout=max(0, deadline-time.monotonic()))
     from app.services.nlp_dependencies import dependency_service
     dependencies = dependency_service()
-    dependency_drained = dependencies is None or await asyncio.to_thread(dependencies.close)
+    dependency_drained = dependencies is None
+    if dependencies is not None and drained:
+        try:
+            dependency_drained = await asyncio.to_thread(dependencies.close, max(0, deadline-time.monotonic()))
+        except Exception:
+            logger.warning('nlp_dependency_event reason_code=shutdown_drain_failed')
     from app.services.retention_maintenance import (
         shutdown_default_retention_maintenance,
     )
@@ -279,9 +296,6 @@ async def shutdown_event():
         await _grant_refresh.stop()
         _grant_refresh = None
     await transport_manager.stop()
-    drained = await analytics_runtime.shutdown_default_analytics_runtime(
-        timeout=5.0
-    )
     if not drained:
         logger.warning(
             "analytics_scheduler_event "

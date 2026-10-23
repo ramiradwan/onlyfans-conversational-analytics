@@ -423,6 +423,20 @@ class HistoryAnalyticsSource:
                 )
             ]
 
+    def account_revision_page(self, *, after: str | None = None, limit: int = 64) -> list[tuple[str, int]]:
+        """Read one ordered page from the authoritative account registry."""
+        if (type(limit) is not int or not 1 <= limit <= 64
+                or (after is not None and (type(after) is not str or not after or len(after) > 1024))):
+            raise ValueError('analytics_account_page_invalid')
+        with self._read() as connection:
+            if after is None:
+                return [(str(row[0]), int(row[1])) for row in connection.execute(
+                    'SELECT creator_account_id,canonical_revision FROM account_heads '
+                    'ORDER BY creator_account_id LIMIT ?', (limit,))]
+            return [(str(row[0]), int(row[1])) for row in connection.execute(
+                'SELECT creator_account_id,canonical_revision FROM account_heads '
+                'WHERE creator_account_id>? ORDER BY creator_account_id LIMIT ?', (after, limit))]
+
     def account_read_model(self, creator_account_id: str) -> AccountReadModel:
         from app.analytics.source_coverage import AcquisitionCoverage
         from app.analytics.source_snapshot import message_kind_column

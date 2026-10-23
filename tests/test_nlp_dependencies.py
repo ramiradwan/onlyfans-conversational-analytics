@@ -557,7 +557,8 @@ async def test_optional_startup_failure_preserves_authority_and_base_startup(env
 
 
 @pytest.mark.asyncio
-async def test_optional_undrained_worker_does_not_skip_core_shutdown(env, monkeypatch):
+@pytest.mark.parametrize('failure', ['undrained', 'exception'])
+async def test_optional_undrained_worker_does_not_skip_core_shutdown(env, monkeypatch, caplog, failure):
     import app.main as main
     import app.services.nlp_dependencies as module
     import app.services.retention_maintenance as maintenance
@@ -576,14 +577,22 @@ async def test_optional_undrained_worker_does_not_skip_core_shutdown(env, monkey
     async def maintenance_stop():
         return True
 
-    monkeypatch.setattr(module, '_service', SimpleNamespace(close=lambda: False))
+    def close(timeout):
+        assert 0 <= timeout <= 5
+        calls.append('dependencies')
+        if failure == 'exception':
+            raise RuntimeError('private diagnostic')
+        return False
+
+    monkeypatch.setattr(module, '_service', SimpleNamespace(close=close))
     monkeypatch.setattr(maintenance, 'shutdown_default_retention_maintenance', maintenance_stop)
     monkeypatch.setattr(main.transport_manager, 'stop', stop)
     monkeypatch.setattr(main.analytics_runtime, 'shutdown_default_analytics_runtime', scheduler)
     monkeypatch.setattr(main.broadcast, 'disconnect', disconnect)
     await main.shutdown_event()
-    assert calls == ['transport', 'analytics', 'broadcast']
+    assert calls == ['analytics', 'dependencies', 'transport', 'broadcast']
     assert not main.app.state.runtime_shutdown_drained
+    assert 'private diagnostic' not in caplog.text
 
 
 def test_pause_retains_only_verified_files_and_restarts_interrupted_file(env):

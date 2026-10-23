@@ -666,12 +666,37 @@ class DependencyService:
                 if op['kind'] == 'select' and op['state'] == 'pending':
                     self._finish_selection(op)
 
-    def prepare_installed(self, digest):
+    def prepare_installed(self, digest, *, cancellation_check=None):
+        observed_cancel = False
+        callback_error = None
+        def check():
+            nonlocal observed_cancel, callback_error
+            self._running()
+            if callback_error is not None:
+                raise callback_error
+            if observed_cancel:
+                raise ValueError('nlp_cancelled')
+            try:
+                cancelled = cancellation_check is not None and cancellation_check()
+            except Exception as error:
+                callback_error = error
+                raise
+            if cancelled:
+                observed_cancel = True
+                raise ValueError('nlp_cancelled')
+        check()
         profile = self._profile(digest)
         with self._retention(profile, ready=False):
-            available = self.artifacts.reopen(profile, cancellation_check=self._running)
-            self._prepare(profile, available, self._running)
+            check()
+            available = self.artifacts.reopen(profile, cancellation_check=check)
+            check()
+            try:
+                self._prepare(profile, available, check)
+            finally:
+                if callback_error is not None:
+                    raise callback_error
             with self.gate:
+                check()
                 self._admit(profile)
                 self.available[digest] = available
 

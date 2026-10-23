@@ -219,6 +219,9 @@ class LazySQLiteAnalyticsProjectionStore:
         with self.question_publications(account_id, budget) as read:
             return read(account_id, canonical_identity, budget)
 
+    def read_findings_snapshot(self, account_id, snapshot, budget):
+        return self._read('read_findings_snapshot', account_id, account_id, snapshot, budget)
+
     def question_connection_database(self, account_id, budget):
         """Borrow only an already available store; recovery retains creation."""
         budget.check()
@@ -284,6 +287,22 @@ class LazySQLiteAnalyticsProjectionStore:
                     if not available:
                         raise ProjectionStorageUnavailable()
                     return store.question_snapshot(account, identity, budget, connection=connection)
+                def findings(snapshot):
+                    if not checks:
+                        raise ValueError('publication_scope_binding_changed')
+                    def validate():
+                        budget.check()
+                        observed = lease.observe() if lease is not None else store.database._restrict_permissions()
+                        with self._lock:
+                            if (self._closed or self._store is not store
+                                    or not self._identity_matches_unlocked(store, connection=connection,
+                                                                         file_identity=observed)):
+                                raise ProjectionStorageUnavailable()
+                    validate()
+                    result = store.read_findings_snapshot(account_id, snapshot, budget, connection=connection)
+                    validate()
+                    return result
+                read.findings = findings
                 yield read
             budget.check()
         except QuestionLimitExceeded:
