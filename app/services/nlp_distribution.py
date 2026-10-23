@@ -40,10 +40,17 @@ class ProfileDistribution:
                         'nlp_distribution_response')
 
                 def chunks():
-                    for block in response.iter_raw(chunk_size=BLOCK_BYTES):
+                    raw = response.iter_raw()
+                    while True:
                         poll()
-                        require(type(block) is bytes and len(block) <= BLOCK_BYTES, 'nlp_distribution_block')
-                        yield block
+                        try:
+                            block = next(raw)
+                        except StopIteration:
+                            break
+                        require(type(block) is bytes, 'nlp_distribution_block')
+                        for start in range(0, len(block), BLOCK_BYTES):
+                            poll()
+                            yield block[start:start + BLOCK_BYTES]
                     poll()
 
                 yield chunks()

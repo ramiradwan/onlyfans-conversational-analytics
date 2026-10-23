@@ -195,8 +195,20 @@ class FindingsRunner:
             if any(len(original.text)>component.max_source_codepoints for component in profile.components):
                 self.findings.abandon(claim,'unsupported_input')
                 return True
+            cancellation_error=None
+            cancellation_observed=False
             def cancelled():
+                nonlocal cancellation_error, cancellation_observed
                 self.authorize(account_id)
+                if cancellation_observed:
+                    return True
+                try:
+                    if self.cancellation_check is not None and self.cancellation_check():
+                        cancellation_observed=True
+                        return True
+                except Exception as error:
+                    cancellation_error=error
+                    raise
                 return (not self.findings.valid_claim(claim) or not self.execution_ready(profile)
                         or (self.dependencies is not None and not self.dependencies.ready(profile)))
             results=[]
@@ -219,6 +231,9 @@ class FindingsRunner:
                     results.extend(response.items[0].tasks)
                 except Exception:
                     failed=True
+                if cancellation_error is not None:
+                    self.authorize(account_id)
+                    raise cancellation_error
                 if failed:
                     if cancelled():
                         return False

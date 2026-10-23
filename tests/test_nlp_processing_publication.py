@@ -760,3 +760,105 @@ def test_corruption_invalidates_existing_content_proof(fixture,corruption):
     else:
         assert run.artifact.projection.source_revision==1
     assert not pipeline.projection_is_current(ACCOUNT,1)
+
+
+def test_external_cancellation_reaches_first_split_component_poll(fixture):
+    from app.analytics.query_execution import QuestionCancelled
+    stopping = [False]
+    polls, requests = [], []
+    r, _, adapter = runner(fixture, 'split', cancellation_check=lambda: stopping[0])
+
+    def execute(request, cancelled):
+        requests.append(request)
+        stopping[0] = True
+        polls.append(cancelled())
+        if polls[-1]:
+            raise RuntimeError('cancelled')
+        return adapter(request, cancelled)
+
+    r.adapter = execute
+    try:
+        completed = r.process_one(ACCOUNT)
+    except QuestionCancelled:
+        completed = False
+    assert polls == [True]
+    assert completed is False
+    assert len(requests) == 1
+    with fixture.stores.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_records').fetchone()[0] == 0
+        assert not db.execute("SELECT 1 FROM nlp_jobs WHERE state='running'").fetchone()
+
+
+def test_external_cancellation_callback_error_is_not_worker_failure(fixture):
+    active = [False]
+    raised = [False]
+    error = RuntimeError('cancellation callback failed')
+    requests = []
+
+    def cancellation_check():
+        if active[0] and not raised[0]:
+            raised[0] = True
+            raise error
+        return False
+
+    r, _, adapter = runner(fixture, 'split', cancellation_check=cancellation_check)
+
+    def execute(request, cancelled):
+        requests.append(request)
+        active[0] = True
+        cancelled()
+        return adapter(request, cancelled)
+
+    r.adapter = execute
+    with pytest.raises(RuntimeError, match='^cancellation callback failed$') as caught:
+        r.process_one(ACCOUNT)
+    assert caught.value is error
+    assert caught.value.__context__ is None
+    assert len(requests) == 1
+    with fixture.stores.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_records').fetchone()[0] == 0
+        assert not db.execute("SELECT 1 FROM nlp_jobs WHERE state='running'").fetchone()
+
+
+
+@pytest.mark.parametrize('revoke_authorization', [False, True])
+def test_external_cancellation_remains_observed_after_one_true_poll(fixture, revoke_authorization):
+    active = [False]
+    signaled = [False]
+    allowed = [True]
+    requests, polls = [], []
+
+    def cancellation_check():
+        if active[0] and not signaled[0]:
+            signaled[0] = True
+            return True
+        return False
+
+    def authorize(account):
+        if not allowed[0]:
+            raise PermissionError('denied')
+
+    r, _, adapter = runner(fixture, 'split', authorize=authorize, cancellation_check=cancellation_check)
+
+    def execute(request, cancelled):
+        requests.append(request)
+        active[0] = True
+        polls.append(cancelled())
+        if polls[-1]:
+            if revoke_authorization:
+                allowed[0] = False
+            raise RuntimeError('cancelled')
+        return adapter(request, cancelled)
+
+    r.adapter = execute
+    if revoke_authorization:
+        with pytest.raises(PermissionError, match='^denied$') as caught:
+            r.process_one(ACCOUNT)
+        assert caught.value.__context__ is None
+    else:
+        assert r.process_one(ACCOUNT) is False
+    assert polls == [True]
+    assert len(requests) == 1
+    with fixture.stores.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_records').fetchone()[0] == 0
+        assert not db.execute("SELECT 1 FROM nlp_jobs WHERE state='running'").fetchone()
