@@ -43,9 +43,20 @@ test('paired dispatch reuses its exact flow and pushes only bounded outcome corr
   await h.tasks.run(h.value, h.controls);
   assert.equal(h.flows.length, 1);
   assert.equal(h.notifications.at(-1).state, 'opening');
+  let timer;
+  t.after(() => clearTimeout(timer));
+  const notified = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(Error('notification_timeout')), 5000);
+    const notify = h.controls.notify;
+    h.controls.notify = async value => {
+      await notify(value);
+      clearTimeout(timer);
+      resolve();
+    };
+  });
   h.flows[0].resolve(h.value.ceremony.completion.return_uri + '?ceremony_id=' + h.value.ceremony.ceremony_id
     + '&attempt_id=' + h.value.ceremony.attempt_id + '&notification=changed');
-  await tick(); await tick();
+  await notified;
   assert.deepEqual(h.notifications.at(-1), { state: 'checking', notification: {
     ceremony_id: h.value.ceremony.ceremony_id, attempt_id: h.value.ceremony.attempt_id, notification: 'changed' } });
   await h.tasks.run(h.value, h.controls); assert.equal(h.flows.length, 1);
