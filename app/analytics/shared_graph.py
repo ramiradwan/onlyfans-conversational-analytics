@@ -425,6 +425,9 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
                             statistics['node_identities_written'] += len(identities - present)
                         cursor = db.executemany(statement, changed)
                         statistics[kind + '_content_written'] += cursor.rowcount
+                    check()
+                    writer._checkpoint_committed_batch()
+                    check()
                     writer._record_operation_duration(time.monotonic() - started, allow_growth=True)
             # Membership keys have a different physical order from content IDs.
             # Insert them after all referenced content, without retaining batches.
@@ -439,6 +442,9 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
                     started = time.monotonic()
                     with writer._owned_transaction() as db:
                         write_members(db, kind, batch, page_plans)
+                    check()
+                    writer._checkpoint_committed_batch()
+                    check()
                     writer._record_operation_duration(time.monotonic() - started, allow_growth=True)
                     statistics[kind + '_memberships_written'] += len(batch)
         with writer._owned_transaction() as db:

@@ -34,7 +34,7 @@ from app.models.analytics import (
     GraphTraversalBounds,
 )
 from app.persistence import sqlite_api as sqlite3
-from app.persistence.migrations import MigrationChecksumError
+from app.persistence.migrations import MigrationChecksumError, load_migration_catalog
 from app.persistence.private_files import _windows_acl_is_owner_only
 from app.persistence.projection_activation import (
     InMemoryProjectionActivationRepository,
@@ -967,7 +967,9 @@ def test_populated_projection_v2_metric_upgrade_discards_legacy_rows_and_restart
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 1
     with upgraded.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 25
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == (
+            load_migration_catalog(source_catalog)[-1].version
+        )
         assert connection.execute("SELECT COUNT(*) FROM conversation_fragments").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM enrichment_reuse").fetchone()[0] == 0
         assert connection.execute(
@@ -1047,7 +1049,9 @@ def test_populated_projection_v1_metric_upgrade_through_v5_is_restart_safe(
             "SELECT COUNT(*) FROM graph_algorithm_metrics"
         ).fetchone()[0] == 1
     with upgraded.read() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 25
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == (
+            load_migration_catalog(source_catalog)[-1].version
+        )
         assert connection.execute("SELECT COUNT(*) FROM conversation_fragments").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM enrichment_reuse").fetchone()[0] == 0
         assert connection.execute(
