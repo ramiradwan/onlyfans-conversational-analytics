@@ -19,9 +19,9 @@ def test_append_reads_only_changed_payload_buckets(tmp_path, monkeypatch):
         opened, affected = [], set()
         read = shared_graph.verified_segment_chunk
         assemble = incremental_graph.build_incremental_graph
-        def observe_read(db, account, proof, kind, bucket):
+        def observe_read(db, account, proof, kind, bucket, *, check=lambda: None):
             opened.append((kind, bucket))
-            return read(db, account, proof, kind, bucket)
+            return read(db, account, proof, kind, bucket, check=check)
         def observe_build(**kwargs):
             changed = kwargs['changed_graph']
             for kind, records in [('node', changed.nodes), ('edge', changed.edges)]:

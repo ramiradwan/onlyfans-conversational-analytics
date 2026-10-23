@@ -9,6 +9,7 @@ pytestmark = [pytest.mark.ci_tier("integration")]
 @pytest.mark.parametrize('prefix_size', [1024, 4096])
 def test_verified_append_payload_work_stays_in_changed_buckets(tmp_path, monkeypatch, record_property, prefix_size):
     from app.analytics import shared_graph
+    from app.analytics.graph_chunk_encoding import decode
     from app.analytics.opaque_refs import account_ref
     f = dominant_fixture(tmp_path)
     try:
@@ -18,7 +19,7 @@ def test_verified_append_payload_work_stays_in_changed_buckets(tmp_path, monkeyp
                     insert_message(db, 'chat-0', f'dominant-{i}', NOW-timedelta(hours=2)+timedelta(seconds=i), i)
         f.pipeline.project_account(ACCOUNT)
         with f.stores.database.read() as db:
-            total = db.execute("SELECT SUM(length(c.canonical_bytes)) FROM graph_segment_chunks c JOIN generation_graph_segments m USING(creator_account_id,segment_id,kind) JOIN projection_generations g USING(creator_account_id,generation_id) WHERE g.status='active' AND g.creator_account_id=?", (account_ref(ACCOUNT),)).fetchone()[0]
+            total = sum(len(decode(db, row[0])) for row in db.execute("SELECT c.canonical_bytes FROM graph_segment_chunks c JOIN generation_graph_segments m USING(creator_account_id,segment_id,kind) JOIN projection_generations g USING(creator_account_id,generation_id) WHERE g.status='active' AND g.creator_account_id=?", (account_ref(ACCOUNT),)))
         original, opened = shared_graph.verified_segment_chunk, []
         def observe(*args, **kwargs):
             value = original(*args, **kwargs)

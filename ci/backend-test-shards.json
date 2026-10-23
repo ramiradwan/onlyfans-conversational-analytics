@@ -242,6 +242,7 @@
     "tests/test_generation_verification_cache.py": 4,
     "tests/test_generation_verification_envelope.py": 3,
     "tests/test_graph_batch_checkpoint.py": 2,
+    "tests/test_graph_chunk_encoding.py": 2,
     "tests/test_graph_chunk_metadata.py": 3,
     "tests/test_graph_component_diagnostic.py": 1,
     "tests/test_graph_digest_stream.py": 4,
@@ -615,6 +616,10 @@
       {
         "selector": "tests/test_generation_throughput.py",
         "reason": "SQLite generation, recovery, connection, process ownership or persisted graph behavior on the fixed Windows runtime."
+      },
+      {
+        "selector": "tests/test_graph_chunk_encoding.py",
+        "reason": "Chunk encoding preserves canonical bytes, migration admission and publication verification on Windows."
       },
       {
         "selector": "tests/test_graph_batch_checkpoint.py",

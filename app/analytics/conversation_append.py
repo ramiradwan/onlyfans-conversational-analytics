@@ -40,7 +40,7 @@ def _previous_graph(loader, unit, check):
             grouped[key[3:5]].add(key)
         for bucket, selected in sorted(grouped.items()):
             check()
-            chunk = loader.graph_segment_chunk(kind, bucket)
+            chunk = loader.graph_segment_chunk(kind, bucket, check=check)
             if chunk is None:
                 raise ValueError('conversation_append_chunk_missing')
             segment, encoded = chunk

@@ -255,6 +255,8 @@ def _segment_chunk(graph, plan, check):
 
 
 def _ensure_segment_chunks(connection, graph, plans, check):
+    from app.analytics.graph_chunk_encoding import encode
+
     if not chunks_supported(connection):
         return 0
     written = 0
@@ -278,7 +280,7 @@ def _ensure_segment_chunks(connection, graph, plans, check):
                VALUES (?,?,?,?,?,?)""",
             (
                 graph.account_ref, plan.segment_id, plan.kind, len(plan.keys),
-                chunk, digest,
+                encode(connection, chunk, check=check), digest,
             ),
         )
         written += 1
@@ -601,6 +603,8 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check, 
             raise GraphReferentialIntegrityError('graph_segment_digest_invalid')
 
     def current_chunk(plan):
+        from app.analytics.graph_chunk_encoding import GraphChunkEncodingError, decode
+
         row = connection.execute(
             """SELECT kind,record_count,canonical_bytes,canonical_digest
                FROM graph_segment_chunks
@@ -609,10 +613,15 @@ def _verified_changed_segment_chunks(connection, account_id, validation, check, 
         ).fetchone()
         if (row is None or row['kind'] != plan.kind
                 or int(row['record_count']) != plan.count
-                or row['canonical_digest'] != plan.chunk_digest
-                or hashlib.sha256(row['canonical_bytes']).hexdigest() != plan.chunk_digest):
+                or row['canonical_digest'] != plan.chunk_digest):
             raise GraphReferentialIntegrityError('graph_segment_chunk_invalid')
-        return row['canonical_bytes']
+        try:
+            canonical = decode(connection, row['canonical_bytes'], check=check)
+        except GraphChunkEncodingError:
+            raise GraphReferentialIntegrityError('graph_segment_chunk_invalid') from None
+        if hashlib.sha256(canonical).hexdigest() != plan.chunk_digest:
+            raise GraphReferentialIntegrityError('graph_segment_chunk_invalid')
+        return canonical
 
     for plan in changed:
         check()
@@ -933,7 +942,7 @@ def verified_segment_chunks_complete(connection, account_id: str,
 
 
 def verified_segment_chunk(connection, account_id: str, proof: GraphSegmentProof,
-                           kind: str, bucket: str):
+                           kind: str, bucket: str, *, check=lambda: None):
     """Open one immutable canonical chunk only when it matches the live proof."""
 
     if kind not in ('node', 'edge'):
@@ -949,10 +958,17 @@ def verified_segment_chunk(connection, account_id: str, proof: GraphSegmentProof
         (account_id, item.segment_id),
     ).fetchone()
     if (row is None or row['kind'] != kind or int(row['record_count']) != item.count
-            or row['canonical_digest'] != item.chunk_digest
-            or hashlib.sha256(row['canonical_bytes']).hexdigest() != item.chunk_digest):
+            or row['canonical_digest'] != item.chunk_digest):
         return None
-    return item, row['canonical_bytes']
+    from app.analytics.graph_chunk_encoding import GraphChunkEncodingError, decode
+
+    try:
+        canonical = decode(connection, row['canonical_bytes'], check=check)
+    except GraphChunkEncodingError:
+        return None
+    if hashlib.sha256(canonical).hexdigest() != item.chunk_digest:
+        return None
+    return item, canonical
 
 
 def uses_segments(connection, generation_id: str, account_id: str) -> bool:

@@ -39,7 +39,7 @@ def append_unit(loader, previous, delta, *, conversation_node, input_digest,
             wanted = set(selected)
             seen = 0
             check()
-            opened = loader.graph_segment_chunk(kind, bucket)
+            opened = loader.graph_segment_chunk(kind, bucket, check=check)
             if opened is None:
                 raise ValueError('conversation_append_chunk_missing')
             segment, encoded = opened
