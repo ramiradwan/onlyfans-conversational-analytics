@@ -85,6 +85,9 @@ fn version_tuple(text: &str) -> Option<[u16; 4]> {
 }
 
 const STAGED_FILE_LIMIT: usize = 65536;
+const STAGED_METADATA_TOTAL_LIMIT: usize = 4 * STAGED_FILE_LIMIT;
+#[cfg(any(windows, test))]
+const WORKER_CODE_TOTAL_LIMIT: usize = 256 * 1024 * 1024;
 const FOUNDATION: &str = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";
 const BUNDLE: &str = "http://schemas.microsoft.com/appx/2016/bundle";
 const UAP3: &str = "http://schemas.microsoft.com/appx/manifest/uap/windows10/3";
@@ -436,15 +439,47 @@ impl StagedReadError {
     }
 }
 
+#[cfg(any(windows, test))]
+struct ReadBudget {
+    bytes: usize,
+    limit: usize,
+}
+#[cfg(any(windows, test))]
+impl ReadBudget {
+    fn total_after(&self, length: u64, file_limit: usize) -> Option<usize> {
+        let length = usize::try_from(length).ok()?;
+        if length == 0 || length > file_limit {
+            return None;
+        }
+        self.bytes
+            .checked_add(length)
+            .filter(|total| *total <= self.limit)
+    }
+}
+
 #[cfg(windows)]
 struct StagedFiles {
     held: Vec<std::fs::File>,
-    bytes: usize,
+    budget: ReadBudget,
     #[cfg(all(feature = "qualification-tools", debug_assertions))]
     records: Vec<(StagedRole, usize)>,
 }
 #[cfg(windows)]
 impl StagedFiles {
+    fn metadata() -> Self {
+        Self::with_budget(STAGED_METADATA_TOTAL_LIMIT)
+    }
+    fn worker() -> Self {
+        Self::with_budget(WORKER_CODE_TOTAL_LIMIT)
+    }
+    fn with_budget(limit: usize) -> Self {
+        Self {
+            held: Vec::new(),
+            budget: ReadBudget { bytes: 0, limit },
+            #[cfg(all(feature = "qualification-tools", debug_assertions))]
+            records: Vec::new(),
+        }
+    }
     fn read(
         &mut self,
         root: &std::path::Path,
@@ -569,6 +604,10 @@ impl StagedFiles {
         }
         protected_package_file(file.as_raw_handle(), role)?;
         stable_file_path(&file, &path, role)?;
+        let total = self
+            .budget
+            .total_after(metadata.len(), limit)
+            .ok_or_else(|| fail("staged_evidence_size_invalid", StagedOperation::BoundedRead))?;
         let mut bytes = Vec::new();
         (&mut file)
             .take(limit as u64 + 1)
@@ -587,16 +626,7 @@ impl StagedFiles {
                 StagedOperation::BoundedRead,
             ));
         }
-        self.bytes = self
-            .bytes
-            .checked_add(bytes.len())
-            .ok_or_else(|| fail("staged_evidence_size_invalid", StagedOperation::BoundedRead))?;
-        if self.bytes > 4 * STAGED_FILE_LIMIT {
-            return Err(fail(
-                "staged_evidence_size_invalid",
-                StagedOperation::BoundedRead,
-            ));
-        }
+        self.budget.bytes = total;
         self.held.push(file);
         #[cfg(all(feature = "qualification-tools", debug_assertions))]
         self.records.push((role, bytes.len()));
@@ -805,12 +835,7 @@ fn validate_staged_target(
     target: &crate::servicing_feed::Target,
     selection: &EngineSelection,
 ) -> Result<(String, StagedFiles), StagedReadError> {
-    let mut files = StagedFiles {
-        held: Vec::new(),
-        bytes: 0,
-        #[cfg(all(feature = "qualification-tools", debug_assertions))]
-        records: Vec::new(),
-    };
+    let mut files = StagedFiles::metadata();
     let result = (|| -> Result<String, StagedReadError> {
         use crate::servicing_feed::Target;
         let failure = |reason, role| StagedReadError::new(reason, role, StagedOperation::Validate);
@@ -891,7 +916,7 @@ fn validate_staged_target(
             } else {
                 4
             };
-            if files.bytes > maximum * STAGED_FILE_LIMIT {
+            if files.budget.bytes > maximum * STAGED_FILE_LIMIT {
                 return Err(failure(
                     "staged_evidence_size_invalid",
                     StagedRole::MainBundle,
@@ -975,12 +1000,7 @@ fn selected_engine(
             .InstalledPath()
             .map_err(|_| "optional_selection_unavailable")?;
         let path = path.to_string();
-        let mut files = StagedFiles {
-            held: Vec::new(),
-            bytes: 0,
-            #[cfg(all(feature = "qualification-tools", debug_assertions))]
-            records: Vec::new(),
-        };
+        let mut files = StagedFiles::metadata();
         let manifest = files
             .read(
                 std::path::Path::new(&path),
@@ -1067,12 +1087,7 @@ pub(crate) fn worker_packages(
             .map_err(|_| "identity_mismatch")?
             .to_string(),
     );
-    let mut files = StagedFiles {
-        held: Vec::new(),
-        bytes: 0,
-        #[cfg(all(feature = "qualification-tools", debug_assertions))]
-        records: Vec::new(),
-    };
+    let mut files = StagedFiles::worker();
     *stage = FailureStage::DescriptorRead;
     let bytes = files
         .read(
@@ -2038,6 +2053,60 @@ fn check_availability(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn worker_reads_have_a_separate_finite_code_budget() {
+        let mut metadata = StagedFiles::metadata();
+        let mut worker = StagedFiles::worker();
+        let per_file = 128 * 1024 * 1024;
+        for length in [4096, 13_740_803, 6_661_120, 4_635_648, 15_809_848] {
+            let total = worker.budget.total_after(length, per_file).unwrap();
+            worker.budget.bytes = total;
+        }
+        metadata.budget.bytes = metadata
+            .budget
+            .total_after(4096, STAGED_FILE_LIMIT)
+            .unwrap();
+        assert!(metadata.budget.total_after(13_740_803, per_file).is_none());
+        assert_eq!(metadata.budget.bytes, 4096);
+        assert!(worker
+            .budget
+            .total_after((per_file + 1) as u64, per_file)
+            .is_none());
+        assert!(worker
+            .budget
+            .total_after((STAGED_FILE_LIMIT + 1) as u64, STAGED_FILE_LIMIT)
+            .is_none());
+        assert_eq!(metadata.budget.limit, STAGED_METADATA_TOTAL_LIMIT);
+        assert_eq!(worker.budget.limit, WORKER_CODE_TOTAL_LIMIT);
+    }
+
+    #[test]
+    fn read_budget_accepts_exact_total_and_failures_do_not_advance() {
+        for (limit, per_file) in [
+            (STAGED_METADATA_TOTAL_LIMIT, STAGED_FILE_LIMIT),
+            (WORKER_CODE_TOTAL_LIMIT, 128 * 1024 * 1024),
+        ] {
+            let mut budget = ReadBudget { bytes: 0, limit };
+            assert!(budget.total_after(0, per_file).is_none());
+            assert!(budget
+                .total_after((per_file + 1) as u64, per_file)
+                .is_none());
+            assert_eq!(budget.bytes, 0);
+            for _ in 0..limit / per_file {
+                budget.bytes = budget.total_after(per_file as u64, per_file).unwrap();
+            }
+            assert_eq!(budget.bytes, limit);
+            assert!(budget.total_after(1, per_file).is_none());
+            assert_eq!(budget.bytes, limit);
+        }
+        let budget = ReadBudget {
+            bytes: usize::MAX - 1,
+            limit: usize::MAX,
+        };
+        assert!(budget.total_after(2, 2).is_none());
+        assert_eq!(budget.bytes, usize::MAX - 1);
+    }
     fn installed_engine_manifest(version: &str) -> (String, PackageIdentity) {
         let identity = PackageIdentity {
             name: "Example.Engine".into(),

@@ -314,11 +314,7 @@ pub(crate) fn run(root: &Path) -> bool {
                 .map_err(|e| native(StagedOperation::Identity, e))?
                 .to_string(),
         );
-        let mut current_files = StagedFiles {
-            held: Vec::new(),
-            bytes: 0,
-            records: Vec::new(),
-        };
+        let mut current_files = StagedFiles::metadata();
         let descriptor = current_files.read(
             &current_root,
             "app/desktop-release.json",
