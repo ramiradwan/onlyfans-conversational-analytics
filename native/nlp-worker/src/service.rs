@@ -2,6 +2,7 @@
 use crate::{
     context::{Context, integer},
     entity::{Control, EntityAdapter},
+    topic::TopicAdapter,
     wire::{Envelope, canonical, hash, id, object},
 };
 use anyhow::{Result, bail, ensure};
@@ -15,6 +16,51 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+enum Resident {
+    Entities(EntityAdapter),
+    Topics(TopicAdapter),
+}
+impl Resident {
+    fn load(context: &Context, component: Value, control: &Control) -> Result<Self> {
+        match component["adapter"]["adapter_id"].as_str() {
+            Some(crate::context::ADAPTER) => Ok(Self::Entities(EntityAdapter::load(
+                context, component, control,
+            )?)),
+            Some(crate::topic::ADAPTER) => Ok(Self::Topics(TopicAdapter::load(
+                context, component, control,
+            )?)),
+            _ => bail!("incompatible"),
+        }
+    }
+    fn extract(&self, text: &str, control: &Control) -> Result<Vec<Value>> {
+        match self {
+            Self::Entities(adapter) => adapter.extract(text, control),
+            Self::Topics(adapter) => adapter.extract(text, control),
+        }
+    }
+}
+fn task(component: &Value) -> Result<&'static str> {
+    let name = match component["adapter"]["adapter_id"].as_str() {
+        Some(crate::context::ADAPTER) => "concept_mentions",
+        Some(crate::topic::ADAPTER) => "message_topics",
+        _ => bail!("incompatible"),
+    };
+    let tasks = component["tasks"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("binding_mismatch"))?;
+    ensure!(
+        tasks.len() == 1
+            && tasks[0]["task"] == name
+            && tasks[0]["task_contract"] == format!("{name}.v1"),
+        "binding_mismatch"
+    );
+    Ok(name)
+}
+fn identify_payload(mut payload: Value, task: &str) -> Value {
+    payload["task"] = json!(task);
+    payload["task_contract"] = json!(format!("{task}.v1"));
+    payload
+}
 fn assessed_payload(text: &str, findings: Vec<Value>) -> Value {
     let count = text.chars().count();
     json!({"task":"concept_mentions","task_contract":"concept_mentions.v1","outcome":if findings.is_empty(){"assessed_no_match"}else{"assessed_findings"},"reason":"none","coverage":{"source_codepoints":count,"examined":if count==0{json!([])}else{json!([{"start":0,"end":count}])},"excluded":[],"limits_reached":[]},"findings":findings})
@@ -72,10 +118,7 @@ fn validate_analyze(context: &Context, p: &Value, c: &Value) -> Result<()> {
         ],
     )?;
     context.bound(p)?;
-    ensure!(
-        p["tasks"] == json!(["concept_mentions"]),
-        "binding_mismatch"
-    );
+    ensure!(p["tasks"] == json!([task(c)?]), "binding_mismatch");
     let items = p["items"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("invalid_payload"))?;
@@ -106,25 +149,36 @@ fn validate_analyze(context: &Context, p: &Value, c: &Value) -> Result<()> {
 }
 
 fn analyze(
-    adapter: &EntityAdapter,
+    adapter: &Resident,
     context: &Context,
     p: &Value,
     c: &Value,
     control: &Control,
+) -> Result<Value> {
+    analyze_with(context, p, c, |text| adapter.extract(text, control))
+}
+fn analyze_with(
+    context: &Context,
+    p: &Value,
+    c: &Value,
+    mut extract: impl FnMut(&str) -> Result<Vec<Value>>,
 ) -> Result<Value> {
     validate_analyze(context, p, c)?;
     let items = p["items"].as_array().unwrap();
     let mut results = Vec::new();
     for item in items {
         let text = item["text"].as_str().unwrap();
-        let result = adapter.extract(text, control);
-        let payload = match result {
-            Ok(findings) => assessed_payload(text, findings),
-            Err(error) => {
-                let (reason, limit) = terminal_error(&error);
-                error_payload(c, text, reason, limit)
-            }
-        };
+        let result = extract(text);
+        let payload = identify_payload(
+            match result {
+                Ok(findings) => assessed_payload(text, findings),
+                Err(error) => {
+                    let (reason, limit) = terminal_error(&error);
+                    error_payload(c, text, reason, limit)
+                }
+            },
+            task(c)?,
+        );
         results.push(json!({"request_item_id":item["request_item_id"],"tasks":[{"component_id":p["component_id"],"component_sha256":p["component_sha256"],"text_sha256":item["text_sha256"],"payload":payload}]}));
     }
     Ok(
@@ -135,7 +189,7 @@ struct Active {
     request: Value,
     operation: String,
     cancel: Arc<AtomicBool>,
-    join: JoinHandle<(Option<EntityAdapter>, Value)>,
+    join: JoinHandle<(Option<Resident>, Value)>,
     cancel_reply: Option<Value>,
 }
 pub struct Service {
@@ -143,7 +197,7 @@ pub struct Service {
     bootstrapped: bool,
     closed: bool,
     seen: BTreeSet<String>,
-    resident: Option<(Value, EntityAdapter)>,
+    resident: Option<(Value, Resident)>,
     active: Option<Active>,
     component: Option<Value>,
     last_terminal: Option<(Value, String)>,
@@ -271,7 +325,7 @@ impl Service {
                     deadline: Instant::now() + Duration::from_secs(120),
                 };
                 let join = thread::spawn(move || {
-                    let result = EntityAdapter::load(&context, component, &control);
+                    let result = Resident::load(&context, component, &control);
                     let (model, outcome, reason) = match result {
                         Ok(a) => (Some(a), "ready", "none"),
                         Err(error) => {
@@ -497,8 +551,7 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     fn service() -> Service {
-        let component =
-            json!({"component_id":"one","max_batch_items":2,"max_source_codepoints":32});
+        let component = json!({"component_id":"one","max_batch_items":2,"max_source_codepoints":32,"adapter":{"adapter_id":"boundary_entities"},"tasks":[{"task":"concept_mentions","task_contract":"concept_mentions.v1"}]});
         let profile = json!({"components":[component],"artifacts":[]});
         let profile_json = canonical(&profile).unwrap();
         Service::new(Context {
@@ -763,6 +816,87 @@ mod tests {
         let b = json!({"artifact_id":"two","sha256":"b".repeat(64),"size_bytes":1,"role":"configuration","format_id":"format"});
         assert!(artifact_set(&json!([b.clone(), a.clone()]), &[a.clone(), b]).is_ok());
         assert!(artifact_set(&json!([a.clone(), a.clone()]), &[a.clone(), a]).is_err());
+    }
+    #[test]
+    fn topic_dispatch_uses_original_source_binding_and_truthful_outcomes() {
+        let mut s = service();
+        let mut c = s.context.profile["components"][0].clone();
+        c["adapter"]["adapter_id"] = json!(crate::topic::ADAPTER);
+        c["tasks"] = json!([{"task":"message_topics","task_contract":"message_topics.v1"}]);
+        Arc::get_mut(&mut s.context).unwrap().profile["components"][0] = c.clone();
+        let sha = hash(canonical(&c).unwrap().as_bytes());
+        let text = "\u{e9} \u{1f600}";
+        let p = json!({"protocol":"nlp-worker.v2","request_id":"analyze.topic","profile_sha256":s.context.profile_sha,
+            "component_id":"one","component_sha256":sha,"tasks":["message_topics"],"deadline_ms":100,
+            "items":[{"request_item_id":"first","text":text,"text_sha256":hash(text.as_bytes())}]});
+        let result = analyze_with(&s.context, &p, &c, |_| Ok(vec![])).unwrap();
+        let task = &result["items"][0]["tasks"][0];
+        assert_eq!(task["text_sha256"], hash(text.as_bytes()));
+        assert_eq!(task["component_sha256"], sha);
+        assert_eq!(task["payload"]["task"], "message_topics");
+        assert_eq!(task["payload"]["task_contract"], "message_topics.v1");
+        assert_eq!(task["payload"]["outcome"], "assessed_no_match");
+        assert_eq!(task["payload"]["coverage"]["source_codepoints"], 3);
+        assert_eq!(
+            task["payload"]["coverage"]["examined"],
+            json!([{"start":0,"end":3}])
+        );
+        for error in [
+            "encoded_bound",
+            "word_bound",
+            "cancelled",
+            "deadline",
+            "output_bound",
+            "classifier_output",
+        ] {
+            let result = analyze_with(&s.context, &p, &c, |_| Err(anyhow::anyhow!(error))).unwrap();
+            let payload = &result["items"][0]["tasks"][0]["payload"];
+            assert_eq!(payload["task"], "message_topics");
+            assert_ne!(payload["outcome"], "assessed_no_match");
+            assert!(
+                payload["coverage"]["examined"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        let mut wrong = p.clone();
+        wrong["tasks"] = json!(["concept_mentions"]);
+        let mut called = false;
+        assert!(
+            analyze_with(&s.context, &wrong, &c, |_| {
+                called = true;
+                Ok(vec![])
+            })
+            .is_err()
+        );
+        assert!(!called);
+    }
+    #[test]
+    fn serial_component_requests_cannot_mix_or_substitute_tasks() {
+        let mut s = service();
+        let entity = s.context.profile["components"][0].clone();
+        let mut topic = entity.clone();
+        topic["component_id"] = json!("two");
+        topic["adapter"]["adapter_id"] = json!(crate::topic::ADAPTER);
+        topic["tasks"] = json!([{"task":"message_topics","task_contract":"message_topics.v1"}]);
+        Arc::get_mut(&mut s.context).unwrap().profile["components"] =
+            json!([entity.clone(), topic.clone()]);
+        for c in [entity, topic] {
+            let name = task(&c).unwrap();
+            let p = json!({"protocol":"nlp-worker.v2","request_id":"analyze.one","profile_sha256":s.context.profile_sha,
+                "component_id":c["component_id"],"component_sha256":hash(canonical(&c).unwrap().as_bytes()),"tasks":[name],
+                "deadline_ms":100,"items":[{"request_item_id":"one","text":"","text_sha256":hash(b"")}]});
+            let result = analyze_with(&s.context, &p, &c, |_| Ok(vec![])).unwrap();
+            assert_eq!(result["items"][0]["tasks"][0]["payload"]["task"], name);
+            assert_eq!(
+                result["items"][0]["tasks"][0]["payload"]["coverage"]["examined"],
+                json!([])
+            );
+            let mut mixed = p;
+            mixed["tasks"] = json!(["message_topics", "concept_mentions"]);
+            assert!(validate_analyze(&s.context, &mixed, &c).is_err());
+        }
     }
     #[test]
     fn malformed_later_item_refuses_whole_request_before_execution() {

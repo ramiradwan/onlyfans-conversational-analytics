@@ -199,6 +199,108 @@ def rehash_v2(value):
     return profiles.AnalysisProfile.model_validate_json(frame(value))
 
 
+def shared_encoder_profile_document():
+    value = v2_fixture("split-profile")
+    value["schema_version"] = "nlp-profile.v3"
+    encoder = copy.deepcopy(next(asset for asset in value["artifacts"] if asset["role"] == "weights"))
+    encoder.update(artifact_id="weights.encoder", format_id="synthetic.encoder.v1", size_bytes=17,
+                   sha256="e" * 64)
+    value["artifacts"].append(encoder)
+    for index, component in enumerate(value["components"]):
+        head = next(asset for asset in value["artifacts"] if asset["artifact_id"] == component["artifact_ids"][0])
+        head["format_id"] = component["adapter"]["artifact_format"] = f"synthetic.head.{index}.v1"
+        config = dict(artifact_id=f"configuration.{index}", sha256=str(index + 1) * 64,
+                      size_bytes=19 + index, role="configuration", format_id="synthetic.configuration.v1")
+        value["artifacts"].append(config)
+        component["artifact_ids"].extend([encoder["artifact_id"], config["artifact_id"]])
+    value["resources"]["installed_bytes"] = sum(asset["size_bytes"] for asset in value["artifacts"])
+    rehash_shared_profile_document(value)
+    return value
+
+
+def rehash_shared_profile_document(value):
+    assets = tuple(profiles.Artifact.model_validate_json(frame(asset)) for asset in value["artifacts"])
+    for component in value["components"]:
+        closure = tuple(asset for asset in assets if asset.artifact_id in component["artifact_ids"]
+                        or asset.role in ("engine", "runtime"))
+        component["artifact_closure_sha256"] = profiles.artifact_closure_digest(closure)
+        component["tokenizer_sha256"] = profiles.artifact_closure_digest(tuple(asset for asset in closure
+                                                                           if asset.role == "tokenizer"))
+
+
+def test_v3_shared_encoder_and_tokenizer_keep_exact_closures_and_unique_accounting():
+    profile = profiles.read_profile(frame(shared_encoder_profile_document()))
+    assert type(profile) is profiles.SubsetAnalysisProfile
+    assert profile.execution_mode == "serial_unload" and len(profile.components) == 2
+    assert {binding.task for binding in profile.bindings} == {"message_topics", "concept_mentions"}
+    assert len({component.adapter.artifact_format for component in profile.components}) == 2
+    assert profiles.read_profile(profiles.canonical_bytes(profile)) == profile
+    assert profiles.canonical_bytes(profiles.read_profile(profiles.canonical_bytes(profile))) == profiles.canonical_bytes(profile)
+    shared = set(profile.components[0].artifact_ids) & set(profile.components[1].artifact_ids)
+    assert shared == {"weights.encoder", "tokenizer"}
+    assert sum(asset.artifact_id == "weights.encoder" for asset in profile.artifacts) == 1
+    assert sum(asset.role == "tokenizer" for asset in profile.artifacts) == 1
+    assert profile.resources.installed_bytes == sum(asset.size_bytes for asset in profile.artifacts)
+    component_bytes = 0
+    for component in profile.components:
+        closure = tuple(asset for asset in profile.artifacts if asset.artifact_id in component.artifact_ids
+                        or asset.role in ("engine", "runtime"))
+        assert component.artifact_closure_sha256 == profiles.artifact_closure_digest(closure)
+        assert {asset.role for asset in closure} == {"engine", "runtime", "weights", "tokenizer", "configuration"}
+        component_bytes += sum(asset.size_bytes for asset in closure)
+    repeated = sum(asset.size_bytes for asset in profile.artifacts
+                   if asset.artifact_id in shared or asset.role in ("engine", "runtime"))
+    assert component_bytes == profile.resources.installed_bytes + repeated
+    understated = profile.model_dump(mode="json")
+    understated["resources"]["installed_bytes"] -= 1
+    with pytest.raises(ValidationError, match="artifact accounting mismatch"):
+        profiles.read_profile(frame(understated))
+
+
+def test_v2_same_mixed_weight_closure_retains_legacy_format_restriction():
+    value = shared_encoder_profile_document()
+    value["schema_version"] = "nlp-profile.v2"
+    with pytest.raises(ValidationError, match="unsupported artifact format"):
+        profiles.read_profile(frame(value))
+
+
+@pytest.mark.parametrize("fault,reason", [
+    ("missing", "incomplete artifact closure"),
+    ("altered", "component artifact closure mismatch"),
+    ("digest", "component artifact closure mismatch"),
+    ("unreferenced", "unreferenced data artifact"),
+    ("tokenizer", "unsupported tokenizer format"),
+    ("format_identifier", "format_id"),
+    ("role", "role"),
+])
+def test_v3_mixed_weight_formats_preserve_artifact_and_tokenizer_refusals(fault, reason):
+    value = shared_encoder_profile_document()
+    encoder = next(asset for asset in value["artifacts"] if asset["artifact_id"] == "weights.encoder")
+    if fault == "missing": value["artifacts"].remove(encoder)
+    elif fault == "altered": encoder["sha256"] = "f" * 64
+    elif fault == "digest": value["components"][0]["artifact_closure_sha256"] = "0" * 64
+    elif fault == "unreferenced":
+        extra = copy.deepcopy(encoder)
+        extra["artifact_id"] = "unreferenced"
+        value["artifacts"].append(extra)
+    elif fault == "tokenizer":
+        next(asset for asset in value["artifacts"] if asset["role"] == "tokenizer")["format_id"] = "unsupported.v1"
+        rehash_shared_profile_document(value)
+    elif fault == "format_identifier": encoder["format_id"] = "invalid format"
+    else: encoder["role"] = "plugin"
+    with pytest.raises(ValidationError, match=reason):
+        profiles.read_profile(frame(value))
+
+
+def test_v3_structural_shared_closure_does_not_supply_adapter_readiness():
+    profile = profiles.read_profile(frame(shared_encoder_profile_document()))
+    request = adapter.HandshakeRequest(request_id="hello", expected_engine=profile.components[0].engine)
+    capabilities = SyntheticAdapter(profile, profile.components[0], None, []).describe(request).model_dump(mode="json")
+    capabilities["adapters"].pop()
+    with pytest.raises(NlpBoundaryError, match="nlp_adapter_incompatible"):
+        adapter.validate_handshake(profile, request, frame(capabilities))
+
+
 def test_v2_generated_schemas_and_fixtures_match_authoritative_models():
     for name, schema in documents_v2().items():
         assert json.loads((ROOT / "shared/nlp/v2" / name).read_text()) == schema

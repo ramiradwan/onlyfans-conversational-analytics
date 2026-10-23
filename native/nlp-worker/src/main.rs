@@ -3,7 +3,10 @@ mod context;
 mod entity;
 mod onnx;
 mod owned;
+mod runtime;
 mod service;
+mod tokenizer_metadata;
+mod topic;
 mod wire;
 use anyhow::{Result, ensure};
 fn run() -> Result<()> {

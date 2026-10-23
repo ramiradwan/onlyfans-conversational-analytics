@@ -414,22 +414,29 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
         )) {
             return Err("artifact_mismatch");
         }
+        let task_contract = match (a["adapter_id"].as_str(), a["artifact_format"].as_str()) {
+            (Some("boundary_entities"), Some("onnx-boundary-entity.v1")) => "concept_mentions.v1",
+            (Some("boundary_topics"), Some("onnx-boundary-classification.v1")) => {
+                "message_topics.v1"
+            }
+            _ => return Err("artifact_mismatch"),
+        };
+        let topics = task_contract == "message_topics.v1";
         if a["adapter_build_sha256"] != executable.artifact.sha256
-            || a["adapter_id"] != "boundary_entities"
             || a["adapter_version"] != "1"
             || a["abi"] != "nlp-adapter.v1"
             || a["architecture"] != "boundary-shared-v1"
-            || a["artifact_format"] != "onnx-boundary-entity.v1"
             || a["tokenizer_format"] != "huggingface-tokenizer-json.v1"
+            || cap["task_contracts"] != serde_json::json!([task_contract])
         {
             return Err("artifact_mismatch");
         }
         for (name, bound) in [
             ("max_source_codepoints", 131072),
             ("max_batch_items", 16),
-            ("max_windows", 256),
-            ("max_candidates", 8192),
-            ("max_output_findings", 576),
+            ("max_windows", if topics { 1 } else { 256 }),
+            ("max_candidates", if topics { 64 } else { 8192 }),
+            ("max_output_findings", if topics { 64 } else { 576 }),
         ] {
             if !cap[name].as_u64().is_some_and(|n| n >= 1 && n <= bound) {
                 return Err("artifact_mismatch");
@@ -441,26 +448,20 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
         {
             return Err("artifact_mismatch");
         }
-        for (key, allowed) in [
-            (
-                "task_contracts",
-                vec!["message_topics.v1", "concept_mentions.v1"],
-            ),
-            (
-                "score_kinds",
-                vec!["probability", "logit", "margin", "none"],
-            ),
-        ] {
-            let a = cap[key].as_array().ok_or("artifact_mismatch")?;
-            let mut seen = BTreeSet::new();
-            if a.is_empty()
-                || a.iter().any(|s| {
-                    !s.as_str()
-                        .is_some_and(|s| allowed.contains(&s) && seen.insert(s))
-                })
-            {
-                return Err("artifact_mismatch");
-            }
+        let allowed = if topics {
+            vec!["probability", "none"]
+        } else {
+            vec!["probability", "logit", "margin", "none"]
+        };
+        let scores = cap["score_kinds"].as_array().ok_or("artifact_mismatch")?;
+        let mut seen = BTreeSet::new();
+        if scores.is_empty()
+            || scores.iter().any(|s| {
+                !s.as_str()
+                    .is_some_and(|s| allowed.contains(&s) && seen.insert(s))
+            })
+        {
+            return Err("artifact_mismatch");
         }
     }
     for c in profile["components"]
@@ -790,6 +791,150 @@ mod tests {
         let (mut meta, profile) = fixture();
         meta.artifacts[1].file = "../onnxruntime.dll".into();
         assert!(validate_metadata(&meta, &profile).is_err());
+    }
+    fn topic_fixture() -> (Metadata, Value) {
+        let (mut meta, mut profile) = fixture();
+        let cap = &mut meta.adapters[0];
+        cap["adapter"]["adapter_id"] = "boundary_topics".into();
+        cap["adapter"]["artifact_format"] = "onnx-boundary-classification.v1".into();
+        cap["task_contracts"] = serde_json::json!(["message_topics.v1"]);
+        cap["score_kinds"] = serde_json::json!(["probability", "none"]);
+        cap["max_candidates"] = 64.into();
+        cap["max_output_findings"] = 64.into();
+        profile["components"][0]["adapter"] = cap["adapter"].clone();
+        (meta, profile)
+    }
+    #[test]
+    fn topic_metadata_and_serial_split_profile_bind_exact_capabilities() {
+        let (mut topics, topic_profile) = topic_fixture();
+        assert!(validate_metadata(&topics, &topic_profile).is_ok());
+        let (entities, mut serial) = fixture();
+        assert!(validate_metadata(&entities, &serial).is_ok());
+        serial["execution_mode"] = "serial_unload".into();
+        serial["components"]
+            .as_array_mut()
+            .unwrap()
+            .push(topic_profile["components"][0].clone());
+        topics.adapters.insert(0, entities.adapters[0].clone());
+        assert!(validate_metadata(&topics, &serial).is_ok());
+        topics.adapters.pop();
+        assert_eq!(
+            validate_metadata(&topics, &serial),
+            Err("identity_mismatch")
+        );
+        topics.adapters.push(topics.adapters[0].clone());
+        assert_eq!(
+            validate_metadata(&topics, &serial),
+            Err("artifact_mismatch")
+        );
+        topics.adapters.clear();
+        assert_eq!(
+            validate_metadata(&topics, &serial),
+            Err("artifact_mismatch")
+        );
+    }
+    #[test]
+    fn compiled_adapter_tuples_cannot_be_cross_paired_or_substituted() {
+        for topics in [false, true] {
+            for (key, value) in [
+                ("adapter_id", "unknown"),
+                ("adapter_version", "2"),
+                ("abi", "nlp-adapter.v2"),
+                ("architecture", "other"),
+                ("tokenizer_format", "other"),
+                (
+                    "artifact_format",
+                    if topics {
+                        "onnx-boundary-entity.v1"
+                    } else {
+                        "onnx-boundary-classification.v1"
+                    },
+                ),
+                (
+                    "adapter_id",
+                    if topics {
+                        "boundary_entities"
+                    } else {
+                        "boundary_topics"
+                    },
+                ),
+            ] {
+                let (mut meta, mut profile) = if topics { topic_fixture() } else { fixture() };
+                meta.adapters[0]["adapter"][key] = value.into();
+                profile["components"][0]["adapter"] = meta.adapters[0]["adapter"].clone();
+                assert_eq!(
+                    validate_metadata(&meta, &profile),
+                    Err("artifact_mismatch"),
+                    "{topics} {key} {value}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn adapter_task_claims_cannot_expand_or_cross_task_boundaries() {
+        for topics in [false, true] {
+            let own = if topics {
+                "message_topics.v1"
+            } else {
+                "concept_mentions.v1"
+            };
+            let other = if topics {
+                "concept_mentions.v1"
+            } else {
+                "message_topics.v1"
+            };
+            for tasks in [
+                serde_json::json!([]),
+                serde_json::json!([other]),
+                serde_json::json!([own, other]),
+                serde_json::json!([own, own]),
+                serde_json::json!(["unknown.v1"]),
+            ] {
+                let (mut meta, profile) = if topics { topic_fixture() } else { fixture() };
+                meta.adapters[0]["task_contracts"] = tasks;
+                assert_eq!(validate_metadata(&meta, &profile), Err("artifact_mismatch"));
+            }
+        }
+    }
+    #[test]
+    fn topic_capability_limits_scores_and_package_roles_are_closed() {
+        for scores in [
+            serde_json::json!(["probability"]),
+            serde_json::json!(["none"]),
+            serde_json::json!(["probability", "none"]),
+        ] {
+            let (mut meta, profile) = topic_fixture();
+            meta.adapters[0]["score_kinds"] = scores;
+            assert!(validate_metadata(&meta, &profile).is_ok());
+        }
+        for scores in [
+            serde_json::json!([]),
+            serde_json::json!(["logit"]),
+            serde_json::json!(["margin"]),
+            serde_json::json!(["probability", "probability"]),
+            serde_json::json!(["probability", "unknown"]),
+        ] {
+            let (mut meta, profile) = topic_fixture();
+            meta.adapters[0]["score_kinds"] = scores;
+            assert_eq!(validate_metadata(&meta, &profile), Err("artifact_mismatch"));
+        }
+        for (key, value) in [
+            ("max_windows", 2),
+            ("max_candidates", 65),
+            ("max_output_findings", 65),
+        ] {
+            let (mut meta, profile) = topic_fixture();
+            meta.adapters[0][key] = value.into();
+            assert_eq!(validate_metadata(&meta, &profile), Err("artifact_mismatch"));
+        }
+        for index in 0..2 {
+            let (mut meta, mut profile) = topic_fixture();
+            meta.artifacts[index].artifact.role =
+                if index == 0 { "runtime" } else { "weights" }.into();
+            profile["artifacts"][index] =
+                serde_json::to_value(&meta.artifacts[index].artifact).unwrap();
+            assert_eq!(validate_metadata(&meta, &profile), Err("artifact_mismatch"));
+        }
     }
     #[test]
     fn data_handles_are_exact_and_not_control_aliases() {

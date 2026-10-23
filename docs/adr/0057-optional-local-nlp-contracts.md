@@ -19,6 +19,8 @@ An analysis profile binds message-local topic classification and concept extract
 
 The `nlp-profile.v3`, `nlp-result.v3` and `nlp-snapshot.v3` families permit a nonempty declared subset of supported tasks. Earlier families retain their required task sets. Results and comparisons cover exactly the declared tasks. `analytics-findings.v2` reports each supported task as declared or unavailable; an undeclared capability has no outcome or coverage. The worker protocol remains v2. Profile signatures use distinct version-bound protected types.
 
+V3 profile validation binds complete typed artifact closures and tokenizer formats; compiled adapters check each weight file's format and role during preparation. This permits components with different heads to share one encoder artifact identity, counted once in profile accounting. V2 retains homogeneous weight-format validation. Structural acceptance grants no execution readiness or release approval.
+
 Stable topic and concept identifiers remain distinct from model labels. Findings describe text, including negated or quoted mentions; they do not establish participant preferences or intentions. Future tone uses a separate qualified task profile and does not alter baseline sentiment.
 
 `app/nlp/contracts.py` retains v1 semantics. The profile, versioned result and adapter modules define the boundary; the generator owns schemas under `shared/nlp/`. Requests declare exact tasks and component/profile identities. Brain rejects mismatched, missing, extra or duplicate task results. Compatibility declarations and handshake results do not authenticate a release.

@@ -250,7 +250,8 @@ class AnalysisProfile(Descriptor):
                 raise ValueError("tokenizer format mismatch")
             if component.tokenizer_sha256 != artifact_closure_digest(tokenizers):
                 raise ValueError("tokenizer closure mismatch")
-            if any(asset.format_id != component.adapter.artifact_format for asset in data if asset.role == "weights"):
+            if self.schema_version == "nlp-profile.v2" and any(
+                    asset.format_id != component.adapter.artifact_format for asset in data if asset.role == "weights"):
                 raise ValueError("unsupported artifact format")
             if any(asset.format_id != component.adapter.tokenizer_format for asset in data if asset.role == "tokenizer"):
                 raise ValueError("unsupported tokenizer format")

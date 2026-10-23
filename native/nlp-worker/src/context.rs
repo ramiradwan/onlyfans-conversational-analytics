@@ -76,12 +76,18 @@ pub fn supported_adapter(v: &Value) -> Result<()> {
             "tokenizer_format",
         ],
     )?;
+    let topics = v["adapter_id"] == crate::topic::ADAPTER;
     ensure!(
-        v["adapter_id"] == ADAPTER
+        (v["adapter_id"] == ADAPTER || topics)
             && v["adapter_version"] == "1"
             && v["abi"] == "nlp-adapter.v1"
             && v["architecture"] == "boundary-shared-v1"
-            && v["artifact_format"] == "onnx-boundary-entity.v1"
+            && v["artifact_format"]
+                == if topics {
+                    "onnx-boundary-classification.v1"
+                } else {
+                    "onnx-boundary-entity.v1"
+                }
             && v["tokenizer_format"] == "huggingface-tokenizer-json.v1"
             && v["adapter_build_sha256"]
                 .as_str()
@@ -127,8 +133,14 @@ pub fn capability(v: &Value) -> Result<()> {
         ],
     )?;
     supported_adapter(&v["adapter"])?;
+    let topics = v["adapter"]["adapter_id"] == crate::topic::ADAPTER;
     ensure!(
-        v["task_contracts"] == json!(["concept_mentions.v1"]),
+        v["task_contracts"]
+            == if topics {
+                json!(["message_topics.v1"])
+            } else {
+                json!(["concept_mentions.v1"])
+            },
         "incompatible"
     );
     let scores = array(&v["score_kinds"])?;
@@ -148,8 +160,8 @@ pub fn capability(v: &Value) -> Result<()> {
         ("max_source_codepoints", 131072),
         ("max_batch_items", 16),
         ("max_windows", 1),
-        ("max_candidates", 192),
-        ("max_output_findings", 512),
+        ("max_candidates", if topics { 64 } else { 192 }),
+        ("max_output_findings", if topics { 64 } else { 512 }),
     ] {
         integer(&v[key], 1, max)?;
     }
@@ -157,6 +169,22 @@ pub fn capability(v: &Value) -> Result<()> {
         v["runtime_requirements_sha256"]
             .as_str()
             .is_some_and(|s| wire::hex(s, 64)),
+        "incompatible"
+    );
+    Ok(())
+}
+pub fn score_kinds(component: &Value, cap: &Value) -> Result<()> {
+    let supported = cap["score_kinds"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
+    let tasks = component["tasks"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("incompatible"))?;
+    ensure!(
+        !tasks.is_empty()
+            && tasks
+                .iter()
+                .all(|task| supported.contains(&task["score_policy"]["kind"])),
         "incompatible"
     );
     Ok(())
@@ -328,6 +356,18 @@ pub fn validate_profile(v: &Value) -> Result<()> {
                 && bindings.iter().any(|b| b["task"] == "concept_mentions"),
             "binding_mismatch"
         );
+        let artifacts: Vec<Artifact> = serde_json::from_value(v["artifacts"].clone())?;
+        for component in components {
+            let ids = array(&component["artifact_ids"])?;
+            ensure!(
+                artifacts
+                    .iter()
+                    .filter(|asset| asset.role == "weights"
+                        && ids.iter().any(|id| id == &asset.artifact_id))
+                    .all(|asset| component["adapter"]["artifact_format"] == asset.format_id),
+                "artifact_mismatch"
+            );
+        }
     }
     Ok(())
 }
@@ -499,5 +539,218 @@ impl Context {
             .ok_or_else(|| anyhow::anyhow!("artifact_mismatch"))?;
         ensure!(f.artifact.role == role, "artifact_mismatch");
         Ok(f.path.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn exact_adapter_capabilities_do_not_allow_task_or_format_substitution() {
+        for topics in [false, true] {
+            let mut cap = json!({"adapter":{"adapter_id":if topics {crate::topic::ADAPTER} else {ADAPTER},"adapter_version":"1",
+                "adapter_build_sha256":"a".repeat(64),"abi":"nlp-adapter.v1","architecture":"boundary-shared-v1",
+                "artifact_format":if topics {"onnx-boundary-classification.v1"} else {"onnx-boundary-entity.v1"},
+                "tokenizer_format":"huggingface-tokenizer-json.v1"},
+                "task_contracts":if topics {json!(["message_topics.v1"])} else {json!(["concept_mentions.v1"])},
+                "score_kinds":["probability","none"],"max_source_codepoints":4096,"max_batch_items":1,"max_windows":1,
+                "max_candidates":if topics {64} else {192},"max_output_findings":if topics {64} else {512},
+                "runtime_requirements_sha256":"b".repeat(64)});
+            assert!(capability(&cap).is_ok());
+            let mut wrong = cap.clone();
+            wrong["task_contracts"] = json!(["message_topics.v1", "concept_mentions.v1"]);
+            assert!(capability(&wrong).is_err());
+            let mut wrong = cap.clone();
+            wrong["adapter"]["artifact_format"] = json!("other");
+            assert!(capability(&wrong).is_err());
+            for (kind, allowed) in [("probability", "none"), ("none", "probability")] {
+                cap["score_kinds"] = json!([allowed]);
+                let component = json!({"tasks":[{"score_policy":{"kind":kind}}]});
+                assert!(score_kinds(&component, &cap).is_err());
+            }
+        }
+    }
+
+    fn serial_profile() -> (Value, Value, Vec<Value>) {
+        let engine = json!({"package_name":"Example.Engine","package_family":"Example.Engine_family",
+            "core_package_name":"Example.Core","core_package_version":"1.0.0.0","publisher":"CN=Example",
+            "package_version":"1.0.0.0","related_set_id":"example.set","engine_version":"1","platform":"windows-x64",
+            "worker_protocol":"nlp-worker.v2","engine_build_sha256":"a".repeat(64)});
+        let policy = |id: &str| json!({"policy_id":id,"revision":"1","sha256":"b".repeat(64)});
+        let mut artifacts = Vec::new();
+        for (id, role, format) in [
+            ("engine", "engine", "native.v1"),
+            ("runtime", "runtime", "native.v1"),
+            ("encoder.shared", "weights", "onnx-boundary-entity.v1"),
+            (
+                "tokenizer.shared",
+                "tokenizer",
+                "huggingface-tokenizer-json.v1",
+            ),
+            ("entity.marginals", "weights", "onnx-boundary-entity.v1"),
+            ("entity.scorer", "weights", "onnx-boundary-entity.v1"),
+            (
+                "entity.configuration",
+                "configuration",
+                "boundary-entity-config.v1",
+            ),
+            (
+                "topic.classifier",
+                "weights",
+                "onnx-boundary-classification.v1",
+            ),
+            (
+                "topic.configuration",
+                "configuration",
+                "boundary-topic-config.v1",
+            ),
+        ] {
+            artifacts.push(json!({"artifact_id":id,"sha256":"c".repeat(64),"size_bytes":1,"role":role,"format_id":format}));
+        }
+        let mut components = Vec::new();
+        let mut capabilities = Vec::new();
+        for topics in [false, true] {
+            let name = if topics {
+                "message_topics"
+            } else {
+                "concept_mentions"
+            };
+            let ids = if topics {
+                vec![
+                    "encoder.shared",
+                    "tokenizer.shared",
+                    "topic.classifier",
+                    "topic.configuration",
+                ]
+            } else {
+                vec![
+                    "encoder.shared",
+                    "tokenizer.shared",
+                    "entity.marginals",
+                    "entity.scorer",
+                    "entity.configuration",
+                ]
+            };
+            let adapter = json!({"adapter_id":if topics {crate::topic::ADAPTER} else {ADAPTER},"adapter_version":"1",
+                "adapter_build_sha256":"a".repeat(64),"abi":"nlp-adapter.v1","architecture":"boundary-shared-v1",
+                "artifact_format":if topics {"onnx-boundary-classification.v1"} else {"onnx-boundary-entity.v1"},
+                "tokenizer_format":"huggingface-tokenizer-json.v1"});
+            let mut closure = artifacts
+                .iter()
+                .filter(|a| {
+                    a["role"] == "engine"
+                        || a["role"] == "runtime"
+                        || ids.iter().any(|id| a["artifact_id"] == *id)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            closure.sort_by(|a, b| a["artifact_id"].as_str().cmp(&b["artifact_id"].as_str()));
+            let tokenizers = closure
+                .iter()
+                .filter(|a| a["role"] == "tokenizer")
+                .collect::<Vec<_>>();
+            components.push(json!({"canonicalization":"nlp-canonical.v1","component_id":if topics {"topics"} else {"entities"},
+                "engine":engine,"adapter":adapter,"pack_id":"example.pack","pack_revision":"1","pack_sha256":"d".repeat(64),
+                "model_revision":"1","artifact_ids":ids,"artifact_closure_sha256":hash(canonical(&json!(closure)).unwrap().as_bytes()),
+                "tokenizer_sha256":hash(canonical(&json!(tokenizers)).unwrap().as_bytes()),"runtime_requirements":policy("runtime.two"),
+                "tasks":[{"task":name,"task_contract":format!("{name}.v1"),"taxonomy":policy("taxonomy.synthetic"),
+                    "enabled_ids":["category.synthetic"],"score_policy":{"kind":"none","semantics_id":"unscored",
+                        "calibration":"not_calibrated","calibration_sha256":null}}],
+                "executed_labels":[{"task":name,"label_id":"category.synthetic","description":"Invented category"}],
+                "preprocessing":policy("preprocessing.synthetic"),"windowing":policy("windowing.synthetic"),
+                "decoding":policy("decoding.synthetic"),"output_mapping":policy("mapping.synthetic"),"decision":policy("decision.synthetic"),
+                "language":"en","max_source_codepoints":4096,"max_batch_items":1,"max_windows":1,
+                "max_candidates":if topics {64} else {192},"max_output_findings":if topics {64} else {512},
+                "peak_memory_bytes":1024,"inference_threads":2}));
+            capabilities.push(json!({"adapter":adapter,"task_contracts":[format!("{name}.v1")],"score_kinds":["none"],
+                "max_source_codepoints":4096,"max_batch_items":1,"max_windows":1,
+                "max_candidates":if topics {64} else {192},"max_output_findings":if topics {64} else {512},
+                "runtime_requirements_sha256":"b".repeat(64)}));
+        }
+        (
+            json!({"schema_version":"nlp-profile.v3","canonicalization":"nlp-canonical.v1","profile_id":"profile.synthetic",
+            "revision":"1","components":components,"bindings":[{"task":"concept_mentions","component_id":"entities"},
+                {"task":"message_topics","component_id":"topics"}],"artifacts":artifacts,
+            "aggregation":policy("aggregation.synthetic"),"presentation":policy("presentation.synthetic"),
+            "resources":{"download_bytes":9,"installed_bytes":9,"rollback_bytes":0,"temporary_bytes":0,
+                "transition_peak_memory_bytes":1024,"inference_threads":2},"execution_mode":"serial_unload"}),
+            engine,
+            capabilities,
+        )
+    }
+    #[test]
+    fn complete_serial_v3_profile_binds_one_shared_encoder_and_tokenizer() {
+        let (profile, engine, adapters) = serial_profile();
+        assert!(validate_profile(&profile).is_ok());
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "nlp-shared-profile-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let mut files = Vec::new();
+        let mut owners = Vec::new();
+        let mut paths = Vec::new();
+        for value in profile["artifacts"].as_array().unwrap() {
+            let artifact: Artifact = serde_json::from_value(value.clone()).unwrap();
+            let path = root.join(&artifact.artifact_id);
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .unwrap();
+            paths.push(path.clone());
+            owners.push(OwnerArtifact {
+                artifact: artifact.clone(),
+                handle: 1,
+            });
+            files.push(BoundFile {
+                artifact,
+                _file: file,
+                path,
+            });
+        }
+        let context = Context::bind(
+            Owner {
+                schema: "nlp-owner-context.v1".into(),
+                channel_nonce: "a".repeat(32),
+                profile_json: canonical(&profile).unwrap(),
+                engine,
+                adapters,
+                artifacts: owners,
+            },
+            files,
+        )
+        .unwrap();
+        assert_eq!(context.files.len(), 9);
+        for component in profile["components"].as_array().unwrap() {
+            let ids = component["artifact_ids"].as_array().unwrap();
+            assert!(
+                ids.contains(&json!("encoder.shared")) && ids.contains(&json!("tokenizer.shared"))
+            );
+            assert_eq!(
+                context.artifact_path("encoder.shared", "weights").unwrap(),
+                root.join("encoder.shared")
+            );
+            assert_eq!(
+                context
+                    .artifact_path("tokenizer.shared", "tokenizer")
+                    .unwrap(),
+                root.join("tokenizer.shared")
+            );
+        }
+        drop(context);
+        for path in paths {
+            std::fs::remove_file(path).unwrap();
+        }
+        std::fs::remove_dir(root).unwrap();
+        let mut historical = profile;
+        historical["schema_version"] = json!("nlp-profile.v2");
+        assert_eq!(
+            validate_profile(&historical).unwrap_err().to_string(),
+            "artifact_mismatch"
+        );
     }
 }
