@@ -515,45 +515,7 @@ pub fn frame_length(bytes: [u8; 4]) -> Result<usize> {
     }
     Ok(n)
 }
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum FailureStage {
-    ParentAccess,
-    OuterAccess,
-    ParentProcess,
-    CurrentPackage,
-    ParentPackage,
-    ParentSid,
-    ParentSession,
-    ParentJob,
-    HostJob,
-    OuterLimits,
-    MainObservation,
-    MainTrust,
-    ParentImage,
-    HostImage,
-    PackageObservation,
-    PackageTrust,
-    DescriptorRead,
-    DescriptorParse,
-    DescriptorValidation,
-    DeclaredEngine,
-    EngineSelection,
-    InstalledEngine,
-    MainManifest,
-    EngineManifest,
-    ParentFamily,
-    CurrentPackageIdentity,
-    MainFiles,
-    InitialCommand,
-    WorkerMetadata,
-    ObservationBinding,
-    MetadataBinding,
-    ArtifactBindings,
-    WorkerControl,
-    WorkerLaunch,
-    WorkerDrain,
-}
+pub(crate) use crate::worker_diagnostics::FailureStage;
 
 pub(crate) fn status_value_with_stage(
     nonce: &str,

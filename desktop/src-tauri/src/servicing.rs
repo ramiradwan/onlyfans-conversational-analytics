@@ -1063,9 +1063,9 @@ impl WorkerPackages {
 }
 #[cfg(windows)]
 pub(crate) fn worker_packages(
-    stage: &mut crate::worker_host::FailureStage,
+    stage: &mut crate::worker_diagnostics::FailureStage,
 ) -> Result<WorkerPackages, &'static str> {
-    use crate::worker_host::FailureStage;
+    use crate::worker_diagnostics::FailureStage;
     *stage = FailureStage::PackageObservation;
     let _apartment = Apartment::new().map_err(|_| "identity_mismatch")?;
     let (package, main) = observe().map_err(|_| "identity_mismatch")?;

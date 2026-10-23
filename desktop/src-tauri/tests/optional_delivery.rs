@@ -9,6 +9,9 @@ mod servicing;
 #[allow(dead_code)]
 #[path = "../src/servicing_feed.rs"]
 mod servicing_feed;
+#[allow(dead_code)]
+#[path = "../src/worker_diagnostics.rs"]
+mod worker_diagnostics;
 
 use std::{
     path::PathBuf,

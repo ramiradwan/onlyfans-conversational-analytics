@@ -22,6 +22,7 @@ mod servicing_feed;
 mod servicing_handoff;
 #[cfg(windows)]
 mod windows;
+mod worker_diagnostics;
 mod worker_host;
 
 #[cfg(windows)]

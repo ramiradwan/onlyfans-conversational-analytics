@@ -359,7 +359,7 @@ pub(crate) fn run(root: &Path) -> bool {
         receipt.validator_calls += 1;
         let (_, files) = validate_staged_target(&release, &actual.identity, &target, &selected)?;
         receipt.files_read = Some(files.records.clone());
-        receipt.target_bytes = Some(files.bytes);
+        receipt.target_bytes = Some(files.budget.bytes);
         let (_, after) = observe().map_err(|e| native(StagedOperation::Identity, e))?;
         if after.identity != actual.identity
             || selected_engine(&manager, &release, &after.identity)

@@ -14,6 +14,9 @@ mod servicing;
 mod servicing_feed;
 #[path = "../../src/windows.rs"]
 mod windows;
+#[cfg(debug_assertions)]
+#[path = "../../src/worker_diagnostics.rs"]
+mod worker_diagnostics;
 
 use std::{
     io::Read,
