@@ -68,9 +68,13 @@ async def test_configured_split_processing_publishes_through_runtime_and_reader(
             activation=e.fixture.repositories.projection_activation, findings=configuration)
         assert owned.pipeline.projections.database is None
         await runtime.start_default_analytics_runtime()
-        await eventually(lambda: e.findings.state(ACCOUNT)['acknowledged_revision'] ==
-            e.findings.state(ACCOUNT)['notification_revision'] and
-            e.findings.state(ACCOUNT)['completion_revision'] == 2)
+        publication_state = {}
+        def published():
+            nonlocal publication_state
+            publication_state = e.findings.state(ACCOUNT)
+            return (publication_state['completion_revision'] == 2 and
+                publication_state['acknowledged_revision'] == publication_state['notification_revision'])
+        await eventually(published)
         projection = owned.pipeline.projections.get(ACCOUNT)
         policy = build_runtime_policy(AuthContext('principal.synthetic', ACCOUNT, 'creator',
             platform_creator_id='platform.synthetic', session_id='session.synthetic'))
@@ -79,7 +83,14 @@ async def test_configured_split_processing_publishes_through_runtime_and_reader(
             expected_projection_digest=projection.projection_digest))
         assert {task.task for task in response.tasks} == {'message_topics', 'concept_mentions'}
         assert all(task.rows for task in response.tasks)
-        assert all(task.complete_messages == 2 for task in response.tasks)
+        assert all(task.complete_messages == 2 for task in response.tasks), {
+            'revisions': {key: publication_state[key] for key in (
+                'completion_revision', 'acknowledged_revision', 'notification_revision')},
+            'tasks': [{key: getattr(task, key) for key in (
+                'task', 'availability', 'eligible_messages', 'complete_messages',
+                'pending_messages', 'failed_messages', 'partial_messages',
+                'unsupported_messages', 'uncertain_messages')} for task in response.tasks],
+        }
     finally:
         assert await runtime.shutdown_default_analytics_runtime(timeout=10)
         e.service.close()
