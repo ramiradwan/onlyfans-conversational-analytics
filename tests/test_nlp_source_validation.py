@@ -639,3 +639,171 @@ def test_small_inventory_uses_actual_publication_path(tmp_path, monkeypatch):
         assert value.publish_pending(ACCOUNT) is None
     finally:
         cleanup(fixture)
+
+
+def _append_queue_sources(database, state, start, stop, lane):
+    with database.transaction() as db:
+        db.executemany(
+            'INSERT INTO nlp_sources(account_ref,source_ref,source_version,speaker_ref,'
+            'conversation_id,message_id,seen_epoch,lane,read_metadata) VALUES(?,?,?,?,?,?,?,?,?)',
+            [(state['account_ref'], f'{index:064x}', 'version', 'speaker', 'chat',
+              f'message-{index}', state['scan_epoch'], lane, '{}')
+             for index in range(start, stop)],
+        )
+
+
+@pytest.mark.parametrize('lane', ['live', 'backfill'])
+@pytest.mark.parametrize('vacancy', [False, True])
+def test_queue_claim_and_refill_work_stays_bounded_as_one_lane_inventory_grows(fixture, monkeypatch, lane, vacancy):
+    value, _, _ = runner(fixture)
+    database = fixture.stores.database
+    state = value.findings.state(ACCOUNT)
+    _append_queue_sources(database, state, 0, 1024, lane)
+    first = value.findings.claim(ACCOUNT)
+    assert first is not None
+    value.findings.release(first)
+    transaction = database.transaction
+    work = []
+    for ordinal, (start, stop) in enumerate(((1024, 1024), (1024, 8192))):
+        _append_queue_sources(database, state, start, stop, lane)
+        if vacancy:
+            abandoned = value.findings.claim(ACCOUNT)
+            value.findings.abandon(abandoned, 'unsupported_input')
+        steps = [0]
+        def progress():
+            steps[0] += 100
+            return int(steps[0] > 100_000)
+        @contextmanager
+        def measured_transaction():
+            with transaction() as db:
+                db.set_progress_handler(progress, 100)
+                try:
+                    yield db
+                finally:
+                    db.set_progress_handler(None, 0)
+        with monkeypatch.context() as patch:
+            patch.setattr(database, 'transaction', measured_transaction)
+            claim = value.findings.claim(ACCOUNT)
+        assert claim is not None and claim.source_ref == f'{ordinal + 1 if vacancy else 0:064x}'
+        assert value.findings.valid_claim(claim)
+        work.append(steps[0])
+        value.findings.release(claim)
+        with database.read() as db:
+            assert db.execute("SELECT count(*) FROM nlp_jobs WHERE state IN ('pending','running')").fetchone()[0] == 256
+    assert work[1] <= work[0] + 5_000, work
+
+
+@pytest.mark.parametrize('lane', ['live', 'backfill'])
+def test_late_opposite_lane_enters_full_queue_and_preserves_claim_fairness(fixture, lane):
+    value, _, _ = runner(fixture)
+    database = fixture.stores.database
+    state = value.findings.state(ACCOUNT)
+    _append_queue_sources(database, state, 0, 1024, lane)
+    claim = value.findings.claim(ACCOUNT)
+    assert claim is not None
+    value.findings.release(claim)
+    opposite = 'backfill' if lane == 'live' else 'live'
+    _append_queue_sources(database, state, 1024, 1026, opposite)
+    with database.transaction() as db:
+        db.execute('UPDATE nlp_accounts SET live_claims=0 WHERE account_ref=?', (state['account_ref'],))
+    lanes = []
+    for _ in range(4):
+        claimed = value.findings.claim(ACCOUNT)
+        assert claimed is not None
+        with database.read() as db:
+            row = db.execute('SELECT lane,source_version,selection_epoch,admission_epoch FROM nlp_jobs WHERE account_ref=? AND source_ref=?',
+                             (state['account_ref'], claimed.source_ref)).fetchone()
+        assert row['source_version'] == 'version'
+        assert row['selection_epoch'] == state['selection_epoch']
+        assert row['admission_epoch'] == state['admission_epoch']
+        lanes.append(row['lane'])
+        value.findings.release(claimed)
+    assert lanes == ['live', 'live', 'live', 'backfill']
+    with database.read() as db:
+        assert db.execute("SELECT count(*) FROM nlp_jobs WHERE state IN ('pending','running')").fetchone()[0] == 256
+        assert db.execute('SELECT lane FROM nlp_jobs WHERE account_ref=? AND source_ref=?',
+                          (state['account_ref'], f'{1024:064x}')).fetchone()[0] == opposite
+
+
+def test_backfill_refills_after_terminal_work_with_a_sustained_live_backlog(fixture):
+    value, _, _ = runner(fixture)
+    database = fixture.stores.database
+    state = value.findings.state(ACCOUNT)
+    _append_queue_sources(database, state, 0, 1024, 'live')
+    initial = value.findings.claim(ACCOUNT)
+    value.findings.release(initial)
+    _append_queue_sources(database, state, 1024, 1026, 'backfill')
+    with database.transaction() as db:
+        db.execute('UPDATE nlp_accounts SET live_claims=3 WHERE account_ref=?', (state['account_ref'],))
+    first_backfill = value.findings.claim(ACCOUNT)
+    assert first_backfill.source_ref == f'{1024:064x}'
+    value.findings.abandon(first_backfill, 'unsupported_input')
+    lanes = []
+    for _ in range(4):
+        claim = value.findings.claim(ACCOUNT)
+        assert claim is not None
+        with database.read() as db:
+            lane = db.execute('SELECT lane FROM nlp_jobs WHERE account_ref=? AND source_ref=?',
+                              (state['account_ref'], claim.source_ref)).fetchone()[0]
+            assert db.execute("SELECT count(*) FROM nlp_jobs WHERE state IN ('pending','running')").fetchone()[0] == 256
+        lanes.append(lane)
+        value.findings.abandon(claim, 'unsupported_input')
+    assert lanes == ['live', 'live', 'live', 'backfill']
+    assert claim.source_ref == f'{1025:064x}'
+    after = value.findings.state(ACCOUNT)
+    for field in ('selection_epoch', 'admission_epoch', 'scan_epoch', 'scan_cursor', 'inventory_digest'):
+        assert after[field] == state[field]
+
+
+def test_source_lane_migration_preserves_populated_inventory_and_claims(fixture, tmp_path):
+    import hashlib
+    import json
+    import shutil
+    from pathlib import Path
+    from app.analytics.database import ProjectionsDatabase
+    from app.analytics.enrichment_proof_transition import GUARD_DIGESTS
+    from app.analytics.validation_receipt import TRIGGER_DIGESTS, content_stamp
+
+    _, profile, _ = runner(fixture)
+    catalog = Path(__file__).parents[1] / 'app/analytics/sql'
+    previous = tmp_path / 'previous-catalog'
+    previous.mkdir()
+    for source in catalog.glob('*.sql'):
+        if int(source.name[:4]) <= 30:
+            shutil.copy2(source, previous / source.name)
+    path = tmp_path / 'upgrade.sqlite3'
+    database = ProjectionsDatabase(path, migrations_dir=previous)
+    store = FindingsStore(database)
+    store.select(ACCOUNT, profile)
+    state = store.state(ACCOUNT)
+    _append_queue_sources(database, state, 0, 512, 'backfill')
+    claim = store.claim(ACCOUNT)
+    assert claim is not None
+    def content(database):
+        with database.read() as db:
+            return {table: [tuple(row) for row in db.execute(f'SELECT * FROM {table} ORDER BY 1,2')]
+                    for table in ('nlp_accounts', 'nlp_sources', 'nlp_jobs')}
+    before = content(database)
+    with database.read() as db:
+        before_stamp = content_stamp(db)
+    assert before_stamp is not None
+    upgraded = ProjectionsDatabase(path)
+    assert content(upgraded) == before
+    with upgraded.read() as db:
+        after_stamp = content_stamp(db)
+        signatures = {row[0]: hashlib.sha256(row[1].encode()).hexdigest()
+                      for row in db.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")}
+    assert after_stamp is not None and after_stamp[:2] == before_stamp[:2]
+    assert after_stamp[2] != before_stamp[2] and after_stamp[3] == before_stamp[3]
+    def signature_digest(values):
+        return hashlib.sha256(json.dumps(values, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    assert signature_digest(signatures) == GUARD_DIGESTS[30]
+    assert signature_digest({name: value for name, value in signatures.items()
+                             if name.startswith('generation_content_')}) == TRIGGER_DIGESTS[30]
+    restarted = FindingsStore(upgraded)
+    assert restarted.valid_claim(claim)
+    restarted.release(claim)
+    assert restarted.claim(ACCOUNT).source_ref == claim.source_ref
+    assert upgraded.migration_runner.run() == []
+    with upgraded.read() as db:
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 31

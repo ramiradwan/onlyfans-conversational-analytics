@@ -450,19 +450,24 @@ class FindingsStore:
             raise ValueError('nlp_account_missing')
         pending = db.execute("SELECT count(*) FROM nlp_jobs WHERE account_ref=? AND state IN ('pending','running')",(ref,)).fetchone()[0]
         for lane in ('live','backfill'):
-            waiting=db.execute('SELECT s.* FROM nlp_sources s WHERE account_ref=? AND seen_epoch=? AND lane=? '
+            waiting=db.execute('SELECT s.source_ref FROM nlp_sources s WHERE account_ref=? AND seen_epoch=? AND lane=? '
                 'AND NOT EXISTS(SELECT 1 FROM nlp_jobs j WHERE j.account_ref=s.account_ref AND j.source_ref=s.source_ref) '
                 'ORDER BY source_ref LIMIT 1',(ref,state['scan_epoch'],lane)).fetchone()
             represented=db.execute("SELECT 1 FROM nlp_jobs WHERE account_ref=? AND lane=? AND state IN ('pending','running') LIMIT 1",(ref,lane)).fetchone()
-            if waiting is not None and represented is None and pending>=MAX_PENDING:
-                victim=db.execute("SELECT source_ref FROM nlp_jobs WHERE account_ref=? AND lane!=? AND state='pending' ORDER BY source_ref DESC LIMIT 1",(ref,lane)).fetchone()
-                if victim is not None:
+            if waiting is not None and represented is None:
+                if pending>=MAX_PENDING:
+                    victim=db.execute("SELECT source_ref FROM nlp_jobs WHERE account_ref=? AND lane!=? AND state='pending' ORDER BY source_ref DESC LIMIT 1",(ref,lane)).fetchone()
+                    if victim is None:
+                        continue
                     db.execute('DELETE FROM nlp_jobs WHERE account_ref=? AND source_ref=?',(ref,victim[0]))
-                    db.execute("INSERT INTO nlp_jobs(account_ref,source_ref,source_version,selection_epoch,admission_epoch,state,lane) VALUES(?,?,?,?,?,'pending',?)",
-                        (ref,waiting['source_ref'],waiting['source_version'],state['selection_epoch'],state['admission_epoch'],lane))
+                    pending-=1
+                db.execute("INSERT INTO nlp_jobs(account_ref,source_ref,source_version,selection_epoch,admission_epoch,state,lane) "
+                    "SELECT account_ref,source_ref,source_version,?,?,'pending',lane FROM nlp_sources WHERE account_ref=? AND source_ref=?",
+                    (state['selection_epoch'],state['admission_epoch'],ref,waiting['source_ref']))
+                pending+=1
         missing = db.execute('SELECT s.* FROM nlp_sources s WHERE account_ref=? AND seen_epoch=? AND NOT EXISTS('
             'SELECT 1 FROM nlp_jobs j WHERE j.account_ref=s.account_ref AND j.source_ref=s.source_ref) '
-            "ORDER BY (lane='live') DESC,source_ref LIMIT ?",(ref,state['scan_epoch'],max(0,MAX_PENDING-pending))).fetchall()
+            'ORDER BY lane DESC,source_ref LIMIT ?',(ref,state['scan_epoch'],max(0,MAX_PENDING-pending))).fetchall()
         db.executemany("INSERT INTO nlp_jobs(account_ref,source_ref,source_version,selection_epoch,admission_epoch,state,lane) VALUES(?,?,?,?,?,'pending',?)",
             [(ref,r['source_ref'],r['source_version'],state['selection_epoch'],state['admission_epoch'],r['lane']) for r in missing])
 

@@ -162,7 +162,8 @@ def test_every_tracking_trigger_is_required(fixture):
         # Catalog 26 adds six optional-findings content epoch triggers.
         # Catalog 27 also tracks immutable membership and backfill progress.
         # Catalog 28 tracks erasure progress and historical record bindings.
-        assert len(names) == 105
+        # Catalog 30 also tracks immutable findings source pages.
+        assert len(names) == 108
         for name in names:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TRIGGER ' + name)

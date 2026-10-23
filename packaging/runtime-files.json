@@ -164,7 +164,8 @@
         "0027_nlp_reclamation.sql": "ac5bbf489ced16fad9128a5e4c9184799e7782cf54aa0a71810634b88efee54b",
         "0028_nlp_erasure.sql": "6a2922a85a781e613b881b790bb589f8e2f38e53f5b979e8f067a062344a4cb2",
         "0029_nlp_dependencies.sql": "efe83bfc570ae02ad9188f35955c64a1a8d12deae89c6240de6a53000150df63",
-        "0030_nlp_read_metadata.sql": "64ab2ffdc2ff9127784d482abba16d4abe5569a1fe2f7fb43539bb73ec134ac0"
+        "0030_nlp_read_metadata.sql": "64ab2ffdc2ff9127784d482abba16d4abe5569a1fe2f7fb43539bb73ec134ac0",
+        "0031_nlp_source_lane_index.sql": "5e67b0bf3153098aeeef7baed204a294c66f76fcff8c86de75ddae7585a14956"
       }
     }
   ],

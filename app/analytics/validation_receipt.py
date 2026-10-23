@@ -29,7 +29,8 @@ TRIGGER_DIGESTS = {12: TRIGGER_DIGEST,
     28: 'da68337a06aa101b5e9db7f39feb31ed27722200093182dc78d61a32009ac3ab',
     # Catalog 29 adds selection metadata columns; content triggers are unchanged.
     29: 'da68337a06aa101b5e9db7f39feb31ed27722200093182dc78d61a32009ac3ab',
-    30: 'e7fbe6a0a251160574b1b6e2b82f96c4f111d460b9a41522e597b01b4d37c31d'}
+    30: 'e7fbe6a0a251160574b1b6e2b82f96c4f111d460b9a41522e597b01b4d37c31d',
+    31: 'e7fbe6a0a251160574b1b6e2b82f96c4f111d460b9a41522e597b01b4d37c31d'}
 MAX_RECEIPTS = 8
 RECEIPT_SECONDS = 60.0
 _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',
