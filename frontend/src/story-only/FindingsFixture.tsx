@@ -1,4 +1,4 @@
-/** STORY ONLY: no product API or stored customer data. */
+/** Story-only findings fixture using synthetic responses and source text. */
 import { Box, Typography } from '@mui/material';
 import { useMemo } from 'react';
 

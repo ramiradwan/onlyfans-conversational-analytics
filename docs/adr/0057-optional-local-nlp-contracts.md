@@ -1,10 +1,10 @@
-<!-- CODE-VERIFY: Check app/nlp/contracts.py, profiles.py, v2.py, adapter.py, tools/generate_nlp_contracts.py, shared/nlp/ and tests/test_nlp_contracts.py for contract facts. Native worker and installed delivery behavior require separate qualification. -->
+<!-- CODE-VERIFY: Check app/nlp/contracts.py, profiles.py, v2.py, adapter.py, app/analytics/runtime.py, app/services/nlp_dependencies.py, tools/generate_nlp_contracts.py, shared/nlp/ and tests/test_nlp_contracts.py for contract facts. Native worker and installed delivery behavior require separate qualification. -->
 
 # ADR 0057: Define optional local NLP computation and shared findings
 
-- Status: Accepted; runtime integration requires separate qualification.
+- Status: Accepted; runtime activation requires separate qualification.
 - Date: 2026-10-19
-- Amended: 2026-10-20
+- Amended: 2026-10-23
 - Extends: ADRs 0009, 0027 and 0056. ADR 0012 remains proposed.
 
 ## Decision
@@ -35,6 +35,6 @@ One inference job runs across all profiles. The default resource policy permits 
 
 Brain-side normalization contracts in `app/nlp/normalization.py` separate source occurrence anchors from extraction provenance. Caller-retained account namespaces and NFC literal keys produce deterministic provisional node IDs; spelling equality does not approve semantic equivalence. Keys exceeding 256 code points are rejected. Versioned mapping and publication contracts have a 65,536-byte canonical bound. Publication manifests exclude derived group IDs; groups are publication-scoped references. These contracts implement no alias resolver, ledger persistence, deletion enforcement or runtime activation. Existing v1/v2 worker messages and readers remain unchanged.
 
-Contracts enable no inference, acquisition, persistence or user interface. Synthetic adapter conformance verifies the typed boundary. Native execution, installed delivery and task quality require separate qualification before runtime integration. Existing baseline results and v1 records retain their meanings.
+These contracts alone grant no runtime or release authority. Synthetic adapter conformance verifies the typed boundary. Optional runtime composition uses explicit configuration; default construction supplies no Engine provider or approved profile. Installed delivery, task quality and complete resource costs require separate qualification before activation. Existing baseline results and v1 records retain their meanings.
 
 V2 descriptors declare bounded safe-integer resource costs independently of admission policy. The default local policy retains 250 MiB download, 512 MiB installed footprint including rollback, 512 MiB additional peak memory and two inference threads. A caller may explicitly supply a separately approved local policy; profile metadata cannot raise these limits. Structural validation still checks the complete artifact closure, aggregate installed accounting and component transition requirements. Resource admission grants neither release trust nor processing authorization. Qualification must measure complete runtime, transition, temporary and rollback costs before adopting a different policy.
