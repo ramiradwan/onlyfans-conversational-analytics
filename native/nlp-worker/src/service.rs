@@ -141,6 +141,7 @@ struct Active {
 pub struct Service {
     context: Arc<Context>,
     bootstrapped: bool,
+    closed: bool,
     seen: BTreeSet<String>,
     resident: Option<(Value, EntityAdapter)>,
     active: Option<Active>,
@@ -152,6 +153,7 @@ impl Service {
         Self {
             context: Arc::new(context),
             bootstrapped: false,
+            closed: false,
             seen: BTreeSet::new(),
             resident: None,
             active: None,
@@ -167,6 +169,7 @@ impl Service {
         out
     }
     pub fn dispatch(&mut self, e: Envelope) -> Result<Vec<(String, Value)>> {
+        ensure!(!self.closed, "unexpected_operation");
         let op = e.operation;
         let p = e.payload;
         if !self.bootstrapped {
@@ -192,10 +195,15 @@ impl Service {
         }
         ensure!(op != "bootstrap", "unexpected_operation");
         let rid = id(&p["request_id"])?;
-        ensure!(
-            self.seen.len() < 256 && self.seen.insert(rid.to_owned()),
-            "unexpected_operation"
-        );
+        if self.seen.len() == 256 && op == "close" && self.active.is_none() {
+            object(&p, &["request_id"])?;
+            ensure!(!self.seen.contains(rid), "unexpected_operation");
+        } else {
+            ensure!(
+                self.seen.len() < 256 && self.seen.insert(rid.to_owned()),
+                "unexpected_operation"
+            );
+        }
         match op.as_str() {
             "handshake" => {
                 object(&p, &["protocol", "request_id", "expected_engine"])?;
@@ -440,6 +448,7 @@ impl Service {
                     )]);
                 }
                 self.resident.take();
+                self.closed = true;
                 Ok(vec![(
                     op,
                     json!({"request_id":p["request_id"],"outcome":"drained","reason":"none"}),
@@ -526,6 +535,143 @@ mod tests {
         bootstrap(&mut s);
         let p = json!({"channel_nonce":s.context.nonce,"profile_json":s.context.profile_json,"artifact_ids":[]});
         assert!(s.dispatch(command("bootstrap", p)).is_err());
+    }
+    fn handshakes(s: &mut Service, count: usize) {
+        for i in 0..count {
+            let p = json!({"protocol":"nlp-worker.v2","request_id":format!("handshake.{i}"),"expected_engine":s.context.engine});
+            let replies = s.dispatch(command("handshake", p)).unwrap();
+            assert_eq!(replies.len(), 1);
+            assert_eq!(replies[0].0, "handshake");
+            assert_eq!(replies[0].1["request_id"], format!("handshake.{i}"));
+            assert_eq!(replies[0].1["engine"], s.context.engine);
+        }
+    }
+    #[test]
+    fn exhausted_request_history_reserves_one_terminal_close() {
+        let mut s = service();
+        bootstrap(&mut s);
+        handshakes(&mut s, 256);
+        assert_eq!(s.seen.len(), 256);
+        let extra = json!({"protocol":"nlp-worker.v2","request_id":"handshake.extra","expected_engine":s.context.engine});
+        assert!(s.dispatch(command("handshake", extra)).is_err());
+        assert_eq!(s.seen.len(), 256);
+        let close = json!({"request_id":"close.one"});
+        let replies = s.dispatch(command("close", close.clone())).unwrap();
+        assert_eq!(
+            replies,
+            vec![(
+                "close".into(),
+                json!({"request_id":"close.one","outcome":"drained","reason":"none"})
+            )]
+        );
+        assert_eq!(s.seen.len(), 256);
+        assert!(s.closed);
+        assert!(s.dispatch(command("close", close)).is_err());
+        assert!(
+            s.dispatch(command("close", json!({"request_id":"close.two"})))
+                .is_err()
+        );
+        let p = json!({"protocol":"nlp-worker.v2","request_id":"handshake.after","expected_engine":s.context.engine});
+        assert!(s.dispatch(command("handshake", p)).is_err());
+        assert_eq!(s.seen.len(), 256);
+    }
+    #[test]
+    fn reserved_close_rejects_replays_and_malformed_payloads() {
+        let mut s = service();
+        bootstrap(&mut s);
+        handshakes(&mut s, 256);
+        for p in [
+            json!({"request_id":"handshake.0"}),
+            json!({"request_id":"close.extra","extra":true}),
+            json!({}),
+            json!({"request_id":""}),
+            json!({"request_id":1}),
+        ] {
+            assert!(s.dispatch(command("close", p)).is_err());
+            assert!(!s.closed);
+            assert_eq!(s.seen.len(), 256);
+        }
+        assert_eq!(
+            s.dispatch(command("close", json!({"request_id":"close.valid"})))
+                .unwrap()[0]
+                .1["outcome"],
+            "drained"
+        );
+        assert_eq!(s.seen.len(), 256);
+    }
+    #[test]
+    fn ordinary_terminal_close_also_rejects_further_dispatch() {
+        let mut s = service();
+        bootstrap(&mut s);
+        assert_eq!(
+            s.dispatch(command("close", json!({"request_id":"close.one"})))
+                .unwrap()[0]
+                .1["outcome"],
+            "drained"
+        );
+        assert_eq!(s.seen.len(), 1);
+        assert!(
+            s.dispatch(command("close", json!({"request_id":"close.one"})))
+                .is_err()
+        );
+        assert!(
+            s.dispatch(command("close", json!({"request_id":"close.two"})))
+                .is_err()
+        );
+        let p = json!({"channel_nonce":s.context.nonce,"profile_json":s.context.profile_json,"artifact_ids":[]});
+        assert!(s.dispatch(command("bootstrap", p)).is_err());
+        assert_eq!(s.seen.len(), 1);
+    }
+    #[test]
+    fn busy_close_preserves_active_operation_and_history_limit() {
+        let mut s = service();
+        bootstrap(&mut s);
+        handshakes(&mut s, 255);
+        let (finish, wait) = std::sync::mpsc::sync_channel(0);
+        let join = thread::spawn(move || {
+            wait.recv_timeout(Duration::from_secs(2)).unwrap();
+            (None, json!({"protocol":"nlp-worker.v2"}))
+        });
+        s.active = Some(Active {
+            request: json!({"request_id":"prepare.one"}),
+            operation: "prepare".into(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            join,
+            cancel_reply: None,
+        });
+        let replies = s
+            .dispatch(command("close", json!({"request_id":"close.busy"})))
+            .unwrap();
+        assert_eq!(
+            replies,
+            vec![(
+                "close".into(),
+                json!({"request_id":"close.busy","outcome":"failed","reason":"busy"})
+            )]
+        );
+        assert!(!s.closed);
+        assert_eq!(s.seen.len(), 256);
+        assert!(
+            s.dispatch(command(
+                "close",
+                json!({"request_id":"close.exhausted.busy"})
+            ))
+            .is_err()
+        );
+        assert!(!s.closed);
+        assert_eq!(s.seen.len(), 256);
+        let active = s.active.take().unwrap();
+        assert!(!active.cancel.load(Ordering::SeqCst));
+        assert!(active.cancel_reply.is_none());
+        finish.send(()).unwrap();
+        active.join.join().unwrap();
+        assert_eq!(
+            s.dispatch(command("close", json!({"request_id":"close.idle"})))
+                .unwrap()[0]
+                .1["outcome"],
+            "drained"
+        );
+        assert_eq!(s.seen.len(), 256);
     }
     #[test]
     fn idle_cancel_binds_only_the_latest_cancellable_terminal() {
