@@ -136,6 +136,8 @@ def test_real_writes_are_ordered_and_skip_existing_payloads(tmp_path, monkeypatc
     original_write = storage.write_shared_graph
     original_incremental_write = incremental.write_incremental_graph
     captured = {'node': [], 'edge': []}
+    memberships = {'node': [], 'edge': []}
+    events = []
     statistics = []
     class RecordingConnection:
         def __init__(self, connection):
@@ -147,6 +149,12 @@ def test_real_writes_are_ordered_and_skip_existing_payloads(tmp_path, monkeypatc
             for kind in captured:
                 if statement.startswith('INSERT INTO graph_' + kind + '_content('):
                     captured[kind].extend(row[1] for row in parameters)
+                    if parameters:
+                        events.append('content')
+                if statement.startswith('INSERT INTO graph_membership_' + kind + 's('):
+                    memberships[kind].extend(parameters)
+                    if parameters:
+                        events.append('membership')
             return self.connection.executemany(statement, parameters)
     @contextmanager
     def transaction(writer):
@@ -167,20 +175,67 @@ def test_real_writes_are_ordered_and_skip_existing_payloads(tmp_path, monkeypatc
         first = fixture.pipeline.project_account(ACCOUNT).artifact
         assert captured['node'] == sorted(captured['node'])
         assert captured['edge'] == sorted(captured['edge'])
+        assert 'content' not in events[events.index('membership'):]
+        for kind, records in (('node', first.nodes), ('edge', first.edges)):
+            assert len(memberships[kind]) == len(records)
+            assert len(set(memberships[kind])) == len(records)
+            assert [row[:3] for row in memberships[kind]] == sorted(row[:3] for row in memberships[kind])
+            assert statistics[-1][kind + '_memberships_written'] == len(records)
         assert statistics[-1]['node_identities_written'] == len(first.nodes)
         previous = {kind: set(values) for kind, values in captured.items()}
+        previous_memberships = {kind: set(values) for kind, values in memberships.items()}
         captured['node'].clear(); captured['edge'].clear()
+        memberships['node'].clear(); memberships['edge'].clear(); events.clear()
         with fixture.repositories.database.transaction() as connection:
             insert_message(connection, 'chat-1', 'ordered-write-addition', NOW)
             advance(connection)
         second = fixture.pipeline.project_account(ACCOUNT).artifact
         cold_equal(fixture, second)
+        assert 'content' not in events[events.index('membership'):]
         for kind in captured:
             assert captured[kind] == sorted(captured[kind])
             assert not previous[kind].intersection(captured[kind])
             assert statistics[-1][kind + '_content_written'] == len(captured[kind])
+            assert not previous_memberships[kind].intersection(memberships[kind])
+            assert statistics[-1][kind + '_memberships_written'] == len(memberships[kind])
         new_ids = {node.node_id for node in second.nodes} - {node.node_id for node in first.nodes}
         assert statistics[-1]['node_identities_written'] == len(new_ids)
+    finally:
+        cleanup(fixture)
+
+
+def test_cancelled_membership_batches_cannot_publish_and_retry_is_complete(tmp_path, monkeypatch):
+    from app.analytics import graph_membership_pages
+    from tests.continuous_analytics_fixture import ACCOUNT, make_fixture, cleanup, cold_equal
+
+    fixture = make_fixture(tmp_path, conversations=3, messages=30)
+    original_write = graph_membership_pages.write_members
+    cancelled = False
+    written = 0
+
+    def interrupt(connection, kind, members, pages):
+        nonlocal cancelled, written
+        result = original_write(connection, kind, members, pages)
+        written += result
+        cancelled = True
+        return result
+
+    monkeypatch.setattr(graph_membership_pages, 'write_members', interrupt)
+    try:
+        with pytest.raises(ProjectionBuildCancelled):
+            fixture.pipeline.build_candidate(ACCOUNT, cancellation_check=lambda: cancelled)
+        assert written > 0
+        assert fixture.stores.database.active_generation(ACCOUNT) is None
+        assert fixture.stores.database.open_connection_count(fixture.stores.database.path) == 0
+        with fixture.stores.database.read() as db:
+            assert not db.execute("SELECT 1 FROM projection_generations WHERE status!='building'").fetchall()
+            assert not db.execute('SELECT 1 FROM graph_segments WHERE sealed=1').fetchall()
+            assert not db.execute('PRAGMA foreign_key_check').fetchall()
+        monkeypatch.setattr(graph_membership_pages, 'write_members', original_write)
+        result = fixture.pipeline.project_account(ACCOUNT)
+        cold_equal(fixture, result.artifact)
+        with fixture.stores.database.read() as db:
+            assert not db.execute('PRAGMA foreign_key_check').fetchall()
     finally:
         cleanup(fixture)
 

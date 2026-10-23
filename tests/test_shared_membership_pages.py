@@ -137,6 +137,7 @@ def test_failed_page_reclamation_rolls_back_the_complete_selection(fixture):
 def test_populated_upgrade_preserves_logical_memberships_and_backup(tmp_path):
     from app.analytics.pipeline import AnalyticsPipeline
     from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
+    from app.persistence.migrations import load_migration_catalog
 
     fixture = make_fixture(tmp_path/'canonical', backend='memory', conversations=3, messages=12)
     source = Path(__file__).parents[1]/'app/analytics/sql'
@@ -165,7 +166,7 @@ def test_populated_upgrade_preserves_logical_memberships_and_backup(tmp_path):
             assert db.execute('PRAGMA user_version').fetchone()[0] == 19
         upgraded = ProjectionsDatabase(legacy.path)
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 25
+            assert db.execute('PRAGMA user_version').fetchone()[0] == load_migration_catalog(source)[-1].version
             assert selected(db) == before
             assert content_stamp(db) is not None and _guards_match(db)
             assert not db.execute('PRAGMA foreign_key_check').fetchall()

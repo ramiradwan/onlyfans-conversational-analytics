@@ -339,6 +339,22 @@ def _existing_ids(connection, table, field, account, identities, check):
     return result
 
 
+def _membership_order(graph, plans, kind, check, page_plans):
+    """Visit changed memberships in physical page and record-key order."""
+
+    records = graph.nodes if kind == 'node' else graph.edges
+    for plan in sorted(plans, key=lambda plan: plan.segment_id):
+        check()
+        if plan.kind != kind or plan.reused:
+            continue
+        for key in sorted(plan.keys):
+            check()
+            if page_plans is not None and page_plans[(kind, plan.segment_id)][key[3:6]].reused:
+                continue
+            content = hashlib.sha256(records[key].encode('utf-8')).hexdigest()
+            yield graph.account_ref, plan.segment_id, key, content
+
+
 def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None,
                        graph_digest=None) -> dict[str, int]:
     """Write changed content only; verify the complete selected graph at publication."""
@@ -409,7 +425,20 @@ def write_shared_graph(writer, graph: CompactGraph, store, *, check=lambda: None
                             statistics['node_identities_written'] += len(identities - present)
                         cursor = db.executemany(statement, changed)
                         statistics[kind + '_content_written'] += cursor.rowcount
-                        write_members(db, kind, [member for _, member in batch], page_plans)
+                    writer._record_operation_duration(time.monotonic() - started, allow_growth=True)
+            # Membership keys have a different physical order from content IDs.
+            # Insert them after all referenced content, without retaining batches.
+            for kind in ('node', 'edge'):
+                members = _membership_order(graph, plans, kind, check, page_plans)
+                while True:
+                    check()
+                    writer._check_heartbeat()
+                    batch = list(islice(members, writer._chunk_size))
+                    if not batch:
+                        break
+                    started = time.monotonic()
+                    with writer._owned_transaction() as db:
+                        write_members(db, kind, batch, page_plans)
                     writer._record_operation_duration(time.monotonic() - started, allow_growth=True)
                     statistics[kind + '_memberships_written'] += len(batch)
         with writer._owned_transaction() as db:
