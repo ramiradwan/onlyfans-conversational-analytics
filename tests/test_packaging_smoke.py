@@ -46,7 +46,14 @@ SYNTHETIC_PRIVACY_POLICY_URL = "https://legal-evidence.example.com/legal/privacy
 
 @pytest.fixture(scope="module", autouse=True)
 def _isolated_release_source(tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest):
-    with configured_release_source(request.module, tmp_path_factory.mktemp("release-source")):
+    with configured_release_source(request.module, tmp_path_factory.mktemp("release-source")) as source:
+        for relative in (
+            "__pycache__/synthetic.cpython-311.pyc", "__pycache__/metadata.json",
+            "synthetic.pyc", "synthetic.pyo", "synthetic-uppercase.PYC",
+        ):
+            cache = source / "contracts" / relative
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_bytes(b"synthetic generated cache")
         yield
 
 
@@ -349,6 +356,10 @@ stage = dist / 'Brain'
 (stage / '_internal').mkdir(parents=True)
 shutil.copyfile(Path({str(listener_executable)!r}) if {listener_executable is not None!r} else Path(os.environ['ComSpec']), stage / 'Brain.exe')
 shutil.copyfile(stage / 'Brain.exe', root / 'desktop/src-tauri/target/x86_64-pc-windows-msvc/release/Bridge.exe')
+def ignored_data(directory, names):
+    return [name for name in names if name == '__pycache__' or (
+        (Path(directory) / name).is_file() and Path(name).suffix.lower() in ('.pyc', '.pyo')
+    )]
 for relative in (
     'app/templates',
     'app/onboarding',
@@ -362,7 +373,7 @@ for relative in (
     'shared/desktop-onboarding',
     'shared/browser-tasks',
 ):
-    shutil.copytree(root / relative, stage / '_internal' / relative)
+    shutil.copytree(root / relative, stage / '_internal' / relative, ignore=ignored_data)
 provisioning = stage / '_internal' / 'app' / 'provisioning'
 provisioning.mkdir()
 for name in ('creator-platform-data-risk-disclosure.html',):
@@ -534,6 +545,28 @@ def _without_port_preflight(script: str) -> str:
     route = "Assert-CleanEnvironment\nAssert-ArtifactDigest\nAssert-ProvisioningPortAvailable"
     assert route in script
     return script.replace(route, "Assert-CleanEnvironment\nAssert-ArtifactDigest", 1)
+
+
+def test_build_stages_contract_data_without_generated_caches(non_listening_installer: Path) -> None:
+    """Build-time DATA staging preserves contracts while excluding interpreter caches."""
+
+    source = ROOT / "contracts"
+    staged = non_listening_installer.parent.parent / "dist" / "Brain" / "_internal" / "contracts"
+    for relative in (
+        "__pycache__/synthetic.cpython-311.pyc", "__pycache__/metadata.json",
+        "synthetic.pyc", "synthetic.pyo", "synthetic-uppercase.PYC",
+    ):
+        assert (source / relative).is_file(), "the source fixture must contain generated caches"
+    for relative in ("__init__.py", "loader.py", "manifest.json", "consumer-pin.json"):
+        assert (staged / relative).read_bytes() == (source / relative).read_bytes()
+    manifest = json.loads((staged / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["files"]
+    assert all((staged / entry["path"]).is_file() for entry in manifest["files"])
+    assert all(
+        "__pycache__" not in path.relative_to(staged).parts
+        and path.suffix.lower() not in {".pyc", ".pyo"}
+        for path in staged.rglob("*")
+    )
 
 
 def test_real_interpreter_is_still_detected(tmp_path: Path) -> None:

@@ -2,9 +2,11 @@
 
 from contextlib import ExitStack, contextmanager
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
+from app.persistence.migrations import load_migration_catalog
 from app.analytics import nlp_findings_store, nlp_processing
 from app.analytics.errors import CanonicalRevisionChanged, ProjectionUnavailable
 from app.analytics.evidence_contracts import MAX_EVIDENCE_TEXT_CHARS
@@ -15,6 +17,10 @@ from app.analytics.query_execution import (
 )
 from tests.continuous_analytics_fixture import ACCOUNT, advance, cleanup, make_fixture
 from tests.test_nlp_processing_publication import runner
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = pytest.mark.ci_tier('integration')
 
@@ -806,4 +812,4 @@ def test_source_lane_migration_preserves_populated_inventory_and_claims(fixture,
     assert restarted.claim(ACCOUNT).source_ref == claim.source_ref
     assert upgraded.migration_runner.run() == []
     with upgraded.read() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 31
+        assert db.execute('PRAGMA user_version').fetchone()[0] == CURRENT_SCHEMA_VERSION

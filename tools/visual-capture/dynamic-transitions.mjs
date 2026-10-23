@@ -68,7 +68,10 @@ async function driveWorkspace(page, view, base, step, mode) {
   await page.waitForFunction(() => window.__workspaceFixture);
   await page.clock.install({ time: new Date('2026-06-30T12:05:00Z') });
   const push = (method, ...args) => page.evaluate(({ method, args }) => window.__workspaceFixture[method](...args), { method, args });
-  await step('loading', () => page.clock.fastForward(450));
+  await step('loading', async () => {
+    if (view === 'settings') await push('release', 'nlp.get', 'populated');
+    await page.clock.fastForward(450);
+  });
   if (view === 'passkey') {
     for (const action of ['Sign in with passkey', 'Set up a passkey']) for (const outcome of ['NotAllowedError', 'AbortError', 'Error', 'success']) {
       const key = action.startsWith('Set') ? 'passkey.enroll' : 'passkey.login';

@@ -271,6 +271,13 @@ async def startup_event():
 async def shutdown_event():
     global _grant_refresh
     app.state.runtime_shutdown_drained = False
+    from app.services.retention_maintenance import (
+        shutdown_default_retention_maintenance,
+    )
+
+    if not await shutdown_default_retention_maintenance():
+        logger.warning("retention_maintenance_event reason_code=shutdown_drain_timeout")
+        return
     deadline = time.monotonic() + 5.0
     drained = await analytics_runtime.shutdown_default_analytics_runtime(timeout=max(0, deadline-time.monotonic()))
     from app.services.nlp_dependencies import dependency_service
@@ -281,13 +288,6 @@ async def shutdown_event():
             dependency_drained = await asyncio.to_thread(dependencies.close, max(0, deadline-time.monotonic()))
         except Exception:
             logger.warning('nlp_dependency_event reason_code=shutdown_drain_failed')
-    from app.services.retention_maintenance import (
-        shutdown_default_retention_maintenance,
-    )
-
-    if not await shutdown_default_retention_maintenance():
-        logger.warning("retention_maintenance_event reason_code=shutdown_drain_timeout")
-        return
     from app.services.signing_parameters import stop_signing_parameters
     await stop_signing_parameters()
     if hasattr(app.state, "desktop_coordinator"):

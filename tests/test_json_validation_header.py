@@ -8,12 +8,17 @@ import tracemalloc
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from app.persistence.migrations import load_migration_catalog
 from app.persistence.json_header import json_object_header, json_validation_scope
 from app.persistence import sqlite_api
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.sqlite_projection_store import SQLiteAnalyticsProjectionStore
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, make_fixture, cleanup
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier('integration')]
 
@@ -142,7 +147,7 @@ def test_populated_header_upgrade_keeps_bytes_backups_and_foreign_keys(tmp_path)
             assert db.execute('PRAGMA user_version').fetchone()[0] == 8
             assert db.execute('SELECT document_json FROM analytics_projections').fetchone()[0] == before
         with updated.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 25
+            assert db.execute('PRAGMA user_version').fetchone()[0] == CURRENT_SCHEMA_VERSION
             assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert not db.execute('PRAGMA foreign_key_check').fetchall()
             assert db.execute('SELECT document_json FROM analytics_projections').fetchone()[0] == before

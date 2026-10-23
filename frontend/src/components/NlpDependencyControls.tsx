@@ -1,7 +1,7 @@
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
-import { Panel, SectionHeader } from './ui';
+import { Panel, SectionHeader, useRevealHold } from './ui';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   nlpDependenciesApi, parseNlpDependencyPlan,
@@ -34,6 +34,7 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
   const [operation, setOperation] = useState<NlpDependencyObservation | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
   const [pollRevision, setPollRevision] = useState(0);
+  useRevealHold(Boolean(account && !status && !error));
   const lifetime = useRef<AbortController | null>(null);
   const active = () => Boolean(account && !lifetime.current?.signal.aborted && bridgeTransportStore.getState().creatorAccountId === account);
 

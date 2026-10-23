@@ -6,10 +6,14 @@ from types import SimpleNamespace
 
 from app.analytics.canonical_source import HistoryAnalyticsSource
 from app.persistence.database import CanonicalSQLite
-from app.persistence.migrations import MigrationRunner
+from app.persistence.migrations import MigrationRunner, load_migration_catalog
 from tests.continuous_analytics_fixture import ACCOUNT, NOW, insert_message
 
 import pytest
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/persistence/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier('integration')]
 
@@ -40,7 +44,7 @@ def test_populated_canonical_upgrade_preserves_exact_source_identity(tmp_path):
         assert db.execute('PRAGMA user_version').fetchone()[0] == 8
         assert db.execute('SELECT text FROM account_messages').fetchone()[0] == 'Thanks pricing'
     with database.read() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 12
+        assert db.execute('PRAGMA user_version').fetchone()[0] == CURRENT_SCHEMA_VERSION
         assert db.execute('SELECT event_kind_json FROM account_messages').fetchone()[0] is None
         assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
         assert source._identity_cache.token(db, ACCOUNT) is not None

@@ -4,6 +4,7 @@ import shutil
 
 import pytest
 
+from app.persistence.migrations import load_migration_catalog
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.enrichment_proof_transition import _guards_match
 from app.analytics.pipeline import AnalyticsPipeline
@@ -16,6 +17,10 @@ from app.persistence import sqlite_api as sqlite3
 from tests.continuous_analytics_fixture import (
     ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message, make_fixture,
 )
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier("integration")]
 
@@ -207,7 +212,7 @@ def test_schema22_upgrade_preserves_page_cache_and_backup(tmp_path, monkeypatch)
             assert before > 0 and db.execute("PRAGMA user_version").fetchone()[0] == 21
         upgraded = ProjectionsDatabase(database.path)
         with upgraded.read() as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 25
+            assert db.execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
             assert db.execute("SELECT COUNT(*) FROM conversation_pages").fetchone()[0] == before
             assert content_stamp(db) is not None and _guards_match(db)
             assert not db.execute("PRAGMA foreign_key_check").fetchall()

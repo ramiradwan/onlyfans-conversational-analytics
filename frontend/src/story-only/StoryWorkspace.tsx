@@ -26,6 +26,7 @@ import type { CreatorVaultApi, CreatorVaultStatus } from '../services/creatorVau
 import type { DesktopOnboardingApi } from '../services/desktopOnboarding';
 import type { HistorySettingsApi } from '../services/historySettingsApi';
 import type { MessageApi } from '../services/messageApi';
+import type { NlpDependenciesApi } from '../services/nlpDependenciesApi';
 import { bridgeTransportStore } from '../store/transportStore';
 import { useUserStore } from '../store/userStore';
 import CreatorDashboardView from '../views/CreatorDashboardView';
@@ -364,6 +365,17 @@ const WORKSPACE_PATHS: Record<Exclude<StoryWorkspaceName, 'passkey'>, string> = 
   graph: '/graph-explorer',
 };
 
+function textAnalysisApi(journey: StoryJourneyName): NlpDependenciesApi {
+  return {
+    get: async () => journey === 'loading' ? new Promise(() => {}) : ({
+      configured: false, profiles: [], available_profiles: [], failure: null,
+      resume_granularity: 'verified_files_current_file_restarts', acquisitions: [], selected: null,
+    }),
+    observe: async () => { throw new Error('No text analysis operation is active.'); },
+    command: async () => { throw new Error('Text analysis is unavailable.'); },
+  };
+}
+
 function createDriver(journey: StoryJourneyName) {
   let currentJourney = journey;
   let desktop: DesktopState = { connected: journey !== 'loading', pending: null, error: null, snapshot: {
@@ -417,7 +429,10 @@ function createDriver(journey: StoryJourneyName) {
       });
     }])) as T;
   }
+  const nlp = wrap('nlp', () => textAnalysisApi(currentJourney));
+  let nlpStatus: ReturnType<NlpDependenciesApi['get']> | undefined;
   const apis = {
+    nlp: { ...nlp, get: (signal?: AbortSignal) => nlpStatus ??= nlp.get(signal) },
     activation: wrap('activation', () => activationApi()),
     history: wrap('history', () => historyApi(currentJourney)),
     pairing: wrap('pairing', () => pairingApi(currentJourney)),
@@ -556,6 +571,7 @@ export function StoryWorkspace({
                 vaultApi={apis.vault}
                 browserApi={driver.apis.browser}
                 onboardingApi={driver.onboarding}
+                nlpApi={driver.apis.nlp}
               />
             )}
           />

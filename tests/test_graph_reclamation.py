@@ -7,12 +7,17 @@ import shutil
 import pytest
 from sqlcipher3 import dbapi2 as sqlite3
 
+from app.persistence.migrations import load_migration_catalog
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.enrichment_proof_transition import _guards_match
 from app.analytics.validation_receipt import content_stamp
 from tests.continuous_analytics_fixture import (
     ACCOUNT, NOW, advance, cleanup, cold_equal, insert_message, make_fixture,
 )
+
+CURRENT_SCHEMA_VERSION = load_migration_catalog(
+    Path(__file__).resolve().parents[1] / 'app/analytics/sql'
+)[-1].version
 
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
 
@@ -135,7 +140,7 @@ def test_populated_upgrade_preserves_graph_and_reclaims_final_references(tmp_pat
             assert _guards_match(db) and content_stamp(db) is not None
         upgraded = ProjectionsDatabase(legacy.path)
         with upgraded.read() as db:
-            assert db.execute('PRAGMA user_version').fetchone()[0] == 25
+            assert db.execute('PRAGMA user_version').fetchone()[0] == CURRENT_SCHEMA_VERSION
             assert _guards_match(db) and content_stamp(db) is not None
             assert [tuple(row) for row in db.execute(
                 'SELECT * FROM graph_node_content ORDER BY creator_account_id,content_id'

@@ -575,6 +575,7 @@ async def test_optional_undrained_worker_does_not_skip_core_shutdown(env, monkey
         calls.append('broadcast')
 
     async def maintenance_stop():
+        calls.append('maintenance')
         return True
 
     def close(timeout):
@@ -590,7 +591,7 @@ async def test_optional_undrained_worker_does_not_skip_core_shutdown(env, monkey
     monkeypatch.setattr(main.analytics_runtime, 'shutdown_default_analytics_runtime', scheduler)
     monkeypatch.setattr(main.broadcast, 'disconnect', disconnect)
     await main.shutdown_event()
-    assert calls == ['analytics', 'dependencies', 'transport', 'broadcast']
+    assert calls == ['maintenance', 'analytics', 'dependencies', 'transport', 'broadcast']
     assert not main.app.state.runtime_shutdown_drained
     assert 'private diagnostic' not in caplog.text
 
