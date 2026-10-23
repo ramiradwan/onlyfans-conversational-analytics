@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -10,7 +11,7 @@ import subprocess
 import sys
 import tarfile
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from fastapi.staticfiles import StaticFiles
@@ -110,7 +111,10 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     for name in ("desktop-onboarding", "browser-tasks"):
         shutil.copytree(ROOT / "shared" / name, internal / "shared" / name)
     shutil.copytree(ROOT / "app" / "static", internal / "app" / "static")
-    shutil.copytree(ROOT / "contracts", internal / "contracts")
+    shutil.copytree(
+        ROOT / "contracts", internal / "contracts",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+    )
     for catalog in SQL_CATALOGS:
         source = ROOT / catalog
         destination = internal / catalog
@@ -124,6 +128,85 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
 
 def _codes(findings) -> set[str]:
     return {finding.code for finding in findings}
+
+
+def test_data_tree_collection_excludes_cached_bytecode(tmp_path: Path) -> None:
+    spec = ROOT / "packaging" / "pyinstaller" / "brain.spec"
+    tree = ast.parse(spec.read_text(encoding="utf-8"))
+    helpers = ast.Module(body=[
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {"_source_relative", "_add_tree"}
+    ], type_ignores=[])
+    namespace = {
+        "PurePosixPath": PurePosixPath,
+        "_PROJECT_ROOT": tmp_path,
+        "_INTERNAL_PREFIX": "_internal/",
+    }
+    exec(compile(helpers, str(spec), "exec"), namespace)
+    files = (
+        "loader.py", "nested/data.json", "__pycache__/loader.cpython-313.pyc",
+        "__pycache__/metadata.json", "legacy.pyc", "nested/legacy.pyo",
+    )
+    for name in files:
+        target = tmp_path / "contracts" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"synthetic data")
+    entries = []
+    seen = set()
+
+    namespace["_add_tree"](entries, seen, "_internal/contracts")
+    namespace["_add_tree"](entries, seen, "_internal/contracts")
+
+    assert entries == [
+        (str(tmp_path / "contracts" / "loader.py"), "contracts"),
+        (str(tmp_path / "contracts" / "nested" / "data.json"),
+         str(PurePosixPath("contracts/nested"))),
+    ]
+    assert seen == {PurePosixPath("contracts")}
+
+
+def test_staging_fixture_excludes_source_contract_caches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    copytree = shutil.copytree
+    source = tmp_path / "source-contracts"
+    copytree(ROOT / "contracts", source)
+    cache = source / "__pycache__" / "synthetic.pyc"
+    cache.parent.mkdir(exist_ok=True)
+    cache.write_bytes(b"synthetic cached data")
+    (source / "synthetic.pyo").write_bytes(b"synthetic cached data")
+
+    def copy_with_cached_source(src, dst, *args, **kwargs):
+        if Path(src) == ROOT / "contracts":
+            src = source
+        return copytree(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "copytree", copy_with_cached_source)
+    stage = _stage_runtime_tree(tmp_path)
+    staged = stage / "_internal" / "contracts"
+
+    assert not (staged / "__pycache__").exists()
+    assert not (staged / "synthetic.pyo").exists()
+    assert (staged / "loader.py").read_bytes() == (source / "loader.py").read_bytes()
+
+
+@pytest.mark.parametrize("relative", [
+    "legacy.pyc", "nested/legacy.pyo", "nested/legacy.PYC",
+    "__pycache__/loader.cpython-313.pyc", "nested/__pycache__/metadata.json",
+])
+def test_contract_verifier_rejects_cached_data(tmp_path: Path, relative: str) -> None:
+    stage = _stage_runtime_tree(tmp_path)
+    candidate = stage / "_internal" / "contracts" / relative
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_bytes(b"synthetic cached data")
+
+    findings = verify_runtime_files(stage)
+
+    assert PackagingFinding(
+        "contracts_cached_data_present", f"_internal/contracts/{relative}",
+        "cached bytecode is not contract data",
+    ) in findings
 
 
 def _source_sql_digests() -> dict[str, str]:
