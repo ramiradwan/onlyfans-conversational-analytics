@@ -167,8 +167,26 @@ fn status(
     pid: Option<u32>,
     tree_drained: bool,
 ) -> Result<()> {
-    let bytes = serde_json::to_vec(&status_value(nonce, state, reason, pid, tree_drained)?)
-        .map_err(|_| "io_failure")?;
+    status_with_stage(pipe, nonce, state, reason, pid, tree_drained, None)
+}
+fn status_with_stage(
+    pipe: HANDLE,
+    nonce: &str,
+    state: &str,
+    reason: &str,
+    pid: Option<u32>,
+    tree_drained: bool,
+    stage: Option<FailureStage>,
+) -> Result<()> {
+    let bytes = serde_json::to_vec(&status_value_with_stage(
+        nonce,
+        state,
+        reason,
+        pid,
+        tree_drained,
+        stage,
+    )?)
+    .map_err(|_| "io_failure")?;
     let mut output = (bytes.len() as u32).to_le_bytes().to_vec();
     output.extend(bytes);
     unsafe {
@@ -239,50 +257,72 @@ fn parent_identity(
     parent: HANDLE,
     outer: HANDLE,
     packages: &crate::servicing::WorkerPackages,
+    stage: &mut FailureStage,
 ) -> Result<()> {
     unsafe {
-        if access(parent)? != (PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
-            || access(outer)? != OUTER_JOB_QUERY
-        {
+        *stage = FailureStage::ParentAccess;
+        if access(parent)? != (PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE) {
             return Err("identity_mismatch");
         }
+        *stage = FailureStage::OuterAccess;
+        if access(outer)? != OUTER_JOB_QUERY {
+            return Err("identity_mismatch");
+        }
+        *stage = FailureStage::ParentProcess;
         let pid = GetProcessId(parent);
         if pid == 0 || pid != parent_pid()? || WaitForSingleObject(parent, 0) != WAIT_TIMEOUT {
             return Err("identity_mismatch");
         }
         let current = GetCurrentProcess();
+        *stage = FailureStage::ParentSid;
         if crate::windows::process_sid(parent)? != crate::windows::process_sid(current)? {
             return Err("identity_mismatch");
         }
         let (mut a, mut b) = (0, 0);
+        *stage = FailureStage::ParentSession;
         if ProcessIdToSessionId(pid, &mut a) == 0
             || ProcessIdToSessionId(GetCurrentProcessId(), &mut b) == 0
             || a != b
         {
             return Err("identity_mismatch");
         }
-        if process_package(parent, false)? != process_package(current, false)?
-            || process_package(parent, true)?
-                != packages
-                    .main
-                    .identity
-                    .family
-                    .as_deref()
-                    .ok_or("identity_mismatch")?
+        *stage = FailureStage::ParentPackage;
+        if process_package(parent, false)? != process_package(current, false)? {
+            return Err("identity_mismatch");
+        }
+        *stage = FailureStage::ParentFamily;
+        if process_package(parent, true)?
+            != packages
+                .main
+                .identity
+                .family
+                .as_deref()
+                .ok_or("identity_mismatch")?
         {
             return Err("identity_mismatch");
         }
+        *stage = FailureStage::CurrentPackageIdentity;
         if crate::windows::package_identity()?.as_ref() != Some(&packages.main.identity) {
             return Err("identity_mismatch");
         }
+        *stage = FailureStage::ParentImage;
         let image = crate::windows::process_image(parent)?;
+        *stage = FailureStage::HostImage;
         let own = std::env::current_exe().map_err(|_| "identity_mismatch")?;
-        if !same_path(&image, &packages.main_root.join("app/Brain.exe"))
-            || !same_path(&own, &packages.main_root.join("app/Bridge.exe"))
-        {
+        *stage = FailureStage::ParentImage;
+        if !same_path(&image, &packages.main_root.join("app/Brain.exe")) {
+            return Err("identity_mismatch");
+        }
+        *stage = FailureStage::HostImage;
+        if !same_path(&own, &packages.main_root.join("app/Bridge.exe")) {
             return Err("identity_mismatch");
         }
         for p in [parent, current] {
+            *stage = if p == parent {
+                FailureStage::ParentJob
+            } else {
+                FailureStage::HostJob
+            };
             let mut member = 0;
             if IsProcessInJob(p, outer, &mut member) == 0 || member == 0 {
                 return Err("identity_mismatch");
@@ -797,24 +837,35 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut tree_drained = true;
     let mut held_packages: Option<crate::servicing::WorkerPackages> = None;
     let mut held_files = Vec::new();
+    let mut stage = FailureStage::ParentAccess;
     let result = (|| {
         // Authenticate the direct parent before optional-package enumeration.
         unsafe {
-            if access(parent.0)? != (PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
-                || access(outer.0)? != OUTER_JOB_QUERY
-                || GetProcessId(parent.0) != parent_pid()?
-            {
+            if access(parent.0)? != (PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE) {
+                return Err("identity_mismatch");
+            }
+            stage = FailureStage::OuterAccess;
+            if access(outer.0)? != OUTER_JOB_QUERY {
+                return Err("identity_mismatch");
+            }
+            stage = FailureStage::ParentProcess;
+            if GetProcessId(parent.0) != parent_pid()? {
                 return Err("identity_mismatch");
             }
             alive(parent.0, lifetime.0)?;
             let current = GetCurrentProcess();
+            stage = FailureStage::CurrentPackage;
             let full = process_package(current, false)?;
-            if process_package(parent.0, false)? != full
-                || crate::windows::process_sid(parent.0)? != crate::windows::current_sid()?
-            {
+            stage = FailureStage::ParentPackage;
+            if process_package(parent.0, false)? != full {
+                return Err("identity_mismatch");
+            }
+            stage = FailureStage::ParentSid;
+            if crate::windows::process_sid(parent.0)? != crate::windows::current_sid()? {
                 return Err("identity_mismatch");
             }
             let (mut a, mut b) = (0, 0);
+            stage = FailureStage::ParentSession;
             if ProcessIdToSessionId(GetProcessId(parent.0), &mut a) == 0
                 || ProcessIdToSessionId(GetCurrentProcessId(), &mut b) == 0
                 || a != b
@@ -822,12 +873,18 @@ pub fn run(args: &[String]) -> Result<()> {
                 return Err("identity_mismatch");
             }
             for process in [parent.0, current] {
+                stage = if process == parent.0 {
+                    FailureStage::ParentJob
+                } else {
+                    FailureStage::HostJob
+                };
                 let mut member = 0;
                 if IsProcessInJob(process, outer.0, &mut member) == 0 || member == 0 {
                     return Err("identity_mismatch");
                 }
             }
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = zeroed();
+            stage = FailureStage::OuterLimits;
             if QueryInformationJobObject(
                 outer.0,
                 JobObjectExtendedLimitInformation,
@@ -842,25 +899,35 @@ pub fn run(args: &[String]) -> Result<()> {
             {
                 return Err("identity_mismatch");
             }
+            stage = FailureStage::MainObservation;
             let (observed, root) = crate::servicing::installed(&full)?;
+            stage = FailureStage::MainTrust;
             if observed.origin != crate::servicing::Origin::SignedDirect
                 || observed.signature != crate::servicing::Signature::SignedDirect
-                || !same_path(
-                    &crate::windows::process_image(parent.0)?,
-                    &Path::new(&root).join("app/Brain.exe"),
-                )
-                || !same_path(
-                    &std::env::current_exe().map_err(|_| "identity_mismatch")?,
-                    &Path::new(&root).join("app/Bridge.exe"),
-                )
             {
                 return Err("identity_mismatch");
             }
+            stage = FailureStage::ParentImage;
+            if !same_path(
+                &crate::windows::process_image(parent.0)?,
+                &Path::new(&root).join("app/Brain.exe"),
+            ) {
+                return Err("identity_mismatch");
+            }
+            stage = FailureStage::HostImage;
+            if !same_path(
+                &std::env::current_exe().map_err(|_| "identity_mismatch")?,
+                &Path::new(&root).join("app/Bridge.exe"),
+            ) {
+                return Err("identity_mismatch");
+            }
         }
-        let mut packages = crate::servicing::worker_packages()?;
-        parent_identity(parent.0, outer.0, &packages)?;
+        let mut packages = crate::servicing::worker_packages(&mut stage)?;
+        parent_identity(parent.0, outer.0, &packages, &mut stage)?;
+        stage = FailureStage::MainFiles;
         packages.read_main("app/Brain.exe", 128 * 1024 * 1024)?;
         packages.read_main("app/Bridge.exe", 128 * 1024 * 1024)?;
+        stage = FailureStage::InitialCommand;
         let initial = frame(
             command.0,
             parent.0,
@@ -868,18 +935,22 @@ pub fn run(args: &[String]) -> Result<()> {
             deadline.min(Instant::now() + Duration::from_secs(20)),
         )?;
         let tag: Value = decode(&initial)?;
+        stage = FailureStage::WorkerMetadata;
         let (meta, mut retained) = metadata(&mut packages)?;
         if Instant::now() >= deadline {
             return Err("timeout");
         }
         alive(parent.0, lifetime.0)?;
         if tag["schema"] == "nlp-host-observe.v1" {
+            stage = FailureStage::ObservationBinding;
             observe(&initial, &nonce, &meta.engine)?;
             let synthetic = serde_json::json!({"artifacts":meta.artifacts.iter().map(|a|serde_json::to_value(&a.artifact).unwrap()).collect::<Vec<_>>(),"components":[{"engine":meta.engine,"adapter":meta.adapters.first().ok_or("artifact_mismatch")?["adapter"]}]});
+            stage = FailureStage::MetadataBinding;
             validate_metadata(&meta, &synthetic)?;
             drop(input);
             drop(output);
             status(status_pipe.0, &nonce, "ready", "none", None, true)?;
+            stage = FailureStage::WorkerControl;
             control(
                 &frame(
                     command.0,
@@ -893,9 +964,12 @@ pub fn run(args: &[String]) -> Result<()> {
             status(status_pipe.0, &nonce, "drained", "none", None, true)?;
             return Ok(());
         }
+        stage = FailureStage::InitialCommand;
         let launch: Launch = decode(&initial)?;
         let profile = profile(&launch, &nonce, &raw)?;
+        stage = FailureStage::MetadataBinding;
         validate_metadata(&meta, &profile)?;
+        stage = FailureStage::ArtifactBindings;
         for binding in &launch.artifacts {
             retained.push((binding.artifact.clone(), data_handle(binding)?));
         }
@@ -926,6 +1000,7 @@ pub fn run(args: &[String]) -> Result<()> {
         }
         alive(parent.0, lifetime.0)?;
         status(status_pipe.0, &nonce, "ready", "none", None, true)?;
+        stage = FailureStage::WorkerControl;
         control(
             &frame(
                 command.0,
@@ -936,6 +1011,7 @@ pub fn run(args: &[String]) -> Result<()> {
             &nonce,
             "commit",
         )?;
+        stage = FailureStage::WorkerLaunch;
         worker = Some(spawn(
             held_packages.as_ref().unwrap(),
             input,
@@ -951,11 +1027,13 @@ pub fn run(args: &[String]) -> Result<()> {
         let child = worker.as_mut().unwrap();
         worker_pid = Some(child.pid);
         status(status_pipe.0, &nonce, "running", "none", worker_pid, false)?;
+        stage = FailureStage::WorkerControl;
         control(
             &frame(command.0, parent.0, lifetime.0, deadline)?,
             &nonce,
             "close",
         )?;
+        stage = FailureStage::WorkerDrain;
         let settled = child.drain();
         tree_drained = child.joined;
         settled?;
@@ -975,13 +1053,14 @@ pub fn run(args: &[String]) -> Result<()> {
             }
             _ => "identity_mismatch",
         };
-        let _ = status(
+        let _ = status_with_stage(
             status_pipe.0,
             &nonce,
             "failed",
             reason,
             worker_pid,
             tree_drained,
+            Some(stage),
         );
         return Err(reason);
     }

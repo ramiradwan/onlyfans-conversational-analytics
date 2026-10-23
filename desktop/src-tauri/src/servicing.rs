@@ -1042,9 +1042,14 @@ impl WorkerPackages {
     }
 }
 #[cfg(windows)]
-pub(crate) fn worker_packages() -> Result<WorkerPackages, &'static str> {
+pub(crate) fn worker_packages(
+    stage: &mut crate::worker_host::FailureStage,
+) -> Result<WorkerPackages, &'static str> {
+    use crate::worker_host::FailureStage;
+    *stage = FailureStage::PackageObservation;
     let _apartment = Apartment::new().map_err(|_| "identity_mismatch")?;
     let (package, main) = observe().map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::PackageTrust;
     if main.origin != Origin::SignedDirect
         || main.signature != Signature::SignedDirect
         || package.IsOptional().map_err(|_| "identity_mismatch")?
@@ -1068,6 +1073,7 @@ pub(crate) fn worker_packages() -> Result<WorkerPackages, &'static str> {
         #[cfg(all(feature = "qualification-tools", debug_assertions))]
         records: Vec::new(),
     };
+    *stage = FailureStage::DescriptorRead;
     let bytes = files
         .read(
             &main_root,
@@ -1075,11 +1081,14 @@ pub(crate) fn worker_packages() -> Result<WorkerPackages, &'static str> {
             StagedRole::MainDescriptor,
         )
         .map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::DescriptorParse;
     let release: DesktopRelease =
         serde_json::from_slice(&bytes).map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::DescriptorValidation;
     release
         .validate(&main.identity)
         .map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::DeclaredEngine;
     let (related_set_id, declared) = match &release
         .servicing
         .as_ref()
@@ -1092,6 +1101,7 @@ pub(crate) fn worker_packages() -> Result<WorkerPackages, &'static str> {
         } => (related_set_id.clone(), engine),
         _ => return Err("identity_mismatch"),
     };
+    *stage = FailureStage::EngineSelection;
     let manager = activate_owned().map_err(|_| "identity_mismatch")?;
     let (full_name, engine_root) = match selected_engine(&manager, &release, &main.identity)? {
         EngineSelection::Present {
@@ -1099,12 +1109,14 @@ pub(crate) fn worker_packages() -> Result<WorkerPackages, &'static str> {
         } => (full_name, std::path::PathBuf::from(path)),
         EngineSelection::Absent => return Err("identity_mismatch"),
     };
+    *stage = FailureStage::InstalledEngine;
     let (engine, path) = installed(&full_name)?;
     if std::path::Path::new(&path) != engine_root
         || engine.identity.version != declared.package_version
     {
         return Err("identity_mismatch");
     }
+    *stage = FailureStage::MainManifest;
     let bytes = files
         .read(&main_root, "AppxManifest.xml", StagedRole::MainManifest)
         .map_err(|_| "identity_mismatch")?;
@@ -1115,6 +1127,7 @@ pub(crate) fn worker_packages() -> Result<WorkerPackages, &'static str> {
         None,
     )
     .map_err(|_| "identity_mismatch")?;
+    *stage = FailureStage::EngineManifest;
     let bytes = files
         .read(&engine_root, "AppxManifest.xml", StagedRole::EngineManifest)
         .map_err(|_| "identity_mismatch")?;

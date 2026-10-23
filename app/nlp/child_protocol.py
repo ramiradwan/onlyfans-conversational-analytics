@@ -114,10 +114,19 @@ class HostStatus(Contract):
                     'timeout', 'worker_failure']
     worker_pid: Annotated[int, Field(ge=1, le=2**32 - 1)] | None
     tree_drained: bool
+    failure_stage: Literal['parent_access', 'outer_access', 'parent_process', 'current_package',
+        'parent_package', 'parent_sid', 'parent_session', 'parent_job', 'host_job', 'outer_limits',
+        'main_observation', 'main_trust', 'parent_image', 'host_image', 'package_observation',
+        'package_trust', 'descriptor_read', 'descriptor_parse', 'descriptor_validation',
+        'declared_engine', 'engine_selection', 'installed_engine', 'main_manifest', 'engine_manifest',
+        'parent_family', 'current_package_identity', 'main_files', 'initial_command',
+        'worker_metadata', 'observation_binding', 'metadata_binding', 'artifact_bindings',
+        'worker_control', 'worker_launch', 'worker_drain'] | None = None
 
     @model_validator(mode='after')
     def coherent(self):
-        if ((self.state == 'failed') == (self.reason == 'none') or
+        if ((self.failure_stage is not None and self.state != 'failed') or
+                (self.state == 'failed') == (self.reason == 'none') or
                 (self.state == 'ready' and self.worker_pid is not None) or
                 (self.state == 'running' and (self.worker_pid is None or self.tree_drained)) or
                 (self.state in ('ready', 'drained') and not self.tree_drained)):

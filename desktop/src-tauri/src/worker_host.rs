@@ -514,6 +514,64 @@ pub fn frame_length(bytes: [u8; 4]) -> Result<usize> {
     }
     Ok(n)
 }
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum FailureStage {
+    ParentAccess,
+    OuterAccess,
+    ParentProcess,
+    CurrentPackage,
+    ParentPackage,
+    ParentSid,
+    ParentSession,
+    ParentJob,
+    HostJob,
+    OuterLimits,
+    MainObservation,
+    MainTrust,
+    ParentImage,
+    HostImage,
+    PackageObservation,
+    PackageTrust,
+    DescriptorRead,
+    DescriptorParse,
+    DescriptorValidation,
+    DeclaredEngine,
+    EngineSelection,
+    InstalledEngine,
+    MainManifest,
+    EngineManifest,
+    ParentFamily,
+    CurrentPackageIdentity,
+    MainFiles,
+    InitialCommand,
+    WorkerMetadata,
+    ObservationBinding,
+    MetadataBinding,
+    ArtifactBindings,
+    WorkerControl,
+    WorkerLaunch,
+    WorkerDrain,
+}
+
+pub(crate) fn status_value_with_stage(
+    nonce: &str,
+    state: &str,
+    reason: &str,
+    pid: Option<u32>,
+    tree_drained: bool,
+    stage: Option<FailureStage>,
+) -> Result<Value> {
+    let mut value = status_value(nonce, state, reason, pid, tree_drained)?;
+    if let Some(stage) = stage {
+        if state != "failed" {
+            return Err("invalid_bootstrap");
+        }
+        value["failure_stage"] = serde_json::to_value(stage).map_err(|_| "invalid_bootstrap")?;
+    }
+    Ok(value)
+}
+
 pub fn status_value(
     nonce: &str,
     state: &str,
@@ -558,6 +616,37 @@ pub fn run(args: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_status_stage_is_finite_and_absent_on_success() {
+        let value = status_value_with_stage(
+            "n",
+            "failed",
+            "identity_mismatch",
+            None,
+            true,
+            Some(FailureStage::DescriptorValidation),
+        )
+        .unwrap();
+        assert_eq!(value["failure_stage"], "descriptor_validation");
+        assert_eq!(value["reason"], "identity_mismatch");
+        assert_eq!(value["tree_drained"], true);
+        assert!(serde_json::from_str::<FailureStage>(r#""exception detail""#).is_err());
+        assert!(status_value_with_stage(
+            "n",
+            "ready",
+            "none",
+            None,
+            true,
+            Some(FailureStage::ParentAccess)
+        )
+        .is_err());
+        let ready = status_value_with_stage("n", "ready", "none", None, true, None).unwrap();
+        assert!(ready.get("failure_stage").is_none());
+        assert!(status_value("n", "failed", "identity_mismatch", None, true)
+            .unwrap()
+            .get("failure_stage")
+            .is_none());
+    }
     #[test]
     fn strict_private_arguments() {
         let args = [

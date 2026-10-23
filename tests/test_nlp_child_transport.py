@@ -41,7 +41,7 @@ def test_failed_observation_retains_exact_drained_owner_after_launcher_removal(m
         check()
         status = BytesIO()
         write_frame(status, payload_bytes(HostStatus(schema='nlp-host-status.v1', channel_nonce=nonce, state='failed',
-            reason='identity_mismatch', worker_pid=None, tree_drained=True)))
+            reason='identity_mismatch', worker_pid=None, tree_drained=True, failure_stage='parent_access')))
         status.seek(0)
         resources = ExitStack()
         resources.callback(lambda: closed.append(True))
@@ -67,6 +67,7 @@ def test_failed_observation_retains_exact_drained_owner_after_launcher_removal(m
     owner = raised.value.owner
     assert owner is owners[0] and owner._closed and closed == [True]
     assert owner._terminal.state == 'failed' and owner._terminal.reason == 'identity_mismatch'
+    assert owner._terminal.failure_stage == 'parent_access'
     assert owner._terminal.tree_drained and not owner._failure and not owner.graceful
     assert not owner._reader.is_alive() and all(not thread.is_alive() for thread in owner._writers)
     assert launcher._owners == set() and not launcher.current(identity)
@@ -202,6 +203,27 @@ def test_host_status_separates_physical_drain_from_failure():
     with pytest.raises(ValueError):
         _decode(HostStatus, json.dumps(body).encode(), 'host')
     assert json.loads(payload_bytes(HostControl(channel_nonce=NONCE, operation='close')))['schema'] == 'nlp-host-control.v1'
+
+
+@pytest.mark.parametrize('stage', ['parent_access', 'descriptor_validation', 'engine_selection', None])
+def test_failed_host_stage_remains_closed_and_optional(stage):
+    body = dict(schema='nlp-host-status.v1', channel_nonce=NONCE, state='failed',
+        reason='identity_mismatch', worker_pid=None, tree_drained=True)
+    assert _decode(HostStatus, json.dumps(body).encode(), 'host').failure_stage is None
+    body['failure_stage'] = stage
+    assert _decode(HostStatus, json.dumps(body).encode(), 'host').failure_stage == stage
+
+
+@pytest.mark.parametrize('mutation', [dict(failure_stage='exception detail'), dict(failure_stage=1),
+    dict(failure_stage={'path': 'untrusted'}), dict(state='ready', reason='none'),
+    dict(state='drained', reason='none'),
+    dict(state='running', reason='none', worker_pid=123, tree_drained=False)])
+def test_host_stage_rejects_unknown_data_and_nonfailed_states(mutation):
+    body = dict(schema='nlp-host-status.v1', channel_nonce=NONCE, state='failed',
+        reason='identity_mismatch', worker_pid=None, tree_drained=True, failure_stage='parent_access')
+    body.update(mutation)
+    with pytest.raises(ValueError):
+        _decode(HostStatus, json.dumps(body).encode(), 'host')
 
 
 @pytest.mark.parametrize('tail', [b'\x01', struct.pack('<I', 2) + b'{}'])
