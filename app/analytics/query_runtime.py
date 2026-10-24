@@ -20,7 +20,14 @@ class PricingNotQualified(AnalyticsError):
 
 
 class QuestionResources:
-    def __init__(self, source, pipeline, *, clock=lambda: datetime.now(timezone.utc)):
+    def __init__(self, source, pipeline, *, clock=lambda: datetime.now(timezone.utc),
+                 findings_navigation=None):
+        from app.analytics.nlp_navigation import NavigationRegistry
+
+        if findings_navigation is not None and not isinstance(findings_navigation, NavigationRegistry):
+            raise ValueError('findings_navigation_invalid')
+        self._findings_navigation = (NavigationRegistry() if findings_navigation is None
+                                     else findings_navigation)
         self.source, self.pipeline, self.clock = source, pipeline, clock
         self._pending_questions = getattr(pipeline, '_pending_questions', None)
         self.secret = secrets.token_bytes(32)
@@ -35,6 +42,10 @@ class QuestionResources:
         self._connections = QuestionConnectionPool()
         self._work = getattr(source, '_question_work', None) or QuestionWork()
         self.closed = False
+
+    @property
+    def findings_navigation(self):
+        return self._findings_navigation
 
     def _remember(self, policy):
         account = authorized_account(policy, None)
@@ -136,6 +147,19 @@ class QuestionResources:
         try:
             with self._work.foreground():
                 return read(self, policy, request, cancellation_check=cancellation_check)
+        finally:
+            self._slots.release()
+
+    def grouped_findings(self, policy, request, *, cancellation_check=None):
+        """Group saved categories within the existing read limits."""
+        from app.analytics.errors import ProjectionBackpressure
+        from app.analytics.nlp_navigation import read_grouped
+
+        if not self._slots.acquire(blocking=False):
+            raise ProjectionBackpressure()
+        try:
+            with self._work.foreground():
+                return read_grouped(self, policy, request, cancellation_check=cancellation_check)
         finally:
             self._slots.release()
 

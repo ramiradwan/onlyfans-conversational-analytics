@@ -23,6 +23,7 @@ from app.models.graph import ExtendedConversationNode
 from app.analytics.query_contracts import Count, Instant, QuestionEvidence, QuestionRecord
 from app.nlp.contracts import Identifier
 from app.nlp.profiles import PolicyIdentity, TaskName
+from app.nlp.navigation import CategoryNavigationDescriptor, navigation_identity
 
 
 class AnalyticsErrorDetail(BaseModel):
@@ -347,4 +348,101 @@ class FilteredFindingsResponse(SubsetFindingsResponse):
         return self
 
 
-FindingsReadResponse = Annotated[FindingsResponse | SubsetFindingsResponse | FilteredFindingsResponse, Field(discriminator='schema_version')]
+class GroupedFindingsRequest(FindingsRequest):
+    view: Literal['grouped']
+    expected_navigation_sha256: Sha256Digest | None = None
+
+    @model_validator(mode='after')
+    def pinned_pages(self):
+        if (self.evidence_offset or self.conversation_offset) and self.expected_navigation_sha256 is None:
+            raise ValueError('navigation pin required for pagination')
+        return self
+
+
+class NavigationGroupRow(QuestionRecord):
+    group_id: Identifier
+    task: TaskName
+    supporting_messages: Count
+    supporting_conversations: Count
+    complete_supporting_messages: Count
+    partial_supporting_messages: Count
+    share_of_complete_messages: Annotated[float, Field(ge=0, le=1)] | None
+
+    @model_validator(mode='after')
+    def support_partition(self):
+        if (self.supporting_messages != self.complete_supporting_messages + self.partial_supporting_messages
+                or self.supporting_conversations > self.supporting_messages
+                or bool(self.supporting_conversations) != bool(self.supporting_messages)):
+            raise ValueError('navigation support counts mismatch')
+        return self
+
+
+class NavigationRead(QuestionRecord):
+    availability: Literal['available', 'not_declared']
+    policy: PolicyIdentity | None
+    declaration: CategoryNavigationDescriptor | None
+    current: Annotated[tuple[NavigationGroupRow, ...], Field(max_length=16)]
+    previous: Annotated[tuple[NavigationGroupRow, ...], Field(max_length=16)] | None
+
+    @model_validator(mode='after')
+    def exact_declaration(self):
+        if self.availability == 'not_declared':
+            if self.policy is not None or self.declaration is not None or self.current or self.previous is not None:
+                raise ValueError('undeclared navigation has results')
+            return self
+        if self.declaration is None or self.policy != navigation_identity(self.declaration):
+            raise ValueError('navigation identity mismatch')
+        expected = [(group.group_id, group.task) for group in self.declaration.groups]
+        for rows in (self.current, self.previous):
+            if rows is not None and [(row.group_id, row.task) for row in rows] != expected:
+                raise ValueError('navigation row order mismatch')
+        return self
+
+
+class GroupedFindingsResponse(SubsetFindingsResponse):
+    schema_version: Literal['analytics-findings.v4'] = 'analytics-findings.v4'
+    view: Literal['grouped'] = 'grouped'
+    category_filter: FindingsCategoryFilter | None
+    navigation: NavigationRead
+
+    @model_validator(mode='after')
+    def grouped_population(self):
+        selected = self.category_filter
+        if selected is not None:
+            if not any(task.task == selected.task and any(row.category_id == selected.category_id for row in task.rows)
+                       for task in self.tasks):
+                raise ValueError('findings category mismatch')
+            if any(item.task != selected.task or item.category_id != selected.category_id
+                   for item in self.evidence_page.items):
+                raise ValueError('findings category evidence mismatch')
+        navigation = self.navigation
+        if navigation.availability == 'not_declared':
+            return self
+        declaration = navigation.declaration
+        if declaration.source_presentation != self.presentation:
+            raise ValueError('navigation presentation mismatch')
+        bindings = {binding.task: binding for binding in declaration.bindings}
+        if set(bindings) != {task.task for task in self.tasks}:
+            raise ValueError('navigation declared task mismatch')
+        for task in self.tasks:
+            binding = bindings[task.task]
+            if (binding.task_contract != task.task_contract or binding.taxonomy != task.taxonomy
+                    or binding.enabled_ids != tuple(sorted(row.category_id for row in task.rows))):
+                raise ValueError('navigation category binding mismatch')
+        if (navigation.previous is not None) != (self.comparison.availability == 'available'):
+            raise ValueError('navigation comparison mismatch')
+        for rows, tasks in ((navigation.current, self.tasks), (navigation.previous, self.comparison.tasks)):
+            if rows is None:
+                continue
+            by_task = {task.task: task for task in tasks}
+            for row in rows:
+                task = by_task[row.task]
+                expected = row.complete_supporting_messages / task.complete_messages if task.complete_messages else None
+                if (row.complete_supporting_messages > task.complete_messages
+                        or row.partial_supporting_messages > task.partial_messages
+                        or row.share_of_complete_messages != expected):
+                    raise ValueError('navigation denominator mismatch')
+        return self
+
+
+FindingsReadResponse = Annotated[FindingsResponse | SubsetFindingsResponse | FilteredFindingsResponse | GroupedFindingsResponse, Field(discriminator='schema_version')]

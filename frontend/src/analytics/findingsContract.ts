@@ -13,7 +13,8 @@ const policy = z.object({ policy_id: identifier, revision: identifier, sha256: z
 const taskName = z.enum(['message_topics', 'concept_mentions']);
 const categoryFilter = z.object({ task: taskName, category_id: identifier }).strict();
 const conversationRef = z.string().regex(/^c1:[0-9a-f]{64}$/);
-const row = z.object({ category_id: identifier, display_label: z.string().min(1).max(256),
+const displayLabel = z.string().refine((value) => Array.from(value).length >= 1 && Array.from(value).length <= 256);
+const row = z.object({ category_id: identifier, display_label: displayLabel,
   label_status: z.enum(['resolved', 'id_only']), label_identity_sha256: digest,
   supporting_messages: count, supporting_conversations: count, occurrences: count,
   complete_supporting_messages: count, partial_supporting_messages: count,
@@ -46,10 +47,28 @@ const taskAvailability = z.object({ task: taskName,
 const subsetResponse = response.extend({ schema_version: z.literal('analytics-findings.v2'),
   tasks: z.array(task).min(1).max(2), task_availability: z.array(taskAvailability).length(2) });
 const filteredResponse = subsetResponse.extend({ schema_version: z.literal('analytics-findings.v3'), category_filter: categoryFilter });
-const versionedResponse = z.discriminatedUnion('schema_version', [response, subsetResponse, filteredResponse]);
+const safeLabel = displayLabel.refine((value) => !/\p{C}/u.test(value));
+const navigationDeclaration = z.object({ schema_version: z.literal('nlp-category-navigation.v1'),
+  policy_id: identifier, revision: identifier, source_presentation: policy,
+  bindings: z.array(z.object({ task: taskName, task_contract: identifier, taxonomy: policy,
+    enabled_ids: z.array(identifier).max(64) }).strict()).min(1).max(2),
+  groups: z.array(z.object({ group_id: identifier, display_label: safeLabel, task: taskName,
+    member_ids: z.array(identifier).min(1).max(64) }).strict()).max(16) }).strict();
+const navigationRow = z.object({ group_id: identifier, task: taskName,
+  supporting_messages: count, supporting_conversations: count, complete_supporting_messages: count,
+  partial_supporting_messages: count, share_of_complete_messages: z.number().min(0).max(1).nullable() }).strict();
+const groupedResponse = subsetResponse.extend({ schema_version: z.literal('analytics-findings.v4'),
+  view: z.literal('grouped'), category_filter: categoryFilter.nullable(),
+  navigation: z.object({ availability: z.enum(['available', 'not_declared']), policy: policy.nullable(),
+    declaration: navigationDeclaration.nullable(), current: z.array(navigationRow).max(16),
+    previous: z.array(navigationRow).max(16).nullable() }).strict() });
+const versionedResponse = z.discriminatedUnion('schema_version', [response, subsetResponse, filteredResponse, groupedResponse]);
 export type FindingsResponseV1 = z.infer<typeof response>;
 export type FindingsResponseV2 = z.infer<typeof subsetResponse>;
 export type FindingsResponseV3 = z.infer<typeof filteredResponse>;
+export type FindingsResponseV4 = z.infer<typeof groupedResponse>;
+export type NavigationDeclaration = z.infer<typeof navigationDeclaration>;
+export type NavigationGroupRow = z.infer<typeof navigationRow>;
 export type FindingsCategoryFilter = z.infer<typeof categoryFilter>;
 export type FindingsResponse = z.infer<typeof versionedResponse>;
 export type FindingsTask = FindingsResponse['tasks'][number];
@@ -64,6 +83,8 @@ export interface FindingsRequest {
   conversation_offset: number;
   conversation_limit: number;
   category_filter?: FindingsCategoryFilter | null;
+  view?: 'grouped';
+  expected_navigation_sha256?: string | null;
 }
 export class FindingsContractError extends Error {
   constructor() { super('These text analysis results could not be verified. Refresh the analytics view.'); }
@@ -83,12 +104,17 @@ function checkEffective(window: FindingsResponse['effective_window'], start: big
       || (end !== null && (exclusiveEnd ? last >= end : last > end))) throw new FindingsContractError();
   }
 }
-export function parseFindings(value: unknown, request: FindingsRequest): FindingsResponse {
+function parseResponse(value: unknown, request: FindingsRequest): FindingsResponse {
   const checked = versionedResponse.safeParse(value);
   if (!checked.success) throw new FindingsContractError();
   const result = checked.data;
   const selected = request.category_filter ?? null;
-  if (selected === null ? result.schema_version === 'analytics-findings.v3'
+  if (request.view === 'grouped' ? result.schema_version !== 'analytics-findings.v4'
+    : result.schema_version === 'analytics-findings.v4' || request.expected_navigation_sha256 != null) throw new FindingsContractError();
+  if (result.schema_version === 'analytics-findings.v4'
+    ? selected === null ? result.category_filter !== null
+      : result.category_filter?.task !== selected.task || result.category_filter.category_id !== selected.category_id
+    : selected === null ? result.schema_version === 'analytics-findings.v3'
     : result.schema_version !== 'analytics-findings.v3'
       || result.category_filter.task !== selected.task || result.category_filter.category_id !== selected.category_id) throw new FindingsContractError();
   if (selected && !result.tasks.some((item) => item.task === selected.task && item.rows.some((r) => r.category_id === selected.category_id))) throw new FindingsContractError();
@@ -168,6 +194,99 @@ export function parseFindings(value: unknown, request: FindingsRequest): Finding
       || (item.task === 'message_topics' && item.reference.span != null)
       || (start !== null && at < start) || (end !== null && at > end)) throw new FindingsContractError();
     keys.add(key);
+  }
+  return result;
+}
+
+export function parseFindings(value: unknown, request: FindingsRequest): FindingsResponse {
+  if (request.view === 'grouped') throw new FindingsContractError();
+  return parseResponse(value, request);
+}
+
+/** The descriptor uses ASCII sorted-key JSON, including escaped UTF-16 pairs. */
+export function navigationCanonicalJson(value: unknown): string {
+  function ordered(item: unknown): unknown {
+    if (Array.isArray(item)) return item.map(ordered);
+    if (item !== null && typeof item === 'object') return Object.fromEntries(
+      Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, child]) => [key, ordered(child)]));
+    return item;
+  }
+  return JSON.stringify(ordered(value)).replace(/[\u007f-\uffff]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
+async function canonicalDigest(value: unknown): Promise<string> {
+  const raw = new TextEncoder().encode(navigationCanonicalJson(value));
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', raw)),
+    (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export async function parseGroupedFindings(value: unknown, request: FindingsRequest): Promise<FindingsResponseV4> {
+  const result = parseResponse(value, request);
+  if (result.schema_version !== 'analytics-findings.v4') throw new FindingsContractError();
+  const pin = request.expected_navigation_sha256;
+  if ((pin != null && !digest.safeParse(pin).success)
+    || ((request.evidence_offset > 0 || request.conversation_offset > 0) && pin == null)) throw new FindingsContractError();
+  const nav = result.navigation;
+  if (nav.availability === 'not_declared') {
+    if (pin != null || nav.policy !== null || nav.declaration !== null || nav.current.length || nav.previous !== null) throw new FindingsContractError();
+  } else {
+    const declaration = nav.declaration; const identity = nav.policy;
+    if (!declaration || !identity || identity.policy_id !== declaration.policy_id || identity.revision !== declaration.revision
+      || JSON.stringify(declaration.source_presentation) !== JSON.stringify(result.presentation)
+      || navigationCanonicalJson(declaration).length > 65_536
+      || identity.sha256 !== await canonicalDigest(declaration)
+      || (pin != null && pin !== `sha256:${identity.sha256}`)) throw new FindingsContractError();
+    const names = declaration.bindings.map((item) => item.task);
+    const sorted = [...names].sort();
+    if (new Set(names).size !== names.length || names.some((name, i) => name !== sorted[i])
+      || names.length !== result.tasks.length) throw new FindingsContractError();
+    for (const binding of declaration.bindings) {
+      const task = result.tasks.find((item) => item.task === binding.task);
+      const enabled = [...binding.enabled_ids].sort();
+      if (!task || task.task_contract !== binding.task_contract || JSON.stringify(task.taxonomy) !== JSON.stringify(binding.taxonomy)
+        || new Set(enabled).size !== enabled.length || enabled.some((id, i) => id !== binding.enabled_ids[i])
+        || JSON.stringify([...task.rows.map((row) => row.category_id)].sort()) !== JSON.stringify(enabled)) throw new FindingsContractError();
+    }
+    const groups = declaration.groups;
+    if (new Set(groups.map((group) => group.group_id)).size !== groups.length
+      || groups.reduce((total, group) => total + group.member_ids.length, 0) > 256) throw new FindingsContractError();
+    for (const group of groups) {
+      const binding = declaration.bindings.find((item) => item.task === group.task);
+      if (!binding || new Set(group.member_ids).size !== group.member_ids.length
+        || group.member_ids.some((id) => !binding.enabled_ids.includes(id))) throw new FindingsContractError();
+    }
+    function checkRows(rows: NavigationGroupRow[], tasks: FindingsTask[]) {
+      if (rows.length !== groups.length) throw new FindingsContractError();
+      for (const [i, row] of rows.entries()) {
+        const group = groups[i]; const task = tasks.find((item) => item.task === group.task);
+        if (!task || row.group_id !== group.group_id || row.task !== group.task) throw new FindingsContractError();
+        const members = task.rows.filter((item) => group.member_ids.includes(item.category_id));
+        const unionBounds = (field: 'supporting_messages' | 'supporting_conversations' | 'complete_supporting_messages' | 'partial_supporting_messages') => {
+          const values = members.map((item) => item[field]);
+          return row[field] >= Math.max(0, ...values) && BigInt(row[field]) <= values.reduce((a, b) => a + BigInt(b), 0n);
+        };
+        if (!unionBounds('supporting_messages') || !unionBounds('supporting_conversations')
+          || !unionBounds('complete_supporting_messages') || !unionBounds('partial_supporting_messages')
+          || row.supporting_conversations > row.supporting_messages || Boolean(row.supporting_conversations) !== Boolean(row.supporting_messages)
+          || row.complete_supporting_messages > task.complete_messages
+          || row.partial_supporting_messages > task.partial_messages
+          || BigInt(row.supporting_messages) !== BigInt(row.complete_supporting_messages) + BigInt(row.partial_supporting_messages)
+          || (task.complete_messages === 0 ? row.share_of_complete_messages !== null
+            : row.share_of_complete_messages !== row.complete_supporting_messages / task.complete_messages)) throw new FindingsContractError();
+      }
+    }
+    checkRows(nav.current, result.tasks);
+    if (result.comparison.availability === 'available') {
+      if (nav.previous === null) throw new FindingsContractError();
+      checkRows(nav.previous, result.comparison.tasks);
+    } else if (nav.previous !== null) throw new FindingsContractError();
+  }
+  for (const task of result.tasks) for (const row of task.rows) {
+    const body = { presentation: result.presentation, task_contract: task.task_contract, taxonomy: task.taxonomy,
+      category_id: row.category_id, display_label: row.display_label, label_status: row.label_status };
+    if (!safeLabel.safeParse(row.display_label).success
+      || row.label_identity_sha256 !== `sha256:${await canonicalDigest(body)}`) throw new FindingsContractError();
   }
   return result;
 }
