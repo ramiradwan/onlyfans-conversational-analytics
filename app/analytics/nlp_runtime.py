@@ -15,6 +15,7 @@ from typing import Callable
 from app.analytics.errors import ProjectionBuildCancelled, ProjectionCoordinatorClosed, ProjectionStorageUnavailable
 from app.analytics.nlp_findings_store import FindingsStore, MAX_ACCOUNTS
 from app.analytics.nlp_processing import FindingsRunner
+from app.analytics.nlp_execution import require_findings_execution
 from app.analytics.opaque_refs import account_ref
 from app.analytics.query_execution import QuestionCancelled
 from app.analytics.scheduling import _OwnedBoundedExecutor
@@ -139,6 +140,7 @@ class _AcknowledgedPipeline:
 
 class FindingsRuntime:
     def __init__(self, source, pipeline, configuration, authorize):
+        require_findings_execution()
         self.source, self.pipeline = source, pipeline
         self.configuration, self.authorize_account = configuration, authorize
         self._stop = threading.Event()

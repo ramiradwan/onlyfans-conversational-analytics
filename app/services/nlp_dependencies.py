@@ -13,6 +13,7 @@ import threading
 import time
 from uuid import uuid4
 
+from app.analytics.nlp_execution import require_findings_execution
 from app.nlp import adapter
 from app.nlp.artifact_store import DATA_ROLES, ArtifactStoreError
 from app.nlp.profile_authentication import authenticate_profile, MAX_ENVELOPE_BYTES
@@ -232,8 +233,10 @@ class DependencyService:
 
     @contextmanager
     def retain(self, profile):
+        require_findings_execution()
         with self._retention(profile, ready=True):
             def execute(request, cancelled):
+                require_findings_execution()
                 deadline = self.monotonic() + request.deadline_ms / 1000
 
                 def check():
@@ -626,6 +629,7 @@ class DependencyService:
         return total
 
     def _prepare(self, profile, available, check):
+        require_findings_execution()
         deadline = self.monotonic() + 120
         request = adapter.HandshakeRequest(request_id=uuid4().hex, expected_engine=profile.components[0].engine)
         with self.engine.open(profile, available, check, deadline=deadline) as session:

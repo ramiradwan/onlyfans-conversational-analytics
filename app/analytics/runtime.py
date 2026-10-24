@@ -21,6 +21,7 @@ from app.analytics.pipeline import AnalyticsPipeline, CanonicalReadModelSource
 from app.analytics.scheduling import InProcessProjectionScheduler
 from app.analytics.query_runtime import QuestionResources
 from app.analytics.nlp_runtime import FindingsConfiguration, FindingsRuntime
+from app.analytics.nlp_execution import require_findings_execution
 from app.analytics.nlp_navigation import NavigationRegistry
 from app.core.config import settings
 from app.persistence.projection_activation import ProjectionActivationRepository
@@ -96,6 +97,8 @@ def configure_default_analytics_runtime(
         raise ValueError(f"Unsupported analytics backend {backend!r}")
     if findings is not None and (backend != 'sqlite' or not isinstance(findings, FindingsConfiguration)):
         raise ValueError('findings_configuration_invalid')
+    if findings is not None:
+        require_findings_execution()
     if findings_navigation is not None and not isinstance(findings_navigation, NavigationRegistry):
         raise ValueError('findings_navigation_invalid')
     configuration = _DefaultRuntimeConfiguration(
