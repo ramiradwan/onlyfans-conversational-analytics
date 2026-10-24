@@ -572,7 +572,8 @@
         "app/__init__.py",
         "app/.env.example",
         "app/README.md",
-        "app/models/nlp_literals.py"
+        "app/models/nlp_literals.py",
+        "app/models/nlp_observations.py"
       ],
       "role": "Top-level application assembly, FastAPI application lifecycle, CLI entrypoints, core shared models/utilities, and bootstrap composition.",
       "authority": "composition",
@@ -695,7 +696,8 @@
         "app/analytics/source_coverage.py",
         "app/analytics/exchange_*.py",
         "app/analytics/nlp_literals.py",
-        "app/analytics/nlp_literal_read.py"
+        "app/analytics/nlp_literal_read.py",
+        "app/analytics/nlp_observation_read.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",

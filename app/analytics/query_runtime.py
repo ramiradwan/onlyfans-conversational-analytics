@@ -163,6 +163,19 @@ class QuestionResources:
         finally:
             self._slots.release()
 
+    def observation_links(self, policy, request, *, cancellation_check=None):
+        """Read saved source links within the existing foreground limits."""
+        from app.analytics.errors import ProjectionBackpressure
+        from app.analytics.nlp_observation_read import read
+
+        if not self._slots.acquire(blocking=False):
+            raise ProjectionBackpressure()
+        try:
+            with self._work.foreground():
+                return read(self, policy, request, cancellation_check=cancellation_check)
+        finally:
+            self._slots.release()
+
     def _request_refresh(self, account):
         with self._lock:
             if account in self._policies:

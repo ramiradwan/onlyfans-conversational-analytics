@@ -1,10 +1,10 @@
-<!-- CODE-VERIFY: Check app/nlp/contracts.py, profiles.py, v2.py, adapter.py, app/analytics/runtime.py, app/analytics/nlp_literals.py, app/analytics/nlp_literal_read.py, tests/test_nlp_literal_publication.py, tests/test_nlp_literal_read.py, app/services/nlp_dependencies.py, tools/generate_nlp_contracts.py, shared/nlp/ and tests/test_nlp_contracts.py for contract facts. Native worker and installed delivery behavior require separate qualification. -->
+<!-- CODE-VERIFY: Check app/nlp/contracts.py, profiles.py, v2.py, adapter.py, app/analytics/runtime.py, app/analytics/nlp_literals.py, app/analytics/nlp_literal_read.py, app/analytics/nlp_observation_read.py, app/models/nlp_observations.py, tests/test_nlp_literal_publication.py, tests/test_nlp_literal_read.py, tests/test_nlp_observation_read.py, app/services/nlp_dependencies.py, tools/generate_nlp_contracts.py, shared/nlp/ and tests/test_nlp_contracts.py for contract facts. Native worker and installed delivery behavior require separate qualification. -->
 
 # ADR 0057: Define optional local NLP computation and shared findings
 
 - Status: Accepted; runtime activation requires separate qualification.
 - Date: 2026-10-19
-- Amended: 2026-10-23
+- Amended: 2026-10-24
 - Extends: ADRs 0009, 0027 and 0056. ADR 0012 remains proposed.
 
 ## Decision
@@ -44,3 +44,5 @@ V2 descriptors declare bounded safe-integer resource costs independently of admi
 `analytics-literals.v1` exposes distinct occurrence, message and conversation counts with exact source references and independent extraction/normalization coverage. Paging and selection pin the normalization publication identity; percentages remain unavailable.
 
 `analytics-findings.v4` adds an explicit grouped read. A constructor-injected registry admits immutable navigation declarations bound to the saved presentation, complete task set, taxonomies and enabled categories. Group support uses distinct-message and conversation unions before category filtering; complete-message shares retain the existing task denominators. Pagination pins the declaration identity. An undeclared grouping retains flat category reads. Navigation changes neither processing profiles nor saved generations, and grouped failures do not schedule analysis or projection recovery.
+
+`analytics-observation-links.v1` projects message-topic and exact literal-occurrence links from saved findings. Category selection covers either task; literal selection pins its normalization publication. Mapped support counts remain distinct from extraction coverage, including unrepresentable literals. Pages bind the complete selected view identity and retain source, account, generation and retention checks. Topic links use whole-message evidence; literal links retain exact source spans. The view leaves baseline graph identities unchanged and schedules no analysis or recovery.
