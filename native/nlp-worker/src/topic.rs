@@ -49,6 +49,14 @@ struct Decoding {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct Group {
+    group_id: String,
+    task_name: String,
+    instruction: Option<String>,
+    label_ids: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Config {
     schema: String,
     graphs: Graphs,
@@ -58,6 +66,8 @@ struct Config {
     labels: Vec<Mapping>,
     policies: BTreeMap<String, Value>,
     decoding: Decoding,
+    #[serde(default)]
+    groups: Option<Vec<Group>>,
 }
 
 pub struct TopicAdapter {
@@ -151,19 +161,27 @@ fn bind_labels(component: &Value, cfg: &Config) -> Result<Vec<(String, String)>>
 fn parse_config(component: &Value, bytes: &[u8]) -> Result<(Config, Vec<(String, String)>)> {
     ensure!(bytes.len() <= 65536, "resource_limit");
     let value = wire::parse(bytes)?;
-    wire::object(
-        &value,
-        &[
-            "schema",
-            "graphs",
-            "tokenizer",
-            "task_name",
-            "instruction",
-            "labels",
-            "policies",
-            "decoding",
-        ],
-    )?;
+    let mut keys = vec![
+        "schema",
+        "graphs",
+        "tokenizer",
+        "task_name",
+        "instruction",
+        "labels",
+        "policies",
+        "decoding",
+    ];
+    if value.get("groups").is_some() {
+        ensure!(value["groups"].is_array(), "binding_mismatch");
+        for group in value["groups"].as_array().unwrap() {
+            wire::object(
+                group,
+                &["group_id", "task_name", "instruction", "label_ids"],
+            )?;
+        }
+        keys.push("groups");
+    }
+    wire::object(&value, &keys)?;
     let cfg: Config = serde_json::from_value(value)?;
     let d = &cfg.decoding;
     ensure!(
@@ -205,6 +223,7 @@ fn parse_config(component: &Value, bytes: &[u8]) -> Result<(Config, Vec<(String,
         );
     }
     let conditioning = bind_labels(component, &cfg)?;
+    classification_views(&cfg, &conditioning)?;
     Ok((cfg, conditioning))
 }
 
@@ -264,6 +283,100 @@ fn schema(cfg: &Config, conditioning: &[(String, String)]) -> Vec<String> {
         cfg.instruction.as_deref(),
         conditioning,
     )
+}
+
+struct ClassificationView {
+    indices: Vec<usize>,
+    schema: Vec<String>,
+}
+
+fn classification_views(
+    cfg: &Config,
+    conditioning: &[(String, String)],
+) -> Result<Vec<ClassificationView>> {
+    let Some(groups) = &cfg.groups else {
+        return Ok(vec![ClassificationView {
+            indices: (0..cfg.labels.len()).collect(),
+            schema: schema(cfg, conditioning),
+        }]);
+    };
+    ensure!(
+        !groups.is_empty() && groups.len() <= cfg.labels.len(),
+        "binding_mismatch"
+    );
+    let mut names = BTreeSet::new();
+    let mut assigned = BTreeSet::new();
+    let mut views = Vec::new();
+    for group in groups {
+        wire::id(&json!(group.group_id))?;
+        ensure!(
+            names.insert(&group.group_id) && !group.label_ids.is_empty(),
+            "binding_mismatch"
+        );
+        plain(&group.task_name, 256, true)?;
+        if let Some(instruction) = &group.instruction {
+            plain(instruction, 2048, false)?;
+        }
+        let mut indices = Vec::new();
+        for id in &group.label_ids {
+            let index = cfg
+                .labels
+                .iter()
+                .position(|label| &label.label_id == id)
+                .ok_or_else(|| anyhow::anyhow!("binding_mismatch"))?;
+            ensure!(assigned.insert(index), "binding_mismatch");
+            indices.push(index);
+        }
+        ensure!(
+            indices.windows(2).all(|pair| pair[0] < pair[1]),
+            "binding_mismatch"
+        );
+        let selected = indices
+            .iter()
+            .map(|&i| conditioning[i].clone())
+            .collect::<Vec<_>>();
+        let labels = selected
+            .iter()
+            .map(|label| label.0.clone())
+            .collect::<Vec<_>>();
+        views.push(ClassificationView {
+            indices,
+            schema: build_classification_schema_tokens_with_descriptions(
+                &group.task_name,
+                &labels,
+                group.instruction.as_deref(),
+                &selected,
+            ),
+        });
+    }
+    ensure!(assigned.len() == cfg.labels.len(), "binding_mismatch");
+    Ok(views)
+}
+
+fn assemble_logits<T>(
+    views: &[(Vec<usize>, T)],
+    count: usize,
+    mut infer: impl FnMut(&T) -> Result<Vec<f32>>,
+) -> Result<Vec<f32>> {
+    let mut logits = vec![None; count];
+    for (indices, input) in views {
+        let values = infer(input)?;
+        ensure!(
+            values.len() == indices.len() && values.iter().all(|v| v.is_finite()),
+            "classifier_output"
+        );
+        for (&index, value) in indices.iter().zip(values) {
+            ensure!(
+                index < count && logits[index].is_none(),
+                "classifier_output"
+            );
+            logits[index] = Some(value);
+        }
+    }
+    logits
+        .into_iter()
+        .map(|value| value.ok_or_else(|| anyhow::anyhow!("classifier_output")))
+        .collect()
 }
 
 fn words(text: &str, limit: usize) -> Result<Vec<String>> {
@@ -395,6 +508,141 @@ mod tests {
     }
     fn parsed(component: &Value, cfg: &Value) -> Result<(Config, Vec<(String, String)>)> {
         parse_config(component, &serde_json::to_vec(cfg)?)
+    }
+    fn grouped_example() -> (Value, Value) {
+        let (component, mut config) = example();
+        config["groups"] = json!([
+            {"group_id":"second", "task_name":"details", "instruction":"Inspect details", "label_ids":["topic.b"]},
+            {"group_id":"first", "task_name":"summary", "instruction":null, "label_ids":["topic.a"]}
+        ]);
+        (component, config)
+    }
+    #[test]
+    fn grouped_schema_uses_each_explicit_prompt_and_bound_description() {
+        let (component, config) = grouped_example();
+        let (cfg, conditioning) = parsed(&component, &config).unwrap();
+        let views = classification_views(&cfg, &conditioning).unwrap();
+        assert_eq!(views.len(), 2);
+        assert_eq!(views[0].indices, [1]);
+        assert_eq!(views[1].indices, [0]);
+        assert_eq!(
+            views[0].schema,
+            build_classification_schema_tokens_with_descriptions(
+                "details",
+                &["Second".into()],
+                Some("Inspect details"),
+                &[("Second".into(), "Second definition".into())]
+            )
+        );
+        assert_eq!(
+            views[1].schema,
+            build_classification_schema_tokens_with_descriptions(
+                "summary",
+                &["First".into()],
+                None,
+                &[("First".into(), "First definition".into())]
+            )
+        );
+        let (flat, values) = example();
+        let (cfg, conditioning) = parsed(&flat, &values).unwrap();
+        let views = classification_views(&cfg, &conditioning).unwrap();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].schema, schema(&cfg, &conditioning));
+        assert_eq!(views[0].indices, [0, 1]);
+    }
+    #[test]
+    fn group_partition_and_exact_fields_are_required() {
+        let (component, original) = grouped_example();
+        for groups in [
+            json!(null),
+            json!([]),
+            json!([{"group_id":"one","task_name":"topics","instruction":null,"label_ids":["topic.a"]}]),
+            json!([{"group_id":"one","task_name":"topics","instruction":null,"label_ids":["topic.a","topic.a"]}]),
+            json!([{"group_id":"one","task_name":"topics","instruction":null,"label_ids":["topic.a","missing"]}]),
+            json!([{"group_id":"one","task_name":"topics","instruction":null,"label_ids":["topic.b","topic.a"]}]),
+        ] {
+            let mut config = original.clone();
+            config["groups"] = groups;
+            assert!(parsed(&component, &config).is_err());
+        }
+        for change in 0..7 {
+            let mut config = original.clone();
+            match change {
+                0 => config["groups"][1]["group_id"] = json!("second"),
+                1 => config["groups"][0]["label_ids"] = json!([]),
+                2 => config["groups"][0]["task_name"] = json!("[L]"),
+                3 => config["groups"][0]["instruction"] = json!("[P]"),
+                4 => {
+                    config["groups"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("instruction");
+                }
+                5 => config["groups"][0]["extra"] = json!(true),
+                _ => config["unknown"] = json!(true),
+            }
+            assert!(parsed(&component, &config).is_err(), "case {change}");
+        }
+    }
+    #[test]
+    fn grouped_outputs_are_atomic_finite_and_in_global_order() {
+        let views = vec![(vec![1], vec![0.0]), (vec![0], vec![-2.0])];
+        let logits = assemble_logits(&views, 2, |v| Ok(v.clone())).unwrap();
+        assert_eq!(logits, [-2.0, 0.0]);
+        let (component, config) = example();
+        let (cfg, _) = parsed(&component, &config).unwrap();
+        let findings = decode(&component, &cfg, &logits).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0]["topic_id"], "topic.b");
+        for bad in [vec![], vec![f32::NAN], vec![f32::INFINITY], vec![0.0, 1.0]] {
+            let mut calls = 0;
+            assert!(
+                assemble_logits(&views, 2, |_| {
+                    calls += 1;
+                    Ok(if calls == 1 { vec![0.0] } else { bad.clone() })
+                })
+                .is_err()
+            );
+            assert_eq!(calls, 2);
+        }
+        let mut calls = 0;
+        assert!(
+            assemble_logits(&views, 2, |_| {
+                calls += 1;
+                if calls == 2 {
+                    anyhow::bail!("cancelled")
+                } else {
+                    Ok(vec![1.0])
+                }
+            })
+            .is_err()
+        );
+        assert!(assemble_logits(&views[..1], 2, |v| Ok(v.clone())).is_err());
+        let duplicate = vec![(vec![0], vec![1.0]), (vec![0], vec![1.0])];
+        assert!(assemble_logits(&duplicate, 2, |v| Ok(v.clone())).is_err());
+        let unknown = vec![(vec![2], vec![1.0])];
+        assert!(assemble_logits(&unknown, 2, |v| Ok(v.clone())).is_err());
+    }
+    #[test]
+    fn every_group_view_requires_its_complete_actual_routes() {
+        let (component, config) = grouped_example();
+        let (cfg, conditioning) = parsed(&component, &config).unwrap();
+        let views = classification_views(&cfg, &conditioning).unwrap();
+        for view in views {
+            let mut input = formatted(&view.schema);
+            assert!(label_routes(&input, &view.schema, view.indices.len(), 512).is_ok());
+            assert!(
+                label_routes(
+                    &input,
+                    &view.schema,
+                    view.indices.len(),
+                    input.input_ids.len() - 1
+                )
+                .is_err()
+            );
+            input.attention_mask[0] = 0;
+            assert!(label_routes(&input, &view.schema, view.indices.len(), 512).is_err());
+        }
     }
     fn files() -> BTreeMap<String, Artifact> {
         [
@@ -894,32 +1142,55 @@ impl TopicAdapter {
     pub fn extract(&self, text: &str, control: &Control) -> Result<Vec<Value>> {
         control.check()?;
         examine_words(text, self.config.decoding.max_words, |words| {
-            let schema = schema(&self.config, &self.conditioning);
-            let formatted =
-                format_input_with_mapping(&self.tokenizer, std::slice::from_ref(&schema), &words)?;
-            let routes = label_routes(
-                &formatted,
-                &schema,
-                self.conditioning.len(),
-                self.config.decoding.max_encoded_tokens,
+            // Admit every complete view before executing any encoder pass.
+            let mut admitted = Vec::new();
+            for view in classification_views(&self.config, &self.conditioning)? {
+                control.check()?;
+                let formatted = format_input_with_mapping(
+                    &self.tokenizer,
+                    std::slice::from_ref(&view.schema),
+                    &words,
+                )?;
+                label_routes(
+                    &formatted,
+                    &view.schema,
+                    view.indices.len(),
+                    self.config.decoding.max_encoded_tokens,
+                )?;
+                admitted.push((view.indices, (view.schema, formatted)));
+            }
+            let logits = assemble_logits(
+                &admitted,
+                self.config.labels.len(),
+                |(schema, formatted)| {
+                    control.check()?;
+                    let routes = label_routes(
+                        formatted,
+                        schema,
+                        schema
+                            .iter()
+                            .filter(|token| token.as_str() == "[L]")
+                            .count(),
+                        self.config.decoding.max_encoded_tokens,
+                    )?;
+                    let length = formatted.input_ids.len();
+                    let hidden = self.encoder.infer(
+                        Array2::from_shape_vec((1, length), formatted.input_ids.clone())?,
+                        Array2::from_shape_vec((1, length), formatted.attention_mask.clone())?,
+                    )?;
+                    control.check()?;
+                    let states =
+                        gather(&hidden, length, self.config.decoding.hidden_size, &routes)?;
+                    let logits = self.classifier.infer(states)?;
+                    control.check()?;
+                    Ok(logits
+                        .as_slice()
+                        .ok_or_else(|| anyhow::anyhow!("classifier_output"))?
+                        .to_vec())
+                },
             )?;
             control.check()?;
-            let length = formatted.input_ids.len();
-            let hidden = self.encoder.infer(
-                Array2::from_shape_vec((1, length), formatted.input_ids)?,
-                Array2::from_shape_vec((1, length), formatted.attention_mask)?,
-            )?;
-            control.check()?;
-            let states = gather(&hidden, length, self.config.decoding.hidden_size, &routes)?;
-            let logits = self.classifier.infer(states)?;
-            control.check()?;
-            let findings = decode(
-                &self.component,
-                &self.config,
-                logits
-                    .as_slice()
-                    .ok_or_else(|| anyhow::anyhow!("classifier_output"))?,
-            )?;
+            let findings = decode(&self.component, &self.config, &logits)?;
             control.check()?;
             Ok(findings)
         })
