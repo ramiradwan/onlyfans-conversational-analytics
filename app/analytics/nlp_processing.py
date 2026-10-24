@@ -14,6 +14,7 @@ from app.analytics.evidence_contracts import EvidenceLocation
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.analytics.identity import source_identity
 from app.analytics.nlp_findings_store import FrozenFindings, FindingsStore, PAGE_SIZE, MAX_SOURCES, MAX_LOCATORS, source_binding, encoded
+from app.analytics.nlp_execution import require_findings_execution
 from app.analytics.opaque_refs import account_ref
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
@@ -159,6 +160,7 @@ class FindingsRunner:
         return complete
 
     def process_one(self, account_id):
+        require_findings_execution()
         if self.dependencies is None:
             return self._process_one(account_id)
         self.authorize(account_id)
@@ -171,6 +173,7 @@ class FindingsRunner:
 
     def _process_one(self, account_id, *, bound_adapter=None, expected_profile=None):
         """Perform one bounded job; projection reads never call this method."""
+        require_findings_execution()
         if not _EXECUTION.acquire(blocking=False):
             return False
         claim=None
