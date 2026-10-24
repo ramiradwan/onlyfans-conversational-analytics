@@ -2,7 +2,10 @@ import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, 
 
 import type { FindingsState, FindingsStore } from '../../store/findingsStore';
 
-export function MentionEvidenceDialog({ state, actions }: { state: FindingsState; actions: FindingsStore['actions'] }) {
+export function MentionEvidenceDialog({ state, actions }: {
+  state: Pick<FindingsState, 'source' | 'sourceLoading' | 'sourceError'>;
+  actions: Pick<FindingsStore['actions'], 'closeSource'>;
+}) {
   const source = state.source;
   const span = source?.browser_span;
   return <Dialog open={state.sourceLoading || source !== null || state.sourceError !== null} onClose={actions.closeSource}

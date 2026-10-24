@@ -28,7 +28,8 @@ def documents_v2():
 def documents_normalization():
     models = (normalization.LiteralNode, normalization.OccurrenceAnchor,
               normalization.OccurrenceMapping, normalization.EquivalenceMembership,
-              normalization.NormalizationPublication)
+              normalization.NormalizationPublication, normalization.LiteralDisposition,
+              normalization.LiteralRecordState, normalization.LiteralPublicationEnvelope)
     return {model.__name__ + ".schema.json": model.model_json_schema() for model in models}
 
 

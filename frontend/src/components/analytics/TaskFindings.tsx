@@ -3,11 +3,13 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 
 import { ChartPanel } from './ChartPanel';
+import { LiteralFindings } from './LiteralFindings';
 import { MentionEvidenceDialog } from './MentionEvidenceDialog';
 import type { FindingsBaseline } from '../../analytics/analyticsReadModel';
 import { findingsTaskAvailability, type FindingsCategoryFilter, type FindingsDirection, type FindingsTask } from '../../analytics/findingsContract';
 import { formatCount, formatRatioPercent } from '../../analytics/formatAnalytics';
 import { createFindingsStore, findingsBinding, type FindingsStore } from '../../store/findingsStore';
+import type { LiteralsStore } from '../../store/literalsStore';
 import { bridgeTransportStore, type BridgeTransportStore } from '../../store/transportStore';
 
 const taskLabel = (task: FindingsTask['task']) => task === 'message_topics' ? 'Topics' : 'Mentions';
@@ -44,7 +46,7 @@ function TaskSection({ task, previous = false, onCategory, selected }: { task: F
 }
 
 interface Props {
-  baseline: FindingsBaseline | null; controller?: FindingsStore;
+  baseline: FindingsBaseline | null; controller?: FindingsStore; literalsController?: LiteralsStore;
   transport?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
 }
 export function TaskFindings(props: Props) {
@@ -52,7 +54,7 @@ export function TaskFindings(props: Props) {
   const account = useSyncExternalStore(transport.subscribe, () => transport.getState().creatorAccountId);
   return <FindingsSession key={account ?? 'unbound'} {...props} transport={transport} />;
 }
-function FindingsSession({ baseline, controller, transport = bridgeTransportStore }: Props) {
+function FindingsSession({ baseline, controller, literalsController, transport = bridgeTransportStore }: Props) {
   const store = useMemo(() => controller ?? createFindingsStore(), [controller]);
   const state = useStore(store);
   const [direction, setDirection] = useState<FindingsDirection>('all');
@@ -125,6 +127,7 @@ function FindingsSession({ baseline, controller, transport = bridgeTransportStor
         </Stack>
       </ChartPanel>
     </Stack>}
+    {baseline && <LiteralFindings baseline={baseline} direction={direction} conversation={conversation} category={category?.filter} controller={literalsController} transport={transport} />}
     <MentionEvidenceDialog state={state.binding === binding ? state : { ...state, source: null, sourceLoading: false, sourceError: null }} actions={store.actions} />
   </Stack>;
 }

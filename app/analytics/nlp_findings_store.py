@@ -261,6 +261,11 @@ class FindingsStore:
                 db.execute('DELETE FROM nlp_jobs WHERE account_ref=?',(ref,))
             if intent is not None:
                 db.execute('UPDATE nlp_accounts SET dependency_intent=? WHERE account_ref=?', (intent, ref))
+            from app.analytics.nlp_literals import ensure_namespace, LiteralUnavailable
+            try:
+                ensure_namespace(db, ref)
+            except LiteralUnavailable:
+                pass
 
     def selection_completed(self, account_id, intent, digest):
         with self.database.read() as db:
@@ -550,6 +555,11 @@ class FindingsStore:
             if db.execute('SELECT COALESCE(sum(length(document)),0) FROM nlp_records').fetchone()[0] + len(raw) > MAX_RECORD_STORAGE:
                 raise ValueError('nlp_record_storage_limit')
             db.execute('INSERT OR IGNORE INTO nlp_records VALUES(?,?,?)',(claim.account_ref,key,raw))
+            from app.analytics.nlp_literals import capture_record, LiteralUnavailable, LiteralIntegrityError
+            try:
+                capture_record(db, profile, source, record, key)
+            except (LiteralUnavailable, LiteralIntegrityError):
+                pass
             db.execute("UPDATE nlp_jobs SET state='done',record_digest=?,expires_at=NULL WHERE account_ref=? AND source_ref=?",
                 (key,claim.account_ref,claim.source_ref))
             db.execute('UPDATE nlp_accounts SET completion_revision=completion_revision+1,'

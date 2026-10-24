@@ -1,0 +1,176 @@
+{
+  "$defs": {
+    "Coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "source_codepoints": {
+          "maximum": 131072,
+          "minimum": 0,
+          "title": "Source Codepoints",
+          "type": "integer"
+        },
+        "examined": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Examined",
+          "type": "array"
+        },
+        "excluded": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Excluded",
+          "type": "array"
+        },
+        "limits_reached": {
+          "items": {
+            "enum": [
+              "tokens",
+              "windows",
+              "candidates",
+              "output"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Limits Reached",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_codepoints",
+        "examined",
+        "excluded",
+        "limits_reached"
+      ],
+      "title": "Coverage",
+      "type": "object"
+    },
+    "SourceBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "account_scope": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Account Scope",
+          "type": "string"
+        },
+        "source_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "source_version": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Version",
+          "type": "string"
+        },
+        "speaker_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Speaker Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_scope",
+        "source_ref",
+        "source_version",
+        "speaker_ref"
+      ],
+      "title": "SourceBinding",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Half-open Unicode codepoint offsets into unchanged original source text.",
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "canonicalization": {
+      "const": "nlp-canonical.v1",
+      "default": "nlp-canonical.v1",
+      "title": "Canonicalization",
+      "type": "string"
+    },
+    "record_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Record Sha256",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceBinding"
+    },
+    "outcome": {
+      "enum": [
+        "assessed_findings",
+        "assessed_no_match",
+        "partial",
+        "uncertain",
+        "unsupported",
+        "failed",
+        "unprocessed"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "coverage": {
+      "$ref": "#/$defs/Coverage"
+    },
+    "occurrences": {
+      "maximum": 512,
+      "minimum": 0,
+      "title": "Occurrences",
+      "type": "integer"
+    },
+    "mapped": {
+      "maximum": 512,
+      "minimum": 0,
+      "title": "Mapped",
+      "type": "integer"
+    },
+    "unrepresentable": {
+      "maximum": 512,
+      "minimum": 0,
+      "title": "Unrepresentable",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "record_sha256",
+    "source",
+    "outcome",
+    "coverage",
+    "occurrences",
+    "mapped",
+    "unrepresentable"
+  ],
+  "title": "LiteralRecordState",
+  "type": "object"
+}

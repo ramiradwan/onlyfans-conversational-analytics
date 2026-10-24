@@ -13,7 +13,8 @@ from uuid import uuid4
 from app.analytics.evidence_contracts import EvidenceLocation
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.analytics.identity import source_identity
-from app.analytics.nlp_findings_store import FindingsStore, PAGE_SIZE, MAX_SOURCES, MAX_LOCATORS, source_binding, encoded
+from app.analytics.nlp_findings_store import FrozenFindings, FindingsStore, PAGE_SIZE, MAX_SOURCES, MAX_LOCATORS, source_binding, encoded
+from app.analytics.opaque_refs import account_ref
 from app.analytics.pipeline import AnalyticsPipeline
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from app.nlp import v2
@@ -275,10 +276,17 @@ class FindingsRunner:
         revision=self.findings.state(account_id)['notification_revision']
         frozen=self.findings.freeze(account_id,canonical,label_resolver=self.label_resolver)
         profile=read_profile(self.findings.state(account_id)['profile_json'])
+        def published():
+            self.findings.acknowledge(account_id,revision)
+            from app.analytics.nlp_literals import LiteralUnavailable, LiteralIntegrityError
+            try:
+                self.publish_literals(account_id, frozen)
+            except (LiteralUnavailable, LiteralIntegrityError):
+                pass
         return FrozenFindingsPipeline(self.source,projections=self.projections,enrichment=self.enrichment,
             clock=self.clock,nlp_findings=frozen,nlp_authorize=lambda:self._cheap_publication_admission(account_id,due),
             nlp_admit=lambda:self._publication_admission(account_id),
-            on_published=lambda:self.findings.acknowledge(account_id,revision),
+            on_published=published,
             dependency_guard=(lambda:self.dependencies.publication(profile)) if self.dependencies is not None else nullcontext)
 
     async def notify_scheduler(self, scheduler, account_id):
@@ -299,3 +307,65 @@ class FindingsRunner:
         candidate=pipeline.build_candidate(account_id)
         self.authorize(account_id)
         return pipeline.publish_candidate(candidate)
+
+    def publish_literals(self, account_id, binding):
+        """Seal only cached derivations under the existing live source owner."""
+        from app.analytics.nlp_literals import publish
+        if type(binding) is not FrozenFindings or binding.account_ref != account_ref(account_id):
+            raise ValueError('nlp_literal_account_mismatch')
+        budget = self._budget()
+        self.authorize(account_id)
+        with self.source.open_question_scope(account_id, budget, verify_source_token=True,
+                                              prepare_identity=True) as scope:
+            result = publish(self.projections.database, binding, canonical=scope.identity,
+                             source_current=lambda: scope.check(budget), check=budget.check)
+            scope.check(budget)
+            return result
+
+    def backfill_literals(self, account_id, binding, *, maximum=PAGE_SIZE):
+        """Capture one bounded page of missing derivations without inference."""
+        from app.analytics.nlp_findings_store import require_current_snapshot
+        from app.analytics.nlp_literals import capture_record, supported, LiteralUnavailable
+        if type(binding) is not FrozenFindings or binding.account_ref != account_ref(account_id):
+            raise ValueError('nlp_literal_account_mismatch')
+        if not 1 <= maximum <= PAGE_SIZE:
+            raise ValueError('nlp_literal_backfill_limit')
+        self.authorize(account_id)
+        budget = self._budget()
+        completed = 0
+        with self.source.open_question_scope(account_id, budget, verify_source_token=True,
+                                              prepare_identity=True) as scope:
+            with self.projections.database.read() as db:
+                if not supported(db):
+                    raise LiteralUnavailable()
+                value = require_current_snapshot(db, binding, scope.identity, verify_records=False)
+                profile = read_profile(encoded(value['snapshot']['profile']))
+                page = []
+                for key in value['records']:
+                    budget.check()
+                    if not db.execute('SELECT 1 FROM nlp_literal_derivations WHERE account_ref=? AND record_digest=?',
+                                      (binding.account_ref,key)).fetchone():
+                        raw = db.execute('SELECT document FROM nlp_records WHERE account_ref=? AND record_digest=?',
+                                         (binding.account_ref,key)).fetchone()
+                        if raw is None or hashlib.sha256(bytes(raw[0])).hexdigest() != key:
+                            raise ValueError('nlp_record_invalid')
+                        record = v2.read_record(bytes(raw[0]))
+                        location = db.execute('SELECT conversation_id,message_id FROM nlp_sources WHERE account_ref=? AND source_ref=?',
+                                              (binding.account_ref,record.source.source_ref)).fetchone()
+                        if location is None:
+                            raise ValueError('nlp_source_invalid')
+                        page.append((key,record,EvidenceLocation(conversation_id=location[0],message_id=location[1])))
+                        if len(page) == maximum:
+                            break
+            for key,record,location in page:
+                budget.check()
+                original = self._read(account_id,location,budget)
+                if original is None or source_binding(original) != record.source:
+                    raise ValueError('nlp_source_invalid')
+                scope.check(budget)
+                with self.projections.database.transaction() as db:
+                    require_current_snapshot(db,binding,scope.identity,verify_records=False)
+                    capture_record(db,profile,original,record,key,check=budget.check)
+                completed += 1
+            scope.check(budget)
+        return completed

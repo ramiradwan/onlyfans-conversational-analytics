@@ -1,0 +1,207 @@
+{
+  "$defs": {
+    "NormalizationPublication": {
+      "additionalProperties": false,
+      "description": "Manifest inputs exclude all derived group IDs to avoid circular identity.",
+      "properties": {
+        "canonicalization": {
+          "const": "nlp-canonical.v1",
+          "default": "nlp-canonical.v1",
+          "title": "Canonicalization",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nlp-normalization-publication.v1",
+          "default": "nlp-normalization-publication.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "account_scope": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Account Scope",
+          "type": "string"
+        },
+        "extraction_snapshot_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Extraction Snapshot Sha256",
+          "type": "string"
+        },
+        "normalization_policy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "ledger_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Ledger Revision",
+          "type": "integer"
+        },
+        "ledger_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Ledger Sha256",
+          "type": "string"
+        },
+        "source_validity_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Validity Sha256",
+          "type": "string"
+        },
+        "projection_policy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "completion_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Completion Revision",
+          "type": "integer"
+        },
+        "availability_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Availability Revision",
+          "type": "integer"
+        },
+        "mapping_batch_sha256": {
+          "items": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 1024,
+          "title": "Mapping Batch Sha256",
+          "type": "array"
+        },
+        "membership_batch_sha256": {
+          "items": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 1024,
+          "title": "Membership Batch Sha256",
+          "type": "array"
+        }
+      },
+      "required": [
+        "account_scope",
+        "extraction_snapshot_sha256",
+        "normalization_policy",
+        "ledger_revision",
+        "ledger_sha256",
+        "source_validity_sha256",
+        "projection_policy",
+        "completion_revision",
+        "availability_revision",
+        "mapping_batch_sha256",
+        "membership_batch_sha256"
+      ],
+      "title": "NormalizationPublication",
+      "type": "object"
+    },
+    "PolicyIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "revision",
+        "sha256"
+      ],
+      "title": "PolicyIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "canonicalization": {
+      "const": "nlp-canonical.v1",
+      "default": "nlp-canonical.v1",
+      "title": "Canonicalization",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nlp-literal-publication.v1",
+      "default": "nlp-literal-publication.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "publication": {
+      "$ref": "#/$defs/NormalizationPublication"
+    },
+    "account_namespace": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Account Namespace",
+      "type": "string"
+    },
+    "profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Profile Sha256",
+      "type": "string"
+    },
+    "records": {
+      "maximum": 100000,
+      "minimum": 0,
+      "title": "Records",
+      "type": "integer"
+    },
+    "occurrences": {
+      "maximum": 100000,
+      "minimum": 0,
+      "title": "Occurrences",
+      "type": "integer"
+    },
+    "mapped": {
+      "maximum": 100000,
+      "minimum": 0,
+      "title": "Mapped",
+      "type": "integer"
+    },
+    "unrepresentable": {
+      "maximum": 100000,
+      "minimum": 0,
+      "title": "Unrepresentable",
+      "type": "integer"
+    },
+    "content_batch_sha256": {
+      "items": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 512,
+      "title": "Content Batch Sha256",
+      "type": "array"
+    }
+  },
+  "required": [
+    "publication",
+    "account_namespace",
+    "profile_sha256",
+    "records",
+    "occurrences",
+    "mapped",
+    "unrepresentable",
+    "content_batch_sha256"
+  ],
+  "title": "LiteralPublicationEnvelope",
+  "type": "object"
+}
