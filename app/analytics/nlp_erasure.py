@@ -15,6 +15,7 @@ from app.analytics.nlp_findings_store import (
     check_deadline,
 )
 from app.analytics.nlp_reclamation import reclaim_orphans
+from app.analytics.nlp_literals import payload_tables, erase_page
 from app.analytics.opaque_refs import account_ref
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from app.analytics.validation_receipt import content_stamp, generation_binding
@@ -86,7 +87,7 @@ class FindingsErasure:
                 db.execute(
                     "SELECT 1 FROM " + table + " WHERE account_ref=? LIMIT 1", (ref,)
                 ).fetchone()
-                for table in ("nlp_accounts", "nlp_records", "nlp_snapshots")
+                for table in ("nlp_accounts", "nlp_records", "nlp_snapshots") + payload_tables(db)
             )
             enhanced = db.execute(
                 "SELECT 1 FROM projection_generations WHERE creator_account_id=? AND pipeline_revision LIKE '%+nlp.snapshot.v1%' LIMIT 1",
@@ -112,7 +113,7 @@ class FindingsErasure:
                             "SELECT 1 FROM " + table + " WHERE account_ref=? LIMIT 1",
                             (ref,),
                         ).fetchone()
-                        for table in ("nlp_accounts", "nlp_records", "nlp_snapshots")
+                        for table in ("nlp_accounts", "nlp_records", "nlp_snapshots") + payload_tables(db)
                     )
                     or db.execute(
                         "SELECT 1 FROM projection_generations WHERE creator_account_id=? AND pipeline_revision LIKE '%+nlp.snapshot.v1%' LIMIT 1",
@@ -408,6 +409,7 @@ class FindingsErasure:
 
     def _erase(self, account_id, state, deadline):
         ref = state["account_ref"]
+        check_deadline(deadline)
         if not state["account_wide"]:
             identity = self.source.erasure_source_identity(account_id)
             if identity != state["identity"] or (
@@ -418,6 +420,9 @@ class FindingsErasure:
                         "UPDATE nlp_erasure_state SET phase='scan',identity='' WHERE account_ref=?",
                         (ref,),
                     )
+                return None
+        with self._write(state) as db:
+            if erase_page(db, ref, account_wide=bool(state["account_wide"])):
                 return None
         # Strict authentication/backfill must succeed before retirement can
         # remove ownership. Optional GC's diagnostic boundary is not used here.
@@ -511,7 +516,7 @@ class FindingsErasure:
                 db.execute(
                     "SELECT 1 FROM " + table + " WHERE account_ref=? LIMIT 1", (ref,)
                 ).fetchone()
-                for table in ("nlp_snapshots", "nlp_records", "nlp_jobs", "nlp_sources")
+                for table in ("nlp_snapshots", "nlp_records", "nlp_jobs", "nlp_sources") + payload_tables(db)
             ):
                 return None
             inventory = inventory_digest(db, ref, deadline)

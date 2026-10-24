@@ -165,6 +165,9 @@ def test_forward_admission_preserves_raw_rows_backup_and_mixed_public_artifacts(
     source = Path(__file__).parents[1] / 'app/analytics/sql'
     for migration in sorted(source.glob('*.sql'))[:31]:
         shutil.copy2(migration, catalog / migration.name)
+    admission_catalog = tmp_path / 'catalog32'
+    shutil.copytree(catalog, admission_catalog)
+    shutil.copy2(source / '0032_graph_chunk_encoding.sql', admission_catalog)
     legacy = ProjectionsDatabase(tmp_path / 'legacy.sqlite3', migrations_dir=catalog)
     options = dict(activation=fixture.repositories.projection_activation,
                    canonical_identity_reader=fixture.source.read_identity, rollback_retention=2)
@@ -178,13 +181,13 @@ def test_forward_admission_preserves_raw_rows_backup_and_mixed_public_artifacts(
         with legacy.read() as connection:
             stamp = content_stamp(connection)
             schema_cookie = connection.execute('PRAGMA schema_version').fetchone()[0]
-        upgraded = ProjectionsDatabase(legacy.path)
+        upgraded = ProjectionsDatabase(legacy.path, migrations_dir=admission_catalog)
         assert stored_chunks(upgraded) == before
         with upgraded.read() as connection:
             assert codec.admitted(connection)
             assert connection.execute('PRAGMA schema_version').fetchone()[0] == schema_cookie
             assert content_stamp(connection) == stamp
-        admission = load_migration_catalog(source)[-1]
+        admission = load_migration_catalog(admission_catalog)[-1]
         assert (admission.version, admission.name, admission.checksum) == (32, 'graph_chunk_encoding', codec.ADMISSION_CHECKSUM)
         with upgraded.open_detached(upgraded.migration_runner.last_backup_path, read_only=True) as connection:
             assert connection.execute('PRAGMA user_version').fetchone()[0] == 31
@@ -192,6 +195,24 @@ def test_forward_admission_preserves_raw_rows_backup_and_mixed_public_artifacts(
                 'SELECT segment_id,canonical_bytes,canonical_digest FROM graph_segment_chunks ORDER BY segment_id')] == before
         with pytest.raises(SchemaCompatibilityError):
             ProjectionsDatabase(legacy.path, migrations_dir=catalog)
+        with upgraded.read() as connection:
+            schema32 = {(row[0], row[1]): row[2] for row in connection.execute(
+                'SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL')}
+        upgraded = ProjectionsDatabase(legacy.path)
+        assert stored_chunks(upgraded) == before
+        with upgraded.read() as connection:
+            schema33 = {(row[0], row[1]): row[2] for row in connection.execute(
+                'SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL')}
+            added = schema33.keys() - schema32.keys()
+            literal_tables = {'nlp_literal_accounts', 'nlp_literal_derivations', 'nlp_literal_derivation_batches',
+                              'nlp_literal_publications', 'nlp_literal_publication_batches'}
+            assert {name for kind, name in added if kind == 'table'} == literal_tables
+            assert len(added) == 31 and sum(kind == 'trigger' for kind, _ in added) == 26
+            assert {key: schema33[key] for key in schema32} == schema32
+            assert connection.execute('PRAGMA schema_version').fetchone()[0] == schema_cookie + 31
+            after_stamp = content_stamp(connection)
+            assert after_stamp is not None and after_stamp[:2] == stamp[:2] and after_stamp[3] == stamp[3]
+            assert codec.admitted(connection)
         current = SQLiteAnalyticsProjectionStore(upgraded, **options)
         assert current.get_artifact(ACCOUNT) == first
         pipeline.projections, pipeline.graph = current, current.graph

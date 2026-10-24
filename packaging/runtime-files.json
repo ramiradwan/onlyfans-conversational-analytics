@@ -166,7 +166,8 @@
         "0029_nlp_dependencies.sql": "efe83bfc570ae02ad9188f35955c64a1a8d12deae89c6240de6a53000150df63",
         "0030_nlp_read_metadata.sql": "64ab2ffdc2ff9127784d482abba16d4abe5569a1fe2f7fb43539bb73ec134ac0",
         "0031_nlp_source_lane_index.sql": "5e67b0bf3153098aeeef7baed204a294c66f76fcff8c86de75ddae7585a14956",
-        "0032_graph_chunk_encoding.sql": "1a6f97c378237c336f4b607de0c803db9335da7fb5ddded0175cc210aa5297b9"
+        "0032_graph_chunk_encoding.sql": "1a6f97c378237c336f4b607de0c803db9335da7fb5ddded0175cc210aa5297b9",
+        "0033_nlp_literals.sql": "ff0e91c91232642b06067b0c2b8699cde1cd736d6848b788ce880e112851a4a1"
       }
     }
   ],

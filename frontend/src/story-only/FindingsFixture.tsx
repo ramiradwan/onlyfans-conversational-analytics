@@ -3,15 +3,18 @@ import { Box, Typography } from '@mui/material';
 import { useMemo } from 'react';
 
 import { findingsAccount, findingsBaselineFixture, findingsResponse, findingsFilteredResponse, findingsSource } from './findingsFixtures';
+import { literalsResponse } from './literalsFixtures';
 import publishedComparison from '../../../shared/analytics/findings-comparison.v1.json';
 import publishedEvidence from '../../../shared/analytics/findings-evidence.v1.json';
 import publishedResponse from '../../../shared/analytics/findings-response.v1.json';
 import type { AccountRef } from '../analytics/analyticsContract';
 import type { FindingsBaseline } from '../analytics/analyticsReadModel';
 import { parseFindings } from '../analytics/findingsContract';
+import { parseLiterals } from '../analytics/literalsContract';
 import { parseSourceEvidence } from '../analytics/questionContract';
 import { TaskFindings } from '../components/analytics/TaskFindings';
 import { createFindingsStore } from '../store/findingsStore';
+import { createLiteralsStore } from '../store/literalsStore';
 import { createBridgeTransportStore } from '../store/transportStore';
 
 export function FindingsFixture({ kind = 'synthetic' }: { kind?: 'synthetic' | 'published' | 'comparison' }) {
@@ -28,6 +31,13 @@ export function FindingsFixture({ kind = 'synthetic' }: { kind?: 'synthetic' | '
     read: async (request) => parseFindings(kind === 'synthetic' ? (request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request)) : wire, request),
     evidence: async (reference) => kind === 'synthetic' ? findingsSource(reference) : parseSourceEvidence(publishedEvidence.resolved_evidence, reference),
   }), [kind, wire]);
+  const literalsController = useMemo(() => createLiteralsStore({
+    read: async (request) => {
+      if (kind !== 'synthetic') throw new Error('Only recorded findings are available in this fixture.');
+      return parseLiterals(literalsResponse(request), request);
+    },
+    evidence: async (reference) => findingsSource(reference),
+  }), [kind]);
   const transport = useMemo(() => {
     const state = { ...createBridgeTransportStore().getState(), creatorAccountId: kind === 'synthetic' ? findingsAccount : publishedEvidence.account_id,
       connection: 'connected' as const, readModelState: 'realtime' as const,
@@ -37,6 +47,6 @@ export function FindingsFixture({ kind = 'synthetic' }: { kind?: 'synthetic' | '
   return <Box sx={{ p: 3, maxWidth: '72rem', mx: 'auto' }}>
     <Typography component="h1" variant="h4">Synthetic text analysis fixture</Typography>
     <Typography>Invented values for visual inspection. No network requests. {kind !== 'synthetic' && 'Recorded backend response; only its recorded filters and one resolved source are available.'}</Typography>
-    <TaskFindings baseline={baseline} controller={controller} transport={transport} />
+    <TaskFindings baseline={baseline} controller={controller} literalsController={literalsController} transport={transport} />
   </Box>;
 }

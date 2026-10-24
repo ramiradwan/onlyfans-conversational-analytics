@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from app.nlp.contracts import Contract, Digest, Identifier, NlpBoundaryError, SourceBinding, Span
+from app.nlp.contracts import Contract, Coverage, Digest, Identifier, NlpBoundaryError, SourceBinding, Span
 from app.nlp.profiles import Descriptor, PolicyIdentity, canonical_bytes
 
 MAX_RECORD_BYTES = 65_536
@@ -57,6 +57,11 @@ def provisional_literal_node(account_namespace: str, type_id: str, surface: str)
     key = unicodedata.normalize("NFC", surface.strip())
     return LiteralNode(account_namespace=account_namespace, type_id=type_id, literal_key=key,
                        node_id=_digest("nlp-literal-node.v1", account_namespace, KEY_SCHEMA, type_id, key))
+
+
+def literal_type_id(task_contract: str, taxonomy: PolicyIdentity, category_id: str) -> str:
+    return _digest("nlp-literal-type.v1", task_contract,
+                   canonical_bytes(taxonomy).decode("ascii"), category_id)
 
 
 class OccurrenceAnchor(Descriptor):
@@ -138,6 +143,63 @@ class NormalizationPublication(BoundedDescriptor):
         for refs in (self.mapping_batch_sha256, self.membership_batch_sha256):
             if tuple(sorted(set(refs))) != refs:
                 raise ValueError("publication references must be sorted and unique")
+        return self
+
+
+class LiteralDisposition(BoundedDescriptor):
+    schema_version: Literal["nlp-literal-disposition.v1"] = "nlp-literal-disposition.v1"
+    occurrence: OccurrenceAnchor
+    extraction: ExtractionProvenance
+    type_id: Digest
+    reason: Literal["empty_key", "key_too_long"]
+
+
+class LiteralRecordState(BoundedDescriptor):
+    record_sha256: Digest
+    source: SourceBinding
+    outcome: Literal["assessed_findings", "assessed_no_match", "partial", "uncertain",
+                     "unsupported", "failed", "unprocessed"]
+    coverage: Coverage
+    occurrences: Annotated[int, Field(ge=0, le=512)]
+    mapped: Annotated[int, Field(ge=0, le=512)]
+    unrepresentable: Annotated[int, Field(ge=0, le=512)]
+
+    @model_validator(mode="after")
+    def counts(self):
+        if self.mapped + self.unrepresentable != self.occurrences:
+            raise ValueError("literal record counts mismatch")
+        if self.outcome.startswith("assessed_") and not self.coverage.complete:
+            raise ValueError("literal assessed coverage mismatch")
+        if self.outcome == "assessed_findings" and not self.occurrences:
+            raise ValueError("literal findings missing")
+        if self.outcome not in ("assessed_findings", "partial") and self.occurrences:
+            raise ValueError("literal nonfinding outcome mismatch")
+        if self.outcome == "partial" and self.coverage.complete:
+            raise ValueError("literal partial coverage mismatch")
+        return self
+
+
+class LiteralPublicationEnvelope(BoundedDescriptor):
+    schema_version: Literal["nlp-literal-publication.v1"] = "nlp-literal-publication.v1"
+    publication: NormalizationPublication
+    account_namespace: Identifier
+    profile_sha256: Digest
+    records: Annotated[int, Field(ge=0, le=100_000)]
+    occurrences: Annotated[int, Field(ge=0, le=100_000)]
+    mapped: Annotated[int, Field(ge=0, le=100_000)]
+    unrepresentable: Annotated[int, Field(ge=0, le=100_000)]
+    content_batch_sha256: Annotated[tuple[Digest, ...], Field(max_length=512)]
+
+    @model_validator(mode="after")
+    def counts(self):
+        if self.mapped + self.unrepresentable != self.occurrences:
+            raise ValueError("literal publication counts mismatch")
+        if len(set(self.content_batch_sha256)) != len(self.content_batch_sha256):
+            raise ValueError("duplicate literal content batch")
+        if tuple(sorted(self.content_batch_sha256)) != self.publication.mapping_batch_sha256:
+            raise ValueError("literal publication batches mismatch")
+        if self.publication.membership_batch_sha256:
+            raise ValueError("literal publication has equivalence membership")
         return self
 
 

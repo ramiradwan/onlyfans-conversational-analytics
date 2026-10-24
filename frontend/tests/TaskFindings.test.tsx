@@ -6,27 +6,59 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FindingsClientError, type FindingsClient } from '../src/analytics/findingsClient';
 import { parseFindings } from '../src/analytics/findingsContract';
+import type { LiteralsClient } from '../src/analytics/literalsClient';
+import { parseLiterals } from '../src/analytics/literalsContract';
 import { AnalyticsPresentation } from '../src/components/analytics/AnalyticsPresentation';
 import { TaskFindings } from '../src/components/analytics/TaskFindings';
 import { createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
+import { createLiteralsStore, type LiteralsStore } from '../src/store/literalsStore';
 import { findingsBaselineFixture as baseline, findingsResponse, findingsFilteredResponse, findingsSource, findingsSourceText, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 import { storyBaselineState, storyDateRange } from '../src/story-only/analyticsFixtures';
+import { literalsResponse } from '../src/story-only/literalsFixtures';
 import { theme } from '../src/theme';
 import { context } from './questionFixture';
 
 let store: FindingsStore;
+let literalStore: LiteralsStore;
 beforeEach(() => vi.stubGlobal('crypto', webcrypto));
-afterEach(() => { cleanup(); store?.actions.dispose(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); store?.actions.dispose(); literalStore?.actions.dispose(); vi.unstubAllGlobals(); });
 function setup(overrides: Partial<FindingsClient> = {}) {
   const api: FindingsClient = { read: vi.fn(async (request) => parseFindings(request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request), request)),
     evidence: vi.fn(async (reference) => findingsSource(reference)), ...overrides };
   store = createFindingsStore(api); let state = context(); const listeners = new Set<() => void>();
+  const literalApi: LiteralsClient = { read: vi.fn(async (request) => parseLiterals(literalsResponse(request), request)),
+    evidence: vi.fn(async (reference) => findingsSource(reference)) };
+  literalStore = createLiteralsStore(literalApi);
   const transport = { getState: () => state, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
-  const rendered = render(<ThemeProvider theme={theme}><TaskFindings baseline={baseline} controller={store} transport={transport} /></ThemeProvider>);
-  return { api, rendered, update: (next: typeof state) => { state = next; listeners.forEach((listener) => listener()); } };
+  const rendered = render(<ThemeProvider theme={theme}><TaskFindings baseline={baseline} controller={store} literalsController={literalStore} transport={transport} /></ThemeProvider>);
+  return { api, literalApi, rendered, update: (next: typeof state) => { state = next; listeners.forEach((listener) => listener()); } };
 }
 
 describe('TaskFindings', () => {
+  it('keeps activated literal reads live across direction, conversation and category changes', async () => {
+    const { literalApi } = setup();
+    expect(literalApi.read).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Show recurring literal values' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'View sources for literal item (synthetic-mention)' }));
+    await screen.findByRole('button', { name: 'Clear literal selection' });
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Message direction' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Received messages' }));
+    await waitFor(() => expect(literalApi.read).toHaveBeenLastCalledWith(expect.objectContaining({ direction: 'inbound', node_id: null,
+      row_offset: 0, evidence_offset: 0, expected_normalization_sha256: null }), expect.any(AbortSignal)));
+    expect(await screen.findByRole('table', { name: 'Recurring literal values' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Show recurring literal values' })).toBeNull();
+    fireEvent.mouseDown(await screen.findByRole('combobox', { name: 'Conversation' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Conversation 1 · 7 eligible messages' }));
+    await waitFor(() => expect(literalApi.read).toHaveBeenLastCalledWith(expect.objectContaining({ conversation_ref: `c1:${'2'.repeat(64)}` }), expect.any(AbortSignal)));
+    await screen.findByRole('table', { name: 'Topics findings' });
+    fireEvent.click(screen.getByRole('button', { name: 'View sources for Topics: Example topic' }));
+    await waitFor(() => expect(literalApi.read).toHaveBeenLastCalledWith(expect.objectContaining({ conversation_ref: null,
+      category_filter: { task: 'message_topics', category_id: 'synthetic-topic' }, row_offset: 0, evidence_offset: 0 }), expect.any(AbortSignal)));
+    expect(await screen.findByRole('table', { name: 'Recurring literal values' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear category filter' }));
+    await waitFor(() => expect(literalApi.read).toHaveBeenLastCalledWith(expect.objectContaining({ category_filter: null }), expect.any(AbortSignal)));
+    expect(screen.queryByRole('button', { name: 'Show recurring literal values' })).toBeNull();
+  });
   it('selects and clears category sources accessibly while returning to all conversations', async () => {
     const { api } = setup();
     await screen.findByRole('table', { name: 'Topics findings' });

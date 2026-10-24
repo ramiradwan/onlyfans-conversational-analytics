@@ -652,10 +652,12 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
     return response, [(e[6], e[7]) for e in page]
 
 
-def read(resources, policy, request, *, cancellation_check=None):
+def read(resources, policy, request, *, cancellation_check=None,
+         request_model=FindingsRequest, projector=None, response_check=None):
+    """Own admission, borrowed connections and evidence for saved finding views."""
     account = resources._remember(policy)
     try:
-        plan = FindingsRequest.model_validate(request)
+        plan = request_model.model_validate(request)
     except (ValueError, TypeError):
         raise InvalidAnalyticsRequest(
             "analytics_findings_request_invalid", "The findings request is invalid."
@@ -702,9 +704,17 @@ def read(resources, policy, request, *, cancellation_check=None):
                 )
             ):
                 raise ProjectionUnavailable(availability="building")
-            response, bindings = aggregate(
-                value, records, generation, snapshot, plan, budget, source_rows
-            )
+            if projector is None:
+                response, bindings = aggregate(
+                    value, records, generation, snapshot, plan, budget, source_rows
+                )
+            else:
+                from app.analytics.query_sql import bounded_sql
+                with bounded_sql(analytics_lease, budget):
+                    response, bindings = projector(
+                        value, records, generation, snapshot, plan, budget, source_rows,
+                        connection=analytics_lease,
+                    )
             for reference, location in bindings:
                 budget.check()
                 resources.evidence.bind(
@@ -722,7 +732,14 @@ def read(resources, policy, request, *, cancellation_check=None):
             ):
                 raise ProjectionUnavailable(availability="building")
             scope.check(budget)
+            if response_check is not None:
+                from app.analytics.query_sql import bounded_sql
+                with bounded_sql(analytics_lease, budget):
+                    response_check(analytics_lease, response, budget)
+                scope.check(budget)
         budget.check()
+        if snapshot.retention_due_at is not None and snapshot.retention_due_at <= resources.clock():
+            raise ProjectionUnavailable(availability="building")
         return response
     except AnalyticsError:
         resources.evidence.clear_account(policy)

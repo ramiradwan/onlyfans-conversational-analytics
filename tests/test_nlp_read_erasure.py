@@ -218,7 +218,9 @@ def test_page_scan_compares_content_stamp_and_exact_erasure_state(
         ).fetchone()
 
 
-def test_page_progress_survives_restart_but_retention_due_resets_scan(history):
+def test_page_progress_survives_restart_but_retention_due_resets_scan(
+    history, monkeypatch
+):
     import time
 
     f, _, _, _, _ = history
@@ -238,5 +240,10 @@ def test_page_progress_survives_restart_but_retention_due_resets_scan(history):
     persisted = restarted._state(account_ref(ACCOUNT))
     assert persisted["due_at"]
     f.clock.now += timedelta(days=100)
+
+    def unexpected_erase(*args, **kwargs):
+        pytest.fail("derived deletion preceded the required retention rescan")
+
+    monkeypatch.setattr("app.analytics.nlp_erasure.erase_page", unexpected_erase)
     assert restarted._erase(ACCOUNT, persisted, time.monotonic() + 5) is None
     assert restarted._state(account_ref(ACCOUNT))["phase"] == "scan"

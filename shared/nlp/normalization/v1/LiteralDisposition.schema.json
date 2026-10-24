@@ -1,0 +1,221 @@
+{
+  "$defs": {
+    "ExtractionProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "task_contract": {
+          "const": "concept_mentions.v1",
+          "default": "concept_mentions.v1",
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "extraction_record_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Extraction Record Sha256",
+          "type": "string"
+        },
+        "extraction_snapshot_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Extraction Snapshot Sha256",
+          "type": "string"
+        },
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Sha256",
+          "type": "string"
+        },
+        "component_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Component Id",
+          "type": "string"
+        },
+        "component_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Component Sha256",
+          "type": "string"
+        },
+        "taxonomy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        }
+      },
+      "required": [
+        "extraction_record_sha256",
+        "extraction_snapshot_sha256",
+        "profile_sha256",
+        "component_id",
+        "component_sha256",
+        "taxonomy"
+      ],
+      "title": "ExtractionProvenance",
+      "type": "object"
+    },
+    "OccurrenceAnchor": {
+      "additionalProperties": false,
+      "description": "Source occurrence identity deliberately excludes execution identity.",
+      "properties": {
+        "canonicalization": {
+          "const": "nlp-canonical.v1",
+          "default": "nlp-canonical.v1",
+          "title": "Canonicalization",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceBinding"
+        },
+        "category_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Category Id",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        }
+      },
+      "required": [
+        "source",
+        "category_id",
+        "span"
+      ],
+      "title": "OccurrenceAnchor",
+      "type": "object"
+    },
+    "PolicyIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "revision",
+        "sha256"
+      ],
+      "title": "PolicyIdentity",
+      "type": "object"
+    },
+    "SourceBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "account_scope": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Account Scope",
+          "type": "string"
+        },
+        "source_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "source_version": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Version",
+          "type": "string"
+        },
+        "speaker_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Speaker Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_scope",
+        "source_ref",
+        "source_version",
+        "speaker_ref"
+      ],
+      "title": "SourceBinding",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Half-open Unicode codepoint offsets into unchanged original source text.",
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "canonicalization": {
+      "const": "nlp-canonical.v1",
+      "default": "nlp-canonical.v1",
+      "title": "Canonicalization",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nlp-literal-disposition.v1",
+      "default": "nlp-literal-disposition.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "occurrence": {
+      "$ref": "#/$defs/OccurrenceAnchor"
+    },
+    "extraction": {
+      "$ref": "#/$defs/ExtractionProvenance"
+    },
+    "type_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Type Id",
+      "type": "string"
+    },
+    "reason": {
+      "enum": [
+        "empty_key",
+        "key_too_long"
+      ],
+      "title": "Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "occurrence",
+    "extraction",
+    "type_id",
+    "reason"
+  ],
+  "title": "LiteralDisposition",
+  "type": "object"
+}
