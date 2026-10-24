@@ -11,6 +11,7 @@ const windowSchema = z.object({ scope: z.enum(['all_time', 'requested', 'effecti
   start: instant.nullable(), end: instant.nullable() }).strict();
 const policy = z.object({ policy_id: identifier, revision: identifier, sha256: z.string().regex(/^[0-9a-f]{64}$/) }).strict();
 const taskName = z.enum(['message_topics', 'concept_mentions']);
+const categoryFilter = z.object({ task: taskName, category_id: identifier }).strict();
 const conversationRef = z.string().regex(/^c1:[0-9a-f]{64}$/);
 const row = z.object({ category_id: identifier, display_label: z.string().min(1).max(256),
   label_status: z.enum(['resolved', 'id_only']), label_identity_sha256: digest,
@@ -44,9 +45,12 @@ const taskAvailability = z.object({ task: taskName,
   availability: z.enum(['declared', 'not_declared']) }).strict();
 const subsetResponse = response.extend({ schema_version: z.literal('analytics-findings.v2'),
   tasks: z.array(task).min(1).max(2), task_availability: z.array(taskAvailability).length(2) });
-const versionedResponse = z.discriminatedUnion('schema_version', [response, subsetResponse]);
+const filteredResponse = subsetResponse.extend({ schema_version: z.literal('analytics-findings.v3'), category_filter: categoryFilter });
+const versionedResponse = z.discriminatedUnion('schema_version', [response, subsetResponse, filteredResponse]);
 export type FindingsResponseV1 = z.infer<typeof response>;
 export type FindingsResponseV2 = z.infer<typeof subsetResponse>;
+export type FindingsResponseV3 = z.infer<typeof filteredResponse>;
+export type FindingsCategoryFilter = z.infer<typeof categoryFilter>;
 export type FindingsResponse = z.infer<typeof versionedResponse>;
 export type FindingsTask = FindingsResponse['tasks'][number];
 export type FindingsTaskAvailability = z.infer<typeof taskAvailability>;
@@ -59,6 +63,7 @@ export interface FindingsRequest {
   conversation_ref: string | null;
   conversation_offset: number;
   conversation_limit: number;
+  category_filter?: FindingsCategoryFilter | null;
 }
 export class FindingsContractError extends Error {
   constructor() { super('These text analysis results could not be verified. Refresh the analytics view.'); }
@@ -82,6 +87,11 @@ export function parseFindings(value: unknown, request: FindingsRequest): Finding
   const checked = versionedResponse.safeParse(value);
   if (!checked.success) throw new FindingsContractError();
   const result = checked.data;
+  const selected = request.category_filter ?? null;
+  if (selected === null ? result.schema_version === 'analytics-findings.v3'
+    : result.schema_version !== 'analytics-findings.v3'
+      || result.category_filter.task !== selected.task || result.category_filter.category_id !== selected.category_id) throw new FindingsContractError();
+  if (selected && !result.tasks.some((item) => item.task === selected.task && item.rows.some((r) => r.category_id === selected.category_id))) throw new FindingsContractError();
   const { requested_window: requested, ...identity } = request.baseline;
   const start = requested.start === null ? null : instantMicros(requested.start);
   const end = requested.end === null ? null : instantMicros(requested.end);
@@ -91,7 +101,7 @@ export function parseFindings(value: unknown, request: FindingsRequest): Finding
   const page = result.evidence_page;
   const conversations = result.conversation_page;
   const declaredTasks = new Set(result.tasks.map((item) => item.task));
-  if (declaredTasks.size !== result.tasks.length || (result.schema_version === 'analytics-findings.v2'
+  if (declaredTasks.size !== result.tasks.length || (result.schema_version !== 'analytics-findings.v1'
     && (new Set(result.task_availability.map((item) => item.task)).size !== 2
       || result.task_availability.some((item) => (item.availability === 'declared') !== declaredTasks.has(item.task))))) throw new FindingsContractError();
   if (result.direction !== request.direction || result.requested_window.scope !== requested.scope
@@ -150,6 +160,7 @@ export function parseFindings(value: unknown, request: FindingsRequest): Finding
     const key = JSON.stringify([item.task, item.category_id, evidenceKey(item.reference)]);
     const at = instantMicros(item.reference.sent_at);
     if (keys.has(key) || item.reference.account_ref !== result.account_ref
+      || (selected !== null && (item.task !== selected.task || item.category_id !== selected.category_id))
       || item.reference.source_revision !== result.source_revision
       || (request.conversation_ref !== null && item.reference.conversation_ref !== request.conversation_ref)
       || !result.tasks.find((t) => t.task === item.task)?.rows.some((r) => r.category_id === item.category_id)
@@ -166,6 +177,6 @@ export function findingsSnapshot(result: FindingsResponse): string {
 }
 
 export function findingsTaskAvailability(result: FindingsResponse): FindingsTaskAvailability[] {
-  return result.schema_version === 'analytics-findings.v2' ? result.task_availability
+  return result.schema_version !== 'analytics-findings.v1' ? result.task_availability
     : (['message_topics', 'concept_mentions'] as const).map((task) => ({ task, availability: 'declared' }));
 }

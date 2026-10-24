@@ -9,11 +9,11 @@ from fastapi.testclient import TestClient
 from pydantic import TypeAdapter, ValidationError
 import pytest
 
-from app.analytics.errors import ProjectionUnavailable
+from app.analytics.errors import InvalidAnalyticsRequest, ProjectionUnavailable
 from app.analytics.nlp_processing import FindingsRunner
 from app.analytics.nlp_record_validation import validate_source_bound_record
 from app.analytics.query_runtime import QuestionResources
-from app.models.insights import FindingsReadResponse, FindingsRequest
+from app.models.insights import FindingsCategoryFilter, FindingsReadResponse, FindingsRequest
 from app.nlp import profile_authentication as authentication, v2
 from app.nlp.contracts import NlpBoundaryError
 from app.nlp.profiles import AnalysisProfile, SubsetAnalysisProfile, canonical_bytes, read_profile
@@ -221,6 +221,22 @@ def test_subset_failure_does_not_publish_undeclared_no_match(subset):
                all(row.occurrences == 0 and row.share_of_complete_messages is None for row in t.rows)
                for t in response.tasks)
     assert {t.task for t in response.tasks} == {b.task for b in profile.bindings}
+
+
+def test_subset_category_keeps_availability_and_refuses_undeclared_task(subset):
+    _, _, profile, _, resources, policy, _ = subset
+    original, plan = publish(subset)
+    mentions = next(t for t in original.tasks if t.task == 'concept_mentions')
+    pair = FindingsCategoryFilter(task='concept_mentions', category_id=mentions.rows[0].category_id)
+    response = resources.findings(policy, plan.model_copy(update={'category_filter': pair}))
+    assert response.schema_version == 'analytics-findings.v3'
+    assert response.tasks == original.tasks and response.comparison == original.comparison
+    assert response.task_availability == original.task_availability
+    assert TypeAdapter(FindingsReadResponse).validate_json(response.model_dump_json()) == response
+    if not any(b.task == 'message_topics' for b in profile.bindings):
+        with pytest.raises(InvalidAnalyticsRequest):
+            resources.findings(policy, plan.model_copy(update={'category_filter':
+                FindingsCategoryFilter(task='message_topics', category_id='topic.synthetic')}))
 
 
 @pytest.mark.parametrize('change', ['authorization', 'source', 'selection'])

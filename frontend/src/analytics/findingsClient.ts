@@ -16,6 +16,10 @@ export function buildFindingsUrl(request: FindingsRequest): string {
     evidence_offset: String(request.evidence_offset), evidence_limit: String(request.evidence_limit),
     conversation_offset: String(request.conversation_offset), conversation_limit: String(request.conversation_limit) });
   if (request.conversation_ref !== null) params.set('conversation_ref', request.conversation_ref);
+  if (request.category_filter) {
+    params.set('category_task', request.category_filter.task);
+    params.set('category_id', request.category_filter.category_id);
+  }
   if (request.baseline.requested_window.start) params.set('start_date', request.baseline.requested_window.start);
   if (request.baseline.requested_window.end) params.set('end_date', request.baseline.requested_window.end);
   return `${FINDINGS}?${params}`;

@@ -1,9 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createFindingsClient } from '../src/analytics/findingsClient';
-import { findingsRequest, findingsResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
+import { findingsRequest, findingsResponse, findingsFilteredResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 
 describe('findings client', () => {
+  it('binds both category fields to the authenticated saved read', async () => {
+    const request = { ...findingsRequest, category_filter: { task: 'message_topics' as const, category_id: 'synthetic-topic' } };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(findingsFilteredResponse(request))));
+    const value = await createFindingsClient({ fetcher }).read(request);
+    const url = new URL(fetcher.mock.calls[0][0], 'https://example.invalid');
+    expect(url.searchParams.get('category_task')).toBe('message_topics');
+    expect(url.searchParams.get('category_id')).toBe('synthetic-topic');
+    expect(value.schema_version).toBe('analytics-findings.v3');
+    fetcher.mockResolvedValue(new Response(JSON.stringify(findingsResponse(request))));
+    await expect(createFindingsClient({ fetcher }).read(request)).rejects.toThrow();
+  });
   it('reads the explicit subset format through the existing authenticated endpoint', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(findingsSubsetResponse())));
     const value = await createFindingsClient({ fetcher }).read(findingsRequest);

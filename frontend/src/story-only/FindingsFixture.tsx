@@ -2,7 +2,7 @@
 import { Box, Typography } from '@mui/material';
 import { useMemo } from 'react';
 
-import { findingsAccount, findingsBaselineFixture, findingsResponse, findingsSource } from './findingsFixtures';
+import { findingsAccount, findingsBaselineFixture, findingsResponse, findingsFilteredResponse, findingsSource } from './findingsFixtures';
 import publishedComparison from '../../../shared/analytics/findings-comparison.v1.json';
 import publishedEvidence from '../../../shared/analytics/findings-evidence.v1.json';
 import publishedResponse from '../../../shared/analytics/findings-response.v1.json';
@@ -25,7 +25,7 @@ export function FindingsFixture({ kind = 'synthetic' }: { kind?: 'synthetic' | '
     requested_window: { scope: 'requested', start: wire.requested_window.start, end: wire.requested_window.end },
   }, [kind, wire]);
   const controller = useMemo(() => createFindingsStore({
-    read: async (request) => parseFindings(kind === 'synthetic' ? findingsResponse(request) : wire, request),
+    read: async (request) => parseFindings(kind === 'synthetic' ? (request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request)) : wire, request),
     evidence: async (reference) => kind === 'synthetic' ? findingsSource(reference) : parseSourceEvidence(publishedEvidence.resolved_evidence, reference),
   }), [kind, wire]);
   const transport = useMemo(() => {

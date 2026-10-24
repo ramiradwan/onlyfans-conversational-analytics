@@ -181,6 +181,11 @@ class FullSyncResponse(BaseModel):
     conversation_range_provenance: SliceProvenance
 
 
+class FindingsCategoryFilter(QuestionRecord):
+    task: TaskName
+    category_id: Identifier
+
+
 class FindingsRequest(QuestionRecord):
     expected_generation: Annotated[int, Field(strict=True, ge=1)]
     expected_projection_digest: Sha256Digest
@@ -192,6 +197,7 @@ class FindingsRequest(QuestionRecord):
     conversation_ref: ConversationRef | None = None
     conversation_offset: Annotated[int, Field(strict=True, ge=0, le=100_000)] = 0
     conversation_limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 50
+    category_filter: FindingsCategoryFilter | None = None
 
     @model_validator(mode='after')
     def ordered_window(self):
@@ -323,4 +329,22 @@ class SubsetFindingsResponse(FindingsResponse):
         return self
 
 
-FindingsReadResponse = Annotated[FindingsResponse | SubsetFindingsResponse, Field(discriminator='schema_version')]
+class FilteredFindingsResponse(SubsetFindingsResponse):
+    """Category drilldown keeps the unfiltered task summaries."""
+    schema_version: Literal['analytics-findings.v3'] = 'analytics-findings.v3'
+    category_filter: FindingsCategoryFilter
+
+    @model_validator(mode='after')
+    def selected_category(self):
+        selected = self.category_filter
+        if not any(task.task == selected.task and
+                   any(row.category_id == selected.category_id for row in task.rows)
+                   for task in self.tasks):
+            raise ValueError('findings category mismatch')
+        if any(item.task != selected.task or item.category_id != selected.category_id
+               for item in self.evidence_page.items):
+            raise ValueError('findings category evidence mismatch')
+        return self
+
+
+FindingsReadResponse = Annotated[FindingsResponse | SubsetFindingsResponse | FilteredFindingsResponse, Field(discriminator='schema_version')]

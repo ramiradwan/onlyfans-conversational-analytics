@@ -225,18 +225,23 @@ async def get_findings(request: Request, response: Response,
         evidence_offset: int = Query(0,ge=0,le=1_000_000), evidence_limit: int = Query(50,ge=1,le=100),
         conversation_ref: str | None = Query(None,pattern=r'^c1:[0-9a-f]{64}$'),
         conversation_offset: int = Query(0,ge=0,le=100_000), conversation_limit: int = Query(50,ge=1,le=100),
+        category_task: str | None = None, category_id: str | None = None,
         policy: RuntimePolicy = Depends(get_authenticated_account_session)):
     account_bound_to_session(policy,None)
     response.headers['Cache-Control'] = 'no-store'
     allowed = {'expected_generation','expected_projection_digest','start_date','end_date','direction',
-               'evidence_offset','evidence_limit','conversation_ref','conversation_offset','conversation_limit'}
+               'evidence_offset','evidence_limit','conversation_ref','conversation_offset','conversation_limit',
+               'category_task','category_id'}
     try:
         if any(key not in allowed or len(request.query_params.getlist(key)) != 1 for key in request.query_params):
+            raise InvalidAnalyticsRequest('analytics_findings_request_invalid','The findings request is invalid.')
+        if (category_task is None) != (category_id is None):
             raise InvalidAnalyticsRequest('analytics_findings_request_invalid','The findings request is invalid.')
         plan = FindingsRequest(expected_generation=expected_generation,
             expected_projection_digest=expected_projection_digest,start_date=_timestamp(start_date),end_date=_timestamp(end_date),
             direction=direction,evidence_offset=evidence_offset,evidence_limit=evidence_limit,
-            conversation_ref=conversation_ref,conversation_offset=conversation_offset,conversation_limit=conversation_limit)
+            conversation_ref=conversation_ref,conversation_offset=conversation_offset,conversation_limit=conversation_limit,
+            category_filter=None if category_task is None else {'task':category_task,'category_id':category_id})
         return await insights_service.fetch_findings(policy,plan)
     except AnalyticsError as error:
         failure = _analytics_http_error(error)
