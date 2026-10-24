@@ -42,8 +42,11 @@ class ProcessOwners:
         kernel.OpenProcess.restype = wintypes.HANDLE
         kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
         kernel.GetProcessTimes.restype = wintypes.BOOL
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
         kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-        handle = kernel.OpenProcess(0x1000, False, pid)
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x1000 | 0x00100000, False, pid)
         if not handle:
             if ctypes.get_last_error() == 87:
                 return None
@@ -51,6 +54,10 @@ class ProcessOwners:
         try:
             values = [wintypes.FILETIME() for _ in range(4)]
             require(kernel.GetProcessTimes(handle, *(ctypes.byref(v) for v in values)), 'nlp_owner_observation')
+            status = kernel.WaitForSingleObject(handle, 0)
+            if status == 0:
+                return None
+            require(status == 258, 'nlp_owner_observation')
             birth = values[0].dwLowDateTime | values[0].dwHighDateTime << 32
             return {'pid': pid, 'birth': str(birth)}
         finally:

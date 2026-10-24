@@ -121,6 +121,8 @@ PR_SKIP_BASELINE: dict[tuple[str, str], str] = {
         "Skipped: OFCA_LEGAL_POLICY_MANIFEST is unset, so risk-disclosure.lock.json is unrefuted",
     ("tests/test_legal_instrument_approval.py::test_served_disclosure_matches_the_upstream_source_it_is_taken_from", "Linux"):
         "Skipped: OFCA_LEGAL_POLICY_MANIFEST is unset, so risk-disclosure.lock.json is unrefuted",
+    ("tests/test_nlp_process_owners.py::test_joined_process_with_exit_code_259_is_absent_while_handle_is_retained", "Linux"):
+        "Skipped: Windows retained process-object semantics",
     ("tests/test_packaged_runtime.py::test_frozen_executable_loads_the_production_companion_noise_factory", "Windows"):
         "Skipped: packaged runtime artifact is unavailable; set BRAIN_PACKAGED_ARTIFACT_DIR to the Brain artifact directory",
     ("tests/test_packaged_runtime.py::test_frozen_executable_reports_the_fixed_sqlcipher_runtime", "Windows"):
