@@ -22,7 +22,8 @@ from app.analytics.query_execution import (
     QuestionLimitExceeded,
 )
 from app.models.analytics import AnalyticsWindow, WindowScope
-from app.models.insights import FindingsRequest, FindingsResponse, SubsetFindingsResponse, FilteredFindingsResponse
+from app.models.insights import (FindingsRequest, FindingsResponse, SubsetFindingsResponse,
+                                 FilteredFindingsResponse, GroupedFindingsResponse)
 from app.nlp.contracts import SourceBinding
 from app.nlp.profiles import read_profile
 
@@ -322,7 +323,7 @@ def _inventory(value, records, profile, budget, source_rows):
 
 
 def _summarize(
-    profile, inventory, labels, selected, records, budget, *, with_evidence=True
+    profile, inventory, labels, selected, records, budget, *, with_evidence=True, navigation=None
 ):
     tasks, evidence = [], []
     for binding in profile.bindings:
@@ -359,6 +360,7 @@ def _summarize(
             counts[state] += 1
             if payload is None or state not in ("complete", "partial"):
                 continue
+            seen_groups = set() if navigation is not None else None
             for finding in payload.findings:
                 budget.check()
                 category = (
@@ -366,6 +368,8 @@ def _summarize(
                     if binding.task == "message_topics"
                     else finding.concept_id
                 )
+                if navigation is not None:
+                    navigation.observe(binding.task, category, ref, state, seen_groups, budget.check)
                 row = totals[category]
                 span = (
                     None
@@ -471,7 +475,7 @@ def _select(sources, start, end, direction, *, end_exclusive=False, conversation
     ]
 
 
-def aggregate(value, records, generation, snapshot, request, budget, source_rows):
+def aggregate(value, records, generation, snapshot, request, budget, source_rows, *, navigation=None, grouped=False):
     """Return counts and one exact evidence page, plus private locator bindings."""
     profile = read_profile(encoded(value["snapshot"]["profile"]))
     category = request.category_filter
@@ -495,7 +499,12 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
         for entry in population
         if request.conversation_ref in (None, entry[1].conversation_ref)
     ]
-    tasks, evidence = _summarize(profile, inventory, labels, selected, records, budget)
+    if grouped and navigation is not None:
+        from app.analytics.nlp_navigation import NavigationAccumulator
+        current_groups = NavigationAccumulator(navigation)
+    else:
+        current_groups = None
+    tasks, evidence = _summarize(profile, inventory, labels, selected, records, budget, navigation=current_groups)
     conversations = Counter(ref.conversation_ref for _, ref, _ in population)
     if category is not None:
         matching_conversations = set()
@@ -543,6 +552,7 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
         "effective_window": None,
         "tasks": [],
     }
+    previous_groups = None
     if (
         request.start_date is not None
         and request.end_date is not None
@@ -563,6 +573,7 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
                 end_exclusive=True,
                 conversation=request.conversation_ref,
             )
+            previous_groups = NavigationAccumulator(navigation) if current_groups is not None else None
             previous_tasks, _ = _summarize(
                 profile,
                 inventory,
@@ -571,6 +582,7 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
                 records,
                 budget,
                 with_evidence=False,
+                navigation=previous_groups,
             )
             comparison = {
                 "availability": "available",
@@ -587,13 +599,24 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
     page = evidence[
         request.evidence_offset : request.evidence_offset + request.evidence_limit
     ]
-    response_model = (FilteredFindingsResponse if category is not None else
+    response_model = (GroupedFindingsResponse if grouped else FilteredFindingsResponse if category is not None else
                       SubsetFindingsResponse if profile.schema_version == 'nlp-profile.v3' else FindingsResponse)
     availability = ({'task_availability': [
         {'task': task, 'availability': 'declared' if task in {b.task for b in profile.bindings} else 'not_declared'}
-        for task in ('message_topics', 'concept_mentions')]} if category is not None or profile.schema_version == 'nlp-profile.v3' else {})
+        for task in ('message_topics', 'concept_mentions')]} if grouped or category is not None or profile.schema_version == 'nlp-profile.v3' else {})
+    navigation_fields = {}
+    if grouped:
+        from app.nlp.navigation import navigation_identity
+        navigation_fields = {'view': 'grouped', 'category_filter': category, 'navigation': {
+            'availability': 'available' if navigation is not None else 'not_declared',
+            'policy': navigation_identity(navigation) if navigation is not None else None,
+            'declaration': navigation,
+            'current': current_groups.rows(tasks) if current_groups is not None else [],
+            'previous': previous_groups.rows(comparison['tasks']) if previous_groups is not None else None,
+        }}
     response = response_model(
-        **({'category_filter': category} if category is not None else {}),
+        **({'category_filter': category} if category is not None and not grouped else {}),
+        **navigation_fields,
         **availability,
         **{
             key: generation[column]

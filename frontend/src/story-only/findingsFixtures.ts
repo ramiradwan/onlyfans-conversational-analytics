@@ -1,7 +1,7 @@
 /** STORY ONLY: invented response and source text for isolated visual inspection. */
 import type { AccountRef } from '../analytics/analyticsContract';
 import type { FindingsBaseline } from '../analytics/analyticsReadModel';
-import type { FindingsRequest, FindingsResponse, FindingsResponseV1, FindingsResponseV2, FindingsResponseV3, FindingsTask } from '../analytics/findingsContract';
+import { navigationCanonicalJson, type FindingsRequest, type FindingsResponse, type FindingsResponseV1, type FindingsResponseV2, type FindingsResponseV3, type FindingsResponseV4, type FindingsTask, type NavigationDeclaration } from '../analytics/findingsContract';
 import type { QuestionEvidence, SourceEvidence } from '../analytics/questionContract';
 
 export const findingsAccount = 'synthetic-question-account';
@@ -75,6 +75,45 @@ export function findingsFilteredResponse(request: FindingsRequest,
   return { ...value, schema_version: 'analytics-findings.v3', category_filter: { ...request.category_filter },
     conversation_page: evidence.length ? value.conversation_page : { ...value.conversation_page, items: [], total: 0, has_more: false },
     evidence_page: { ...value.evidence_page, total: evidence.length,
+      has_more: request.evidence_offset + request.evidence_limit < evidence.length,
+      items: evidence.slice(request.evidence_offset, request.evidence_offset + request.evidence_limit) } };
+}
+
+async function fixtureHash(value: unknown) {
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(navigationCanonicalJson(value)))),
+    (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export async function groupedFindingsResponse(request: FindingsRequest = { ...findingsRequest, view: 'grouped' }): Promise<FindingsResponseV4> {
+  const value = findingsSubsetResponse({ ...request, evidence_offset: 0, evidence_limit: 100 }, ['message_topics', 'concept_mentions']);
+  const topics = value.tasks.find((task) => task.task === 'message_topics')!;
+  topics.rows.push({ ...topics.rows[0], category_id: 'synthetic-secondary', display_label: 'Second category' });
+  const previous = value.comparison.tasks.find((task) => task.task === 'message_topics')!;
+  previous.rows.push({ ...previous.rows[0], category_id: 'synthetic-secondary', display_label: 'Second category' });
+  for (const task of [...value.tasks, ...value.comparison.tasks]) for (const row of task.rows) {
+    row.label_identity_sha256 = `sha256:${await fixtureHash({ presentation: value.presentation,
+      task_contract: task.task_contract, taxonomy: task.taxonomy, category_id: row.category_id,
+      display_label: row.display_label, label_status: row.label_status })}`;
+  }
+  const declaration: NavigationDeclaration = { schema_version: 'nlp-category-navigation.v1', policy_id: 'synthetic.navigation', revision: '1',
+    source_presentation: { ...value.presentation },
+    bindings: [...value.tasks].sort((a, b) => a.task < b.task ? -1 : 1).map((task) => ({ task: task.task,
+      task_contract: task.task_contract, taxonomy: { ...task.taxonomy }, enabled_ids: task.rows.map((row) => row.category_id).sort() })),
+    groups: [{ group_id: 'subjects', display_label: 'Subjects', task: 'message_topics', member_ids: ['synthetic-topic', 'synthetic-secondary'] },
+      { group_id: 'formats', display_label: 'Formats café 😀', task: 'message_topics', member_ids: ['synthetic-secondary'] }] };
+  const evidence = [...value.evidence_page.items,
+    { task: 'message_topics' as const, category_id: 'synthetic-secondary', assessment: 'complete' as const, reference }]
+    .filter((item) => !request.category_filter || (item.task === request.category_filter.task && item.category_id === request.category_filter.category_id));
+  const groupRows = (old: boolean) => declaration.groups.map((group) => ({ group_id: group.group_id, task: group.task,
+    supporting_messages: old ? 0 : 1, supporting_conversations: old ? 0 : 1,
+    complete_supporting_messages: old ? 0 : 1, partial_supporting_messages: 0, share_of_complete_messages: old ? null : 0.5 }));
+  return { ...value, schema_version: 'analytics-findings.v4', view: 'grouped', category_filter: request.category_filter ? { ...request.category_filter } : null,
+    navigation: { availability: 'available', declaration,
+      policy: { policy_id: declaration.policy_id, revision: declaration.revision, sha256: await fixtureHash(declaration) },
+      current: groupRows(false), previous: groupRows(true) },
+    conversation_page: { ...value.conversation_page, limit: request.conversation_limit, offset: request.conversation_offset,
+      ...(!evidence.length ? { total: 0, items: [], has_more: false } : {}) },
+    evidence_page: { offset: request.evidence_offset, limit: request.evidence_limit, total: evidence.length,
       has_more: request.evidence_offset + request.evidence_limit < evidence.length,
       items: evidence.slice(request.evidence_offset, request.evidence_offset + request.evidence_limit) } };
 }

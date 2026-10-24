@@ -1,4 +1,4 @@
-import { parseFindings, FindingsContractError, type FindingsRequest, type FindingsResponse } from './findingsContract';
+import { parseFindings, parseGroupedFindings, FindingsContractError, type FindingsRequest, type FindingsResponse } from './findingsContract';
 import type { QuestionEvidence, SourceEvidence } from './questionContract';
 import { FINDINGS } from '../config/endpoints';
 import { createQuestionApi } from '../services/questionApi';
@@ -20,6 +20,8 @@ export function buildFindingsUrl(request: FindingsRequest): string {
     params.set('category_task', request.category_filter.task);
     params.set('category_id', request.category_filter.category_id);
   }
+  if (request.view === 'grouped') params.set('view', 'grouped');
+  if (request.expected_navigation_sha256 != null) params.set('expected_navigation_sha256', request.expected_navigation_sha256);
   if (request.baseline.requested_window.start) params.set('start_date', request.baseline.requested_window.start);
   if (request.baseline.requested_window.end) params.set('end_date', request.baseline.requested_window.end);
   return `${FINDINGS}?${params}`;
@@ -62,7 +64,9 @@ export function createFindingsClient(options: { fetcher?: typeof fetch; csrf?: (
           if (result.status === 503) throw new FindingsClientError('unavailable', 'Text analysis is unavailable for this saved analysis. Other analytics remain available.');
           throw new FindingsClientError('error', 'Text analysis results could not be loaded. Check the filters and try again.');
         }
-        return parseFindings(value, request);
+        const parsed = request.view === 'grouped' ? await parseGroupedFindings(value, request) : parseFindings(value, request);
+        if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+        return parsed;
       } catch (error) {
         if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
         if (error instanceof FindingsClientError || error instanceof FindingsContractError) throw error;

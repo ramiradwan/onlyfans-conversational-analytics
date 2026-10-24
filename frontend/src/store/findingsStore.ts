@@ -20,9 +20,11 @@ const initial: FindingsState = { status: 'unavailable', binding: '', result: nul
   message: 'Text analysis is unavailable until a matching saved analysis is ready.',
   source: null, sourceLoading: false, sourceError: null };
 export const findingsBinding = (baseline: FindingsBaseline | null, direction: FindingsDirection, conversation: string | null = null,
-  category: FindingsCategoryFilter | null = null) => JSON.stringify([baseline, direction, conversation, category?.task ?? null, category?.category_id ?? null]);
+  category: FindingsCategoryFilter | null = null, view: 'grouped' | null = null) => JSON.stringify([baseline, direction, conversation, category?.task ?? null, category?.category_id ?? null, view]);
 
-export function createFindingsStore(api: FindingsClient = createFindingsClient()) {
+export function createFindingsStore(api?: FindingsClient, options: { view?: 'grouped' | null } = {}) {
+  const client = api ?? createFindingsClient();
+  const view = options.view === undefined ? (api ? null : 'grouped') : options.view;
   const store = createStore<FindingsState>(() => ({ ...initial }));
   let contextKey = '';
   let account: string | null = null;
@@ -30,13 +32,17 @@ export function createFindingsStore(api: FindingsClient = createFindingsClient()
   let sequence = 0;
   let controller: AbortController | null = null;
   let snapshot: string | null = null;
+  let navigationPin: string | null = null;
+  let baselineKey = '';
   const abort = () => { sequence += 1; controller?.abort(); controller = null; };
   const begin = () => { abort(); controller = new AbortController(); return { id: sequence, signal: controller.signal }; };
   const current = (id: number) => Boolean(selected && id === sequence);
   function invalidate() { abort(); store.setState({ result: null, source: null, sourceLoading: false, sourceError: null }); }
   async function read(offset = 0, conversationOffset = 0) {
     if (!selected || !account) return;
-    const request = { ...selected, evidence_offset: offset, conversation_offset: conversationOffset };
+    if (selected.view === 'grouped' && navigationPin === null && (offset > 0 || conversationOffset > 0)) return;
+    const request = { ...selected, evidence_offset: offset, conversation_offset: conversationOffset,
+      ...(selected.view === 'grouped' ? { expected_navigation_sha256: navigationPin } : {}) };
     const accountId = account;
     const run = begin();
     store.setState({ status: 'loading', result: null, source: null, sourceLoading: false, sourceError: null, message: null });
@@ -44,8 +50,14 @@ export function createFindingsStore(api: FindingsClient = createFindingsClient()
       const expected = await expectedAccountRef(accountId);
       if (!current(run.id)) return;
       if (expected !== request.baseline.account_ref) throw new Error('Account changed');
-      const result = await api.read(request, run.signal);
+      const result = await client.read(request, run.signal);
       if (!current(run.id)) return;
+      if (request.view === 'grouped') {
+        if (result.schema_version !== 'analytics-findings.v4') throw new Error('View changed');
+        const accepted = result.navigation.policy ? `sha256:${result.navigation.policy.sha256}` : null;
+        if (navigationPin !== null && navigationPin !== accepted) throw new Error('Navigation changed');
+        navigationPin = accepted;
+      }
       const identity = findingsSnapshot(result);
       if ((offset > 0 || conversationOffset > 0) && snapshot !== identity) throw new Error('Snapshot changed');
       snapshot = identity;
@@ -56,17 +68,22 @@ export function createFindingsStore(api: FindingsClient = createFindingsClient()
     }
   }
   function setContext(baseline: FindingsBaseline | null, next: Context, direction: FindingsDirection, conversation: string | null = null,
-    category: FindingsCategoryFilter | null = null) {
-    const binding = findingsBinding(baseline, direction, conversation, category);
+    category: FindingsCategoryFilter | null = null, selectedView = view) {
+    const binding = findingsBinding(baseline, direction, conversation, category, selectedView);
     const key = JSON.stringify([binding, next.creatorAccountId, next.session?.connection_id,
       next.connection, next.readModelState, next.projection]);
     if (key === contextKey) return;
+    const nextBaseline = JSON.stringify([baseline, next.creatorAccountId, next.session, selectedView]);
+    if (nextBaseline !== baselineKey) navigationPin = null;
+    baselineKey = nextBaseline;
     invalidate(); snapshot = null; contextKey = key; account = next.creatorAccountId;
     selected = baseline && account && next.connection === 'connected' && next.readModelState === 'realtime'
       && next.projection.status === 'current' && next.projection.canonical_revision === baseline.source_revision
       && next.projection.projected_revision === baseline.source_revision
       ? { baseline, direction, evidence_offset: 0, evidence_limit: 50, conversation_ref: conversation, conversation_offset: 0, conversation_limit: 50,
-        category_filter: category ? { task: category.task, category_id: category.category_id } : null } : null;
+        category_filter: category ? { task: category.task, category_id: category.category_id } : null,
+        ...(selectedView === 'grouped' ? { view: 'grouped' as const } : {}) } : null;
+    if (!selected) navigationPin = null;
     store.setState({ ...initial, binding });
     if (selected) void read();
   }
@@ -76,7 +93,7 @@ export function createFindingsStore(api: FindingsClient = createFindingsClient()
     const run = begin();
     store.setState({ source: null, sourceLoading: true, sourceError: null });
     try {
-      const source = parseSourceEvidence(await api.evidence(reference, run.signal), reference);
+      const source = parseSourceEvidence(await client.evidence(reference, run.signal), reference);
       if (selected?.direction !== 'all' && selected?.direction !== source.direction) throw new Error('Direction changed');
       if (current(run.id)) store.setState({ source, sourceLoading: false });
     } catch {
@@ -85,7 +102,8 @@ export function createFindingsStore(api: FindingsClient = createFindingsClient()
     }
   }
   function closeSource() { abort(); store.setState({ source: null, sourceLoading: false, sourceError: null }); }
-  function dispose() { invalidate(); contextKey = ''; selected = null; account = null; store.setState({ ...initial }); }
-  return { ...store, actions: { setContext, read, invalidate, openSource, closeSource, dispose } };
+  function reload() { navigationPin = null; snapshot = null; return read(); }
+  function dispose() { invalidate(); contextKey = ''; baselineKey = ''; navigationPin = null; selected = null; account = null; store.setState({ ...initial }); }
+  return { ...store, view, actions: { setContext, read, reload, invalidate, openSource, closeSource, dispose } };
 }
 export type FindingsStore = ReturnType<typeof createFindingsStore>;

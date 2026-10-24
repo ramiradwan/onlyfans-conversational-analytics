@@ -26,6 +26,31 @@ class _EmptyCanonicalSource:
         raise AssertionError("registry setup must not read canonical state")
 
 
+def test_bootstrap_injects_navigation_without_source_reads_or_findings_runtime() -> None:
+    from app.analytics.nlp_navigation import NavigationRegistry
+    from tests.test_nlp_navigation import declaration
+
+    source = _EmptyCanonicalSource()
+    registry = NavigationRegistry((declaration(),))
+    try:
+        first = analytics_runtime.configure_default_analytics_runtime(
+            source, backend='memory', findings_navigation=registry)
+        assert first.questions.findings_navigation is registry
+        assert first.findings is None
+        assert analytics_runtime.configure_default_analytics_runtime(
+            source, backend='memory', findings_navigation=registry) is first
+        replacement = analytics_runtime.configure_default_analytics_runtime(source, backend='memory')
+        assert first.questions.closed
+        assert replacement.questions.findings_navigation != registry
+        assert replacement.findings is None
+        with pytest.raises(ValueError, match='findings_navigation_invalid'):
+            analytics_runtime.configure_default_analytics_runtime(
+                source, backend='memory', findings_navigation=object())
+    finally:
+        analytics_runtime.reset_analytics_runtimes()
+        main_module.configure_analytics_runtime()
+
+
 def test_reconfiguring_bootstrap_source_closes_and_unregisters_previous_runtime() -> None:
     first_source = _EmptyCanonicalSource()
     second_source = _EmptyCanonicalSource()

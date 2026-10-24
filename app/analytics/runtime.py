@@ -21,6 +21,7 @@ from app.analytics.pipeline import AnalyticsPipeline, CanonicalReadModelSource
 from app.analytics.scheduling import InProcessProjectionScheduler
 from app.analytics.query_runtime import QuestionResources
 from app.analytics.nlp_runtime import FindingsConfiguration, FindingsRuntime
+from app.analytics.nlp_navigation import NavigationRegistry
 from app.core.config import settings
 from app.persistence.projection_activation import ProjectionActivationRepository
 from app.security.analysis_authorization import clear_analysis_policies
@@ -51,6 +52,7 @@ class _DefaultRuntimeConfiguration:
     activation: ProjectionActivationRepository | None
     post_commit_rebuild_enabled: bool
     findings: FindingsConfiguration | None
+    findings_navigation: NavigationRegistry | None
 
 
 _RUNTIMES: dict[int, AnalyticsRuntime] = {}
@@ -86,6 +88,7 @@ def configure_default_analytics_runtime(
     activation: ProjectionActivationRepository | None = None,
     post_commit_rebuild_enabled: bool | None = None,
     findings: FindingsConfiguration | None = None,
+    findings_navigation: NavigationRegistry | None = None,
 ) -> AnalyticsRuntime:
     """Configure the default runtime from bootstrap-owned dependencies."""
 
@@ -93,6 +96,8 @@ def configure_default_analytics_runtime(
         raise ValueError(f"Unsupported analytics backend {backend!r}")
     if findings is not None and (backend != 'sqlite' or not isinstance(findings, FindingsConfiguration)):
         raise ValueError('findings_configuration_invalid')
+    if findings_navigation is not None and not isinstance(findings_navigation, NavigationRegistry):
+        raise ValueError('findings_navigation_invalid')
     configuration = _DefaultRuntimeConfiguration(
         source=source,
         backend=backend,
@@ -105,6 +110,7 @@ def configure_default_analytics_runtime(
             else post_commit_rebuild_enabled
         ),
         findings=findings,
+        findings_navigation=findings_navigation,
     )
     global _DEFAULT_CONFIGURATION, _STARTUP_TASK, _STARTUP_TASK_SOURCE_KEY
     with _RUNTIME_LOCK:
@@ -199,7 +205,8 @@ def _runtime_for_source_locked(
         pipeline=pipeline,
         scheduler=InProcessProjectionScheduler(pipeline, reconciliation_interval=30,
             generation_pipeline=findings.generation_pipeline if findings is not None else None),
-        questions=QuestionResources(source, pipeline, clock=pipeline._retention_clock),
+        questions=QuestionResources(source, pipeline, clock=pipeline._retention_clock,
+            findings_navigation=configuration.findings_navigation if configuration is not None else None),
         findings=findings,
     )
     _RUNTIMES[key] = runtime

@@ -282,6 +282,8 @@
     "tests/test_nlp_dependency_publication.py": 4,
     "tests/test_nlp_literal_publication.py": 2,
     "tests/test_nlp_literal_read.py": 4,
+    "tests/test_nlp_navigation_api.py": 1,
+    "tests/test_nlp_navigation_read.py": 1,
     "tests/test_nlp_processing_publication.py": 4,
     "tests/test_nlp_read_erasure.py": 1,
     "tests/test_nlp_read_projection.py": 4,

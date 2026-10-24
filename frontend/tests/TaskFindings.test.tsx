@@ -5,14 +5,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FindingsClientError, type FindingsClient } from '../src/analytics/findingsClient';
-import { parseFindings } from '../src/analytics/findingsContract';
+import { parseFindings, parseGroupedFindings } from '../src/analytics/findingsContract';
 import type { LiteralsClient } from '../src/analytics/literalsClient';
 import { parseLiterals } from '../src/analytics/literalsContract';
 import { AnalyticsPresentation } from '../src/components/analytics/AnalyticsPresentation';
 import { TaskFindings } from '../src/components/analytics/TaskFindings';
 import { createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
 import { createLiteralsStore, type LiteralsStore } from '../src/store/literalsStore';
-import { findingsBaselineFixture as baseline, findingsResponse, findingsFilteredResponse, findingsSource, findingsSourceText, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
+import { findingsBaselineFixture as baseline, findingsResponse, findingsFilteredResponse, findingsSource, findingsSourceText, findingsSubsetResponse, groupedFindingsResponse } from '../src/story-only/findingsFixtures';
 import { storyBaselineState, storyDateRange } from '../src/story-only/analyticsFixtures';
 import { literalsResponse } from '../src/story-only/literalsFixtures';
 import { theme } from '../src/theme';
@@ -22,10 +22,10 @@ let store: FindingsStore;
 let literalStore: LiteralsStore;
 beforeEach(() => vi.stubGlobal('crypto', webcrypto));
 afterEach(() => { cleanup(); store?.actions.dispose(); literalStore?.actions.dispose(); vi.unstubAllGlobals(); });
-function setup(overrides: Partial<FindingsClient> = {}) {
+function setup(overrides: Partial<FindingsClient> = {}, view: 'grouped' | null = null) {
   const api: FindingsClient = { read: vi.fn(async (request) => parseFindings(request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request), request)),
     evidence: vi.fn(async (reference) => findingsSource(reference)), ...overrides };
-  store = createFindingsStore(api); let state = context(); const listeners = new Set<() => void>();
+  store = createFindingsStore(api, { view }); let state = context(); const listeners = new Set<() => void>();
   const literalApi: LiteralsClient = { read: vi.fn(async (request) => parseLiterals(literalsResponse(request), request)),
     evidence: vi.fn(async (reference) => findingsSource(reference)) };
   literalStore = createLiteralsStore(literalApi);
@@ -35,6 +35,52 @@ function setup(overrides: Partial<FindingsClient> = {}) {
 }
 
 describe('TaskFindings', () => {
+  it('shows declared unions, overlapping groups, ungrouped categories and pinned child actions', async () => {
+    const read = vi.fn<FindingsClient['read']>(async (request) => parseGroupedFindings(await groupedFindingsResponse(request), request));
+    setup({ read }, 'grouped');
+    const subjects = await screen.findByRole('table', { name: 'Topics findings · Subjects' });
+    expect(within(subjects).getByText('Example topic')).toBeTruthy();
+    expect(within(subjects).getByText('Second category')).toBeTruthy();
+    expect(screen.getAllByText(/Union support: 1 messages · 1 conversations · Complete \/ partial: 1 \/ 0/)).toHaveLength(2);
+    expect(screen.getByRole('table', { name: 'Topics findings · Formats café 😀' })).toBeTruthy();
+    expect(screen.getByRole('table', { name: 'Mentions findings · Ungrouped categories' })).toBeTruthy();
+    expect(screen.getByRole('table', { name: 'Previous Topics findings · Subjects' })).toBeTruthy();
+    expect(screen.getByText(/Groups and categories can overlap/)).toBeTruthy();
+    const first = store.getState().result;
+    if (first?.schema_version !== 'analytics-findings.v4') throw new Error('Grouped view required');
+    const pin = `sha256:${first.navigation.policy!.sha256}`;
+    fireEvent.click(within(subjects).getByRole('button', { name: 'View sources for Topics: Second category' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(expect.objectContaining({
+      category_filter: { task: 'message_topics', category_id: 'synthetic-secondary' },
+      expected_navigation_sha256: pin, conversation_ref: null }), expect.any(AbortSignal)));
+    await screen.findByText('Selected category: Topics · Second category');
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Message direction' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Received messages' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ direction: 'inbound', expected_navigation_sha256: pin }), expect.any(AbortSignal)));
+    await screen.findByRole('table', { name: 'Topics findings · Subjects' });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh saved findings' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ expected_navigation_sha256: null }), expect.any(AbortSignal)));
+  });
+  it('retains flat category sources when grouping has no declaration', async () => {
+    const read = vi.fn<FindingsClient['read']>(async (request) => {
+      if (!request.view) return parseFindings(findingsResponse(request), request);
+      const value = await groupedFindingsResponse(request);
+      value.navigation = { availability: 'not_declared', policy: null, declaration: null, current: [], previous: null };
+      return parseGroupedFindings(value, request);
+    });
+    setup({ read }, 'grouped');
+    expect(await screen.findByRole('table', { name: 'Topics findings' })).toBeTruthy();
+    expect(screen.getByText(/Declared category groups are unavailable/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'View sources for Topics: Example topic' })).toBeTruthy();
+    await store.actions.read(1);
+    expect(read).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Use flat categories' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith(expect.not.objectContaining({ view: 'grouped' }), expect.any(AbortSignal)));
+    await screen.findByRole('table', { name: 'Topics findings' });
+    await act(async () => { await store.actions.read(1); });
+    expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ evidence_offset: 1 }), expect.any(AbortSignal));
+    expect(read.mock.calls.at(-1)![0].expected_navigation_sha256).toBeUndefined();
+  });
   it('keeps activated literal reads live across direction, conversation and category changes', async () => {
     const { literalApi } = setup();
     expect(literalApi.read).not.toHaveBeenCalled();
