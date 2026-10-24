@@ -163,7 +163,14 @@ def test_every_tracking_trigger_is_required(fixture):
         # Catalog 27 also tracks immutable membership and backfill progress.
         # Catalog 28 tracks erasure progress and historical record bindings.
         # Catalog 30 also tracks immutable findings source pages.
-        assert len(names) == 108
+        # Catalog 33 tracks all five literal payload tables.
+        literal_tables = ('nlp_literal_accounts', 'nlp_literal_derivations', 'nlp_literal_derivation_batches',
+                          'nlp_literal_publications', 'nlp_literal_publication_batches')
+        literal_names = {f'generation_content_{table}_{event}'
+                         for table in literal_tables for event in ('insert', 'update', 'delete')}
+        assert literal_names <= set(names)
+        assert len(set(names) - literal_names) == 108
+        assert len(names) == 123
         for name in names:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TRIGGER ' + name)

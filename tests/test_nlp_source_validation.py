@@ -792,6 +792,8 @@ def test_source_lane_migration_preserves_populated_inventory_and_claims(fixture,
     before = content(database)
     with database.read() as db:
         before_stamp = content_stamp(db)
+        before_signatures = {row[0]: hashlib.sha256(row[1].encode()).hexdigest()
+                             for row in db.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")}
     assert before_stamp is not None
     upgraded = ProjectionsDatabase(path)
     assert content(upgraded) == before
@@ -803,9 +805,21 @@ def test_source_lane_migration_preserves_populated_inventory_and_claims(fixture,
     assert after_stamp[2] != before_stamp[2] and after_stamp[3] == before_stamp[3]
     def signature_digest(values):
         return hashlib.sha256(json.dumps(values, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    assert signature_digest(signatures) == GUARD_DIGESTS[30]
-    assert signature_digest({name: value for name, value in signatures.items()
+    literal_tables = ('nlp_literal_accounts', 'nlp_literal_derivations', 'nlp_literal_derivation_batches',
+                      'nlp_literal_publications', 'nlp_literal_publication_batches')
+    literal_tracking = {f'generation_content_{table}_{event}'
+                        for table in literal_tables for event in ('insert', 'update', 'delete')}
+    literal_guards = {f'{table}_{guard}' for table in literal_tables
+                      for guard in ('immutable', 'replace_blocked')}
+    literal_guards.add('nlp_literal_publication_batches_building')
+    assert signatures.keys() - before_signatures.keys() == literal_tracking | literal_guards
+    assert {name: signatures[name] for name in before_signatures} == before_signatures
+    assert signature_digest(before_signatures) == GUARD_DIGESTS[30]
+    assert signature_digest(signatures) == GUARD_DIGESTS[CURRENT_SCHEMA_VERSION]
+    assert signature_digest({name: value for name, value in before_signatures.items()
                              if name.startswith('generation_content_')}) == TRIGGER_DIGESTS[30]
+    assert signature_digest({name: value for name, value in signatures.items()
+                             if name.startswith('generation_content_')}) == TRIGGER_DIGESTS[CURRENT_SCHEMA_VERSION]
     restarted = FindingsStore(upgraded)
     assert restarted.valid_claim(claim)
     restarted.release(claim)
