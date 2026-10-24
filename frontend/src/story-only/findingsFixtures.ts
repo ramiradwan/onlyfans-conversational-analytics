@@ -1,7 +1,7 @@
 /** STORY ONLY: invented response and source text for isolated visual inspection. */
 import type { AccountRef } from '../analytics/analyticsContract';
 import type { FindingsBaseline } from '../analytics/analyticsReadModel';
-import type { FindingsRequest, FindingsResponse, FindingsResponseV1, FindingsResponseV2, FindingsTask } from '../analytics/findingsContract';
+import type { FindingsRequest, FindingsResponse, FindingsResponseV1, FindingsResponseV2, FindingsResponseV3, FindingsTask } from '../analytics/findingsContract';
 import type { QuestionEvidence, SourceEvidence } from '../analytics/questionContract';
 
 export const findingsAccount = 'synthetic-question-account';
@@ -64,4 +64,17 @@ export function findingsSubsetResponse(request = findingsRequest,
       has_more: request.evidence_offset + request.evidence_limit < evidence.length,
       items: evidence.slice(request.evidence_offset, request.evidence_offset + request.evidence_limit) },
   };
+}
+
+export function findingsFilteredResponse(request: FindingsRequest,
+  declared: FindingsTask['task'][] = ['message_topics', 'concept_mentions']): FindingsResponseV3 {
+  if (!request.category_filter) throw new Error('Category required');
+  const value = findingsSubsetResponse(request, declared);
+  const evidence = findingsSubsetResponse({ ...request, evidence_offset: 0, evidence_limit: 100 }, declared)
+    .evidence_page.items.filter((item) => item.task === request.category_filter!.task && item.category_id === request.category_filter!.category_id);
+  return { ...value, schema_version: 'analytics-findings.v3', category_filter: { ...request.category_filter },
+    conversation_page: evidence.length ? value.conversation_page : { ...value.conversation_page, items: [], total: 0, has_more: false },
+    evidence_page: { ...value.evidence_page, total: evidence.length,
+      has_more: request.evidence_offset + request.evidence_limit < evidence.length,
+      items: evidence.slice(request.evidence_offset, request.evidence_offset + request.evidence_limit) } };
 }

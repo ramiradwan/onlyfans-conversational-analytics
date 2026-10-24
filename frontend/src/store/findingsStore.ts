@@ -3,7 +3,7 @@ import { createStore } from 'zustand';
 import type { BridgeTransportState } from './transportStore';
 import type { FindingsBaseline } from '../analytics/analyticsReadModel';
 import { createFindingsClient, FindingsClientError, type FindingsClient } from '../analytics/findingsClient';
-import { findingsSnapshot, type FindingsDirection, type FindingsRequest, type FindingsResponse } from '../analytics/findingsContract';
+import { findingsSnapshot, type FindingsCategoryFilter, type FindingsDirection, type FindingsRequest, type FindingsResponse } from '../analytics/findingsContract';
 import { evidenceKey, expectedAccountRef, parseSourceEvidence, type QuestionEvidence, type SourceEvidence } from '../analytics/questionContract';
 
 type Context = Pick<BridgeTransportState, 'creatorAccountId' | 'session' | 'connection' | 'projection' | 'readModelState'>;
@@ -19,7 +19,8 @@ export interface FindingsState {
 const initial: FindingsState = { status: 'unavailable', binding: '', result: null,
   message: 'Text analysis is unavailable until a matching saved analysis is ready.',
   source: null, sourceLoading: false, sourceError: null };
-export const findingsBinding = (baseline: FindingsBaseline | null, direction: FindingsDirection, conversation: string | null = null) => JSON.stringify([baseline, direction, conversation]);
+export const findingsBinding = (baseline: FindingsBaseline | null, direction: FindingsDirection, conversation: string | null = null,
+  category: FindingsCategoryFilter | null = null) => JSON.stringify([baseline, direction, conversation, category?.task ?? null, category?.category_id ?? null]);
 
 export function createFindingsStore(api: FindingsClient = createFindingsClient()) {
   const store = createStore<FindingsState>(() => ({ ...initial }));
@@ -54,8 +55,9 @@ export function createFindingsStore(api: FindingsClient = createFindingsClient()
         message: error instanceof FindingsClientError ? error.message : 'These text analysis results could not be verified. Refresh the analytics view.' });
     }
   }
-  function setContext(baseline: FindingsBaseline | null, next: Context, direction: FindingsDirection, conversation: string | null = null) {
-    const binding = findingsBinding(baseline, direction, conversation);
+  function setContext(baseline: FindingsBaseline | null, next: Context, direction: FindingsDirection, conversation: string | null = null,
+    category: FindingsCategoryFilter | null = null) {
+    const binding = findingsBinding(baseline, direction, conversation, category);
     const key = JSON.stringify([binding, next.creatorAccountId, next.session?.connection_id,
       next.connection, next.readModelState, next.projection]);
     if (key === contextKey) return;
@@ -63,7 +65,8 @@ export function createFindingsStore(api: FindingsClient = createFindingsClient()
     selected = baseline && account && next.connection === 'connected' && next.readModelState === 'realtime'
       && next.projection.status === 'current' && next.projection.canonical_revision === baseline.source_revision
       && next.projection.projected_revision === baseline.source_revision
-      ? { baseline, direction, evidence_offset: 0, evidence_limit: 50, conversation_ref: conversation, conversation_offset: 0, conversation_limit: 50 } : null;
+      ? { baseline, direction, evidence_offset: 0, evidence_limit: 50, conversation_ref: conversation, conversation_offset: 0, conversation_limit: 50,
+        category_filter: category ? { task: category.task, category_id: category.category_id } : null } : null;
     store.setState({ ...initial, binding });
     if (selected) void read();
   }

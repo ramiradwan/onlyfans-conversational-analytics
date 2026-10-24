@@ -22,7 +22,7 @@ from app.analytics.query_execution import (
     QuestionLimitExceeded,
 )
 from app.models.analytics import AnalyticsWindow, WindowScope
-from app.models.insights import FindingsRequest, FindingsResponse, SubsetFindingsResponse
+from app.models.insights import FindingsRequest, FindingsResponse, SubsetFindingsResponse, FilteredFindingsResponse
 from app.nlp.contracts import SourceBinding
 from app.nlp.profiles import read_profile
 
@@ -474,6 +474,16 @@ def _select(sources, start, end, direction, *, end_exclusive=False, conversation
 def aggregate(value, records, generation, snapshot, request, budget, source_rows):
     """Return counts and one exact evidence page, plus private locator bindings."""
     profile = read_profile(encoded(value["snapshot"]["profile"]))
+    category = request.category_filter
+    if category is not None and not any(
+        binding.task == category.task and any(
+            task.task == category.task and category.category_id in task.enabled_ids
+            for task in profile.component(binding.component_id).tasks
+        ) for binding in profile.bindings
+    ):
+        raise InvalidAnalyticsRequest(
+            "analytics_findings_request_invalid", "The selected category is unavailable for this analysis profile."
+        )
     inventory, labels, sources = _inventory(
         value, records, profile, budget, source_rows
     )
@@ -487,6 +497,35 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
     ]
     tasks, evidence = _summarize(profile, inventory, labels, selected, records, budget)
     conversations = Counter(ref.conversation_ref for _, ref, _ in population)
+    if category is not None:
+        matching_conversations = set()
+        for item, ref, _ in population:
+            budget.check()
+            record = records.get(item["record_digest"])
+            if record is None:
+                continue
+            payload = next(task.result.payload for task in record.tasks
+                           if task.result.payload.task == category.task)
+            if payload.outcome not in ("assessed_findings", "partial"):
+                continue
+            for finding in payload.findings:
+                budget.check()
+                identifier = finding.topic_id if category.task == "message_topics" else finding.concept_id
+                if identifier == category.category_id:
+                    matching_conversations.add(ref.conversation_ref)
+                    break
+        matching_counts = Counter()
+        for key, count in conversations.items():
+            budget.check()
+            if key in matching_conversations:
+                matching_counts[key] = count
+        conversations = matching_counts
+        matching_evidence = []
+        for entry in evidence:
+            budget.check()
+            if entry[0] == category.task and entry[1] == category.category_id:
+                matching_evidence.append(entry)
+        evidence = matching_evidence
     conversation_rows = sorted(conversations)
     conversation_page = conversation_rows[
         request.conversation_offset : request.conversation_offset
@@ -548,11 +587,13 @@ def aggregate(value, records, generation, snapshot, request, budget, source_rows
     page = evidence[
         request.evidence_offset : request.evidence_offset + request.evidence_limit
     ]
-    response_model = SubsetFindingsResponse if profile.schema_version == 'nlp-profile.v3' else FindingsResponse
+    response_model = (FilteredFindingsResponse if category is not None else
+                      SubsetFindingsResponse if profile.schema_version == 'nlp-profile.v3' else FindingsResponse)
     availability = ({'task_availability': [
         {'task': task, 'availability': 'declared' if task in {b.task for b in profile.bindings} else 'not_declared'}
-        for task in ('message_topics', 'concept_mentions')]} if profile.schema_version == 'nlp-profile.v3' else {})
+        for task in ('message_topics', 'concept_mentions')]} if category is not None or profile.schema_version == 'nlp-profile.v3' else {})
     response = response_model(
+        **({'category_filter': category} if category is not None else {}),
         **availability,
         **{
             key: generation[column]

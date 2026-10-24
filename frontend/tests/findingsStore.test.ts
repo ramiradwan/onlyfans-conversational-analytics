@@ -6,14 +6,14 @@ import type { FindingsClient } from '../src/analytics/findingsClient';
 import { parseFindings, type FindingsResponse } from '../src/analytics/findingsContract';
 import type { SourceEvidence } from '../src/analytics/questionContract';
 import { createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
-import { findingsBaselineFixture as baseline, findingsResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
+import { findingsBaselineFixture as baseline, findingsResponse, findingsFilteredResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 import { context } from './questionFixture';
 
 let store: FindingsStore;
 beforeEach(() => vi.stubGlobal('crypto', webcrypto));
 afterEach(() => { store?.actions.dispose(); vi.unstubAllGlobals(); });
 function setup(overrides: Partial<FindingsClient> = {}) {
-  const api: FindingsClient = { read: vi.fn(async (request) => parseFindings(findingsResponse(request), request)),
+  const api: FindingsClient = { read: vi.fn(async (request) => parseFindings(request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request), request)),
     evidence: vi.fn(async (reference) => findingsSource(reference)), ...overrides };
   store = createFindingsStore(api); store.actions.setContext(baseline, context(), 'all');
   return api;
@@ -21,6 +21,42 @@ function setup(overrides: Partial<FindingsClient> = {}) {
 const ready = async () => vi.waitFor(() => expect(store.getState().status).toBe('ready'));
 
 describe('findings store', () => {
+  it('owns category identity and resets both pages across task/category changes', async () => {
+    const api = setup(); await ready();
+    await store.actions.read(1, 1);
+    const category = { task: 'message_topics' as const, category_id: 'synthetic-topic' };
+    store.actions.setContext(baseline, context(), 'all', null, category);
+    category.category_id = 'mutated';
+    await ready();
+    expect(api.read).toHaveBeenLastCalledWith(expect.objectContaining({ evidence_offset: 0, conversation_offset: 0,
+      category_filter: { task: 'message_topics', category_id: 'synthetic-topic' } }), expect.any(AbortSignal));
+    await store.actions.read();
+    expect(store.getState().result?.schema_version).toBe('analytics-findings.v3');
+    store.actions.setContext(baseline, context(), 'all', null, { task: 'concept_mentions', category_id: 'synthetic-mention' });
+    expect(store.getState().result).toBeNull(); await ready();
+    expect(store.getState().result?.evidence_page.total).toBe(2);
+  });
+  it('aborts stale category reads and source dialogs before accepting a new category', async () => {
+    let resolveRead!: (value: FindingsResponse) => void;
+    const read = vi.fn<FindingsClient['read']>().mockImplementationOnce(() => new Promise((done) => { resolveRead = done; }))
+      .mockImplementation(async (request) => parseFindings(findingsFilteredResponse(request), request));
+    let resolveSource!: (value: SourceEvidence) => void;
+    const evidence = vi.fn<FindingsClient['evidence']>(() => new Promise((done) => { resolveSource = done; }));
+    setup({ read, evidence }); await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    const firstSignal = read.mock.calls[0][1] as AbortSignal;
+    store.actions.setContext(baseline, context(), 'all', null, { task: 'concept_mentions', category_id: 'synthetic-mention' });
+    await ready(); resolveRead(findingsResponse()); await Promise.resolve();
+    expect(firstSignal.aborted).toBe(true);
+    expect(store.getState().result?.evidence_page.total).toBe(2);
+    const reference = store.getState().result!.evidence_page.items[0].reference;
+    const pending = store.actions.openSource(reference);
+    store.actions.setContext(baseline, context(), 'all', null, { task: 'message_topics', category_id: 'synthetic-topic' });
+    expect(store.getState().source).toBeNull();
+    resolveSource(findingsSource(reference)); await pending; await ready();
+    expect((evidence.mock.calls[0][1] as AbortSignal).aborted).toBe(true);
+    expect(store.getState().source).toBeNull();
+    expect(store.getState().result?.evidence_page.items[0].task).toBe('message_topics');
+  });
   it('reads only the accepted baseline and resolves only evidence from its current page', async () => {
     const api = setup(); await ready();
     expect(api.read).toHaveBeenCalledWith(expect.objectContaining({ baseline, direction: 'all', conversation_ref: null }), expect.any(AbortSignal));

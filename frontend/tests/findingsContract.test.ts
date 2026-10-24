@@ -2,9 +2,32 @@ import { describe, expect, it } from 'vitest';
 
 import { findingsTaskAvailability, parseFindings, type FindingsResponseV2 } from '../src/analytics/findingsContract';
 import { parseSourceEvidence } from '../src/analytics/questionContract';
-import { findingsRequest, findingsResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
+import { findingsRequest, findingsResponse, findingsFilteredResponse, findingsSource, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 
 describe('findings contract', () => {
+  it('requires the filtered version and exact task/category echo while keeping summaries', () => {
+    const request = { ...findingsRequest, category_filter: { task: 'concept_mentions' as const, category_id: 'synthetic-mention' }, evidence_offset: 1, evidence_limit: 1 };
+    const value = findingsFilteredResponse(request);
+    const result = parseFindings(value, request);
+    expect(result.tasks).toEqual(findingsResponse(request).tasks);
+    expect(result.comparison).toEqual(findingsResponse(request).comparison);
+    expect(result.evidence_page).toMatchObject({ offset: 1, total: 2, has_more: false });
+    expect(result.evidence_page.items[0].reference.span).toEqual({ start: 14, end: 18 });
+    expect(() => parseFindings(value, { ...request, category_filter: null })).toThrow();
+    expect(() => parseFindings(findingsResponse(request), request)).toThrow();
+    expect(() => parseFindings(findingsSubsetResponse(request), request)).toThrow();
+    for (const category_filter of [{ task: 'message_topics', category_id: 'synthetic-mention' },
+      { task: 'concept_mentions', category_id: 'other' }]) {
+      expect(() => parseFindings({ ...value, category_filter }, request)).toThrow();
+    }
+    expect(() => parseFindings({ ...findingsResponse(), category_filter: request.category_filter }, findingsRequest)).toThrow();
+    expect(() => parseFindings({ ...findingsSubsetResponse(), category_filter: request.category_filter }, findingsRequest)).toThrow();
+    const wrongEvidence = findingsFilteredResponse(request);
+    wrongEvidence.evidence_page.items[0] = findingsResponse().evidence_page.items[2];
+    expect(() => parseFindings(wrongEvidence, request)).toThrow();
+    const subset = parseFindings(findingsFilteredResponse(request, ['concept_mentions']), request);
+    expect(findingsTaskAvailability(subset)).toContainEqual({ task: 'message_topics', availability: 'not_declared' });
+  });
   it('validates both tasks and retains separate coverage and counting units', () => {
     const value = parseFindings(findingsResponse(), findingsRequest);
     expect(value.tasks[1].rows[0].occurrences).toBe(2);

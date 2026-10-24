@@ -9,7 +9,7 @@ import { parseFindings } from '../src/analytics/findingsContract';
 import { AnalyticsPresentation } from '../src/components/analytics/AnalyticsPresentation';
 import { TaskFindings } from '../src/components/analytics/TaskFindings';
 import { createFindingsStore, type FindingsStore } from '../src/store/findingsStore';
-import { findingsBaselineFixture as baseline, findingsResponse, findingsSource, findingsSourceText, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
+import { findingsBaselineFixture as baseline, findingsResponse, findingsFilteredResponse, findingsSource, findingsSourceText, findingsSubsetResponse } from '../src/story-only/findingsFixtures';
 import { storyBaselineState, storyDateRange } from '../src/story-only/analyticsFixtures';
 import { theme } from '../src/theme';
 import { context } from './questionFixture';
@@ -18,7 +18,7 @@ let store: FindingsStore;
 beforeEach(() => vi.stubGlobal('crypto', webcrypto));
 afterEach(() => { cleanup(); store?.actions.dispose(); vi.unstubAllGlobals(); });
 function setup(overrides: Partial<FindingsClient> = {}) {
-  const api: FindingsClient = { read: vi.fn(async (request) => parseFindings(findingsResponse(request), request)),
+  const api: FindingsClient = { read: vi.fn(async (request) => parseFindings(request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request), request)),
     evidence: vi.fn(async (reference) => findingsSource(reference)), ...overrides };
   store = createFindingsStore(api); let state = context(); const listeners = new Set<() => void>();
   const transport = { getState: () => state, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
@@ -27,6 +27,32 @@ function setup(overrides: Partial<FindingsClient> = {}) {
 }
 
 describe('TaskFindings', () => {
+  it('selects and clears category sources accessibly while returning to all conversations', async () => {
+    const { api } = setup();
+    await screen.findByRole('table', { name: 'Topics findings' });
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Conversation' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Conversation 1 · 7 eligible messages' }));
+    await waitFor(() => expect(api.read).toHaveBeenLastCalledWith(expect.objectContaining({ conversation_ref: `c1:${'2'.repeat(64)}` }), expect.any(AbortSignal)));
+    fireEvent.click(await screen.findByRole('button', { name: 'Mentions source 1: synthetic-mention (complete)' }));
+    await screen.findByRole('dialog', { name: 'Finding source' });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'View sources for Topics: Example topic' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(api.read).toHaveBeenLastCalledWith(expect.objectContaining({ category_filter: { task: 'message_topics', category_id: 'synthetic-topic' },
+      conversation_ref: null, evidence_offset: 0, conversation_offset: 0 }), expect.any(AbortSignal)));
+    expect(await screen.findByText('Selected category: Topics · Example topic')).toBeTruthy();
+    expect(screen.getByText(/Choosing or clearing a category returns to all conversations/)).toBeTruthy();
+    const topics = await screen.findByRole('table', { name: 'Topics findings' });
+    expect(within(topics).getByText(/50\s*%/)).toBeTruthy();
+    expect(screen.getByRole('table', { name: 'Mentions findings' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Mentions source 1:/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear category filter' }));
+    await waitFor(() => expect(api.read).toHaveBeenLastCalledWith(expect.objectContaining({ category_filter: null, conversation_ref: null,
+      evidence_offset: 0, conversation_offset: 0 }), expect.any(AbortSignal)));
+    expect(screen.queryByText(/Selected category:/)).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Mentions source 2: synthetic-mention (complete)' })).toBeTruthy();
+  });
   it('shows both tasks with distinct counting units and honest label fallback', async () => {
     const { api } = setup();
     const topics = await screen.findByRole('table', { name: 'Topics findings' });

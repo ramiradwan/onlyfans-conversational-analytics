@@ -10,13 +10,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from app.analytics.errors import ProjectionUnavailable
+from app.analytics.errors import InvalidAnalyticsRequest, ProjectionUnavailable
 from app.analytics.evidence import EvidenceUnavailable
 from app.analytics.nlp_read_projection import frozen_labels
 from app.analytics.query_runtime import QuestionResources
 from app.analytics.nlp_processing import FindingsRunner
 from app.analytics.opaque_refs import account_ref
-from app.models.insights import FindingsRequest
+from app.models.insights import FindingsCategoryFilter, FindingsRequest
 from app.nlp.profiles import AnalysisProfile
 from app.security.local_sessions import build_runtime_policy
 from app.security.runtime_policy import AuthContext
@@ -72,8 +72,21 @@ class FixtureAdapter(ConformanceAdapter):
         return json.dumps(response).encode()
 
 
+class CategoryAdapter(FixtureAdapter):
+    def __call__(self, request, cancelled):
+        response = json.loads(super().__call__(request, cancelled))
+        number = int(request.items[0].text.rsplit("case", 1)[1])
+        topics = response["items"][0]["tasks"][0]["payload"]
+        categories = {0: ["topic.synthetic"], 1: ["concept.synthetic"],
+                      2: ["topic.partial"], 4: ["topic.synthetic", "topic.second"]}
+        if number in categories:
+            topics["outcome"] = "partial" if number == 2 else "assessed_findings"
+            topics["findings"] = [{"topic_id": c} for c in categories[number]]
+        return json.dumps(response).encode()
+
+
 @pytest.fixture
-def ready(tmp_path):
+def ready(tmp_path, request):
     fixture = make_fixture(tmp_path, conversations=2, messages=4)
     with fixture.repositories.database.transaction() as db:
         rows = db.execute(
@@ -94,8 +107,15 @@ def ready(tmp_path):
             "description": "Other synthetic label",
         }
     )
+    category_case = getattr(request, "param", None) == "categories"
+    if category_case:
+        for identifier in ("concept.synthetic", "topic.partial", "topic.zero", "topic.disabled"):
+            component["executed_labels"].append({"task": "message_topics", "label_id": identifier,
+                                                 "description": "Synthetic category"})
+            if identifier != "topic.disabled":
+                component["tasks"][0]["enabled_ids"].append(identifier)
     profile = AnalysisProfile.model_validate_json(json.dumps(document))
-    adapter = FixtureAdapter(profile)
+    adapter = (CategoryAdapter if category_case else FixtureAdapter)(profile)
 
     def labels(identity):
         return (
@@ -520,8 +540,9 @@ def test_optional_metadata_capacity_failure_preserves_core_publication(
     assert error.value.availability == "unavailable"
 
 
+@pytest.mark.parametrize("category_filtered", [False, True])
 def test_full_source_capacity_is_counted_once_across_tasks_comparison_and_evidence(
-    ready,
+    ready, category_filtered,
 ):
     import sqlite3
     from app.analytics.nlp_read_projection import (
@@ -587,6 +608,8 @@ def test_full_source_capacity_is_counted_once_across_tasks_comparison_and_eviden
             "start_date": ready.fixture.clock.now - timedelta(days=9),
             "end_date": ready.fixture.clock.now,
             "evidence_limit": 2,
+            "category_filter": FindingsCategoryFilter(task="message_topics", category_id="topic.synthetic")
+            if category_filtered else None,
         }
     )
     response, bindings = aggregate(
@@ -703,3 +726,119 @@ def test_read_slot_and_shutdown_refuse_findings_without_execution(ready):
     assert ready.resources.wait_closed()
     with pytest.raises(ProjectionUnavailable):
         ready.resources.findings(ready.policy, ready.request)
+
+
+@pytest.mark.parametrize("ready", ["categories"], indirect=True)
+def test_category_pages_preserve_population_and_filter_before_pagination(ready):
+    from app.analytics.opaque_refs import conversation_ref, message_ref
+
+    start = ready.fixture.clock.now - timedelta(days=8)
+    plan = ready.request.model_copy(update={"start_date": start, "end_date": start + timedelta(hours=2)})
+    full = ready.resources.findings(ready.policy, plan)
+    selected = plan.model_copy(update={
+        "category_filter": FindingsCategoryFilter(task="message_topics", category_id="topic.synthetic"),
+        "evidence_limit": 1, "evidence_offset": 1,
+        "conversation_limit": 1, "conversation_offset": 1,
+    })
+    response = ready.resources.findings(ready.policy, selected)
+    assert response.schema_version == "analytics-findings.v3"
+    assert response.category_filter == selected.category_filter
+    assert response.tasks == full.tasks
+    assert response.comparison == full.comparison
+    assert response.effective_window == full.effective_window
+    assert response.tasks[0].complete_messages == 4
+    assert response.tasks[0].rows[0].share_of_complete_messages == 1 / 2
+    chats = sorted(conversation_ref(ACCOUNT, f"chat-{i}") for i in range(2))
+    assert response.conversation_page.total == 2
+    assert [(c.conversation_ref, c.eligible_messages) for c in response.conversation_page.items] == [(chats[1], 4)]
+    expected = sorted(message_ref(ACCOUNT, f"chat-{i}", f"m-{i}-0") for i in range(2))
+    assert response.evidence_page.total == 2
+    assert [e.reference.message_ref for e in response.evidence_page.items] == [expected[1]]
+    assert all(e.task == "message_topics" and e.category_id == "topic.synthetic" for e in response.evidence_page.items)
+
+    conversation = selected.model_copy(update={"conversation_ref": chats[0], "conversation_offset": 0, "evidence_offset": 0})
+    narrowed = ready.resources.findings(ready.policy, conversation)
+    original = ready.resources.findings(ready.policy, conversation.model_copy(update={"category_filter": None}))
+    assert narrowed.tasks == original.tasks and narrowed.comparison == original.comparison
+    assert narrowed.effective_window == original.effective_window
+    assert narrowed.conversation_page.total == 2
+    assert all(e.reference.conversation_ref == chats[0] for e in narrowed.evidence_page.items)
+
+
+@pytest.mark.parametrize("ready", ["categories"], indirect=True)
+def test_category_partial_zero_and_same_identifier_in_other_task(ready):
+    from app.analytics.opaque_refs import conversation_ref, message_ref
+
+    full = ready.resources.findings(ready.policy, ready.request)
+    def read(task, identifier):
+        return ready.resources.findings(ready.policy, ready.request.model_copy(update={
+            "category_filter": FindingsCategoryFilter(task=task, category_id=identifier)}))
+    partial = read("message_topics", "topic.partial")
+    assert [(e.reference.message_ref, e.assessment) for e in partial.evidence_page.items] == [(message_ref(ACCOUNT, "chat-0", "m-0-2"), "partial")]
+    assert [(c.conversation_ref, c.eligible_messages) for c in partial.conversation_page.items] == [(conversation_ref(ACCOUNT, "chat-0"), 4)]
+    zero = read("message_topics", "topic.zero")
+    assert zero.evidence_page.total == zero.conversation_page.total == 0
+    assert zero.tasks == partial.tasks == full.tasks
+    assert zero.comparison == partial.comparison == full.comparison
+    for identifier, chat in (("topic.partial", "chat-0"), ("topic.second", "chat-1")):
+        for offset in (0, 1):
+            page = ready.resources.findings(ready.policy, ready.request.model_copy(update={
+                "category_filter": FindingsCategoryFilter(task="message_topics", category_id=identifier),
+                "conversation_limit": 1, "conversation_offset": offset})).conversation_page
+            assert page.total == 1
+            assert [c.conversation_ref for c in page.items] == ([conversation_ref(ACCOUNT, chat)] if offset == 0 else [])
+            assert all(c.eligible_messages == 4 for c in page.items)
+    topic = read("message_topics", "concept.synthetic")
+    mentions = read("concept_mentions", "concept.synthetic")
+    assert [e.reference.message_ref for e in topic.evidence_page.items] == [message_ref(ACCOUNT, "chat-0", "m-0-1")]
+    assert mentions.evidence_page.total == 5
+    assert all(e.task == "concept_mentions" and e.reference.span is not None for e in mentions.evidence_page.items)
+    for identifier in ("topic.disabled", "unknown"):
+        with pytest.raises(InvalidAnalyticsRequest):
+            read("message_topics", identifier)
+
+
+def test_category_endpoint_pairs_strict_queries_and_response_version(api, ready):
+    client, _ = api
+    query = ready.request.model_dump(mode="json", exclude_none=True)
+    pair = {"category_task": "message_topics", "category_id": "topic.synthetic"}
+    response = client.get("/api/v1/insights/findings", params={**query, **pair})
+    assert response.status_code == 200, response.text
+    assert response.json()["schema_version"] == "analytics-findings.v3"
+    assert response.json()["category_filter"] == {"task": pair["category_task"], "category_id": pair["category_id"]}
+    assert len(response.json()["task_availability"]) == 2
+    assert client.get("/api/v1/insights/findings", params=query).json()["schema_version"] == "analytics-findings.v1"
+    for extra in ({"category_task": "message_topics"}, {"category_id": "topic.synthetic"},
+                  {**pair, "category_task": "unknown"}, {**pair, "category_id": "unknown"},
+                  {**pair, "unexpected": "value"}):
+        invalid = client.get("/api/v1/insights/findings", params={**query, **extra})
+        assert invalid.status_code == 422, invalid.text
+        assert invalid.json()["detail"]["code"] == "analytics_findings_request_invalid"
+    for key in pair:
+        duplicate = list({**query, **pair}.items()) + [(key, pair[key])]
+        assert client.get("/api/v1/insights/findings", params=duplicate).status_code == 422
+
+
+@pytest.mark.parametrize("interruption", ["cancel", "deadline"])
+def test_category_filter_observes_shared_budget_after_summary(ready, monkeypatch, interruption):
+    from app.analytics import nlp_read_projection as projection
+    from app.analytics.query_execution import QuestionBudget, QuestionCancelled, QuestionLimitExceeded, QuestionLimits
+
+    interrupted = False
+    summarize = projection._summarize
+    def complete_summary(*args, **kwargs):
+        nonlocal interrupted
+        result = summarize(*args, **kwargs)
+        interrupted = True
+        return result
+    monkeypatch.setattr(projection, "_summarize", complete_summary)
+    budget = QuestionBudget(QuestionLimits(max_records=100_000, wall_clock_ms=5000),
+        cancellation_check=lambda: interrupted and interruption == "cancel",
+        monotonic=lambda: 6 if interrupted and interruption == "deadline" else 0)
+    monkeypatch.setattr(projection, "QuestionBudget", lambda *args, **kwargs: budget)
+    plan = ready.request.model_copy(update={"category_filter":
+        FindingsCategoryFilter(task="message_topics", category_id="topic.synthetic")})
+    error = QuestionCancelled if interruption == "cancel" else QuestionLimitExceeded
+    with pytest.raises(error):
+        ready.resources.findings(ready.policy, plan)
+    assert not ready.resources.evidence._entries
