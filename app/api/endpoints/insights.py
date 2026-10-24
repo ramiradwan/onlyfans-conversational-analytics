@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
 
 from app.analytics.evidence import EvidenceUnavailable
 from app.analytics.evidence_contracts import ResolvedEvidence
@@ -37,6 +39,7 @@ from app.models.insights import (
 )
 from app.services import insights_service
 from app.models.nlp_literals import LiteralFindingsRequest, LiteralFindingsResponse
+from app.models.nlp_observations import ObservationLinksRequest, ObservationLinksResponse
 
 
 router = APIRouter(
@@ -302,6 +305,70 @@ async def get_literal_findings(request: Request, response: Response,
         raise HTTPException(422, detail={'code': 'analytics_findings_request_invalid',
             'message': 'The findings request is invalid.', 'availability': 'unavailable'},
             headers={'Cache-Control': 'no-store'}) from None
+
+
+class _ObservationReadRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def protected(request: Request):
+            try:
+                return await handler(request)
+            except RequestValidationError:
+                raise HTTPException(422, detail={'code': 'analytics_findings_request_invalid',
+                    'message': 'The findings request is invalid.', 'availability': 'unavailable'},
+                    headers={'Cache-Control': 'no-store'}) from None
+
+        return protected
+
+
+async def get_observation_links(request: Request, response: Response,
+        expected_generation: int = Query(..., ge=1),
+        expected_projection_digest: str = Query(..., pattern=r'^sha256:[0-9a-f]{64}$'),
+        start_date: str | None = None, end_date: str | None = None,
+        direction: str = Query('all', pattern=r'^(all|inbound|outbound)$'),
+        evidence_offset: int = Query(0, ge=0, le=1_000_000),
+        evidence_limit: int = Query(50, ge=1, le=100),
+        conversation_ref: str | None = Query(None, pattern=r'^c1:[0-9a-f]{64}$'),
+        category_task: str | None = None, category_id: str | None = None,
+        node_id: str | None = Query(None, pattern=r'^sha256:[0-9a-f]{64}$'),
+        expected_normalization_sha256: str | None = Query(None, pattern=r'^sha256:[0-9a-f]{64}$'),
+        expected_view_sha256: str | None = Query(None, pattern=r'^sha256:[0-9a-f]{64}$'),
+        policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    account_bound_to_session(policy, None)
+    response.headers['Cache-Control'] = 'no-store'
+    allowed = {'expected_generation', 'expected_projection_digest', 'start_date', 'end_date',
+               'direction', 'evidence_offset', 'evidence_limit', 'conversation_ref',
+               'category_task', 'category_id', 'node_id', 'expected_normalization_sha256',
+               'expected_view_sha256'}
+    try:
+        if (any(key not in allowed or len(request.query_params.getlist(key)) != 1
+                for key in request.query_params)
+                or (category_task is None) != (category_id is None)
+                or (category_task is not None) == (node_id is not None)):
+            raise InvalidAnalyticsRequest('analytics_findings_request_invalid', 'The findings request is invalid.')
+        focus = ({'kind': 'literal', 'node_id': node_id} if node_id is not None else
+                 {'kind': 'category', 'selection': {'task': category_task, 'category_id': category_id}})
+        plan = ObservationLinksRequest(expected_generation=expected_generation,
+            expected_projection_digest=expected_projection_digest,
+            start_date=_timestamp(start_date), end_date=_timestamp(end_date), direction=direction,
+            conversation_ref=conversation_ref, evidence_offset=evidence_offset, evidence_limit=evidence_limit,
+            expected_normalization_sha256=expected_normalization_sha256,
+            expected_view_sha256=expected_view_sha256, focus=focus)
+        return await insights_service.fetch_observation_links(policy, plan)
+    except AnalyticsError as error:
+        failure = _analytics_http_error(error)
+        failure.headers = {'Cache-Control': 'no-store'}
+        raise failure from None
+    except (ValueError, TypeError):
+        raise HTTPException(422, detail={'code': 'analytics_findings_request_invalid',
+            'message': 'The findings request is invalid.', 'availability': 'unavailable'},
+            headers={'Cache-Control': 'no-store'}) from None
+
+
+router.add_api_route('/findings/observations', get_observation_links, methods=['GET'],
+    response_model=ObservationLinksResponse, operation_id='fetchObservationLinks',
+    responses=PROTECTED_ERROR_RESPONSES, route_class_override=_ObservationReadRoute)
 
 
 def _question_schema(model):
