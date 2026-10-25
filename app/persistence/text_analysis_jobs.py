@@ -282,9 +282,6 @@ class TextAnalysisJobStore:
                 require_text_analysis_fence(policy, context, kind='license', phase='start',
                                             canonical_database=self.repository.database)
             db.execute('UPDATE text_analysis_enrollments SET state=? WHERE enrollment_id=?', (mode, enrollment_id))
-            if mode == 'retired':
-                db.execute('DELETE FROM knowledge_jobs WHERE job_id IN '
-                           '(SELECT job_id FROM text_analysis_intents WHERE enrollment_id=?)', (enrollment_id,))
         return EnrollmentReceipt(enrollment_id=enrollment_id, state=mode)
 
     def prepare_child_in(self, db, enrollment_id, plan, sources, *, profile_bytes, policy):

@@ -372,6 +372,124 @@ def test_ports_require_a_held_transaction_and_closed_plans(execution):
         JobPlan.model_validate(dict(x.plan.model_dump(), job_id=str(uuid4())))
 
 
+def enrolled_child(x):
+    parameters = ExecutionParameters.model_validate({k:v for k,v in x.plan.model_dump().items() if k != 'input'})
+    intent = EnrollmentIntent(external_key=str(uuid4()), run_context=x.intent.run_context, parameters=parameters)
+    with x.repo.database.transaction() as db:
+        parent = x.store.enroll_in(db, intent, policy=x.policy)
+        child = x.store.prepare_child_in(db, parent.enrollment_id, x.plan, x.members,
+            profile_bytes=x.profile.model_dump_json().encode(), policy=x.policy)
+    return intent, parent, child
+
+
+def seal_child(x, child):
+    activate(x, child)
+    with x.held() as current:
+        token = x.repo.claim_attempt(child.job_id, expected_fence=0, lease_seconds=60, policy=current)
+        for ordinal, frame in enumerate(x.frames[:len(x.members)]):
+            x.repo.stage_member(token, ordinal, frame, policy=current)
+        return x.repo.commit(token, policy=current)
+
+
+def test_retirement_preserves_sealed_bytes_baseline_replay_and_distinct_enrollment(execution, monkeypatch):
+    from app.analytics.nlp_contribution_replay import replay_contribution
+    from app.analytics.nlp_findings_store import FindingsStore
+    from app.core.config import settings
+    x = execution(one=True)
+    intent, parent, child = enrolled_child(x)
+    manifest = seal_child(x, child)
+    baseline = replace(x.policy, text_analysis_authority=None, text_analysis_fence=None)
+    original = x.repo.export_document(child.contribution_id, policy=baseline)
+    with x.repo.database.transaction() as db:
+        retired = x.store.set_enrollment_mode_in(db, parent.enrollment_id, 'retired', policy=baseline)
+    saved = canonical_rows(x.repo.database)
+    with x.repo.database.transaction() as db:
+        assert x.store.set_enrollment_mode_in(db, parent.enrollment_id, 'retired', policy=baseline) == retired
+        assert x.store.enroll_in(db, intent, policy=x.policy) == retired
+    assert canonical_rows(x.repo.database) == saved
+    with monkeypatch.context() as patch:
+        patch.setattr(settings, 'environment', 'production')
+        assert x.repo.get_committed(child.contribution_id, policy=baseline) == manifest
+        assert x.repo.export_document(child.contribution_id, policy=baseline) == original
+        with x.repo.database.read() as db:
+            assert x.store.read_in(db, child.job_id, policy=baseline).state == 'committed'
+            assert x.store.list_children_in(db, parent.enrollment_id, policy=baseline)[0].job_id == child.job_id
+        findings = FindingsStore(x.f.stores.projections.database)
+        findings.select(ACCOUNT, x.profile, mode='paused')
+        assert replay_contribution(x.repo, findings, child.contribution_id, policy=baseline)['complete']
+        with findings.database.read() as db:
+            assert bytes(db.execute('SELECT document FROM nlp_records').fetchone()[0]) == x.frames[0]
+        assert replay_contribution(x.repo, findings, child.contribution_id, policy=baseline)['imported'] == 0
+    with x.repo.database.transaction() as db:
+        replacement = x.store.enroll_in(db, intent.model_copy(update={'external_key':str(uuid4())}), policy=x.policy)
+        new_child = x.store.prepare_child_in(db, replacement.enrollment_id, x.plan, x.members,
+            profile_bytes=x.profile.model_dump_json().encode(), policy=x.policy)
+    assert replacement.enrollment_id != parent.enrollment_id
+    assert (new_child.job_id, new_child.contribution_id) != (child.job_id, child.contribution_id)
+    assert x.repo.export_document(child.contribution_id, policy=baseline) == original
+
+
+@pytest.mark.parametrize('phase', ['start', 'resume', 'commit'])
+def test_retired_enrollment_fences_retained_unfinished_children(execution, phase):
+    x = execution(one=True)
+    _, parent, child = enrolled_child(x)
+    token = None
+    if phase != 'start':
+        activate(x, child)
+        with x.held() as current:
+            token = x.repo.claim_attempt(child.job_id, expected_fence=0, lease_seconds=60, policy=current)
+            x.repo.stage_member(token, 0, x.frames[0], policy=current)
+    with x.repo.database.transaction() as db:
+        x.store.set_enrollment_mode_in(db, parent.enrollment_id, 'retired', policy=x.policy)
+    retained = canonical_rows(x.repo.database)
+    with x.held() as current:
+        with pytest.raises(ValueError, match='enrollment_unavailable'):
+            if phase == 'start':
+                with x.repo.database.transaction() as db:
+                    x.store.activate_in(db, child.job_id, policy=current)
+            elif phase == 'resume':
+                x.repo.claim_attempt(child.job_id, expected_fence=1, lease_seconds=60, policy=current)
+            else:
+                x.repo.commit(token, policy=current)
+        with pytest.raises(ValueError, match='enrollment_unavailable'), x.repo.database.transaction() as db:
+            x.store.prepare_child_in(db, parent.enrollment_id, x.plan, x.members,
+                profile_bytes=x.profile.model_dump_json().encode(), policy=current)
+    assert canonical_rows(x.repo.database) == retained
+    with x.repo.database.read() as db:
+        assert x.store.read_in(db, child.job_id, policy=x.policy).state == ('prepared' if phase == 'start' else 'running')
+        assert db.execute('SELECT count(*) FROM knowledge_sources').fetchone()[0] == 1
+        assert db.execute('SELECT count(*) FROM knowledge_members').fetchone()[0] == (0 if phase == 'start' else 1)
+
+
+@pytest.mark.parametrize('kind', ['message', 'account', 'expiry'])
+def test_retirement_preserves_source_and_retention_erasure(execution, kind):
+    from app.persistence.retention import CreatorVaultRetention
+    x = execution(one=True)
+    _, parent, child = enrolled_child(x)
+    seal_child(x, child)
+    baseline = replace(x.policy, text_analysis_authority=None, text_analysis_fence=None)
+    with x.repo.database.transaction() as db:
+        x.store.set_enrollment_mode_in(db, parent.enrollment_id, 'retired', policy=baseline)
+    retention = CreatorVaultRetention(x.repo.database, clock=lambda:x.f.clock.now)
+    if kind == 'message':
+        retention.delete_message(ACCOUNT, 'm-0-0')
+    elif kind == 'account':
+        retention.delete_all(ACCOUNT)
+    else:
+        x.f.clock.now += timedelta(days=1000)
+        with pytest.raises(ValueError, match='source_expired'):
+            x.repo.get_committed(child.contribution_id, policy=baseline)
+        retention.enforce(ACCOUNT)
+    with pytest.raises(ValueError, match='contribution_unavailable'):
+        x.repo.get_committed(child.contribution_id, policy=baseline)
+    with x.repo.database.read() as db:
+        receipt = x.store.read_in(db, child.job_id, policy=baseline)
+        assert receipt.state == 'result_deleted' and receipt.contribution_id == child.contribution_id
+        assert x.store.read_enrollment_in(db, parent.enrollment_id, policy=baseline)[0].state == 'retired'
+        for table in ('knowledge_jobs', 'knowledge_sources', 'knowledge_members', 'knowledge_contributions'):
+            assert db.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 0
+
+
 def canonical_rows(database):
     with database.read() as db:
         tables = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
