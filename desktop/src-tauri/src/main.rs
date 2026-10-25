@@ -10,6 +10,8 @@ mod deployment;
 #[cfg(windows)]
 mod engine_acquisition;
 #[cfg(windows)]
+mod engine_acquisition_broker;
+#[cfg(windows)]
 mod frame;
 mod handoff_contract;
 #[cfg(windows)]
@@ -100,6 +102,9 @@ fn desktop_engine_acquisition_start(
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .map_err(|_| "update_check_in_progress")?;
     let guard = UpdateCheckGuard(owner.clone());
+    if owner.admitted.load(Ordering::SeqCst) && !owner.quitting.load(Ordering::SeqCst) {
+        engine_acquisition_broker::admitted_servicing();
+    }
     let release = owner.release.clone();
     let acquisition = owner.engine_acquisition.clone();
     acquisition.start(explicit_selection, release, move || {
@@ -141,6 +146,13 @@ fn main() {
         WebviewUrl, WebviewWindowBuilder,
     };
     let args: Vec<String> = std::env::args().collect();
+    if engine_acquisition_broker::requested(&args) {
+        std::process::exit(if engine_acquisition_broker::run(&args).is_ok() {
+            0
+        } else {
+            1
+        });
+    }
     if worker_host::requested(&args) {
         std::process::exit(if worker_host::run(&args).is_ok() {
             0

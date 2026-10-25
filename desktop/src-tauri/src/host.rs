@@ -156,6 +156,7 @@ fn run(
         }
         state.admitted.store(true, Ordering::SeqCst);
         crate::servicing_handoff::admitted(data)?;
+        crate::engine_acquisition_broker::admitted_servicing();
         let window = app.get_webview_window("main").ok_or("window_unavailable")?;
         window.navigate(target).map_err(|_| "window_unavailable")?;
         let mut next_check = Instant::now() + Duration::from_secs(15);
@@ -382,6 +383,9 @@ fn prepare_update(state: &Arc<Host>) -> bool {
     let release = release.clone();
     std::thread::spawn(move || {
         let _check = Check(owner.clone());
+        if owner.admitted.load(Ordering::SeqCst) && !owner.quitting.load(Ordering::SeqCst) {
+            crate::engine_acquisition_broker::admitted_servicing();
+        }
         let result = crate::servicing::prepare_direct(&release, || {
             owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
         });

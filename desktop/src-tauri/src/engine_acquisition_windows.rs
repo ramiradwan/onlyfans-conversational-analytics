@@ -15,7 +15,7 @@ use windows_runtime::{
 };
 
 const BUDGET: Duration = Duration::from_secs(300);
-pub(super) struct Failure {
+pub(crate) struct Failure {
     pub reason: &'static str,
     pub hresult: Option<i32>,
     pub recovery: bool,
@@ -55,7 +55,7 @@ fn reconcile_active(owner: &Owner, journal: &Journal, verify: impl FnOnce() -> b
     recovery("optional_recovery_pending")
 }
 
-fn declared(release: Option<&DesktopRelease>) -> Result<&EngineRelease, Failure> {
+pub(crate) fn declared(release: Option<&DesktopRelease>) -> Result<&EngineRelease, Failure> {
     let release = release.ok_or("optional_direct_release_required")?;
     if release.update_owner != "direct-appinstaller" {
         return Err("optional_direct_release_required".into());
@@ -85,7 +85,10 @@ fn binding(
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
-fn installed(release: &DesktopRelease, expected: &EngineRelease) -> Result<bool, Failure> {
+pub(crate) fn installed(
+    release: &DesktopRelease,
+    expected: &EngineRelease,
+) -> Result<bool, Failure> {
     let (package, actual) = servicing::observe().map_err(windows_error)?;
     if servicing::bind(release, &actual) != servicing::UpdateSource::DirectAppinstaller {
         return Err("optional_direct_release_required".into());
@@ -133,7 +136,7 @@ impl servicing::deployment_settlement::Operation for Optional<'_> {
             }
             other => {
                 self.owner.update(|s| {
-                    s.reason = Some("optional_status_unobservable");
+                    s.reason = Some("optional_status_unobservable".into());
                     if let Err(error) = other {
                         s.hresult = Some(error.code().0);
                     }
@@ -149,7 +152,7 @@ impl servicing::deployment_settlement::Operation for Optional<'_> {
         });
         if let Err(error) = self.operation.Cancel() {
             self.owner.update(|s| {
-                s.reason = Some("optional_cancel_request_failed");
+                s.reason = Some("optional_cancel_request_failed".into());
                 s.hresult = Some(error.code().0);
             });
         }
@@ -292,6 +295,7 @@ mod tests {
                 }),
                 cancel: AtomicBool::new(false),
                 stopping: AtomicBool::new(false),
+                remote: false,
             });
             let journal = Journal {
                 schema: "optional-engine-acquisition.v1".into(),
