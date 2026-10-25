@@ -45,6 +45,23 @@ RECEIPT_KEYS = {"schema", "source_commit", "workflow_run_id", "run_attempt", "lo
 CASE_KEYS = {"id", "configuration", "observations", "outcome", "files", "duration_ms"}
 INVENTORY_CASE_KEYS = {"id", "group", "kind", "configuration", "observations", "report", "files"}
 PHASES = {"prepare", "frontend", "dynamic", "freshness", "review", "static", "cleanup", "manifest"}
+OBSERVER_REGIONS = {
+    "home": ["freshness-status", "issue-band", "dashboard-notice", "dashboard-overview", "dashboard-basis", "dashboard-recent", "dashboard-setup"],
+    "analytics": ["freshness-status", "issue-band", "analytics-content"],
+    "inbox": ["freshness-status", "issue-band", "inbox-notice", "inbox-content"],
+    "settings": ["freshness-status", "issue-band", "settings-browser", "settings-history", "settings-activation", "settings-vault"],
+    "graph": ["freshness-status", "issue-band", "graph-notice"],
+    "passkey": ["passkey-card", "passkey-feedback"],
+    "production-boot": ["passkey-card", "passkey-feedback"],
+    "popup": ["popup-content", "popup-status", "surface-feedback"],
+    "setup": ["extension-stage", "surface-feedback"],
+    "options": ["options-notice", "options-capture", "options-connection", "options-data", "surface-feedback"],
+}
+OBSERVER_PHASES = {
+    "required_region_missing_at_first_surface": "first_surface",
+    "observer_read_failed": "observer_read",
+    "observer_unclassified": "observer_inspection",
+}
 
 
 class VisualGateError(ValueError):
@@ -69,6 +86,36 @@ def number(value: Any, code: str = "invalid_number", *, integer: bool = False, m
 def exact(value: Any, keys: set[str], code: str) -> dict[str, Any]:
     require(isinstance(value, dict) and set(value) == keys, code)
     return value
+
+
+def case_fields(row: Any, code: str) -> None:
+    require(type(row) is dict, code)
+    exact(row, CASE_KEYS | ({"observer_diagnostics"} if "observer_diagnostics" in row else set()), code)
+
+
+def observer_diagnostics(row: dict[str, Any], case: dict[str, Any]) -> list[dict[str, Any]]:
+    if "observer_diagnostics" not in row:
+        return []
+    value = row["observer_diagnostics"]
+    config = case["configuration"]
+    view = config.get("view", config.get("workspace", config.get("surface")))
+    require(type(view) is str and view in OBSERVER_REGIONS, "observer_diagnostic_view")
+    regions = OBSERVER_REGIONS[view]
+    require(row["outcome"] == "failed" and type(value) is list and 0 < len(value) <= len(regions) + 2,
+            "observer_diagnostic_values")
+    seen, result = set(), []
+    for entry in value:
+        exact(entry, {"code", "phase", "region"}, "observer_diagnostic_fields")
+        code, phase, region = entry["code"], entry["phase"], entry["region"]
+        require(type(code) is str and code in OBSERVER_PHASES and type(phase) is str
+                and phase == OBSERVER_PHASES[code], "observer_diagnostic_code")
+        require((type(region) is str and region in regions) if code == "required_region_missing_at_first_surface"
+                else region is None, "observer_diagnostic_region")
+        identity = (code, phase, region)
+        require(identity not in seen, "observer_diagnostic_duplicate")
+        seen.add(identity)
+        result.append({"code": code, "phase": phase, "region": region})
+    return result
 
 
 def read(path: Path) -> bytes:
@@ -363,8 +410,9 @@ def validate_receipt(directory: Path, *, inventory: dict[str, Any], digest: str,
     actual = _rows(receipt["cases"], "id", "case_inventory")
     require(set(actual) == set(expected), "incomplete_case_inventory")
     for case_id, row in actual.items():
-        exact(row, CASE_KEYS, "case_receipt_fields")
+        case_fields(row, "case_receipt_fields")
         case = expected[case_id]
+        observer_diagnostics(row, case)
         require(same(row["configuration"], case["configuration"]) and row["observations"] == case["observations"]
                 and row["outcome"] == "passed" and isinstance(row["files"], list)
                 and len(row["files"]) == len(set(row["files"])) and set(row["files"]) == set(case["files"]),
@@ -511,12 +559,16 @@ def publish_diagnostics(raw: Path, destination: Path, inventory: dict[str, Any],
         seen = set()
         safe = []
         for row in receipt["cases"]:
-            exact(row, CASE_KEYS, "partial_case_fields")
+            case_fields(row, "partial_case_fields")
             case_id = row["id"]
             require(isinstance(case_id, str) and case_id in known and case_id not in seen
                     and (group == "all" or known[case_id]["group"] == group)
                     and row["outcome"] in {"passed", "failed", "incomplete"}, "partial_case_values")
-            safe.append({"id": case_id, "outcome": row["outcome"]})
+            retained = {"id": case_id, "outcome": row["outcome"]}
+            diagnostic = observer_diagnostics(row, known[case_id])
+            if diagnostic:
+                retained["observer_diagnostics"] = diagnostic
+            safe.append(retained)
             seen.add(case_id)
         result.update(group=group, status="restricted_metadata", cases=safe, phase_timings=dict(sorted(phases.items())))
     except (VisualGateError, ContractError, OSError, ValueError, TypeError, KeyError):
@@ -532,6 +584,10 @@ def publish_diagnostics(raw: Path, destination: Path, inventory: dict[str, Any],
         lines = ["## Visual capture incomplete", "", f"Group: `{result['group']}`; producer attempt: {attempt}.",
                  "", "| Registered case | Outcome |", "| --- | --- |"]
         lines += [f"| `{row['id']}` | {row['outcome']} |" for row in failed]
+        for row in failed:
+            for diagnostic in row.get("observer_diagnostics", []):
+                region = f"; region `{diagnostic['region']}`" if diagnostic["region"] is not None else ""
+                lines += ["", f"Observer `{row['id']}`: `{diagnostic['code']}`; phase `{diagnostic['phase']}`{region}."]
         lines += ["", "Phase seconds: " + ", ".join(f"{phase}={duration:.3f}"
                     for phase, duration in result["phase_timings"].items()) + "."]
         lines += ["", "Reproduce the complete group:", "", f"`{_rerun(result['group'])}`"]

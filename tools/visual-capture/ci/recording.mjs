@@ -5,6 +5,7 @@ import path, { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { generateInventory, inventoryBytes } from './inventory.mjs';
+import { validateObserverDiagnostics } from '../observer-diagnostics.mjs';
 
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export const GROUPS = ['all', 'dynamic', 'remaining'];
@@ -57,7 +58,7 @@ export class CaptureRecorder {
     const record = { id, configuration: structuredClone(configuration), observations: [], outcome: 'incomplete', files: [], duration_ms: 0 };
     this.records.set(id, record);
     let ended = false;
-    return ({ observations = [], outcome, files = [] }) => {
+    return ({ observations = [], outcome, files = [], observerDiagnostics = [] }) => {
       if (ended) throw new Error('visual_ci_duplicate_case_terminal');
       ended = true;
       const allowed = new Set(expected.observations);
@@ -65,9 +66,12 @@ export class CaptureRecorder {
       const safeFiles = Array.isArray(files) ? files.filter(value => expected.files.includes(value)) : [];
       const exact = isDeepStrictEqual(observations, expected.observations)
         && isDeepStrictEqual([...new Set(files)].sort(), [...expected.files].sort());
+      const terminal = outcome === 'passed' && exact ? 'passed' : 'failed';
+      const diagnostic = validateObserverDiagnostics(observerDiagnostics, expected.configuration, terminal);
       record.observations = safeObservations;
       record.files = safeFiles;
-      record.outcome = outcome === 'passed' && exact ? 'passed' : 'failed';
+      record.outcome = terminal;
+      if (diagnostic.length) record.observer_diagnostics = diagnostic;
       record.duration_ms = Math.max(0, Math.round(this.clock() - start));
     };
   }
