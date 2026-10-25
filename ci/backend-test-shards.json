@@ -386,6 +386,10 @@
         "reason": "Actual process-held root ownership, read-only DPAPI inspection and pre-constructor refusal require Windows qualification."
       },
       {
+        "selector": "tests/test_nlp_process_owners.py::test_joined_process_with_exit_code_259_is_absent_while_handle_is_retained",
+        "reason": "Retained Windows process handles must distinguish an exited process with code 259 from a running process."
+      },
+      {
         "selector": "tests/test_upgrade_lifecycle.py",
         "reason": "Keyed admission must see committed SQLCipher WAL, refuse incompatible state and complete pending schemas before constructors."
       },
