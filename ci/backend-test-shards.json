@@ -283,6 +283,7 @@
     "tests/test_nlp_dependency_publication.py": 4,
     "tests/test_nlp_execution_gate.py": 2,
     "tests/test_nlp_first_download_recovery.py": 3,
+    "tests/test_nlp_frozen_execution_gate.py": 2,
     "tests/test_nlp_literal_publication.py": 2,
     "tests/test_nlp_literal_read.py": 4,
     "tests/test_nlp_navigation_api.py": 1,
@@ -360,6 +361,7 @@
     "tests/test_startup_maintenance.py": 3,
     "tests/test_streamed_conversation_pending.py": 2,
     "tests/test_targeted_visibility_benchmark.py": 3,
+    "tests/test_text_analysis_jobs.py": 1,
     "tests/test_tied_insertion_admission.py": 3,
     "tests/test_tied_insertion_metric_reuse.py": 2,
     "tests/test_tied_insertion_reuse.py": 1,
@@ -618,6 +620,14 @@
       {
         "selector": "tests/test_nlp_recovery.py",
         "reason": "Explicit SQLite recovery preserves source inventory, literal bytes and shared authority visibility fences on Windows."
+      },
+      {
+        "selector": "tests/test_nlp_frozen_execution_gate.py",
+        "reason": "Frozen execution refuses mutable environment overrides while saved SQLite findings remain readable."
+      },
+      {
+        "selector": "tests/test_text_analysis_jobs.py",
+        "reason": "Encrypted SQLite preserves prepared jobs, exact store ownership and atomic preview output and spend transitions on Windows."
       }
     ],
     "analytics": [

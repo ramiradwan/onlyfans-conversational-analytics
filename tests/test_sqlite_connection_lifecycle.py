@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from threading import Event, Thread
 
 import pytest
@@ -7,6 +8,19 @@ import pytest
 from app.persistence import database as database_module
 
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
+
+def test_connection_ownership_rejects_other_owners_detached_and_closed_handles(tmp_path):
+    database = database_module.CanonicalSQLite(tmp_path / 'owned.sqlite3', encryption_key=b'r' * 32)
+    other_owner = database_module.CanonicalSQLite(database.path, encryption_key=b'r' * 32)
+    with closing(database.connect()) as owned, closing(other_owner.connect()) as foreign:
+        assert database.owns_connection(owned)
+        assert not database.owns_connection(foreign)
+        assert not other_owner.owns_connection(owned)
+        with closing(database.open_detached(tmp_path / 'detached.sqlite3')) as detached:
+            assert not database.owns_connection(detached)
+        owned.close()
+        assert not database.owns_connection(owned)
 
 
 class ProbeLock:

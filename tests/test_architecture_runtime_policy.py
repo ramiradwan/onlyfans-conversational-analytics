@@ -29,6 +29,7 @@ _AUTHORITY_TABLES = frozenset(
         "bridge_sessions",
         "runtime_tickets",
         "authorization_epoch",
+        "text_analysis_authority_references",
         "companion_pairing_windows",
         "companion_pairing_generations",
     }
@@ -46,6 +47,7 @@ def _is_kernel_path(path: Path) -> bool:
     return normalized.startswith("security/") or normalized in {
         "persistence/auth.py",
         "persistence/companion_pairing.py",
+        "persistence/text_analysis_authority.py",
     }
 
 
@@ -154,4 +156,17 @@ def test_companion_authority_persistence_has_an_exact_kernel_owner(
     (persistence / "unapproved_pairing.py").write_text(authority, encoding="utf-8")
     assert _runtime_policy_boundary_violations(root) == [
         "persistence/unapproved_pairing.py: ['references authorization row companion_pairing_windows']"
+    ]
+
+
+def test_text_analysis_authority_persistence_has_an_exact_kernel_owner(tmp_path: Path) -> None:
+    root = tmp_path / "app"
+    persistence = root / "persistence"
+    persistence.mkdir(parents=True)
+    authority = 'TABLE = "text_analysis_authority_references"\n'
+    (persistence / "text_analysis_authority.py").write_text(authority, encoding="utf-8")
+    assert _runtime_policy_boundary_violations(root) == []
+    (persistence / "unapproved_analysis.py").write_text(authority, encoding="utf-8")
+    assert _runtime_policy_boundary_violations(root) == [
+        "persistence/unapproved_analysis.py: ['references authorization row text_analysis_authority_references']"
     ]

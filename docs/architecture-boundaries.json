@@ -390,7 +390,9 @@
         "app/persistence/json_header.py",
         "app/persistence/signing_parameters.py",
         "app/persistence/nlp_dependencies.py",
-        "app/persistence/contributions.py"
+        "app/persistence/contributions.py",
+        "app/persistence/text_analysis_authority.py",
+        "app/persistence/text_analysis_jobs.py"
       ],
       "role": "Authoritative canonical conversation storage, SQLite database lifecycle and SQLCipher runtime qualification, schema migrations, and irreversible deletion closure.",
       "authority": "authoritative",
@@ -703,7 +705,8 @@
         "app/analytics/nlp_contribution_replay.py",
         "app/analytics/nlp_contribution_sources.py",
         "app/analytics/nlp_contribution_origins.py",
-        "app/analytics/nlp_recovery.py"
+        "app/analytics/nlp_recovery.py",
+        "app/analytics/nlp_preview.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",
