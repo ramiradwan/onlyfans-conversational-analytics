@@ -327,6 +327,60 @@ pub(crate) fn save_engine_acquisition(data: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn load_engine_reconnect(data: &Path) -> Result<Option<Vec<u8>>> {
+    let path = data.join("temp/native-servicing/engine-reconnect.json");
+    policy::safe_data_path(&path)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    private_path(&path)?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(&path)
+        .map_err(|_| "servicing_storage_invalid")?;
+    let mut bytes = Vec::new();
+    file.take(4097)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "servicing_storage_invalid")?;
+    if bytes.len() > 4096 {
+        return Err("servicing_storage_invalid");
+    }
+    Ok(Some(bytes))
+}
+
+pub(crate) fn save_engine_reconnect(data: &Path, bytes: &[u8]) -> Result<()> {
+    if bytes.is_empty() || bytes.len() > 4096 {
+        return Err("servicing_storage_invalid");
+    }
+    let root = cache_root(data, true)?;
+    let target = root.join("engine-reconnect.json");
+    if target.exists() {
+        private_path(&target)?;
+    }
+    let temporary = root.join("engine-reconnect.next");
+    if temporary.exists() {
+        private_path(&temporary)?;
+        std::fs::remove_file(&temporary).map_err(|_| "servicing_storage_invalid")?;
+    }
+    let mut file = create_file(&temporary)?;
+    file.write_all(bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|_| "servicing_storage_invalid")?;
+    drop(file);
+    if unsafe {
+        MoveFileExW(
+            wide(&temporary).as_ptr(),
+            wide(&target).as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err("servicing_storage_invalid");
+    }
+    Ok(())
+}
+
 fn nonce() -> Result<String> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).map_err(|_| "servicing_random_unavailable")?;
@@ -384,6 +438,7 @@ impl Cancellation {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Frame {
+    family_binding: String,
     intent: Intent,
     root: PathBuf,
 }
@@ -690,7 +745,7 @@ pub fn start(
         session: nonce()?,
         name: observed.identity.name,
         publisher: observed.identity.publisher,
-        family,
+        family: family.clone(),
         source_version: observed.identity.version,
         target_version: update.version.clone(),
         target_full_name: update.package_full_name.clone(),
@@ -745,7 +800,22 @@ pub fn start(
         PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
     )?;
     let cancellation = duplicate(cancel.0 .0, SYNCHRONIZE)?;
-    let mut inherited = [parent.0, input.0, response.0, cancellation.0];
+    let family_lease = update
+        .family_lease
+        .as_ref()
+        .ok_or("servicing_exclusion_invalid")?;
+    family_lease.validate(&family)?;
+    if !family_lease.bound_servicing(&update.family_binding)? {
+        return Err("servicing_exclusion_invalid");
+    }
+    let lease_handle = family_lease.duplicate()?;
+    let mut inherited = [
+        parent.0,
+        input.0,
+        response.0,
+        cancellation.0,
+        lease_handle.0,
+    ];
     let mut breakaway = 1u32;
     let mut attributes = Attributes::new(&mut inherited, &mut breakaway)?;
     let mut startup: STARTUPINFOEXW = unsafe { zeroed() };
@@ -753,12 +823,13 @@ pub fn start(
     startup.lpAttributeList = attributes.raw();
     let mut process: PROCESS_INFORMATION = unsafe { zeroed() };
     let mut command = wide(format!(
-        "\"{}\" {HELPER_FLAG} {} {} {} {}",
+        "\"{}\" {HELPER_FLAG} {} {} {} {} {}",
         image.display(),
         parent.0 as usize,
         input.0 as usize,
         response.0 as usize,
-        cancellation.0 as usize
+        cancellation.0 as usize,
+        lease_handle.0 as usize
     ));
     if unsafe {
         CreateProcessW(
@@ -794,6 +865,7 @@ pub fn start(
     };
     preparation.armed = false;
     let bytes = serde_json::to_vec(&Frame {
+        family_binding: update.family_binding.clone(),
         intent,
         root: data.to_owned(),
     })
@@ -833,10 +905,10 @@ fn argument_handle(value: &str) -> Result<Handle> {
 }
 
 pub fn helper_main(args: &[String]) -> Result<()> {
-    if args.len() != 6 || !helper_requested(args) || windows::package_identity()?.is_some() {
+    if args.len() != 7 || !helper_requested(args) || windows::package_identity()?.is_some() {
         return Err("servicing_helper_invalid");
     }
-    let values = [&args[2], &args[3], &args[4], &args[5]];
+    let values = [&args[2], &args[3], &args[4], &args[5], &args[6]];
     for (index, value) in values.iter().enumerate() {
         if values[..index].contains(value) {
             return Err("servicing_handle_invalid");
@@ -846,6 +918,17 @@ pub fn helper_main(args: &[String]) -> Result<()> {
     let input = argument_handle(&args[3])?;
     let status = argument_handle(&args[4])?;
     let cancel = argument_handle(&args[5])?;
+    let raw_lease = argument_handle(&args[6])?;
+    let mut flags = 0;
+    if unsafe { GetHandleInformation(raw_lease.0, &mut flags) } == 0
+        || flags & HANDLE_FLAG_INHERIT == 0
+    {
+        return Err("servicing_exclusion_invalid");
+    }
+    let family_lease = servicing::family_exclusion::Lease {
+        handle: servicing::family_exclusion::Handle::new(raw_lease.0)?,
+    };
+    std::mem::forget(raw_lease);
     if unsafe { GetProcessId(parent.0) } == 0
         || unsafe { GetProcessId(parent.0) } == unsafe { GetCurrentProcessId() }
         || windows::process_sid(parent.0)? != windows::current_sid()?
@@ -864,6 +947,10 @@ pub fn helper_main(args: &[String]) -> Result<()> {
     frame.intent.validate()?;
     let full_name = process_package(parent.0, false)?.ok_or("servicing_parent_invalid")?;
     let family = process_package(parent.0, true)?.ok_or("servicing_parent_invalid")?;
+    family_lease.validate(&family)?;
+    if !family_lease.bound_servicing(&frame.family_binding)? {
+        return Err("servicing_exclusion_invalid");
+    }
     let parent_image = windows::process_image(parent.0)?;
     let (observed, installed) = servicing::installed(&full_name)?;
     let release = crate::deployment::load(
@@ -975,6 +1062,7 @@ pub fn helper_main(args: &[String]) -> Result<()> {
                 if crate::handoff_contract::version(&observed.identity.version)?
                     >= crate::handoff_contract::version(&committed.target_version)?
                 {
+                    // The admitted target settles the separately recorded deferred result.
                     return Ok(());
                 }
             }

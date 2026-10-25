@@ -17,7 +17,7 @@ pub(crate) enum Selection {
     Preview,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Phase {
     NotRequested,
@@ -29,7 +29,8 @@ pub(crate) enum Phase {
     RecoveryPending,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Status {
     pub operation_id: Option<String>,
     pub state: Phase,
@@ -39,7 +40,7 @@ pub(crate) struct Status {
     pub deadline_reached: bool,
     // AddOptionalPackageAsync does not expose transfer byte counts.
     pub progress_percent: Option<u8>,
-    pub reason: Option<&'static str>,
+    pub reason: Option<String>,
     pub hresult: Option<i32>,
 }
 impl Default for Status {
@@ -92,9 +93,15 @@ pub(crate) struct Owner {
     inner: Mutex<Inner>,
     cancel: AtomicBool,
     stopping: AtomicBool,
+    remote: bool,
 }
 impl Owner {
     pub fn new(data: PathBuf) -> Arc<Self> {
+        let mut owner = Self::new_local(data);
+        Arc::get_mut(&mut owner).unwrap().remote = true;
+        owner
+    }
+    pub(crate) fn new_local(data: PathBuf) -> Arc<Self> {
         let mut status = Status::default();
         match crate::servicing_handoff::load_engine_acquisition(&data)
             .and_then(|b| b.map(|b| Journal::decode(&b)).transpose())
@@ -102,11 +109,11 @@ impl Owner {
             Ok(Some(journal)) if journal.active => {
                 status.operation_id = Some(journal.operation_id);
                 status.state = Phase::RecoveryPending;
-                status.reason = Some("optional_recovery_pending");
+                status.reason = Some("optional_recovery_pending".into());
             }
             Err(_) => {
                 status.state = Phase::RecoveryPending;
-                status.reason = Some("optional_intent_invalid");
+                status.reason = Some("optional_intent_invalid".into());
             }
             _ => {}
         }
@@ -118,9 +125,13 @@ impl Owner {
             }),
             cancel: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
+            remote: false,
         })
     }
     pub fn status(&self) -> Status {
+        if self.remote {
+            return crate::engine_acquisition_broker::status(&self.data);
+        }
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -128,12 +139,19 @@ impl Owner {
             .clone()
     }
     pub fn busy(&self) -> bool {
+        if self.remote {
+            let s = self.status();
+            return s.in_flight || s.state == Phase::RecoveryPending;
+        }
         let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.status.in_flight
             || inner.status.state == Phase::RecoveryPending
             || inner.thread.as_ref().is_some_and(|t| !t.is_finished())
     }
     pub fn cancel(&self, operation: &str) -> Result<Status, &'static str> {
+        if self.remote {
+            return crate::engine_acquisition_broker::cancel(&self.data, operation);
+        }
         if !crate::worker_host::hex(operation, 32) {
             return Err("optional_operation_unknown");
         }
@@ -148,10 +166,24 @@ impl Owner {
         }
         Ok(inner.status.clone())
     }
+    pub(crate) fn local_finished(&self) -> bool {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .thread
+            .as_ref()
+            .is_some_and(|t| t.is_finished())
+    }
     pub fn request_stop(&self) {
+        if self.remote {
+            return;
+        }
         self.cancel.store(true, Ordering::SeqCst);
     }
     pub fn drain(&self) -> bool {
+        if self.remote {
+            return true;
+        }
         self.stopping.store(true, Ordering::SeqCst);
         self.request_stop();
         let thread = self
@@ -165,7 +197,7 @@ impl Owner {
                 self.update(|s| {
                     s.in_flight = false;
                     s.state = Phase::RecoveryPending;
-                    s.reason = Some("optional_owner_failed");
+                    s.reason = Some("optional_owner_failed".into());
                 });
                 return false;
             }
@@ -181,14 +213,39 @@ impl Owner {
         release: Option<DesktopRelease>,
         cancelled: impl Fn() -> bool + Send + 'static,
     ) -> Result<Status, &'static str> {
+        if self.remote {
+            if cancelled() {
+                return Err("optional_cancelled");
+            }
+            return crate::engine_acquisition_broker::start(&self.data, selection, &cancelled);
+        }
         self.spawn_work(move |owner, id| {
             platform::execute(owner, selection, release.as_ref(), id, &|| {
                 owner.cancel.load(Ordering::SeqCst) || cancelled()
             })
         })
     }
+    pub(crate) fn start_local(
+        self: &Arc<Self>,
+        selection: Selection,
+        release: DesktopRelease,
+        id: String,
+    ) -> Result<Status, &'static str> {
+        self.spawn_work_id(Some(id), move |owner, id| {
+            platform::execute(owner, selection, Some(&release), id, &|| {
+                owner.cancel.load(Ordering::SeqCst)
+            })
+        })
+    }
     fn spawn_work(
         self: &Arc<Self>,
+        work: impl FnOnce(&Owner, &str) -> Result<bool, platform::Failure> + Send + 'static,
+    ) -> Result<Status, &'static str> {
+        self.spawn_work_id(None, work)
+    }
+    fn spawn_work_id(
+        self: &Arc<Self>,
+        id: Option<String>,
         work: impl FnOnce(&Owner, &str) -> Result<bool, platform::Failure> + Send + 'static,
     ) -> Result<Status, &'static str> {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -203,7 +260,7 @@ impl Owner {
         }
         let mut nonce = [0u8; 16];
         getrandom::fill(&mut nonce).map_err(|_| "optional_random_unavailable")?;
-        let id = nonce.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let id = id.unwrap_or_else(|| nonce.iter().map(|b| format!("{b:02x}")).collect::<String>());
         self.cancel.store(false, Ordering::SeqCst);
         inner.status = Status {
             operation_id: Some(id.clone()),
@@ -233,7 +290,7 @@ impl Owner {
                             } else {
                                 Phase::Failed
                             };
-                            status.reason = Some(error.reason);
+                            status.reason = Some(error.reason.into());
                             status.hresult = error.hresult;
                         }
                     }
@@ -245,7 +302,7 @@ impl Owner {
             Err(error) => {
                 inner.status.in_flight = false;
                 inner.status.state = Phase::Failed;
-                inner.status.reason = Some(error);
+                inner.status.reason = Some(error.into());
                 return Err(error);
             }
         }
@@ -254,7 +311,7 @@ impl Owner {
 }
 
 #[path = "engine_acquisition_windows.rs"]
-mod platform;
+pub(crate) mod platform;
 
 #[cfg(test)]
 mod tests {
@@ -269,6 +326,7 @@ mod tests {
             }),
             cancel: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
+            remote: false,
         })
     }
     #[test]
@@ -377,7 +435,7 @@ mod tests {
         owner.update(|s| {
             s.operation_id = Some("a".repeat(32));
             s.state = Phase::RecoveryPending;
-            s.reason = Some("optional_recovery_pending");
+            s.reason = Some("optional_recovery_pending".into());
         });
         assert!(owner.inner.lock().unwrap().thread.is_none());
         assert!(owner.drain());
@@ -387,7 +445,7 @@ mod tests {
             Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         );
         assert_eq!(status.state, Phase::RecoveryPending);
-        assert_eq!(status.reason, Some("optional_recovery_pending"));
+        assert_eq!(status.reason.as_deref(), Some("optional_recovery_pending"));
         assert!(!status.in_flight && !status.installed && owner.busy());
         assert!(owner.inner.lock().unwrap().thread.is_none());
     }
