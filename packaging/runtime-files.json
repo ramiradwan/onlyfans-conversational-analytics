@@ -172,7 +172,8 @@
         "0031_nlp_source_lane_index.sql": "5e67b0bf3153098aeeef7baed204a294c66f76fcff8c86de75ddae7585a14956",
         "0032_graph_chunk_encoding.sql": "1a6f97c378237c336f4b607de0c803db9335da7fb5ddded0175cc210aa5297b9",
         "0033_nlp_literals.sql": "ff0e91c91232642b06067b0c2b8699cde1cd736d6848b788ce880e112851a4a1",
-        "0034_nlp_contribution_origins.sql": "ebc584bf752daee16d8b576fa1e34ec69c74ede467c859342f5e7055135665f4"
+        "0034_nlp_contribution_origins.sql": "ebc584bf752daee16d8b576fa1e34ec69c74ede467c859342f5e7055135665f4",
+        "0035_nlp_enrollment_reconciliation.sql": "fe8ebaf6929b7ceead3c803ff3cbde1a5d78c3e28fbd764b3ed3aa549ab4b009"
       }
     }
   ],

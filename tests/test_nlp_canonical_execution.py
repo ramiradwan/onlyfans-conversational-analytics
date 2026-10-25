@@ -79,6 +79,69 @@ def rows(x,table):
         return [dict(row) for row in db.execute(f'SELECT * FROM {table}')]
 
 
+def test_new_child_preparation_composes_module_from_baseline_identity(execution):
+    x=execution()
+    baseline=replace(x.policy,text_analysis_authority=None)
+    x.runner.canonical_execution=CanonicalFindingsExecution(x.repository,x.authority,
+        **dict(x.owner_args,identity_policy=baseline))
+    assert x.runner.process_one(ACCOUNT)
+    assert rows(x,'knowledge_jobs')[0]['state'] == 'committed'
+
+
+@pytest.mark.parametrize('target',['current','different','retired'])
+def test_retained_anchor_checks_exact_frozen_record_current_enrollment(execution,target):
+    x=execution()
+    assert x.runner.process_one(ACCOUNT)
+    frozen=x.runner.frozen_pipeline(ACCOUNT).nlp_findings
+    enrollment=x.enrollment.enrollment_id
+    with x.repository.database.transaction() as db:
+        if target == 'different':
+            x.jobs.set_enrollment_mode_in(db,enrollment,'retired',policy=x.policy)
+            enrollment=x.jobs.enroll_in(db,EnrollmentIntent(external_key=str(uuid4()),
+                run_context=encode_run_context(x.context),parameters=x.owner.parameters),policy=x.policy).enrollment_id
+        if target == 'retired':
+            x.jobs.set_enrollment_mode_in(db,enrollment,'retired',policy=x.policy)
+        else:
+            db.execute('INSERT INTO text_analysis_account_current VALUES(?,?,?,?,?)',
+                (x.context.installation_id,ACCOUNT,x.context.principal_id,1,enrollment))
+    assert x.owner.retained_anchor(x.runner.findings,frozen) is (target == 'current')
+
+
+def test_terminal_receipt_and_disposable_counter_are_not_retained_anchors(execution):
+    def bounded(profile):
+        return profile.model_copy(update={'components':tuple(c.model_copy(update={'max_source_codepoints':1}) for c in profile.components)})
+    x=execution(modify=bounded)
+    assert x.runner.process_one(ACCOUNT)
+    assert rows(x,'text_analysis_intents')[0]['terminal_reason'] == 'unsupported_input'
+    assert not rows(x,'knowledge_members') and not rows(x,'knowledge_contributions')
+    with x.repository.database.transaction() as db:
+        db.execute('INSERT INTO text_analysis_account_current VALUES(?,?,?,?,?)',
+            (x.context.installation_id,ACCOUNT,x.context.principal_id,1,x.enrollment.enrollment_id))
+    with x.runner.findings.database.transaction() as db:
+        db.execute('UPDATE nlp_accounts SET completion_revision=1')
+    frozen=x.runner.frozen_pipeline(ACCOUNT).nlp_findings
+    assert x.runner.findings.state(ACCOUNT)['completion_revision'] == 1
+    assert not x.owner.retained_anchor(x.runner.findings,frozen)
+
+
+@pytest.mark.parametrize('change',['delete','change'])
+def test_retained_anchor_refuses_erased_or_changed_source_origin(execution,change):
+    from app.persistence.retention import CreatorVaultRetention
+    x=execution()
+    assert x.runner.process_one(ACCOUNT)
+    frozen=x.runner.frozen_pipeline(ACCOUNT).nlp_findings
+    with x.repository.database.transaction() as db:
+        db.execute('INSERT INTO text_analysis_account_current VALUES(?,?,?,?,?)',
+            (x.context.installation_id,ACCOUNT,x.context.principal_id,1,x.enrollment.enrollment_id))
+    if change == 'delete':
+        CreatorVaultRetention(x.repository.database,clock=lambda:x.f.clock.now).delete_message(ACCOUNT,'m-0-0')
+    else:
+        with x.repository.database.transaction() as db:
+            db.execute("UPDATE account_messages SET text='changed',content_hash='changed' WHERE creator_account_id=? AND message_id='m-0-0'",(ACCOUNT,))
+    with pytest.raises(ValueError,match='origin_retired'):
+        x.owner.retained_anchor(x.runner.findings,frozen)
+
+
 @pytest.mark.parametrize('kind',['joint','split'])
 def test_actual_runner_seals_before_origin_bound_projection_and_holds_no_worker_transaction(execution,kind,monkeypatch):
     x = execution(kind)
@@ -346,7 +409,7 @@ def test_identity_only_lookup_cannot_authorize_missing_or_unfinished_execution(e
         x.owner.begin(x.f.source,x.profile,original,lease_seconds=120)
     x.runner.canonical_execution = CanonicalFindingsExecution(x.repository,x.authority,
         enrollment_id=x.enrollment.enrollment_id,identity_policy=identity_only(x))
-    with pytest.raises(ValueError,match='authority_missing'):
+    with pytest.raises(ValueError,match='^text_analysis_current_evidence_missing$'):
         x.runner.process_one(ACCOUNT)
     assert not x.adapter.requests and not rows(x,'knowledge_contributions')
     assert len(rows(x,'knowledge_jobs')) == int(unfinished)

@@ -8,9 +8,14 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
+from functools import partial
 import threading
 import time
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.text_analysis_selection import FixtureTextAnalysisExecutionConfiguration
+    from app.services.text_analysis_execution import LicensedFindingsBinding
 
 from app.analytics.errors import ProjectionBuildCancelled, ProjectionCoordinatorClosed, ProjectionStorageUnavailable
 from app.analytics.nlp_findings_store import FindingsStore, MAX_ACCOUNTS
@@ -32,12 +37,17 @@ class FindingsConfiguration:
     clock: Callable = lambda: datetime.now(timezone.utc)
     label_resolver: Callable | None = None
     interval: float = .25
+    execution: FixtureTextAnalysisExecutionConfiguration | None = None
 
     def __post_init__(self):
         if not all(callable(value) for value in (self.dependencies, self.authorize, self.clock)):
             raise ValueError('findings_configuration_invalid')
         if type(self.interval) not in (int, float) or not .01 <= self.interval <= 60:
             raise ValueError('findings_interval_invalid')
+        if self.execution is not None:
+            from app.services.text_analysis_selection import FixtureTextAnalysisExecutionConfiguration
+            if type(self.execution) is not FixtureTextAnalysisExecutionConfiguration:
+                raise ValueError('findings_execution_configuration_invalid')
 
 
 class _BoundDatabase:
@@ -61,6 +71,18 @@ class _BoundDatabase:
     def transaction(self, **kwargs):
         with self.lease() as current, current.database.transaction(**kwargs) as connection:
             yield connection
+
+    def bind_contribution_origins(self, *args):
+        with self.lease() as current:
+            current.database.bind_contribution_origins(*args)
+
+
+@dataclass
+class _EnrollmentRunner:
+    key: tuple
+    binding: LicensedFindingsBinding
+    runner: FindingsRunner
+    after_job: str = ''
 
 
 class _BoundProjections:
@@ -111,6 +133,26 @@ class _BoundGraph:
         return call
 
 
+class _GatedPipeline:
+    def __init__(self, base, gate):
+        self.base, self.gate = base, gate
+
+    def __getattr__(self, name):
+        return getattr(self.base, name)
+
+    def prepare_questions(self, *args, **kwargs):
+        with self.gate:
+            return self.base.prepare_questions(*args, **kwargs)
+
+    def build_candidate(self, *args, **kwargs):
+        with self.gate:
+            return self.base.build_candidate(*args, **kwargs)
+
+    def publish_candidate(self, *args, **kwargs):
+        with self.gate:
+            return self.base.publish_candidate(*args, **kwargs)
+
+
 class _AcknowledgedPipeline:
     def __init__(self, base, runner, account, signal, published, current_signal):
         self.base, self.runner, self.account = base, runner, account
@@ -119,6 +161,16 @@ class _AcknowledgedPipeline:
 
     def __getattr__(self, name):
         return getattr(self.base, name)
+
+    def prepare_questions(self, account, *args, **kwargs):
+        with self.runner.dependencies.gate:
+            self.runner.authorize(account)
+            return self.base.prepare_questions(account, *args, **kwargs)
+
+    def build_candidate(self, account, *args, **kwargs):
+        with self.runner.dependencies.gate:
+            self.runner.authorize(account)
+            return self.base.build_candidate(account, *args, **kwargs)
 
     def publish_candidate(self, candidate):
         with self.runner.dependencies.gate:
@@ -153,6 +205,13 @@ class FindingsRuntime:
         self._service = None
         self._store = None
         self._runner = None
+        self._gate = (configuration.execution.authentication.database.dependency_authority_gate
+                      if configuration.execution is not None else None)
+        self._baseline = _GatedPipeline(pipeline, self._gate) if self._gate is not None else pipeline
+        self._execution_service = None
+        self._enrollments = OrderedDict()
+        self._locator_page = deque()
+        self._after_account = ''
         self._accounts = deque(maxlen=MAX_ACCOUNTS)
         self._published = OrderedDict()
         self._preparation_attempts = set()
@@ -187,6 +246,12 @@ class FindingsRuntime:
         return True
 
     def _clear_binding(self):
+        from app.services.text_analysis_execution import execution_service, configure_execution_service
+        if self._execution_service is not None:
+            if execution_service() is self._execution_service:
+                configure_execution_service(None)
+            if getattr(self._service, 'execution_owner', None) is self._execution_service:
+                self._service.execution_owner = None
         if self._service is not None and dependency_service() is self._service:
             configure_dependency_service(None)
         self._service, self._runner, self._store = None, None, None
@@ -194,6 +259,10 @@ class FindingsRuntime:
         self._published.clear()
         self._preparation_attempts.clear()
         self._after = None
+        self._execution_service = None
+        self._enrollments.clear()
+        self._locator_page.clear()
+        self._after_account = ''
 
     def _bind(self):
         with self.pipeline.projections.lifecycle_store() as store:
@@ -214,6 +283,13 @@ class FindingsRuntime:
         if service.source is not self.source or service.findings is not findings:
             raise ValueError('findings_dependency_binding_invalid')
         bound.database.gate = service.gate
+        if self._gate is not None and service.gate is not self._gate:
+            raise ValueError('findings_execution_gate_mismatch')
+        if self.configuration.execution is not None:
+            from app.services.text_analysis_execution import execution_service
+            if execution_service() is not None:
+                raise ValueError('findings_execution_owner_conflict')
+            self._execution_service = self.configuration.execution.bind(self.source, service)
         service.start()
         configure_dependency_service(service)
         self._runner = FindingsRunner(self.source, bound,
@@ -222,29 +298,46 @@ class FindingsRuntime:
             clock=self.configuration.clock, enrichment=self.pipeline.enrichment,
             label_resolver=self.configuration.label_resolver,
             cancellation_check=self._stop.is_set)
+        if self.configuration.execution is not None:
+            from app.services.text_analysis_execution import configure_execution_service
+            configure_execution_service(self._execution_service)
         self._failed = False
         self.failure = None
         return True
 
     def generation_pipeline(self, account):
+        gate=self._gate or (self._service.gate if self._service is not None else nullcontext())
+        with gate:
+            return self._generation_pipeline(account)
+
+    def _generation_pipeline(self, account):
         if self._stop.is_set():
             raise ProjectionCoordinatorClosed()
         runner = self._runner
+        if self._execution_service is not None:
+            entry = self._enrollments.get(account)
+            if entry is None:
+                return self._baseline
+            runner = entry.runner
         if runner is None or self._failed:
-            return self.pipeline
+            return self._baseline
         try:
             state = runner.findings.state(account)
         except (ValueError, ProjectionStorageUnavailable):
-            return self.pipeline
+            return self._baseline
         # Authorization is independent of dependency readiness.
         runner.authorize(account)
         profile = read_profile(state['profile_json'])
-        ready = runner.dependencies.ready(profile)
+        ready = True if self._execution_service is not None else runner.dependencies.ready(profile)
         signal = self._signal(state, ready)
-        base = runner.frozen_pipeline(account) if state['mode'] == 'enabled' and ready else self.pipeline
+        retained = self._execution_service is not None and state['mode'] in ('enabled', 'paused')
+        base = runner.frozen_pipeline(account) if retained or (state['mode'] == 'enabled' and ready) else self.pipeline
+        if retained and not base.retained_anchor:
+            base = self.pipeline
         def current_signal():
             current = runner.findings.state(account)
-            return self._signal(current, runner.dependencies.ready(read_profile(current['profile_json'])))
+            ready = True if self._execution_service is not None else runner.dependencies.ready(read_profile(current['profile_json']))
+            return self._signal(current, ready)
         return _AcknowledgedPipeline(base, runner, account, signal, self._published, current_signal)
 
     @staticmethod
@@ -256,6 +349,8 @@ class FindingsRuntime:
         if self._stop.is_set() or not self._bind():
             return None
         runner = self._runner
+        if self._execution_service is not None:
+            return self._enrollment_turn()
         with runner.dependencies.gate:
             selections = runner.findings.selected_profiles()
             selected = {row['account_ref'] for row in selections}
@@ -299,6 +394,87 @@ class FindingsRuntime:
             runner.process_one(account)
         state = runner.findings.state(account)
         ready = runner.dependencies.ready(read_profile(state['profile_json']))
+        if state['notification_revision'] > 0 and (
+                state['acknowledged_revision'] != state['notification_revision']
+                or self._published.get(account) != self._signal(state, ready)):
+            from app.analytics.identity import source_identity
+            return account, source_identity(self.source, account).revision, state['notification_revision']
+        return None
+
+    def _authorize_enrollment(self, entry, account):
+        if self._stop.is_set():
+            raise QuestionCancelled()
+        self._execution_service.authorize_binding(entry.binding, account)
+        with entry.runner.projections.database.lease():
+            pass
+
+    def _enrollment_turn(self):
+        service = self._execution_service
+        if not self._locator_page:
+            page = service.current_locators(after_account=self._after_account, limit=64)
+            self._after_account = page[-1].creator_account_id if len(page) == 64 else ''
+            self._locator_page.extend(page)
+        if not self._locator_page:
+            return None
+        locator = self._locator_page.popleft()
+        binding = service.bind_current(locator)
+        account = locator.creator_account_id
+        if not self.source.account_exists(account):
+            self._enrollments.pop(account, None)
+            return None
+        key = (locator.enrollment_id, locator.mode_version, binding.capsule.capsule_sha256)
+        entry = self._enrollments.get(account)
+        if entry is None or entry.key != key:
+            runner = FindingsRunner(self.source, self._runner.projections, authorize=partial(service.authorize_binding, binding),
+                execution_ready=self._service.ready, adapter=None, dependencies=self._service,
+                clock=self.configuration.clock, enrichment=self.pipeline.enrichment,
+                label_resolver=self.configuration.label_resolver, cancellation_check=self._stop.is_set,
+                canonical_execution=binding.execution, execution_service=service, execution_binding=binding)
+            entry = _EnrollmentRunner(key, binding, runner)
+            runner.authorize = lambda account: self._authorize_enrollment(entry, account)
+            self._enrollments[account] = entry
+        else:
+            entry.binding = binding
+            entry.runner.execution_binding = binding
+            entry.runner.canonical_execution = binding.execution
+        self._enrollments.move_to_end(account)
+        while len(self._enrollments) > MAX_ACCOUNTS:
+            removed, _ = self._enrollments.popitem(last=False)
+            self._published.pop(removed, None)
+        runner = entry.runner
+        runner.authorize(account)
+        runner.reconcile(account, maximum=64)
+        with service.retained_visibility(binding):
+            with service.repository.database.read() as db:
+                children = binding.execution.jobs.list_children_in(db, locator.enrollment_id,
+                    policy=binding.identity_policy, after_id=entry.after_job, limit=64)
+            for child in children:
+                runner._budget().check()
+                if child.state == 'committed':
+                    from app.analytics.nlp_contribution_replay import replay_contribution
+                    replay_contribution(service.repository, runner.findings, child.contribution_id,
+                                        policy=binding.identity_policy, limit=1)
+            entry.after_job = children[-1].job_id if len(children) == 64 else ''
+        if binding.current.state == 'enabled':
+            try:
+                digest = binding.profile.identity_digest()
+                if (not self._service.ready(binding.profile) and digest not in self._preparation_attempts
+                        and len(self._preparation_attempts) < 64):
+                    self._preparation_attempts.add(digest)
+                    def cancelled():
+                        runner.authorize(account)
+                        with binding.execution._fence('prepare'):
+                            pass
+                        return self._stop.is_set()
+                    self._service.prepare_installed(digest, cancellation_check=cancelled)
+                runner.process_one(account)
+            except ValueError:
+                runner.authorize(account)
+                with service.retained_visibility(binding):
+                    pass
+                self.failure = 'findings_execution_unavailable'
+        state = runner.findings.state(account)
+        ready = True
         if state['notification_revision'] > 0 and (
                 state['acknowledged_revision'] != state['notification_revision']
                 or self._published.get(account) != self._signal(state, ready)):

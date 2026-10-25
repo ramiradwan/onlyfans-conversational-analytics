@@ -39,10 +39,11 @@ class _PublicationLimits:
 
 class FrozenFindingsPipeline(AnalyticsPipeline):
     """A publication acknowledges only the notification frozen with its input."""
-    def __init__(self, *args, on_published, dependency_guard=nullcontext, **kwargs):
+    def __init__(self, *args, on_published, dependency_guard=nullcontext, retained_anchor=False, **kwargs):
         super().__init__(*args, **kwargs)
         self._on_published = on_published
         self._dependency_guard = dependency_guard
+        self.retained_anchor = retained_anchor
 
     def publish_candidate(self, candidate):
         with self._dependency_guard():
@@ -225,12 +226,18 @@ class FindingsRunner(FindingsReadContext):
     """
     def __init__(self, source, projections, *, authorize, execution_ready, adapter,
                  clock, enrichment=None, lease_clock=time.time, dependencies=None, label_resolver=None,
-                 cancellation_check=None, canonical_execution=None):
+                 cancellation_check=None, canonical_execution=None, execution_service=None, execution_binding=None):
         if canonical_execution is not None:
             from app.analytics.nlp_canonical_execution import CanonicalFindingsExecution
             if type(canonical_execution) is not CanonicalFindingsExecution:
                 raise ValueError('nlp_canonical_owner_invalid')
         self.canonical_execution = canonical_execution
+        if execution_service is not None or execution_binding is not None:
+            from app.services.text_analysis_execution import TextAnalysisExecutionService, LicensedFindingsBinding
+            if (type(execution_service) is not TextAnalysisExecutionService or type(execution_binding) is not LicensedFindingsBinding
+                    or execution_binding.execution is not canonical_execution):
+                raise ValueError('nlp_execution_binding_invalid')
+        self.execution_service, self.execution_binding = execution_service, execution_binding
         self.source, self.projections = source, projections
         self.authorize, self.execution_ready, self.adapter = authorize, execution_ready, adapter
         self.clock, self.enrichment = clock, enrichment
@@ -242,6 +249,12 @@ class FindingsRunner(FindingsReadContext):
     def _dependency_admission(self, account_id):
         if self.dependencies is not None:
             profile = read_profile(self.findings.state(account_id)['profile_json'])
+            if self.execution_service is not None:
+                self.execution_service.authorize_binding(self.execution_binding, account_id)
+                state = self.dependencies.persistence.authority()
+                if state['trust_sha256'] is None or profile.identity_digest() in state['withdrawals']:
+                    raise ValueError('nlp_recovery_authority_unavailable')
+                return
             if not self.dependencies.ready(profile):
                 raise ValueError('nlp_dependency_unavailable')
 
@@ -298,8 +311,7 @@ class FindingsRunner(FindingsReadContext):
                 if work.sealed or work.staged_record is not None:
                     if not work.sealed:
                         self.canonical_execution.seal(work)
-                    self.findings.release(claim)
-                    self.canonical_execution.replay(work, self.findings)
+                    self._replay_canonical(work, claim)
                     return True
             if any(len(original.text)>component.max_source_codepoints for component in profile.components):
                 if work is not None:
@@ -357,8 +369,7 @@ class FindingsRunner(FindingsReadContext):
                 if cancelled():
                     return False
                 self.canonical_execution.seal(work, frame)
-                self.findings.release(claim)
-                self.canonical_execution.replay(work, self.findings)
+                self._replay_canonical(work, claim)
                 return True
             return self.findings.complete(claim,profile,latest,frame)
         finally:
@@ -367,6 +378,12 @@ class FindingsRunner(FindingsReadContext):
                     self.findings.release(claim)
             finally:
                 _EXECUTION.release()
+
+    def _replay_canonical(self, work, claim):
+        guard = self.execution_service.retained_visibility(self.execution_binding) if self.execution_service is not None else nullcontext()
+        with guard:
+            self.findings.release(claim)
+            return self.canonical_execution.replay(work, self.findings)
 
 
     def _infer_components(self, profile, original, claim, cancelled, bound_adapter, cancellation, *, work=None):
@@ -415,6 +432,8 @@ class FindingsRunner(FindingsReadContext):
         revision=self.findings.state(account_id)['notification_revision']
         frozen=self.findings.freeze(account_id,canonical,label_resolver=self.label_resolver)
         profile=read_profile(self.findings.state(account_id)['profile_json'])
+        retained_anchor = (self.canonical_execution.retained_anchor(self.findings, frozen)
+                           if self.execution_service is not None else False)
         def published():
             self.findings.acknowledge(account_id,revision)
             from app.analytics.nlp_literals import LiteralUnavailable, LiteralIntegrityError
@@ -426,7 +445,10 @@ class FindingsRunner(FindingsReadContext):
             clock=self.clock,nlp_findings=frozen,nlp_authorize=lambda:self._cheap_publication_admission(account_id,due),
             nlp_admit=lambda:self._publication_admission(account_id),
             on_published=published,
-            dependency_guard=(lambda:self.dependencies.publication(profile)) if self.dependencies is not None else nullcontext)
+            retained_anchor=retained_anchor,
+            dependency_guard=(lambda:self.execution_service.retained_visibility(self.execution_binding))
+                if self.execution_service is not None else
+                (lambda:self.dependencies.publication(profile)) if self.dependencies is not None else nullcontext)
 
     async def notify_scheduler(self, scheduler, account_id):
         """Redeliver durable input changes until scheduler publication acknowledges."""

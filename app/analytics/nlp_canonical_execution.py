@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import time
 
 from app.analytics.identity import source_identity
 from app.analytics.nlp_contribution_replay import replay_contribution
-from app.analytics.nlp_findings_store import source_binding
-from app.models.knowledge_contributions import AttemptToken, InputIdentity, SourceMemberSpec, inventory_digest
+from app.analytics.nlp_findings_store import source_binding, require_current_snapshot, MAX_LOCATORS, check_deadline
+from app.models.knowledge_contributions import AttemptToken, InputIdentity, SourceMemberSpec, inventory_digest, record_digest
 from app.models.text_analysis_jobs import JobPlan
 from app.nlp.profiles import canonical_bytes
 from app.persistence.contributions import ContributionRepository
@@ -24,6 +25,13 @@ class CanonicalWork:
     staged_record: bytes | None
     sealed: bool
     terminal_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _RetainedOrigin:
+    record_sha256: str
+    contribution_id: str
+    manifest_sha256: str
 
 
 class CanonicalFindingsExecution:
@@ -79,16 +87,16 @@ class CanonicalFindingsExecution:
         plan = JobPlan(**self.parameters.model_dump(mode='python'), input=InputIdentity(
             canonical_revision=canonical.revision, canonical_content_sha256=canonical.content_digest.removeprefix('sha256:'),
             inventory_sha256=inventory_digest((member,)), source_count=1))
-        with self.repository.database.transaction() as db:
+        with self._fence('prepare') as policy, self.repository.database.transaction() as db:
             receipt = self.jobs.prepare_child_in(db, self.enrollment_id, plan, (member,),
-                profile_bytes=canonical_bytes(profile), policy=self.policy)
+                profile_bytes=canonical_bytes(profile), policy=policy)
             if receipt.state == 'failed':
                 if receipt.terminal_reason not in ('unsupported_input', 'record_limit'):
                     raise ValueError('nlp_canonical_terminal_invalid')
                 return CanonicalWork(receipt.job_id, receipt.contribution_id, None, None, False, receipt.terminal_reason)
             if receipt.state == 'result_deleted':
                 return None
-            retained = self.repository.read_execution_member_in(db, receipt.job_id, policy=self.policy)
+            retained = self.repository.read_execution_member_in(db, receipt.job_id, policy=policy)
         if retained.state == 'committed':
             return CanonicalWork(receipt.job_id, receipt.contribution_id, None, retained.staged_record, True)
         with self._fence('start') as policy, self.repository.database.transaction() as db:
@@ -119,7 +127,56 @@ class CanonicalFindingsExecution:
             self.repository.commit_in(db, work.attempt, policy=policy)
 
     def replay(self, work, findings):
-        return replay_contribution(self.repository, findings, work.contribution_id, policy=self.policy, limit=1)
+        with self.authority_store.database.dependency_authority_gate:
+            return replay_contribution(self.repository, findings, work.contribution_id, policy=self.policy, limit=1)
+
+    def retained_anchor(self, findings, frozen):
+        """Check live membership of the exact frozen inventory in this enrollment."""
+        with self.authority_store.database.dependency_authority_gate:
+            return self._retained_anchor(findings, frozen)
+
+    def _retained_anchor(self, findings, frozen):
+        deadline=time.monotonic()+30
+        with self.repository.database.read() as db:
+            store_id=db.execute('SELECT store_id FROM knowledge_store_identity WHERE singleton=1').fetchone()[0]
+        candidates=[]
+        with findings.database.read() as db:
+            value=require_current_snapshot(db,frozen,deadline=deadline)
+            if len(value['records']) > MAX_LOCATORS:
+                raise ValueError('nlp_recovery_record_limit')
+            for key in value['records']:
+                check_deadline(deadline)
+                cursor=db.execute('SELECT contribution_id,manifest_sha256 FROM nlp_record_origins '
+                    'WHERE account_ref=? AND record_digest=? AND canonical_store_id=?',
+                    (frozen.account_ref,key,store_id))
+                while page:=cursor.fetchmany(64):
+                    for row in page:
+                        candidates.append(_RetainedOrigin(key,row['contribution_id'],row['manifest_sha256']))
+                        if len(candidates) > MAX_LOCATORS:
+                            raise ValueError('nlp_recovery_record_limit')
+        anchored=False
+        for candidate in candidates:
+            check_deadline(deadline)
+            with self.repository.read_committed(candidate.contribution_id,policy=self.policy) as (db,manifest,spec,_):
+                current=db.execute('SELECT c.enrollment_id,e.state FROM text_analysis_account_current c '
+                    'JOIN text_analysis_enrollments e ON e.enrollment_id=c.enrollment_id '
+                    'WHERE c.installation_id=? AND c.creator_account_id=?',
+                    (self.context.installation_id,self.context.creator_account_id)).fetchone()
+                intent=db.execute('SELECT enrollment_id FROM text_analysis_intents WHERE job_id=? AND contribution_id=?',
+                                  (spec.job_id,candidate.contribution_id)).fetchone()
+                if (current is None or current['enrollment_id'] != self.enrollment_id or current['state'] not in ('enabled','paused') or intent is None
+                        or intent['enrollment_id'] != self.enrollment_id
+                        or spec.creator_account_id != self.context.creator_account_id
+                        or spec.algorithm_profile_sha256 != self.context.algorithm_profile_sha256
+                        or record_digest(manifest) != candidate.manifest_sha256):
+                    continue
+                member=self.repository.read_execution_member_in(db,spec.job_id,policy=self.policy)
+                if member.state == 'committed' and member.staged_record is not None and hashlib.sha256(member.staged_record).hexdigest() == candidate.record_sha256:
+                    anchored=True
+                    break
+        with findings.database.read() as db:
+            require_current_snapshot(db,frozen,deadline=deadline,verify_records=False)
+        return anchored
 
     def finish_without_output(self, work, reason):
         if work.attempt is None:

@@ -34,7 +34,8 @@ TRIGGER_DIGESTS = {12: TRIGGER_DIGEST,
     # Catalog 32 admits chunk encoding without changing tracked SQL or the schema cookie.
     32: 'e7fbe6a0a251160574b1b6e2b82f96c4f111d460b9a41522e597b01b4d37c31d',
     33: 'e077dd7e8af550a789acf1fd1d69fce0177d166284046e1f8d60be5054e8ce1b',
-    34: 'd3a8dff0c5d999fc481ed4cbc3118dfb89f22d5753343f325d17181abefb3356',}
+    34: 'd3a8dff0c5d999fc481ed4cbc3118dfb89f22d5753343f325d17181abefb3356',
+    35: 'd3a8dff0c5d999fc481ed4cbc3118dfb89f22d5753343f325d17181abefb3356',}
 MAX_RECEIPTS = 8
 RECEIPT_SECONDS = 60.0
 _VOLATILE = frozenset({'status', 'activation_intent_id', 'witness_sequence',

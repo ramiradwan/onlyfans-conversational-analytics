@@ -19,8 +19,48 @@ from app.persistence.nlp_dependencies import DependencyPersistence
 from app.persistence.retention import CreatorVaultRetention
 from tests.continuous_analytics_fixture import ACCOUNT, insert_message, advance
 from tests.test_knowledge_contributions import data, seal, _positive
+from tests.test_nlp_canonical_execution import execution as licensed_execution, authority_basis
 
 pytestmark = [pytest.mark.ci_tier('integration'), pytest.mark.windows_compat]
+
+
+@pytest.mark.parametrize('when',['begin','visibility','same_owner_other_principal'])
+def test_current_enrollment_guard_fences_replacement_without_narrowing_saved_scope(licensed_execution,when):
+    from app.models.text_analysis_jobs import EnrollmentIntent
+    from app.security.text_analysis_policy import encode_run_context
+    x=licensed_execution()
+    assert x.runner.process_one(ACCOUNT)
+    with x.repository.database.read() as db:
+        manifest=x.repository.get_committed(db.execute('SELECT contribution_id FROM knowledge_contributions').fetchone()[0],policy=x.policy)
+    refs=((manifest.contribution_id,record_digest(manifest)),)
+    x.runner.findings.mode(ACCOUNT,'paused')
+    coordinator=RecoveryCoordinator(x.repository,DependencyPersistence(x.auth),x.f.source,x.f.stores.projections,
+        policy=x.policy,clock=lambda:x.f.clock.now)
+    ticket=None
+    if when == 'visibility':
+        ticket=coordinator.begin(ACCOUNT,x.profile,refs,intent=str(uuid4()))
+    target=x.enrollment.enrollment_id
+    with x.repository.database.transaction() as db:
+        if when != 'same_owner_other_principal':
+            x.jobs.set_enrollment_mode_in(db,target,'retired',policy=x.policy)
+            other=x.jobs.enroll_in(db,EnrollmentIntent(external_key=str(uuid4()),
+                run_context=encode_run_context(x.context),parameters=x.owner.parameters),policy=x.policy)
+            target=other.enrollment_id
+            x.jobs.set_enrollment_mode_in(db,target,'paused',policy=x.policy)
+        db.execute('INSERT INTO text_analysis_account_current VALUES(?,?,?,?,?)',
+            (x.context.installation_id,ACCOUNT,x.context.principal_id,1,target))
+    if when == 'same_owner_other_principal':
+        coordinator.policy=replace(x.policy,identity=replace(x.policy.identity,principal_id='another-current-principal'))
+        ticket=coordinator.begin(ACCOUNT,x.profile,refs,intent=str(uuid4()))
+        with coordinator.visibility(ticket):
+            pass
+    else:
+        with pytest.raises(ValueError,match='current_owner_conflict'):
+            if ticket is None:
+                coordinator.begin(ACCOUNT,x.profile,refs,intent=str(uuid4()))
+            else:
+                with coordinator.visibility(ticket):
+                    pass
 
 
 def prepare(data, *, loss=False):
@@ -366,13 +406,13 @@ def test_fresh_read_authorization_after_owner_or_source_guard_wait(data, boundar
     c.policy = replace(c.policy, expires_at=expires)
     attempted, yielded = Event(), Event()
     if boundary == 'literal_source_expiry':
-        original = c.source.dependency_selection_guard
+        original = c.repository.read_committed
         @contextmanager
         def waiting(*args, **kwargs):
             attempted.set()
-            with original(*args, **kwargs):
-                yield
-        monkeypatch.setattr(c.source, 'dependency_selection_guard', waiting)
+            with original(*args, **kwargs) as value:
+                yield value
+        monkeypatch.setattr(c.repository, 'read_committed', waiting)
         held = c.repository.database.transaction()
     else:
         original = c.authority.recovery_visibility

@@ -226,55 +226,105 @@ class FindingsStore:
         profile = read_profile(profile.model_dump_json())
         ref = account_ref(account_id)
         with self.database.transaction() as db:
-            require_erasure_idle(db, ref)
-            if expected is not None and self._selection_token(db, ref) != expected:
-                raise ValueError('nlp_selection_stale')
-            state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
-            ledger = db.execute(
-                "SELECT selection_epoch FROM nlp_epoch_ledger WHERE account_ref=?",
-                (ref,),
-            ).fetchone()
-            epoch = (
-                max(
-                    state["selection_epoch"] if state else 0, ledger[0] if ledger else 0
-                )
-                + 1
-            )
-            db.execute(
-                "INSERT INTO nlp_epoch_ledger VALUES(?,?) ON CONFLICT(account_ref) DO UPDATE SET selection_epoch=excluded.selection_epoch",
-                (ref, epoch),
-            )
-            if state is None:
-                if db.execute('SELECT count(*) FROM nlp_accounts').fetchone()[0] >= MAX_ACCOUNTS:
-                    raise ValueError('nlp_account_limit')
-                db.execute(
-                    "INSERT INTO nlp_accounts(account_ref,profile_json,selection_epoch,mode) VALUES(?,?,?,?)",
-                    (ref, profile.model_dump_json(), epoch, mode),
-                )
-            else:
-                if (preserve_previous and
-                        read_profile(state['profile_json']).identity_digest() != profile.identity_digest()):
-                    db.execute('UPDATE nlp_accounts SET previous_profile_json=profile_json WHERE account_ref=?', (ref,))
-                db.execute(
-                    "UPDATE nlp_accounts SET profile_json=?,selection_epoch=?,"
-                    "admission_epoch=admission_epoch+1,availability_revision=availability_revision+1,"
-                    "notification_revision=notification_revision+1,mode=? WHERE account_ref=?",
-                    (profile.model_dump_json(), epoch, mode, ref),
-                )
-                db.execute('DELETE FROM nlp_jobs WHERE account_ref=?',(ref,))
-            if intent is not None:
-                db.execute('UPDATE nlp_accounts SET dependency_intent=? WHERE account_ref=?', (intent, ref))
-            from app.analytics.nlp_literals import ensure_namespace, LiteralUnavailable
-            try:
-                ensure_namespace(db, ref)
-            except LiteralUnavailable:
-                pass
+            self._select_in(db, ref, profile, mode=mode, expected=expected, preserve_previous=preserve_previous, intent=intent)
 
+    def _select_in(self, db, ref, profile, *, mode, expected=None, preserve_previous=False, intent=None):
+        require_erasure_idle(db, ref)
+        if expected is not None and self._selection_token(db, ref) != expected:
+            raise ValueError('nlp_selection_stale')
+        state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
+        ledger = db.execute(
+            "SELECT selection_epoch FROM nlp_epoch_ledger WHERE account_ref=?",
+            (ref,),
+        ).fetchone()
+        epoch = (
+            max(
+                state["selection_epoch"] if state else 0, ledger[0] if ledger else 0
+            )
+            + 1
+        )
+        db.execute(
+            "INSERT INTO nlp_epoch_ledger VALUES(?,?) ON CONFLICT(account_ref) DO UPDATE SET selection_epoch=excluded.selection_epoch",
+            (ref, epoch),
+        )
+        if state is None:
+            if db.execute('SELECT count(*) FROM nlp_accounts').fetchone()[0] >= MAX_ACCOUNTS:
+                raise ValueError('nlp_account_limit')
+            db.execute(
+                "INSERT INTO nlp_accounts(account_ref,profile_json,selection_epoch,mode) VALUES(?,?,?,?)",
+                (ref, profile.model_dump_json(), epoch, mode),
+            )
+        else:
+            if (preserve_previous and
+                    read_profile(state['profile_json']).identity_digest() != profile.identity_digest()):
+                db.execute('UPDATE nlp_accounts SET previous_profile_json=profile_json WHERE account_ref=?', (ref,))
+            db.execute(
+                "UPDATE nlp_accounts SET profile_json=?,selection_epoch=?,"
+                "admission_epoch=admission_epoch+1,availability_revision=availability_revision+1,"
+                "notification_revision=notification_revision+1,mode=? WHERE account_ref=?",
+                (profile.model_dump_json(), epoch, mode, ref),
+            )
+            db.execute('DELETE FROM nlp_jobs WHERE account_ref=?',(ref,))
+        if intent is not None:
+            db.execute('UPDATE nlp_accounts SET dependency_intent=? WHERE account_ref=?', (intent, ref))
+        from app.analytics.nlp_literals import ensure_namespace, LiteralUnavailable
+        try:
+            ensure_namespace(db, ref)
+        except LiteralUnavailable:
+            pass
     def selection_completed(self, account_id, intent, digest):
         with self.database.read() as db:
             row = db.execute('SELECT dependency_intent,profile_json FROM nlp_accounts WHERE account_ref=?', (account_ref(account_id),)).fetchone()
         return bool(row and row['dependency_intent'] == intent and
                     read_profile(row['profile_json']).identity_digest() == digest)
+
+    def reconcile_enrollment(self, account_id, *, canonical_store_id, current, profile):
+        from app.models.text_analysis_enrollment import CurrentEnrollment
+        if (type(current) is not CurrentEnrollment or current.creator_account_id != account_id
+                or type(canonical_store_id) is not str or not 1 <= len(canonical_store_id) <= 512):
+            raise ValueError('nlp_enrollment_binding_invalid')
+        current = CurrentEnrollment.model_validate(current.model_dump())
+        if current.enrollment_id is None:
+            if profile is not None or current.state != 'retired':
+                raise ValueError('nlp_enrollment_binding_invalid')
+            profile_sha = None
+        else:
+            if profile is None or not current.capsule_available or current.state not in ('enabled', 'paused'):
+                raise ValueError('nlp_enrollment_profile_unavailable')
+            profile = read_profile(profile.model_dump_json())
+            profile_sha = profile.identity_digest()
+        binding = digest({'current': current.model_dump(), 'profile': profile_sha})
+        ref = account_ref(account_id)
+        with self.database.transaction() as db:
+            require_erasure_idle(db, ref)
+            old = db.execute('SELECT * FROM nlp_enrollment_reconciliation WHERE account_ref=?', (ref,)).fetchone()
+            if old is not None:
+                if old['canonical_store_id'] != canonical_store_id or old['mode_version'] > current.mode_version:
+                    raise ValueError('nlp_enrollment_reconciliation_stale')
+                if old['mode_version'] == current.mode_version:
+                    if old['binding_sha256'] != binding:
+                        raise ValueError('nlp_enrollment_reconciliation_conflict')
+                    return False
+                if (old['enrollment_id'] == current.enrollment_id and current.enrollment_id is not None
+                        and old['profile_sha256'] != profile_sha):
+                    raise ValueError('nlp_enrollment_reconciliation_conflict')
+            state = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?', (ref,)).fetchone()
+            if current.enrollment_id is None:
+                if state is not None and state['mode'] in ('enabled', 'paused'):
+                    self._mode_in(db, ref, 'paused')
+            elif old is not None and old['enrollment_id'] == current.enrollment_id:
+                if state is None or read_profile(state['profile_json']).identity_digest() != profile_sha:
+                    raise ValueError('nlp_enrollment_projection_changed')
+                if state['mode'] in ('removed', 'withdrawn'):
+                    raise ValueError('nlp_enrollment_projection_unavailable')
+                self._mode_in(db, ref, current.state)
+            else:
+                self._select_in(db, ref, profile, mode=current.state, preserve_previous=True)
+            db.execute('INSERT INTO nlp_enrollment_reconciliation VALUES(?,?,?,?,?,?) '
+                'ON CONFLICT(account_ref) DO UPDATE SET enrollment_id=excluded.enrollment_id,'
+                'mode_version=excluded.mode_version,profile_sha256=excluded.profile_sha256,binding_sha256=excluded.binding_sha256',
+                (ref, canonical_store_id, current.enrollment_id, current.mode_version, profile_sha, binding))
+            return True
 
     def selected_profiles(self):
         """Referenced current/rollback closures; callers separately fence retention."""
@@ -296,19 +346,21 @@ class FindingsStore:
         if mode not in ('enabled','paused','withdrawn','removed'):
             raise ValueError('nlp_mode_invalid')
         with self.database.transaction() as db:
-            ref = account_ref(account_id)
-            require_erasure_idle(db, ref)
-            state = db.execute('SELECT mode FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
-            if state is None:
-                raise ValueError('nlp_account_missing')
-            if state[0] == mode:
-                return
-            invalidates = mode in ('withdrawn','removed') or state[0] in ('withdrawn','removed')
-            db.execute('UPDATE nlp_accounts SET mode=?,admission_epoch=admission_epoch+1,'
-                'availability_revision=availability_revision+?,notification_revision=notification_revision+? '
-                'WHERE account_ref=?',(mode,int(invalidates),int(invalidates),ref))
-            db.execute("UPDATE nlp_jobs SET state='pending',owner=NULL,expires_at=NULL WHERE account_ref=? AND state='running'",(ref,))
+            self._mode_in(db, account_ref(account_id), mode)
 
+    @staticmethod
+    def _mode_in(db, ref, mode):
+        require_erasure_idle(db, ref)
+        state = db.execute('SELECT mode FROM nlp_accounts WHERE account_ref=?',(ref,)).fetchone()
+        if state is None:
+            raise ValueError('nlp_account_missing')
+        if state[0] == mode:
+            return
+        invalidates = mode in ('withdrawn','removed') or state[0] in ('withdrawn','removed')
+        db.execute('UPDATE nlp_accounts SET mode=?,admission_epoch=admission_epoch+1,'
+            'availability_revision=availability_revision+?,notification_revision=notification_revision+? '
+            'WHERE account_ref=?',(mode,int(invalidates),int(invalidates),ref))
+        db.execute("UPDATE nlp_jobs SET state='pending',owner=NULL,expires_at=NULL WHERE account_ref=? AND state='running'",(ref,))
     def state(self, account_id):
         with self.database.read() as db:
             row = db.execute('SELECT * FROM nlp_accounts WHERE account_ref=?',(account_ref(account_id),)).fetchone()

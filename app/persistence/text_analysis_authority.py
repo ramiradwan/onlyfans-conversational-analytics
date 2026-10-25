@@ -121,6 +121,7 @@ class TextAnalysisAuthorityStore:
     def __init__(self, authentication):
         self.authentication = authentication
         self.database = authentication.database
+        self._schemas = None
 
     def import_verified_reference(self, token: str, *, kind: str, context: dict,
                                   trust: TextAnalysisTrust, schemas: TextAnalysisSchemas) -> TextAnalysisReference:
@@ -245,19 +246,22 @@ class TextAnalysisAuthorityStore:
             or type(lifecycle) is not FixtureTextAnalysisLifecycle or lifecycle.fixture_only is not True
             or lifecycle.auth_database is not self.database):
             raise RuntimeAuthorizationDenied('text_analysis_production_provider_unavailable')
-        with self.database.dependency_authority_gate, self.database.transaction() as db:
-            policy = self.compose_policy_in(db, identity_policy, context.reference_id, context,
-                trust=evidence.trust, schemas=TextAnalysisSchemas(), kind=kind, now=self.authentication._clock())
-            self._check_current_in(db, policy, context, evidence, phase=phase)
-            fence = TextAnalysisTransitionFence(_SEAL, self, db, context, evidence, policy.authorization_epoch, lifecycle, phase)
-            policy = replace(policy, text_analysis_fence=fence)
-            fence._policy = policy
-            try:
-                require_text_analysis(policy, context, kind=kind, phase=phase)
-                yield policy
-                self._check_current_in(db, fence._policy, context, fence._evidence, phase=phase)
-            finally:
-                fence._active = False
+        with self.database.dependency_authority_gate:
+            if self._schemas is None:
+                self._schemas = TextAnalysisSchemas()
+            with self.database.transaction() as db:
+                policy = self.compose_policy_in(db, identity_policy, context.reference_id, context,
+                    trust=evidence.trust, schemas=self._schemas, kind=kind, now=self.authentication._clock())
+                self._check_current_in(db, policy, context, evidence, phase=phase)
+                fence = TextAnalysisTransitionFence(_SEAL, self, db, context, evidence, policy.authorization_epoch, lifecycle, phase)
+                policy = replace(policy, text_analysis_fence=fence)
+                fence._policy = policy
+                try:
+                    require_text_analysis(policy, context, kind=kind, phase=phase)
+                    yield policy
+                    self._check_current_in(db, fence._policy, context, fence._evidence, phase=phase)
+                finally:
+                    fence._active = False
 
     def _check_current_in(self, db, policy, context, evidence, *, phase):
         from app.persistence.nlp_dependencies import DependencyPersistence

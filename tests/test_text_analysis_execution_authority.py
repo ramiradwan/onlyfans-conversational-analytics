@@ -1,5 +1,6 @@
 """Exact module references and fixture-only auth reservations."""
 from dataclasses import replace
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -7,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from app.persistence.auth import SQLiteAuthenticationStore
+from app.persistence.auth import RevocationKey, RevocationScopeType, SQLiteAuthenticationStore
+from app.persistence import text_analysis_authority as authority_module
 from app.persistence import sqlite_api
 from app.persistence.database import CanonicalSQLite
 from app.persistence.migrations import MigrationRunner
@@ -19,11 +21,13 @@ from app.security.grant_types import ACCOUNT_AUTHORITY_GRANT_TYPES
 from app.security.runtime_policy import AuthContext, IdentityAccountAuthority, RuntimeAuthorizationDenied
 from app.security.text_analysis_authority import fixture_trust, verify_authority
 from app.security.text_analysis_contract import TextAnalysisSchemas, canonical
+from app.security import text_analysis_contract as contract_module
 from app.security.text_analysis_policy import (
     TextAnalysisRunContext, capability_binding, decode_run_context, encode_run_context,
     require_text_analysis, require_text_analysis_fence,
 )
 from app.security.text_analysis_references import PROFILE_SHA256, reference_from_verified
+from contracts.loader import ContractsIntegrityError
 
 pytestmark = pytest.mark.ci_tier('fast')
 NOW = datetime(2026, 10, 25, tzinfo=timezone.utc)
@@ -376,3 +380,125 @@ def test_fence_without_canonical_lifecycle_owner_cannot_authorize_canonical_writ
             lifecycle=FixtureTextAnalysisLifecycle(auth.database),fixture_only=True) as held:
         with pytest.raises(RuntimeAuthorizationDenied,match='canonical_owner_mismatch'):
             require_text_analysis_fence(held,context,kind='license',phase='commit',canonical_database=canonical_db)
+
+
+def _license_transition(store, basis, *, phase='start', policy=None, evidence=None):
+    auth,_,_,_,context,original_policy,original_evidence,_ = basis
+    return store.transition_fence(original_policy if policy is None else policy, context, kind='license', phase=phase,
+        evidence=original_evidence if evidence is None else evidence,
+        lifecycle=FixtureTextAnalysisLifecycle(auth.database), fixture_only=True)
+
+
+def test_schema_registry_is_verified_once_per_store_but_original_jws_each_transition(basis, monkeypatch):
+    auth,_,case,_,_,_,_,_ = basis
+    store = TextAnalysisAuthorityStore(auth)
+    constructed, tokens = [], []
+    build, verify = authority_module.TextAnalysisSchemas, authority_module.verify_authority
+    def schemas():
+        result = build()
+        constructed.append(result)
+        return result
+    def signed(token, **kwargs):
+        tokens.append(token)
+        return verify(token, **kwargs)
+    monkeypatch.setattr(authority_module, 'TextAnalysisSchemas', schemas)
+    monkeypatch.setattr(authority_module, 'verify_authority', signed)
+    for phase in ('prepare', 'start', 'resume', 'commit'):
+        with _license_transition(store, basis, phase=phase) as held:
+            assert held.text_analysis_fence._connection.in_transaction
+    assert constructed == [store._schemas]
+    assert tokens == [case['token']]*4
+    replacement = TextAnalysisAuthorityStore(auth)
+    assert replacement._schemas is None
+    with _license_transition(replacement, basis):
+        pass
+    assert len(constructed) == 2 and constructed[0] is not constructed[1]
+
+
+def test_schema_registry_initialization_holds_gate_before_auth_writer(basis, monkeypatch):
+    auth = basis[0]
+    store = TextAnalysisAuthorityStore(auth)
+    build = authority_module.TextAnalysisSchemas
+    observed = []
+    def schemas():
+        assert auth.database.dependency_authority_gate._is_owned()
+        assert store._schemas is None
+        # This real writer could not open if initialization held another writer.
+        with auth.database.transaction() as db:
+            observed.append(db.in_transaction)
+        return build()
+    monkeypatch.setattr(authority_module, 'TextAnalysisSchemas', schemas)
+    with _license_transition(store, basis):
+        pass
+    assert observed == [True] and store._schemas is not None
+
+
+def test_failed_schema_registry_verification_is_not_cached_or_reserved(basis, monkeypatch):
+    auth = basis[0]
+    store = TextAnalysisAuthorityStore(auth)
+    verify, writer = contract_module.verify_snapshot_integrity, auth.database.transaction
+    verified, reservations = [], []
+    def checked(root):
+        result = verify(root)
+        verified.append(result)
+        if len(verified) == 1:
+            raise ContractsIntegrityError('snapshot verification failed')
+        return result
+    @contextmanager
+    def reserved(*args, **kwargs):
+        reservations.append(True)
+        with writer(*args, **kwargs) as db:
+            yield db
+    monkeypatch.setattr(contract_module, 'verify_snapshot_integrity', checked)
+    monkeypatch.setattr(auth.database, 'transaction', reserved)
+    with pytest.raises(ContractsIntegrityError, match='snapshot verification failed'):
+        with _license_transition(store, basis):
+            pytest.fail('Unverified registry admitted')
+    assert store._schemas is None and not reservations
+    for _ in range(2):
+        with _license_transition(store, basis):
+            pass
+    assert store._schemas is not None and len(verified) == 2 and len(reservations) == 2
+
+
+@pytest.mark.parametrize('change', ['grant-revocation', 'grant-expiry'])
+def test_cached_schema_registry_keeps_actual_grant_currentness(basis, tmp_path, monkeypatch, change):
+    from tests.test_text_analysis_identity import make_identity_fixture
+    auth,_,_,_,context,_,evidence,_ = basis
+    scope = {key: getattr(context, key) for key in
+             ('organization_id', 'installation_id', 'installation_key_id', 'installation_key_jkt')}
+    identity = make_identity_fixture(tmp_path/'identity', scope=scope, authentication=auth, now=auth._clock(),
+        principal_id=context.principal_id, creator_account_id=context.creator_account_id)
+    policy = identity.owner.rebuild(identity.identity)
+    evidence = replace(evidence, authorization_epoch=policy.authorization_epoch.value)
+    store = TextAnalysisAuthorityStore(auth)
+    with _license_transition(store, basis, policy=policy, evidence=evidence):
+        pass
+    schemas, epoch = store._schemas, auth.read_epoch()
+    if change == 'grant-revocation':
+        auth.revoke(RevocationKey(RevocationScopeType.VERIFIED_GRANT, identity.identity.grant_reference_ids[0]))
+        assert auth.read_epoch().value > epoch.value
+    else:
+        monkeypatch.setattr(auth, '_clock', lambda: policy.expires_at)
+        assert auth.read_epoch() == epoch
+    with pytest.raises(RuntimeAuthorizationDenied, match='policy_stale'):
+        with _license_transition(store, basis, policy=policy, evidence=evidence):
+            pytest.fail('Stale grant admitted')
+    assert store._schemas is schemas
+
+
+def test_cached_schema_registry_does_not_cache_signed_authority_bytes(basis):
+    auth,_,case,reference,_,_,_,_ = basis
+    store = TextAnalysisAuthorityStore(auth)
+    with _license_transition(store, basis):
+        pass
+    schemas = store._schemas
+    protected, payload, signature = case['token'].split('.')
+    corrupted = '.'.join((protected, payload, ('A' if signature[0] != 'A' else 'B') + signature[1:]))
+    with auth.database.transaction() as db:
+        db.execute('UPDATE text_analysis_authority_references SET compact_jws=? WHERE reference_id=?',
+                   (corrupted, reference.reference_id))
+    with pytest.raises(RuntimeAuthorizationDenied):
+        with _license_transition(store, basis):
+            pytest.fail('Changed signed bytes admitted')
+    assert store._schemas is schemas
