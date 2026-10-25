@@ -45,23 +45,16 @@ class FrozenFindingsPipeline(AnalyticsPipeline):
             return run
 
 
-class FindingsRunner:
-    """Providers and background scheduling require explicit runtime configuration.
-
-    Authorization raises on refusal. Execution readiness returns a boolean for
-    the exact profile; it cannot confer authorization or release qualification.
-    The adapter honors request deadlines and polls the cancellation callback.
-    """
-    def __init__(self, source, projections, *, authorize, execution_ready, adapter,
-                 clock, enrichment=None, lease_clock=time.time, dependencies=None, label_resolver=None,
-                 cancellation_check=None):
+class FindingsReadContext:
+    """Source validation and reconstruction without execution dependencies."""
+    def __init__(self, source, projections, *, authorize, clock, cancellation_check=None):
         self.source, self.projections = source, projections
-        self.authorize, self.execution_ready, self.adapter = authorize, execution_ready, adapter
-        self.clock, self.enrichment = clock, enrichment
-        self.dependencies = dependencies
-        self.label_resolver = label_resolver
+        self.authorize, self.clock = authorize, clock
         self.cancellation_check = cancellation_check
-        self.findings = FindingsStore(projections.database,clock=lease_clock)
+        self.findings = FindingsStore(projections.database)
+
+    def _dependency_admission(self, account_id):
+        self.authorize(account_id)
 
     def _budget(self):
         return QuestionBudget(QuestionLimits(max_records=100_000,wall_clock_ms=30_000),
@@ -120,12 +113,6 @@ class FindingsRunner:
         if due is not None and due <= self.clock():
             raise ValueError('nlp_source_expired')
 
-    def _dependency_admission(self, account_id):
-        if self.dependencies is not None:
-            profile = read_profile(self.findings.state(account_id)['profile_json'])
-            if not self.dependencies.ready(profile):
-                raise ValueError('nlp_dependency_unavailable')
-
     def reconcile(self, account_id, *, maximum=MAX_SOURCES):
         """Advance a durable scan by a bounded number of locator pages."""
         if not 1 <= maximum <= MAX_SOURCES:
@@ -158,6 +145,94 @@ class FindingsRunner:
                 count+=len(page)
         budget.check()
         return complete
+
+    def publish_literals(self, account_id, binding):
+        """Seal only cached derivations under the existing live source owner."""
+        from app.analytics.nlp_literals import publish
+        if type(binding) is not FrozenFindings or binding.account_ref != account_ref(account_id):
+            raise ValueError('nlp_literal_account_mismatch')
+        budget = self._budget()
+        self.authorize(account_id)
+        with self.source.open_question_scope(account_id, budget, verify_source_token=True,
+                                              prepare_identity=True) as scope:
+            result = publish(self.projections.database, binding, canonical=scope.identity,
+                             source_current=lambda: scope.check(budget), check=budget.check)
+            scope.check(budget)
+            return result
+
+    def backfill_literals(self, account_id, binding, *, maximum=PAGE_SIZE):
+        """Capture one bounded page of missing derivations without inference."""
+        from app.analytics.nlp_findings_store import require_current_snapshot
+        from app.analytics.nlp_literals import capture_record, supported, LiteralUnavailable
+        if type(binding) is not FrozenFindings or binding.account_ref != account_ref(account_id):
+            raise ValueError('nlp_literal_account_mismatch')
+        if not 1 <= maximum <= PAGE_SIZE:
+            raise ValueError('nlp_literal_backfill_limit')
+        self.authorize(account_id)
+        budget = self._budget()
+        completed = 0
+        with self.source.open_question_scope(account_id, budget, verify_source_token=True,
+                                              prepare_identity=True) as scope:
+            with self.projections.database.read() as db:
+                if not supported(db):
+                    raise LiteralUnavailable()
+                value = require_current_snapshot(db, binding, scope.identity, verify_records=False)
+                profile = read_profile(encoded(value['snapshot']['profile']))
+                page = []
+                for key in value['records']:
+                    budget.check()
+                    if not db.execute('SELECT 1 FROM nlp_literal_derivations WHERE account_ref=? AND record_digest=?',
+                                      (binding.account_ref,key)).fetchone():
+                        raw = db.execute('SELECT document FROM nlp_records WHERE account_ref=? AND record_digest=?',
+                                         (binding.account_ref,key)).fetchone()
+                        if raw is None or hashlib.sha256(bytes(raw[0])).hexdigest() != key:
+                            raise ValueError('nlp_record_invalid')
+                        record = v2.read_record(bytes(raw[0]))
+                        location = db.execute('SELECT conversation_id,message_id FROM nlp_sources WHERE account_ref=? AND source_ref=?',
+                                              (binding.account_ref,record.source.source_ref)).fetchone()
+                        if location is None:
+                            raise ValueError('nlp_source_invalid')
+                        page.append((key,record,bytes(raw[0]),EvidenceLocation(conversation_id=location[0],message_id=location[1])))
+                        if len(page) == maximum:
+                            break
+            for key,record,raw,location in page:
+                budget.check()
+                original = self._read(account_id,location,budget)
+                if original is None or source_binding(original) != record.source:
+                    raise ValueError('nlp_source_invalid')
+                scope.check(budget)
+                with self.projections.database.transaction() as db:
+                    require_current_snapshot(db,binding,scope.identity,verify_records=False)
+                    capture_record(db,profile,original,record,key,check=budget.check,record_bytes=raw)
+                completed += 1
+            scope.check(budget)
+        return completed
+
+
+
+class FindingsRunner(FindingsReadContext):
+    """Providers and background scheduling require explicit runtime configuration.
+
+    Authorization raises on refusal. Execution readiness returns a boolean for
+    the exact profile; it cannot confer authorization or release qualification.
+    The adapter honors request deadlines and polls the cancellation callback.
+    """
+    def __init__(self, source, projections, *, authorize, execution_ready, adapter,
+                 clock, enrichment=None, lease_clock=time.time, dependencies=None, label_resolver=None,
+                 cancellation_check=None):
+        self.source, self.projections = source, projections
+        self.authorize, self.execution_ready, self.adapter = authorize, execution_ready, adapter
+        self.clock, self.enrichment = clock, enrichment
+        self.dependencies = dependencies
+        self.label_resolver = label_resolver
+        self.cancellation_check = cancellation_check
+        self.findings = FindingsStore(projections.database,clock=lease_clock)
+
+    def _dependency_admission(self, account_id):
+        if self.dependencies is not None:
+            profile = read_profile(self.findings.state(account_id)['profile_json'])
+            if not self.dependencies.ready(profile):
+                raise ValueError('nlp_dependency_unavailable')
 
     def process_one(self, account_id):
         require_findings_execution()
@@ -310,65 +385,3 @@ class FindingsRunner:
         candidate=pipeline.build_candidate(account_id)
         self.authorize(account_id)
         return pipeline.publish_candidate(candidate)
-
-    def publish_literals(self, account_id, binding):
-        """Seal only cached derivations under the existing live source owner."""
-        from app.analytics.nlp_literals import publish
-        if type(binding) is not FrozenFindings or binding.account_ref != account_ref(account_id):
-            raise ValueError('nlp_literal_account_mismatch')
-        budget = self._budget()
-        self.authorize(account_id)
-        with self.source.open_question_scope(account_id, budget, verify_source_token=True,
-                                              prepare_identity=True) as scope:
-            result = publish(self.projections.database, binding, canonical=scope.identity,
-                             source_current=lambda: scope.check(budget), check=budget.check)
-            scope.check(budget)
-            return result
-
-    def backfill_literals(self, account_id, binding, *, maximum=PAGE_SIZE):
-        """Capture one bounded page of missing derivations without inference."""
-        from app.analytics.nlp_findings_store import require_current_snapshot
-        from app.analytics.nlp_literals import capture_record, supported, LiteralUnavailable
-        if type(binding) is not FrozenFindings or binding.account_ref != account_ref(account_id):
-            raise ValueError('nlp_literal_account_mismatch')
-        if not 1 <= maximum <= PAGE_SIZE:
-            raise ValueError('nlp_literal_backfill_limit')
-        self.authorize(account_id)
-        budget = self._budget()
-        completed = 0
-        with self.source.open_question_scope(account_id, budget, verify_source_token=True,
-                                              prepare_identity=True) as scope:
-            with self.projections.database.read() as db:
-                if not supported(db):
-                    raise LiteralUnavailable()
-                value = require_current_snapshot(db, binding, scope.identity, verify_records=False)
-                profile = read_profile(encoded(value['snapshot']['profile']))
-                page = []
-                for key in value['records']:
-                    budget.check()
-                    if not db.execute('SELECT 1 FROM nlp_literal_derivations WHERE account_ref=? AND record_digest=?',
-                                      (binding.account_ref,key)).fetchone():
-                        raw = db.execute('SELECT document FROM nlp_records WHERE account_ref=? AND record_digest=?',
-                                         (binding.account_ref,key)).fetchone()
-                        if raw is None or hashlib.sha256(bytes(raw[0])).hexdigest() != key:
-                            raise ValueError('nlp_record_invalid')
-                        record = v2.read_record(bytes(raw[0]))
-                        location = db.execute('SELECT conversation_id,message_id FROM nlp_sources WHERE account_ref=? AND source_ref=?',
-                                              (binding.account_ref,record.source.source_ref)).fetchone()
-                        if location is None:
-                            raise ValueError('nlp_source_invalid')
-                        page.append((key,record,EvidenceLocation(conversation_id=location[0],message_id=location[1])))
-                        if len(page) == maximum:
-                            break
-            for key,record,location in page:
-                budget.check()
-                original = self._read(account_id,location,budget)
-                if original is None or source_binding(original) != record.source:
-                    raise ValueError('nlp_source_invalid')
-                scope.check(budget)
-                with self.projections.database.transaction() as db:
-                    require_current_snapshot(db,binding,scope.identity,verify_records=False)
-                    capture_record(db,profile,original,record,key,check=budget.check)
-                completed += 1
-            scope.check(budget)
-        return completed

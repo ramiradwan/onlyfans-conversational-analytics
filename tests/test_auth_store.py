@@ -57,6 +57,24 @@ def store(tmp_path: Path, clock: MutableClock) -> SQLiteAuthenticationStore:
     return SQLiteAuthenticationStore(tmp_path / "auth.sqlite3", clock=clock)
 
 
+def test_epoch_reader_preserves_active_transaction_and_refuses_missing_state(store):
+    original = store.read_epoch()
+    with pytest.raises(RuntimeError, match="rollback"):
+        with store.database.transaction() as connection:
+            connection.execute("UPDATE authorization_epoch SET value=value+1 WHERE singleton=1")
+            assert store.read_epoch(connection).value == original.value + 1
+            assert store.read_epoch() == original
+            raise RuntimeError("rollback")
+    assert store.read_epoch() == original
+    with pytest.raises(RuntimeError, match="rollback"):
+        with store.database.transaction() as connection:
+            connection.execute("DELETE FROM authorization_epoch WHERE singleton=1")
+            with pytest.raises(AuthenticationStateError, match="epoch is unavailable"):
+                store.read_epoch(connection)
+            raise RuntimeError("rollback")
+    assert store.read_epoch() == original
+
+
 def record_grant(
     store: SQLiteAuthenticationStore,
     instant: datetime,

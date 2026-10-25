@@ -84,7 +84,7 @@ class DependencyService:
         self.clock, self.monotonic, self.owners = clock, monotonic, owners or ProcessOwners()
         self.spool = reject_path_aliases(Path(spool_root))
         require(self.spool.is_absolute(), 'nlp_spool_root')
-        self.gate = threading.RLock()
+        self.gate = persistence.gate
         self.thread = None
         self.stopping = threading.Event()
         self.available = {}

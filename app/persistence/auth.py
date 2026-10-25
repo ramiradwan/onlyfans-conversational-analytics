@@ -744,6 +744,13 @@ class SQLiteAuthenticationStore:
                 signed_object_digests=_unique(signed_object_digests),
             )
 
+    def read_epoch(self, connection: sqlite3.Connection | None = None) -> AuthorizationEpoch:
+        """Read the epoch in an existing owner transaction when supplied."""
+        if connection is not None:
+            return self._authorization_epoch(connection)
+        with self.database.read() as current:
+            return self._authorization_epoch(current)
+
     @staticmethod
     def _authorization_epoch(connection: sqlite3.Connection) -> AuthorizationEpoch:
         row = connection.execute(

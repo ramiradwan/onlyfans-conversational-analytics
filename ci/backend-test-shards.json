@@ -269,6 +269,7 @@
     "tests/test_integrity_upgrade_lifecycle.py": 2,
     "tests/test_integrity_verification_bounds.py": 3,
     "tests/test_json_validation_header.py": 1,
+    "tests/test_knowledge_contributions.py": 3,
     "tests/test_licensed_analytics_pipeline.py": 4,
     "tests/test_live_socket_capture_policy.py": 2,
     "tests/test_local_database_encryption.py": 3,
@@ -294,6 +295,7 @@
     "tests/test_nlp_read_erasure.py": 1,
     "tests/test_nlp_read_projection.py": 4,
     "tests/test_nlp_reclamation.py": 2,
+    "tests/test_nlp_recovery.py": 4,
     "tests/test_nlp_runtime.py": 1,
     "tests/test_nlp_source_validation.py": 1,
     "tests/test_nlp_task_subsets.py": 4,
@@ -373,8 +375,7 @@
     "tests/test_verified_append_records.py": 4,
     "tests/test_visibility_proof_completeness.py": 1,
     "tests/test_websocket_transport.py": 3,
-    "tests/test_witness_source_cache.py": 4,
-    "tests/test_knowledge_contributions.py": 3
+    "tests/test_witness_source_cache.py": 4
   },
   "windows_contracts": {
     "platform": [
@@ -613,6 +614,10 @@
       {
         "selector": "tests/test_knowledge_contributions.py",
         "reason": "Canonical SQLite fencing, backup restore and disposable-store replay preserve exact result bytes on Windows."
+      },
+      {
+        "selector": "tests/test_nlp_recovery.py",
+        "reason": "Explicit SQLite recovery preserves source inventory, literal bytes and shared authority visibility fences on Windows."
       }
     ],
     "analytics": [

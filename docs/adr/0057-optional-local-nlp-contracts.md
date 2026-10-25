@@ -33,6 +33,8 @@ Shared findings belong in existing encrypted analytics storage through a version
 
 Canonical contribution storage follows ADR 0014. Its dormant repository separates durable jobs, fenced attempts and sealed source-bound result members from disposable analytics records. Exact-record replay requires current source and account checks without an Engine; it does not recreate historical generation or literal identities. No production execution route is enabled.
 
+Explicit current-view recovery may create a paused read selection from exact canonical contributions, including after projection loss. It reconstructs the complete current source population and preserves result bytes and provenance. Final visibility shares the dependency authority gate and retains source, withdrawal, account and origin checks without requiring installed dependencies. Removal invalidates existing recovery tickets; a fresh read intent may select paused mode again without enabling processing. Reconstructed views receive new derived identities. Missing original labels or unsupported normalization remain explicitly unavailable, and retained saved metadata is unchanged.
+
 One inference job runs across all profiles. The default resource policy permits at most two inference CPU threads including tokenizer pools. Components execute serially and unload between executions. Cancellation, exit and servicing drain or terminate the owned worker tree. Independent limits bound frames, batches, source text, windows, candidates and outputs. A qualified component may impose stricter limits than the protocol ceilings.
 
 ## Consequences

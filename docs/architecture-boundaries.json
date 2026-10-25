@@ -702,7 +702,8 @@
         "app/analytics/nlp_observation_read.py",
         "app/analytics/nlp_contribution_replay.py",
         "app/analytics/nlp_contribution_sources.py",
-        "app/analytics/nlp_contribution_origins.py"
+        "app/analytics/nlp_contribution_origins.py",
+        "app/analytics/nlp_recovery.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",

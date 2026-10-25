@@ -99,6 +99,7 @@ _CONNECTION_COUNTS: dict[Path, int] = {}
 _CONNECTION_COUNTS_LOCK = RLock()
 _LIFECYCLE_LOCKS: dict[Path, RLock] = {}
 _CONNECTION_TRANSITION_LOCKS: dict[Path, RLock] = {}
+_DEPENDENCY_AUTHORITY_LOCKS: dict[Path, RLock] = {}
 
 
 def _connection_locks(path: Path) -> tuple[RLock, RLock]:
@@ -365,6 +366,12 @@ class CanonicalSQLite(LocalSQLite):
 
 class AuthSQLite(LocalSQLite):
     """Authoritative local authentication database."""
+
+    @property
+    def dependency_authority_gate(self):
+        """Share short dependency authority commits across owner facades."""
+        with _CONNECTION_COUNTS_LOCK:
+            return _DEPENDENCY_AUTHORITY_LOCKS.setdefault(self.path, RLock())
 
     store_name = "auth"
 
