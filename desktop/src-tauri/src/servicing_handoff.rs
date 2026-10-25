@@ -273,6 +273,60 @@ fn save_intent(data: &Path, intent: &Intent) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn load_engine_acquisition(data: &Path) -> Result<Option<Vec<u8>>> {
+    let path = data.join("temp/native-servicing/engine-acquisition.json");
+    policy::safe_data_path(&path)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    private_path(&path)?;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(&path)
+        .map_err(|_| "servicing_storage_invalid")?;
+    let mut bytes = Vec::new();
+    file.take(4097)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "servicing_storage_invalid")?;
+    if bytes.len() > 4096 {
+        return Err("servicing_storage_invalid");
+    }
+    Ok(Some(bytes))
+}
+
+pub(crate) fn save_engine_acquisition(data: &Path, bytes: &[u8]) -> Result<()> {
+    if bytes.is_empty() || bytes.len() > 4096 {
+        return Err("servicing_storage_invalid");
+    }
+    let root = cache_root(data, true)?;
+    let target = root.join("engine-acquisition.json");
+    if target.exists() {
+        private_path(&target)?;
+    }
+    let temporary = root.join("engine-acquisition.next");
+    if temporary.exists() {
+        private_path(&temporary)?;
+        std::fs::remove_file(&temporary).map_err(|_| "servicing_storage_invalid")?;
+    }
+    let mut file = create_file(&temporary)?;
+    file.write_all(bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|_| "servicing_storage_invalid")?;
+    drop(file);
+    if unsafe {
+        MoveFileExW(
+            wide(&temporary).as_ptr(),
+            wide(&target).as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err("servicing_storage_invalid");
+    }
+    Ok(())
+}
+
 fn nonce() -> Result<String> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).map_err(|_| "servicing_random_unavailable")?;

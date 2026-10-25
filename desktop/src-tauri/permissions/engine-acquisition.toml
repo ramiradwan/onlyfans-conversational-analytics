@@ -1,0 +1,14 @@
+[[permission]]
+identifier = "allow-desktop-engine-acquisition-start"
+description = "Request the declared optional Engine from an explicit module or preview selection."
+commands.allow = ["desktop_engine_acquisition_start"]
+
+[[permission]]
+identifier = "allow-desktop-engine-acquisition-status"
+description = "Observe the owned optional Engine acquisition."
+commands.allow = ["desktop_engine_acquisition_status"]
+
+[[permission]]
+identifier = "allow-desktop-engine-acquisition-cancel"
+description = "Request cancellation of the exact owned optional Engine acquisition."
+commands.allow = ["desktop_engine_acquisition_cancel"]

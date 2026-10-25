@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
-  "description": "Read native lifecycle state in the owned local application window.",
+  "description": "Use native lifecycle operations in the owned local application window.",
   "windows": [
     "main"
   ],
@@ -23,6 +23,9 @@
   "permissions": [
     "allow-desktop-state",
     "allow-desktop-update-status",
+    "allow-desktop-engine-acquisition-start",
+    "allow-desktop-engine-acquisition-status",
+    "allow-desktop-engine-acquisition-cancel",
     "allow-desktop-refresh-presentation",
     "allow-desktop-browser-task",
     "allow-desktop-setup-code"

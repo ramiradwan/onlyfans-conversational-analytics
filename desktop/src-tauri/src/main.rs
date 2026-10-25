@@ -8,6 +8,8 @@ mod bootstrap;
 mod browser;
 mod deployment;
 #[cfg(windows)]
+mod engine_acquisition;
+#[cfg(windows)]
 mod frame;
 mod handoff_contract;
 #[cfg(windows)]
@@ -62,6 +64,9 @@ async fn desktop_update_status(
     use std::sync::atomic::Ordering;
     desktop_state(window.clone(), state.clone())?;
     let owner = state.inner().clone();
+    if owner.engine_acquisition.busy() {
+        return Err("optional_acquisition_busy");
+    }
     owner
         .update_check_active
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -78,6 +83,50 @@ async fn desktop_update_status(
     // A lost admission or closed window cannot receive a result from an old check.
     desktop_state(window, state)?;
     Ok(status)
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn desktop_engine_acquisition_start(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+    explicit_selection: engine_acquisition::Selection,
+) -> Result<engine_acquisition::Status, &'static str> {
+    use std::sync::atomic::Ordering;
+    desktop_state(window, state.clone())?;
+    let owner = state.inner().clone();
+    owner
+        .update_check_active
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .map_err(|_| "update_check_in_progress")?;
+    let guard = UpdateCheckGuard(owner.clone());
+    let release = owner.release.clone();
+    let acquisition = owner.engine_acquisition.clone();
+    acquisition.start(explicit_selection, release, move || {
+        let _hold = &guard;
+        owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
+    })
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn desktop_engine_acquisition_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+) -> Result<engine_acquisition::Status, &'static str> {
+    desktop_state(window, state.clone())?;
+    Ok(state.engine_acquisition.status())
+}
+
+#[cfg(windows)]
+#[tauri::command]
+fn desktop_engine_acquisition_cancel(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+    operation_id: String,
+) -> Result<engine_acquisition::Status, &'static str> {
+    desktop_state(window, state.clone())?;
+    state.engine_acquisition.cancel(&operation_id)
 }
 
 #[cfg(windows)]
@@ -214,6 +263,7 @@ fn main() {
         quitting: AtomicBool::new(false),
         update_check_active: AtomicBool::new(false),
         servicing_cancel: std::sync::Mutex::new(None),
+        engine_acquisition: engine_acquisition::Owner::new(data.clone()),
         release,
         actions: sender,
     });
@@ -238,6 +288,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_state,
             desktop_update_status,
+            desktop_engine_acquisition_start,
+            desktop_engine_acquisition_status,
+            desktop_engine_acquisition_cancel,
             browser::desktop_refresh_presentation,
             browser::desktop_browser_task,
             browser::desktop_setup_code,

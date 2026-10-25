@@ -26,6 +26,7 @@ pub struct Host {
     pub quitting: AtomicBool,
     pub update_check_active: AtomicBool,
     pub servicing_cancel: Mutex<Option<crate::servicing_handoff::Cancellation>>,
+    pub engine_acquisition: Arc<crate::engine_acquisition::Owner>,
     pub release: Option<crate::deployment::DesktopRelease>,
     pub actions: SyncSender<Action>,
 }
@@ -33,6 +34,7 @@ pub struct Host {
 impl Host {
     pub fn quit(&self) {
         self.quitting.store(true, Ordering::SeqCst);
+        self.engine_acquisition.request_stop();
         if let Some(cancel) = self
             .servicing_cancel
             .lock()
@@ -48,6 +50,7 @@ impl Host {
 
 fn unavailable(app: &AppHandle, state: &Host, reason: &'static str) {
     state.admitted.store(false, Ordering::SeqCst);
+    state.engine_acquisition.request_stop();
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.navigate(policy::failure_document(reason).parse().expect("fixed URL"));
         let _ = window.show();
@@ -70,8 +73,11 @@ pub fn supervise(
 ) {
     match run(&app, &state, &receiver, journey, &image, &data) {
         Ok(true) => {
+            let acquisition_drained = state.engine_acquisition.drain();
             state.stopped.store(true, Ordering::SeqCst);
-            app.exit(if state.quitting.load(Ordering::SeqCst) {
+            app.exit(if !acquisition_drained {
+                1
+            } else if state.quitting.load(Ordering::SeqCst) {
                 0
             } else {
                 crate::handoff_contract::EXIT_FOR_SERVICING as i32
@@ -81,6 +87,7 @@ pub fn supervise(
         Err(reason) => unavailable(&app, &state, reason),
         Ok(false) => (),
     }
+    let acquisition_drained = state.engine_acquisition.drain();
     // Failure is stable until the user quits. App links never start a crash loop.
     while !state.quitting.load(Ordering::SeqCst) {
         if matches!(
@@ -91,7 +98,7 @@ pub fn supervise(
         }
     }
     state.stopped.store(true, Ordering::SeqCst);
-    app.exit(0);
+    app.exit(if acquisition_drained { 0 } else { 1 });
 }
 
 fn run(
@@ -219,6 +226,17 @@ fn run(
             }
             match receiver.recv_timeout(Duration::from_millis(100)) {
                 Ok(Action::Prepared(Ok(update))) => {
+                    if state.engine_acquisition.busy() {
+                        continue;
+                    }
+                    if state
+                        .update_check_active
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    let _exclusive = crate::UpdateCheckGuard(state.clone());
                     let Some(release) = state.release.as_ref() else {
                         continue;
                     };
@@ -337,6 +355,9 @@ fn run(
 }
 
 fn prepare_update(state: &Arc<Host>) -> bool {
+    if state.engine_acquisition.busy() {
+        return false;
+    }
     let Some(release) = state
         .release
         .as_ref()
