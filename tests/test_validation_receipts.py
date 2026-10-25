@@ -169,8 +169,11 @@ def test_every_tracking_trigger_is_required(fixture):
         literal_names = {f'generation_content_{table}_{event}'
                          for table in literal_tables for event in ('insert', 'update', 'delete')}
         assert literal_names <= set(names)
-        assert len(set(names) - literal_names) == 108
-        assert len(names) == 123
+        origin_names = {f'generation_content_nlp_origins_{event}' for event in ('insert', 'delete')}
+        origin_names |= {f'generation_content_nlp_origin_epoch_{event}' for event in ('insert', 'update', 'delete')}
+        assert origin_names <= set(names)
+        assert len(set(names) - literal_names - origin_names) == 108
+        assert len(names) == 128
         for name in names:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DROP TRIGGER ' + name)

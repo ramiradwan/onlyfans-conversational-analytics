@@ -31,6 +31,8 @@ Each task has an independent outcome and coverage. Missing dependencies, uncerta
 
 Shared findings belong in existing encrypted analytics storage through a versioned record boundary. Brain binds them to account, exact source version, profile and executed component. Retention, deletion and account barriers invalidate evidence. Snapshot identity includes source validity and per-task completion/availability so findings can publish without canonical edits. Reuse initially requires exact source and profile equality. Joint conditioning changes invalidate both tasks. Analytics reads never trigger synchronous inference.
 
+Canonical contribution storage follows ADR 0014. Its dormant repository separates durable jobs, fenced attempts and sealed source-bound result members from disposable analytics records. Exact-record replay requires current source and account checks without an Engine; it does not recreate historical generation or literal identities. No production execution route is enabled.
+
 One inference job runs across all profiles. The default resource policy permits at most two inference CPU threads including tokenizer pools. Components execute serially and unload between executions. Cancellation, exit and servicing drain or terminate the owned worker tree. Independent limits bound frames, batches, source text, windows, candidates and outputs. A qualified component may impose stricter limits than the protocol ceilings.
 
 ## Consequences

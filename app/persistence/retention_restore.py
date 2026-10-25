@@ -62,6 +62,9 @@ def _merge_authority(
     policies: list[dict],
     barriers: list[dict],
 ) -> None:
+    from app.persistence.contributions import retire_scope
+    for barrier in barriers:
+        retire_scope(connection, barrier['creator_account_id'], barrier['scope_kind'], barrier['scope_key'])
     for row in policies:
         connection.execute(
             """
@@ -378,6 +381,8 @@ def restore_backup_pair_with_deletion_barriers(
                 staged_canonical.execute("PRAGMA foreign_keys=ON")
                 staged_canonical.execute("BEGIN IMMEDIATE")
                 _merge_authority(staged_canonical, policies, barriers)
+                from app.persistence.contributions import reconcile_restored
+                reconcile_restored(staged_canonical, current_time)
                 if staged_canonical.execute("PRAGMA foreign_key_check").fetchall():
                     raise SQLiteBackupError(
                         "restore_barrier_reconciliation_foreign_key_failed"
@@ -525,6 +530,8 @@ def restore_migration_backup_with_deletion_barriers(
                 staged.execute("PRAGMA foreign_keys=ON")
                 staged.execute("BEGIN IMMEDIATE")
                 _merge_authority(staged, policies, barriers)
+                from app.persistence.contributions import reconcile_restored
+                reconcile_restored(staged, current_time)
                 if staged.execute("PRAGMA foreign_key_check").fetchall():
                     raise SQLiteBackupError(
                         "migration_restore_barrier_reconciliation_foreign_key_failed"

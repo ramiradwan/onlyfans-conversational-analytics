@@ -68,7 +68,7 @@ def _page(database, account_ref, proof_candidate, install_transition, deadline):
             return False
         check_deadline(deadline)
         binding = FrozenFindings(account_ref, row['snapshot_id'])
-        value = checked_snapshot(db, binding, verify_records=False)
+        value = checked_snapshot(db, binding, verify_records=False,verify_origins=False)
         keys = value['records']
         if (not isinstance(keys, list) or any(type(key) is not str for key in keys) or len(keys)>100_000 or
                 len(set(keys)) != len(keys) or row['cursor']>len(keys)):
@@ -152,7 +152,7 @@ def reclaim_orphans(
             if row['complete'] not in (1,2):
                 ready=False
                 continue
-            value=checked_snapshot(db,FrozenFindings(account_ref,row['snapshot_id']),verify_records=False)
+            value=checked_snapshot(db,FrozenFindings(account_ref,row['snapshot_id']),verify_records=False,verify_origins=False)
             members=[]
             for member in db.execute('SELECT ordinal,record_digest FROM nlp_snapshot_members '
                     'WHERE account_ref=? AND snapshot_id=? ORDER BY ordinal',(account_ref,row['snapshot_id'])):

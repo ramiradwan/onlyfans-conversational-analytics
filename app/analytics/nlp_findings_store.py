@@ -90,7 +90,7 @@ class Claim:
     expires_at: float
 
 
-def checked_snapshot(db, binding, *, verify_records=True, deadline=None, decoded_records=None):
+def checked_snapshot(db, binding, *, verify_records=True, deadline=None, decoded_records=None, verify_origins=True):
     """Verify immutable stored bytes, without granting live source access."""
     deadline = min(
         deadline if deadline is not None else float("inf"),
@@ -104,6 +104,9 @@ def checked_snapshot(db, binding, *, verify_records=True, deadline=None, decoded
     snapshot = v2.decode_snapshot(encoded(value['snapshot']))
     if snapshot.account_scope != binding.account_ref:
         raise ValueError('nlp_snapshot_invalid')
+    if verify_origins:
+        from app.analytics.nlp_contribution_origins import require_snapshot_origins
+        require_snapshot_origins(db, binding.account_ref, value['records'], check=lambda: check_deadline(deadline))
     for task in snapshot.tasks:
         if digest(value['coverage'][task.task]) != task.coverage_sha256:
             raise ValueError('nlp_snapshot_coverage_invalid')
@@ -155,7 +158,7 @@ def bind_generation(db, generation_id, binding, base_config, canonical):
 
 
 def check_generation(
-    db, generation, *, current=False, verify_records=True, deadline=None, decoded_records=None
+    db, generation, *, current=False, verify_records=True, deadline=None, decoded_records=None, verify_origins=True
 ):
     if db.execute('PRAGMA user_version').fetchone()[0] < 26:
         if '+nlp.snapshot.v1' in generation['pipeline_revision']:
@@ -180,7 +183,7 @@ def check_generation(
         )
         if current
         else checked_snapshot(
-            db, binding, verify_records=verify_records, deadline=deadline, decoded_records=decoded_records
+            db, binding, verify_records=verify_records, deadline=deadline, decoded_records=decoded_records, verify_origins=verify_origins
         )
     )
     if (value['snapshot']['canonical_revision'] != canonical.revision or
@@ -600,6 +603,9 @@ class FindingsStore:
             keys=[]
             for row in rows:
                 check_deadline(deadline)
+                from app.analytics.nlp_contribution_origins import origin_live
+                if not origin_live(db, ref, row['record_digest']):
+                    continue
                 if len(keys)>=100_000:
                     raise ValueError('nlp_snapshot_record_limit')
                 raw=bytes(row['document'])

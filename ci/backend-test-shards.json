@@ -373,7 +373,8 @@
     "tests/test_verified_append_records.py": 4,
     "tests/test_visibility_proof_completeness.py": 1,
     "tests/test_websocket_transport.py": 3,
-    "tests/test_witness_source_cache.py": 4
+    "tests/test_witness_source_cache.py": 4,
+    "tests/test_knowledge_contributions.py": 3
   },
   "windows_contracts": {
     "platform": [
@@ -608,6 +609,10 @@
       {
         "selector": "tests/test_private_file_memory.py",
         "reason": "Mandatory Windows native private-file ACL memory regression; intentionally also covered by production boot."
+      },
+      {
+        "selector": "tests/test_knowledge_contributions.py",
+        "reason": "Canonical SQLite fencing, backup restore and disposable-store replay preserve exact result bytes on Windows."
       }
     ],
     "analytics": [

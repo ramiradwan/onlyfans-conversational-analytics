@@ -25,6 +25,7 @@ from app.analytics.nlp_execution import require_findings_execution
 from app.analytics.nlp_navigation import NavigationRegistry
 from app.core.config import settings
 from app.persistence.projection_activation import ProjectionActivationRepository
+from app.persistence.database import CanonicalSQLite
 from app.security.analysis_authorization import clear_analysis_policies
 
 
@@ -54,6 +55,7 @@ class _DefaultRuntimeConfiguration:
     post_commit_rebuild_enabled: bool
     findings: FindingsConfiguration | None
     findings_navigation: NavigationRegistry | None
+    canonical_database: CanonicalSQLite | None = None
 
 
 _RUNTIMES: dict[int, AnalyticsRuntime] = {}
@@ -86,6 +88,7 @@ def configure_default_analytics_runtime(
     backend: AnalyticsBackend,
     projections_path: str | Path | None = None,
     canonical_path: str | Path | None = None,
+    canonical_database: CanonicalSQLite | None = None,
     activation: ProjectionActivationRepository | None = None,
     post_commit_rebuild_enabled: bool | None = None,
     findings: FindingsConfiguration | None = None,
@@ -106,6 +109,7 @@ def configure_default_analytics_runtime(
         backend=backend,
         projections_path=projections_path,
         canonical_path=canonical_path,
+        canonical_database=canonical_database,
         activation=activation,
         post_commit_rebuild_enabled=(
             backend == "sqlite"
@@ -239,6 +243,7 @@ def _build_pipeline(
         "sqlite",
         projections_path=configuration.projections_path,
         canonical_path=configuration.canonical_path,
+        canonical_database=configuration.canonical_database,
         activation=configuration.activation,
         canonical_identity_reader=lambda account_id: source_identity(source, account_id),
         lazy=True,

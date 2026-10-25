@@ -117,6 +117,7 @@ def configure_analytics_runtime(*, findings=_UNSET_FINDINGS):
         backend=settings.canonical_persistence_backend,
         projections_path=settings.analytics_projection_database_path,
         canonical_path=settings.canonical_database_path,
+        canonical_database=transport_manager.canonical_database,
         activation=transport_manager.projection_activation,
         findings=requested_findings,
         post_commit_rebuild_enabled=(

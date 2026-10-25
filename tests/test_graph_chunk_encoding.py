@@ -206,10 +206,11 @@ def test_forward_admission_preserves_raw_rows_backup_and_mixed_public_artifacts(
             added = schema33.keys() - schema32.keys()
             literal_tables = {'nlp_literal_accounts', 'nlp_literal_derivations', 'nlp_literal_derivation_batches',
                               'nlp_literal_publications', 'nlp_literal_publication_batches'}
-            assert {name for kind, name in added if kind == 'table'} == literal_tables
-            assert len(added) == 31 and sum(kind == 'trigger' for kind, _ in added) == 26
+            origin_tables = {'nlp_record_origins', 'nlp_origin_epochs'}
+            assert {name for kind, name in added if kind == 'table'} == literal_tables | origin_tables
+            assert len(added) == 40 and sum(kind == 'trigger' for kind, _ in added) == 33
             assert {key: schema33[key] for key in schema32} == schema32
-            assert connection.execute('PRAGMA schema_version').fetchone()[0] == schema_cookie + 31
+            assert connection.execute('PRAGMA schema_version').fetchone()[0] == schema_cookie + 40
             after_stamp = content_stamp(connection)
             assert after_stamp is not None and after_stamp[:2] == stamp[:2] and after_stamp[3] == stamp[3]
             assert codec.admitted(connection)

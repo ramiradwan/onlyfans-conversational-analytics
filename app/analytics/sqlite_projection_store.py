@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.analytics.nlp_contribution_origins import OriginCheckerUnavailable
+
 from app.core.lifecycle_receipts import startup_timed, startup_span, startup_count
 
 import json
@@ -123,6 +125,7 @@ class SQLiteAnalyticsProjectionStore:
         rollback_retention: int = 1,
         gc_batch_size: int = 8,
         busy_timeout_ms: int = 5_000,
+        contributions=None,
     ) -> None:
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be positive")
@@ -132,6 +135,8 @@ class SQLiteAnalyticsProjectionStore:
         startup_file_identity = None
         if isinstance(database, ProjectionsDatabase):
             self.database = database
+            if contributions is not None:
+                self.database.bind_contribution_origins(contributions.origin_is_live, contributions.origin_epoch)
         elif reconcile:
             def read_startup(connection):
                 return self._read_startup_generations(connection), connection._secured_file_identity
@@ -139,12 +144,12 @@ class SQLiteAnalyticsProjectionStore:
             try:
                 self.database, (startup_rows, startup_file_identity) = (
                     ProjectionsDatabase.open_with_validated_read(
-                        database, read_startup, busy_timeout_ms=busy_timeout_ms)
+                        database, read_startup, busy_timeout_ms=busy_timeout_ms, contributions=contributions)
                 )
             except StartupValidationUnavailable:
-                self.database = ProjectionsDatabase(database, busy_timeout_ms=busy_timeout_ms)
+                self.database = ProjectionsDatabase(database, busy_timeout_ms=busy_timeout_ms, contributions=contributions)
         else:
-            self.database = ProjectionsDatabase(database, busy_timeout_ms=busy_timeout_ms)
+            self.database = ProjectionsDatabase(database, busy_timeout_ms=busy_timeout_ms, contributions=contributions)
         if startup_file_identity is None:
             startup_file_identity = self.database._restrict_permissions()
         self._opening_file_identity = startup_file_identity
@@ -1712,6 +1717,8 @@ class SQLiteAnalyticsProjectionStore:
                 try:
                     self._validate_persisted_generation(generation["generation_id"],
                         materialize_projection=False, capture_startup=(dict(generation), intent))
+                except OriginCheckerUnavailable:
+                    raise
                 except (ProjectionValidationError, GraphReferentialIntegrityError, ValueError):
                     valid = False
             if not valid:
@@ -1833,6 +1840,8 @@ class SQLiteAnalyticsProjectionStore:
                     require_current_owner=current_owner_live,
                 ):
                     counts["activated"] += 1
+            except OriginCheckerUnavailable:
+                raise
             except (
                 ProjectionActivationConflict,
                 ProjectionReconciliationError,
@@ -2085,6 +2094,8 @@ class SQLiteAnalyticsProjectionStore:
                      projection_digest=values["projection_digest"],
                      graph_digest=values["graph_digest"])
                 return values
+        except OriginCheckerUnavailable:
+            raise
         except GraphDeadlineExceeded:
             raise
         except (ProjectionValidationError, GraphReferentialIntegrityError):
