@@ -7,6 +7,7 @@ import RestrictedReporter from '../reporter.mjs';
 import { readRegistry, identifyTest, laneTests } from '../registry.mjs';
 import { verifyEvents } from '../verify.mjs';
 import { parseOptions, childEnvironment, checkedOutSource, progressLine, startProgress } from '../run.mjs';
+import { createStartupObservations } from '../../lib/startup-diagnostics.mjs';
 
 function fixture(t, { mode = 'execution', retries = 1 } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'browser-ci-unit-'));
@@ -31,12 +32,64 @@ function attempt(f, retry = 0, status = 'passed') {
   f.reporter.onTestBegin(f.item, result); f.reporter.onTestEnd(f.item, result);
 }
 
+function nativeEnvelope(startup) {
+  return { schema: 'native-permission-diagnostic/v1', request_kind: 'full', stage: 'unknown',
+    window_found: false, prompt_found: false, invoke_attempted: false, allow_invoked: false, prompt_dismissed: false,
+    exit_code: null, signal: null, killed: false, operation_error_kind: 'aborted', trace_source: 'stream',
+    trace_status: 'empty', trace_incomplete: false, trace_bytes: 0,
+    child: { present: true, pid: 123, spawn_observed: true, error_kind: 'aborted', close_observed: true,
+      close_exit_code: null, close_signal: 'SIGTERM' }, timeout_fired: true, permission_state: 'denied', startup };
+}
+
 test('closed reporter excludes titles, diagnostics, raw results and attachments', (t) => {
   const f = fixture(t); attempt(f); f.reporter.onEnd({ status: 'passed', error: 'private-terminal' });
   const bytes = readFileSync(f.filename, 'utf8');
   assert.doesNotMatch(bytes, /private-/);
   assert.deepEqual(verifyEvents(bytes, f), { count: 1, completed: 1, retried: 0 });
   assert.equal(f.reporter.printsToStdio(), false);
+});
+
+test('failed attempts retain only validated startup summaries and keep retry gates unchanged', (t) => {
+  const f = fixture(t); const observation = createStartupObservations('brain', { now: () => 0 }).snapshot();
+  const result = { retry: 0, status: 'failed', workerIndex: 0, duration: 10,
+    errors: [{ message: 'Brain startup failed: ' + JSON.stringify(observation) },
+      { message: 'Brain startup failed: ' + JSON.stringify({ ...observation, raw: 'private-value' }) }] };
+  f.reporter.onTestBegin(f.item, result); f.reporter.onTestEnd(f.item, result);
+  attempt(f, 1); f.item.outcome = () => 'flaky'; f.reporter.onEnd({ status: 'passed' });
+  const bytes = readFileSync(f.filename, 'utf8');
+  assert.doesNotMatch(bytes, /private/);
+  const failed = bytes.trim().split('\n').map(JSON.parse).find(row => row.event === 'attempt_end' && row.retry === 0);
+  assert.deepEqual(failed.startup, [observation]);
+  assert.equal(verifyEvents(bytes, f).retried, 1);
+  assert.throws(() => verifyEvents(bytes, { ...f, qualification: true }), /browser_ci_invalid_evidence/);
+  failed.startup[0].raw = 'private-value';
+  const changed = bytes.trim().split('\n').map(JSON.parse).map(row => row.event === 'attempt_end' && row.retry === 0 ? failed : row);
+  assert.throws(() => verifyEvents(changed.map(JSON.stringify).join('\n') + '\n', f), /browser_ci_invalid_evidence/);
+});
+
+test('native diagnostic envelopes expose only the closed startup subset', (t) => {
+  const f = fixture(t);
+  const startup = createStartupObservations('native_permission', { now: () => 0 }).snapshot();
+  const result = { retry: 0, status: 'failed', workerIndex: 0, duration: 10,
+    errors: [{ message: 'Native permission interaction failed: ' + JSON.stringify(nativeEnvelope(startup)) },
+      { message: 'Native permission interaction failed: ' + JSON.stringify({ ...nativeEnvelope(startup), raw: 'private-command' }) }] };
+  f.reporter.onTestBegin(f.item, result); f.reporter.onTestEnd(f.item, result);
+  f.item.outcome = () => 'unexpected'; f.reporter.onEnd({ status: 'failed' });
+  const bytes = readFileSync(f.filename, 'utf8');
+  assert.doesNotMatch(bytes, /private/);
+  assert.deepEqual(bytes.trim().split('\n').map(JSON.parse).find(row => row.event === 'attempt_end').startup, [startup]);
+  assert.throws(() => verifyEvents(bytes, f), /browser_ci_invalid_evidence/);
+});
+
+test('shared wire fixtures are retained by the actual reporter for independent validation', (t) => {
+  const f = fixture(t);
+  const fixtures = JSON.parse(readFileSync(new URL('../startup-diagnostic-fixtures.json', import.meta.url), 'utf8'));
+  const result = { retry: 0, status: 'failed', workerIndex: 0, duration: 10,
+    errors: [{ message: 'Brain startup failed: ' + JSON.stringify(fixtures[0]) },
+      { message: 'Native permission interaction failed: ' + JSON.stringify(nativeEnvelope(fixtures[1])) }] };
+  f.reporter.onTestBegin(f.item, result); f.reporter.onTestEnd(f.item, result);
+  const rows = readFileSync(f.filename, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(rows.find(row => row.event === 'attempt_end').startup, fixtures);
 });
 
 test('actual inventory includes all registry cases even for a selected lane and has no execution claim', (t) => {

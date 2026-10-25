@@ -7,19 +7,35 @@ contains the explicitly named synthetic provider used by seed_webauthn_grants.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 
+def _startup_phase(phase):
+    if phase not in {"entry_started", "uvicorn_imported", "endpoints_imported",
+                     "main_imported", "helpers_installed", "uvicorn_entered"}:
+        return
+    try:
+        print(json.dumps({"schema": "browser-startup-phase/v1", "phase": phase},
+                         separators=(",", ":")), flush=True)
+    except (OSError, ValueError):
+        pass
+
+
+_startup_phase("entry_started")
 PRODUCT_ROOT = Path(__file__).resolve().parents[3]
 HELPER_ROOT = Path(__file__).resolve().parent
 sys.path[:0] = [str(PRODUCT_ROOT), str(HELPER_ROOT)]
 
 import uvicorn  # noqa: E402
 
+_startup_phase("uvicorn_imported")
 from app.api.endpoints import companion_pairing, companion_session  # noqa: E402
+_startup_phase("endpoints_imported")
 from app.core.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
+_startup_phase("main_imported")
 from app.persistence.auth import SQLiteAuthenticationStore  # noqa: E402
 from app.security.companion_pairing import CompanionPairingService  # noqa: E402
 from pairing_fixture import SyntheticPairingAuthority  # noqa: E402
@@ -40,9 +56,11 @@ def _e2e_pairing_service() -> CompanionPairingService:
 
 companion_pairing.companion_pairing_service = _e2e_pairing_service
 install_session_diagnostics(companion_session)
+_startup_phase("helpers_installed")
 
 
 if __name__ == "__main__":
+    _startup_phase("uvicorn_entered")
     uvicorn.run(
         app,
         host="127.0.0.1",

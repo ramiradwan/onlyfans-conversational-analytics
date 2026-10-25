@@ -1,4 +1,5 @@
 import { StringDecoder } from 'node:string_decoder';
+import { createStartupObservations } from './startup-diagnostics.mjs';
 
 const SCHEMA = 'native-permission-diagnostic/v1';
 const STAGES = new Set(['started', 'window_found', 'prompt_found', 'invoke_attempted', 'allow_returned', 'prompt_dismissed']);
@@ -28,7 +29,7 @@ export function parseNativePermissionTrace(value) {
   return last;
 }
 
-function traceCollector() {
+function traceCollector(observePhase) {
   const decoder = new StringDecoder('utf8');
   let pending = '', last = null, bytes = 0, records = 0;
   let invalid = false, incomplete = false, limited = false;
@@ -39,7 +40,7 @@ function traceCollector() {
     try { parsed = JSON.parse(line); }
     catch { if (final) incomplete = true; else invalid = true; return; }
     const closed = closedTraceRecord(parsed);
-    if (closed) last = closed;
+    if (closed) { last = closed; observePhase(closed.stage); }
     else invalid = true;
   }
   return {
@@ -100,13 +101,15 @@ async function readPermissionOnce(read, schedule, cancel) {
 /** Preserve a failed native interaction while recording only closed metadata. */
 export async function runNativePermissionInteraction({
   run, readPermission, requestKind = 'unspecified', schedule = setTimeout, cancel = clearTimeout,
+  now = () => performance.now(),
 }) {
+  const startup = createStartupObservations('native_permission', { now });
   const controller = new AbortController();
   let timeoutFired = false;
   let failed = false;
   let failure, result, command, child, close, onSpawn, onError, onClose;
   let streamed = false;
-  const collector = traceCollector();
+  const collector = traceCollector(startup.phase);
   const onData = chunk => collector.write(chunk);
   const childState = { present: false, pid: null, spawn_observed: false, error_kind: null,
     close_observed: false, close_exit_code: null, close_signal: null };
@@ -115,6 +118,7 @@ export async function runNativePermissionInteraction({
     command = run(controller.signal);
     child = command?.child;
     if (child) {
+      startup.bind(child);
       childState.present = true;
       childState.pid = Number.isSafeInteger(child.pid) && child.pid > 0 ? child.pid : null;
       onSpawn = () => { childState.spawn_observed = true; };
@@ -134,7 +138,7 @@ export async function runNativePermissionInteraction({
     }
     result = await command;
   }
-  catch (error) { failed = true; failure = error; }
+  catch (error) { failed = true; failure = error; startup.failure(error); }
   finally {
     // An AbortError reports cancellation; only close joins the owned child and its pipes.
     await close;
@@ -151,6 +155,7 @@ export async function runNativePermissionInteraction({
   const buffered = !streamed && typeof failure?.stdout === 'string';
   if (buffered) collector.write(failure.stdout);
   const observed = collector.finish();
+  if (observed.status === 'limit_exceeded') startup.limitPhases();
   const trace = observed.last;
   const diagnostic = {
     schema: SCHEMA,
@@ -168,6 +173,7 @@ export async function runNativePermissionInteraction({
     child: childState,
     timeout_fired: timeoutFired,
     permission_state: await readPermissionOnce(readPermission, schedule, cancel),
+    startup: startup.snapshot(),
   };
   // Do not retain the subprocess error as a cause: it contains the full command.
   throw new Error(`Native permission interaction failed: ${JSON.stringify(diagnostic)}`);

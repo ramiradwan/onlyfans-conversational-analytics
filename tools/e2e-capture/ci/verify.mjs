@@ -1,6 +1,7 @@
 // Local runner checks. The Python artifact verifier independently enforces the
 // same contract at the required CI gate; this is not the acceptance authority.
 import { EVENT_SCHEMA, exactKeys, laneTests } from './registry.mjs';
+import { validStartupDiagnostic } from '../lib/startup-diagnostics.mjs';
 
 const BASE = ['schema', 'seq', 'event'];
 const FIELDS = {
@@ -27,8 +28,11 @@ export function verifyEvents(bytes, { registry, digest, mode, lane, qualificatio
   } catch { fail(); }
   if (events.length < 3 || events.length > 512) fail();
   for (const [index, event] of events.entries()) {
+    const startup = event?.event === 'attempt_end' && Object.hasOwn(event, 'startup');
     if (!event || !FIELDS[event.event] || event.schema !== EVENT_SCHEMA || event.seq !== index
-        || !exactKeys(event, [...BASE, ...FIELDS[event.event]]) || event.event === 'fault') fail();
+        || !exactKeys(event, [...BASE, ...FIELDS[event.event], ...(startup ? ['startup'] : [])]) || event.event === 'fault') fail();
+    if (startup && (event.status === 'passed' || !Array.isArray(event.startup) || !event.startup.length
+        || event.startup.length > 2 || !event.startup.every(validStartupDiagnostic))) fail();
   }
   const [begin, collection] = events; const end = events.at(-1);
   if (begin.event !== 'begin' || collection.event !== 'collection' || end.event !== 'end'
