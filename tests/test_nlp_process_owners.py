@@ -71,6 +71,7 @@ def test_missing_and_inaccessible_processes_remain_distinct(monkeypatch, error, 
     api.CloseHandle.assert_not_called()
 
 
+@pytest.mark.windows_compat
 @pytest.mark.skipif(os.name != 'nt', reason='Windows retained process-object semantics')
 def test_joined_process_with_exit_code_259_is_absent_while_handle_is_retained():
     child = subprocess.Popen([sys._base_executable, '-c', 'import sys; sys.exit(259)'])

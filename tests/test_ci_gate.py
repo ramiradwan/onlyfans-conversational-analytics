@@ -798,6 +798,35 @@ def test_linux_platform_skip_requires_actual_windows_contract_execution():
         gate.validate_coverage(reports, event="pull_request")
 
 
+@pytest.mark.parametrize("event", ["push", "pull_request"])
+def test_retained_windows_process_requires_contract_execution(event, monkeypatch, windows_manifest):
+    reports = _reports() if event == "push" else _pr_inputs()[2]
+    original = "tests/test_platform.py::test_fs"
+    node = "tests/test_nlp_process_owners.py::test_joined_process_with_exit_code_259_is_absent_while_handle_is_retained"
+    _rename_node(reports, original, node)
+    windows_manifest["files"][node.split("::", 1)[0]] = windows_manifest["files"].pop("tests/test_platform.py")
+    manifest = gate.load_backend_manifest(Path())
+    manifest["windows_contracts"]["platform"].append({"selector": node})
+    monkeypatch.setattr(gate, "load_backend_manifest", lambda root: manifest)
+    for report in reports.values():
+        next(row for row in report["collected"] if row["nodeid"] == node)["markers"] = ["windows_compat"]
+    _skip(reports["backend-fast"], node, gate.PR_SKIP_BASELINE[(node, "Linux")])
+    if event == "push":
+        owner = _windows_owner(reports, node)
+        assert gate.validate_report(reports[owner], gate.SPECS[owner])[node] == "executed"
+
+    contract = reports["windows-platform-contract"]
+    selected = contract["selected"]
+    _replace_selection(contract, [selected_node for selected_node in selected if selected_node != node])
+    with pytest.raises(gate.GateError, match="selection parity"):
+        gate.validate_coverage(reports, event=event)
+    _replace_selection(contract, selected)
+    gate.validate_coverage(reports, event=event)
+    _skip(contract, node, "Skipped: retained process observation unavailable")
+    with pytest.raises(gate.GateError, match="required OS|unreviewed pull-request skip"):
+        gate.validate_coverage(reports, event=event)
+
+
 def test_raw_windows_marker_cannot_be_hidden_by_classifier_fields():
     _, _, reports = _pr_inputs()
     node = "tests/test_platform.py::test_fs"
