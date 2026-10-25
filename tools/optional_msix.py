@@ -6,6 +6,9 @@ Windows owns executable installation and replacement.
 from __future__ import annotations
 
 import re
+import hashlib
+import io
+import json
 import stat
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
@@ -19,6 +22,204 @@ from tools.msix_packaging import FOUNDATION, version_tuple
 UAP3 = "http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
 APPINSTALLER = "http://schemas.microsoft.com/appx/appinstaller/2018"
 WORKER_PATH = "worker/TextAnalysisWorker.exe"
+QUOTE_PATH = "app/engine-acquisition-quote.json"
+QUOTE_MAXIMUM = 16384
+MAX_SAFE_INTEGER = 9007199254740991
+
+
+def _closed(value, fields):
+    if type(value) is not dict or set(value) != set(fields):
+        raise ValueError("invalid closed Engine quote object")
+
+
+def _integer(value, *, positive=False):
+    if type(value) is not int or not (1 if positive else 0) <= value <= MAX_SAFE_INTEGER:
+        raise ValueError("Engine quote requires a safe integer")
+    return value
+
+
+def _decode_object(raw: bytes, maximum: int) -> dict:
+    if not 0 < len(raw) <= maximum:
+        raise ValueError("Engine quote JSON exceeds its bound")
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate Engine quote JSON member")
+            result[key] = value
+        return result
+    def invalid(_):
+        raise ValueError("nonfinite Engine quote JSON number")
+    result = json.loads(raw.decode("utf-8"), object_pairs_hook=unique, parse_constant=invalid)
+    if type(result) is not dict:
+        raise ValueError("Engine quote JSON requires an object")
+    return result
+
+
+def validate_acquisition_quote(raw: bytes, descriptor: bytes, profile: dict) -> dict:
+    """Validate publisher-expected bytes, without observing a Windows transfer."""
+    from jsonschema import Draft202012Validator
+    from tools.msix_packaging import CONFIG_ROOT, read_json, validate_profile, desktop_descriptor
+    validate_profile(profile)
+    quote = _decode_object(raw, QUOTE_MAXIMUM)
+    schema = read_json(CONFIG_ROOT / "schemas/engine-acquisition-quote.schema.json")
+    if list(Draft202012Validator(schema).iter_errors(quote)):
+        raise ValueError("invalid Engine acquisition quote schema")
+    desktop = _decode_object(descriptor, 65536)
+    profile_digest = desktop.get("profile_sha256")
+    if not isinstance(profile_digest, str) or re.fullmatch(r"[0-9a-f]{64}", profile_digest) is None:
+        raise ValueError("invalid Engine quote desktop profile binding")
+    if (profile["schema"] != "ofca-msix-package-profile/v2"
+            or profile["distribution"] != "direct-appinstaller"
+            or profile["servicing"]["installed_artifact"]["kind"] != "related_bundle"
+            or desktop != desktop_descriptor(profile, profile_digest)):
+        raise ValueError("Engine quote requires the exact related desktop descriptor")
+    layout = profile["servicing"]["installed_artifact"]
+    if (quote["desktop_descriptor_sha256"] != hashlib.sha256(descriptor).hexdigest()
+            or quote["related_set_id"] != layout["related_set_id"] or quote["engine"] != layout["engine"]):
+        raise ValueError("Engine quote descriptor or relation differs")
+    bundle = quote["bundle"]
+    if (bundle["file"] != artifact_filename("engine", layout["engine"]["package_version"])
+            or bundle["uri"] != artifact_uri(profile["app_installer_uri"], purpose=profile["purpose"],
+                kind="engine", version=layout["engine"]["package_version"], digest=bundle["sha256"])):
+        raise ValueError("Engine quote artifact coordinate differs")
+    _integer(bundle["size_bytes"], positive=True)
+    disk = quote["disk"]
+    for key, value in disk.items():
+        _integer(value, positive=key == "installed_space_budget_bytes")
+    _integer(sum(disk.values()))
+    return quote
+
+
+def _pinned_document(base: Path, pin: dict, *, maximum=16 * 1024 * 1024) -> tuple[dict, str]:
+    from tools.msix_packaging import sha256
+    _closed(pin, ("file", "sha256"))
+    if not isinstance(pin["file"], str) or not pin["file"]:
+        raise ValueError("Engine quote requires an explicit input file")
+    path = base / pin["file"]
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > maximum or sha256(path) != pin["sha256"]:
+        raise ValueError("Engine quote input pin differs")
+    return _decode_object(path.read_bytes(), maximum), pin["sha256"]
+
+
+def engine_payload_inventory(bundle: Path, profile: dict) -> dict:
+    """Exact installed payload records; deployment footprints are separate."""
+    from tools.msix_packaging import FOOTPRINT_FILES, installed_archive_path
+    verify_engine_bundle(bundle, profile)
+    version = profile["servicing"]["installed_artifact"]["engine"]["package_version"]
+    with zipfile.ZipFile(bundle) as outer:
+        with zipfile.ZipFile(io.BytesIO(outer.read(engine_application_filename(version)))) as archive:
+            records, names = [], set()
+            for member in archive.infolist():
+                name = installed_archive_path(member.filename)
+                if name.casefold() in names or stat.S_ISLNK(member.external_attr >> 16):
+                    raise ValueError("Engine inventory has an alias or link")
+                names.add(name.casefold())
+                if name in FOOTPRINT_FILES:
+                    continue
+                _integer(member.file_size)
+                digest = hashlib.sha256()
+                with archive.open(member) as source:
+                    for block in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(block)
+                records.append(dict(path=name, size=member.file_size, sha256=digest.hexdigest()))
+    return dict(schema="optional-engine-payload-inventory/v1",
+                engine=profile["servicing"]["installed_artifact"]["engine"],
+                files=sorted(records, key=lambda record: record["path"]))
+
+
+def acquisition_quote(profile: dict, descriptor: bytes, inputs_path: Path, engine_bundle: Path) -> dict:
+    """Consume pinned outputs of prior independent signed-artifact admission."""
+    from tools.msix_packaging import canonical_json, sha256
+    if inputs_path.is_symlink() or inputs_path.stat().st_size > 65536:
+        raise ValueError("Engine quote inputs exceed their bound or are linked")
+    inputs = _decode_object(inputs_path.read_bytes(), 65536)
+    _closed(inputs, ("schema", "engine_bundle", "engine_payload_inventory", "disk_budget_declaration",
+                     "direct_signed_verification"))
+    if inputs["schema"] != "optional-engine-acquisition-quote-inputs/v1":
+        raise ValueError("invalid Engine quote inputs schema")
+    if (profile.get("schema") != "ofca-msix-package-profile/v2" or profile["distribution"] != "direct-appinstaller"
+            or profile["servicing"]["installed_artifact"]["kind"] != "related_bundle"):
+        raise ValueError("Engine quote requires a direct related release")
+    layout = profile["servicing"]["installed_artifact"]
+    bundle = inputs["engine_bundle"]
+    _closed(bundle, ("file", "sha256", "size_bytes"))
+    _integer(bundle["size_bytes"], positive=True)
+    if (engine_bundle.is_symlink() or not engine_bundle.is_file()
+            or bundle["file"] != engine_bundle.name
+            or bundle["file"] != artifact_filename("engine", layout["engine"]["package_version"])
+            or bundle["sha256"] != sha256(engine_bundle) or bundle["size_bytes"] != engine_bundle.stat().st_size):
+        raise ValueError("final signed Engine bundle pin differs")
+    inventory, inventory_sha = _pinned_document(inputs_path.parent, inputs["engine_payload_inventory"])
+    _closed(inventory, ("schema", "engine", "files"))
+    if type(inventory["files"]) is not list or not 1 <= len(inventory["files"]) <= 50000:
+        raise ValueError("invalid Engine payload inventory")
+    for record in inventory["files"]:
+        _closed(record, ("path", "sha256", "size"))
+        _integer(record["size"])
+    installed_bytes = _integer(sum(record["size"] for record in inventory["files"]))
+    if inventory != engine_payload_inventory(engine_bundle, profile):
+        raise ValueError("sealed Engine payload inventory differs")
+    declaration, _ = _pinned_document(inputs_path.parent, inputs["disk_budget_declaration"], maximum=65536)
+    _closed(declaration, ("schema", "engine", "bundle_sha256", "engine_payload_inventory_sha256", "disk"))
+    if (declaration["schema"] != "optional-engine-disk-budget/v1" or declaration["engine"] != layout["engine"]
+            or declaration["bundle_sha256"] != bundle["sha256"]
+            or declaration["engine_payload_inventory_sha256"] != inventory_sha):
+        raise ValueError("Engine disk declaration binding differs")
+    # A pinned verifier receipt is an input from the signing admission job,
+    # not a replacement for that job or proof of an arbitrary file's provenance.
+    verification, _ = _pinned_document(inputs_path.parent, inputs["direct_signed_verification"])
+    _closed(verification, ("schema", "purpose", "distribution", "mode", "identity", "file_count",
+        "package_sha256", "profile_sha256", "inventory_sha256", "signature", "artifact_set", "engine_identity"))
+    prior = verification["artifact_set"]
+    _closed(prior, ("kind", "core", "related_set_id", "engine"))
+    _closed(prior["core"], ("file", "sha256", "size"))
+    _closed(verification["identity"], ("Name", "Publisher", "Version", "Architecture", "FullName", "FamilyName"))
+    _closed(prior["engine"], ("identity", "package_version", "artifact"))
+    _closed(prior["engine"]["artifact"], ("file", "sha256", "size"))
+    _integer(prior["engine"]["artifact"]["size"], positive=True)
+    _closed(verification["engine_identity"], ("Name", "Publisher", "Version", "Architecture", "FullName", "FamilyName"))
+    artifact = dict(file=bundle["file"], sha256=bundle["sha256"], size=bundle["size_bytes"])
+    expected_engine = dict(**layout["engine"], artifact=artifact)
+    identity = layout["engine"]["identity"]
+    observed_engine = dict(Name=identity["name"], Publisher=identity["publisher"], Architecture=identity["architecture"],
+        Version=layout["engine"]["package_version"], FamilyName=identity["family"],
+        FullName=f'{identity["name"]}_{layout["engine"]["package_version"]}_x64__{identity["family"].rsplit("_", 1)[1]}')
+    if (verification.get("schema") != "ofca-msix-release-verification/v2"
+            or verification.get("mode") != "DirectSigned" or verification.get("signature") != "trusted-timestamped"
+            or verification.get("purpose") != profile["purpose"] or verification.get("distribution") != "direct-appinstaller"
+            or prior["kind"] != "related_bundle" or prior["engine"] != expected_engine
+            or verification["engine_identity"] != observed_engine):
+        raise ValueError("independent DirectSigned Engine verification differs")
+    # The receipt may describe an older Core release and related set. Only its
+    # admitted Engine is reused; the target relation is checked independently.
+    version_tuple(verification["identity"]["Version"])
+    _integer(verification["file_count"], positive=True)
+    _integer(prior["core"]["size"], positive=True)
+    if (prior["core"]["file"] != artifact_filename("related_bundle", verification["identity"]["Version"])
+            or prior["core"]["sha256"] != verification["package_sha256"]
+            or not isinstance(prior["related_set_id"], str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", prior["related_set_id"])
+            or any(not isinstance(verification[key], str) or not re.fullmatch(r"[a-f0-9]{64}", verification[key])
+                   for key in ("package_sha256", "profile_sha256", "inventory_sha256"))):
+        raise ValueError("invalid prior DirectSigned verification record")
+    quote = dict(schema="optional-engine-acquisition-quote/v1", desktop_descriptor_sha256=hashlib.sha256(descriptor).hexdigest(),
+                 related_set_id=layout["related_set_id"], engine=layout["engine"],
+                 bundle=dict(**bundle, uri=artifact_uri(profile["app_installer_uri"], purpose=profile["purpose"],
+                    kind="engine", version=layout["engine"]["package_version"], digest=bundle["sha256"])),
+                 disk=declaration["disk"])
+    validate_acquisition_quote(canonical_json(quote), descriptor, profile)
+    if installed_bytes > quote["disk"]["installed_space_budget_bytes"]:
+        raise ValueError("Engine installed budget is below its sealed payload")
+    return quote
+
+
+def verify_quote_artifact(quote: dict, engine_bundle: Path, profile: dict) -> None:
+    from tools.msix_packaging import sha256
+    if (quote["bundle"]["sha256"] != sha256(engine_bundle)
+            or quote["bundle"]["size_bytes"] != engine_bundle.stat().st_size):
+        raise ValueError("quoted Engine differs from the final artifact bytes")
+    if sum(item["size"] for item in engine_payload_inventory(engine_bundle, profile)["files"]) > quote["disk"]["installed_space_budget_bytes"]:
+        raise ValueError("quoted Engine installed budget is below its final payload")
 
 
 def artifact_filename(kind: str, version: str) -> str:

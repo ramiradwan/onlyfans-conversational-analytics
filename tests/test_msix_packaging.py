@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
 from pathlib import Path
 import shutil
@@ -534,6 +535,152 @@ def _prepared_and_sealed(stage, tmp_path, profile_path=PROFILE_PATH):
     assert result.returncode == 0, result.stdout + result.stderr
     msix.seal_payload(working, profile_path, Path(sys.executable))
     return working
+
+
+def _write_inert_digests(app):
+    records = [msix.file_record(path, path.relative_to(app).as_posix())
+               for path in sorted(app.rglob("*")) if path.is_file() and path.name != "sha256sums.txt"]
+    (app / "sha256sums.txt").write_text("".join(f'{record["sha256"]} *{record["path"]}\n' for record in records), encoding="ascii")
+
+
+def test_opted_in_quote_is_sealed_and_verified_against_final_external_engine(stage, tmp_path):
+    from test_optional_msix import _engine_quote_inputs
+    from tools import optional_msix as optional
+    selected, profile_path, engine, inputs, _ = _engine_quote_inputs(tmp_path)
+    working = tmp_path / "quoted-core"
+    msix.prepare_payload(stage, working, profile_path, engine_quote_inputs=inputs, engine_bundle=engine)
+    app = working / "payload/app"
+    _write_inert_digests(app)
+    inventory = msix.seal_payload(working, profile_path, Path(sys.executable))
+    assert optional.QUOTE_PATH in {record["path"] for record in inventory["files"]}
+    package = tmp_path / "core.msix"
+    with zipfile.ZipFile(package, "w") as archive:
+        for path in (working / "payload").rglob("*"):
+            if path.is_file(): archive.writestr(path.relative_to(working / "payload").as_posix(), path.read_bytes())
+        archive.writestr("AppxBlockMap.xml", b"inert footprint")
+        archive.writestr("[Content_Types].xml", b"inert footprint")
+    assert msix.verify_archive(package, working / "inventory.json", profile_path, engine_bundle=engine)["file_count"] == len(inventory["files"])
+    engine.write_bytes(engine.read_bytes() + b"changed final bytes")
+    with pytest.raises(ValueError, match="final artifact bytes"):
+        msix.verify_archive(package, working / "inventory.json", profile_path, engine_bundle=engine)
+
+
+@pytest.mark.parametrize("change", ["quote", "engine", "inputs"])
+def test_quote_sealing_refuses_changed_prepared_inputs(stage, tmp_path, change):
+    from test_optional_msix import _engine_quote_inputs
+    _, profile_path, engine, inputs, _ = _engine_quote_inputs(tmp_path)
+    working = tmp_path / "quoted-core"
+    msix.prepare_payload(stage, working, profile_path, engine_quote_inputs=inputs, engine_bundle=engine)
+    app = working / "payload/app"
+    if change == "quote":
+        quote = msix.read_json(app / "engine-acquisition-quote.json")
+        quote["disk"]["rollback_space_budget_bytes"] = 1
+        (app / "engine-acquisition-quote.json").write_bytes(msix.canonical_json(quote))
+    else:
+        target = engine if change == "engine" else inputs
+        target.write_bytes(target.read_bytes() + b" ")
+    _write_inert_digests(app)
+    with pytest.raises(ValueError, match="Engine.*changed|Engine bundle pin differs"):
+        msix.seal_payload(working, profile_path, Path(sys.executable))
+
+
+def test_ordinary_preparation_has_no_quote_and_cannot_adopt_an_unrequested_leaf(stage, tmp_path):
+    working = tmp_path / "legacy-core"
+    msix.prepare_payload(stage, working, PROFILE_PATH)
+    app = working / "payload/app"
+    assert not (app / "engine-acquisition-quote.json").exists()
+    (app / "engine-acquisition-quote.json").write_bytes(b'{}')
+    _write_inert_digests(app)
+    with pytest.raises(ValueError, match="extra or missing"):
+        msix.seal_payload(working, PROFILE_PATH, Path(sys.executable))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell quote verification")
+def test_powershell_engine_quote_checks_final_artifact_and_declared_budgets(tmp_path):
+    from tools import optional_msix as optional
+    fixture = msix.CONFIG_ROOT / "fixtures"
+    raw = (fixture / "engine-acquisition-quote.v1.json").read_bytes()
+    quote = msix.read_json(fixture / "engine-acquisition-quote.v1.json")
+    selected = msix.read_json(fixture / "engine-acquisition-quote-profile.v2.json")
+    payload = tmp_path / "engine-payload.zip"
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("AppxManifest.xml", optional.optional_manifest(optional._release_relation(selected),
+            minimum_os="10.0.26100.0", tested_os="10.0.26340.0"))
+        archive.writestr(optional.WORKER_PATH, b"inert worker bytes" * 128)
+        archive.writestr("AppxBlockMap.xml", b"inert deployment footprint" * 512)
+        archive.writestr("[Content_Types].xml", b"inert deployment footprint")
+    artifact_set = dict(kind="related_bundle", related_set_id=quote["related_set_id"],
+        core=dict(file="ConversationAnalytics_1.0.11.0_x64.msixbundle", sha256="c" * 64, size=1),
+        engine=dict(**quote["engine"], artifact=dict(file=quote["bundle"]["file"],
+            sha256=quote["bundle"]["sha256"], size=quote["bundle"]["size_bytes"])))
+    cases = []
+    def case(name, body, *, accepted=False, artifacts=None):
+        path = tmp_path / (name + ".json")
+        path.write_bytes(body)
+        cases.append(dict(name=name, quote=str(path), accepted=accepted,
+                          artifacts=artifact_set if artifacts is None else artifacts))
+    case("valid-shared", raw, accepted=True)
+    changed_artifact = copy.deepcopy(artifact_set)
+    changed_artifact["engine"]["artifact"]["sha256"] = "d" * 64
+    case("changed-final-hash", raw, artifacts=changed_artifact)
+    changed_artifact = copy.deepcopy(artifact_set)
+    changed_artifact["engine"]["artifact"]["size"] += 1
+    case("changed-final-size", raw, artifacts=changed_artifact)
+    for name, change in [
+        ("small-installed", lambda value: value["disk"].update(installed_space_budget_bytes=1)),
+        ("boolean-budget", lambda value: value["disk"].update(temporary_space_budget_bytes=True)),
+        ("float-budget", lambda value: value["disk"].update(installed_space_budget_bytes=4096.0)),
+        ("string-budget", lambda value: value["disk"].update(installed_space_budget_bytes="4096")),
+        ("negative-budget", lambda value: value["disk"].update(rollback_space_budget_bytes=-1)),
+        ("unsafe-budget", lambda value: value["disk"].update(installed_space_budget_bytes=9007199254740992)),
+        ("aggregate-overflow", lambda value: value["disk"].update(installed_space_budget_bytes=9007199254740991)),
+        ("missing-budget", lambda value: value["disk"].pop("rollback_space_budget_bytes")),
+        ("unknown", lambda value: value.update(approved=True)),
+        ("nested-unknown", lambda value: value["disk"].update(measured=True)),
+        ("relation-array", lambda value: value.update(related_set_id=[value["related_set_id"]])),
+        ("wrong-descriptor", lambda value: value.update(desktop_descriptor_sha256="e" * 64)),
+        ("wrong-uri", lambda value: value["bundle"].update(uri=value["bundle"]["uri"].replace("/packages/", "/other/"))),
+    ]:
+        value = copy.deepcopy(quote)
+        change(value)
+        case(name, msix.canonical_json(value))
+    case("duplicate", raw.replace(b'{', b'{"schema":"wrong",', 1))
+    case("nested-duplicate", raw.replace(b'"size_bytes":12345', b'"size_bytes":0,"size_bytes":12345'))
+    case("oversize", raw + b" " * 16384)
+    case_path = tmp_path / "quote-cases.json"
+    case_path.write_bytes(msix.canonical_json(dict(cases=cases)))
+    script = tmp_path / "quote-check.ps1"
+    script.write_text(r"""param($Verifier,$Helpers,$IdentityBinding,$ProfilePath,$DescriptorPath,$PayloadPath,$CasesPath)
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+$tokens=$null;$errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($Verifier,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'verifier syntax error'}
+foreach($name in @('Get-ByteDigest','Convert-CheckedJson','Assert-ClosedObject','Assert-EngineAcquisitionQuote')){
+ $definitions=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)|Where-Object Name -ceq $name)
+ if($definitions.Count -ne 1){throw 'exact quote helper definition required'}
+ . ([scriptblock]::Create($definitions[0].Extent.Text))
+}
+Import-Module $Helpers -Force
+Add-Type -Path $IdentityBinding
+$profile=Convert-CheckedJson ([IO.File]::ReadAllBytes($ProfilePath)) 65536
+$descriptor=[IO.File]::ReadAllBytes($DescriptorPath)
+$payload=[IO.File]::ReadAllBytes($PayloadPath)
+$inputCases=Convert-CheckedJson ([IO.File]::ReadAllBytes($CasesPath)) 1048576
+foreach($case in $inputCases.cases){
+ $accepted=$false;$failure=''
+ try{Assert-EngineAcquisitionQuote ([IO.File]::ReadAllBytes($case.quote)) $descriptor $profile $case.artifacts $payload;$accepted=$true}catch{$failure=$_.Exception.Message}
+ if($accepted -ne $case.accepted){throw ('unexpected quote outcome: '+$case.name+': '+$failure)}
+}
+Write-Output ('PASS '+$inputCases.cases.Count)
+""", encoding="utf-8")
+    result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script),
+        str(ROOT / "packaging/verify-msix.ps1"), str(msix.CONFIG_ROOT / "release-artifacts.psm1"),
+        str(msix.CONFIG_ROOT / "ReadPackageIdentity.cs"), str(fixture / "engine-acquisition-quote-profile.v2.json"),
+        str(fixture / "engine-acquisition-quote-descriptor.v2.json"), str(payload), str(case_path)],
+        capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"PASS {len(cases)}" in result.stdout
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows digest writer")

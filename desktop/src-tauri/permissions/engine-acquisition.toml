@@ -1,6 +1,11 @@
 [[permission]]
+identifier = "allow-desktop-engine-acquisition-review"
+description = "Review the declared optional Engine package before an explicit selection."
+commands.allow = ["desktop_engine_acquisition_review"]
+
+[[permission]]
 identifier = "allow-desktop-engine-acquisition-start"
-description = "Request the declared optional Engine from an explicit module or preview selection."
+description = "Request the declared optional Engine from a reviewed explicit module selection."
 commands.allow = ["desktop_engine_acquisition_start"]
 
 [[permission]]

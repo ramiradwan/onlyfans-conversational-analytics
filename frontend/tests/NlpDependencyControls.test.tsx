@@ -1,14 +1,15 @@
 import { ThemeProvider } from '@mui/material/styles';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NlpDependencyControls } from '../src/components/NlpDependencyControls';
+import type { EngineAcquisitionApi } from '../src/api/engineAcquisition';
 import type { NlpDependenciesApi, NlpDependencyCommand, NlpDependencyObservation, NlpDependencyPlan, NlpDependencyResult, NlpDependencyStatus } from '../src/services/nlpDependenciesApi';
 import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
 
-const profile = { profile_id: 'topics-and-mentions', revision: 'one', profile_sha256: 'a'.repeat(64), catalogued: true, installed: false, prepared: false, withdrawn: false, storage_state: 'absent', languages: ['en'], tasks: ['topics', 'mentions'], resources: null };
+const profile = { profile_id: 'topics-and-mentions', revision: 'one', profile_sha256: 'a'.repeat(64), catalogued: true, installed: false, prepared: false, withdrawn: false, storage_state: 'absent', languages: ['en'], tasks: ['message_topics', 'concept_mentions'], resources: { download_bytes: 2048, installed_bytes: 4096, rollback_bytes: 2048, temporary_bytes: 4096, transition_peak_memory_bytes: 8192, inference_threads: 2 } };
 const status: NlpDependencyStatus = { configured: true, profiles: [profile], available_profiles: [], acquisitions: [], selected: null, failure: null, resume_granularity: 'verified_files_current_file_restarts' };
 const unavailable: NlpDependencyStatus = { ...status, configured: false, profiles: [], failure: 'nlp_unavailable' };
 const quote: NlpDependencyPlan = { operation_id: 'a'.repeat(32), profile_sha256: profile.profile_sha256, declared_full_artifact_download_bytes: 2048, data_download_bytes: 1024, incremental_data_download_bytes: 512, profile_metadata_bytes: 100, installed_bytes: 4096, rollback_bytes: 2048, acquisition_temporary_bytes: 1152, transition_peak_memory_bytes: 8192, inference_threads: 2 };
@@ -25,13 +26,118 @@ function fixture(initial = status) {
     }),
   };
 }
-function view(api: NlpDependenciesApi, account = 'account-one') {
-  return <ThemeProvider theme={theme}><NlpDependencyControls api={api} creatorAccountId={account} /></ThemeProvider>;
+function view(api: NlpDependenciesApi, account = 'account-one', engineApi?: EngineAcquisitionApi) {
+  return <ThemeProvider theme={theme}><NlpDependencyControls api={api} engineApi={engineApi} creatorAccountId={account} /></ThemeProvider>;
 }
 beforeEach(() => { useUserStore.getState().actions.setUserRole('creator-ceo'); bridgeTransportStore.bindAccount('account-one'); });
 afterEach(() => { cleanup(); bridgeTransportStore.reset(); useUserStore.getState().actions.setUserRole(null); });
 async function review() { fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' })); await screen.findByRole('dialog', { name: 'Review download costs' }); }
 describe('NlpDependencyControls', () => {
+  it('keeps shared Engine review separate when no qualified profile service is configured', async () => {
+    const api = fixture(unavailable);
+    const idle = { operation_id: null, state: 'not_requested' as const, installed: false, in_flight: false,
+      cancel_requested: false, deadline_reached: false, progress_percent: null, reason: null, hresult: null };
+    const engineApi = { supported: () => true, status: vi.fn().mockResolvedValue(idle),
+      review: vi.fn().mockResolvedValue({ availability: 'unavailable', reason: 'optional_quote_unavailable' }),
+      start: vi.fn(), cancel: vi.fn() };
+    render(view(api, 'account-one', engineApi));
+    expect(await screen.findByText('Engine installation has not been requested.')).toBeTruthy();
+    expect(screen.getByText(/Text analysis is unavailable until a qualified profile/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Review Engine installation' }));
+    expect(await screen.findByText(/A verified Engine installation quote is unavailable/)).toBeTruthy();
+    expect(engineApi.review).toHaveBeenCalledOnce(); expect(engineApi.start).not.toHaveBeenCalled();
+    expect(api.command).not.toHaveBeenCalled();
+  });
+
+  it('uses fresh plan metadata when the cached profile has no support or resource metadata', async () => {
+    const cached = { ...profile, languages: null, tasks: null, resources: null };
+    const api = fixture({ ...status, profiles: [cached] });
+    api.command.mockResolvedValueOnce({ operation: quote, status });
+    render(view(api));
+    expect(await screen.findByText('Language and task support: not yet verified.')).toBeTruthy();
+    await review();
+    const dialog = within(screen.getByRole('dialog', { name: 'Review download costs' }));
+    expect(dialog.getByText('Supported languages: en.')).toBeTruthy();
+    expect(dialog.getByText('Supported tasks: Message topics, Exact mentions.')).toBeTruthy();
+    expect((dialog.getByRole('button', { name: 'Download reviewed files' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
+  });
+  it('discloses every supported language and task from the matching response profile', async () => {
+    const fresh = { ...profile, languages: ['en', 'fi', 'sv'] };
+    const api = fixture(); api.command.mockResolvedValueOnce({ operation: quote, status: { ...status, profiles: [fresh] } });
+    render(view(api)); await review();
+    const dialog = within(screen.getByRole('dialog', { name: 'Review download costs' }));
+    expect(dialog.getByText('Supported languages: en, fi, sv.')).toBeTruthy();
+    expect(dialog.getByText('Supported tasks: Message topics, Exact mentions.')).toBeTruthy();
+    expect(dialog.getByText(/Review Engine installation separately/)).toBeTruthy();
+    expect(dialog.getByText(/Profile-declared complete download budget:/)).toBeTruthy();
+    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
+  });
+  it.each([
+    ['message_topics', 'Message topics'],
+    ['concept_mentions', 'Exact mentions'],
+  ])('accepts a fresh profile supporting only %s', async (task, label) => {
+    const fresh = { ...profile, tasks: [task] };
+    const api = fixture(); api.command.mockResolvedValueOnce({ operation: quote, status: { ...status, profiles: [fresh] } });
+    render(view(api)); await review();
+    const dialog = within(screen.getByRole('dialog', { name: 'Review download costs' }));
+    expect(dialog.getByText(`Supported tasks: ${label}.`)).toBeTruthy();
+    expect(dialog.getByText('Supported languages: en.')).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Download reviewed files' }));
+    await waitFor(() => expect(api.command).toHaveBeenCalledWith({ action: 'acquire', profile_id: profile.profile_id, revision: profile.revision, operation_id: quote.operation_id }, expect.any(AbortSignal)));
+  });
+  it.each<[string, NlpDependencyStatus['profiles']]>([
+    ['missing profile', []],
+    ['changed digest', [{ ...profile, profile_sha256: 'c'.repeat(64) }]],
+    ['changed identity', [{ ...profile, revision: 'two' }]],
+    ['duplicate identity', [profile, profile]],
+    ['conflicting digest identity', [profile, { ...profile, revision: 'two' }]],
+    ['missing languages', [{ ...profile, languages: null }]],
+    ['missing tasks', [{ ...profile, tasks: null }]],
+    ['empty tasks', [{ ...profile, tasks: [] }]],
+    ['duplicate tasks', [{ ...profile, tasks: ['message_topics', 'message_topics'] }]],
+    ['unknown task', [{ ...profile, tasks: ['message_topics', 'unknown'] }]],
+    ['missing resources', [{ ...profile, resources: null }]],
+    ['mismatched resources', [{ ...profile, resources: { ...profile.resources, installed_bytes: 4097 } }]],
+    ['withdrawn profile', [{ ...profile, withdrawn: true }]],
+    ['uncatalogued profile', [{ ...profile, catalogued: false }]],
+  ])('refuses download review with %s in the fresh response', async (_name, profiles) => {
+    const api = fixture(); api.command.mockResolvedValueOnce({ operation: quote, status: { ...status, profiles: [...profiles] } });
+    render(view(api));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' }));
+    expect(await screen.findByText(/Text analysis settings could not be updated/)).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download reviewed files' })).toBeNull();
+    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
+  });
+  it('does not claim verified language or task support from unapproved or incomplete cached metadata', async () => {
+    const api = fixture({ ...status, profiles: [{ ...profile, catalogued: false }, { ...profile, profile_sha256: 'd'.repeat(64), resources: null }] });
+    render(view(api));
+    expect(await screen.findAllByText('Language and task support: not yet verified.')).toHaveLength(2);
+    expect(screen.queryByText(/^Supported languages:/)).toBeNull();
+    expect(screen.queryByText(/^Supported tasks:/)).toBeNull();
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...quote, profile_sha256: 'c'.repeat(64) },
+    { ...quote, incremental_data_download_bytes: quote.data_download_bytes + 1 },
+    { ...quote, data_download_bytes: quote.declared_full_artifact_download_bytes + 1 },
+    { ...quote, acquisition_temporary_bytes: profile.resources.temporary_bytes + 1 },
+    { ...quote, profile_metadata_bytes: 0 },
+  ])('refuses an incoherent returned plan %#', async (operation) => {
+    const api = fixture(); api.command.mockResolvedValueOnce({ operation, status });
+    render(view(api)); fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' }));
+    expect(await screen.findByText(/Text analysis settings could not be updated/)).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull();
+    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
+  });
+  it('disables an open review if a later status withdraws its profile', async () => {
+    const api = fixture(); render(view(api)); await review();
+    api.get.mockResolvedValue({ ...status, profiles: [{ ...profile, withdrawn: true }] });
+    fireEvent.click(screen.getByText('Check status'));
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Download reviewed files' }) as HTMLButtonElement).disabled).toBe(true));
+    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
+  });
   it('preserves the unavailable baseline without automatic setup actions', async () => {
     const api = fixture(unavailable); render(view(api));
     expect(await screen.findByText(/Text analysis is unavailable until/)).toBeTruthy();

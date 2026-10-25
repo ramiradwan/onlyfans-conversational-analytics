@@ -1,7 +1,9 @@
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
+import { EngineDependencyControls } from './EngineDependencyControls';
 import { Panel, SectionHeader, useRevealHold } from './ui';
+import type { EngineAcquisitionApi } from '../api/engineAcquisition';
 import { usePermissions } from '../hooks/usePermissions';
 import {
   nlpDependenciesApi, parseNlpDependencyPlan,
@@ -10,9 +12,43 @@ import {
 } from '../services/nlpDependenciesApi';
 import { bridgeTransportStore } from '../store/transportStore';
 
-interface Props { api?: NlpDependenciesApi; creatorAccountId: string | null }
+interface Props { api?: NlpDependenciesApi; engineApi?: EngineAcquisitionApi; creatorAccountId: string | null }
 const number = new Intl.NumberFormat();
 const formatBytes = (value: number) => `${number.format(value)} bytes`;
+const taskNames: Record<string, string> = { message_topics: 'Message topics', concept_mentions: 'Exact mentions' };
+function hasProfileMetadata(profile: NlpDependencyProfile) {
+  const resources = profile.resources;
+  return profile.catalogued && !profile.withdrawn && profile.languages !== null && profile.languages.length > 0
+    && new Set(profile.languages).size === profile.languages.length
+    && profile.languages.every((language) => /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(language))
+    && profile.tasks !== null && profile.tasks.length >= 1 && profile.tasks.length <= 2
+    && new Set(profile.tasks).size === profile.tasks.length
+    && profile.tasks.every((task) => Object.hasOwn(taskNames, task))
+    && resources !== null
+    && ['download_bytes', 'installed_bytes', 'transition_peak_memory_bytes', 'inference_threads'].every((key) => Number.isSafeInteger(resources[key]) && Number(resources[key]) > 0)
+    && ['rollback_bytes', 'temporary_bytes'].every((key) => Number.isSafeInteger(resources[key]) && Number(resources[key]) >= 0);
+}
+function matchesPlan(profile: NlpDependencyProfile, plan: NlpDependencyPlan) {
+  const resources = profile.resources;
+  return profile.catalogued && !profile.withdrawn && hasProfileMetadata(profile) && resources !== null
+    && profile.profile_sha256 === plan.profile_sha256
+    && resources.download_bytes === plan.declared_full_artifact_download_bytes
+    && resources.installed_bytes === plan.installed_bytes && resources.rollback_bytes === plan.rollback_bytes
+    && resources.transition_peak_memory_bytes === plan.transition_peak_memory_bytes
+    && resources.inference_threads === plan.inference_threads
+    && plan.profile_metadata_bytes > 0 && plan.data_download_bytes > 0
+    && plan.incremental_data_download_bytes <= plan.data_download_bytes
+    && plan.data_download_bytes <= plan.declared_full_artifact_download_bytes
+    && plan.acquisition_temporary_bytes <= Number(resources.temporary_bytes)
+    && (plan.incremental_data_download_bytes !== 0 || plan.acquisition_temporary_bytes === 0);
+}
+function ProfileSupport({ profile }: { profile: NlpDependencyProfile }) {
+  if (!hasProfileMetadata(profile)) return <Typography>Language and task support: not yet verified.</Typography>;
+  return <>
+    <Typography>Supported languages: {profile.languages!.join(', ')}.</Typography>
+    <Typography>Supported tasks: {profile.tasks!.map((task) => taskNames[task]).join(', ')}.</Typography>
+  </>;
+}
 function pendingAcquisition(status: NlpDependencyStatus) {
   const acquisitions = status.acquisitions.filter((item) => item.kind === 'acquire');
   return acquisitions.find((item) => item.in_flight || item.state === 'running')
@@ -20,9 +56,13 @@ function pendingAcquisition(status: NlpDependencyStatus) {
 }
 
 /** Account-bound presentation. Changing accounts discards the prior account's view immediately. */
-export function NlpDependencyControls({ api = nlpDependenciesApi, creatorAccountId }: Props) {
+export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, creatorAccountId }: Props) {
   const { isCreator } = usePermissions();
-  return <DependencySession key={`${creatorAccountId}:${isCreator}`} api={api} account={isCreator ? creatorAccountId : null} />;
+  const account = isCreator ? creatorAccountId : null;
+  return <Stack spacing={2}>
+    <EngineDependencyControls account={account} api={engineApi} />
+    <DependencySession key={`${creatorAccountId}:${isCreator}`} api={api} account={account} />
+  </Stack>;
 }
 
 function DependencySession({ api, account }: { api: NlpDependenciesApi; account: string | null }) {
@@ -90,12 +130,15 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
     try {
       const response = await api.command(command, lifetime.current!.signal);
       if (!active()) return;
-      setStatus(response.status);
       if (command.action === 'plan' && profile) {
         const quote = parseNlpDependencyPlan(response.operation);
-        if (quote.profile_sha256 !== profile.profile_sha256) throw new Error('Profile changed');
-        setReview({ profile, plan: quote });
+        const matching = response.status.profiles.filter((item) => item.profile_sha256 === quote.profile_sha256);
+        if (!response.status.configured || quote.profile_sha256 !== profile.profile_sha256 || matching.length !== 1
+          || matching[0].profile_id !== profile.profile_id || matching[0].revision !== profile.revision
+          || !matchesPlan(matching[0], quote)) throw new Error('Profile changed');
+        setReview({ profile: matching[0], plan: quote });
       }
+      setStatus(response.status);
       if (command.action === 'acquire' && typeof response.operation === 'string') {
         setOperation(null); setOperationId(response.operation);
       }
@@ -107,13 +150,21 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
     finally { if (active()) setBusy(false); }
   };
   const unavailable = !account || !status?.configured;
+  const reviewMatchesStatus = Boolean(review && status?.configured
+    && status.profiles.filter((profile) => profile.profile_sha256 === review.profile.profile_sha256).length === 1
+    && status.profiles.filter((profile) =>
+    profile.profile_id === review.profile.profile_id && profile.revision === review.profile.revision
+    && profile.profile_sha256 === review.profile.profile_sha256 && matchesPlan(profile, review.plan)
+    && JSON.stringify(profile.languages) === JSON.stringify(review.profile.languages)
+    && JSON.stringify(profile.tasks) === JSON.stringify(review.profile.tasks)
+    && profile.resources?.temporary_bytes === review.profile.resources?.temporary_bytes).length === 1);
   const operationState = operation?.state === 'complete' ? 'Download complete' : operation?.state === 'paused' ? 'Download paused'
     : operation?.state === 'cancelled' ? 'Download cancelled' : operation?.state === 'running' ? 'Downloading' : 'Download needs attention';
   return (
     <Panel component="section" aria-label="Optional text analysis">
       <SectionHeader title="Optional text analysis" />
       <Typography>Find topics and mentions in messages. Setup is optional; other analytics remain available.</Typography>
-      <Typography>Language support is profile-specific. Review English support before choosing a profile.</Typography>
+      <Typography>Language and task support are profile-specific. Review the profile before choosing it.</Typography>
       {account && <Button disabled={busy} onClick={() => { void checkStatus(); }}>Check status</Button>}
       {busy && <Typography role="status">Updating text analysis settings…</Typography>}
       {error && <Alert severity="error">Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again.</Alert>}
@@ -126,7 +177,7 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
             <Stack spacing={1} key={profile.profile_sha256}>
               <Typography component="h3" variant="subtitle1">{profile.profile_id} · {profile.revision}</Typography>
               <Typography>{profile.withdrawn ? 'Unavailable profile' : profile.prepared && profile.installed ? 'Prepared for this session; available offline while the engine is ready' : profile.installed ? 'Files installed; preparation required before use' : 'Not installed'}</Typography>
-              <Typography>English support: {profile.languages === null ? 'not yet verified' : profile.languages.includes('en') ? 'supported' : 'not supported'}. Other supported languages: {profile.languages?.filter((language) => language !== 'en').join(', ') || 'none listed'}.</Typography>
+              <ProfileSupport profile={profile} />
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
                 <Button disabled={busy || profile.withdrawn || !profile.catalogued} onClick={() => { void run({ action: 'plan', profile_id: profile.profile_id, revision: profile.revision }, profile); }}>Review download for {profile.profile_id}</Button>
                 {profile.installed && <Button disabled={busy || profile.prepared || profile.withdrawn} onClick={() => { void run({ action: 'prepare', profile_sha256: profile.profile_sha256 }); }}>Prepare {profile.profile_id}</Button>}
@@ -162,10 +213,12 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
         <DialogTitle id="text-analysis-cost-title">Review download costs</DialogTitle>
         <DialogContent data-journey-state="textanalysis.cost_review">
           {review && <Stack spacing={1}>
-            <Typography>This plan downloads data files. Engine installation must be available separately.</Typography>
+            <Typography>This plan downloads model data. Review Engine installation separately. Full-profile totals are declared budgets.</Typography>
+            <Typography>{review.profile.profile_id} · {review.profile.revision}</Typography>
+            <ProfileSupport profile={review.profile} />
             {([
               ['Download now', review.plan.incremental_data_download_bytes], ['Complete data download', review.plan.data_download_bytes],
-              ['Complete download including engine and runtime', review.plan.declared_full_artifact_download_bytes], ['Profile metadata already retrieved', review.plan.profile_metadata_bytes],
+              ['Profile-declared complete download budget', review.plan.declared_full_artifact_download_bytes], ['Profile metadata already retrieved', review.plan.profile_metadata_bytes],
               ['Installed size', review.plan.installed_bytes], ['Temporary disk space', review.plan.acquisition_temporary_bytes],
               ['Rollback space', review.plan.rollback_bytes], ['Peak memory during transition', review.plan.transition_peak_memory_bytes],
             ] as const).map(([label, value]) => <Typography key={label}>{label}: {formatBytes(value)}</Typography>)}
@@ -173,7 +226,7 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
             <Typography>Downloading does not enable processing. Prepare the installed files and explicitly choose the profile afterward.</Typography>
           </Stack>}
         </DialogContent>
-        <DialogActions><Button onClick={() => setReview(null)}>Back</Button><Button disabled={busy || unavailable || !review} onClick={() => { if (review) void run({ action: 'acquire', profile_id: review.profile.profile_id, revision: review.profile.revision, operation_id: review.plan.operation_id }); }}>Download reviewed files</Button></DialogActions>
+        <DialogActions><Button onClick={() => setReview(null)}>Back</Button><Button disabled={busy || unavailable || !reviewMatchesStatus} onClick={() => { if (review && reviewMatchesStatus) void run({ action: 'acquire', profile_id: review.profile.profile_id, revision: review.profile.revision, operation_id: review.plan.operation_id }); }}>Download reviewed files</Button></DialogActions>
       </Dialog>
       <Dialog open={removal !== null} onClose={() => setRemoval(null)} aria-labelledby="text-analysis-remove-title">
         <DialogTitle id="text-analysis-remove-title">{removal === 'account' ? 'Remove text analysis for this account?' : 'Remove installed profile?'}</DialogTitle>

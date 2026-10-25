@@ -245,6 +245,8 @@ fn request(
     if answer.nonce != j.nonce
         || answer.binding != j.binding
         || answer.broker != j.broker
+        || answer.quote_sha256 != j.quote_sha256
+        || answer.review_digest != j.review_digest
         || (committing && !answer.committed)
     {
         return Err("optional_broker_peer");
@@ -333,8 +335,16 @@ impl Drop for BootstrapChild {
 pub(super) fn start(
     data: &Path,
     selection: Selection,
+    review_digest: &str,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Status> {
+    if selection != Selection::Module {
+        return Err("optional_preview_unavailable");
+    }
+    let reviewed = crate::engine_acquisition_quote::verified(cancelled)?;
+    if reviewed.binding.review_digest != review_digest {
+        return Err("optional_quote_stale");
+    }
     let ctx = context()?;
     if ctx.data != data {
         return Err("optional_broker_root");
@@ -446,7 +456,9 @@ pub(super) fn start(
         return Err("optional_broker_launch");
     }
     let j = Journal {
-        schema: "optional-engine-reconnect.v1".into(),
+        schema: "optional-engine-reconnect.v2".into(),
+        quote_sha256: Some(reviewed.binding.quote_sha256.clone()),
+        review_digest: Some(reviewed.binding.review_digest.clone()),
         nonce: nonce.clone(),
         binding: ctx.binding.clone(),
         broker: peer,
@@ -592,7 +604,10 @@ pub(super) fn run(args: &[String]) -> Result<()> {
                     return Err("optional_broker_peer");
                 }
                 if matches!(request.action, Action::Commit {}) {
-                    if !commit_authorized(&j, &request) {
+                    if !commit_authorized(&j, &request)
+                        || j.selection != Selection::Module
+                        || j.review().is_err()
+                    {
                         return Err("optional_broker_peer");
                     }
                     if !j.committed {
@@ -605,7 +620,12 @@ pub(super) fn run(args: &[String]) -> Result<()> {
                         committed.save(&ctx.data)?;
                         j = committed;
                         if owner
-                            .start_local(j.selection, ctx.release.clone(), j.nonce.clone())
+                            .start_local(
+                                j.selection,
+                                ctx.release.clone(),
+                                j.nonce.clone(),
+                                j.review()?,
+                            )
                             .is_err()
                         {
                             j.status = Status {

@@ -1034,6 +1034,41 @@ pub(crate) fn selected_engine(
     Ok(result.unwrap_or(EngineSelection::Absent))
 }
 
+/// Fixed metadata leaves retain the installed package's protected file closure.
+#[cfg(windows)]
+pub(crate) struct AcquisitionMetadata {
+    pub descriptor: Vec<u8>,
+    pub quote: Vec<u8>,
+    _files: StagedFiles,
+}
+#[cfg(windows)]
+pub(crate) fn acquisition_metadata(
+    root: &std::path::Path,
+) -> Result<AcquisitionMetadata, &'static str> {
+    let mut files = StagedFiles::metadata();
+    let descriptor = files
+        .read_bounded(
+            root,
+            "app/desktop-release.json",
+            StagedRole::MainDescriptor,
+            16384,
+        )
+        .map_err(|_| "optional_quote_unavailable")?;
+    let quote = files
+        .read_bounded(
+            root,
+            "app/engine-acquisition-quote.json",
+            StagedRole::MainDescriptor,
+            16384,
+        )
+        .map_err(|_| "optional_quote_unavailable")?;
+    Ok(AcquisitionMetadata {
+        descriptor,
+        quote,
+        _files: files,
+    })
+}
+
 /// Retained installed package reads use the same origin, relation and file policy.
 #[cfg(windows)]
 pub(crate) struct WorkerPackages {

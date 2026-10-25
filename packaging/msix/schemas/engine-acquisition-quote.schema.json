@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dipsy.fi/schemas/optional-engine-acquisition-quote-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "desktop_descriptor_sha256", "related_set_id", "engine", "bundle", "disk"],
+  "properties": {
+    "schema": {"const": "optional-engine-acquisition-quote/v1"},
+    "desktop_descriptor_sha256": {"$ref": "#/$defs/sha256"},
+    "related_set_id": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[A-Za-z0-9_.:-]+$"},
+    "engine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["identity", "package_version"],
+      "properties": {
+        "identity": {
+          "type": "object", "additionalProperties": false,
+          "required": ["name", "publisher", "family", "architecture"],
+          "properties": {
+            "name": {"type": "string", "minLength": 3, "maxLength": 50, "pattern": "^[A-Za-z0-9.-]+$"},
+            "publisher": {"type": "string", "minLength": 4, "maxLength": 8192, "pattern": "^CN="},
+            "family": {"type": "string", "minLength": 17, "maxLength": 64, "pattern": "^[A-Za-z0-9.-]+_[a-z0-9]{13}$"},
+            "architecture": {"const": "x64"}
+          }
+        },
+        "package_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"}
+      }
+    },
+    "bundle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file", "uri", "sha256", "size_bytes"],
+      "properties": {
+        "file": {"type": "string", "maxLength": 128, "pattern": "^TextAnalysisEngine_[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+_x64\\.msixbundle$"},
+        "uri": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"$ref": "#/$defs/positive"}
+      }
+    },
+    "disk": {
+      "type": "object", "additionalProperties": false,
+      "required": ["installed_space_budget_bytes", "temporary_space_budget_bytes", "rollback_space_budget_bytes"],
+      "properties": {
+        "installed_space_budget_bytes": {"$ref": "#/$defs/positive"},
+        "temporary_space_budget_bytes": {"$ref": "#/$defs/nonnegative"},
+        "rollback_space_budget_bytes": {"$ref": "#/$defs/nonnegative"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "positive": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "nonnegative": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}
+  }
+}
