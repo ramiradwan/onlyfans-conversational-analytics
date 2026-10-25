@@ -7,6 +7,7 @@ import path from 'node:path';
 
 import { PRODUCT_ROOT, pythonExecutable } from './paths.mjs';
 import { createSessionFailureCollector } from './stable-connection-diagnostic.mjs';
+import { createStartupObservations } from './startup-diagnostics.mjs';
 
 const BRAIN_HOST = '127.0.0.1';
 export const BRAIN_PORT = 17_871;
@@ -56,9 +57,14 @@ function portAcceptsConnections(port) {
   });
 }
 
-function brainHealthIsReady() {
+export function brainHealthIsReady(observe, requestFactory = httpRequest) {
   return new Promise((resolve) => {
-    const request = httpRequest({
+    let finished = false; let timedOut = false;
+    const complete = (ready, outcome) => {
+      if (finished) return;
+      finished = true; observe(outcome); resolve(ready);
+    };
+    const request = requestFactory({
       host: BRAIN_HOST,
       port: BRAIN_PORT,
       path: '/health',
@@ -66,10 +72,12 @@ function brainHealthIsReady() {
       headers: { Host: new URL(BRAIN_ORIGIN).host },
     }, (response) => {
       response.resume();
-      resolve((response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300);
+      const ready = (response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300;
+      complete(ready, ready ? 'ready' : 'non_2xx');
     });
-    request.once('error', () => resolve(false));
-    request.setTimeout(500, () => request.destroy());
+    request.once('error', error => complete(false, timedOut ? 'timeout'
+      : error.code === 'ECONNREFUSED' ? 'connection_refused' : 'connection_error'));
+    request.setTimeout(500, () => { timedOut = true; request.destroy(); });
     request.end();
   });
 }
@@ -112,6 +120,7 @@ export class BrainProcess {
       throw new Error(`Port ${BRAIN_PORT} is already in use; refusing to reuse or stop another process.`);
     }
 
+    const startup = createStartupObservations('brain');
     const child = spawn(
       pythonExecutable(),
       [E2E_BRAIN_ENTRY],
@@ -143,6 +152,7 @@ export class BrainProcess {
         windowsHide: true,
       },
     );
+    startup.bind(child);
     this.child = child;
     const remember = chunk => this.rememberOutput(chunk);
     child.stdout.on('data', remember);
@@ -152,13 +162,13 @@ export class BrainProcess {
     while (Date.now() < deadline) {
       if (child.exitCode !== null) {
         this.child = null;
-        throw new Error(`Brain exited during startup.\n${this.recentOutput()}`);
+        throw new Error(`Brain startup failed: ${JSON.stringify(startup.snapshot('startup_exit'))}`);
       }
-      if (await brainHealthIsReady()) return;
+      if (await brainHealthIsReady(startup.health)) return;
       await delay(100);
     }
     await this.stop();
-    throw new Error(`Brain did not become healthy.\n${this.recentOutput()}`);
+    throw new Error(`Brain startup failed: ${JSON.stringify(startup.snapshot('unhealthy'))}`);
   }
 
   async stop() {

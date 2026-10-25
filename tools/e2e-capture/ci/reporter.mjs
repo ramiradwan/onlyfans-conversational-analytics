@@ -1,5 +1,6 @@
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { E2E_ROOT, EVENT_SCHEMA, LANES, identifyTest, readRegistry } from './registry.mjs';
+import { startupDiagnosticFromMessage } from '../lib/startup-diagnostics.mjs';
 
 const STATUSES = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'];
 const OUTCOMES = ['expected', 'unexpected', 'flaky', 'skipped'];
@@ -81,8 +82,11 @@ export default class RestrictedReporter {
       this.fault('invalid_status'); return;
     }
     this.attempts.set(id, (this.attempts.get(id) ?? 0) + 1);
+    const startup = result.status === 'passed' || !Array.isArray(result.errors) ? []
+      : result.errors.slice(0, 4).map(error => startupDiagnosticFromMessage(error?.message)).filter(Boolean).slice(0, 2);
     this.emit('attempt_end', { id, retry: result.retry, status: result.status,
-      expected_status: test.expectedStatus, duration_ms: Math.round(result.duration) });
+      expected_status: test.expectedStatus, duration_ms: Math.round(result.duration),
+      ...(startup.length ? { startup } : {}) });
   }
 
   onError() { this.globalErrors += 1; this.fault('global_error'); }
