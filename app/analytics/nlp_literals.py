@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 import hashlib
 import json
 from app.persistence import sqlite_api as sqlite3
@@ -178,13 +179,14 @@ def _base(profile, record, record_digest, namespace):
             'outcome': payload.outcome, 'coverage': payload.coverage.model_dump(mode='json')}
 
 
-def capture_record(db, profile, source, record, record_digest, *, check=lambda: None):
+def capture_record(db, profile, source, record, record_digest, *, check=lambda: None, record_bytes=None):
     """Caller owns the current canonical completion transaction and source."""
     if not supported(db) or not any(b.task == 'concept_mentions' for b in profile.bindings):
         return False
     _guard(db)
-    validated = validate_source_bound_record(profile, source, record.model_dump_json().encode())
-    if validated != record or _hash(record.model_dump_json().encode()) != record_digest:
+    raw = record.model_dump_json().encode() if record_bytes is None else record_bytes
+    validated = validate_source_bound_record(profile, source, raw)
+    if validated != record or _hash(raw) != record_digest:
         raise LiteralIntegrityError()
     db.execute('SAVEPOINT literal_capture')
     try:
@@ -375,7 +377,7 @@ def _token(db, binding):
     return tuple(row)
 
 
-def publish(database, binding, *, canonical, source_current, check=lambda: None):
+def publish(database, binding, *, canonical, source_current, check=lambda: None, visibility_guard=nullcontext):
     """Authenticate in readers and seal with short, owned writer transactions."""
     deadline = time.monotonic() + 30
     def tick():
@@ -404,7 +406,8 @@ def publish(database, binding, *, canonical, source_current, check=lambda: None)
         raw = canonical_bytes(envelope)
         tick()
         source_current()
-        with database.transaction() as db:
+        with visibility_guard(), database.transaction() as db:
+            tick()
             if content_stamp(db) != stamp or _token(db,binding) != token:
                 raise ProjectionUnavailable(availability='building')
             old = db.execute('SELECT state,document,expires_at,publication_id FROM nlp_literal_publications WHERE account_ref=? AND snapshot_id=?',
@@ -444,7 +447,8 @@ def publish(database, binding, *, canonical, source_current, check=lambda: None)
             seal_stamp=content_stamp(db)
         tick()
         source_current()
-        with database.transaction() as db:
+        with visibility_guard(), database.transaction() as db:
+            tick()
             if content_stamp(db)!=seal_stamp:
                 raise ProjectionUnavailable(availability='building')
             _owned(db,binding,owner,token)
