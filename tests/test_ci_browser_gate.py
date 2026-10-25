@@ -1,6 +1,7 @@
 """Independent browser evidence and safe artifact publication falsifiers."""
 from __future__ import annotations
 
+import ast
 import copy
 import json
 from pathlib import Path
@@ -45,6 +46,91 @@ def _stream(registry, digest, lane, *, inventory=False, retry_id=None):
 
 def _bytes(rows):
     return ("\n".join(json.dumps(row) for row in rows) + "\n").encode()
+
+
+def _startup():
+    return dict(schema="browser-startup-diagnostic/v1", owner="brain", reason="unhealthy", elapsed_ms=20_000,
+                pid=123, spawn_ms=1, first_stdout_ms=None, first_stderr_ms=None,
+                stdout_bytes=0, stderr_bytes=0, exit_ms=20_000, close_ms=None, exit_code=None,
+                close_exit_code=None, signal="SIGTERM", close_signal=None, error_kind=None,
+                phases=[], phase_status="empty", health_attempts=100, health_outcome="connection_refused")
+
+
+def test_shared_reporter_wire_fixtures_pass_independent_restricted_validation(registry):
+    reg, digest = registry
+    values = json.loads((gate.ROOT / "tools/e2e-capture/ci/startup-diagnostic-fixtures.json").read_bytes())
+    rows = _stream(reg, digest, "catchup")
+    next(row for row in rows if row["event"] == "attempt_end").update(status="failed", startup=values)
+    gate._safe_events(_bytes(rows), reg, digest)
+    values[1]["raw"] = "private-value"
+    with pytest.raises(gate.BrowserGateError):
+        gate._safe_events(_bytes(rows), reg, digest)
+
+
+def test_startup_summary_publishes_only_closed_metadata_and_does_not_pass_failed_execution(tmp_path, registry):
+    reg, digest = registry
+    rows = _stream(reg, digest, "catchup")
+    attempt = next(row for row in rows if row["event"] == "attempt_end")
+    attempt.update(status="failed", startup=[_startup()])
+    rows[-1]["status"] = "failed"
+    gate._safe_events(_bytes(rows), reg, digest)
+    with pytest.raises(gate.BrowserGateError):
+        gate.validate_stream(_bytes(rows), registry=reg, registry_digest=digest, lane="catchup", mode="execution", qualification=False)
+    root = tmp_path / "input"
+    root.mkdir()
+    (root / "execution.ndjson").write_bytes(_bytes(rows))
+    gate.publish_diagnostics(root, tmp_path / "safe", reg, digest)
+    assert (tmp_path / "safe/execution.ndjson").read_bytes() == _bytes(rows)
+
+
+@pytest.mark.parametrize("change", [
+    {"raw": "private-value"}, {"owner": "private"}, {"reason": "private"}, {"elapsed_ms": float("inf")},
+    {"elapsed_ms": True}, {"spawn_ms": 20_001}, {"stdout_bytes": 65_537}, {"error_kind": "private"},
+    {"signal": "private"}, {"health_outcome": "private"}, {"phase_status": "private"},
+    {"phases": [{"phase": "private", "elapsed_ms": 0}]},
+    {"phases": [{"phase": "entry_started", "elapsed_ms": 0, "raw": "private"}]},
+])
+def test_startup_summary_rejects_arbitrary_or_unbounded_fields(registry, change):
+    reg, digest = registry
+    rows = _stream(reg, digest, "catchup")
+    attempt = next(row for row in rows if row["event"] == "attempt_end")
+    attempt.update(status="failed", startup=[{**_startup(), **change}])
+    with pytest.raises((gate.BrowserGateError, gate.ContractError)):
+        gate._safe_events(_bytes(rows), reg, digest)
+
+
+def test_startup_metadata_preserves_ordinary_retry_and_qualification_rules(registry):
+    reg, digest = registry
+    test_id = next(t["id"] for t in reg["tests"] if t["shard"] == "core" and t["retry_override"] is None)
+    rows = _stream(reg, digest, "core", retry_id=test_id)
+    next(row for row in rows if row["event"] == "attempt_end" and row["status"] == "failed")["startup"] = [_startup()]
+    gate.validate_stream(_bytes(rows), registry=reg, registry_digest=digest, lane="core", mode="execution", qualification=False)
+    with pytest.raises(gate.BrowserGateError):
+        gate.validate_stream(_bytes(rows), registry=reg, registry_digest=digest, lane="core", mode="execution", qualification=True)
+    next(row for row in rows if row["event"] == "attempt_end" and row["status"] == "passed")["startup"] = [_startup()]
+    with pytest.raises(gate.BrowserGateError):
+        gate._safe_events(_bytes(rows), reg, digest)
+
+
+def test_entry_phase_writer_is_constant_best_effort_and_precedes_heavy_imports():
+    path = gate.ROOT / "tools/e2e-capture/helpers/brain_entry.py"
+    tree = ast.parse(path.read_text())
+    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_startup_phase")
+    output = []
+    namespace = {"json": json, "print": lambda value, **kw: output.append((value, kw))}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"), namespace)
+    namespace["_startup_phase"]("entry_started")
+    namespace["_startup_phase"]("private-value")
+    assert output == [('{"schema":"browser-startup-phase/v1","phase":"entry_started"}', {"flush": True})]
+    def broken(*args, **kwargs):
+        raise OSError("private-value")
+    namespace["print"] = broken
+    namespace["_startup_phase"]("main_imported")
+    first_phase = next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Expr)
+                       and isinstance(node.value, ast.Call) and getattr(node.value.func, "id", None) == "_startup_phase")
+    first_heavy = next(i for i, node in enumerate(tree.body) if isinstance(node, ast.Import)
+                       and any(alias.name == "uvicorn" for alias in node.names))
+    assert first_phase < first_heavy
 
 
 def _artifact(root, registry_pair, lane, *, attempt=1, qualification=False, retry_id=None):

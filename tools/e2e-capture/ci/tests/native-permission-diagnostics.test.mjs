@@ -5,6 +5,7 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { promisify } from 'node:util';
 import { parseNativePermissionTrace, runNativePermissionInteraction } from '../../lib/native-permission-diagnostics.mjs';
+import { startupDiagnosticFromMessage, validStartupDiagnostic } from '../../lib/startup-diagnostics.mjs';
 
 const trace = (overrides = {}) => ({
   schema: 'native-permission-diagnostic/v1', stage: 'prompt_found', window_found: true,
@@ -115,6 +116,33 @@ test('stream diagnostics preserve the last closed stage across malformed and inc
   assert.equal(incomplete.trace_incomplete, true);
   const empty = await streamedFailure([]);
   assert.equal(empty.stage, 'unknown'); assert.equal(empty.trace_status, 'empty');
+  assert.equal(empty.startup.first_stdout_ms, null);
+  assert.equal(empty.startup.close_exit_code, 1);
+  assert.notEqual(empty.startup.close_ms, null);
+  assert.equal(validStartupDiagnostic(empty.startup), true);
+});
+
+test('actual native owner retains first byte, parsed phase and close timings without raw content', async () => {
+  const timer = timers(); let now = 0; let reject;
+  const child = new EventEmitter(); child.pid = 123;
+  child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  const command = Object.assign(new Promise((resolve, fail) => { reject = fail; }), { child });
+  const pending = readFailure(runNativePermissionInteraction({ ...timer, now: () => now,
+    run: () => command, readPermission: async () => false }));
+  now = 2; child.emit('spawn'); now = 4; child.stderr.write('private stderr');
+  now = 6; child.stdout.write(JSON.stringify(trace({ stage: 'started' })) + '\n');
+  now = 15; const error = Object.assign(new Error('private command'), { code: 'ABORT_ERR' });
+  child.emit('error', error); reject(error);
+  now = 16; child.emit('exit', null, 'SIGTERM');
+  now = 17; child.stdout.end(); child.stderr.end(); child.emit('close', null, 'SIGTERM');
+  const result = await pending;
+  assert.equal(result.startup.spawn_ms, 2); assert.equal(result.startup.first_stderr_ms, 4);
+  assert.equal(result.startup.first_stdout_ms, 6); assert.equal(result.startup.exit_ms, 16);
+  assert.equal(result.startup.close_ms, 17);
+  assert.deepEqual(result.startup.phases, [{ phase: 'started', elapsed_ms: 6 }]);
+  assert.doesNotMatch(JSON.stringify(result), /private/);
+  assert.equal(validStartupDiagnostic(result.startup), true);
+  assert.deepEqual(startupDiagnosticFromMessage('Native permission interaction failed: ' + JSON.stringify(result)), result.startup);
 });
 
 test('stream diagnostics bound bytes and records without discarding earlier validated stages', async () => {

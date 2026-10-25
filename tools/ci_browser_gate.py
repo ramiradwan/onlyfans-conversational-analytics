@@ -67,6 +67,68 @@ def _object(value: Any, keys: set[str], label: str) -> dict[str, Any]:
     return value
 
 
+def _startup_diagnostics(row: dict[str, Any]) -> set[str]:
+    """Validate optional closed observations without changing test outcomes."""
+    if "startup" not in row:
+        return set()
+    values = row["startup"]
+    _require(row.get("status") != "passed" and isinstance(values, list) and 1 <= len(values) <= 2,
+             "unsafe startup diagnostics")
+    phases = {
+        "brain": {"entry_started", "uvicorn_imported", "endpoints_imported", "main_imported", "helpers_installed", "uvicorn_entered"},
+        "native_permission": {"started", "window_found", "prompt_found", "invoke_attempted", "allow_returned", "prompt_dismissed"},
+    }
+    keys = {"schema", "owner", "reason", "elapsed_ms", "pid", "spawn_ms", "first_stdout_ms", "first_stderr_ms",
+            "stdout_bytes", "stderr_bytes", "exit_ms", "close_ms", "exit_code", "close_exit_code", "signal", "close_signal",
+            "error_kind", "phases", "phase_status", "health_attempts", "health_outcome"}
+    for value in values:
+        _object(value, keys, "startup diagnostic")
+        _require(value["schema"] == "browser-startup-diagnostic/v1" and type(value["owner"]) is str and value["owner"] in phases,
+                 "unsafe startup owner")
+        _require(type(value["reason"]) is str and value["reason"] in
+                 ({"unhealthy", "startup_exit"} if value["owner"] == "brain" else {"interaction_failed"}),
+                 "unsafe startup reason")
+        _int(value["elapsed_ms"], "startup elapsed")
+        _require(value["elapsed_ms"] <= 3_600_000, "unsafe startup elapsed")
+        for key in ("spawn_ms", "first_stdout_ms", "first_stderr_ms", "exit_ms", "close_ms"):
+            if value[key] is not None:
+                _int(value[key], "startup timing")
+                _require(value[key] <= value["elapsed_ms"], "unsafe startup timing")
+        if value["pid"] is not None:
+            _int(value["pid"], "startup PID", minimum=1)
+            _require(value["pid"] <= 2**32 - 1, "unsafe startup PID")
+        for key in ("stdout_bytes", "stderr_bytes"):
+            _int(value[key], "startup bytes")
+            _require(value[key] <= 65_536, "unsafe startup bytes")
+        for key in ("exit_code", "close_exit_code"):
+            _require(value[key] is None or type(value[key]) is int and abs(value[key]) <= 2**32 - 1,
+                     "unsafe startup exit")
+        for key in ("signal", "close_signal"):
+            _require(value[key] is None or type(value[key]) is str and value[key] in {"SIGTERM", "SIGKILL", "other"}, "unsafe startup signal")
+        _require(value["error_kind"] is None or type(value["error_kind"]) is str and value["error_kind"] in
+                 {"aborted", "not_found", "access_denied", "output_limit", "other"}, "unsafe startup error")
+        _require(type(value["phase_status"]) is str and value["phase_status"] in {"empty", "observed", "limited"}, "unsafe startup phase status")
+        _int(value["health_attempts"], "startup health attempts")
+        _require(value["health_attempts"] <= 10_000 and type(value["health_outcome"]) is str and value["health_outcome"] in
+                 {"not_attempted", "ready", "non_2xx", "connection_refused", "connection_error", "timeout"},
+                 "unsafe startup health")
+        _require(value["owner"] != "native_permission" or
+                 value["health_attempts"] == 0 and value["health_outcome"] == "not_attempted", "unsafe native health")
+        _require(isinstance(value["phases"], list) and len(value["phases"]) <= 6, "unsafe startup phases")
+        seen = set()
+        previous = 0
+        for phase in value["phases"]:
+            _object(phase, {"phase", "elapsed_ms"}, "startup phase")
+            _int(phase["elapsed_ms"], "startup phase time")
+            _require(type(phase["phase"]) is str and phase["phase"] in phases[value["owner"]] and phase["phase"] not in seen
+                     and previous <= phase["elapsed_ms"] <= value["elapsed_ms"], "unsafe startup phase")
+            seen.add(phase["phase"])
+            previous = phase["elapsed_ms"]
+        _require(value["phase_status"] != "empty" or not value["phases"], "unsafe empty startup phases")
+        _require(value["phase_status"] != "observed" or bool(value["phases"]), "unsafe observed startup phases")
+    return {"startup"}
+
+
 def _read(path: Path) -> bytes:
     _require(path.is_file() and not any(part.is_symlink() for part in (path, *path.parents)),
              "missing or nonregular browser evidence")
@@ -191,7 +253,8 @@ def validate_stream(data: bytes, *, registry: dict[str, Any], registry_digest: s
                      "duplicate, overlapping, unauthorized or noncontiguous browser attempt")
             active = (test_id, retry)
         elif event == "attempt_end":
-            _object(row, prefix | {"id", "retry", "status", "expected_status", "duration_ms"}, "browser attempt end")
+            _object(row, prefix | {"id", "retry", "status", "expected_status", "duration_ms"}
+                    | _startup_diagnostics(row), "browser attempt end")
             _int(row["retry"], "browser retry")
             _int(row["duration_ms"], "browser duration")
             duration_ms += row["duration_ms"]
@@ -281,6 +344,8 @@ def _safe_events(data: bytes, registry: dict[str, Any], digest: str) -> None:
             keys = {"attempt_begin": {"id", "retry", "worker_index"},
                     "attempt_end": {"id", "retry", "status", "expected_status", "duration_ms"},
                     "outcome": {"id", "outcome", "expected_status", "attempts"}}[event]
+            if event == "attempt_end":
+                keys = keys | _startup_diagnostics(row)
             _object(row, prefix | keys, "diagnostic execution")
             _require(row["id"] in ids, "unsafe diagnostic identity")
             for key in keys & {"retry", "worker_index", "duration_ms", "attempts"}:
