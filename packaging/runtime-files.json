@@ -86,7 +86,8 @@
         "0012_history_record_kind.sql": "2f1bfd9ccabdc313b1848e2d8a0f5d18e7776ba92f190ac448961808ba312001",
         "0013_derived_deletion_acknowledgements.sql": "e5798eeb09600bfe8bc03fde3f79c03415c78e1c29ba0f3979fc548f0784e087",
         "0014_knowledge_contributions.sql": "ddd3eb451317c375dba20c5ae24233a881a1b1902767d45b944e145c0238242c",
-        "0015_text_analysis_jobs.sql": "e71fe0c2d8399f0f33a6ec0f6f01e52a18b15175065ba6297319cded3e4c9e73"
+        "0015_text_analysis_jobs.sql": "e71fe0c2d8399f0f33a6ec0f6f01e52a18b15175065ba6297319cded3e4c9e73",
+        "0016_text_analysis_enrollment.sql": "500596f708ec3aa13df4d086a80175fb370bc6c94250d1f39ccdb9164cfed73b"
       }
     },
     {

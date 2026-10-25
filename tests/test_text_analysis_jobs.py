@@ -456,7 +456,16 @@ def test_retired_enrollment_fences_retained_unfinished_children(execution, phase
                 profile_bytes=x.profile.model_dump_json().encode(), policy=current)
     assert canonical_rows(x.repo.database) == retained
     with x.repo.database.read() as db:
-        assert x.store.read_in(db, child.job_id, policy=x.policy).state == ('prepared' if phase == 'start' else 'running')
+        assert x.store.read_in(db, child.job_id, policy=x.policy).state == ('prepared' if phase == 'start' else 'pending')
+        if token is not None:
+            job = db.execute('SELECT job_attempt_id,lease_expires_at FROM knowledge_jobs WHERE job_id=?',
+                             (child.job_id,)).fetchone()
+            assert tuple(job) == (None, None)
+            staged = db.execute('SELECT producing_attempt_fence,producing_job_attempt_id FROM knowledge_members WHERE job_id=?',
+                                (child.job_id,)).fetchone()
+            assert tuple(staged) == (token.attempt_fence, token.job_attempt_id)
+            assert db.execute('SELECT 1 FROM knowledge_attempts WHERE job_id=? AND attempt_fence=? AND job_attempt_id=?',
+                              (child.job_id, token.attempt_fence, token.job_attempt_id)).fetchone()
         assert db.execute('SELECT count(*) FROM knowledge_sources').fetchone()[0] == 1
         assert db.execute('SELECT count(*) FROM knowledge_members').fetchone()[0] == (0 if phase == 'start' else 1)
 
@@ -601,15 +610,24 @@ def test_populated_v14_upgrade_preserves_exact_rows_and_rolls_back_failure(contr
         before_high_water = storage_high_water(db)
         ledger = [tuple(r) for r in db.execute('SELECT * FROM schema_migrations ORDER BY version')]
     if interrupt:
-        migration = load_migration_catalog()[-1]
-        with database.read() as db, pytest.raises(Exception):
+        migration = next(item for item in load_migration_catalog() if item.version == 15)
+        with database.read() as db, pytest.raises(Exception, match='missing_migration_column'):
             MigrationRunner._apply(db, replace(migration, sql=migration.sql+'\nSELECT missing_migration_column;'))
         with database.read() as db:
             assert snapshot(db) == before
+            assert storage_high_water(db) == before_high_water
+            assert [tuple(r) for r in db.execute('SELECT * FROM schema_migrations ORDER BY version')] == ledger
             assert db.execute('PRAGMA user_version').fetchone()[0] == 14
             assert db.execute("SELECT count(*) FROM sqlite_master WHERE name LIKE 'migration15_%'").fetchone()[0] == 0
-    assert MigrationRunner(database).run() == [15]
+            for table in ('text_analysis_enrollments', 'text_analysis_intents',
+                          'text_analysis_enrollment_capsules', 'text_analysis_account_current',
+                          'text_analysis_enrollment_commands'):
+                assert db.execute('SELECT 1 FROM sqlite_master WHERE type=\'table\' AND name=?', (table,)).fetchone() is None
+    assert MigrationRunner(database).run() == [15, 16]
     with database.read() as db:
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 16
+        for table in ('text_analysis_enrollment_capsules', 'text_analysis_account_current', 'text_analysis_enrollment_commands'):
+            assert db.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 0
         assert snapshot(db) == before
         assert storage_high_water(db) == before_high_water
         assert [tuple(r) for r in db.execute('SELECT * FROM schema_migrations WHERE version<=14 ORDER BY version')] == ledger

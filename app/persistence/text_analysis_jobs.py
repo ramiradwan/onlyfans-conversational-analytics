@@ -303,6 +303,10 @@ class TextAnalysisJobStore:
                 require_text_analysis_fence(policy, context, kind='license', phase='start',
                                             canonical_database=self.repository.database)
             db.execute('UPDATE text_analysis_enrollments SET state=? WHERE enrollment_id=?', (mode, enrollment_id))
+            if mode in ('paused', 'retired'):
+                db.execute("UPDATE knowledge_jobs SET state='pending',job_attempt_id=NULL,lease_expires_at=NULL "
+                    "WHERE state='running' AND job_id IN (SELECT job_id FROM text_analysis_intents WHERE enrollment_id=?)",
+                    (enrollment_id,))
         return EnrollmentReceipt(enrollment_id=enrollment_id, state=mode)
 
     def prepare_child_in(self, db, enrollment_id, plan, sources, *, profile_bytes, policy):

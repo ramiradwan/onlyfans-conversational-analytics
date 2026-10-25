@@ -110,7 +110,17 @@ class ContributionRepository:
                         ('text_analysis_intents', 'context'), ('text_analysis_intents', 'confirmation'),
                         ('text_analysis_intents', 'preview_selection_policy'),
                         ('text_analysis_preview_outputs', 'document')]
-        return sum(db.execute(f'SELECT COALESCE(sum(length({column})),0) FROM {table}').fetchone()[0]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_enrollment_capsules'").fetchone():
+            columns += [(table, column) for table, names in (
+                ('text_analysis_enrollment_capsules', ('enrollment_id', 'profile', 'profile_bytes_sha256',
+                    'identity', 'identity_sha256', 'capsule_sha256')),
+                ('text_analysis_account_current', ('installation_id', 'creator_account_id', 'principal_id',
+                    'mode_version', 'enrollment_id')),
+                ('text_analysis_enrollment_commands', ('installation_id', 'command_key', 'creator_account_id',
+                    'principal_id', 'meaning', 'meaning_sha256', 'receipt')),
+            ) for column in names]
+        return sum(db.execute(f'SELECT COALESCE(sum(CASE WHEN typeof({column})=\'integer\' '
+                              f'THEN 8 ELSE length({column}) END),0) FROM {table}').fetchone()[0]
                    for table, column in columns)
 
     def _job(self, db, job_id, policy):
@@ -550,6 +560,10 @@ def retire_scope(connection, account_id, scope_kind, scope_key):
         if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_enrollments'").fetchone():
             connection.execute("UPDATE text_analysis_enrollments SET state='retired' "
                                "WHERE creator_account_id=? AND state!='retired'", (account_id,))
+        if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_account_current'").fetchone():
+            connection.execute('UPDATE text_analysis_account_current SET enrollment_id=NULL, '
+                'mode_version=CASE WHEN mode_version<9007199254740991 THEN mode_version+1 ELSE mode_version END '
+                'WHERE creator_account_id=? AND enrollment_id IS NOT NULL', (account_id,))
         connection.execute('DELETE FROM knowledge_jobs WHERE creator_account_id=?', (account_id,))
         return
     column = {'message': 'message_id', 'conversation': 'conversation_id', 'participant': 'participant_id'}.get(scope_kind)
@@ -571,6 +585,9 @@ def storage_high_water(connection):
     if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_intents'").fetchone():
         tables += ['text_analysis_enrollments', 'text_analysis_intents',
                    'text_analysis_preview_admissions', 'text_analysis_preview_outputs']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_enrollment_capsules'").fetchone():
+        tables += ['text_analysis_enrollment_capsules', 'text_analysis_account_current',
+                   'text_analysis_enrollment_commands']
     for table in tables:
         for row in connection.execute(f'SELECT * FROM {table} ORDER BY 1,2'):
             value = [v.hex() if type(v) is bytes else v for v in row]

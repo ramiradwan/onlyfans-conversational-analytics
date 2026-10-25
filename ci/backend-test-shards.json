@@ -362,6 +362,8 @@
     "tests/test_startup_maintenance.py": 3,
     "tests/test_streamed_conversation_pending.py": 2,
     "tests/test_targeted_visibility_benchmark.py": 3,
+    "tests/test_text_analysis_enrollment.py": 4,
+    "tests/test_text_analysis_identity.py": 2,
     "tests/test_text_analysis_jobs.py": 1,
     "tests/test_tied_insertion_admission.py": 3,
     "tests/test_tied_insertion_metric_reuse.py": 2,
@@ -633,6 +635,14 @@
       {
         "selector": "tests/test_nlp_canonical_execution.py",
         "reason": "Encrypted SQLite preserves canonical commitment, source-bound replay and execution fencing through the findings runner on Windows."
+      },
+      {
+        "selector": "tests/test_text_analysis_enrollment.py",
+        "reason": "Encrypted SQLite preserves original profile lineage, versioned account commands and fenced enrollment replacement on Windows."
+      },
+      {
+        "selector": "tests/test_text_analysis_identity.py",
+        "reason": "Durable authenticated sessions and verified identity grants retain original account and installation scope on Windows."
       }
     ],
     "analytics": [
