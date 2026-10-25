@@ -116,6 +116,27 @@ class TextAnalysisJobStore:
         return tuple(self._receipt(row) for row in rows)
 
     @staticmethod
+    def _child_slot(enrollment_id, member, parameters):
+        return _digest(['text-analysis-child.v1', enrollment_id, member.source.model_dump(), member.text_sha256,
+                        parameters.model_dump()])
+
+    def find_child_in(self, db, enrollment_id, member, *, policy):
+        """Find one stable child receipt using baseline account scope only."""
+        self.repository._owned_connection(db)
+        _, enrollment = self.read_enrollment_in(db, enrollment_id, policy=policy)
+        member = _typed(SourceMemberSpec, member)
+        if member.ordinal != 0:
+            raise ValueError('text_analysis_child_source_count')
+        slot = self._child_slot(enrollment_id, member, enrollment.parameters)
+        row = db.execute('SELECT * FROM text_analysis_intents WHERE slot_sha256=?', (slot,)).fetchone()
+        if row is None:
+            return None
+        if row['enrollment_id'] != enrollment_id:
+            raise ValueError('text_analysis_child_scope_invalid')
+        self._read_scope(row, policy)
+        return self._receipt(row)
+
+    @staticmethod
     def _plan_context(plan, context):
         if any(getattr(plan, name) != getattr(context, name) for name in
                ('algorithm_profile_sha256', 'algorithm_artifacts_sha256', 'policy_identity_sha256')):
@@ -299,8 +320,7 @@ class TextAnalysisJobStore:
         if len(members) != 1:
             raise ValueError('text_analysis_child_source_count')
         member = members[0]
-        slot = _digest(['text-analysis-child.v1', enrollment_id, member.source.model_dump(), member.text_sha256,
-                        enrollment.parameters.model_dump()])
+        slot = self._child_slot(enrollment_id, member, enrollment.parameters)
         old = db.execute('SELECT * FROM text_analysis_intents WHERE slot_sha256=?', (slot,)).fetchone()
         if old:
             return self._receipt(old)
@@ -369,4 +389,38 @@ class TextAnalysisJobStore:
                    (intent['reference_id'],))
         db.execute("UPDATE text_analysis_intents SET terminal_reason=? WHERE job_id=?", (outcome.disposition, token.job_id))
         db.execute("UPDATE knowledge_jobs SET state='failed',lease_expires_at=NULL WHERE job_id=?", (token.job_id,))
+        return self.read_in(db, token.job_id, policy=policy)
+
+    def finish_licensed_without_output_in(self, db, token, *, reason, policy):
+        """Retain an unencodable licensed outcome without staging a result."""
+        self._guard(db)
+        if type(reason) is not str or reason not in ('unsupported_input', 'record_limit'):
+            raise ValueError('text_analysis_terminal_reason_invalid')
+        token = _typed(AttemptToken, token)
+        row, spec, _ = self.repository._job(db, token.job_id, policy)
+        intent = self.repository._module_intent(db, token.job_id)
+        if (intent is None or intent['authority_kind'] != 'license'
+                or intent['enrollment_id'] is None or spec.input.source_count != 1):
+            raise ValueError('text_analysis_licensed_child_required')
+        self.repository._write_scope(db, spec, policy, 'commit')
+        retry = (row['state'] == 'failed' and intent['terminal_reason'] == reason
+                and row['attempt_fence'] == token.attempt_fence
+                and row['job_attempt_id'] == token.job_attempt_id
+                and row['lease_expires_at'] == token.lease_expires_at)
+        if not retry:
+            self.repository._attempt(row, token)
+        if (db.execute('SELECT 1 FROM knowledge_contributions WHERE job_id=?', (token.job_id,)).fetchone()
+                or db.execute('SELECT 1 FROM knowledge_members WHERE job_id=?', (token.job_id,)).fetchone()):
+            raise ValueError('text_analysis_retained_result_exists')
+        members = tuple(self.repository._sources(db, token.job_id))
+        if len(members) != 1:
+            raise ValueError('text_analysis_licensed_child_required')
+        budget = self.repository._budget()
+        self.repository._source(db, spec, members[0], budget)
+        budget.check()
+        if retry:
+            return self.read_in(db, token.job_id, policy=policy)
+        self.repository._attempt(row, token)
+        db.execute('UPDATE text_analysis_intents SET terminal_reason=? WHERE job_id=?', (reason, token.job_id))
+        db.execute("UPDATE knowledge_jobs SET state='failed' WHERE job_id=?", (token.job_id,))
         return self.read_in(db, token.job_id, policy=policy)

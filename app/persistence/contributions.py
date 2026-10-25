@@ -6,6 +6,7 @@ import json
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 from uuid import uuid4
 
 from app.models.knowledge_contributions import (
@@ -13,11 +14,23 @@ from app.models.knowledge_contributions import (
     inventory_digest, members_digest, record_digest,
 )
 from app.nlp import v2
-from app.nlp.profiles import canonical_bytes, read_profile
+from app.nlp.profiles import AnalysisProfile, SubsetAnalysisProfile, canonical_bytes, read_profile
 from app.security.runtime_policy import RuntimePolicy, authorized_account
 
 MAX_MEMBERS = 4096
 PAGE_SIZE = 64
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionMember:
+    state: str
+    spec: JobSpec
+    profile: AnalysisProfile | SubsetAnalysisProfile
+    member: SourceMemberSpec
+    attempt_fence: int
+    job_attempt_id: str | None
+    lease_expires_at: float | None
+    staged_record: bytes | None
 
 
 def _load(model, raw):
@@ -123,6 +136,42 @@ class ContributionRepository:
         self._owned_connection(db)
         self._budget()
         return self.source_guard.source(db, spec, member, budget, self.clock())
+
+    def read_execution_member_in(self, db, job_id, ordinal=0, *, policy, attempt=None):
+        """Read and validate one retained member without changing execution state."""
+        self._owned_connection(db)
+        if type(ordinal) is not int or not 0 <= ordinal < MAX_MEMBERS:
+            raise ValueError('knowledge_member_invalid')
+        row, spec, profile = self._job(db, job_id, policy)
+        if attempt is not None:
+            attempt = _typed(AttemptToken, attempt)
+            if attempt.job_id != job_id:
+                raise ValueError('knowledge_attempt_stale')
+            self._write_scope(db, spec, policy, 'resume')
+            self._attempt(row, attempt)
+        stored = db.execute('SELECT document FROM knowledge_sources WHERE job_id=? AND ordinal=?',
+                            (job_id, ordinal)).fetchone()
+        if stored is None:
+            raise ValueError('knowledge_member_missing')
+        member = _load(SourceMemberSpec, stored[0])
+        budget = self._budget()
+        source = self._source(db, spec, member, budget)
+        staged = db.execute('SELECT * FROM knowledge_members WHERE job_id=? AND ordinal=?', (job_id, ordinal)).fetchone()
+        raw = None
+        if staged is not None:
+            raw = bytes(staged['document'])
+            identity = _load(MemberIdentity, staged['identity'])
+            if (identity.ordinal != ordinal or identity.source_member_sha256 != record_digest(member)
+                    or identity.record_sha256 != _sha(raw)
+                    or identity.producing_attempt_fence != staged['producing_attempt_fence']
+                    or identity.producing_job_attempt_id != staged['producing_job_attempt_id']
+                    or not db.execute('SELECT 1 FROM knowledge_attempts WHERE job_id=? AND attempt_fence=? AND job_attempt_id=?',
+                        (job_id, identity.producing_attempt_fence, identity.producing_job_attempt_id)).fetchone()):
+                raise ValueError('knowledge_member_corrupt')
+            self.source_guard.record(profile, source, raw)
+        budget.check()
+        return ExecutionMember(row['state'], spec, profile, member, row['attempt_fence'],
+            row['job_attempt_id'], row['lease_expires_at'], raw)
 
     def _current_input(self, db, spec, budget):
         self._owned_connection(db)

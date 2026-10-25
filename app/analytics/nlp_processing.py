@@ -24,6 +24,12 @@ from app.nlp.profiles import read_profile
 _EXECUTION = Lock()
 
 
+@dataclass(slots=True)
+class _CancellationState:
+    error: Exception | None = None
+    observed: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class _PublicationLimits:
     # Two units per source, two for scope entry, two for the final token check.
@@ -219,7 +225,12 @@ class FindingsRunner(FindingsReadContext):
     """
     def __init__(self, source, projections, *, authorize, execution_ready, adapter,
                  clock, enrichment=None, lease_clock=time.time, dependencies=None, label_resolver=None,
-                 cancellation_check=None):
+                 cancellation_check=None, canonical_execution=None):
+        if canonical_execution is not None:
+            from app.analytics.nlp_canonical_execution import CanonicalFindingsExecution
+            if type(canonical_execution) is not CanonicalFindingsExecution:
+                raise ValueError('nlp_canonical_owner_invalid')
+        self.canonical_execution = canonical_execution
         self.source, self.projections = source, projections
         self.authorize, self.execution_ready, self.adapter = authorize, execution_ready, adapter
         self.clock, self.enrichment = clock, enrichment
@@ -236,7 +247,7 @@ class FindingsRunner(FindingsReadContext):
 
     def process_one(self, account_id):
         require_findings_execution()
-        if self.dependencies is None:
+        if self.dependencies is None or self.canonical_execution is not None:
             return self._process_one(account_id)
         self.authorize(account_id)
         profile = read_profile(self.findings.state(account_id)['profile_json'])
@@ -252,6 +263,7 @@ class FindingsRunner(FindingsReadContext):
         if not _EXECUTION.acquire(blocking=False):
             return False
         claim=None
+        work=None
         try:
             self.authorize(account_id)
             self.reconcile(account_id)
@@ -259,7 +271,7 @@ class FindingsRunner(FindingsReadContext):
             profile=read_profile(state['profile_json'])
             if expected_profile is not None and profile.identity_digest() != expected_profile:
                 return False
-            if state['mode']!='enabled' or not self.execution_ready(profile):
+            if state['mode']!='enabled' or (self.canonical_execution is None and not self.execution_ready(profile)):
                 return False
             claim=self.findings.claim(account_id)
             if claim is None:
@@ -271,59 +283,60 @@ class FindingsRunner(FindingsReadContext):
             if original is None or source_binding(original).source_version!=claim.source_version:
                 self.findings.invalidate_source(account_id,claim.source_ref)
                 return False
+            if self.canonical_execution is not None:
+                lease_seconds = min(120, int(claim.expires_at-self.findings.clock()))
+                if lease_seconds < 1:
+                    return False
+                work = self.canonical_execution.begin(self.source, profile, original, lease_seconds=lease_seconds)
+                if work is None:
+                    return False
+                self._budget().check()
+                self.authorize(account_id)
+                if work.terminal_reason is not None:
+                    self.findings.abandon(claim, work.terminal_reason)
+                    return True
+                if work.sealed or work.staged_record is not None:
+                    if not work.sealed:
+                        self.canonical_execution.seal(work)
+                    self.findings.release(claim)
+                    self.canonical_execution.replay(work, self.findings)
+                    return True
             if any(len(original.text)>component.max_source_codepoints for component in profile.components):
+                if work is not None:
+                    self.canonical_execution.finish_without_output(work, 'unsupported_input')
                 self.findings.abandon(claim,'unsupported_input')
                 return True
-            cancellation_error=None
-            cancellation_observed=False
+            if work is not None and not self.execution_ready(profile):
+                return False
+            cancellation = _CancellationState()
             def cancelled():
-                nonlocal cancellation_error, cancellation_observed
                 self.authorize(account_id)
-                if cancellation_observed:
+                if cancellation.observed:
                     return True
                 try:
                     if self.cancellation_check is not None and self.cancellation_check():
-                        cancellation_observed=True
+                        cancellation.observed=True
                         return True
                 except Exception as error:
-                    cancellation_error=error
+                    cancellation.error=error
                     raise
-                return (not self.findings.valid_claim(claim) or not self.execution_ready(profile)
+                stopped = (not self.findings.valid_claim(claim) or not self.execution_ready(profile)
                         or (self.dependencies is not None and not self.dependencies.ready(profile)))
-            results=[]
-            for component in profile.components:
-                if cancelled():
+                if not stopped and work is not None:
+                    self.canonical_execution.check(work)
+                return stopped
+            if work is not None and self.dependencies is not None:
+                if not self.dependencies.ready(profile):
                     return False
-                remaining_ms=min(120_000,int((claim.expires_at-self.findings.clock())*1000))
-                if remaining_ms<1:
-                    return False
-                request=v2.WorkerRequest(request_id=uuid4().hex,profile_sha256=profile.identity_digest(),
-                    component_id=component.component_id,component_sha256=component.identity_digest(),
-                    tasks=tuple(task.task for task in component.tasks),deadline_ms=remaining_ms,
-                    items=(v2.WorkerInput(request_item_id='message',text=original.text,
-                        text_sha256=hashlib.sha256(original.text.encode()).hexdigest()),))
-                v2.validate_request(profile,request.model_dump_json().encode())
-                failed=False
-                try:
-                    execute = self.adapter if bound_adapter is None else bound_adapter
-                    response=v2.validate_response(profile,request,execute(request,cancelled))
-                    results.extend(response.items[0].tasks)
-                except Exception:
-                    failed=True
-                if cancellation_error is not None:
-                    self.authorize(account_id)
-                    raise cancellation_error
-                if failed:
-                    if cancelled():
-                        return False
-                    # A failed component retains a truthful result for each of its tasks.
-                    for task in component.tasks:
-                        payload={'task':task.task,'outcome':'failed','reason':'worker_failure',
-                            'coverage':{'source_codepoints':len(original.text),'examined':[],
-                                'excluded':([{'start':0,'end':len(original.text)}] if original.text else []),'limits_reached':[]},'findings':[]}
-                        results.append(v2.BoundTaskResult.model_validate_json(encoded(dict(component_id=component.component_id,
-                            component_sha256=component.identity_digest(),text_sha256=request.items[0].text_sha256,payload=payload))))
-            if cancelled():
+                with self.dependencies.retain(profile) as retained_adapter:
+                    results = self._infer_components(profile, original, claim, cancelled,
+                        self.adapter if self.adapter is not None else retained_adapter, cancellation, work=work)
+            else:
+                results = self._infer_components(profile, original, claim, cancelled, bound_adapter, cancellation, work=work)
+            if cancellation.error is not None:
+                self.authorize(account_id)
+                raise cancellation.error
+            if results is False or cancelled():
                 return False
             latest=self._read(account_id,location,self._budget())
             if latest is None or source_binding(latest)!=source_binding(original):
@@ -336,7 +349,16 @@ class FindingsRunner(FindingsReadContext):
             try:
                 frame=v2.encode_record(record)
             except ValueError:
+                if work is not None:
+                    self.canonical_execution.finish_without_output(work, 'record_limit')
                 self.findings.abandon(claim,'record_limit')
+                return True
+            if work is not None:
+                if cancelled():
+                    return False
+                self.canonical_execution.seal(work, frame)
+                self.findings.release(claim)
+                self.canonical_execution.replay(work, self.findings)
                 return True
             return self.findings.complete(claim,profile,latest,frame)
         finally:
@@ -345,6 +367,45 @@ class FindingsRunner(FindingsReadContext):
                     self.findings.release(claim)
             finally:
                 _EXECUTION.release()
+
+
+    def _infer_components(self, profile, original, claim, cancelled, bound_adapter, cancellation, *, work=None):
+        results=[]
+        for component in profile.components:
+            if cancelled():
+                return False
+            remaining_ms=min(120_000,int((claim.expires_at-self.findings.clock())*1000))
+            if work is not None:
+                remaining_ms = min(remaining_ms,int((work.attempt.lease_expires_at-self.canonical_execution.repository.clock())*1000))
+            if remaining_ms<1:
+                return False
+            request=v2.WorkerRequest(request_id=uuid4().hex,profile_sha256=profile.identity_digest(),
+                component_id=component.component_id,component_sha256=component.identity_digest(),
+                tasks=tuple(task.task for task in component.tasks),deadline_ms=remaining_ms,
+                items=(v2.WorkerInput(request_item_id='message',text=original.text,
+                    text_sha256=hashlib.sha256(original.text.encode()).hexdigest()),))
+            v2.validate_request(profile,request.model_dump_json().encode())
+            failed=False
+            try:
+                execute = self.adapter if bound_adapter is None else bound_adapter
+                response=v2.validate_response(profile,request,execute(request,cancelled))
+                results.extend(response.items[0].tasks)
+            except Exception:
+                failed=True
+            if cancellation.error is not None:
+                self.authorize(original.account_id)
+                raise cancellation.error
+            if failed:
+                if cancelled():
+                    return False
+                # A failed component retains a truthful result for each of its tasks.
+                for task in component.tasks:
+                    payload={'task':task.task,'outcome':'failed','reason':'worker_failure',
+                        'coverage':{'source_codepoints':len(original.text),'examined':[],
+                            'excluded':([{'start':0,'end':len(original.text)}] if original.text else []),'limits_reached':[]},'findings':[]}
+                    results.append(v2.BoundTaskResult.model_validate_json(encoded(dict(component_id=component.component_id,
+                        component_sha256=component.identity_digest(),text_sha256=request.items[0].text_sha256,payload=payload))))
+        return results
 
     def frozen_pipeline(self, account_id):
         """Revalidate live eligibility before freezing immutable publication input."""

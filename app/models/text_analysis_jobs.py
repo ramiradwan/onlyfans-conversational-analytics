@@ -59,7 +59,7 @@ class ExecutionReceipt(UUIDRecord):
     state: Literal['prepared', 'pending', 'running', 'committed', 'failed', 'result_deleted']
     confirmation: bytes | None
     enrollment_id: str | None = None
-    terminal_reason: Literal['empty', 'incomplete', 'overflow', 'source_retired'] | None = None
+    terminal_reason: Literal['empty', 'incomplete', 'overflow', 'source_retired', 'unsupported_input', 'record_limit'] | None = None
 
 
 class EnrollmentReceipt(Contract):
