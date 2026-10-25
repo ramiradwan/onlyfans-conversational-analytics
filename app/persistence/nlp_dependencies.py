@@ -11,8 +11,12 @@ from app.nlp.release_catalog import canonical, require, MAX_PROFILES
 
 class DependencyPersistence:
     def __init__(self, authentication):
+        self.authentication = authentication
         self.database = authentication.database
         self.gate = self.database.dependency_authority_gate
+
+    def read_epoch(self):
+        return self.authentication.read_epoch().value
 
     @staticmethod
     def _authority(db):
@@ -31,9 +35,8 @@ class DependencyPersistence:
                     and type(state['withdrawals']) is list, 'nlp_authority_missing')
             require(state['trust_sha256'] is not None, 'nlp_authority_missing')
             require(profile_digest not in state['withdrawals'], 'nlp_profile_withdrawn')
-            read_epoch = db.execute('SELECT value FROM authorization_epoch WHERE singleton=1').fetchone()
-            require(read_epoch is not None, 'nlp_authority_missing')
-            barrier = (state['epoch'], state['trust_sha256'], state['catalog_sha256'], tuple(state['withdrawals']), read_epoch[0])
+            read_epoch = self.authentication.read_epoch(db).value
+            barrier = (state['epoch'], state['trust_sha256'], state['catalog_sha256'], tuple(state['withdrawals']), read_epoch)
             require(expected is None or barrier == expected, 'nlp_recovery_authority_changed')
             yield barrier
             require(self._authority(db) == state, 'nlp_recovery_authority_changed')

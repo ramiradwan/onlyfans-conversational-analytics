@@ -84,9 +84,7 @@ class RecoveryCoordinator:
     def authorize(self, account):
         self.check()
         authorized_account(self.policy, account)
-        with self.authority.database.read() as db:
-            epoch = db.execute('SELECT value FROM authorization_epoch WHERE singleton=1').fetchone()
-        if epoch is None or epoch[0] != self.policy.authorization_epoch.value:
+        if self.authority.read_epoch() != self.policy.authorization_epoch.value:
             raise ValueError('nlp_recovery_read_authority_changed')
         if self.policy.expires_at is not None and self.policy.expires_at <= self.clock():
             raise ValueError('nlp_recovery_read_expired')
