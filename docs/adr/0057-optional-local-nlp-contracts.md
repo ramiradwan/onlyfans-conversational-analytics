@@ -4,7 +4,7 @@
 
 - Status: Accepted; runtime activation requires separate qualification.
 - Date: 2026-10-19
-- Amended: 2026-10-24
+- Amended: 2026-10-25
 - Extends: ADRs 0009, 0027 and 0056. ADR 0012 remains proposed.
 
 ## Decision
@@ -14,6 +14,12 @@ Permit one optional native computation worker under `native/nlp-worker/`. Brain 
 The engine, CPU runtime and tokenizer remain outside the base installer. Direct MSIX uses a signed optional executable package in a qualified related set. Windows owns installation and servicing; the native host discovers exact approved identities and contains worker lifetime. Inno and Store retain base analytics and expose this optional capability as unavailable. There is no unmanaged executable fallback. A full-trust subprocess is fault isolation, not a security sandbox.
 
 Model packs are authenticated immutable data, never executable extensions. Exact core/engine related-set compatibility and adapter artifact compatibility govern activation. Separate NLP trust metadata, hashes, sizes, durable publication sequence and withdrawal state govern acquisition. Analysis authorization authenticates neither executable nor data. Offline accepted installations may run under valid authorization; expired metadata blocks new activation. Learned withdrawal prevents execution.
+
+Text-analysis execution uses the separate `urn:bridge-clean:text-analysis-license:v1` and `urn:bridge-clean:text-analysis-preview:v1` authorities for `text-analysis`, `text-analysis-artifact` and module major 1. Existing `analysis-run`, `analysis-artifact` and major 3 retain their meanings. Verification dispatches by exact profile, protected type, audience and purpose, with independently established organization, installation, key and seat context. Module authority never falls back to starter authority. The non-expiring preview binds one execution and its exact output-policy version without a debit.
+
+The pinned contract inventory does not advertise runtime support. Text-analysis support uses its closed twelve-profile set and the subset required by each operation. Release identity, output policy, request meaning and original signed delivery bytes retain independent bindings. Recovery does not replace authority or renegotiate those bindings. Preview acquisition uses separate native proof and browser admission; its deadline derives from the server's first accepted preparation. Hosted envelopes contain no local work identifiers, findings, counts or source references.
+
+Offline verification grants no worker activation, preview reservation or output commitment. Fixture trust remains non-production. Production execution stays disabled pending qualified composition, installed delivery and task quality. Module issuance also retains the released replacement-installation reissue prerequisite. Starter execution and saved-result reads do not acquire new authority requirements. Local preview admission must commit permitted output and spend atomically; an empty result does not spend the preview. Preview execution requires defined kinds, deterministic per-kind ranking and shown-only retention.
 
 An analysis profile binds message-local topic classification and concept extraction to one joint component or two serial components. Each component identifies its compiled adapter, engine, complete artifact closure, conditioning schema and preprocessing/decoding policies. Compatible data changes require a new profile; a different adapter requires a compatible signed engine. Packs cannot supply executable adapters or arbitrary task graphs.
 

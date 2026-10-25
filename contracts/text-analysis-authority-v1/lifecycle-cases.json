@@ -1,0 +1,655 @@
+[
+  {
+    "case_id": "confirmation-read-expired",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "read",
+        "now": 410
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "expired"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "confirmation-prepare-expired",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "prepare",
+        "now": 410
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "expired"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "authorized-prepare",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "prepare",
+        "now": 130
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "authorized"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "authorized-submit-expired",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "submit",
+        "now": 410
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "authorized"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "read-fresh-proof",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "read",
+        "fresh_proof": false,
+        "now": 130
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "proof_invalid"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "short-session-deadline",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110,
+        "session_deadline": 125
+      },
+      {
+        "action": "submit",
+        "now": 125
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "expired"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "server-deadline",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      }
+    ],
+    "expected": {
+      "admitted": false,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "awaiting-authentication"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "future-uuid-identity",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      }
+    ],
+    "expected": {
+      "admitted": false,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "awaiting-authentication"
+    },
+    "operation_id": "ffffffff-ffff-7fff-bfff-ffffffffffff",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "past-uuid-identity",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      }
+    ],
+    "expected": {
+      "admitted": false,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "awaiting-authentication"
+    },
+    "operation_id": "00000000-0000-7000-8000-000000000000",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "retry-does-not-renew",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "prepare",
+        "now": 1800
+      }
+    ],
+    "expected": {
+      "admitted": false,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "awaiting-authentication"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "expired-retained-operation",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "prepare",
+        "now": 1900
+      }
+    ],
+    "expected": {
+      "admitted": false,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "expired"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "cleanup-fresh-operation",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "cleanup",
+        "now": 1900
+      },
+      {
+        "action": "prepare",
+        "now": 2000
+      }
+    ],
+    "expected": {
+      "admitted": false,
+      "authorized": false,
+      "deadline": 3800,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "awaiting-authentication"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "navigation-and-read-no-authority",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "navigate",
+        "now": 110
+      },
+      {
+        "action": "read",
+        "now": 120
+      }
+    ],
+    "expected": {
+      "admitted": false,
+      "authorized": false,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "awaiting-authentication"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "preview-no-debit",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "issue",
+        "now": 130
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 1,
+      "result": "completed"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "one-lineage-across-seat",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "issue",
+        "now": 130
+      },
+      {
+        "action": "prepare",
+        "now": 140,
+        "operation_id": "019a1957-0000-7000-8000-000000000042",
+        "seat_id": "second-seat"
+      },
+      {
+        "action": "admit",
+        "now": 150
+      },
+      {
+        "action": "submit",
+        "now": 160
+      },
+      {
+        "action": "issue",
+        "now": 170
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1940,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 1,
+      "result": "preview_unavailable"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "lost-result-original-bytes",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "issue",
+        "now": 130
+      },
+      {
+        "action": "cleanup",
+        "now": 2000
+      },
+      {
+        "action": "recover",
+        "now": 2100
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw",
+      "issuances": 1,
+      "result": "exact-result"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "source-neutral-delivery",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "issue",
+        "now": 130
+      },
+      {
+        "action": "source-change",
+        "now": 140
+      },
+      {
+        "action": "recover",
+        "now": 150
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw",
+      "issuances": 1,
+      "result": "exact-result"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "replacement-refused",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "issue",
+        "now": 130
+      },
+      {
+        "action": "replace",
+        "now": 140
+      },
+      {
+        "action": "recover",
+        "now": 150
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 1,
+      "result": "proof_invalid"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "atomic-sign-failure",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "issue",
+        "now": 130,
+        "sign_failure": true
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "temporarily_unavailable"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "admission-generation-change",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "admission-change",
+        "now": 125
+      },
+      {
+        "action": "issue",
+        "now": 130
+      }
+    ],
+    "expected": {
+      "admitted": false,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "authentication_required"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  },
+  {
+    "case_id": "expired-consent-no-issue",
+    "events": [
+      {
+        "action": "prepare",
+        "now": 100
+      },
+      {
+        "action": "admit",
+        "now": 110
+      },
+      {
+        "action": "submit",
+        "now": 120
+      },
+      {
+        "action": "issue",
+        "now": 410
+      }
+    ],
+    "expected": {
+      "admitted": true,
+      "authorized": true,
+      "deadline": 1900,
+      "debits": 0,
+      "delivered": null,
+      "issuances": 0,
+      "result": "expired"
+    },
+    "operation_id": "019a1957-0000-7000-8000-000000000041",
+    "signed_authority": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50cC5KYllYZXRablE2Zkh6VVdQRGlHZzBBIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLXByZXZpZXc6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtcHJldmlldyIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZXhlY3V0aW9uX2xpbWl0IjoxLCJmYWxsYmFja19tYWpvcl92ZXJzaW9ucyI6W10sImlhdCI6MTc5Mjg4NjQwMCwiaW5zdGFsbGF0aW9uX2lkIjoiZml4dHVyZS1pbnN0YWxsYXRpb24iLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLnNESkhOUWt6QXBuc2hOUElCUlV6YWciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6InNESkhOUWt6QXBuc2hOUElCUlV6YXJrYkVnYXdHdzRLX2VVZFJPMElBMU0iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQyIiwibGljZW5zZWRfbWFqb3JfdmVyc2lvbiI6MSwib3JnYW5pemF0aW9uX2lkIjoiZml4dHVyZS1vcmdhbml6YXRpb24iLCJvdXRwdXRfcG9saWN5Ijp7InByb2ZpbGUiOiJ1cm46YnJpZGdlLWNsZWFuOnRleHQtYW5hbHlzaXMtcHJldmlldy1vdXRwdXQtcG9saWN5OnYxIiwidmVyc2lvbiI6MX0sInBlcm1pdF9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MSIsInBlcm1pdF90eXBlIjoidGV4dF9hbmFseXNpc19wcmV2aWV3IiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1wcmV2aWV3OnYxIiwic2VhdF9pZCI6ImZpeHR1cmUtc2VhdCIsInNlYXRfc2NvcGUiOiJvcmdhbml6YXRpb24taW5zdGFsbGF0aW9uLXNlYXQiLCJzdWIiOiJvcmdhbml6YXRpb246Zml4dHVyZS1vcmdhbml6YXRpb246aW5zdGFsbGF0aW9uOmZpeHR1cmUtaW5zdGFsbGF0aW9uOnNlYXQ6Zml4dHVyZS1zZWF0OmNhcGFiaWxpdHk6dGV4dC1hbmFseXNpcyIsInVwZGF0ZV9yaWdodHMiOnRydWV9.Khhmy3uqw4BazwNQBCKB5KLb_GXv0QIEN3VUf8SY9NV0cF2mSS0eoy-qfi_kbFj1PoL2-2_0moPuPBJ859dEGw"
+  }
+]

@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-purchase-session-definitions.schema.json",
+  "title": "Capability purchase session definitions v1",
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt"
+      ],
+      "properties": {
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "challenge_id",
+        "challenge",
+        "signature"
+      ],
+      "properties": {
+        "challenge_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "challenge": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "signature": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url64"
+        }
+      }
+    },
+    "startRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "request_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-purchase-session:v1"
+        },
+        "request_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-purchase-session-definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "statusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "request_id",
+        "binding",
+        "purchase_session_reference"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-purchase-session:v1"
+        },
+        "request_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-purchase-session-definitions.schema.json#/$defs/binding"
+        },
+        "purchase_session_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "walletRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "request_id",
+        "binding",
+        "purchase_session_reference"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-purchase-session:v1"
+        },
+        "request_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-purchase-session-definitions.schema.json#/$defs/binding"
+        },
+        "purchase_session_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "endRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "request_id",
+        "binding",
+        "purchase_session_reference"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-purchase-session:v1"
+        },
+        "request_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-purchase-session-definitions.schema.json#/$defs/binding"
+        },
+        "purchase_session_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    }
+  }
+}

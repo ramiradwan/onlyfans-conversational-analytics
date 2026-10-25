@@ -1,0 +1,235 @@
+openapi: 3.1.0
+info:
+  title: text-analysis-authority-issuance
+  version: 1.0.0
+paths:
+  /v1/text-analysis-license-issuance-proof-challenges:
+    post:
+      operationId: issueTextAnalysisLicenseIssuanceProofChallenge
+      summary: Exact text-analysis-license-issuance-proof operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-license-issuance-proof/v1/challenge-response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id001
+                $ref: ../schemas/text-analysis-license-issuance-proof/v1/error.schema.json
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id001
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-license-issuance-proof/v1/challenge-request.schema.json
+      x-browser-cors: false
+  /v1/text-analysis-license-issuances:issue:
+    post:
+      operationId: issueTextAnalysisLicense
+      summary: Exact text-analysis-authority-issuance operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-authority-delivery/v1/response.schema.json
+        '201':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-authority-delivery/v1/response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id002
+                $ref: ../schemas/text-analysis-authority-issuance/v1/error.schema.json
+        '401':
+          description: Required authentication or proof refused
+          content:
+            application/json:
+              schema: *id002
+        '403':
+          description: Exact authority denied
+          content:
+            application/json:
+              schema: *id002
+        '409':
+          description: Exact request or authority state conflict
+          content:
+            application/json:
+              schema: *id002
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id002
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id002
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-authority-issuance/v1/license-request.schema.json
+      x-browser-cors: false
+  /v1/text-analysis-preview-issuance-proof-challenges:
+    post:
+      operationId: issueTextAnalysisPreviewIssuanceProofChallenge
+      summary: Exact text-analysis-preview-issuance-proof operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-preview-issuance-proof/v1/challenge-response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id003
+                $ref: ../schemas/text-analysis-preview-issuance-proof/v1/error.schema.json
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id003
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id003
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-preview-issuance-proof/v1/challenge-request.schema.json
+      x-browser-cors: false
+  /v1/text-analysis-preview-issuances:issue:
+    post:
+      operationId: issueTextAnalysisPreview
+      summary: Exact text-analysis-authority-issuance operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-authority-delivery/v1/response.schema.json
+        '201':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-authority-delivery/v1/response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id004
+                $ref: ../schemas/text-analysis-authority-issuance/v1/error.schema.json
+        '401':
+          description: Required authentication or proof refused
+          content:
+            application/json:
+              schema: *id004
+        '403':
+          description: Exact authority denied
+          content:
+            application/json:
+              schema: *id004
+        '409':
+          description: Exact request or authority state conflict
+          content:
+            application/json:
+              schema: *id004
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id004
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id004
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-authority-issuance/v1/preview-request.schema.json
+      x-browser-cors: false

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-acquisition/v1/proof-challenge-response.schema.json",
+  "title": "text-analysis-preview-acquisition-proof proof-challenge-response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "purpose",
+    "challenge_id",
+    "challenge",
+    "audience",
+    "request_digest",
+    "issued_at",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1"
+    },
+    "purpose": {
+      "enum": [
+        "text-analysis-preview-acquisition-prepare",
+        "text-analysis-preview-acquisition-read",
+        "text-analysis-preview-acquisition-submit"
+      ]
+    },
+    "challenge_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "challenge": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "audience": {
+      "const": "urn:bridge-clean:commercial-control-plane:text-analysis-preview-acquisition"
+    },
+    "request_digest": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "issued_at": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+    },
+    "expires_at": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

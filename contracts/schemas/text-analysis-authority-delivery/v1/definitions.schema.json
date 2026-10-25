@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-delivery/v1/definitions.schema.json",
+  "title": "text-analysis-authority-delivery definitions v1",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "issuance_authorization_id",
+        "authority_profile",
+        "binding",
+        "issuance_request_digest"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-authority-delivery:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "issuance_authorization_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "authority_profile": {
+          "enum": [
+            "urn:bridge-clean:text-analysis-license:v1",
+            "urn:bridge-clean:text-analysis-preview:v1"
+          ]
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "installation_id",
+            "installation_key_id",
+            "installation_key_jkt"
+          ],
+          "properties": {
+            "organization_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_key_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "installation_key_jkt": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        "issuance_request_digest": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+        }
+      }
+    }
+  }
+}

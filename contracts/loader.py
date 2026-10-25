@@ -16,9 +16,14 @@ class ContractsIntegrityError(RuntimeError):
 _MANIFEST = "manifest.json"
 _PIN = "consumer-pin.json"
 _APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-_APPROVED_SOURCE_COMMIT = "8a469460413d7e6064e3246d0314fc7a3f100016"
-_APPROVED_SOURCE_TREE = "aa2c8d87522a096d6568342f19f564af0cb8f685"
-_APPROVED_SOURCE_MANIFEST_SHA256 = "09af171ecc876f08dd2d834e8e13380da6d30c69827dd8b4cd0dc393e74367d6"
+_APPROVED_SOURCE_COMMIT = "3ad41b7f02236cf2a71b3f917fb2e487c54769fe"
+_APPROVED_SOURCE_TREE = "841e6c2700eb5539cbb63aed31525d52c2191daa"
+_APPROVED_SOURCE_MANIFEST_SHA256 = "3391ce59f60d6162df72872965e16facb22ee6230efb27bdcb618ddb6f616477"
+_TEXT_ANALYSIS_EXPORT = "text-analysis-authority-v1"
+_TEXT_ANALYSIS_VECTOR_SHA256 = "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a"
+_TEXT_ANALYSIS_TRUST_SHA256 = "c1020fc2fb8faf2e42d3a3e204452a420ac4c0badc37a22f9217f37f82f8ab7b"
+_TEXT_ANALYSIS_VECTOR_PROFILE = "urn:bridge-clean:text-analysis-authority-vectors:v1"
+_TEXT_ANALYSIS_GENERATOR_VERSION = "1.0.1"
 _MANIFEST_KEYS = {
     "content_digest",
     "export_set",
@@ -291,9 +296,26 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
         versions[item["export"]] = item["version"]
     if set(versions) != set(vector_manifests):
         raise ContractsIntegrityError("consumer pin generator exports do not match")
+    if _TEXT_ANALYSIS_EXPORT not in vector_manifests:
+        raise ContractsIntegrityError("text-analysis authority pins are missing")
     for export, item in vector_manifests.items():
         vector_manifest = _read_json(contract_root / item["path"])
-        if vector_manifest.get("profile") not in manifest["profiles"]:
+        if export == _TEXT_ANALYSIS_EXPORT:
+            expected_vector = {
+                "export": export, "path": f"{export}/manifest.json",
+                "sha256": _TEXT_ANALYSIS_VECTOR_SHA256,
+            }
+            expected_trust = {
+                "export": export, "path": f"{export}/trust-set.json",
+                "sha256": _TEXT_ANALYSIS_TRUST_SHA256,
+            }
+            if (item != expected_vector or conformance_manifests.get(export) != expected_vector
+                    or trust_sets.get(export) != expected_trust
+                    or versions[export] != _TEXT_ANALYSIS_GENERATOR_VERSION
+                    or vector_manifest.get("profile") != _TEXT_ANALYSIS_VECTOR_PROFILE
+                    or vector_manifest.get("production_usable") is not False):
+                raise ContractsIntegrityError("text-analysis authority pins drifted")
+        elif vector_manifest.get("profile") not in manifest["profiles"]:
             raise ContractsIntegrityError("vector manifest profile is not supported")
         if versions[export] != vector_manifest.get("generator_version"):
             raise ContractsIntegrityError("consumer pin does not match generator version")

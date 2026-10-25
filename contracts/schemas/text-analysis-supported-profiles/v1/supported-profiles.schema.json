@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json",
+  "title": "text-analysis-supported-profiles supported-profiles v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "profiles"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-supported-profiles:v1"
+    },
+    "profiles": {
+      "type": "array",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 256,
+        "enum": [
+          "urn:bridge-clean:text-analysis-authority-delivery-proof:v1",
+          "urn:bridge-clean:text-analysis-authority-delivery:v1",
+          "urn:bridge-clean:text-analysis-authority-issuance:v1",
+          "urn:bridge-clean:text-analysis-license-issuance-proof:v1",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
+          "urn:bridge-clean:text-analysis-preview-acquisition:v1",
+          "urn:bridge-clean:text-analysis-preview-issuance-proof:v1",
+          "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+          "urn:bridge-clean:text-analysis-preview:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1",
+          "urn:bridge-clean:text-analysis-supported-profiles:v1"
+        ]
+      }
+    }
+  }
+}

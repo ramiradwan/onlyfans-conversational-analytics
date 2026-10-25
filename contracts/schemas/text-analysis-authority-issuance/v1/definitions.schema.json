@@ -1,0 +1,381 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-issuance/v1/definitions.schema.json",
+  "title": "text-analysis-authority-issuance definitions v1",
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt"
+      ],
+      "properties": {
+        "organization_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "challenge_id",
+        "challenge",
+        "signature"
+      ],
+      "properties": {
+        "challenge_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "challenge": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "signature": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url64"
+        }
+      }
+    },
+    "licenseConfirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "issuance_authorization_id",
+        "binding",
+        "authority_profile",
+        "scope",
+        "supported_profiles",
+        "release_identity"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "issuance_authorization_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "installation_id",
+            "installation_key_id",
+            "installation_key_jkt"
+          ],
+          "properties": {
+            "organization_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_key_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "installation_key_jkt": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        "authority_profile": {
+          "const": "urn:bridge-clean:text-analysis-license:v1"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "seat_id",
+            "seat_scope",
+            "capability",
+            "licensed_major_version",
+            "compatible_artifact_family",
+            "update_rights",
+            "fallback_major_versions"
+          ],
+          "properties": {
+            "seat_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "seat_scope": {
+              "const": "organization-installation-seat"
+            },
+            "capability": {
+              "const": "text-analysis"
+            },
+            "licensed_major_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "compatible_artifact_family": {
+              "const": "text-analysis-artifact"
+            },
+            "update_rights": {
+              "type": "boolean"
+            },
+            "fallback_major_versions": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              }
+            }
+          }
+        },
+        "supported_profiles": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json"
+        },
+        "release_identity": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-release-identity/v1/release-identity.schema.json"
+        }
+      }
+    },
+    "previewConfirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "issuance_authorization_id",
+        "binding",
+        "authority_profile",
+        "scope",
+        "supported_profiles",
+        "release_identity"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "issuance_authorization_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "installation_id",
+            "installation_key_id",
+            "installation_key_jkt"
+          ],
+          "properties": {
+            "organization_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_key_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "installation_key_jkt": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        "authority_profile": {
+          "const": "urn:bridge-clean:text-analysis-preview:v1"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "seat_id",
+            "seat_scope",
+            "capability",
+            "licensed_major_version",
+            "compatible_artifact_family",
+            "update_rights",
+            "fallback_major_versions",
+            "execution_limit",
+            "output_policy"
+          ],
+          "properties": {
+            "seat_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "seat_scope": {
+              "const": "organization-installation-seat"
+            },
+            "capability": {
+              "const": "text-analysis"
+            },
+            "licensed_major_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "compatible_artifact_family": {
+              "const": "text-analysis-artifact"
+            },
+            "update_rights": {
+              "type": "boolean"
+            },
+            "fallback_major_versions": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              }
+            },
+            "execution_limit": {
+              "const": 1
+            },
+            "output_policy": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-output-policy/v1/policy.schema.json"
+            }
+          }
+        },
+        "supported_profiles": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json"
+        },
+        "release_identity": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-release-identity/v1/release-identity.schema.json"
+        }
+      }
+    },
+    "licenseRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "issuance_authorization_id",
+        "authority_profile",
+        "binding",
+        "confirmation_digest",
+        "supported_profiles",
+        "release_identity"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-authority-issuance:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "issuance_authorization_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "authority_profile": {
+          "const": "urn:bridge-clean:text-analysis-license:v1"
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "installation_id",
+            "installation_key_id",
+            "installation_key_jkt"
+          ],
+          "properties": {
+            "organization_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_key_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "installation_key_jkt": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        "confirmation_digest": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "supported_profiles": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json"
+        },
+        "release_identity": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-release-identity/v1/release-identity.schema.json"
+        }
+      }
+    },
+    "previewRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "issuance_authorization_id",
+        "authority_profile",
+        "binding",
+        "confirmation_digest",
+        "supported_profiles",
+        "release_identity"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-authority-issuance:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "issuance_authorization_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "authority_profile": {
+          "const": "urn:bridge-clean:text-analysis-preview:v1"
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "installation_id",
+            "installation_key_id",
+            "installation_key_jkt"
+          ],
+          "properties": {
+            "organization_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_key_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "installation_key_jkt": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        "confirmation_digest": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "supported_profiles": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json"
+        },
+        "release_identity": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-release-identity/v1/release-identity.schema.json"
+        }
+      }
+    }
+  }
+}

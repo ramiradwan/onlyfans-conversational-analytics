@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-purchase-session-wallet-response.schema.json",
+  "title": "Capability purchase session wallet response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "request_id",
+    "binding",
+    "purchase_session_reference",
+    "state",
+    "created_at",
+    "expires_at",
+    "authenticated_at",
+    "actor_reference",
+    "credits_available"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-purchase-session:v1"
+    },
+    "request_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "binding": {
+      "$ref": "capability-purchase-session-definitions.schema.json#/$defs/binding"
+    },
+    "purchase_session_reference": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "state": {
+      "const": "active"
+    },
+    "created_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    },
+    "authenticated_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    },
+    "actor_reference": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "credits_available": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  }
+}

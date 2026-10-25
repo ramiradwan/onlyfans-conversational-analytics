@@ -1,0 +1,271 @@
+{
+  "case_count": 2328,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "9ac90623fda96057185909b467dacb3acf4b784fd216706b646a8df9c3e6244e",
+      "size": 133478
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "c80346e10eab90d493148fdff046b7cf2c5526aa693ef860bc500fb977b7162f",
+      "size": 48400
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "2ce347bde03c23bbe0dbe74b8c5f0fd2e6b6c56afd08498620c4771335545b3e",
+      "size": 623631
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "e60a58051a176339f52947cf26abad376583a6489245c49209a73756ae80c8c2",
+      "size": 4226476
+    },
+    {
+      "path": "signed-cases.json",
+      "sha256": "5bf87b0894ff1508f4c5630e76085c4fcd1b42228cadb9175f6ffcee338ee12e",
+      "size": 845750
+    },
+    {
+      "path": "trust-set.json",
+      "sha256": "c1020fc2fb8faf2e42d3a3e204452a420ac4c0badc37a22f9217f37f82f8ab7b",
+      "size": 821
+    }
+  ],
+  "fixed_time": "2026-10-25T00:00:00.000Z",
+  "fixture_labels": [
+    "text-analysis-license-v1",
+    "text-analysis-preview-v1",
+    "text-analysis-installation-v1"
+  ],
+  "generator": "tools/generate_text_analysis_vectors.py",
+  "generator_version": "1.0.1",
+  "inputs": [
+    {
+      "path": "docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md",
+      "sha256": "345f113baa615824a64a4a86453fe2f3300e789fbc5966c51ed94bb551378400"
+    },
+    {
+      "path": "openapi/text-analysis-authority-delivery-v1.openapi.yaml",
+      "sha256": "9fc11d107333305a2f2a26b58a670c101a289fdfa6d4b36e6fcd0a6d445a33df"
+    },
+    {
+      "path": "openapi/text-analysis-authority-issuance-v1.openapi.yaml",
+      "sha256": "d7e77d83e14ab54a8cc1b6b84bead12068b4cdb351e7b86a10b3ab9de498b401"
+    },
+    {
+      "path": "openapi/text-analysis-preview-acquisition-v1.openapi.yaml",
+      "sha256": "0d8c5328826815de24b79cb7b429a29a1abc5779001cb82695bf6cdb6c9b92d9"
+    },
+    {
+      "path": "profiles/text-analysis-authority-delivery/v1/profile.json",
+      "sha256": "f1ec2195ae54a808debc514eeeb515b08a1d05a4971120887af2ef05ea848e0f"
+    },
+    {
+      "path": "profiles/text-analysis-authority-delivery-proof/v1/profile.json",
+      "sha256": "a8aab6d92a7dec49b1b118f7217222691cf464382e0d78a37f7beec8eb84d568"
+    },
+    {
+      "path": "profiles/text-analysis-authority-issuance/v1/profile.json",
+      "sha256": "bc85993527c8d6033791fe5470f2ef2cb61f24a50124fadfb65999e008369f97"
+    },
+    {
+      "path": "profiles/text-analysis-license/v1/profile.json",
+      "sha256": "534e6c99b04ee22faaf665f504a9c354a3cb2de76e1be71c5e9d2e5ffa41a7b6"
+    },
+    {
+      "path": "profiles/text-analysis-license-issuance-proof/v1/profile.json",
+      "sha256": "be6998923112c24bbffca4ad30ba6fb1b74178c0fdc2a400ba2830aa39896044"
+    },
+    {
+      "path": "profiles/text-analysis-preview/v1/profile.json",
+      "sha256": "3b65a56289fdad76847435765449760a3a6b04849151250f7a76c8c8f25452bc"
+    },
+    {
+      "path": "profiles/text-analysis-preview-acquisition/v1/profile.json",
+      "sha256": "300b5d442d7126233a29797e7b259a19d963017fff666c7c2dfe512e64d8af3c"
+    },
+    {
+      "path": "profiles/text-analysis-preview-acquisition-proof/v1/profile.json",
+      "sha256": "256cfb83977661f385348556dec7e8ce0fb0b0d56a0ea5bdf632e0ec3a16b13d"
+    },
+    {
+      "path": "profiles/text-analysis-preview-issuance-proof/v1/profile.json",
+      "sha256": "c11c3ffb0f0aa9fe1d62ce814477f241d5830703b601f2e2f6558ae03a3e5dc4"
+    },
+    {
+      "path": "profiles/text-analysis-preview-output-policy/v1/profile.json",
+      "sha256": "460088bb7c5a1304d6785679eff7515637dc8e808866bb7cc655110498f2c6ce"
+    },
+    {
+      "path": "profiles/text-analysis-release-identity/v1/profile.json",
+      "sha256": "34481a787fda3ef13c51e4e33692b8b39e7e8245db8a69313a7339e5103f3c70"
+    },
+    {
+      "path": "profiles/text-analysis-supported-profiles/v1/profile.json",
+      "sha256": "cd915cc3918743b62fd3dbf87fd76416ea99f4779b32aff95da6967d1d67994b"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/text-analysis-authority-delivery/v1/definitions.schema.json",
+      "sha256": "ace65829caa7822df942ce063bcc5daec42dc4c0a5176eefa60035187e2f4f18"
+    },
+    {
+      "path": "schemas/text-analysis-authority-delivery/v1/deliver-request.schema.json",
+      "sha256": "035b3437d814212192a91ed37288a99ca15940015cfb418897deabd53745b5dc"
+    },
+    {
+      "path": "schemas/text-analysis-authority-delivery/v1/error.schema.json",
+      "sha256": "8ab4307ee1ed66f80c793c62e864d87bcb77e9af88fa4a4cbd2fea9695452dda"
+    },
+    {
+      "path": "schemas/text-analysis-authority-delivery/v1/recover-request.schema.json",
+      "sha256": "c1fb3f0598b6060467bf688a1185be2bc47424f8406f49427a69117f936473d9"
+    },
+    {
+      "path": "schemas/text-analysis-authority-delivery/v1/response.schema.json",
+      "sha256": "e92c2f59d3497042eec00667abcbf567a3d71da1e114c9e513f58925e6a8b436"
+    },
+    {
+      "path": "schemas/text-analysis-authority-delivery-proof/v1/challenge-request.schema.json",
+      "sha256": "e282b285a0d18b1ca190acbc8b671c6fe1663f4b087892991d9345f384e0b859"
+    },
+    {
+      "path": "schemas/text-analysis-authority-delivery-proof/v1/challenge-response.schema.json",
+      "sha256": "75f02f13fb4535a7325023c5961467583b75bf758ab0f020056792c0d76bf898"
+    },
+    {
+      "path": "schemas/text-analysis-authority-delivery-proof/v1/error.schema.json",
+      "sha256": "f5d3fd16bf5daffcbd0a426cdfe2621c6093aa6dc557ca43f516611b91a65858"
+    },
+    {
+      "path": "schemas/text-analysis-authority-issuance/v1/definitions.schema.json",
+      "sha256": "bb15a6634f86ff564f90d7ea652ed2c81664525959119fda2b2e5629e2ac0ba8"
+    },
+    {
+      "path": "schemas/text-analysis-authority-issuance/v1/error.schema.json",
+      "sha256": "530bdd8d54300ce4f118b5928788a66171ee9362bae648bc76651303372ed053"
+    },
+    {
+      "path": "schemas/text-analysis-authority-issuance/v1/license-request.schema.json",
+      "sha256": "c45f105a36e295d67c624a0948ddbd58476c3858c92a246d27cb2891ae2a22ad"
+    },
+    {
+      "path": "schemas/text-analysis-authority-issuance/v1/preview-request.schema.json",
+      "sha256": "197991612a0ee1e81ebd679d55b12c300be88446ed8b29e48c6a29dbea6d1862"
+    },
+    {
+      "path": "schemas/text-analysis-license/v1/payload.schema.json",
+      "sha256": "a6b40396978b0d382171e07ae7150d812b3cbb2e77a373b176d89a627c99389b"
+    },
+    {
+      "path": "schemas/text-analysis-license-issuance-proof/v1/challenge-request.schema.json",
+      "sha256": "9fe45554b6e6c512562e4dbac9812dcf87ca664024a7e25630eeac567cb82e72"
+    },
+    {
+      "path": "schemas/text-analysis-license-issuance-proof/v1/challenge-response.schema.json",
+      "sha256": "ce8eaf67d2b379bc6f07ed31bf6736d05434377e1367227f0f5e4d4459d96740"
+    },
+    {
+      "path": "schemas/text-analysis-license-issuance-proof/v1/error.schema.json",
+      "sha256": "d46fbee96390945ee64b1b507eb3e33f1cd6a999693e470573c5fe37fb667abe"
+    },
+    {
+      "path": "schemas/text-analysis-preview/v1/payload.schema.json",
+      "sha256": "9b15c452f8185638221f2a247f71693ab7d59ceabe1c78a8710a5b305e2dd77f"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/admit-request.schema.json",
+      "sha256": "c8bb5f8ba2fe390d15a09be0a39699c5e05e1e1fad6cba6488ab719f6bc337ea"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/admit-response.schema.json",
+      "sha256": "31258ad105829aef3661463c4b9ee31a2489938b0ef32cc9f77a9ab408b339ea"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/definitions.schema.json",
+      "sha256": "a385a6c649e55470c3ea64e9b41b40ea4c476f106c6df09b8daf2e01995e1f16"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/error.schema.json",
+      "sha256": "d8bf09a6466daf60518ad7cac352e014dd2c5400f5d6e18ecad922f32785f8af"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/prepare-request.schema.json",
+      "sha256": "1c784147b14610d694083022ce1c9351cce1e0ad52dafb0a73545fd942fed054"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/prepare-response.schema.json",
+      "sha256": "6a8fdfe7b9fa81321b3cbcf89936b4301f822417b4286e0fbac643f4ebcc1bc0"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/proof-challenge-request.schema.json",
+      "sha256": "b15d75dfdc1b7ff5e89d6df3a66decd6135582cb7432375082f5c7e92853e763"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/proof-challenge-response.schema.json",
+      "sha256": "1f0bc2013848d9ed01f4dd6f81be8378463eec60f98f89e93df40e6df5252bdc"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/proof-error.schema.json",
+      "sha256": "8fc035cf51b1378829190823f1abaeafb5485d7b1506158a46aef6b545ede297"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/read-request.schema.json",
+      "sha256": "faa8df1fcbc9789d7c1478769e2e1288b32504db398b826ff60337a6b7006740"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/read-response.schema.json",
+      "sha256": "18e8ab397a6faab7b034ee2cdd482b36cb82a5803b516829abcc11178417aae3"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/submit-request.schema.json",
+      "sha256": "30da04c6b659e20e4a5c3075d905b0cc781240167f5199607b1f1bf3c8d9e65b"
+    },
+    {
+      "path": "schemas/text-analysis-preview-acquisition/v1/submit-response.schema.json",
+      "sha256": "40efa79bc3e15b26fcef24e078a677c313652b500bb5c25c83c41e594b417f78"
+    },
+    {
+      "path": "schemas/text-analysis-preview-issuance-proof/v1/challenge-request.schema.json",
+      "sha256": "f04ce63c79bf07f52d8697785cc89c8c86e0990986bc721cf3b35df7fd983c13"
+    },
+    {
+      "path": "schemas/text-analysis-preview-issuance-proof/v1/challenge-response.schema.json",
+      "sha256": "281d500dbb71efd3b3d6dd20efe20a90be91d3f196166ffcc711f7fd9146e3a6"
+    },
+    {
+      "path": "schemas/text-analysis-preview-issuance-proof/v1/error.schema.json",
+      "sha256": "f9b6a1941beddd28dd27b858c75d45bd0282dd50d4e9ab384729218554f95dbe"
+    },
+    {
+      "path": "schemas/text-analysis-preview-output-policy/v1/policy.schema.json",
+      "sha256": "d9387bfe474c890bf1917417f66c4499b3c77af9f5a2deff655a005a60868614"
+    },
+    {
+      "path": "schemas/text-analysis-release-identity/v1/release-identity.schema.json",
+      "sha256": "a99ef065a4dd81cc45a1e2aa6980df30f33c6bf8a249cb5431f863c704fb8a37"
+    },
+    {
+      "path": "schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json",
+      "sha256": "4d59268068575f9e2a1149306473201bcb9918d25df0ee6547e3882cbacc9062"
+    },
+    {
+      "path": "tools/generate_text_analysis_vectors.py",
+      "sha256": "993a1d5ad8938df393966267840bae125692e3ab6951bd6a51f8079d5aeb0015"
+    },
+    {
+      "path": "tools/vectorlib.py",
+      "sha256": "4b3cee3f45c0d78c1ab71ac36168474c3d90ce5b2cd3a0cd6586a328d27e9e06"
+    },
+    {
+      "path": "tools/verify_text_analysis_vectors.py",
+      "sha256": "6be2c69528770a5c2bc03c8c85941f18a7f30726d1f9083692b5448715bb03b3"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:text-analysis-authority-vectors:v1"
+}

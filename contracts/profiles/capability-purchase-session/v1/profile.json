@@ -1,0 +1,38 @@
+{
+  "profile": "urn:bridge-clean:capability-purchase-session:v1",
+  "governing_adr": "docs/adr/0040-proof-bound-sandbox-purchase-sessions.md",
+  "messages": {
+    "definitions": "schemas/commercial/v1/capability-purchase-session-definitions.schema.json",
+    "start-request": "schemas/commercial/v1/capability-purchase-session-start-request.schema.json",
+    "status-request": "schemas/commercial/v1/capability-purchase-session-status-request.schema.json",
+    "wallet-request": "schemas/commercial/v1/capability-purchase-session-wallet-request.schema.json",
+    "end-request": "schemas/commercial/v1/capability-purchase-session-end-request.schema.json",
+    "view-response": "schemas/commercial/v1/capability-purchase-session-view-response.schema.json",
+    "wallet-response": "schemas/commercial/v1/capability-purchase-session-wallet-response.schema.json",
+    "error": "schemas/commercial/v1/capability-purchase-session-error.schema.json"
+  },
+  "request_max_bytes": 4096,
+  "response_max_bytes": 20000,
+  "transport": {
+    "method": "POST",
+    "query_forbidden": true,
+    "cache_control": "no-store",
+    "browser_cors": false
+  },
+  "operations": {
+    "start": "/v1/capability-purchase-sessions:start",
+    "status": "/v1/capability-purchase-sessions:status",
+    "wallet": "/v1/capability-purchase-sessions:wallet",
+    "end": "/v1/capability-purchase-sessions:end"
+  },
+  "session_ttl_seconds": 300,
+  "expiry_basis": "original-start-time",
+  "sliding_renewal": false,
+  "entry_path": "/public/capability-purchase-sessions/{entry_reference}",
+  "entry_reference_is_authority": false,
+  "native_reference_requires_fresh_key_proof": true,
+  "working_state_max_records": 4096,
+  "working_state_deletion": "original-session-expiry",
+  "replay_fence_ttl_seconds": 86400,
+  "sandbox_only": true
+}

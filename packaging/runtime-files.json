@@ -175,10 +175,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "87edc82a4c155b4aba68581084cd1780d3908ed71ab70838b82a7e2a4387a4e6",
-    "consumer_pin_sha256": "7a058500a5d6e0dacac38941a078ca74ffb9f8644363d8ae719aff4623644db4",
+    "manifest_sha256": "c39ab23f45305f4da7e4c057c894011a43168b3fa20c44e3c62ba2d852f1f4f3",
+    "consumer_pin_sha256": "ff42d1780379cd887f5ac1ee98bd26b6b749a14824f5301f27c79d9328e55681",
     "root_file_sha256": {
-      "loader.py": "732a83c826c98b81d2e7bd1a43feedbba92409216f3ecb7a32e3690968c98708",
+      "loader.py": "50c5ec517d23f0b59210d1604ec326ffd01fe49e43860ec4056ee017129aae18",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [

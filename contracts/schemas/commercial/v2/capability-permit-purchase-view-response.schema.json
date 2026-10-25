@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v2/capability-permit-purchase-view-response.schema.json",
+  "title": "Capability permit purchase view-response v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "binding",
+    "state",
+    "quote",
+    "quote_digest",
+    "credits_available",
+    "top_up_offers",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-permit-purchase:v2"
+    },
+    "operation_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "binding": {
+      "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/binding"
+    },
+    "state": {
+      "enum": [
+        "confirmation_required",
+        "payment_required",
+        "payment_pending",
+        "ready",
+        "completed",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "quote": {
+      "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/quote"
+    },
+    "quote_digest": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "credits_available": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "top_up_offers": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/pack"
+      }
+    },
+    "decision": {
+      "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/decision"
+    },
+    "checkout_url": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^https://checkout\\.stripe\\.com/"
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "confirmation_required"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "decision"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "payment_required"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "checkout_url"
+        ]
+      }
+    }
+  ]
+}

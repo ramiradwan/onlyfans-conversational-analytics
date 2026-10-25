@@ -1,0 +1,37 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-authority-delivery:v1",
+  "governing_adr": "docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md",
+  "messages": {
+    "definitions": "schemas/text-analysis-authority-delivery/v1/definitions.schema.json",
+    "deliver-request": "schemas/text-analysis-authority-delivery/v1/deliver-request.schema.json",
+    "recover-request": "schemas/text-analysis-authority-delivery/v1/recover-request.schema.json",
+    "response": "schemas/text-analysis-authority-delivery/v1/response.schema.json",
+    "error": "schemas/text-analysis-authority-delivery/v1/error.schema.json"
+  },
+  "request_max_bytes": 4096,
+  "response_max_bytes": 24576,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "classification": "commercial-confidential",
+  "retention_class": "commercial-authority-durable",
+  "error_reasons": [
+    "invalid",
+    "rate_limited",
+    "temporarily_unavailable",
+    "proof_invalid",
+    "request_conflict",
+    "not_completed"
+  ],
+  "audit_days": 400,
+  "request_response_logging": false,
+  "retry": "fresh-proof-original-canonical-request-meaning",
+  "response_cache_control": "no-store",
+  "operations": "noncreating-original-active-key-exact-request-digest-only",
+  "recovery": "original-committed-identical-result-and-signed-bytes-no-resigning",
+  "current_consent_required": false,
+  "release_reclassification": false,
+  "replacement": false,
+  "source_neutral": true,
+  "error_max_bytes": 4096,
+  "audit_retention_class": "security-audit"
+}

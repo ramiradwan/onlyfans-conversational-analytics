@@ -79,6 +79,7 @@ def _add_tree(
 _DATAS: list[tuple[str, str]] = []
 _DATAS.extend(collect_data_files("tzdata"))
 _DATAS.extend(copy_metadata("tzdata"))
+_DATAS.extend(copy_metadata("rfc8785"))
 for _required_file in _POLICY["required_files"]:
     if _required_file.startswith(_INTERNAL_PREFIX):
         _add_file(_DATAS, _required_file)

@@ -1,0 +1,406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v2/capability-permit-purchase-definitions.schema.json",
+  "title": "Capability permit purchase definitions v2",
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt"
+      ],
+      "properties": {
+        "organization_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "challenge_id",
+        "challenge",
+        "signature"
+      ],
+      "properties": {
+        "challenge_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "challenge": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "signature": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url64"
+        }
+      }
+    },
+    "quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quote_id",
+        "offer_version_id",
+        "display_name",
+        "capability",
+        "catalog_version",
+        "credit_cost",
+        "execution_limit",
+        "prepared_at",
+        "expires_at"
+      ],
+      "properties": {
+        "quote_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "offer_version_id": {
+          "const": "one-saved-insight-v1"
+        },
+        "display_name": {
+          "const": "One saved insight"
+        },
+        "capability": {
+          "const": "analysis-run"
+        },
+        "catalog_version": {
+          "const": "insight-sandbox-v1"
+        },
+        "credit_cost": {
+          "const": 10
+        },
+        "execution_limit": {
+          "const": 1
+        },
+        "prepared_at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4102444800
+        },
+        "expires_at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4102444800
+        }
+      }
+    },
+    "pack": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "offer_version_id",
+            "credits",
+            "currency",
+            "gross_amount_minor"
+          ],
+          "properties": {
+            "offer_version_id": {
+              "const": "credits-20-eur-sandbox-v1"
+            },
+            "credits": {
+              "const": 20
+            },
+            "currency": {
+              "const": "EUR"
+            },
+            "gross_amount_minor": {
+              "const": 200
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "offer_version_id",
+            "credits",
+            "currency",
+            "gross_amount_minor"
+          ],
+          "properties": {
+            "offer_version_id": {
+              "const": "credits-50-eur-sandbox-v1"
+            },
+            "credits": {
+              "const": 50
+            },
+            "currency": {
+              "const": "EUR"
+            },
+            "gross_amount_minor": {
+              "const": 500
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "offer_version_id",
+            "credits",
+            "currency",
+            "gross_amount_minor"
+          ],
+          "properties": {
+            "offer_version_id": {
+              "const": "credits-100-eur-sandbox-v1"
+            },
+            "credits": {
+              "const": 100
+            },
+            "currency": {
+              "const": "EUR"
+            },
+            "gross_amount_minor": {
+              "const": 1000
+            }
+          }
+        }
+      ]
+    },
+    "prepareRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "offer_version_id",
+        "purchase_session_reference"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/binding"
+        },
+        "offer_version_id": {
+          "const": "one-saved-insight-v1"
+        },
+        "purchase_session_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "confirmRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "decision_reference",
+        "decision_digest",
+        "quote_id",
+        "quote_digest",
+        "consent",
+        "top_up_offer_id",
+        "purchase_session_reference"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/binding"
+        },
+        "decision_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "decision_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "quote_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "quote_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "consent": {
+          "const": "acquire-one-permit"
+        },
+        "top_up_offer_id": {
+          "enum": [
+            "none",
+            "credits-20-eur-sandbox-v1",
+            "credits-50-eur-sandbox-v1",
+            "credits-100-eur-sandbox-v1"
+          ]
+        },
+        "purchase_session_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "statusRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "cancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "deliverRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "recoverRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase:v2"
+        },
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/binding"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_reference",
+        "actor_reference",
+        "expires_at",
+        "decision_digest",
+        "authenticated_at"
+      ],
+      "properties": {
+        "decision_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "actor_reference": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "expires_at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4102444800
+        },
+        "decision_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "authenticated_at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4102444800
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "quote_id",
+        "quote_digest",
+        "permit_id",
+        "issuance_id",
+        "capability_permit",
+        "committed_at"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "quote_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "quote_digest": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "permit_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "issuance_id": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "capability_permit": {
+          "$ref": "../../common/v1/definitions.schema.json#/$defs/compactJws"
+        },
+        "committed_at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4102444800
+        }
+      }
+    }
+  }
+}

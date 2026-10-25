@@ -838,3 +838,346 @@ contracts:
     openapi_operations:
     - issueCapabilityLicenseDeliveryRecoveryProofChallenge
     governing_adr: docs/adr/0034-recover-committed-activation-delivery.md
+  - id: capability-permit-purchase-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Acquire one generic single-execution permit with native consent and exact registered-key delivery
+      in the isolated test sandbox.
+    profile: urn:bridge-clean:capability-permit-purchase:v1
+    classification: cross-plane-security
+    retention_class: commercial-authority-durable
+    max_request_bytes: 4096
+    max_response_bytes: 20000
+    schema_paths:
+    - schemas/commercial/v1/capability-permit-purchase-definitions.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-prepare-request.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-confirm-request.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-status-request.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-cancel-request.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-deliver-request.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-recover-request.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-view-response.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-delivery-response.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-error.schema.json
+    openapi_operations:
+    - prepareCapabilityPermitPurchase
+    - confirmCapabilityPermitPurchase
+    - readCapabilityPermitPurchase
+    - cancelCapabilityPermitPurchase
+    - deliverCapabilityPermitPurchase
+    - recoverCapabilityPermitPurchase
+    governing_adr: docs/adr/0039-native-single-permit-purchases.md
+  - id: capability-permit-purchase-proof-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Acquire one generic single-execution permit with native consent and exact registered-key delivery
+      in the isolated test sandbox.
+    profile: urn:bridge-clean:capability-permit-purchase-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 4096
+    max_response_bytes: 20000
+    schema_paths:
+    - schemas/commercial/v1/capability-permit-purchase-proof-challenge-request.schema.json
+    - schemas/commercial/v1/capability-permit-purchase-proof-challenge-response.schema.json
+    openapi_operations:
+    - issueCapabilityPermitPurchaseProofChallenge
+    governing_adr: docs/adr/0039-native-single-permit-purchases.md
+  - id: capability-purchase-session-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Proof-bound five-minute test purchase authentication without reusing per-operation
+      consent.
+    profile: urn:bridge-clean:capability-purchase-session:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 4096
+    max_response_bytes: 20000
+    schema_paths:
+    - schemas/commercial/v1/capability-purchase-session-definitions.schema.json
+    - schemas/commercial/v1/capability-purchase-session-start-request.schema.json
+    - schemas/commercial/v1/capability-purchase-session-status-request.schema.json
+    - schemas/commercial/v1/capability-purchase-session-wallet-request.schema.json
+    - schemas/commercial/v1/capability-purchase-session-end-request.schema.json
+    - schemas/commercial/v1/capability-purchase-session-view-response.schema.json
+    - schemas/commercial/v1/capability-purchase-session-wallet-response.schema.json
+    - schemas/commercial/v1/capability-purchase-session-error.schema.json
+    openapi_operations:
+    - startCapabilityPurchaseSession
+    - readCapabilityPurchaseSession
+    - readCapabilityPurchaseSessionWallet
+    - endCapabilityPurchaseSession
+    governing_adr: docs/adr/0040-proof-bound-sandbox-purchase-sessions.md
+  - id: capability-purchase-session-proof-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Proof-bound five-minute test purchase authentication without reusing per-operation
+      consent.
+    profile: urn:bridge-clean:capability-purchase-session-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 4096
+    max_response_bytes: 20000
+    schema_paths:
+    - schemas/commercial/v1/capability-purchase-session-proof-challenge-request.schema.json
+    - schemas/commercial/v1/capability-purchase-session-proof-challenge-response.schema.json
+    openapi_operations:
+    - issueCapabilityPurchaseSessionProofChallenge
+    governing_adr: docs/adr/0040-proof-bound-sandbox-purchase-sessions.md
+  - id: capability-permit-purchase-v2
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Acquire one generic permit using an exact fresh native decision bound to
+      original purchase-session admission.
+    profile: urn:bridge-clean:capability-permit-purchase:v2
+    classification: cross-plane-security
+    retention_class: commercial-authority-durable
+    max_request_bytes: 4096
+    max_response_bytes: 20000
+    schema_paths:
+    - schemas/commercial/v2/capability-permit-purchase-definitions.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-prepare-request.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-confirm-request.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-status-request.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-cancel-request.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-deliver-request.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-recover-request.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-view-response.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-delivery-response.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-error.schema.json
+    openapi_operations:
+    - prepareCapabilityPermitPurchaseV2
+    - confirmCapabilityPermitPurchaseV2
+    - readCapabilityPermitPurchaseV2
+    - cancelCapabilityPermitPurchaseV2
+    - deliverCapabilityPermitPurchaseV2
+    - recoverCapabilityPermitPurchaseV2
+    governing_adr: docs/adr/0040-proof-bound-sandbox-purchase-sessions.md
+  - id: capability-permit-purchase-proof-v2
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Acquire one generic permit using an exact fresh native decision bound to
+      original purchase-session admission.
+    profile: urn:bridge-clean:capability-permit-purchase-proof:v2
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 4096
+    max_response_bytes: 20000
+    schema_paths:
+    - schemas/commercial/v2/capability-permit-purchase-proof-challenge-request.schema.json
+    - schemas/commercial/v2/capability-permit-purchase-proof-challenge-response.schema.json
+    openapi_operations:
+    - issueCapabilityPermitPurchaseProofChallengeV2
+    governing_adr: docs/adr/0040-proof-bound-sandbox-purchase-sessions.md
+
+  - id: text-analysis-license-v1
+    owner: commercial
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Versioned text-analysis-license under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-license:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 0
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/text-analysis-license/v1/payload.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-preview-v1
+    owner: commercial
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Versioned text-analysis-preview under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-preview:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 0
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/text-analysis-preview/v1/payload.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-authority-issuance-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Versioned text-analysis-authority-issuance under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-authority-issuance:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 8192
+    max_response_bytes: 24576
+    schema_paths:
+    - schemas/text-analysis-authority-issuance/v1/definitions.schema.json
+    - schemas/text-analysis-authority-issuance/v1/license-request.schema.json
+    - schemas/text-analysis-authority-issuance/v1/preview-request.schema.json
+    - schemas/text-analysis-authority-issuance/v1/error.schema.json
+    openapi_operations:
+    - issueTextAnalysisLicense
+    - issueTextAnalysisPreview
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-license-issuance-proof-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Versioned text-analysis-license-issuance-proof under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-license-issuance-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 12288
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/text-analysis-license-issuance-proof/v1/challenge-request.schema.json
+    - schemas/text-analysis-license-issuance-proof/v1/challenge-response.schema.json
+    - schemas/text-analysis-license-issuance-proof/v1/error.schema.json
+    openapi_operations:
+    - issueTextAnalysisLicenseIssuanceProofChallenge
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-preview-issuance-proof-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Versioned text-analysis-preview-issuance-proof under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-preview-issuance-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 12288
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/text-analysis-preview-issuance-proof/v1/challenge-request.schema.json
+    - schemas/text-analysis-preview-issuance-proof/v1/challenge-response.schema.json
+    - schemas/text-analysis-preview-issuance-proof/v1/error.schema.json
+    openapi_operations:
+    - issueTextAnalysisPreviewIssuanceProofChallenge
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-authority-delivery-v1
+    owner: commercial
+    producer: commercial-control-plane
+    consumer: local-product
+    purpose: Versioned text-analysis-authority-delivery under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-authority-delivery:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 4096
+    max_response_bytes: 24576
+    schema_paths:
+    - schemas/text-analysis-authority-delivery/v1/definitions.schema.json
+    - schemas/text-analysis-authority-delivery/v1/deliver-request.schema.json
+    - schemas/text-analysis-authority-delivery/v1/recover-request.schema.json
+    - schemas/text-analysis-authority-delivery/v1/response.schema.json
+    - schemas/text-analysis-authority-delivery/v1/error.schema.json
+    openapi_operations:
+    - deliverTextAnalysisAuthority
+    - recoverTextAnalysisAuthority
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-authority-delivery-proof-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Versioned text-analysis-authority-delivery-proof under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-authority-delivery-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 8192
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/text-analysis-authority-delivery-proof/v1/challenge-request.schema.json
+    - schemas/text-analysis-authority-delivery-proof/v1/challenge-response.schema.json
+    - schemas/text-analysis-authority-delivery-proof/v1/error.schema.json
+    openapi_operations:
+    - issueTextAnalysisAuthorityDeliveryProofChallenge
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-preview-output-policy-v1
+    owner: contracts
+    producer: contracts
+    consumer: local-product
+    purpose: Versioned text-analysis-preview-output-policy under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-preview-output-policy:v1
+    classification: public-release
+    retention_class: immutable-public-release
+    max_request_bytes: 0
+    max_response_bytes: 256
+    schema_paths:
+    - schemas/text-analysis-preview-output-policy/v1/policy.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-supported-profiles-v1
+    owner: contracts
+    producer: contracts
+    consumer: local-product
+    purpose: Versioned text-analysis-supported-profiles under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-supported-profiles:v1
+    classification: public-release
+    retention_class: immutable-public-release
+    max_request_bytes: 3072
+    max_response_bytes: 3072
+    schema_paths:
+    - schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-release-identity-v1
+    owner: contracts
+    producer: contracts
+    consumer: local-product
+    purpose: Versioned text-analysis-release-identity under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-release-identity:v1
+    classification: public-release
+    retention_class: immutable-public-release
+    max_request_bytes: 1024
+    max_response_bytes: 1024
+    schema_paths:
+    - schemas/text-analysis-release-identity/v1/release-identity.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-preview-acquisition-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Versioned text-analysis-preview-acquisition under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-preview-acquisition:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 8192
+    max_response_bytes: 16384
+    schema_paths:
+    - schemas/text-analysis-preview-acquisition/v1/definitions.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/prepare-request.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/read-request.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/submit-request.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/prepare-response.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/read-response.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/submit-response.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/admit-request.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/admit-response.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/error.schema.json
+    openapi_operations:
+    - prepareTextAnalysisPreviewAcquisition
+    - readTextAnalysisPreviewAcquisition
+    - submitTextAnalysisPreviewAcquisition
+    - openTextAnalysisPreviewAcquisition
+    - admitTextAnalysisPreviewAcquisition
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: text-analysis-preview-acquisition-proof-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Versioned text-analysis-preview-acquisition-proof under isolated text-analysis authority.
+    profile: urn:bridge-clean:text-analysis-preview-acquisition-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 12288
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/text-analysis-preview-acquisition/v1/proof-challenge-request.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/proof-challenge-response.schema.json
+    - schemas/text-analysis-preview-acquisition/v1/proof-error.schema.json
+    openapi_operations:
+    - issueTextAnalysisPreviewAcquisitionProofChallenge
+    governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
