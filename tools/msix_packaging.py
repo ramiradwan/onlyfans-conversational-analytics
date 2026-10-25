@@ -235,7 +235,8 @@ def _validate_assets() -> None:
             raise ValueError("MSIX logo is missing or has the wrong dimensions")
 
 
-def prepare_payload(stage: Path, working: Path, profile_path: Path) -> dict:
+def prepare_payload(stage: Path, working: Path, profile_path: Path, *,
+                    engine_quote_inputs: Path | None = None, engine_bundle: Path | None = None) -> dict:
     profile = load_profile(profile_path)
     # Qualification is first: adapters cannot turn a deficient stage into a pass.
     paths = installed_runtime_files(stage, "msix")
@@ -244,6 +245,13 @@ def prepare_payload(stage: Path, working: Path, profile_path: Path) -> dict:
     if release.get("version") != profile["application_version"] or release.get("architecture") != "x64":
         raise ValueError("desktop profile disagrees with the qualified runtime version or architecture")
     _validate_assets()
+    descriptor_bytes = canonical_json(desktop_descriptor(profile, sha256(profile_path)))
+    quote_bytes = None
+    if engine_quote_inputs is not None:
+        from tools import optional_msix as optional
+        if engine_bundle is None:
+            raise ValueError("Engine quote requires its final signed external bundle")
+        quote_bytes = canonical_json(optional.acquisition_quote(profile, descriptor_bytes, engine_quote_inputs, engine_bundle))
     if working.exists():
         raise ValueError("MSIX preparation requires a fresh directory")
     working_resolved = working.resolve()
@@ -275,13 +283,19 @@ def prepare_payload(stage: Path, working: Path, profile_path: Path) -> dict:
         shutil.copyfile(stage / path, destination)
     (payload / "AppxManifest.xml").write_bytes(render_manifest(profile))
     shutil.copytree(CONFIG_ROOT / "Assets", payload / "Assets")
-    (app / "desktop-release.json").write_bytes(canonical_json(desktop_descriptor(profile, sha256(profile_path))))
+    (app / "desktop-release.json").write_bytes(descriptor_bytes)
+    if quote_bytes is not None:
+        (app / "engine-acquisition-quote.json").write_bytes(quote_bytes)
     agent = read_json(stage / "Agent/build-meta.json")
     receipt = {
         "schema": "ofca-msix-preparation/v1", "profile_sha256": sha256(profile_path),
         "source_runtime_files": records, "runtime_release": release,
         "linked_agent": {key: agent[key] for key in ("schema", "extension_version", "legal_bindings", "signing_parameters") if key in agent},
     }
+    if quote_bytes is not None:
+        receipt["engine_acquisition_quote"] = dict(inputs=str(engine_quote_inputs.resolve()),
+            inputs_sha256=sha256(engine_quote_inputs), engine_bundle=str(engine_bundle.resolve()),
+            quote_sha256=hashlib.sha256(quote_bytes).hexdigest())
     (working / "preparation.json").write_bytes(canonical_json(receipt))
     return {"payload": str(payload), "package_version": package_version(profile["release_sequence"]),
             "package_name": profile["identity"]["name"]}
@@ -302,6 +316,18 @@ def seal_payload(working: Path, profile_path: Path, makeappx: Path) -> dict:
             raise ValueError("runtime changed after stage qualification")
     expected = {"app/" + record["path"] for record in receipt["source_runtime_files"]}
     expected.update({"app/desktop-release.json", "app/sha256sums.txt", "AppxManifest.xml"})
+    quote_preparation = receipt.get("engine_acquisition_quote")
+    if quote_preparation is not None:
+        from tools import optional_msix as optional
+        if sha256(Path(quote_preparation["inputs"])) != quote_preparation["inputs_sha256"]:
+            raise ValueError("Engine quote inputs changed after preparation")
+        quote_bytes = (app / "engine-acquisition-quote.json").read_bytes()
+        current = optional.acquisition_quote(profile, (app / "desktop-release.json").read_bytes(),
+            Path(quote_preparation["inputs"]), Path(quote_preparation["engine_bundle"]))
+        if (hashlib.sha256(quote_bytes).hexdigest() != quote_preparation["quote_sha256"]
+                or quote_bytes != canonical_json(current)):
+            raise ValueError("Engine quote changed after preparation")
+        expected.add(optional.QUOTE_PATH)
     expected.update("Assets/" + name for name in ASSETS)
     actual = {path.relative_to(payload).as_posix() for path in payload.rglob("*") if path.is_file()}
     if expected != actual:
@@ -363,7 +389,8 @@ def installed_archive_path(value: str) -> str:
     return decoded
 
 
-def verify_archive(package: Path, inventory_path: Path, profile_path: Path, *, production: bool = False) -> dict:
+def verify_archive(package: Path, inventory_path: Path, profile_path: Path, *, production: bool = False,
+                   engine_bundle: Path | None = None) -> dict:
     if package.suffix.lower() != ".msix" or not package.is_file():
         raise ValueError("verification requires an MSIX file")
     profile = load_profile(profile_path, production=production)
@@ -419,6 +446,14 @@ def verify_archive(package: Path, inventory_path: Path, profile_path: Path, *, p
                 inventory.get("installed_artifact") != profile["servicing"]["installed_artifact"]
                 or inventory.get("desktop_descriptor_sha256") != hashlib.sha256(archive.read("app/desktop-release.json")).hexdigest()):
             raise ValueError("v2 descriptor or artifact layout differs from its inventory")
+        from tools import optional_msix as optional
+        if optional.QUOTE_PATH in expected:
+            member = by_installed_path[optional.QUOTE_PATH]
+            if not 0 < member.file_size <= optional.QUOTE_MAXIMUM:
+                raise ValueError("Engine quote exceeds its bound")
+            quote = optional.validate_acquisition_quote(archive.read(member), archive.read("app/desktop-release.json"), profile)
+            if engine_bundle is not None:
+                optional.verify_quote_artifact(quote, engine_bundle, profile)
     return {"schema": "ofca-msix-verification/v1", "verification_scope": "payload-inventory", "signature": "not-checked",
             "package_sha256": sha256(package),
             "profile_sha256": sha256(profile_path), "inventory_sha256": sha256(inventory_path),
@@ -466,7 +501,7 @@ def render_appinstaller(profile: dict, package_uri: str) -> bytes:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("validate-profile", "prepare", "seal", "verify", "verify-unpacked", "appinstaller", "desktop-descriptor",
-                                             "related-mapping", "artifact-set", "release-appinstaller"))
+                                             "related-mapping", "artifact-set", "release-appinstaller", "engine-payload-inventory"))
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--stage", type=Path)
     parser.add_argument("--working", type=Path)
@@ -478,18 +513,23 @@ def main() -> int:
     parser.add_argument("--package-uri")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--engine-bundle", type=Path)
+    parser.add_argument("--engine-acquisition-quote-inputs", type=Path)
     parser.add_argument("--artifact-set", type=Path)
     options = parser.parse_args()
     try:
         if options.operation == "validate-profile":
             profile = load_profile(options.profile, production=options.production)
             result = {"package_version": package_version(profile["release_sequence"]), "identity": profile["identity"]}
-        elif options.operation in {"related-mapping", "artifact-set", "release-appinstaller"}:
+        elif options.operation in {"related-mapping", "artifact-set", "release-appinstaller", "engine-payload-inventory"}:
             from tools import optional_msix as optional
             profile = load_profile(options.profile, production=options.production)
             if profile["schema"] != "ofca-msix-package-profile/v2" or options.output is None:
                 raise ValueError("v2 artifact operation requires an output and explicit profile")
-            if options.operation == "related-mapping":
+            if options.operation == "engine-payload-inventory":
+                if options.engine_bundle is None or profile["servicing"]["installed_artifact"]["kind"] != "related_bundle":
+                    raise ValueError("Engine inventory requires the exact related external bundle")
+                options.output.write_bytes(canonical_json(optional.engine_payload_inventory(options.engine_bundle, profile)))
+            elif options.operation == "related-mapping":
                 if options.engine_bundle is None or profile["servicing"]["installed_artifact"]["kind"] != "related_bundle":
                     raise ValueError("related mapping requires the external Engine bundle")
                 optional.verify_engine_bundle(options.engine_bundle, profile)
@@ -514,7 +554,8 @@ def main() -> int:
         elif options.operation == "prepare":
             if options.stage is None or options.working is None:
                 raise ValueError("prepare requires stage and working directories")
-            result = prepare_payload(options.stage, options.working, options.profile)
+            result = prepare_payload(options.stage, options.working, options.profile,
+                engine_quote_inputs=options.engine_acquisition_quote_inputs, engine_bundle=options.engine_bundle)
         elif options.operation == "seal":
             if options.working is None or options.makeappx is None:
                 raise ValueError("seal requires working directory and MakeAppx")
@@ -523,7 +564,8 @@ def main() -> int:
         elif options.operation == "verify":
             if options.package is None or options.inventory is None:
                 raise ValueError("verify requires package and inventory")
-            result = verify_archive(options.package, options.inventory, options.profile, production=options.production)
+            result = verify_archive(options.package, options.inventory, options.profile, production=options.production,
+                engine_bundle=options.engine_bundle)
         elif options.operation == "verify-unpacked":
             if options.directory is None or options.inventory is None:
                 raise ValueError("verify-unpacked requires directory and inventory")

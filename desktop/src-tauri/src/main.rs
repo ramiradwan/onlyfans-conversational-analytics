@@ -12,6 +12,8 @@ mod engine_acquisition;
 #[cfg(windows)]
 mod engine_acquisition_broker;
 #[cfg(windows)]
+mod engine_acquisition_quote;
+#[cfg(windows)]
 mod frame;
 mod handoff_contract;
 #[cfg(windows)]
@@ -89,28 +91,66 @@ async fn desktop_update_status(
 
 #[cfg(windows)]
 #[tauri::command]
-fn desktop_engine_acquisition_start(
+async fn desktop_engine_acquisition_review(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+) -> Result<engine_acquisition_quote::Review, &'static str> {
+    use std::sync::atomic::Ordering;
+    desktop_state(window.clone(), state.clone())?;
+    let owner = state.inner().clone();
+    if owner.engine_acquisition.busy() {
+        return Err("optional_acquisition_busy");
+    }
+    owner
+        .update_check_active
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .map_err(|_| "update_check_in_progress")?;
+    let guard = UpdateCheckGuard(owner.clone());
+    let review = tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        engine_acquisition_quote::review(&|| {
+            owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
+        })
+    })
+    .await
+    .map_err(|_| "optional_quote_unavailable")??;
+    desktop_state(window, state)?;
+    Ok(review)
+}
+#[cfg(windows)]
+#[tauri::command]
+async fn desktop_engine_acquisition_start(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, std::sync::Arc<host::Host>>,
     explicit_selection: engine_acquisition::Selection,
+    review_digest: String,
 ) -> Result<engine_acquisition::Status, &'static str> {
     use std::sync::atomic::Ordering;
-    desktop_state(window, state.clone())?;
+    desktop_state(window.clone(), state.clone())?;
+    if explicit_selection != engine_acquisition::Selection::Module {
+        return Err("optional_preview_unavailable");
+    }
     let owner = state.inner().clone();
     owner
         .update_check_active
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .map_err(|_| "update_check_in_progress")?;
     let guard = UpdateCheckGuard(owner.clone());
-    if owner.admitted.load(Ordering::SeqCst) && !owner.quitting.load(Ordering::SeqCst) {
-        engine_acquisition_broker::admitted_servicing();
-    }
-    let release = owner.release.clone();
-    let acquisition = owner.engine_acquisition.clone();
-    acquisition.start(explicit_selection, release, move || {
-        let _hold = &guard;
-        owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        if owner.admitted.load(Ordering::SeqCst) && !owner.quitting.load(Ordering::SeqCst) {
+            engine_acquisition_broker::admitted_servicing();
+        }
+        let release = owner.release.clone();
+        let acquisition = owner.engine_acquisition.clone();
+        acquisition.start(explicit_selection, release, review_digest, move || {
+            let _hold = &guard;
+            owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
+        })
     })
+    .await
+    .map_err(|_| "optional_owner_unavailable")??;
+    desktop_state(window, state)?;
+    Ok(result)
 }
 
 #[cfg(windows)]
@@ -300,6 +340,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_state,
             desktop_update_status,
+            desktop_engine_acquisition_review,
             desktop_engine_acquisition_start,
             desktop_engine_acquisition_status,
             desktop_engine_acquisition_cancel,

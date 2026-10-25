@@ -83,7 +83,7 @@ The following modules partition the repository's production namespaces:
 | `analytics-analyzers-metrics` | Orange | Derived | Derived feature analytics, metrics calculations, and enrichment analyzers consuming canonical read models or graph projections (`app/analytics/analyzers/**`, `app/analytics/metrics/**`). |
 | `bridge-presentation` | Green | Presentation | User-facing React presentation components, views, layouts, design system elements, and visual harnesses (`frontend/src/components/**`, `frontend/src/views/**`). |
 | `optional-nlp-worker` | Orange | Derived | Optional native computation only, with bounded private-pipe inputs and outputs (`native/nlp-worker/**`); no writer or publication authority. |
-| `bridge-orchestration` | Yellow | Presentation | Bridge client-side state management, WebSocket session synchronization, authenticated REST API integration, test suites, and build tooling (`frontend/src/store/**`, `frontend/src/services/**`). |
+| `bridge-orchestration` | Yellow | Presentation | Bridge client-side state management, WebSocket session synchronization, authenticated REST API integration, native setup adapters, test suites, and build tooling (`frontend/src/store/**`, `frontend/src/services/**`, `frontend/src/api/engineAcquisition.ts`). |
 
 ## Non-production policy
 

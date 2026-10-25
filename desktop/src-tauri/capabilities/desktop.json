@@ -23,6 +23,7 @@
   "permissions": [
     "allow-desktop-state",
     "allow-desktop-update-status",
+    "allow-desktop-engine-acquisition-review",
     "allow-desktop-engine-acquisition-start",
     "allow-desktop-engine-acquisition-status",
     "allow-desktop-engine-acquisition-cancel",

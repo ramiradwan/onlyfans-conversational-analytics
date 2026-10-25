@@ -7,7 +7,8 @@ param(
     [string] $WindowsSdkVersion = '10.0.26100.0',
     [string] $MakeAppx = '',
     [string] $PackageUri = '',
-    [string] $EngineBundle = ''
+    [string] $EngineBundle = '',
+    [string] $EngineAcquisitionQuoteInputs = ''
 )
 
 Set-StrictMode -Version Latest
@@ -58,7 +59,12 @@ $profileDocument = Get-Content -Raw -LiteralPath $PackageProfile | ConvertFrom-J
 $v2 = $profileDocument.schema -ceq 'ofca-msix-package-profile/v2'
 if (-not $v2 -and $EngineBundle) { throw 'V1 release cannot carry an optional Engine artifact' }
 $working = Join-Path $OutputRoot 'working'
-$prepared = Invoke-MsixPython -Arguments @('prepare', '--stage', $StagingRoot, '--working', $working, '--profile', $PackageProfile)
+$prepareArguments = @('prepare', '--stage', $StagingRoot, '--working', $working, '--profile', $PackageProfile)
+if ($EngineAcquisitionQuoteInputs) {
+    if (-not $EngineBundle) { throw 'Engine quote requires its independently admitted final signed bundle' }
+    $prepareArguments += @('--engine-acquisition-quote-inputs', $EngineAcquisitionQuoteInputs, '--engine-bundle', $EngineBundle)
+}
+$prepared = Invoke-MsixPython -Arguments $prepareArguments
 & (Join-Path $projectRoot 'packaging/write-digests.ps1') -Directory (Join-Path $prepared.payload 'app')
 $sealed = Invoke-MsixPython -Arguments @('seal', '--working', $working, '--profile', $PackageProfile, '--makeappx', $MakeAppx)
 $stem = "$($profile.identity.name)_$($profile.package_version)_x64"
@@ -72,7 +78,9 @@ $inventoryPath = Join-Path $OutputRoot "$stem.inventory.json"
 $profilePath = Join-Path $OutputRoot "$stem.profile.json"
 Copy-Item -LiteralPath $sealed.inventory -Destination $inventoryPath
 Copy-Item -LiteralPath $PackageProfile -Destination $profilePath
-$verified = Invoke-MsixPython -Arguments @('verify', '--package', $packagePath, '--inventory', $inventoryPath, '--profile', $profilePath)
+$verifyArguments = @('verify', '--package', $packagePath, '--inventory', $inventoryPath, '--profile', $profilePath)
+if ($EngineAcquisitionQuoteInputs) { $verifyArguments += @('--engine-bundle', $EngineBundle) }
+$verified = Invoke-MsixPython -Arguments $verifyArguments
 $null = Invoke-MsixPython -Arguments @('verify-unpacked', '--directory', (Join-Path $working 'unpacked'), '--inventory', $inventoryPath, '--profile', $profilePath)
 $artifactSet = $null
 $artifactSetPath = Join-Path $OutputRoot "$stem.artifact-set.json"
@@ -84,6 +92,10 @@ if ($v2) {
         $engineName = 'TextAnalysisEngine_' + $engineVersion + '_x64.msixbundle'
         $enginePath = Join-Path $OutputRoot $engineName
         Copy-Item -LiteralPath $EngineBundle -Destination $enginePath
+        if ($EngineAcquisitionQuoteInputs) {
+            $null = Invoke-MsixPython -Arguments @('verify', '--package', $packagePath, '--inventory', $inventoryPath,
+                '--profile', $profilePath, '--engine-bundle', $enginePath)
+        }
         $mapping = Join-Path $working 'related.map'
         $null = Invoke-MsixPython -Arguments @('related-mapping','--profile',$profilePath,'--engine-bundle',$enginePath,'--output',$mapping)
         $bundleInputs = Join-Path $working 'bundle-inputs'

@@ -802,6 +802,7 @@
         "frontend/public/setup-theme-init.js",
         "frontend/src/store/**",
         "frontend/src/services/**",
+        "frontend/src/api/engineAcquisition.ts",
         "frontend/src/analytics/**",
         "frontend/src/config/**",
         "frontend/src/hooks/**",
@@ -820,7 +821,7 @@
         "frontend/eslint.config.js",
         "frontend/knip.json"
       ],
-      "role": "Bridge client-side state management, WebSocket session synchronization, authenticated REST API integration, test suites, and build tooling.",
+      "role": "Bridge client-side state management, WebSocket session synchronization, authenticated REST API integration, native setup adapters, test suites, and build tooling.",
       "authority": "presentation",
       "zone": "yellow",
       "protected_invariants": [
@@ -828,12 +829,14 @@
       ],
       "permitted_inputs": [
         "Brain WebSocket delta and snapshot frames",
-        "REST analytics responses"
+        "REST analytics responses",
+        "native Engine installation status and review metadata"
       ],
       "permitted_outputs": [
         "Bridge store state",
         "resync requests",
-        "authenticated REST requests"
+        "authenticated REST requests",
+        "explicit native Engine setup requests"
       ]
     },
     {

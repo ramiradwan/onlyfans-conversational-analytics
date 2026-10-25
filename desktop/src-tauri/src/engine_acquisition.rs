@@ -211,32 +211,46 @@ impl Owner {
         self: &Arc<Self>,
         selection: Selection,
         release: Option<DesktopRelease>,
+        review_digest: String,
         cancelled: impl Fn() -> bool + Send + 'static,
     ) -> Result<Status, &'static str> {
+        if selection != Selection::Module {
+            return Err("optional_preview_unavailable");
+        }
+        if !crate::worker_host::hex(&review_digest, 64) {
+            return Err("optional_quote_stale");
+        }
         if self.remote {
             if cancelled() {
                 return Err("optional_cancelled");
             }
-            return crate::engine_acquisition_broker::start(&self.data, selection, &cancelled);
+            return crate::engine_acquisition_broker::start(
+                &self.data,
+                selection,
+                &review_digest,
+                &cancelled,
+            );
         }
-        self.spawn_work(move |owner, id| {
-            platform::execute(owner, selection, release.as_ref(), id, &|| {
-                owner.cancel.load(Ordering::SeqCst) || cancelled()
-            })
-        })
+        let _ = release;
+        Err("optional_broker_required")
     }
     pub(crate) fn start_local(
         self: &Arc<Self>,
         selection: Selection,
         release: DesktopRelease,
         id: String,
+        review: crate::engine_acquisition_quote::Binding,
     ) -> Result<Status, &'static str> {
+        if selection != Selection::Module || !review.valid() {
+            return Err("optional_quote_stale");
+        }
         self.spawn_work_id(Some(id), move |owner, id| {
-            platform::execute(owner, selection, Some(&release), id, &|| {
+            platform::execute(owner, selection, Some(&release), id, &review, &|| {
                 owner.cancel.load(Ordering::SeqCst)
             })
         })
     }
+    #[cfg(test)]
     fn spawn_work(
         self: &Arc<Self>,
         work: impl FnOnce(&Owner, &str) -> Result<bool, platform::Failure> + Send + 'static,
@@ -343,6 +357,30 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<Selection>(&format!("\"{value}\"")).is_err());
         }
+    }
+    #[test]
+    fn fresh_start_requires_review_and_never_uses_a_local_fallback() {
+        let owner = owner();
+        assert_eq!(
+            owner
+                .start(Selection::Preview, None, "a".repeat(64), || false)
+                .unwrap_err(),
+            "optional_preview_unavailable"
+        );
+        assert_eq!(
+            owner
+                .start(Selection::Module, None, String::new(), || false)
+                .unwrap_err(),
+            "optional_quote_stale"
+        );
+        assert_eq!(
+            owner
+                .start(Selection::Module, None, "a".repeat(64), || false)
+                .unwrap_err(),
+            "optional_broker_required"
+        );
+        assert!(owner.inner.lock().unwrap().thread.is_none());
+        assert_eq!(owner.status().state, Phase::NotRequested);
     }
     #[test]
     fn no_owner_or_ready_state_is_created_by_observation() {

@@ -181,6 +181,7 @@ pub(super) fn execute(
     _selection: Selection,
     release: Option<&DesktopRelease>,
     id: &str,
+    review: &crate::engine_acquisition_quote::Binding,
     cancelled: &impl Fn() -> bool,
 ) -> Result<bool, Failure> {
     let previous = crate::servicing_handoff::load_engine_acquisition(&owner.data)
@@ -210,26 +211,12 @@ pub(super) fn execute(
         return Err("optional_direct_release_required".into());
     }
     servicing::automatic_policy(&package)?;
-    let bytes = crate::servicing_feed::read_metadata(
-        actual
-            .app_installer_uri
-            .as_deref()
-            .ok_or("optional_direct_release_required")?,
-        cancelled,
-    )?;
-    match crate::servicing_feed::parse_current_related(&bytes, release, &actual.identity)? {
-        crate::servicing_feed::Target::RelatedBundle {
-            engine_identity,
-            engine,
-            ..
-        } if engine_identity == expected.identity && engine.version == expected.package_version => {
-        }
-        _ => return Err("optional_identity_mismatch".into()),
-    }
+    // Retain protected quote/descriptor files through mutation and settlement.
+    let _review_guard = crate::engine_acquisition_quote::recheck(review, cancelled)?;
+    let catalog = catalog()?;
     if cancelled() {
         return Err("optional_cancelled".into());
     }
-    let catalog = catalog()?;
     let mut journal = Journal {
         schema: "optional-engine-acquisition.v1".into(),
         operation_id: id.into(),

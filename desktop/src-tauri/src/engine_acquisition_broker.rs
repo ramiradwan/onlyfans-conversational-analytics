@@ -29,14 +29,27 @@ pub(crate) struct Journal {
     pub selection: Selection,
     pub terminal: bool,
     pub status: Status,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_digest: Option<String>,
 }
 impl Journal {
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.is_empty() || bytes.len() > MAX_FRAME {
             return Err("optional_reconnect_invalid");
         }
-        let j: Self = crate::worker_host::decode(bytes)?;
-        if j.schema != "optional-engine-reconnect.v1"
+        let raw: serde_json::Value = crate::worker_host::decode(bytes)?;
+        let j: Self =
+            serde_json::from_value(raw.clone()).map_err(|_| "optional_reconnect_invalid")?;
+        let review_valid = match j.schema.as_str() {
+            "optional-engine-reconnect.v1" => !raw
+                .as_object()
+                .is_some_and(|v| v.contains_key("quote_sha256") || v.contains_key("review_digest")),
+            "optional-engine-reconnect.v2" => j.review().is_ok(),
+            _ => false,
+        };
+        if !review_valid
             || !crate::worker_host::hex(&j.nonce, 32)
             || !crate::worker_host::hex(&j.binding, 64)
             || j.broker.pid == 0
@@ -70,6 +83,16 @@ impl Journal {
             return Err("optional_reconnect_invalid");
         }
         Ok(j)
+    }
+    pub(crate) fn review(&self) -> Result<crate::engine_acquisition_quote::Binding> {
+        let binding = crate::engine_acquisition_quote::Binding {
+            quote_sha256: self.quote_sha256.clone().ok_or("optional_quote_stale")?,
+            review_digest: self.review_digest.clone().ok_or("optional_quote_stale")?,
+        };
+        if !binding.valid() {
+            return Err("optional_quote_stale");
+        }
+        Ok(binding)
     }
     pub fn save(&self, data: &Path) -> Result<()> {
         let raw = serde_json::to_vec(self).map_err(|_| "optional_reconnect_invalid")?;
@@ -165,9 +188,10 @@ pub(crate) fn status(data: &Path) -> Status {
 pub(crate) fn start(
     data: &Path,
     selection: Selection,
+    review_digest: &str,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Status> {
-    windows::start(data, selection, cancelled)
+    windows::start(data, selection, review_digest, cancelled)
 }
 // Called only after normal Core startup admission, never by the broker role.
 pub(crate) fn admitted_servicing() {
@@ -240,6 +264,8 @@ mod tests {
     }
     fn journal() -> Journal {
         Journal {
+            quote_sha256: None,
+            review_digest: None,
             schema: "optional-engine-reconnect.v1".into(),
             nonce: "a".repeat(32),
             binding: "b".repeat(64),
@@ -365,5 +391,35 @@ mod tests {
             newer.package.push('x');
             assert!(!current_journal(&j, &j.binding, &newer).unwrap());
         }
+    }
+    #[test]
+    fn versioned_review_journal_is_closed_and_legacy_preview_stays_observable() {
+        let mut old = journal();
+        old.selection = Selection::Preview;
+        let raw = serde_json::to_vec(&old).unwrap();
+        let parsed = Journal::decode(&raw).unwrap();
+        assert_eq!(parsed.selection, Selection::Preview);
+        assert!(parsed.review().is_err());
+        let mut value = serde_json::to_value(&old).unwrap();
+        value["quote_sha256"] = serde_json::Value::Null;
+        assert!(Journal::decode(&serde_json::to_vec(&value).unwrap()).is_err());
+        let mut current = old.clone();
+        current.schema = "optional-engine-reconnect.v2".into();
+        current.quote_sha256 = Some("b".repeat(64));
+        current.review_digest = Some("c".repeat(64));
+        assert!(Journal::decode(&serde_json::to_vec(&current).unwrap())
+            .unwrap()
+            .review()
+            .is_ok());
+        for key in ["quote_sha256", "review_digest"] {
+            let mut value = serde_json::to_value(&current).unwrap();
+            value.as_object_mut().unwrap().remove(key);
+            assert!(Journal::decode(&serde_json::to_vec(&value).unwrap()).is_err());
+            let mut value = serde_json::to_value(&current).unwrap();
+            value[key] = serde_json::Value::Null;
+            assert!(Journal::decode(&serde_json::to_vec(&value).unwrap()).is_err());
+        }
+        current.review_digest = Some("uri".into());
+        assert!(Journal::decode(&serde_json::to_vec(&current).unwrap()).is_err());
     }
 }

@@ -128,6 +128,58 @@ function Get-XmlShape {
     return ,@($Node.NamespaceURI, $Node.LocalName, $attributes.ToArray(), $children.ToArray())
 }
 
+function Assert-EngineAcquisitionQuote {
+    param([byte[]] $Bytes, [byte[]] $DescriptorBytes, $Profile, $ArtifactSet, [byte[]] $EnginePayload)
+    if ($Bytes.Length -eq 0 -or $Bytes.Length -gt 16384 -or
+        ($Bytes.Length -ge 3 -and $Bytes[0] -eq 239 -and $Bytes[1] -eq 187 -and $Bytes[2] -eq 191)) { throw 'Invalid Engine quote bytes' }
+    $quote = Convert-CheckedJson $Bytes 16384
+    Assert-ClosedObject $quote @('schema','desktop_descriptor_sha256','related_set_id','engine','bundle','disk')
+    Assert-ClosedObject $quote.engine @('identity','package_version')
+    Assert-ClosedObject $quote.engine.identity @('name','publisher','family','architecture')
+    Assert-ClosedObject $quote.bundle @('file','uri','sha256','size_bytes')
+    Assert-ClosedObject $quote.disk @('installed_space_budget_bytes','temporary_space_budget_bytes','rollback_space_budget_bytes')
+    if ($quote.schema -isnot [string] -or $quote.desktop_descriptor_sha256 -isnot [string] -or
+        $quote.related_set_id -isnot [string] -or $quote.bundle.file -isnot [string] -or
+        $Profile.schema -cne 'ofca-msix-package-profile/v2' -or $Profile.distribution -cne 'direct-appinstaller' -or
+        $ArtifactSet.kind -cne 'related_bundle' -or $quote.schema -cne 'optional-engine-acquisition-quote/v1' -or
+        $quote.desktop_descriptor_sha256 -cne (Get-ByteDigest $DescriptorBytes) -or
+        $quote.related_set_id -cne $Profile.servicing.installed_artifact.related_set_id -or
+        -not (Test-ReleaseJsonEqual $quote.engine $Profile.servicing.installed_artifact.engine) -or
+        $quote.bundle.sha256 -isnot [string] -or $quote.bundle.sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Engine quote release binding differs' }
+    $artifact = $ArtifactSet.engine.artifact
+    if ($quote.bundle.file -cne $artifact.file -or $quote.bundle.sha256 -cne $artifact.sha256 -or
+        $quote.bundle.size_bytes -cne $artifact.size) { throw 'Engine quote differs from the final signed artifact set' }
+    $suffix = if ($Profile.purpose -ceq 'production') { 'windows/x64/stable/ConversationAnalytics.appinstaller' } else { 'probe.appinstaller' }
+    if (-not $Profile.app_installer_uri.EndsWith($suffix,[StringComparison]::Ordinal)) { throw 'Engine quote has no approved release base' }
+    $base = $Profile.app_installer_uri.Substring(0,$Profile.app_installer_uri.Length-$suffix.Length)
+    $expectedUri = $base + 'packages/' + $artifact.sha256 + '/' + $artifact.file
+    if ($quote.bundle.uri -isnot [string] -or $quote.bundle.uri.Length -gt 2048 -or $quote.bundle.uri -cne $expectedUri) { throw 'Engine quote immutable URI differs' }
+    $maximum = [long]9007199254740991
+    $values = @($quote.bundle.size_bytes,$quote.disk.installed_space_budget_bytes,
+        $quote.disk.temporary_space_budget_bytes,$quote.disk.rollback_space_budget_bytes)
+    foreach ($value in $values) {
+        if (($value -isnot [long] -and $value -isnot [int]) -or $value -lt 0 -or $value -gt $maximum) { throw 'Engine quote requires safe integers' }
+    }
+    if ($values[0] -eq 0 -or $values[1] -eq 0 -or
+        ([long]$values[1]+$values[2]+$values[3]) -gt $maximum) { throw 'Engine quote disk budget is invalid' }
+    $stream = [IO.MemoryStream]::new($EnginePayload,$false)
+    $archive = [IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Read)
+    try {
+        $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $installed = [long]0
+        foreach ($entry in $archive.Entries) {
+            if ($entry.FullName -match '%(?![0-9A-Fa-f]{2})|%(2f|5c)') { throw 'Engine quote payload has an unsafe part escape' }
+            $name = [Ofca.Msix.IdentityReader]::DecodePartName($entry.FullName)
+            if (-not $name -or $name -match '(^/|[\\:\x00-\x1f]|//|(^|/)\.{1,2}(/|$)|/$)' -or
+                -not $names.Add($name) -or (($entry.ExternalAttributes -shr 16) -band 61440) -eq 40960) { throw 'Engine quote payload has unsafe paths or aliases' }
+            if ($name -cin @('AppxBlockMap.xml','[Content_Types].xml','AppxSignature.p7x','AppxMetadata/CodeIntegrity.cat')) { continue }
+            if ($entry.Length -gt $maximum-$installed) { throw 'Engine quote payload size overflow' }
+            $installed += $entry.Length
+        }
+        if ($installed -gt $quote.disk.installed_space_budget_bytes) { throw 'Engine quote installed budget is below the final payload' }
+    } finally { $archive.Dispose(); $stream.Dispose() }
+}
+
 function Test-MsixPayload {
     param([string] $Package, [string] $SignatureContainer = '')
     if (-not $IsWindows) { throw 'MSIX release verification requires Windows' }
@@ -249,6 +301,10 @@ function Test-MsixPayload {
         $expectedShape = ConvertTo-Json -InputObject (Get-XmlShape $template.DocumentElement) -Depth 64 -Compress
         if ($actualShape -cne $expectedShape) { throw 'Manifest identity or policy differs from the approved template' }
         $desktop = Convert-CheckedJson (Read-ZipBytes ($archive.GetEntry('app/desktop-release.json')) 65536) 65536
+        if ($null -ne $archive.GetEntry('app/engine-acquisition-quote.json') -and
+            (-not $v2 -or -not $SignatureContainer -or $profile.servicing.installed_artifact.kind -cne 'related_bundle')) {
+            throw 'Engine quote requires its final related bundle verification'
+        }
         $desktopKeys = @('schema', 'purpose', 'identity', 'application_version', 'package_version', 'profile_sha256', 'update_owner', 'app_installer_uri', 'storage_policy', 'executable_family', 'webview2_minimum_version')
         if ($v2) { $desktopKeys += 'servicing' }
         Assert-ClosedObject $desktop $desktopKeys
@@ -447,6 +503,14 @@ function Test-RelatedArtifacts {
                 file=('TextAnalysisEngine_'+$engine.package_version+'_x64.msixbundle')
                 sha256=(Get-ReleaseHash $EngineBundle);size=([IO.FileInfo]::new($EngineBundle).Length)}}}
         $null = Get-ReleaseArtifactRecords $set $version
+        $coreArchive = [IO.Compression.ZipFile]::OpenRead($corePath)
+        try {
+            $quoteEntry = $coreArchive.GetEntry('app/engine-acquisition-quote.json')
+            if ($null -ne $quoteEntry) {
+                Assert-EngineAcquisitionQuote (Read-ZipBytes $quoteEntry 16384) `
+                    (Read-ZipBytes ($coreArchive.GetEntry('app/desktop-release.json')) 65536) $Profile $set $engineBytes
+            }
+        } finally { $coreArchive.Dispose() }
         $receipt.schema = 'ofca-msix-release-verification/v2'
         $receipt.artifact_set = $set
         $receipt.engine_identity = $engineIdentity
