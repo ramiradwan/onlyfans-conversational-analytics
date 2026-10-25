@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from app.analytics.database import ProjectionsDatabase
 from app.analytics.errors import ProjectionStorageUnavailable
+from app.analytics.nlp_contribution_origins import OriginCheckerUnavailable
 from app.analytics.graph_store import GraphReferentialIntegrityError
 from app.analytics.identity import CanonicalIdentity
 from app.analytics.sqlite_projection_store import (
@@ -54,12 +55,14 @@ class LazySQLiteAnalyticsProjectionStore:
         rollback_retention: int = 1,
         gc_batch_size: int = 8,
         retry_backoff_seconds: float = 0.05,
+        contributions=None,
     ) -> None:
         try:
             self.path = reject_path_aliases(path)
         except PrivateFileSecurityError as error:
             raise ValueError("projection_path_unsafe") from error
         self.activation = activation
+        self.contributions = contributions
         self.canonical_identity_reader = canonical_identity_reader
         self.busy_timeout_ms = busy_timeout_ms
         self.lease_seconds = lease_seconds
@@ -142,6 +145,8 @@ class LazySQLiteAnalyticsProjectionStore:
                 if recover_first:
                     self._quarantine_unlocked()
                 store, file_identity, store_identity = self._open_checked_store()
+            except OriginCheckerUnavailable:
+                raise
             except Exception:
                 if recover_first:
                     self._record_recovery_failure_unlocked()
@@ -149,6 +154,8 @@ class LazySQLiteAnalyticsProjectionStore:
                 try:
                     self._quarantine_unlocked()
                     store, file_identity, store_identity = self._open_checked_store()
+                except OriginCheckerUnavailable:
+                    raise
                 except Exception:
                     self._record_recovery_failure_unlocked()
                     raise ProjectionStorageUnavailable() from None
@@ -559,6 +566,7 @@ class LazySQLiteAnalyticsProjectionStore:
             rollback_retention=self.rollback_retention,
             gc_batch_size=self.gc_batch_size,
             busy_timeout_ms=self.busy_timeout_ms,
+            contributions=self.contributions,
         )
 
     def _quarantine_unlocked(self) -> None:

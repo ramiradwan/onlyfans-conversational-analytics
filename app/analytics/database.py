@@ -198,26 +198,30 @@ class ProjectionsDatabase(ProjectionsSQLite):
         *,
         busy_timeout_ms: int = 5_000,
         migrations_dir: str | Path | None = None,
+        contributions=None,
     ) -> None:
-        self._initialize(path, busy_timeout_ms=busy_timeout_ms, migrations_dir=migrations_dir)
+        self._initialize(path, busy_timeout_ms=busy_timeout_ms, migrations_dir=migrations_dir, contributions=contributions)
         self.migration_runner.run()
 
     @classmethod
     def open_with_validated_read(
         cls, path: str | Path, reader, *, busy_timeout_ms: int = 5_000,
         migrations_dir: str | Path | None = None,
+        contributions=None,
     ):
         """Complete migrations and consume one protected validation snapshot."""
 
         database = cls.__new__(cls)
-        database._initialize(path, busy_timeout_ms=busy_timeout_ms, migrations_dir=migrations_dir)
+        database._initialize(path, busy_timeout_ms=busy_timeout_ms, migrations_dir=migrations_dir, contributions=contributions)
         _, result = database.migration_runner.run_with_validated_read(reader)
         return database, result
 
     def _initialize(
         self, path: str | Path, *, busy_timeout_ms: int,
-        migrations_dir: str | Path | None,
+        migrations_dir: str | Path | None, contributions=None,
     ) -> None:
+        if contributions is not None:
+            self.bind_contribution_origins(contributions.origin_is_live, contributions.origin_epoch)
         super().__init__(
             path,
             busy_timeout_ms=busy_timeout_ms,
@@ -236,6 +240,8 @@ class ProjectionsDatabase(ProjectionsSQLite):
     def connect(self):
         connection = super().connect()
         try:
+            connection.create_function('nlp_origin_live', 5, self._contribution_origin_live)
+            connection.create_function('nlp_origin_epoch', 2, self._contribution_origin_epoch)
             connection.execute("PRAGMA wal_autocheckpoint=0")
             if int(connection.execute("PRAGMA wal_autocheckpoint").fetchone()[0]) != 0:
                 raise RuntimeError("analytics_wal_autocheckpoint_not_disabled")
@@ -243,6 +249,25 @@ class ProjectionsDatabase(ProjectionsSQLite):
         except BaseException:
             connection.close()
             raise
+
+    def _contribution_origin_live(self, *identity):
+        checker = getattr(self, '_contribution_origin_checker', None)
+        try:
+            return None if checker is None else checker(*identity)
+        except Exception:
+            return None
+
+    def _contribution_origin_epoch(self, *identity):
+        checker = getattr(self, '_contribution_epoch_checker', None)
+        try:
+            return None if checker is None else checker(*identity)
+        except Exception:
+            return None
+
+    def bind_contribution_origins(self, checker, epoch_checker):
+        """Bind a trusted current canonical owner; no path is read from stored metadata."""
+        self._contribution_origin_checker = checker
+        self._contribution_epoch_checker = epoch_checker
 
     def retain_wal_anchor(self) -> None:
         """Keep one idle connection open so commits never own last-close checkpointing."""

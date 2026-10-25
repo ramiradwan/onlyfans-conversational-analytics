@@ -454,4 +454,5 @@ class RetentionBoundLazySQLiteAnalyticsProjectionStore(
             gc_batch_size=self.gc_batch_size,
             clock=self._retention_clock,
             busy_timeout_ms=self.busy_timeout_ms,
+            contributions=self.contributions,
         )

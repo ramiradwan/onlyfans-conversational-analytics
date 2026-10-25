@@ -20,6 +20,8 @@ from app.analytics.retention_store import (
     utc_now,
 )
 from app.persistence.projection_activation import ProjectionActivationRepository
+from app.persistence.database import CanonicalSQLite
+from app.persistence.contributions import ContributionRepository
 
 
 ProjectionBackend = Literal["memory", "sqlite"]
@@ -30,6 +32,15 @@ class AnalyticsStores:
     projections: AnalyticsProjectionStore
     graph: GraphReader
     database: ProjectionsDatabase | None = None
+    contributions: ContributionRepository | None = None
+
+
+def create_contribution_reader(database: CanonicalSQLite, *, clock=utc_now):
+    """Compose source-checked recovery from the application-owned canonical store."""
+    if not isinstance(database, CanonicalSQLite):
+        raise ValueError('canonical_database_owner_required')
+    from app.analytics.nlp_contribution_sources import ContributionSourceGuard
+    return ContributionRepository(database, source_guard=ContributionSourceGuard(), clock=lambda: clock().timestamp())
 
 
 def create_analytics_stores(
@@ -37,6 +48,7 @@ def create_analytics_stores(
     *,
     projections_path: str | Path | None = None,
     canonical_path: str | Path | None = None,
+    canonical_database: CanonicalSQLite | None = None,
     activation: ProjectionActivationRepository | None = None,
     canonical_identity_reader: Callable[[str], CanonicalIdentity | None] | None = None,
     busy_timeout_ms: int = 5_000,
@@ -71,6 +83,12 @@ def create_analytics_stores(
         raise ValueError(f"Unsupported analytics persistence backend {backend!r}")
     if projections_path is None:
         raise ValueError("projections_path is required for the sqlite backend")
+    contributions = None
+    if canonical_database is not None:
+        contributions = create_contribution_reader(canonical_database, clock=retention_clock)
+        if canonical_path is not None and Path(canonical_path).resolve() != Path(canonical_database.path).resolve():
+            raise ValueError('canonical_database_owner_mismatch')
+        canonical_path = canonical_database.path
     if canonical_path is not None and (
         Path(projections_path).expanduser().resolve()
         == Path(canonical_path).expanduser().resolve()
@@ -90,10 +108,12 @@ def create_analytics_stores(
             rollback_retention=rollback_retention,
             gc_batch_size=gc_batch_size,
             clock=retention_clock,
+            contributions=contributions,
         )
         return AnalyticsStores(
             projections=projections,
             graph=projections.graph,
+            contributions=contributions,
         )
     projections = RetentionBoundSQLiteAnalyticsProjectionStore(
         projections_path,
@@ -104,9 +124,11 @@ def create_analytics_stores(
         gc_batch_size=gc_batch_size,
         clock=retention_clock,
         busy_timeout_ms=busy_timeout_ms,
+        contributions=contributions,
     )
     return AnalyticsStores(
         projections=projections,
         graph=projections.graph,
         database=projections.database,
+        contributions=contributions,
     )

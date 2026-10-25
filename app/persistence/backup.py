@@ -744,7 +744,12 @@ def _canonical_high_water(connection: sqlite3.Connection) -> dict[str, Any]:
             """
         )
     ]
-    return {"account_identities": accounts, "stream_checkpoints": checkpoints}
+    result = {"account_identities": accounts, "stream_checkpoints": checkpoints}
+    from app.persistence.contributions import storage_high_water
+    knowledge = storage_high_water(connection)
+    if knowledge is not None:
+        result['knowledge_contributions'] = knowledge
+    return result
 
 
 def _projections_high_water(connection: sqlite3.Connection) -> dict[str, Any]:

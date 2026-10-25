@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 from app.persistence.database import CanonicalSQLite
+from app.persistence.contributions import ContributionRepository
 from app.persistence.history import HistoryRepository, ProjectionRepository
 from app.persistence.migrations import MigrationRunner
 from app.persistence.projection_activation import (
@@ -36,6 +37,7 @@ class CanonicalRepositories:
     database: CanonicalSQLite
     projection_database: CanonicalSQLite
     projection_activation: SQLiteProjectionActivationRepository
+    contributions: ContributionRepository
     temporary_directory: TemporaryDirectory[str] | None = None
 
 
@@ -81,5 +83,6 @@ def create_canonical_repositories(
         database=database,
         projection_database=projection.database,
         projection_activation=SQLiteProjectionActivationRepository(database),
+        contributions=ContributionRepository(database),
         temporary_directory=temporary_directory,
     )

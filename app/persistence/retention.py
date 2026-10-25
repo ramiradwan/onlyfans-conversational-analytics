@@ -168,6 +168,8 @@ class CreatorVaultRetention:
         self, connection: sqlite3.Connection, creator_account_id: str, current: datetime
     ) -> list[str]:
         expired: list[str] = []
+        from app.persistence.contributions import retire_expired
+        retire_expired(connection, current, creator_account_id)
         self._ensure_policy(connection, creator_account_id, _iso(current))
         row = connection.execute(
             "SELECT * FROM archive_policies WHERE creator_account_id=?",
@@ -321,6 +323,8 @@ class CreatorVaultRetention:
     @staticmethod
     def _purge_scope(connection: sqlite3.Connection, creator_account_id: str,
                      scope_kind: ScopeKind, scope_key: str) -> None:
+        from app.persistence.contributions import retire_scope
+        retire_scope(connection, creator_account_id, scope_kind, scope_key)
         if scope_kind == "account":
             message_ids = [str(row[0]) for row in connection.execute(
                 "SELECT message_id FROM account_messages WHERE creator_account_id=?",

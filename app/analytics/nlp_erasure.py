@@ -59,6 +59,32 @@ class FindingsErasure:
                 raise ValueError("nlp_erasure_retry")
             yield db
 
+    def _reconcile_origins(self, ref, deadline):
+        with self.database.transaction() as db:
+            if db.execute('PRAGMA user_version').fetchone()[0] < 34:
+                return False
+            stores = db.execute('SELECT DISTINCT canonical_store_id FROM nlp_record_origins WHERE account_ref=?', (ref,)).fetchall()
+            changed = False
+            for store in stores:
+                check_deadline(deadline)
+                epoch = db.execute('SELECT nlp_origin_epoch(?,?)', (store[0], ref)).fetchone()[0]
+                if epoch is None:
+                    from app.analytics.nlp_contribution_origins import OriginCheckerUnavailable
+                    raise OriginCheckerUnavailable('nlp_origin_checker_unavailable')
+                old = db.execute('SELECT epoch FROM nlp_origin_epochs WHERE account_ref=? AND canonical_store_id=?',
+                                 (ref, store[0])).fetchone()
+                if old is None or old[0] != epoch:
+                    db.execute('INSERT INTO nlp_origin_epochs VALUES(?,?,?) ON CONFLICT(account_ref,canonical_store_id) '
+                               'DO UPDATE SET epoch=excluded.epoch', (ref, store[0], epoch))
+                    changed = True
+            if changed:
+                reset = db.execute("UPDATE nlp_erasure_state SET phase='index',identity='',cursor='[]',record_cursor='',due_at=NULL,receipt=NULL "
+                                   'WHERE account_ref=?', (ref,)).rowcount
+                db.execute('UPDATE nlp_accounts SET admission_epoch=admission_epoch+1,availability_revision=availability_revision+1,'
+                           'notification_revision=notification_revision+1 WHERE account_ref=?', (ref,))
+                return bool(reset)
+            return False
+
     def step(
         self,
         account_id,
@@ -71,6 +97,10 @@ class FindingsErasure:
         deadline = deadline if deadline is not None else time.monotonic() + 5.0
         check_deadline(deadline)
         ref = account_ref(account_id)
+        # A canonical retirement may invalidate other still-live sources in the
+        # same contribution. Its durable epoch restarts this bounded scan.
+        if self._reconcile_origins(ref, deadline):
+            return None
         state = self._state(ref)
         if state and state["target_revision"] > target_revision:
             raise ValueError("nlp_erasure_target_changed")
@@ -304,10 +334,13 @@ class FindingsErasure:
         check_deadline(deadline)
         with self._write(state) as db:
             for source in live:
-                db.execute(
-                    "UPDATE nlp_record_bindings SET seen_epoch=? WHERE account_ref=? AND source_ref=? AND source_version=? AND speaker_ref=?",
-                    (state["scan_epoch"], ref, *source),
-                )
+                from app.analytics.nlp_contribution_origins import origin_live
+                for record in db.execute('SELECT record_digest FROM nlp_record_bindings WHERE account_ref=? '
+                                         'AND source_ref=? AND source_version=? AND speaker_ref=?', (ref, *source)).fetchall():
+                    check_deadline(deadline)
+                    if origin_live(db, ref, record[0]):
+                        db.execute('UPDATE nlp_record_bindings SET seen_epoch=? WHERE account_ref=? AND record_digest=?',
+                                   (state['scan_epoch'], ref, record[0]))
                 db.execute(
                     "UPDATE nlp_sources SET erasure_seen_epoch=? WHERE account_ref=? AND source_ref=? AND source_version=? AND speaker_ref=?",
                     (state["scan_epoch"], ref, *source),
@@ -342,7 +375,7 @@ class FindingsErasure:
             ):
                 check_deadline(deadline)
                 key = snapshot[0]
-                value = checked_snapshot(db, FrozenFindings(ref, key), verify_records=False, deadline=deadline)
+                value = checked_snapshot(db, FrozenFindings(ref, key), verify_records=False, deadline=deadline, verify_origins=False)
                 header = value.get("read_inventory")
                 counts = db.execute(
                     "SELECT count(*),min(ordinal),max(ordinal),COALESCE(sum(length(document)),0) "
@@ -468,7 +501,7 @@ class FindingsErasure:
             ).fetchall()
             generation = generations[0] if generations else None
             if generation is not None:
-                check_generation(db, generation, deadline=deadline)
+                check_generation(db, generation, deadline=deadline, verify_origins=False)
                 stamp = content_stamp(db)
         if generation is not None:
             check_deadline(deadline)

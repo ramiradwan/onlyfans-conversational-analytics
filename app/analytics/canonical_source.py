@@ -276,44 +276,7 @@ class HistoryAnalyticsSource:
             token = self._identity_cache.token(connection, account_id)
             if token is None:
                 raise EvidenceUnavailable()
-            row = connection.execute(
-                """SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
-                          m.sender_platform_user_id,m.upstream_updated_at,
-                          m.content_hash,m.winning_stream_epoch,m.winning_source_seq
-                     FROM account_messages AS m
-                     JOIN account_heads AS h
-                       ON h.creator_account_id=m.creator_account_id
-                     JOIN account_chats AS c
-                       ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
-                    WHERE m.creator_account_id=? AND m.message_id=? AND m.chat_id=?
-                      AND m.is_deleted=0 AND c.is_deleted=0 AND length(m.text)<=?
-                      AND length(CAST(m.text AS BLOB))<=?
-                      AND NOT EXISTS (
-                          SELECT 1 FROM entity_tombstones AS t
-                           WHERE t.creator_account_id=m.creator_account_id
-                             AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
-                               OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
-                      AND NOT EXISTS (
-                          SELECT 1 FROM deletion_barriers AS b
-                           WHERE b.creator_account_id=m.creator_account_id
-                             AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR b.deleted_at>=m.lifecycle_started_at)
-                             AND ((b.scope_kind='account' AND b.scope_key='*')
-                               OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
-                               OR (b.scope_kind='message' AND b.scope_key=m.message_id)
-                               OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
-                      AND NOT EXISTS (
-                          SELECT 1 FROM participant_deletion_chat_scopes AS p
-                           WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id
-                             AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR p.deleted_at>=m.lifecycle_started_at))
-                    LIMIT 1""",
-                (
-                    account_id,
-                    location.message_id,
-                    location.conversation_id,
-                    MAX_EVIDENCE_TEXT_CHARS,
-                    MAX_EVIDENCE_TEXT_CHARS * 4,
-                ),
-            ).fetchone()
+            row = _read_evidence_row(connection, account_id, location)
             return row, f"{token.schema}:{token.value}:{token.revision}"
 
         scoped = getattr(self._question_scope_local, "connection", None)
@@ -523,3 +486,57 @@ class HistoryAnalyticsSource:
         if parsed.tzinfo is None or parsed.utcoffset() is None:
             raise ValueError("canonical message timestamp must include a timezone")
         return parsed.isoformat()
+
+
+def read_transaction_evidence(connection, account_id, location, budget):
+    """Resolve live evidence on the caller's existing canonical transaction."""
+    location = EvidenceLocation.model_validate(location)
+    budget.consume(2)
+    row = _read_evidence_row(connection, account_id, location)
+    budget.check()
+    if row is None:
+        return None
+    return EvidenceMessage(account_id=account_id, location=location, source_revision=row[0],
+        text=row[1], sent_at=row[2], direction=row[3], sender_id=row[4],
+        upstream_updated_at=row[5], content_hash=row[6], stream_epoch=row[7], source_sequence=row[8])
+
+
+def _read_evidence_row(connection, account_id, location):
+    return connection.execute(
+        """SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
+                  m.sender_platform_user_id,m.upstream_updated_at,
+                  m.content_hash,m.winning_stream_epoch,m.winning_source_seq
+             FROM account_messages AS m
+             JOIN account_heads AS h
+               ON h.creator_account_id=m.creator_account_id
+             JOIN account_chats AS c
+               ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
+            WHERE m.creator_account_id=? AND m.message_id=? AND m.chat_id=?
+              AND m.is_deleted=0 AND c.is_deleted=0 AND length(m.text)<=?
+              AND length(CAST(m.text AS BLOB))<=?
+              AND NOT EXISTS (
+                  SELECT 1 FROM entity_tombstones AS t
+                   WHERE t.creator_account_id=m.creator_account_id
+                     AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
+                       OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
+              AND NOT EXISTS (
+                  SELECT 1 FROM deletion_barriers AS b
+                   WHERE b.creator_account_id=m.creator_account_id
+                     AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR b.deleted_at>=m.lifecycle_started_at)
+                     AND ((b.scope_kind='account' AND b.scope_key='*')
+                       OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
+                       OR (b.scope_kind='message' AND b.scope_key=m.message_id)
+                       OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
+              AND NOT EXISTS (
+                  SELECT 1 FROM participant_deletion_chat_scopes AS p
+                   WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id
+                     AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR p.deleted_at>=m.lifecycle_started_at))
+            LIMIT 1""",
+        (
+            account_id,
+            location.message_id,
+            location.conversation_id,
+            MAX_EVIDENCE_TEXT_CHARS,
+            MAX_EVIDENCE_TEXT_CHARS * 4,
+        ),
+    ).fetchone()
