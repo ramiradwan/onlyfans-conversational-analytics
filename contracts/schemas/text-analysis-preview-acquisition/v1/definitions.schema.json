@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-acquisition/v1/definitions.schema.json",
+  "title": "text-analysis-preview-acquisition definitions v1",
+  "$defs": {
+    "prepareRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "authority_profile",
+        "supported_profiles",
+        "release_identity"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-acquisition:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "installation_id",
+            "installation_key_id",
+            "installation_key_jkt"
+          ],
+          "properties": {
+            "organization_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_key_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "installation_key_jkt": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        "authority_profile": {
+          "const": "urn:bridge-clean:text-analysis-preview:v1"
+        },
+        "supported_profiles": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-supported-profiles/v1/supported-profiles.schema.json"
+        },
+        "release_identity": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-release-identity/v1/release-identity.schema.json"
+        }
+      }
+    },
+    "readRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-acquisition:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "installation_id",
+            "installation_key_id",
+            "installation_key_jkt"
+          ],
+          "properties": {
+            "organization_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_key_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "installation_key_jkt": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        }
+      }
+    },
+    "submitRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "confirmation_digest",
+        "decision_reference",
+        "decision_digest",
+        "consent"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-acquisition:v1"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "installation_id",
+            "installation_key_id",
+            "installation_key_jkt"
+          ],
+          "properties": {
+            "organization_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+            },
+            "installation_key_id": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+            },
+            "installation_key_jkt": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+            }
+          }
+        },
+        "confirmation_digest": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "decision_reference": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+        },
+        "decision_digest": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+        },
+        "consent": {
+          "const": "acquire-text-analysis-preview"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "expires_at",
+        "terms"
+      ],
+      "properties": {
+        "action": {
+          "const": "acquire-text-analysis-preview"
+        },
+        "expires_at": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+        },
+        "terms": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "capability",
+            "licensed_major_version",
+            "compatible_artifact_family",
+            "update_rights",
+            "fallback_major_versions",
+            "execution_limit",
+            "output_policy"
+          ],
+          "properties": {
+            "capability": {
+              "const": "text-analysis"
+            },
+            "licensed_major_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "compatible_artifact_family": {
+              "const": "text-analysis-artifact"
+            },
+            "update_rights": {
+              "type": "boolean"
+            },
+            "fallback_major_versions": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              }
+            },
+            "execution_limit": {
+              "const": 1
+            },
+            "output_policy": {
+              "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-output-policy/v1/policy.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}

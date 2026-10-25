@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-delivery-proof/v1/challenge-request.schema.json",
+  "title": "text-analysis-authority-delivery-proof challenge-request v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-authority-delivery-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-authority-deliver"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-delivery/v1/definitions.schema.json#/$defs/request"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-authority-delivery-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-authority-recover"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-delivery/v1/definitions.schema.json#/$defs/request"
+        }
+      }
+    }
+  ]
+}

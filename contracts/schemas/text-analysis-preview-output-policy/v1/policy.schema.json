@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-output-policy/v1/policy.schema.json",
+  "title": "text-analysis-preview-output-policy policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "version"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-preview-output-policy:v1"
+    },
+    "version": {
+      "const": 1
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+  "governing_adr": "docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md",
+  "messages": {
+    "policy": "schemas/text-analysis-preview-output-policy/v1/policy.schema.json"
+  },
+  "request_max_bytes": 0,
+  "response_max_bytes": 256,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "classification": "public-release",
+  "retention_class": "immutable-public-release",
+  "version": 1,
+  "document_digest": false,
+  "rules": [
+    "one-complete-shown-result-per-produced-kind-with-retained-evidence-source-chat-references-and-coverage",
+    "additional-per-kind-count-only-after-complete-disclosed-frozen-scope-otherwise-no-total-or-unqualified-ranking",
+    "unshown-candidates-neither-published-nor-retained-as-findings",
+    "hosted-plane-observes-none"
+  ],
+  "kinds_and_ranking": "local-product-ADR-0057"
+}

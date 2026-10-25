@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-purchase-session-proof-challenge-request.schema.json",
+  "title": "Capability purchase session proof challenge request v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-purchase-session-proof:v1"
+        },
+        "purpose": {
+          "const": "capability-purchase-session-start"
+        },
+        "request": {
+          "$ref": "capability-purchase-session-definitions.schema.json#/$defs/startRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-purchase-session-proof:v1"
+        },
+        "purpose": {
+          "const": "capability-purchase-session-status"
+        },
+        "request": {
+          "$ref": "capability-purchase-session-definitions.schema.json#/$defs/statusRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-purchase-session-proof:v1"
+        },
+        "purpose": {
+          "const": "capability-purchase-session-wallet"
+        },
+        "request": {
+          "$ref": "capability-purchase-session-definitions.schema.json#/$defs/walletRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-purchase-session-proof:v1"
+        },
+        "purpose": {
+          "const": "capability-purchase-session-end"
+        },
+        "request": {
+          "$ref": "capability-purchase-session-definitions.schema.json#/$defs/endRequest"
+        }
+      }
+    }
+  ]
+}

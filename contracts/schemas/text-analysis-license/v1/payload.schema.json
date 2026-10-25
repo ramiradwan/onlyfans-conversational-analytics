@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-license/v1/payload.schema.json",
+  "title": "text-analysis-license payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "license_type",
+    "iss",
+    "aud",
+    "sub",
+    "license_id",
+    "issuance_id",
+    "iat",
+    "organization_id",
+    "installation_id",
+    "installation_key_id",
+    "installation_key_jkt",
+    "seat_id",
+    "seat_scope",
+    "capability",
+    "licensed_major_version",
+    "compatible_artifact_family",
+    "update_rights",
+    "fallback_major_versions"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-license:v1"
+    },
+    "license_type": {
+      "const": "text_analysis_license"
+    },
+    "iss": {
+      "const": "urn:bridge-clean:commercial-control-plane"
+    },
+    "aud": {
+      "const": "urn:bridge-clean:local-brain:text-analysis-license"
+    },
+    "sub": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^organization:[A-Za-z0-9._~-]+:installation:[A-Za-z0-9._~-]+:seat:[A-Za-z0-9._~-]+:capability:[a-z][a-z0-9-]{0,63}$"
+    },
+    "license_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "issuance_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "iat": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    },
+    "organization_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "installation_key_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+    },
+    "installation_key_jkt": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "seat_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "seat_scope": {
+      "const": "organization-installation-seat"
+    },
+    "capability": {
+      "const": "text-analysis"
+    },
+    "licensed_major_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "compatible_artifact_family": {
+      "const": "text-analysis-artifact"
+    },
+    "update_rights": {
+      "type": "boolean"
+    },
+    "fallback_major_versions": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 2147483647
+      }
+    }
+  }
+}

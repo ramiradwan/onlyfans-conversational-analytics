@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "4c4d4efa2e5dbd3b5c00296e910c3740fef19169300ac04781894db0a2da0721",
+  "aggregate_bundle_sha256": "e00ef6e41577beaca024970185e8b26803a7b85a3314655030a49f85678b1d18",
   "conformance_manifests": [
     {
       "export": "installation-setup-continuation-v1",
@@ -75,11 +75,16 @@
       "export": "deferred-setup-preparation-v1",
       "path": "deferred-setup-preparation-v1/manifest.json",
       "sha256": "3e9885653c501b3c3f73221453f2a7c9d2b9aa81d4bf71ec6805d77c1b610a26"
+    },
+    {
+      "export": "text-analysis-authority-v1",
+      "path": "text-analysis-authority-v1/manifest.json",
+      "sha256": "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a"
     }
   ],
   "consumer_pin_version": 3,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "87edc82a4c155b4aba68581084cd1780d3908ed71ab70838b82a7e2a4387a4e6",
+  "contract_manifest_sha256": "c39ab23f45305f4da7e4c057c894011a43168b3fa20c44e3c62ba2d852f1f4f3",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -109,7 +114,8 @@
     "browser-authentication-selection-v1",
     "capability-license-delivery-recovery-v1",
     "deferred-setup-preparation-v1",
-    "source-contract-manifest"
+    "source-contract-manifest",
+    "text-analysis-authority-v1"
   ],
   "generator_versions": [
     {
@@ -123,13 +129,17 @@
     {
       "export": "companion-pairing-v1",
       "version": "1.0.0"
+    },
+    {
+      "export": "text-analysis-authority-v1",
+      "version": "1.0.1"
     }
   ],
-  "source_commit": "8a469460413d7e6064e3246d0314fc7a3f100016",
+  "source_commit": "3ad41b7f02236cf2a71b3f917fb2e487c54769fe",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "09af171ecc876f08dd2d834e8e13380da6d30c69827dd8b4cd0dc393e74367d6",
+  "source_contract_manifest_sha256": "3391ce59f60d6162df72872965e16facb22ee6230efb27bdcb618ddb6f616477",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "aa2c8d87522a096d6568342f19f564af0cb8f685",
+  "source_tree": "841e6c2700eb5539cbb63aed31525d52c2191daa",
   "supported_profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -151,7 +161,13 @@
     "urn:bridge-clean:capability-license-reissue-package:v1",
     "urn:bridge-clean:capability-license-reissue:v1",
     "urn:bridge-clean:capability-license:v1",
+    "urn:bridge-clean:capability-permit-purchase-proof:v1",
+    "urn:bridge-clean:capability-permit-purchase-proof:v2",
+    "urn:bridge-clean:capability-permit-purchase:v1",
+    "urn:bridge-clean:capability-permit-purchase:v2",
     "urn:bridge-clean:capability-permit:v1",
+    "urn:bridge-clean:capability-purchase-session-proof:v1",
+    "urn:bridge-clean:capability-purchase-session:v1",
     "urn:bridge-clean:companion-pairing:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v1",
     "urn:bridge-clean:creator-association:v1",
@@ -177,6 +193,18 @@
     "urn:bridge-clean:onboarding-transfer:v1",
     "urn:bridge-clean:provisioning-proof:v1",
     "urn:bridge-clean:release-descriptor:v1",
+    "urn:bridge-clean:text-analysis-authority-delivery-proof:v1",
+    "urn:bridge-clean:text-analysis-authority-delivery:v1",
+    "urn:bridge-clean:text-analysis-authority-issuance:v1",
+    "urn:bridge-clean:text-analysis-license-issuance-proof:v1",
+    "urn:bridge-clean:text-analysis-license:v1",
+    "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
+    "urn:bridge-clean:text-analysis-preview-acquisition:v1",
+    "urn:bridge-clean:text-analysis-preview-issuance-proof:v1",
+    "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+    "urn:bridge-clean:text-analysis-preview:v1",
+    "urn:bridge-clean:text-analysis-release-identity:v1",
+    "urn:bridge-clean:text-analysis-supported-profiles:v1",
     "urn:bridge-clean:capability-permit-v1",
     "urn:bridge-clean:capability-permit-consumption-policy:v1"
   ],
@@ -195,6 +223,11 @@
       "export": "companion-pairing-v1",
       "path": "companion-pairing-v1/trust-set.json",
       "sha256": "2ce4719773749147b7bcb5459e20f257721acee61b27e19e68eb3a88e03a4e7f"
+    },
+    {
+      "export": "text-analysis-authority-v1",
+      "path": "text-analysis-authority-v1/trust-set.json",
+      "sha256": "c1020fc2fb8faf2e42d3a3e204452a420ac4c0badc37a22f9217f37f82f8ab7b"
     }
   ],
   "vector_manifests": [
@@ -212,6 +245,11 @@
       "export": "companion-pairing-v1",
       "path": "companion-pairing-v1/manifest.json",
       "sha256": "2dc0cba74c745af62adc58f6f96b884233dac593d61c27b71d1e42f3133662dc"
+    },
+    {
+      "export": "text-analysis-authority-v1",
+      "path": "text-analysis-authority-v1/manifest.json",
+      "sha256": "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a"
     }
   ]
 }

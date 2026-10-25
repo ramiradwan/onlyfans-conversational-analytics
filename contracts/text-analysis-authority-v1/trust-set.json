@@ -1,0 +1,29 @@
+{
+  "environment": "TEST-VECTORS-ONLY-NOT-A-PRODUCTION-TRUST-SET",
+  "keys": [
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.tl.bly8pptTBYJfWeLPgsG4xQ",
+        "kty": "EC",
+        "x": "TpjaMLJjEq_6HXY7Obo7KIieJUFdwuMjLkD8YnvknGc",
+        "y": "xrzicIRq2RIimxebmEP0_2hsnFowcXFICUFrv6GXCZU"
+      },
+      "purpose": "text-analysis-license"
+    },
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.tp.JbYXetZnQ6fHzUWPDiGg0A",
+        "kty": "EC",
+        "x": "Y3x-myoxX3uzHXHlsrH7-cdHxMF9ZZmQItOE-pMRA-8",
+        "y": "kDo17HdayKO-bhimdO8LIE0LJlUlPzo6j8eix9oFCj8"
+      },
+      "purpose": "text-analysis-preview"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:text-analysis-authority-test-trust:v1"
+}

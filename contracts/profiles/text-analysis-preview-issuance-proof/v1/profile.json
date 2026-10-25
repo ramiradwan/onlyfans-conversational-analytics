@@ -1,0 +1,56 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-preview-issuance-proof:v1",
+  "governing_adr": "docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md",
+  "messages": {
+    "challenge-request": "schemas/text-analysis-preview-issuance-proof/v1/challenge-request.schema.json",
+    "challenge-response": "schemas/text-analysis-preview-issuance-proof/v1/challenge-response.schema.json",
+    "error": "schemas/text-analysis-preview-issuance-proof/v1/error.schema.json"
+  },
+  "request_max_bytes": 12288,
+  "response_max_bytes": 4096,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "classification": "cross-plane-security",
+  "retention_class": "onboarding-working-state",
+  "domain": "BRIDGE-CLEAN-TEXT-ANALYSIS-PREVIEW-ISSUANCE-PROOF-V1\u0000",
+  "audience": "urn:bridge-clean:commercial-control-plane:text-analysis-preview-issuance",
+  "purposes": {
+    "text-analysis-preview-issue": {
+      "method": "POST",
+      "path": "/v1/text-analysis-preview-issuances:issue"
+    }
+  },
+  "algorithm": "ES256",
+  "signature_encoding": "ieee-p1363-low-s",
+  "canonical_request": "RFC8785(request)",
+  "request_digest": "SHA-256",
+  "field_encoding": "uint32be-length-prefixed",
+  "fields": [
+    "challenge-id-utf8",
+    "challenge-raw32",
+    "method-utf8",
+    "path-utf8",
+    "request-digest-raw32",
+    "purpose-utf8",
+    "installation-id-utf8",
+    "organization-id-utf8",
+    "installation-key-id-utf8",
+    "audience-utf8"
+  ],
+  "challenge_ttl_seconds": 60,
+  "challenge_single_use": true,
+  "challenge_max_outstanding": 8192,
+  "key_resolution": "exact-original-active-registered-key-only",
+  "proof_replay_allowed": false,
+  "challenge_disclosure": "uniform-nonauthorizing-unknown-revoked-wrong-scope",
+  "audit_days": 400,
+  "tombstone": "through-original-challenge-deadline",
+  "error_max_bytes": 4096,
+  "audit_retention_class": "security-audit",
+  "request_response_logging": false,
+  "error_reasons": [
+    "invalid",
+    "rate_limited",
+    "temporarily_unavailable"
+  ]
+}

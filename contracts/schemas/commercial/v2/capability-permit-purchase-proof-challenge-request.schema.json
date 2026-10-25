@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v2/capability-permit-purchase-proof-challenge-request.schema.json",
+  "title": "Capability permit purchase proof-challenge-request v2",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase-proof:v2"
+        },
+        "purpose": {
+          "const": "capability-permit-purchase-v2-prepare"
+        },
+        "request": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/prepareRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase-proof:v2"
+        },
+        "purpose": {
+          "const": "capability-permit-purchase-v2-confirm"
+        },
+        "request": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/confirmRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase-proof:v2"
+        },
+        "purpose": {
+          "const": "capability-permit-purchase-v2-status"
+        },
+        "request": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/statusRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase-proof:v2"
+        },
+        "purpose": {
+          "const": "capability-permit-purchase-v2-cancel"
+        },
+        "request": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/cancelRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase-proof:v2"
+        },
+        "purpose": {
+          "const": "capability-permit-purchase-v2-deliver"
+        },
+        "request": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/deliverRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:capability-permit-purchase-proof:v2"
+        },
+        "purpose": {
+          "const": "capability-permit-purchase-v2-recover"
+        },
+        "request": {
+          "$ref": "capability-permit-purchase-definitions.schema.json#/$defs/recoverRequest"
+        }
+      }
+    }
+  ]
+}

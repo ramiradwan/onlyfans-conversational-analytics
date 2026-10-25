@@ -1,0 +1,208 @@
+openapi: 3.1.0
+info:
+  title: Session-bound native single-permit purchase sandbox
+  version: 2.0.0
+paths:
+  /v2/capability-permit-purchases:prepare:
+    post:
+      operationId: prepareCapabilityPermitPurchaseV2
+      summary: Bounded native prepare for a single-execution permit
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v2/capability-permit-purchase-prepare-request.schema.json
+      responses:
+        '200':
+          description: Exact operation projection or committed result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v2/capability-permit-purchase-view-response.schema.json
+        '400':
+          description: Closed schema invalid
+        '401':
+          description: Fresh exact registered-key proof invalid
+        '403':
+          description: Current authority unavailable
+        '409':
+          description: Operation state or immutable terms conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable; no success implied
+  /v2/capability-permit-purchases:confirm:
+    post:
+      operationId: confirmCapabilityPermitPurchaseV2
+      summary: Bounded native confirm for a single-execution permit
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v2/capability-permit-purchase-confirm-request.schema.json
+      responses:
+        '200':
+          description: Exact operation projection or committed result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v2/capability-permit-purchase-view-response.schema.json
+        '400':
+          description: Closed schema invalid
+        '401':
+          description: Fresh exact registered-key proof invalid
+        '403':
+          description: Current authority unavailable
+        '409':
+          description: Operation state or immutable terms conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable; no success implied
+  /v2/capability-permit-purchases:status:
+    post:
+      operationId: readCapabilityPermitPurchaseV2
+      summary: Bounded native status for a single-execution permit
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v2/capability-permit-purchase-status-request.schema.json
+      responses:
+        '200':
+          description: Exact operation projection or committed result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v2/capability-permit-purchase-view-response.schema.json
+        '400':
+          description: Closed schema invalid
+        '401':
+          description: Fresh exact registered-key proof invalid
+        '403':
+          description: Current authority unavailable
+        '409':
+          description: Operation state or immutable terms conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable; no success implied
+  /v2/capability-permit-purchases:cancel:
+    post:
+      operationId: cancelCapabilityPermitPurchaseV2
+      summary: Bounded native cancel for a single-execution permit
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v2/capability-permit-purchase-cancel-request.schema.json
+      responses:
+        '200':
+          description: Exact operation projection or committed result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v2/capability-permit-purchase-view-response.schema.json
+        '400':
+          description: Closed schema invalid
+        '401':
+          description: Fresh exact registered-key proof invalid
+        '403':
+          description: Current authority unavailable
+        '409':
+          description: Operation state or immutable terms conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable; no success implied
+  /v2/capability-permit-purchases:deliver:
+    post:
+      operationId: deliverCapabilityPermitPurchaseV2
+      summary: Bounded native deliver for a single-execution permit
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v2/capability-permit-purchase-deliver-request.schema.json
+      responses:
+        '200':
+          description: Exact operation projection or committed result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v2/capability-permit-purchase-delivery-response.schema.json
+        '400':
+          description: Closed schema invalid
+        '401':
+          description: Fresh exact registered-key proof invalid
+        '403':
+          description: Current authority unavailable
+        '409':
+          description: Operation state or immutable terms conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable; no success implied
+  /v2/capability-permit-purchases:recover:
+    post:
+      operationId: recoverCapabilityPermitPurchaseV2
+      summary: Bounded native recover for a single-execution permit
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v2/capability-permit-purchase-recover-request.schema.json
+      responses:
+        '200':
+          description: Exact operation projection or committed result
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v2/capability-permit-purchase-delivery-response.schema.json
+        '400':
+          description: Closed schema invalid
+        '401':
+          description: Fresh exact registered-key proof invalid
+        '403':
+          description: Current authority unavailable
+        '409':
+          description: Operation state or immutable terms conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable; no success implied
+  /v2/capability-permit-purchase-proof-challenges:
+    post:
+      operationId: issueCapabilityPermitPurchaseProofChallengeV2
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v2/capability-permit-purchase-proof-challenge-request.schema.json
+      responses:
+        '200':
+          description: Uniform nonauthorizing challenge
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v2/capability-permit-purchase-proof-challenge-response.schema.json
+        '400':
+          description: Closed request invalid
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable

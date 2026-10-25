@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-authority-delivery-proof/v1/error.schema.json",
+  "title": "text-analysis-authority-delivery-proof error v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "reason"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-authority-delivery-proof:v1"
+        },
+        "reason": {
+          "enum": [
+            "invalid",
+            "temporarily_unavailable"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "reason",
+        "retry_at"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-authority-delivery-proof:v1"
+        },
+        "reason": {
+          "const": "rate_limited"
+        },
+        "retry_at": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  ]
+}

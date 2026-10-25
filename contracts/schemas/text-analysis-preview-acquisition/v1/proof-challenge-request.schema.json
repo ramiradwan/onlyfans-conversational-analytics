@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-acquisition/v1/proof-challenge-request.schema.json",
+  "title": "text-analysis-preview-acquisition-proof proof-challenge-request v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-preview-acquisition-prepare"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-acquisition/v1/definitions.schema.json#/$defs/prepareRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-preview-acquisition-read"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-acquisition/v1/definitions.schema.json#/$defs/readRequest"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-preview-acquisition-submit"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-acquisition/v1/definitions.schema.json#/$defs/submitRequest"
+        }
+      }
+    }
+  ]
+}

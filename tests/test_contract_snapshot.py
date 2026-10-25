@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from urllib.parse import urljoin
 
 import pytest
 
@@ -117,9 +118,10 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "4c4d4efa2e5dbd3b5c00296e910c3740fef19169300ac04781894db0a2da0721"
-    assert pin["contract_manifest_sha256"] == "87edc82a4c155b4aba68581084cd1780d3908ed71ab70838b82a7e2a4387a4e6"
+    assert pin["aggregate_bundle_sha256"] == "e00ef6e41577beaca024970185e8b26803a7b85a3314655030a49f85678b1d18"
+    assert pin["contract_manifest_sha256"] == "c39ab23f45305f4da7e4c057c894011a43168b3fa20c44e3c62ba2d852f1f4f3"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
+        "text-analysis-authority-v1": "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a",
         "deferred-setup-preparation-v1": "3e9885653c501b3c3f73221453f2a7c9d2b9aa81d4bf71ec6805d77c1b610a26",
         "capability-license-delivery-recovery-v1": "c086ca4cc75e589d4427150bf7f83dfa089a4c0aa3fa77bd9430c37dce685bde",
         "browser-authentication-selection-v1": "1ca8b47bd3f7067166ae6ba71fddc615bb3dad525d0e10f49db5fc0eef859e8c",
@@ -443,21 +445,15 @@ def test_published_schema_references_resolve_inside_pinned_source_manifest() -> 
             return [ref for child in value for ref in references(child)]
         return []
 
-    for relative in schema_paths:
-        document = json.loads((ROOT / relative).read_text("utf-8"))
-        source = Path(relative)
+    documents = {relative: json.loads((ROOT / relative).read_bytes())
+                 for relative in schema_paths}
+    identifiers = {document["$id"]: relative for relative, document in documents.items()}
+    assert len(identifiers) == len(documents)
+    for relative, document in documents.items():
         for ref in references(document):
-            path_part = ref.split("#", 1)[0]
-            if not path_part:
-                continue
-            resolved = (source.parent / path_part).as_posix()
-            while "/../" in resolved or resolved.startswith("../"):
-                resolved = str(Path(resolved))
-                break
-            resolved = Path(resolved).as_posix()
-            # pathlib keeps '..' lexically; resolve against the contracts root instead.
-            resolved = (ROOT / source.parent / path_part).resolve().relative_to(ROOT.resolve()).as_posix()
-            assert resolved in schema_paths
+            resolved = urljoin(document["$id"], ref).split("#", 1)[0]
+            assert resolved in identifiers, (relative, ref)
+
 
 
 @pytest.mark.contract_integrity
@@ -501,3 +497,76 @@ def test_deferred_preparation_policy_and_supplemental_export_are_closed() -> Non
         }
         case_count += len(json.loads(data))
     assert case_count == manifest["case_count"] == 147
+
+
+@pytest.mark.contract_integrity
+def test_text_analysis_export_has_exact_independent_pins_and_inventory() -> None:
+    family = "text-analysis-authority-v1"
+    root = ROOT / family
+    vector = json.loads((root / "manifest.json").read_bytes())
+    pin = json.loads((ROOT / "consumer-pin.json").read_bytes())
+    expected_vector = {
+        "export": family, "path": f"{family}/manifest.json",
+        "sha256": "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a",
+    }
+    expected_trust = {
+        "export": family, "path": f"{family}/trust-set.json",
+        "sha256": "c1020fc2fb8faf2e42d3a3e204452a420ac4c0badc37a22f9217f37f82f8ab7b",
+    }
+    assert expected_vector in pin["vector_manifests"]
+    assert expected_vector in pin["conformance_manifests"]
+    assert expected_trust in pin["trust_sets"]
+    assert {"export": family, "version": "1.0.1"} in pin["generator_versions"]
+    assert vector["profile"] == "urn:bridge-clean:text-analysis-authority-vectors:v1"
+    assert vector["production_usable"] is False
+    assert vector["generator_version"] == "1.0.1"
+    entries = {entry["path"]: entry for entry in vector["files"]}
+    assert set(entries) == {
+        "schema-cases.json", "signed-cases.json", "proof-cases.json",
+        "admission-cases.json", "lifecycle-cases.json", "trust-set.json",
+    }
+    assert {path.name for path in root.iterdir()} == {*entries, "manifest.json"}
+    case_counts = {}
+    for relative, entry in entries.items():
+        data = (root / relative).read_bytes()
+        assert entry == {"path": relative, "size": len(data),
+                         "sha256": hashlib.sha256(data).hexdigest()}
+        if relative.endswith("-cases.json"):
+            case_counts[relative] = len(json.loads(data))
+    assert case_counts == {"schema-cases.json": 1887, "signed-cases.json": 230,
+                           "proof-cases.json": 156, "admission-cases.json": 34,
+                           "lifecycle-cases.json": 21}
+    assert sum(case_counts.values()) == vector["case_count"] == 2328
+    supported = json.loads((ROOT / "profiles/text-analysis-supported-profiles/v1/profile.json").read_bytes())
+    assert len(supported["profiles"]) == 12
+    assert set(supported["profiles"]) < set(pin["supported_profiles"])
+    assert vector["profile"] not in pin["supported_profiles"]
+    assert "urn:bridge-clean:capability-permit-purchase:v2" in pin["supported_profiles"]
+    assert not ({"capability-permit-purchase-v1", "capability-purchase-session-v1"} & set(pin["export_set"]))
+
+
+@pytest.mark.contract_integrity
+def test_text_analysis_fixture_trust_remains_nonproduction() -> None:
+    relative = "text-analysis-authority-v1/trust-set.json"
+    with pytest.raises(ContractsIntegrityError, match="not production usable"):
+        load_trust_set(relative)
+    trust = load_trust_set(relative, environment="development")
+    assert trust["production_usable"] is False
+    assert {key["purpose"] for key in trust["keys"]} == {
+        "text-analysis-license", "text-analysis-preview",
+    }
+    assert all(key["fixture_only"] is True for key in trust["keys"])
+
+
+@pytest.mark.contract_integrity
+def test_selected_text_analysis_pins_cannot_be_omitted(tmp_path: Path) -> None:
+    snapshot = tmp_path / "contracts"
+    shutil.copytree(ROOT, snapshot, ignore=shutil.ignore_patterns("__pycache__"))
+    pin_path = snapshot / "consumer-pin.json"
+    pin = json.loads(pin_path.read_bytes())
+    for collection in ("vector_manifests", "conformance_manifests", "trust_sets", "generator_versions"):
+        pin[collection] = [entry for entry in pin[collection]
+                           if entry["export"] != "text-analysis-authority-v1"]
+    pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ContractsIntegrityError, match="text-analysis authority pins are missing"):
+        verify_snapshot_integrity(snapshot)

@@ -571,6 +571,12 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
+## JSON canonicalization
+
+`rfc8785` 0.1.4 implements JSON Canonicalization Scheme under Apache-2.0, including portions adapted from Andrew Rundgren's reference implementation. The frozen application retains its package metadata and upstream license through `copy_metadata("rfc8785")`.
+
+Project: https://github.com/trailofbits/rfc8785.py
+
 ## IANA timezone data
 
 `tzdata` 2026.4 supplies offline timezone data for analytics question validation. The Python package is licensed under Apache-2.0. The frozen application retains the package metadata and upstream license files through `copy_metadata("tzdata")`.

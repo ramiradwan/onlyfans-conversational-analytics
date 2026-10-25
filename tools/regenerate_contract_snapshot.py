@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "8a469460413d7e6064e3246d0314fc7a3f100016"
-APPROVED_SOURCE_TREE = "aa2c8d87522a096d6568342f19f564af0cb8f685"
-APPROVED_SOURCE_MANIFEST_SHA256 = "09af171ecc876f08dd2d834e8e13380da6d30c69827dd8b4cd0dc393e74367d6"
+APPROVED_SOURCE_COMMIT = "3ad41b7f02236cf2a71b3f917fb2e487c54769fe"
+APPROVED_SOURCE_TREE = "841e6c2700eb5539cbb63aed31525d52c2191daa"
+APPROVED_SOURCE_MANIFEST_SHA256 = "3391ce59f60d6162df72872965e16facb22ee6230efb27bdcb618ddb6f616477"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,7 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "contract-manifest.json": "4b9f08ee294997391a852710bbe2f0459819da00e1acf0e2ee72cd9bba8ea266"
+    "catalog/contracts.yaml": "a6cdca6d15967ab9ede970e45acd41932b9b4c5633eaef54a3b8703492044d68",
+    "contract-manifest.json": "09af171ecc876f08dd2d834e8e13380da6d30c69827dd8b4cd0dc393e74367d6"
 }
 
 EXPORT_SET = [
@@ -57,7 +58,8 @@ EXPORT_SET = [
     "browser-authentication-selection-v1",
     "capability-license-delivery-recovery-v1",
     "deferred-setup-preparation-v1",
-    "source-contract-manifest"
+    "source-contract-manifest",
+    "text-analysis-authority-v1",
 ]
 
 EXPORT_SOURCES = {
@@ -83,7 +85,8 @@ EXPORT_SOURCES = {
     "desktop-decision-v1": "test-vectors/desktop-decision-v1",
     "browser-authentication-selection-v1": "test-vectors/browser-authentication-selection-v1",
     "capability-license-delivery-recovery-v1": "test-vectors/capability-license-delivery-recovery-v1",
-    "deferred-setup-preparation-v1": "test-vectors/deferred-setup-preparation-v1"
+    "deferred-setup-preparation-v1": "test-vectors/deferred-setup-preparation-v1",
+    "text-analysis-authority-v1": "test-vectors/text-analysis-authority-v1",
 }
 
 APPROVED_EXPORT_DIGESTS = {
@@ -109,7 +112,8 @@ APPROVED_EXPORT_DIGESTS = {
     "desktop-decision-v1": "7fa1cdd451ac4acb570c11a6e3e440ba4e00bc8481d28c4aad22d706534b7efa",
     "browser-authentication-selection-v1": "d99a5bb63f45c95a2ef36b9398fb1c9130a8269635722499e535228c0043a29f",
     "capability-license-delivery-recovery-v1": "b20f15cb6539b9345ac51088427176e52e6a7d7850c0976aa98a543cc4700906",
-    "deferred-setup-preparation-v1": "7c32147ecc17a04d673e06416f8d889748e128c3bc2386f19fb5870de6c33e39"
+    "deferred-setup-preparation-v1": "7c32147ecc17a04d673e06416f8d889748e128c3bc2386f19fb5870de6c33e39",
+    "text-analysis-authority-v1": "985d40ba015958bdafcb18ffa13db66596782dc69849923b1fc79fdc6a18b365",
 }
 
 EXPECTED_PROGRESS_VECTOR_FILES = frozenset(
@@ -136,8 +140,8 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 1013
-EXPECTED_PUBLISHED_FILE_COUNT = 220
+EXPECTED_FILE_COUNT = 1114
+EXPECTED_PUBLISHED_FILE_COUNT = 314
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -159,7 +163,13 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:capability-license-reissue-package:v1",
     "urn:bridge-clean:capability-license-reissue:v1",
     "urn:bridge-clean:capability-license:v1",
+    "urn:bridge-clean:capability-permit-purchase-proof:v1",
+    "urn:bridge-clean:capability-permit-purchase-proof:v2",
+    "urn:bridge-clean:capability-permit-purchase:v1",
+    "urn:bridge-clean:capability-permit-purchase:v2",
     "urn:bridge-clean:capability-permit:v1",
+    "urn:bridge-clean:capability-purchase-session-proof:v1",
+    "urn:bridge-clean:capability-purchase-session:v1",
     "urn:bridge-clean:companion-pairing:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v1",
     "urn:bridge-clean:creator-association:v1",
@@ -185,6 +195,18 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:onboarding-transfer:v1",
     "urn:bridge-clean:provisioning-proof:v1",
     "urn:bridge-clean:release-descriptor:v1",
+    "urn:bridge-clean:text-analysis-authority-delivery-proof:v1",
+    "urn:bridge-clean:text-analysis-authority-delivery:v1",
+    "urn:bridge-clean:text-analysis-authority-issuance:v1",
+    "urn:bridge-clean:text-analysis-license-issuance-proof:v1",
+    "urn:bridge-clean:text-analysis-license:v1",
+    "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
+    "urn:bridge-clean:text-analysis-preview-acquisition:v1",
+    "urn:bridge-clean:text-analysis-preview-issuance-proof:v1",
+    "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+    "urn:bridge-clean:text-analysis-preview:v1",
+    "urn:bridge-clean:text-analysis-release-identity:v1",
+    "urn:bridge-clean:text-analysis-supported-profiles:v1",
 )
 LEGACY_VECTOR_PROFILE_ALIASES = ("urn:bridge-clean:capability-permit-v1",)
 POLICY_PROFILES = {"permit-consumption": "permit-consumption/policy.json"}
@@ -192,11 +214,13 @@ VECTOR_MANIFESTS = {
     "grant-profile-v1": "grant-profile-v1/manifest.json",
     "capability-permit-v1": "capability-permit-v1/manifest.json",
     "companion-pairing-v1": "companion-pairing-v1/manifest.json",
+    "text-analysis-authority-v1": "text-analysis-authority-v1/manifest.json",
 }
 TRUST_SETS = {
     "grant-profile-v1": "grant-profile-v1/keys/trust-set.json",
     "capability-permit-v1": "capability-permit-v1/trust-set.json",
     "companion-pairing-v1": "companion-pairing-v1/trust-set.json",
+    "text-analysis-authority-v1": "text-analysis-authority-v1/trust-set.json",
 }
 CONFORMANCE_MANIFESTS = {
     "installation-setup-continuation-v1": "installation-setup-continuation-v1/manifest.json",
@@ -213,7 +237,8 @@ CONFORMANCE_MANIFESTS = {
     "desktop-decision-v1": "desktop-decision-v1/manifest.json",
     "browser-authentication-selection-v1": "browser-authentication-selection-v1/manifest.json",
     "capability-license-delivery-recovery-v1": "capability-license-delivery-recovery-v1/manifest.json",
-    "deferred-setup-preparation-v1": "deferred-setup-preparation-v1/manifest.json"
+    "deferred-setup-preparation-v1": "deferred-setup-preparation-v1/manifest.json",
+    "text-analysis-authority-v1": "text-analysis-authority-v1/manifest.json",
 }
 PAIRING_PROFILE_RECORD = "companion-pairing-profile/profile.json"
 
@@ -425,6 +450,8 @@ def selected_pairing_profile() -> str:
 
 
 def _published_profiles() -> list[str]:
+    """Inventory exported profiles; this is not runtime support advertising."""
+
     source_manifest_path = CONTRACTS_ROOT / SOURCE_MANIFEST_TARGET
     value = json.loads(source_manifest_path.read_text(encoding="utf-8"))
     if sha256(source_manifest_path) != APPROVED_SOURCE_MANIFEST_SHA256:

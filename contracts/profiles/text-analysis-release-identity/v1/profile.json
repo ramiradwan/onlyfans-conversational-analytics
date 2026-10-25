@@ -1,0 +1,25 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+  "governing_adr": "docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md",
+  "messages": {
+    "release-identity": "schemas/text-analysis-release-identity/v1/release-identity.schema.json"
+  },
+  "request_max_bytes": 1024,
+  "response_max_bytes": 1024,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "classification": "public-release",
+  "retention_class": "immutable-public-release",
+  "classification_source": "hosted-release-policy-only",
+  "admitted_distribution": "direct-MSIX",
+  "refused_distributions": [
+    "unknown",
+    "Store",
+    "Inno"
+  ],
+  "channel_is_classification": false,
+  "remote_binary_attestation": false,
+  "equality": "every-field-equals-immutable-descriptor-and-protected-confirmation",
+  "admission": "preparation-and-commitment",
+  "recovery": "original-identity-without-reclassification"
+}

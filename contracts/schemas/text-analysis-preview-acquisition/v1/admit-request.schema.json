@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-acquisition/v1/admit-request.schema.json",
+  "title": "text-analysis-preview-acquisition admit-request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-preview-acquisition:v1"
+    }
+  }
+}

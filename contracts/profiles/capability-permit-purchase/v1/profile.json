@@ -1,0 +1,45 @@
+{
+  "profile": "urn:bridge-clean:capability-permit-purchase:v1",
+  "governing_adr": "docs/adr/0039-native-single-permit-purchases.md",
+  "messages": {
+    "definitions": "schemas/commercial/v1/capability-permit-purchase-definitions.schema.json",
+    "prepare-request": "schemas/commercial/v1/capability-permit-purchase-prepare-request.schema.json",
+    "confirm-request": "schemas/commercial/v1/capability-permit-purchase-confirm-request.schema.json",
+    "status-request": "schemas/commercial/v1/capability-permit-purchase-status-request.schema.json",
+    "cancel-request": "schemas/commercial/v1/capability-permit-purchase-cancel-request.schema.json",
+    "deliver-request": "schemas/commercial/v1/capability-permit-purchase-deliver-request.schema.json",
+    "recover-request": "schemas/commercial/v1/capability-permit-purchase-recover-request.schema.json",
+    "view-response": "schemas/commercial/v1/capability-permit-purchase-view-response.schema.json",
+    "delivery-response": "schemas/commercial/v1/capability-permit-purchase-delivery-response.schema.json",
+    "error": "schemas/commercial/v1/capability-permit-purchase-error.schema.json"
+  },
+  "request_max_bytes": 4096,
+  "response_max_bytes": 20000,
+  "transport": {
+    "method": "POST",
+    "query_forbidden": true,
+    "cache_control": "no-store",
+    "browser_cors": false
+  },
+  "operations": {
+    "prepare": "/v1/capability-permit-purchases:prepare",
+    "confirm": "/v1/capability-permit-purchases:confirm",
+    "status": "/v1/capability-permit-purchases:status",
+    "cancel": "/v1/capability-permit-purchases:cancel",
+    "deliver": "/v1/capability-permit-purchases:deliver",
+    "recover": "/v1/capability-permit-purchases:recover"
+  },
+  "operation_ttl_seconds": 1800,
+  "consent": "acquire-one-permit",
+  "quote_digest": "sha256-hex(RFC8785(quote))",
+  "decision_digest": "sha256-hex(RFC8785({operation_id,binding,quote_digest,decision_reference,actor_reference,expires_at}))",
+  "entry_reference_is_authority": false,
+  "entry_path": "/public/capability-permit-purchases/{entry_reference}",
+  "customer_admission": "current-server-held-owner-or-admin-exact-operation-and-key",
+  "signed_result_profile": "urn:bridge-clean:capability-permit:v1",
+  "signed_result_recovery": "original-committed-exact-bytes-only",
+  "credit_posting": "canonical-payment-reconciliation-only",
+  "journal_retention": "commercial-authority-durable",
+  "generic_idempotency_cleanup_cannot_remove_journal": true,
+  "sandbox_only": true
+}

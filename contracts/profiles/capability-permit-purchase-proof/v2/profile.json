@@ -1,0 +1,59 @@
+{
+  "profile": "urn:bridge-clean:capability-permit-purchase-proof:v2",
+  "governing_adr": "docs/adr/0040-proof-bound-sandbox-purchase-sessions.md",
+  "messages": {
+    "challenge-request": "schemas/commercial/v2/capability-permit-purchase-proof-challenge-request.schema.json",
+    "challenge-response": "schemas/commercial/v2/capability-permit-purchase-proof-challenge-response.schema.json"
+  },
+  "domain": "BRIDGE-CLEAN-CAPABILITY-PERMIT-PURCHASE-PROOF-V2\u0000",
+  "audience": "urn:bridge-clean:commercial-control-plane:capability-permit-purchase:v2",
+  "algorithm": "ES256",
+  "signature_encoding": "ieee-p1363-low-s",
+  "canonical_request": "RFC8785(request)",
+  "request_digest": "SHA-256",
+  "field_encoding": "uint32be-length-prefixed",
+  "fields": [
+    "challenge-id-utf8",
+    "challenge-raw32",
+    "method-utf8",
+    "path-utf8",
+    "request-digest-raw32",
+    "purpose-utf8",
+    "installation-id-utf8",
+    "organization-id-utf8",
+    "installation-key-id-utf8",
+    "audience-utf8"
+  ],
+  "challenge_ttl_seconds": 60,
+  "challenge_single_use": true,
+  "challenge_disclosure": "uniform-nonauthorizing-unknown-revoked-wrong-scope",
+  "key_resolution": "exact-original-active-registered-key-only",
+  "proof_replay_allowed": false,
+  "challenge_path": "/v2/capability-permit-purchase-proof-challenges",
+  "purposes": {
+    "capability-permit-purchase-v2-prepare": {
+      "method": "POST",
+      "path": "/v2/capability-permit-purchases:prepare"
+    },
+    "capability-permit-purchase-v2-confirm": {
+      "method": "POST",
+      "path": "/v2/capability-permit-purchases:confirm"
+    },
+    "capability-permit-purchase-v2-status": {
+      "method": "POST",
+      "path": "/v2/capability-permit-purchases:status"
+    },
+    "capability-permit-purchase-v2-cancel": {
+      "method": "POST",
+      "path": "/v2/capability-permit-purchases:cancel"
+    },
+    "capability-permit-purchase-v2-deliver": {
+      "method": "POST",
+      "path": "/v2/capability-permit-purchases:deliver"
+    },
+    "capability-permit-purchase-v2-recover": {
+      "method": "POST",
+      "path": "/v2/capability-permit-purchases:recover"
+    }
+  }
+}

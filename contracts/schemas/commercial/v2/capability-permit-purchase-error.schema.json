@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v2/capability-permit-purchase-error.schema.json",
+  "title": "Capability permit purchase error v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "code"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-permit-purchase:v2"
+    },
+    "code": {
+      "enum": [
+        "invalid",
+        "proof_invalid",
+        "authority_unavailable",
+        "operation_conflict",
+        "quote_changed",
+        "insufficient_credits",
+        "not_completed",
+        "expired",
+        "cancelled",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-purchase-session-start-request.schema.json",
+  "title": "Capability purchase session start request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "capability-purchase-session-definitions.schema.json#/$defs/startRequest"
+    },
+    "proof": {
+      "$ref": "capability-purchase-session-definitions.schema.json#/$defs/proof"
+    }
+  }
+}

@@ -1,0 +1,331 @@
+openapi: 3.1.0
+info:
+  title: text-analysis-preview-acquisition
+  version: 1.0.0
+paths:
+  /v1/text-analysis-preview-acquisition-proof-challenges:
+    post:
+      operationId: issueTextAnalysisPreviewAcquisitionProofChallenge
+      summary: Exact text-analysis-preview-acquisition-proof operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/proof-challenge-response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id001
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/proof-error.schema.json
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id001
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-preview-acquisition/v1/proof-challenge-request.schema.json
+      x-browser-cors: false
+  /v1/text-analysis-preview-acquisitions:prepare:
+    post:
+      operationId: prepareTextAnalysisPreviewAcquisition
+      summary: Exact text-analysis-preview-acquisition operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/prepare-response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id002
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/error.schema.json
+        '401':
+          description: Required authentication or proof refused
+          content:
+            application/json:
+              schema: *id002
+        '403':
+          description: Exact authority denied
+          content:
+            application/json:
+              schema: *id002
+        '409':
+          description: Exact request or authority state conflict
+          content:
+            application/json:
+              schema: *id002
+        '410':
+          description: Original pending deadline expired
+          content:
+            application/json:
+              schema: *id002
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id002
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id002
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-preview-acquisition/v1/prepare-request.schema.json
+      x-browser-cors: false
+  /v1/text-analysis-preview-acquisitions:read:
+    post:
+      operationId: readTextAnalysisPreviewAcquisition
+      summary: Exact text-analysis-preview-acquisition operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/read-response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id003
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/error.schema.json
+        '401':
+          description: Required authentication or proof refused
+          content:
+            application/json:
+              schema: *id003
+        '403':
+          description: Exact authority denied
+          content:
+            application/json:
+              schema: *id003
+        '409':
+          description: Exact request or authority state conflict
+          content:
+            application/json:
+              schema: *id003
+        '410':
+          description: Original pending deadline expired
+          content:
+            application/json:
+              schema: *id003
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id003
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id003
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-preview-acquisition/v1/read-request.schema.json
+      x-browser-cors: false
+  /v1/text-analysis-preview-acquisitions:submit:
+    post:
+      operationId: submitTextAnalysisPreviewAcquisition
+      summary: Exact text-analysis-preview-acquisition operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/submit-response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id004
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/error.schema.json
+        '401':
+          description: Required authentication or proof refused
+          content:
+            application/json:
+              schema: *id004
+        '403':
+          description: Exact authority denied
+          content:
+            application/json:
+              schema: *id004
+        '409':
+          description: Exact request or authority state conflict
+          content:
+            application/json:
+              schema: *id004
+        '410':
+          description: Original pending deadline expired
+          content:
+            application/json:
+              schema: *id004
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id004
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id004
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id004
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-preview-acquisition/v1/submit-request.schema.json
+      x-browser-cors: false
+  /onboarding/text-analysis-preview-acquisitions/{entry_reference}:
+    get:
+      operationId: openTextAnalysisPreviewAcquisition
+      summary: Exact text-analysis-preview-acquisition operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        default:
+          description: Bounded nonauthorizing navigation; no admission, preparation or consent
+      parameters:
+      - name: entry_reference
+        in: path
+        required: true
+        schema:
+          $ref: https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32
+  /onboarding/text-analysis-preview-acquisitions/{entry_reference}:admit:
+    post:
+      operationId: admitTextAnalysisPreviewAcquisition
+      summary: Exact text-analysis-preview-acquisition operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/admit-response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id005
+                $ref: ../schemas/text-analysis-preview-acquisition/v1/error.schema.json
+        '401':
+          description: Required authentication or proof refused
+          content:
+            application/json:
+              schema: *id005
+        '403':
+          description: Exact authority denied
+          content:
+            application/json:
+              schema: *id005
+        '409':
+          description: Exact request or authority state conflict
+          content:
+            application/json:
+              schema: *id005
+        '410':
+          description: Original pending deadline expired
+          content:
+            application/json:
+              schema: *id005
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id005
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id005
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id005
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-preview-acquisition/v1/admit-request.schema.json
+      parameters:
+      - name: entry_reference
+        in: path
+        required: true
+        schema:
+          $ref: https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32
+      x-admission: independent-current-cookie-exact-Origin-CSRF-owner-admin

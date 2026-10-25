@@ -1,0 +1,44 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-authority-issuance:v1",
+  "governing_adr": "docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md",
+  "messages": {
+    "definitions": "schemas/text-analysis-authority-issuance/v1/definitions.schema.json",
+    "license-request": "schemas/text-analysis-authority-issuance/v1/license-request.schema.json",
+    "preview-request": "schemas/text-analysis-authority-issuance/v1/preview-request.schema.json",
+    "error": "schemas/text-analysis-authority-issuance/v1/error.schema.json"
+  },
+  "request_max_bytes": 8192,
+  "response_max_bytes": 24576,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "classification": "commercial-confidential",
+  "retention_class": "commercial-authority-durable",
+  "error_reasons": [
+    "invalid",
+    "rate_limited",
+    "temporarily_unavailable",
+    "proof_invalid",
+    "request_conflict",
+    "authority_unavailable",
+    "unsupported_profile",
+    "unsupported_release",
+    "preview_unavailable"
+  ],
+  "audit_days": 400,
+  "request_response_logging": false,
+  "retry": "fresh-proof-original-canonical-request-meaning",
+  "response_cache_control": "no-store",
+  "confirmation_max_bytes": 4096,
+  "confirmation_digest": "SHA-256(RFC8785(confirmation))",
+  "authorization": "exact-retained-operation-binding-seat-scope-profile-S-R-confirmation",
+  "commit": "current-authority-and-key-rechecked-after-locks-one-winning-claims-signer-and-exact-bytes",
+  "debit": false,
+  "module_license_activation": "accepted-qualified-replacement-installation-reissue-required",
+  "preview_uniqueness": [
+    "organization_id",
+    "capability"
+  ],
+  "delivery_profile": "urn:bridge-clean:text-analysis-authority-delivery:v1",
+  "error_max_bytes": 4096,
+  "audit_retention_class": "security-audit"
+}

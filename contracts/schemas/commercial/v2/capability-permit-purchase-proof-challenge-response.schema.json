@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v2/capability-permit-purchase-proof-challenge-response.schema.json",
+  "title": "Capability permit purchase proof-challenge-response v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "challenge_id",
+    "challenge",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-permit-purchase-proof:v2"
+    },
+    "challenge_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "challenge": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    }
+  }
+}

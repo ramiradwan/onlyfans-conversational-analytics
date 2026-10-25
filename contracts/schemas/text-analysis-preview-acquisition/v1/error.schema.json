@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-preview-acquisition/v1/error.schema.json",
+  "title": "text-analysis-preview-acquisition error v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "reason"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-acquisition:v1"
+        },
+        "reason": {
+          "enum": [
+            "invalid",
+            "temporarily_unavailable",
+            "proof_invalid",
+            "request_conflict",
+            "authentication_required",
+            "authorization_denied",
+            "expired",
+            "decision_conflict",
+            "unsupported_profile",
+            "unsupported_release",
+            "preview_unavailable"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "reason",
+        "retry_at"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-acquisition:v1"
+        },
+        "reason": {
+          "const": "rate_limited"
+        },
+        "retry_at": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  ]
+}

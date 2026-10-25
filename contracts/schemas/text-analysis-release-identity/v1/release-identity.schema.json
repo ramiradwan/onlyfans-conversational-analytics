@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/text-analysis-release-identity/v1/release-identity.schema.json",
+  "title": "text-analysis-release-identity release-identity v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "product_id",
+    "release_version",
+    "platform",
+    "architecture",
+    "artifact_sha256",
+    "contract_manifest_sha256",
+    "vector_manifest_sha256",
+    "trust_set_sha256"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-release-identity:v1"
+    },
+    "product_id": {
+      "const": "bridge-clean"
+    },
+    "release_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+    },
+    "platform": {
+      "enum": [
+        "windows",
+        "macos",
+        "linux"
+      ]
+    },
+    "architecture": {
+      "enum": [
+        "x86_64",
+        "arm64"
+      ]
+    },
+    "artifact_sha256": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "contract_manifest_sha256": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "vector_manifest_sha256": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "trust_set_sha256": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+    }
+  }
+}

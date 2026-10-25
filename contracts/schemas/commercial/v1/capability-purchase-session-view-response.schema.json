@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-purchase-session-view-response.schema.json",
+  "title": "Capability purchase session view response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "request_id",
+    "binding",
+    "purchase_session_reference",
+    "state",
+    "created_at",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-purchase-session:v1"
+    },
+    "request_id": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "binding": {
+      "$ref": "capability-purchase-session-definitions.schema.json#/$defs/binding"
+    },
+    "purchase_session_reference": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "state": {
+      "enum": [
+        "authentication_required",
+        "active",
+        "ended",
+        "expired"
+      ]
+    },
+    "created_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    },
+    "entry_reference": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/base64url32"
+    },
+    "authenticated_at": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    },
+    "actor_reference": {
+      "$ref": "../../common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "authentication_required"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "entry_reference"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "authenticated_at"
+              ]
+            },
+            {
+              "required": [
+                "actor_reference"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "active"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "authenticated_at",
+          "actor_reference"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "entry_reference"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "ended"
+          }
+        }
+      },
+      "then": {
+        "required": [],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "entry_reference"
+              ]
+            },
+            {
+              "required": [
+                "authenticated_at"
+              ]
+            },
+            {
+              "required": [
+                "actor_reference"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "expired"
+          }
+        }
+      },
+      "then": {
+        "required": [],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "entry_reference"
+              ]
+            },
+            {
+              "required": [
+                "authenticated_at"
+              ]
+            },
+            {
+              "required": [
+                "actor_reference"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

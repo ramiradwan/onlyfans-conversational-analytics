@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/commercial/v1/capability-purchase-session-error.schema.json",
+  "title": "Capability purchase session error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "code"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:capability-purchase-session:v1"
+    },
+    "code": {
+      "enum": [
+        "invalid",
+        "proof_invalid",
+        "authority_unavailable",
+        "operation_conflict",
+        "expired",
+        "rate_limited",
+        "temporarily_unavailable"
+      ]
+    }
+  }
+}

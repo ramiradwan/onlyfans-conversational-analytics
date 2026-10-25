@@ -1,0 +1,144 @@
+openapi: 3.1.0
+info:
+  title: Proof-bound sandbox purchase sessions
+  version: 1.0.0
+paths:
+  /v1/capability-purchase-sessions:start:
+    post:
+      operationId: startCapabilityPurchaseSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-purchase-session-start-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded session projection; no purchase consent
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-purchase-session-view-response.schema.json
+        '400':
+          description: Invalid closed JSON
+        '401':
+          description: Invalid fresh registered-key proof
+        '403':
+          description: Authority unavailable
+        '409':
+          description: Exact replay conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable
+  /v1/capability-purchase-sessions:status:
+    post:
+      operationId: readCapabilityPurchaseSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-purchase-session-status-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded session projection; no purchase consent
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-purchase-session-view-response.schema.json
+        '400':
+          description: Invalid closed JSON
+        '401':
+          description: Invalid fresh registered-key proof
+        '403':
+          description: Authority unavailable
+        '409':
+          description: Exact replay conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable
+  /v1/capability-purchase-sessions:wallet:
+    post:
+      operationId: readCapabilityPurchaseSessionWallet
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-purchase-session-wallet-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded session projection; no purchase consent
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-purchase-session-wallet-response.schema.json
+        '400':
+          description: Invalid closed JSON
+        '401':
+          description: Invalid fresh registered-key proof
+        '403':
+          description: Authority unavailable
+        '409':
+          description: Exact replay conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable
+  /v1/capability-purchase-sessions:end:
+    post:
+      operationId: endCapabilityPurchaseSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-purchase-session-end-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded session projection; no purchase consent
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-purchase-session-view-response.schema.json
+        '400':
+          description: Invalid closed JSON
+        '401':
+          description: Invalid fresh registered-key proof
+        '403':
+          description: Authority unavailable
+        '409':
+          description: Exact replay conflict
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable
+  /v1/capability-purchase-session-proof-challenges:
+    post:
+      operationId: issueCapabilityPurchaseSessionProofChallenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/commercial/v1/capability-purchase-session-proof-challenge-request.schema.json
+      responses:
+        '200':
+          description: Uniform nonauthorizing challenge
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/commercial/v1/capability-purchase-session-proof-challenge-response.schema.json
+        '400':
+          description: Closed request invalid
+        '429':
+          description: Rate limited
+        '503':
+          description: Temporarily unavailable

@@ -1,0 +1,160 @@
+openapi: 3.1.0
+info:
+  title: text-analysis-authority-delivery
+  version: 1.0.0
+paths:
+  /v1/text-analysis-authority-delivery-proof-challenges:
+    post:
+      operationId: issueTextAnalysisAuthorityDeliveryProofChallenge
+      summary: Exact text-analysis-authority-delivery-proof operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-authority-delivery-proof/v1/challenge-response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id001
+                $ref: ../schemas/text-analysis-authority-delivery-proof/v1/error.schema.json
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id001
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id001
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-authority-delivery-proof/v1/challenge-request.schema.json
+      x-browser-cors: false
+  /v1/text-analysis-authority-deliveries:deliver:
+    post:
+      operationId: deliverTextAnalysisAuthority
+      summary: Exact text-analysis-authority-delivery operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-authority-delivery/v1/response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id002
+                $ref: ../schemas/text-analysis-authority-delivery/v1/error.schema.json
+        '401':
+          description: Required authentication or proof refused
+          content:
+            application/json:
+              schema: *id002
+        '409':
+          description: Exact request or authority state conflict
+          content:
+            application/json:
+              schema: *id002
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id002
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id002
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-authority-delivery/v1/deliver-request.schema.json
+      x-browser-cors: false
+  /v1/text-analysis-authority-deliveries:recover:
+    post:
+      operationId: recoverTextAnalysisAuthority
+      summary: Exact text-analysis-authority-delivery operation
+      x-query-forbidden: true
+      x-cache-control: no-store
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/text-analysis-authority-delivery/v1/response.schema.json
+        '400':
+          description: Invalid closed input
+          content:
+            application/json:
+              schema: &id003
+                $ref: ../schemas/text-analysis-authority-delivery/v1/error.schema.json
+        '401':
+          description: Required authentication or proof refused
+          content:
+            application/json:
+              schema: *id003
+        '409':
+          description: Exact request or authority state conflict
+          content:
+            application/json:
+              schema: *id003
+        '413':
+          description: Bound exceeded
+          content:
+            application/json:
+              schema: *id003
+        '429':
+          description: Uniform ingress rate limit
+          content:
+            application/json:
+              schema: *id003
+        '503':
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema: *id003
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/text-analysis-authority-delivery/v1/recover-request.schema.json
+      x-browser-cors: false
