@@ -516,6 +516,19 @@ fn metadata(
     }
     Ok((meta, files))
 }
+
+pub(crate) fn inspect_installed_engine() -> Result<()> {
+    let mut stage = FailureStage::PackageObservation;
+    let mut packages = crate::servicing::worker_packages(&mut stage)?;
+    let (meta, _files) = metadata(&mut packages)?;
+    // Check the release's intrinsic code/adapter closure without selecting a model profile.
+    let observed = serde_json::json!({
+        "artifacts": meta.artifacts.iter().map(|a| &a.artifact).collect::<Vec<_>>(),
+        "components": meta.adapters.iter().map(|a| serde_json::json!({
+            "engine": &meta.engine, "adapter": &a["adapter"]})).collect::<Vec<_>>()
+    });
+    validate_metadata(&meta, &observed)
+}
 struct Worker {
     process: Handle,
     job: Handle,

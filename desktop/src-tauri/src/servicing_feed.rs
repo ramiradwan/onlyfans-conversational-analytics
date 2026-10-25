@@ -100,6 +100,28 @@ fn end(reader: &mut Reader<&[u8]>, name: &str) -> Result<()> {
 }
 
 pub fn parse(bytes: &[u8], release: &DesktopRelease, actual: &PackageIdentity) -> Result<Target> {
+    parse_bound(bytes, release, actual, false)
+}
+
+/// Explicit optional acquisition is bound to the installed Core, never a future update.
+pub(crate) fn parse_current_related(
+    bytes: &[u8],
+    release: &DesktopRelease,
+    actual: &PackageIdentity,
+) -> Result<Target> {
+    let target = parse_bound(bytes, release, actual, true)?;
+    if !matches!(target, Target::RelatedBundle { .. }) {
+        return Err("optional_release_required");
+    }
+    Ok(target)
+}
+
+fn parse_bound(
+    bytes: &[u8],
+    release: &DesktopRelease,
+    actual: &PackageIdentity,
+    current: bool,
+) -> Result<Target> {
     if release.update_owner != "direct-appinstaller" || release.validate(actual).is_err() {
         return Err("direct_source_required");
     }
@@ -166,7 +188,10 @@ pub fn parse(bytes: &[u8], release: &DesktopRelease, actual: &PackageIdentity) -
     {
         return Err("update_identity_mismatch");
     }
-    if version(&package["Version"])? <= version(&actual.version)? {
+    if current && version(&package["Version"])? != version(&actual.version)? {
+        return Err("optional_core_update_required");
+    }
+    if !current && version(&package["Version"])? <= version(&actual.version)? {
         return Err("update_not_newer");
     }
     let engine = if related {
@@ -575,6 +600,24 @@ mod tests {
         );
         let target = parse(xml.as_bytes(), &release, &actual).unwrap();
         assert!(matches!(target,Target::RelatedBundle{engine,..} if engine.version=="42.0.2.3"));
+        assert_eq!(
+            parse_current_related(xml.as_bytes(), &release, &actual),
+            Err("optional_core_update_required")
+        );
+        let current = xml.replace("1.0.11.0", "1.0.10.0");
+        assert!(parse_current_related(current.as_bytes(), &release, &actual).is_ok());
+        assert_eq!(
+            parse(current.as_bytes(), &release, &actual),
+            Err("update_not_newer")
+        );
+        assert!(parse_current_related(
+            current
+                .replace("updates.example.test", "other.example.test")
+                .as_bytes(),
+            &release,
+            &actual
+        )
+        .is_err());
         for bad in [
             xml.replace("42.0.2.3", "0.0.2.3"),
             xml.replace("RelatedPackages", "OptionalPackages"),

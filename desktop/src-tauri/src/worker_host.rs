@@ -576,6 +576,11 @@ pub fn run(args: &[String]) -> Result<()> {
     platform::run(args)
 }
 
+#[cfg(windows)]
+pub(crate) fn inspect_installed_engine() -> Result<()> {
+    platform::inspect_installed_engine()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 #[cfg(any(windows, test))]
 #[path = "deployment_settlement.rs"]
-mod deployment_settlement;
+pub(crate) mod deployment_settlement;
 
 #[cfg(all(windows, feature = "qualification-tools", debug_assertions))]
 #[path = "optional_acquisition.rs"]
@@ -45,7 +45,7 @@ pub struct PreparedUpdate {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum EngineSelection {
+pub(crate) enum EngineSelection {
     Absent,
     Present {
         full_name: String,
@@ -943,7 +943,7 @@ fn validate_staged_target(
 }
 
 #[cfg(windows)]
-fn selected_engine(
+pub(crate) fn selected_engine(
     manager: &windows_runtime::Management::Deployment::PackageManager,
     release: &DesktopRelease,
     main: &PackageIdentity,
@@ -1433,7 +1433,7 @@ fn staged_root(full_name: &str, role: StagedRole) -> Result<std::path::PathBuf, 
 }
 
 #[cfg(windows)]
-fn automatic_policy(
+pub(crate) fn automatic_policy(
     package: &windows_runtime::ApplicationModel::Package,
 ) -> Result<(), &'static str> {
     use windows_runtime::ApplicationModel::AppInstallerPolicySource;
@@ -1813,18 +1813,19 @@ pub fn inspect(release: Option<&DesktopRelease>, cancelled: impl Fn() -> bool) -
 }
 
 #[cfg(windows)]
-struct Apartment;
+pub(crate) struct Apartment;
 // Avoid the generated process-static activation-factory cache: after the last
 // worker calls RoUninitialize, a later check must obtain fresh COM interfaces.
 #[cfg(windows)]
-fn activate_owned<T: windows_runtime::core::Interface + windows_runtime::core::RuntimeName>(
-) -> windows_runtime::core::Result<T> {
+pub(crate) fn activate_owned<
+    T: windows_runtime::core::Interface + windows_runtime::core::RuntimeName,
+>() -> windows_runtime::core::Result<T> {
     use windows_runtime::core::{Interface, HSTRING};
     unsafe { windows_runtime::Win32::System::WinRT::RoActivateInstance(&HSTRING::from(T::NAME))? }
         .cast()
 }
 #[cfg(windows)]
-fn owned_result<T: windows_runtime::core::Interface>(
+pub(crate) fn owned_result<T: windows_runtime::core::Interface>(
     code: windows_runtime::core::HRESULT,
     pointer: *mut std::ffi::c_void,
 ) -> windows_runtime::core::Result<T> {
@@ -1842,7 +1843,7 @@ fn owned_result<T: windows_runtime::core::Interface>(
 }
 #[cfg(windows)]
 impl Apartment {
-    fn new() -> windows_runtime::core::Result<Self> {
+    pub(crate) fn new() -> windows_runtime::core::Result<Self> {
         unsafe {
             windows_runtime::Win32::System::WinRT::RoInitialize(
                 windows_runtime::Win32::System::WinRT::RO_INIT_MULTITHREADED,
@@ -1859,7 +1860,7 @@ impl Drop for Apartment {
 }
 
 #[cfg(windows)]
-fn observe(
+pub(crate) fn observe(
 ) -> windows_runtime::core::Result<(windows_runtime::ApplicationModel::Package, Observation)> {
     use windows_runtime::ApplicationModel::{IPackageStatics, Package};
     let factory: IPackageStatics = unsafe {
