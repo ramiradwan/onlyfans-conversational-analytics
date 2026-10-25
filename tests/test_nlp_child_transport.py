@@ -100,11 +100,15 @@ class ChannelOwner:
         self.cancellable_prepare = cancellable_prepare
         self.allow_drain, self.graceful = True, True
         self.operations = []
+        self.replies = []
+        self.resident_health = 'unloaded'
+        self.cancel_replied = threading.Event()
         self.entered = threading.Event()
         self.worker = threading.Thread(target=self._serve, daemon=False)
         self.worker.start()
 
     def reply(self, operation, payload):
+        self.replies.append((operation, payload))
         write_frame(self.output, encode_envelope(operation, payload))
 
     def _serve(self):
@@ -126,31 +130,39 @@ class ChannelOwner:
                         active = adapter.PrepareRequest.model_validate_json(body)
                         self.entered.set()
                     else:
+                        self.resident_health = 'ready'
                         self.reply(operation, adapter.PreparationResult(**{k: request[k] for k in
                             ('request_id', 'profile_sha256', 'component_id', 'component_sha256')},
                             outcome='ready', reason='none'))
                 elif operation == 'analyze':
                     active = WorkerRequest.model_validate_json(body)
+                    self.resident_health = 'ready'
                     self.entered.set()
                     if not self.cancellable:
                         self.reply(operation, _decode(WorkerResponse,
                             ConformanceAdapter(self.profile)(active, lambda: False), 'response'))
                         active = None
                 elif operation in ('cancel', 'unload'):
-                    self.reply(operation, adapter.LifecycleResult(operation=operation,
-                        request_id=request['request_id'], profile_sha256=request['profile_sha256'],
-                        component_sha256=request['component_sha256'],
-                        target_request_id=request.get('target_request_id'),
-                        outcome='completed', health='ready' if operation == 'cancel' else 'unloaded'))
+                    health = self.resident_health if operation == 'cancel' else 'unloaded'
                     if operation == 'cancel' and active is not None:
                         if isinstance(active, WorkerRequest):
+                            health = 'ready'
                             self.reply('analyze', _decode(WorkerResponse,
                                 ConformanceAdapter(self.profile)(active, lambda: False), 'response'))
                         else:
+                            health = 'unloaded'
                             self.reply('prepare', adapter.PreparationResult(**{k: getattr(active, k) for k in
                                 ('request_id', 'profile_sha256', 'component_id', 'component_sha256')},
                                 outcome='cancelled', reason='cancelled'))
                         active = None
+                    self.resident_health = health
+                    self.reply(operation, adapter.LifecycleResult(operation=operation,
+                        request_id=request['request_id'], profile_sha256=request['profile_sha256'],
+                        component_sha256=request['component_sha256'],
+                        target_request_id=request.get('target_request_id'),
+                        outcome='completed', health=health))
+                    if operation == 'cancel':
+                        self.cancel_replied.set()
                 elif operation == 'close':
                     time.sleep(self.delay)
                     self.reply(operation, CloseResult(request_id=request['request_id'], outcome='drained', reason='none'))
@@ -257,34 +269,69 @@ def test_cancel_ack_does_not_publish_completed_analysis():
     profile, _ = example()
     owner = ChannelOwner(profile, cancellable=True)
     client = ChildClient(profile, owner, NONCE)
-    component = profile.components[0]
-    text = 'A scarf and a printed brochure.'
-    request = WorkerRequest(request_id='request', profile_sha256=profile.identity_digest(),
-        component_id=component.component_id, component_sha256=component.identity_digest(),
-        tasks=tuple(t.task for t in component.tasks), deadline_ms=1000,
-        items=(WorkerInput(request_item_id='item', text=text, text_sha256=hashlib.sha256(text.encode()).hexdigest()),))
-    with pytest.raises(ValueError, match='nlp_cancelled'):
-        client.analyze(request, lambda: owner.entered.is_set())
-    assert 'cancel' in owner.operations
-    assert client.close(2)
-    owner.stdout.close()
+    try:
+        component = profile.components[0]
+        text = 'A scarf and a printed brochure.'
+        request = WorkerRequest(request_id='request', profile_sha256=profile.identity_digest(),
+            component_id=component.component_id, component_sha256=component.identity_digest(),
+            tasks=tuple(t.task for t in component.tasks), deadline_ms=1000,
+            items=(WorkerInput(request_item_id='message', text=text, text_sha256=hashlib.sha256(text.encode()).hexdigest()),))
+        with pytest.raises(ValueError, match='nlp_cancelled'):
+            client.analyze(request, lambda: owner.entered.is_set())
+        assert owner.cancel_replied.wait(1)
+        assert [operation for operation, _ in owner.replies] == ['bootstrap', 'analyze', 'cancel']
+        terminal, ack = owner.replies[-2:]
+        assert terminal[1].request_id == request.request_id
+        assert ack[1].target_request_id == request.request_id and ack[1].health == 'ready'
+        with client._condition:
+            assert client._condition.wait_for(lambda: not client._pending or client._failed, timeout=1)
+        owner.cancellable = False
+        recovered = _decode(WorkerResponse, client.analyze(request.model_copy(update={'request_id': 'after-cancel'}), lambda: False), 'response')
+        assert recovered.request_id == 'after-cancel'
+        late_cancel = adapter.CancelRequest(request_id='late-cancel', target_request_id='after-cancel',
+            profile_sha256=request.profile_sha256, component_sha256=request.component_sha256)
+        pending = client._submit('cancel', late_cancel,
+            lambda body: adapter.validate_lifecycle(late_cancel, body))
+        assert pending.event.wait(1) and not pending.failed
+        assert adapter.validate_lifecycle(late_cancel, pending.body).health == 'ready'
+        assert client.healthy
+        assert client.close(2)
+    finally:
+        client.close(2)
+        owner.stdout.close()
 
 
-def test_cancellation_during_preparation_settles_before_close():
+def test_cancellation_during_preparation_settles_before_reprepare():
     profile, _ = example()
     owner = ChannelOwner(profile, cancellable_prepare=True)
     client = ChildClient(profile, owner, NONCE)
-    component = profile.components[0]
-    request = adapter.PrepareRequest(request_id='prepare-request', profile_sha256=profile.identity_digest(),
-        component_id=component.component_id, component_sha256=component.identity_digest(),
-        artifacts=tuple(a for a in profile.artifacts if a.artifact_id in component.artifact_ids
-            or a.role in ('engine', 'runtime')), max_memory_bytes=profile.resources.transition_peak_memory_bytes,
-        inference_threads=profile.resources.inference_threads)
-    with pytest.raises(ValueError, match='nlp_cancelled'):
-        client.prepare(request, cancelled=lambda: owner.entered.is_set())
-    assert owner.operations == ['bootstrap', 'prepare', 'cancel']
-    assert client.close(2)
-    owner.stdout.close()
+    try:
+        component = profile.components[0]
+        request = adapter.PrepareRequest(request_id='prepare-request', profile_sha256=profile.identity_digest(),
+            component_id=component.component_id, component_sha256=component.identity_digest(),
+            artifacts=tuple(a for a in profile.artifacts if a.artifact_id in component.artifact_ids
+                or a.role in ('engine', 'runtime')), max_memory_bytes=profile.resources.transition_peak_memory_bytes,
+            inference_threads=profile.resources.inference_threads)
+        with pytest.raises(ValueError, match='nlp_cancelled'):
+            client.prepare(request, cancelled=lambda: owner.entered.is_set())
+        assert owner.cancel_replied.wait(1)
+        assert owner.operations == ['bootstrap', 'prepare', 'cancel']
+        assert [operation for operation, _ in owner.replies] == ['bootstrap', 'prepare', 'cancel']
+        terminal, ack = owner.replies[-2:]
+        assert terminal[1].request_id == request.request_id
+        assert terminal[1].outcome == terminal[1].reason == 'cancelled'
+        assert ack[1].target_request_id == request.request_id and ack[1].health == 'unloaded'
+        with client._condition:
+            assert client._condition.wait_for(lambda: not client._pending or client._failed, timeout=1)
+        owner.cancellable_prepare = False
+        recovered = _decode(adapter.PreparationResult,
+            client.prepare(request.model_copy(update={'request_id': 'prepare-recovery'})), 'prepare')
+        assert recovered.request_id == 'prepare-recovery' and recovered.outcome == 'ready'
+        assert client.healthy
+        assert client.close(2)
+    finally:
+        client.close(2)
+        owner.stdout.close()
 
 
 def test_retained_data_rechecks_members_and_holds_readonly_bytes(tmp_path):
