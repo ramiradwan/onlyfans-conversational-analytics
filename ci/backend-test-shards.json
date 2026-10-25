@@ -278,6 +278,7 @@
     "tests/test_membership_proof_falsifiers.py": 2,
     "tests/test_membership_validation_bounds.py": 2,
     "tests/test_msix_packaging.py": 3,
+    "tests/test_nlp_canonical_execution.py": 2,
     "tests/test_nlp_dependencies.py": 2,
     "tests/test_nlp_dependencies_api.py": 2,
     "tests/test_nlp_dependency_publication.py": 4,
@@ -628,6 +629,10 @@
       {
         "selector": "tests/test_text_analysis_jobs.py",
         "reason": "Encrypted SQLite preserves prepared jobs, exact store ownership and atomic preview output and spend transitions on Windows."
+      },
+      {
+        "selector": "tests/test_nlp_canonical_execution.py",
+        "reason": "Encrypted SQLite preserves canonical commitment, source-bound replay and execution fencing through the findings runner on Windows."
       }
     ],
     "analytics": [

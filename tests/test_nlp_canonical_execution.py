@@ -282,15 +282,23 @@ def identity_only(x):
     return replace(x.policy,text_analysis_authority=None,text_analysis_fence=None)
 
 
-def test_identity_only_paused_enrollment_replays_without_module_or_dependency_providers(execution):
+@pytest.mark.parametrize('mode',['paused','retired'])
+def test_identity_only_enrollment_replays_without_module_or_dependency_providers(execution,mode):
     x = execution()
     assert x.runner.process_one(ACCOUNT)
     calls = len(x.adapter.requests)
+    original_job = rows(x,'knowledge_jobs')[0]['job_id']
+    original_record = bytes(rows(x,'knowledge_members')[0]['document'])
+    original_manifest = bytes(rows(x,'knowledge_contributions')[0]['manifest'])
     with x.repository.database.transaction() as db:
-        x.jobs.set_enrollment_mode_in(db,x.enrollment.enrollment_id,'paused',policy=x.policy)
+        x.jobs.set_enrollment_mode_in(db,x.enrollment.enrollment_id,mode,policy=x.policy)
     x.authority.revoke(x.context.reference_id)
     x.runner.canonical_execution = CanonicalFindingsExecution(x.repository,x.authority,
         enrollment_id=x.enrollment.enrollment_id,identity_policy=identity_only(x))
+    assert x.runner.canonical_execution.lifecycle is None
+    assert x.runner.canonical_execution.evidence is None
+    assert x.runner.canonical_execution.policy.text_analysis_authority is None
+    x.runner.adapter = None
     x.runner.execution_ready = lambda p:False
     class AbsentDependencies:
         def ready(self,*args): pytest.fail('dependency readiness on retained replay')
@@ -300,6 +308,12 @@ def test_identity_only_paused_enrollment_replays_without_module_or_dependency_pr
     x.runner.findings.retry(ACCOUNT,source_ref)
     assert x.runner.process_one(ACCOUNT)
     assert len(x.adapter.requests) == calls
+    assert rows(x,'knowledge_jobs')[0]['job_id'] == original_job
+    assert bytes(rows(x,'knowledge_members')[0]['document']) == original_record
+    assert bytes(rows(x,'knowledge_contributions')[0]['manifest']) == original_manifest
+    with x.f.stores.projections.database.read() as db:
+        assert bytes(db.execute('SELECT document FROM nlp_records').fetchone()[0]) == original_record
+        assert db.execute('SELECT count(*) FROM nlp_record_origins').fetchone()[0] == 1
 
 
 def test_erased_child_receipt_is_found_without_recreating_execution(execution):
