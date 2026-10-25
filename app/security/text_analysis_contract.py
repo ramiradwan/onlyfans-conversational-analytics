@@ -112,6 +112,20 @@ class TextAnalysisSchemas:
         if not self.valid(schema, value):
             raise TextAnalysisContractError("schema_invalid")
 
+    def valid_definition(self, schema: str, definition: str, value: object) -> bool:
+        if schema not in self._validators or type(definition) is not str:
+            raise TextAnalysisContractError("unsupported_schema")
+        validator = self._validators[schema]
+        if definition not in validator.schema.get("$defs", {}):
+            raise TextAnalysisContractError("unsupported_schema")
+        pointer = definition.replace("~", "~0").replace("/", "~1")
+        reference = validator.schema["$id"] + "#/$defs/" + pointer
+        return validator.evolve(schema={"$ref": reference}).is_valid(value)
+
+    def require_definition(self, schema: str, definition: str, value: object) -> None:
+        if not self.valid_definition(schema, definition, value):
+            raise TextAnalysisContractError("schema_invalid")
+
 
 def _object(raw: bytes, maximum: int) -> dict:
     try:
