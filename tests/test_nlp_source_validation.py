@@ -812,7 +812,10 @@ def test_source_lane_migration_preserves_populated_inventory_and_claims(fixture,
     literal_guards = {f'{table}_{guard}' for table in literal_tables
                       for guard in ('immutable', 'replace_blocked')}
     literal_guards.add('nlp_literal_publication_batches_building')
-    assert signatures.keys() - before_signatures.keys() == literal_tracking | literal_guards
+    origin_tracking = {f'generation_content_nlp_origins_{event}' for event in ('insert', 'delete')}
+    origin_tracking |= {f'generation_content_nlp_origin_epoch_{event}' for event in ('insert', 'update', 'delete')}
+    origin_guards = {'nlp_record_origins_delete', 'nlp_record_origins_immutable'}
+    assert signatures.keys() - before_signatures.keys() == literal_tracking | literal_guards | origin_tracking | origin_guards
     assert {name: signatures[name] for name in before_signatures} == before_signatures
     assert signature_digest(before_signatures) == GUARD_DIGESTS[30]
     assert signature_digest(signatures) == GUARD_DIGESTS[CURRENT_SCHEMA_VERSION]
