@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 #[cfg(any(windows, test))]
 #[path = "deployment_settlement.rs"]
 pub(crate) mod deployment_settlement;
+#[cfg(windows)]
+#[path = "family_exclusion.rs"]
+pub(crate) mod family_exclusion;
 
 #[cfg(all(windows, feature = "qualification-tools", debug_assertions))]
 #[path = "optional_acquisition.rs"]
@@ -42,6 +45,12 @@ pub struct UpdateStatus {
 pub struct PreparedUpdate {
     pub package_full_name: String,
     pub version: String,
+    #[cfg(windows)]
+    #[serde(skip)]
+    pub(crate) family_lease: Option<std::sync::Arc<family_exclusion::Lease>>,
+    #[cfg(windows)]
+    #[serde(skip)]
+    pub(crate) family_binding: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1182,167 +1191,278 @@ pub fn prepare_direct(
         return Err("direct_source_required");
     }
     automatic_policy(&current)?;
-    // Availability is an informational Windows cache. The exact registered
-    // descriptor supplies the forward target; Windows must still validate and
-    // stage its signed same-family bytes before any runtime drain is allowed.
-    let bytes = crate::servicing_feed::read_metadata(
+    let family_lease = std::sync::Arc::new(family_exclusion::Lease::acquire(
         actual
-            .app_installer_uri
+            .identity
+            .family
             .as_deref()
-            .ok_or("direct_source_required")?,
-        &cancelled,
-    )?;
-    let target = crate::servicing_feed::parse(&bytes, release, &actual.identity)?;
-    if cancelled() {
-        return Err("deployment_cancelled");
-    }
-    let manager: PackageManager = activate_owned().map_err(|_| "windows_stage_failed")?;
-    let selection = selected_engine(&manager, release, &actual.identity)?;
-    if let (
-        EngineSelection::Present { version, .. },
-        crate::servicing_feed::Target::RelatedBundle { engine, .. },
-    ) = (&selection, &target)
-    {
-        if version_tuple(&engine.version) < version_tuple(version) {
-            return Err("optional_target_downgrade");
+            .ok_or("staged_identity_mismatch")?,
+    )?);
+    let mut family_binding = String::new();
+    let mut deferred = false;
+    let result = (|| {
+        // Availability is an informational Windows cache. The exact registered
+        // descriptor supplies the forward target; Windows must still validate and
+        // stage its signed same-family bytes before any runtime drain is allowed.
+        let bytes = crate::servicing_feed::read_metadata(
+            actual
+                .app_installer_uri
+                .as_deref()
+                .ok_or("direct_source_required")?,
+            &cancelled,
+        )?;
+        let target = crate::servicing_feed::parse(&bytes, release, &actual.identity)?;
+        if cancelled() {
+            return Err("deployment_cancelled");
         }
-    }
-    let uri = owned_uri(&target.core().package_uri).map_err(|_| "windows_stage_failed")?;
-    let options: StagePackageOptions = activate_owned().map_err(|_| "windows_stage_failed")?;
-    if let (
-        EngineSelection::Present { .. },
-        crate::servicing_feed::Target::RelatedBundle { engine, .. },
-    ) = (&selection, &target)
-    {
-        options
-            .RelatedPackageUris()
-            .and_then(|v| v.Append(&owned_uri(&engine.package_uri)?))
-            .map_err(|_| "windows_stage_failed")?;
-    }
-    let related_count = u32::from(matches!(
-        (&selection, &target),
-        (
+        let manager: PackageManager = activate_owned().map_err(|_| "windows_stage_failed")?;
+        let selection = selected_engine(&manager, release, &actual.identity)?;
+        if let (
+            EngineSelection::Present { version, .. },
+            crate::servicing_feed::Target::RelatedBundle { engine, .. },
+        ) = (&selection, &target)
+        {
+            if version_tuple(&engine.version) < version_tuple(version) {
+                return Err("optional_target_downgrade");
+            }
+        }
+        let uri = owned_uri(&target.core().package_uri).map_err(|_| "windows_stage_failed")?;
+        let options: StagePackageOptions = activate_owned().map_err(|_| "windows_stage_failed")?;
+        if let (
             EngineSelection::Present { .. },
-            crate::servicing_feed::Target::RelatedBundle { .. }
-        )
-    ));
-    if options
-        .OptionalPackageFamilyNames()
-        .and_then(|v| v.Size())
-        .map_err(|_| "windows_stage_failed")?
-        != 0
-        || options
-            .OptionalPackageUris()
+            crate::servicing_feed::Target::RelatedBundle { engine, .. },
+        ) = (&selection, &target)
+        {
+            options
+                .RelatedPackageUris()
+                .and_then(|v| v.Append(&owned_uri(&engine.package_uri)?))
+                .map_err(|_| "windows_stage_failed")?;
+        }
+        let related_count = u32::from(matches!(
+            (&selection, &target),
+            (
+                EngineSelection::Present { .. },
+                crate::servicing_feed::Target::RelatedBundle { .. }
+            )
+        ));
+        if options
+            .OptionalPackageFamilyNames()
             .and_then(|v| v.Size())
             .map_err(|_| "windows_stage_failed")?
             != 0
-        || options
-            .RelatedPackageUris()
-            .and_then(|v| v.Size())
-            .map_err(|_| "windows_stage_failed")?
-            != related_count
-    {
-        return Err("windows_stage_options_invalid");
-    }
-    let staged = manager
-        .StagePackageByUriAsync(&uri, &options)
-        .map_err(|_| "windows_stage_failed")?;
-    wait_deployment(&staged, &cancelled, Duration::from_secs(300))
-        .map_err(|_| "windows_stage_failed")?;
-    let full_name = HSTRING::from(format!(
-        "{}_{}_x64__{}",
-        actual.identity.name,
-        target.core().version,
-        current
-            .Id()
-            .and_then(|id| id.PublisherId())
-            .map_err(|_| "staged_identity_mismatch")?
-    ));
-    let (manifest, _staged_evidence) = if release.servicing.is_some() {
-        let (uri, files) = validate_staged_target(release, &actual.identity, &target, &selection)
-            .map_err(|error| error.reason)?;
-        (uri, Some(files))
-    } else {
-        (staged_manifest(&full_name.to_string())?, None)
-    };
-    // Recheck effective settings after the potentially long Windows download.
-    let (again, actual_again) = observe().map_err(|_| "windows_source_unavailable")?;
-    if bind(release, &actual_again) != UpdateSource::DirectAppinstaller {
-        return Err("direct_source_required");
-    }
-    automatic_policy(&again)?;
-    if actual_again.identity != actual.identity
-        || selected_engine(&manager, release, &actual_again.identity)? != selection
-    {
-        return Err("update_selection_changed");
-    }
-    if cancelled() {
-        return Err("deployment_cancelled");
-    }
-    // Register the verified main package's manifest, using its Windows-owned
-    // installed location rather than an untrusted path from the descriptor.
-    let manifest = owned_uri(&manifest).map_err(|_| "staged_package_unavailable")?;
-    let options: RegisterPackageOptions =
-        activate_owned().map_err(|_| "windows_registration_failed")?;
-    options
-        .SetDeferRegistrationWhenPackagesAreInUse(true)
-        .map_err(|_| "windows_registration_failed")?;
-    if matches!(selection, EngineSelection::Present { .. }) {
-        let family = &release
-            .engine_identity()
-            .ok_or("optional_identity_mismatch")?
-            .family;
-        options
-            .OptionalPackageFamilyNames()
-            .and_then(|v| v.Append(&HSTRING::from(family)))
-            .map_err(|_| "windows_registration_failed")?;
-    }
-    if !options
-        .DeferRegistrationWhenPackagesAreInUse()
-        .map_err(|_| "windows_registration_failed")?
-        || options
-            .OptionalPackageFamilyNames()
-            .and_then(|v| v.Size())
-            .map_err(|_| "windows_registration_failed")?
-            != u32::from(matches!(selection, EngineSelection::Present { .. }))
-    {
-        return Err("windows_registration_options_invalid");
-    }
-    let registration = manager
-        .RegisterPackageByUriAsync(&manifest, &options)
-        .map_err(|_| "windows_registration_failed")?;
-    let result = wait_deployment(&registration, &cancelled, Duration::from_secs(60))
-        .map_err(|_| "windows_registration_failed")?;
-    if result
-        .IsRegistered()
-        .map_err(|_| "windows_registration_failed")?
-    {
-        return Err("windows_registration_not_deferred");
-    }
-    let (after, actual_after) = observe().map_err(|_| "windows_source_unavailable")?;
-    if actual_after.identity != actual.identity
-        || bind(release, &actual_after) != UpdateSource::DirectAppinstaller
-    {
-        return Err("update_selection_changed");
-    }
-    automatic_policy(&after)?;
-    let target_engine = match &target {
-        crate::servicing_feed::Target::RelatedBundle { engine, .. } => {
-            Some(engine.version.as_str())
+            || options
+                .OptionalPackageUris()
+                .and_then(|v| v.Size())
+                .map_err(|_| "windows_stage_failed")?
+                != 0
+            || options
+                .RelatedPackageUris()
+                .and_then(|v| v.Size())
+                .map_err(|_| "windows_stage_failed")?
+                != related_count
+        {
+            return Err("windows_stage_options_invalid");
         }
-        _ => None,
-    };
-    if !selection_after_register(
-        &selection,
-        &selected_engine(&manager, release, &actual_after.identity)?,
-        target_engine,
-    ) {
-        return Err("update_selection_changed");
+        use sha2::{Digest, Sha256};
+        family_binding = format!(
+            "{:x}",
+            Sha256::digest(
+                serde_json::to_vec(&(
+                    &actual.identity.family,
+                    &actual.identity.version,
+                    &actual.app_installer_uri,
+                    &target.core().version,
+                    &target.core().package_uri,
+                    match &target {
+                        crate::servicing_feed::Target::RelatedBundle { engine, .. } =>
+                            Some((&engine.version, &engine.package_uri)),
+                        _ => None,
+                    }
+                ))
+                .map_err(|_| "servicing_exclusion_invalid")?
+            )
+        );
+        family_lease.mark_servicing(true, &family_binding)?;
+        let staged = manager
+            .StagePackageByUriAsync(&uri, &options)
+            .map_err(|_| "windows_stage_failed")?;
+        wait_deployment(&staged, &cancelled, Duration::from_secs(300))
+            .map_err(|_| "windows_stage_failed")?;
+        let full_name = HSTRING::from(format!(
+            "{}_{}_x64__{}",
+            actual.identity.name,
+            target.core().version,
+            current
+                .Id()
+                .and_then(|id| id.PublisherId())
+                .map_err(|_| "staged_identity_mismatch")?
+        ));
+        let (manifest, staged_evidence) = if release.servicing.is_some() {
+            let (uri, files) =
+                validate_staged_target(release, &actual.identity, &target, &selection)
+                    .map_err(|error| error.reason)?;
+            (uri, Some(files))
+        } else {
+            (staged_manifest(&full_name.to_string())?, None)
+        };
+        // Retain the exact signed staged descriptor for target admission after a
+        // terminal deferred registration, even if no activation helper is started.
+        let mut retained_files = staged_evidence.unwrap_or_else(StagedFiles::metadata);
+        let staged_path = staged_root(&full_name.to_string(), StagedRole::MainDescriptor)
+            .map_err(|e| e.reason)?;
+        let descriptor = retained_files
+            .read(
+                &staged_path,
+                "app/desktop-release.json",
+                StagedRole::MainDescriptor,
+            )
+            .map_err(|e| e.reason)?;
+        let target_identity = PackageIdentity {
+            version: target.core().version.clone(),
+            ..actual.identity.clone()
+        };
+        let target_release: DesktopRelease = if release.servicing.is_some() {
+            target_descriptor(&descriptor, release, &target_identity, &target)?
+        } else {
+            let r: DesktopRelease =
+                serde_json::from_slice(&descriptor).map_err(|_| "desktop_descriptor_invalid")?;
+            r.validate_target(&target_identity)?;
+            if !r.target_matches(release) {
+                return Err("staged_identity_mismatch");
+            }
+            r
+        };
+        // Recheck effective settings after the potentially long Windows download.
+        let (again, actual_again) = observe().map_err(|_| "windows_source_unavailable")?;
+        if bind(release, &actual_again) != UpdateSource::DirectAppinstaller {
+            return Err("direct_source_required");
+        }
+        automatic_policy(&again)?;
+        if actual_again.identity != actual.identity
+            || selected_engine(&manager, release, &actual_again.identity)? != selection
+        {
+            return Err("update_selection_changed");
+        }
+        if cancelled() {
+            return Err("deployment_cancelled");
+        }
+        // Register the verified main package's manifest, using its Windows-owned
+        // installed location rather than an untrusted path from the descriptor.
+        let manifest = owned_uri(&manifest).map_err(|_| "staged_package_unavailable")?;
+        let options: RegisterPackageOptions =
+            activate_owned().map_err(|_| "windows_registration_failed")?;
+        options
+            .SetDeferRegistrationWhenPackagesAreInUse(true)
+            .map_err(|_| "windows_registration_failed")?;
+        if matches!(selection, EngineSelection::Present { .. }) {
+            let family = &release
+                .engine_identity()
+                .ok_or("optional_identity_mismatch")?
+                .family;
+            options
+                .OptionalPackageFamilyNames()
+                .and_then(|v| v.Append(&HSTRING::from(family)))
+                .map_err(|_| "windows_registration_failed")?;
+        }
+        if !options
+            .DeferRegistrationWhenPackagesAreInUse()
+            .map_err(|_| "windows_registration_failed")?
+            || options
+                .OptionalPackageFamilyNames()
+                .and_then(|v| v.Size())
+                .map_err(|_| "windows_registration_failed")?
+                != u32::from(matches!(selection, EngineSelection::Present { .. }))
+        {
+            return Err("windows_registration_options_invalid");
+        }
+        let registration = manager
+            .RegisterPackageByUriAsync(&manifest, &options)
+            .map_err(|_| "windows_registration_failed")?;
+        let result = wait_deployment(&registration, &cancelled, Duration::from_secs(60))
+            .map_err(|_| "windows_registration_failed")?;
+        if result
+            .IsRegistered()
+            .map_err(|_| "windows_registration_failed")?
+        {
+            return Err("windows_registration_not_deferred");
+        }
+        deferred = true;
+        let (after, actual_after) = observe().map_err(|_| "windows_source_unavailable")?;
+        if actual_after.identity != actual.identity
+            || bind(release, &actual_after) != UpdateSource::DirectAppinstaller
+        {
+            return Err("update_selection_changed");
+        }
+        automatic_policy(&after)?;
+        let target_engine = match &target {
+            crate::servicing_feed::Target::RelatedBundle { engine, .. } => {
+                Some(engine.version.as_str())
+            }
+            _ => None,
+        };
+        if !selection_after_register(
+            &selection,
+            &selected_engine(&manager, release, &actual_after.identity)?,
+            target_engine,
+        ) {
+            return Err("update_selection_changed");
+        }
+        let (engine_family, engine_version) =
+            if matches!(selection, EngineSelection::Present { .. }) {
+                match target_release
+                    .servicing
+                    .as_ref()
+                    .map(|s| &s.installed_artifact)
+                {
+                    Some(InstalledArtifact::RelatedBundle { engine, .. }) => (
+                        Some(engine.identity.family.clone()),
+                        Some(engine.package_version.clone()),
+                    ),
+                    _ => return Err("optional_identity_mismatch"),
+                }
+            } else {
+                (None, None)
+            };
+        family_exclusion::DeferredReceipt {
+            schema: "normal-servicing-completion.v1".into(),
+            phase: "servicing_completed_deferred".into(),
+            family: actual
+                .identity
+                .family
+                .clone()
+                .ok_or("staged_identity_mismatch")?,
+            binding: family_binding.clone(),
+            source_package: current
+                .Id()
+                .and_then(|id| id.FullName())
+                .map_err(|_| "windows_source_unavailable")?
+                .to_string(),
+            source_version: actual.identity.version.clone(),
+            source_uri: actual
+                .app_installer_uri
+                .clone()
+                .ok_or("direct_source_required")?,
+            target_package: full_name.to_string(),
+            target_version: target.core().version.clone(),
+            target_name: target_release.identity.name.clone(),
+            target_publisher: target_release.identity.publisher.clone(),
+            target_descriptor_sha256: format!("{:x}", Sha256::digest(&descriptor)),
+            engine_present: matches!(selection, EngineSelection::Present { .. }),
+            engine_family,
+            engine_version,
+        }
+        .save()?;
+        Ok(PreparedUpdate {
+            package_full_name: full_name.to_string(),
+            version: target.core().version.clone(),
+            family_lease: Some(family_lease.clone()),
+            family_binding: family_binding.clone(),
+        })
+    })();
+    if result.is_err() && !deferred && family_lease.active()? {
+        family_lease.mark_servicing(false, &family_binding)?;
     }
-    Ok(PreparedUpdate {
-        package_full_name: full_name.to_string(),
-        version: target.core().version.clone(),
-    })
+    result
 }
 
 #[cfg(windows)]
