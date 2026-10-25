@@ -21,6 +21,8 @@ from app.security.text_analysis_contract import (
     output_policy, release_identity, supported_profiles,
 )
 
+pytestmark = [pytest.mark.ci_tier('fast')]
+
 ROOT = Path(__file__).resolve().parents[1] / "contracts" / "text-analysis-authority-v1"
 SIGNED = json.loads((ROOT / "signed-cases.json").read_bytes())
 SCHEMA = json.loads((ROOT / "schema-cases.json").read_bytes())
