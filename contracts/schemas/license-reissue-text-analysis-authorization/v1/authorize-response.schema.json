@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis-authorization/v1/authorize-response.schema.json",
+  "title": "license-reissue-text-analysis-authorization authorize-response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "state",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-license-reissue-authorization:v1"
+    },
+    "operation_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "state": {
+      "const": "authorized"
+    },
+    "expires_at": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

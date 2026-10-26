@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/complimentary-activation/v2/confirm-response.schema.json",
+  "title": "Complimentary onboarding activation confirm-response v2",
+  "oneOf": [
+    {
+      "$ref": "committed.schema.json"
+    }
+  ]
+}

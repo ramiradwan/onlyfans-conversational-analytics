@@ -1,0 +1,101 @@
+{
+  "case_count": 311,
+  "files": [
+    {
+      "path": "policy-cases.json",
+      "sha256": "eed765fa229f6ffaa48bbce99d269d6826fd9976c7d44ebc11870b31b19d6ac2",
+      "size": 356530
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "00b19adeb3c6803db4e5570e88a06f06660c2ea7e44df4ed16e3445a8fc13c1f",
+      "size": 92434
+    }
+  ],
+  "fixed_time": "2026-10-09T12:00:00.000Z",
+  "fixture_labels": [],
+  "generator": "tools/generate_complimentary_activation_v2_vectors.py",
+  "generator_version": "1.0.0",
+  "governing_adr": "docs/adr/0043-admit-earmarked-starter-alongside-other-credit-history.md",
+  "inputs": [
+    {
+      "path": "catalog/starter-earmark-admission-policy-v1.json",
+      "sha256": "eb5a309e863e50210a051308abedf3c9325753d2e24665a419fbb53ac14f2895"
+    },
+    {
+      "path": "docs/adr/0043-admit-earmarked-starter-alongside-other-credit-history.md",
+      "sha256": "03e375a62f24ca3b4793816928ef8281df0097191e1a2008c6fd798a55ce8e6a"
+    },
+    {
+      "path": "docs/complimentary-onboarding-activation-v2.md",
+      "sha256": "35281c0bb6cd21811aaa1e3adf6788f6b8aee46cc85732cd9e39b9c817db4ab9"
+    },
+    {
+      "path": "openapi/complimentary-onboarding-activation-v2.openapi.yaml",
+      "sha256": "4eeee561e647c690f54b01368b56e85a8a5d9fc0320539e8383589b7e97bdd26"
+    },
+    {
+      "path": "profiles/complimentary-onboarding-activation/v2/profile.json",
+      "sha256": "f919e3fa4928a62971d8250d5f4ae1a9b3107f97edaeba68b2eb904d10fc319c"
+    },
+    {
+      "path": "schemas/commercial/v1/capability-license-redemption-continuation.schema.json",
+      "sha256": "c59babc00cc55a2bf382813daccc9251e67a1d26eb2cf3746eb88e58706df671"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/committed.schema.json",
+      "sha256": "5fe0ff2f672fdee52e8825474a09a2beaccfcada1bd8b9d73f8d5d215ae671f1"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/confirm-request.schema.json",
+      "sha256": "a8dac489127ebc1d0b1d54ce30dd002c4277a3a71402e100ec5fd325cf224a05"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/confirm-response.schema.json",
+      "sha256": "99ac7b65754940204510eab3c6fe51eada9e79e47f62ce24a68a9d1befc4e592"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/error.schema.json",
+      "sha256": "a351d9cc7b76108cb3daf3b3fcae9cfbffbb2a163f90d861068bdbf4ee343e30"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/prepare-request.schema.json",
+      "sha256": "b047a5832566557a3e6f12807bde33ea42ab251180973848c1c0dc88cbef238e"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/prepare-response.schema.json",
+      "sha256": "324b263cdd41771eba4db48b7fb08ac933c9aee14eb56b9dabe1ade8b5ac960a"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/prepared.schema.json",
+      "sha256": "4cfc23a32cf2c54c1ef8ba31d8abbe66b75fa78f9c754e0e64abad0e96b2087b"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/read-request.schema.json",
+      "sha256": "f95045b4e60a80bce6169d40cfaca3770127b502f6bd298ec6a5b986458434a2"
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/read-response.schema.json",
+      "sha256": "5fca7d8c2fe80cf818e8037247d4fd78e25fca93bdc2c65a73aca4bc2f4fb860"
+    },
+    {
+      "path": "tools/generate_complimentary_activation_v2_vectors.py",
+      "sha256": "ff61c152972617769c020af51e348336fa22c9aeeb7619a82c9a08e1590e4adb"
+    },
+    {
+      "path": "tools/vectorlib.py",
+      "sha256": "4b3cee3f45c0d78c1ab71ac36168474c3d90ce5b2cd3a0cd6586a328d27e9e06"
+    },
+    {
+      "path": "tools/verify_complimentary_activation_v2_vectors.py",
+      "sha256": "7b0f7d50458986ef648316abda511fb62c92651b645eb05c526a3b8ef0bac40e"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:complimentary-onboarding-activation-vectors:v2",
+  "test_only": true
+}

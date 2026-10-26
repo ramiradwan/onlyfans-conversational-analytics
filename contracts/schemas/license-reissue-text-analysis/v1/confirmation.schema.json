@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v1/confirmation.schema.json",
+  "title": "license-reissue-text-analysis confirmation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "binding",
+    "reissue_authorization_id",
+    "prior_license_id",
+    "prior_issuance_id",
+    "reissue_reason",
+    "authority_profile",
+    "scope",
+    "supported_profiles",
+    "release_identity",
+    "expires_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-license-reissue:v1"
+    },
+    "operation_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "binding": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v1/definitions.schema.json#/$defs/binding"
+    },
+    "reissue_authorization_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "prior_license_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "prior_issuance_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "reissue_reason": {
+      "enum": [
+        "replacement-installation",
+        "lost-or-destroyed-installation",
+        "inaccessible-original-hardware"
+      ]
+    },
+    "authority_profile": {
+      "const": "urn:bridge-clean:text-analysis-license:v1"
+    },
+    "scope": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v1/definitions.schema.json#/$defs/scope"
+    },
+    "supported_profiles": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis-supported-profiles/v1/supported-profiles.schema.json"
+    },
+    "release_identity": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/text-analysis-release-identity/v1/release-identity.schema.json"
+    },
+    "expires_at": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}
