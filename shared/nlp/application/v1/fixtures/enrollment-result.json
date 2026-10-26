@@ -1,0 +1,18 @@
+{
+  "receipt": {
+    "command_key": "00000000-0000-4000-8000-000000000001",
+    "meaning_sha256": "8667745d0d85c124a0a5408f9d0bf034a3132470efa0f3fe65ca57691cfdcbd8",
+    "mode_version": 1,
+    "enrollment_id": "00000000-0000-4000-8000-000000000004",
+    "state": "enabled"
+  },
+  "current": {
+    "installation_id": "example-installation",
+    "creator_account_id": "example-account",
+    "principal_id": "example-principal",
+    "mode_version": 1,
+    "enrollment_id": "00000000-0000-4000-8000-000000000004",
+    "state": "enabled",
+    "capsule_available": true
+  }
+}

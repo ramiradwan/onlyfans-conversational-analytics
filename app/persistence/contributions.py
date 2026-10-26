@@ -131,6 +131,10 @@ class ContributionRepository:
         if db.execute("SELECT 1 FROM sqlite_master WHERE name='authoritative_pair'").fetchone():
             columns += [('authoritative_pair', column) for column in
                         ('singleton', 'auth_store_id', 'canonical_store_id', 'installation_id', 'incarnation', 'valid')]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_client_intents'").fetchone():
+            columns += [('text_analysis_client_intents', column) for column in
+                        ('installation_id', 'organization_id', 'creator_account_id', 'principal_id',
+                         'kind', 'intent_key', 'body', 'body_sha256', 'retained_at')]
         return sum(db.execute(f'SELECT COALESCE(sum(CASE WHEN typeof({column})=\'integer\' '
                               f'THEN 8 ELSE length({column}) END),0) FROM {table}').fetchone()[0]
                    for table, column in columns)
@@ -604,6 +608,8 @@ def storage_high_water(connection):
         tables += ['text_analysis_preview_requests', 'text_analysis_preview_capsules']
     if connection.execute("SELECT 1 FROM sqlite_master WHERE name='authoritative_pair'").fetchone():
         tables += ['authoritative_pair']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_client_intents'").fetchone():
+        tables += ['text_analysis_client_intents']
     for table in tables:
         for row in connection.execute(f'SELECT * FROM {table} ORDER BY 1,2'):
             value = [v.hex() if type(v) is bytes else v for v in row]

@@ -1,0 +1,885 @@
+{
+  "$defs": {
+    "Coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "source_codepoints": {
+          "maximum": 131072,
+          "minimum": 0,
+          "title": "Source Codepoints",
+          "type": "integer"
+        },
+        "examined": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Examined",
+          "type": "array"
+        },
+        "excluded": {
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "maxItems": 256,
+          "title": "Excluded",
+          "type": "array"
+        },
+        "limits_reached": {
+          "items": {
+            "enum": [
+              "tokens",
+              "windows",
+              "candidates",
+              "output"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Limits Reached",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_codepoints",
+        "examined",
+        "excluded",
+        "limits_reached"
+      ],
+      "title": "Coverage",
+      "type": "object"
+    },
+    "PolicyIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "revision",
+        "sha256"
+      ],
+      "title": "PolicyIdentity",
+      "type": "object"
+    },
+    "PreviewContribution": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "title": "Job Id",
+          "type": "string"
+        },
+        "contribution_id": {
+          "title": "Contribution Id",
+          "type": "string"
+        },
+        "spec_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Spec Sha256",
+          "type": "string"
+        },
+        "input_inventory_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Input Inventory Sha256",
+          "type": "string"
+        },
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Sha256",
+          "type": "string"
+        },
+        "selection_policy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "schema_version": {
+          "const": "text-analysis-preview.v1",
+          "default": "text-analysis-preview.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_count": {
+          "maximum": 4096,
+          "minimum": 0,
+          "title": "Source Count",
+          "type": "integer"
+        },
+        "examination": {
+          "items": {
+            "$ref": "#/$defs/PreviewExamination"
+          },
+          "maxItems": 8192,
+          "title": "Examination",
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/PreviewTaskCoverage"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "summaries": {
+          "items": {
+            "$ref": "#/$defs/PreviewSummary"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Summaries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "job_id",
+        "contribution_id",
+        "spec_sha256",
+        "input_inventory_sha256",
+        "profile_sha256",
+        "selection_policy",
+        "source_count",
+        "examination",
+        "tasks",
+        "summaries"
+      ],
+      "title": "PreviewContribution",
+      "type": "object"
+    },
+    "PreviewEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": {
+          "exclusiveMaximum": 4096,
+          "minimum": 0,
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceBinding"
+        },
+        "reference": {
+          "$ref": "#/$defs/QuestionEvidence"
+        },
+        "assessment": {
+          "enum": [
+            "complete",
+            "partial"
+          ],
+          "title": "Assessment",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ordinal",
+        "source",
+        "reference",
+        "assessment"
+      ],
+      "title": "PreviewEvidence",
+      "type": "object"
+    },
+    "PreviewExamination": {
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": {
+          "exclusiveMaximum": 4096,
+          "minimum": 0,
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "task": {
+          "enum": [
+            "message_topics",
+            "concept_mentions"
+          ],
+          "title": "Task",
+          "type": "string"
+        },
+        "assessment": {
+          "enum": [
+            "assessed",
+            "partial",
+            "uncertain",
+            "unsupported",
+            "failed",
+            "unprocessed"
+          ],
+          "title": "Assessment",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "none",
+            "below_threshold",
+            "unsupported_input",
+            "dependency_unavailable",
+            "cancelled",
+            "deadline",
+            "worker_failure",
+            "limit_reached"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "coverage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Coverage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ordinal",
+        "task",
+        "assessment",
+        "reason",
+        "coverage"
+      ],
+      "title": "PreviewExamination",
+      "type": "object"
+    },
+    "PreviewLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "presentation": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "task_contract": {
+          "enum": [
+            "message_topics.v1",
+            "concept_mentions.v1"
+          ],
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "taxonomy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "category_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Category Id",
+          "type": "string"
+        },
+        "display_label": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Display Label",
+          "type": "string"
+        },
+        "label_status": {
+          "enum": [
+            "resolved",
+            "id_only"
+          ],
+          "title": "Label Status",
+          "type": "string"
+        },
+        "label_identity_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Label Identity Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "presentation",
+        "task_contract",
+        "taxonomy",
+        "category_id",
+        "display_label",
+        "label_status",
+        "label_identity_sha256"
+      ],
+      "title": "PreviewLabel",
+      "type": "object"
+    },
+    "PreviewScope": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-preview-scope.v1",
+          "default": "text-analysis-preview-scope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "cutoff": {
+          "format": "date-time",
+          "title": "Cutoff",
+          "type": "string"
+        },
+        "lower_exclusive": {
+          "format": "date-time",
+          "title": "Lower Exclusive",
+          "type": "string"
+        },
+        "directions": {
+          "const": "both",
+          "default": "both",
+          "title": "Directions",
+          "type": "string"
+        },
+        "message_cap": {
+          "const": 32,
+          "default": 32,
+          "title": "Message Cap",
+          "type": "integer"
+        },
+        "source_count": {
+          "maximum": 32,
+          "minimum": 0,
+          "title": "Source Count",
+          "type": "integer"
+        },
+        "earliest": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Earliest"
+        },
+        "latest": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Latest"
+        },
+        "inventory_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Inventory Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cutoff",
+        "lower_exclusive",
+        "source_count",
+        "earliest",
+        "latest",
+        "inventory_sha256"
+      ],
+      "title": "PreviewScope",
+      "type": "object"
+    },
+    "PreviewSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "topic_category",
+            "mention_category"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "$ref": "#/$defs/PreviewLabel"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/PreviewEvidence"
+          },
+          "maxItems": 65536,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "supporting_conversations": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Supporting Conversations",
+          "type": "integer"
+        },
+        "supporting_messages": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Supporting Messages",
+          "type": "integer"
+        },
+        "occurrences": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Occurrences",
+          "type": "integer"
+        },
+        "complete_supporting_messages": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Complete Supporting Messages",
+          "type": "integer"
+        },
+        "partial_supporting_messages": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Partial Supporting Messages",
+          "type": "integer"
+        },
+        "share_of_complete_messages": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Share Of Complete Messages"
+        },
+        "ranking_scope": {
+          "enum": [
+            "frozen_scope",
+            "assessed_portion"
+          ],
+          "title": "Ranking Scope",
+          "type": "string"
+        },
+        "additional_categories": {
+          "anyOf": [
+            {
+              "maximum": 63,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Additional Categories"
+        }
+      },
+      "required": [
+        "kind",
+        "label",
+        "evidence",
+        "supporting_conversations",
+        "supporting_messages",
+        "occurrences",
+        "complete_supporting_messages",
+        "partial_supporting_messages",
+        "share_of_complete_messages",
+        "ranking_scope",
+        "additional_categories"
+      ],
+      "title": "PreviewSummary",
+      "type": "object"
+    },
+    "PreviewTaskCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "enum": [
+            "message_topics",
+            "concept_mentions"
+          ],
+          "title": "Task",
+          "type": "string"
+        },
+        "eligible": {
+          "maximum": 4096,
+          "minimum": 0,
+          "title": "Eligible",
+          "type": "integer"
+        },
+        "assessed": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Assessed",
+          "type": "integer"
+        },
+        "partial": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Partial",
+          "type": "integer"
+        },
+        "uncertain": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Uncertain",
+          "type": "integer"
+        },
+        "unsupported": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Unsupported",
+          "type": "integer"
+        },
+        "failed": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "unprocessed": {
+          "maximum": 65536,
+          "minimum": 0,
+          "title": "Unprocessed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "task",
+        "eligible",
+        "assessed",
+        "partial",
+        "uncertain",
+        "unsupported",
+        "failed",
+        "unprocessed"
+      ],
+      "title": "PreviewTaskCoverage",
+      "type": "object"
+    },
+    "QuestionEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "account_ref": {
+          "pattern": "^a1:[0-9a-f]{64}$",
+          "title": "Account Ref",
+          "type": "string"
+        },
+        "conversation_ref": {
+          "pattern": "^c1:[0-9a-f]{64}$",
+          "title": "Conversation Ref",
+          "type": "string"
+        },
+        "message_ref": {
+          "pattern": "^m1:[0-9a-f]{64}$",
+          "title": "Message Ref",
+          "type": "string"
+        },
+        "source_revision": {
+          "minimum": 0,
+          "title": "Source Revision",
+          "type": "integer"
+        },
+        "source_version_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Version Digest",
+          "type": "string"
+        },
+        "sent_at": {
+          "format": "date-time",
+          "title": "Sent At",
+          "type": "string"
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceSpan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "account_ref",
+        "conversation_ref",
+        "message_ref",
+        "source_revision",
+        "source_version_digest",
+        "sent_at"
+      ],
+      "title": "QuestionEvidence",
+      "type": "object"
+    },
+    "SavedPreviewDisclosure": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Sha256",
+          "type": "string"
+        },
+        "languages": {
+          "items": {
+            "const": "en",
+            "type": "string"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "title": "Languages",
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/TaskDescriptor"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "selection_policy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "output_profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+          "default": "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+          "title": "Output Profile",
+          "type": "string"
+        },
+        "output_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Output Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "profile_sha256",
+        "languages",
+        "tasks",
+        "presentation",
+        "selection_policy"
+      ],
+      "title": "SavedPreviewDisclosure",
+      "type": "object"
+    },
+    "ScorePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "probability",
+            "logit",
+            "margin",
+            "none"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "semantics_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Semantics Id",
+          "type": "string"
+        },
+        "calibration": {
+          "default": "not_calibrated",
+          "enum": [
+            "not_calibrated",
+            "calibrated"
+          ],
+          "title": "Calibration",
+          "type": "string"
+        },
+        "calibration_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Sha256"
+        }
+      },
+      "required": [
+        "kind",
+        "semantics_id"
+      ],
+      "title": "ScorePolicy",
+      "type": "object"
+    },
+    "SourceBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "account_scope": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Account Scope",
+          "type": "string"
+        },
+        "source_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "source_version": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Version",
+          "type": "string"
+        },
+        "speaker_ref": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Speaker Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_scope",
+        "source_ref",
+        "source_version",
+        "speaker_ref"
+      ],
+      "title": "SourceBinding",
+      "type": "object"
+    },
+    "SourceSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "SourceSpan",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "Half-open Unicode codepoint offsets into unchanged original source text.",
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "minimum": 1,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Span",
+      "type": "object"
+    },
+    "TaskDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "enum": [
+            "message_topics",
+            "concept_mentions"
+          ],
+          "title": "Task",
+          "type": "string"
+        },
+        "task_contract": {
+          "enum": [
+            "message_topics.v1",
+            "concept_mentions.v1"
+          ],
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "taxonomy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "enabled_ids": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Enabled Ids",
+          "type": "array"
+        },
+        "score_policy": {
+          "$ref": "#/$defs/ScorePolicy"
+        }
+      },
+      "required": [
+        "task",
+        "task_contract",
+        "taxonomy",
+        "enabled_ids",
+        "score_policy"
+      ],
+      "title": "TaskDescriptor",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "text-analysis-preview-saved.v1",
+      "default": "text-analysis-preview-saved.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/PreviewScope"
+    },
+    "disclosure": {
+      "$ref": "#/$defs/SavedPreviewDisclosure"
+    },
+    "output": {
+      "$ref": "#/$defs/PreviewContribution"
+    }
+  },
+  "required": [
+    "scope",
+    "disclosure",
+    "output"
+  ],
+  "title": "PreviewSavedEnvelope",
+  "type": "object"
+}

@@ -21,6 +21,7 @@ from app.api.endpoints import (
     nlp_dependencies,
     text_analysis_execution,
     text_analysis_preview,
+    text_analysis_client,
     transport_ws,
     webauthn,
 )
@@ -225,6 +226,7 @@ app.include_router(insights.router)
 app.include_router(nlp_dependencies.router)
 app.include_router(text_analysis_execution.router)
 app.include_router(text_analysis_preview.router)
+app.include_router(text_analysis_client.router)
 app.include_router(webauthn.router)
 app.include_router(creator_vault.router)
 app.include_router(companion_pairing.router)

@@ -1,0 +1,24 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "enrollment_command",
+        "preview_prepare",
+        "preview_confirm"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "key": {
+      "title": "Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "key"
+  ],
+  "title": "ClientIntentCursor",
+  "type": "object"
+}

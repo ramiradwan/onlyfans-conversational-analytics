@@ -24,6 +24,8 @@
         "frontend/src/components/CommercialActivationControls.tsx",
         "frontend/src/components/CreatorVaultControls.tsx",
         "frontend/src/components/NlpDependencyControls.tsx",
+        "frontend/src/components/TextAnalysisExecutionControls.tsx",
+        "frontend/src/components/analytics/TextAnalysisPreviews.tsx",
         "frontend/src/components/analytics/TaskFindings.tsx",
         "frontend/src/components/analytics/MentionEvidenceDialog.tsx",
         "frontend/src/components/analytics/ConversationQuestions.tsx",
@@ -90,6 +92,21 @@
     }
   },
   "journeys": [
+    {
+      "id": "account-text-processing",
+      "entry_state": "textanalysis.processing_controls",
+      "success_state": "textanalysis.processing_review"
+    },
+    {
+      "id": "text-analysis-preview",
+      "entry_state": "textanalysis.preview_controls",
+      "success_state": "textanalysis.preview_results"
+    },
+    {
+      "id": "saved-preview-evidence",
+      "entry_state": "textanalysis.preview_results",
+      "success_state": "findings.source"
+    },
     {
       "id": "profile-findings",
       "entry_state": "findings.controls",
@@ -173,6 +190,254 @@
   ],
   "states": [
     {
+      "id": "textanalysis.processing_controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/TextAnalysisExecutionControls.tsx",
+        "text": "data-journey-state=\"textanalysis.processing_controls\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.processing_review",
+          "by": "user",
+          "action": "Review a processing change"
+        },
+        {
+          "to": "textanalysis.processing_recovery",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisExecutionControls.test.tsx",
+          "name": "reviews cold-profile enablement and waits for a durable intent acknowledgement before the command"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.processing_review",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/TextAnalysisExecutionControls.tsx",
+        "text": "data-journey-state=\"textanalysis.processing_review\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.processing_controls",
+          "by": "user",
+          "action": "Confirm the reviewed change or return"
+        },
+        {
+          "to": "textanalysis.processing_recovery",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisExecutionControls.test.tsx",
+          "name": "reviews cold-profile enablement and waits for a durable intent acknowledgement before the command"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.processing_recovery",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/TextAnalysisExecutionControls.tsx",
+        "text": "data-journey-state=\"textanalysis.processing_recovery\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.processing_controls",
+          "by": "user",
+          "action": "Recover the original command outcome"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisExecutionControls.test.tsx",
+          "name": "keeps an unknown original command through refresh and retries only its exact retained meaning"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.preview_controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TextAnalysisPreviews.tsx",
+        "text": "data-journey-state=\"textanalysis.preview_controls\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.preview_scope",
+          "by": "user",
+          "action": "Prepare and review the original sample"
+        },
+        {
+          "to": "textanalysis.preview_results",
+          "by": "user",
+          "action": "Open a saved preview"
+        },
+        {
+          "to": "textanalysis.preview_recovery",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
+          "name": "prepares an explicitly reviewed original scope before confirmation and keeps pending work read-only"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.preview_scope",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TextAnalysisPreviews.tsx",
+        "text": "data-journey-state=\"textanalysis.preview_scope\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.preview_pending",
+          "by": "user",
+          "action": "Confirm the original disclosed sample"
+        },
+        {
+          "to": "textanalysis.preview_recovery",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
+          "name": "prepares an explicitly reviewed original scope before confirmation and keeps pending work read-only"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.preview_pending",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TextAnalysisPreviews.tsx",
+        "text": "data-journey-state=\"textanalysis.preview_pending\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.preview_results",
+          "by": "user",
+          "action": "Check the original preview outcome"
+        },
+        {
+          "to": "textanalysis.preview_terminal",
+          "by": "user",
+          "action": "Check the original terminal outcome"
+        },
+        {
+          "to": "textanalysis.preview_recovery",
+          "by": "system"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
+          "name": "prepares an explicitly reviewed original scope before confirmation and keeps pending work read-only"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.preview_terminal",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TextAnalysisPreviews.tsx",
+        "text": "data-journey-state=\"textanalysis.preview_terminal\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.preview_controls",
+          "by": "user",
+          "action": "Return to preview controls"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
+          "name": "Text analysis preview controls"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.preview_recovery",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TextAnalysisPreviews.tsx",
+        "text": "data-journey-state=\"textanalysis.preview_recovery\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.preview_scope",
+          "by": "user",
+          "action": "Read the original prepared sample"
+        },
+        {
+          "to": "textanalysis.preview_pending",
+          "by": "user",
+          "action": "Explicitly retry the retained confirmation"
+        },
+        {
+          "to": "textanalysis.preview_results",
+          "by": "user",
+          "action": "Recover the original saved output"
+        },
+        {
+          "to": "textanalysis.preview_terminal",
+          "by": "user",
+          "action": "Read the original terminal outcome"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
+          "name": "recovers a confirmable original request without executing it until exact retry is chosen"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.preview_results",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/analytics/TextAnalysisPreviews.tsx",
+        "text": "data-journey-state=\"textanalysis.preview_results\""
+      },
+      "transitions": [
+        {
+          "to": "findings.source",
+          "by": "user",
+          "action": "Open a retained supporting source"
+        },
+        {
+          "to": "textanalysis.preview_controls",
+          "by": "user",
+          "action": "Return to preview controls"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
+          "name": "reads saved full output without models or module availability and keeps occurrence units distinct"
+        }
+      ]
+    },
+    {
       "id": "findings.controls",
       "surface": "desktop.app",
       "anchor": {
@@ -226,6 +491,7 @@
       },
       "transitions": [
         { "to": "findings.results", "by": "user", "action": "Close the source message" },
+        { "to": "textanalysis.preview_results", "by": "user", "action": "Close the preview source message" },
         { "to": "findings.unavailable", "by": "system" }
       ],
       "evidence": [

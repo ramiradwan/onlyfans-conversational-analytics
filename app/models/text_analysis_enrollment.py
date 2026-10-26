@@ -5,8 +5,8 @@ from pydantic import Field, field_validator, model_validator
 
 from app.models.knowledge_contributions import Name
 from app.models.text_analysis_jobs import EnrollmentIntent, ExecutionIntent
-from app.nlp.contracts import Contract, Digest
-from app.nlp.profiles import canonical_bytes
+from app.nlp.contracts import Contract, Digest, Identifier
+from app.nlp.profiles import canonical_bytes, TaskDescriptor, PolicyIdentity
 
 Version = Annotated[int, Field(ge=0, le=9_007_199_254_740_991)]
 
@@ -94,3 +94,31 @@ class EnrollmentLocator(Contract):
     mode_version: Version
 
     _uuid = field_validator('enrollment_id')(ExecutionIntent.uuid4.__func__)
+
+
+class EnrollmentProfileDisclosure(Contract):
+    profile_sha256: Digest
+    profile_id: Identifier
+    revision: Identifier
+    languages: Annotated[tuple[Literal['en'], ...], Field(min_length=1, max_length=1)]
+    tasks: Annotated[tuple[TaskDescriptor, ...], Field(min_length=1, max_length=2)]
+    presentation: PolicyIdentity
+
+    @model_validator(mode='after')
+    def declared_tasks(self):
+        order = ('message_topics', 'concept_mentions')
+        names = tuple(task.task for task in self.tasks)
+        if names != tuple(task for task in order if task in names):
+            raise ValueError('text_analysis_disclosure_tasks_invalid')
+        return self
+
+
+class EnrollmentView(Contract):
+    current: CurrentEnrollment
+    profile: EnrollmentProfileDisclosure | None
+
+    @model_validator(mode='after')
+    def available(self):
+        if self.current.capsule_available != (self.profile is not None):
+            raise ValueError('text_analysis_view_invalid')
+        return self

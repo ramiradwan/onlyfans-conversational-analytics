@@ -112,6 +112,18 @@ class TextAnalysisExecutionService:
             with self.repository.database.read() as db:
                 return self.enrollments.read_current_in(db, policy=baseline)
 
+    def read_view(self, http_policy):
+        with self.dependencies.gate:
+            _, baseline = self._http_identity(http_policy)
+            with self.authentication.database.transaction() as auth_db:
+                self.selection.pair_owner.validate_auth_in(auth_db)
+                with self.repository.database.transaction() as db:
+                    self._session_in(auth_db, http_policy)
+                    result = self.enrollments.view_in(db, policy=baseline)
+                    self._session_in(auth_db, http_policy)
+                    self.selection.pair_owner.validate_auth_in(auth_db)
+                    return result
+
     def read_command(self, http_policy, command_key):
         with self.dependencies.gate:
             _, baseline = self._http_identity(http_policy)

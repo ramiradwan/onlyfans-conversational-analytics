@@ -73,6 +73,33 @@ def documents_releases():
     return {'ReleaseCatalog.schema.json': ReleaseCatalog.model_json_schema()}
 
 
+def documents_application():
+    from app.models.text_analysis_client import (
+        ClientIntentPut, ClientIntentRecord, ClientIntentCursor, ClientIntentPage, PreviewConfirmIntent,
+    )
+    from app.models.text_analysis_enrollment import (
+        EnrollmentCommand, CurrentEnrollment, EnrollmentCommandReceipt, EnrollmentCommandResult,
+        EnrollmentProfileDisclosure, EnrollmentView,
+    )
+    from app.models.text_analysis_jobs import PreviewConfirmation
+    from app.models.text_analysis_preview import PreviewContribution
+    from app.models.text_analysis_preview_execution import (
+        PreviewPrepareRequest, PreviewScope, PreviewDisclosure, PreviewReceipt, PreviewOutcome,
+        SavedPreviewDisclosure, PreviewSavedEnvelope, PreviewSavedId, PreviewSavedPage,
+    )
+    models = (ClientIntentPut, ClientIntentRecord, ClientIntentCursor, ClientIntentPage, PreviewConfirmIntent,
+        EnrollmentCommand, CurrentEnrollment, EnrollmentCommandReceipt, EnrollmentCommandResult,
+        EnrollmentProfileDisclosure, EnrollmentView, PreviewConfirmation, PreviewContribution,
+        PreviewPrepareRequest, PreviewScope, PreviewDisclosure, PreviewReceipt, PreviewOutcome,
+        SavedPreviewDisclosure, PreviewSavedEnvelope, PreviewSavedId, PreviewSavedPage)
+    return {model.__name__ + '.schema.json': model.model_json_schema() for model in models}
+
+
+def fixtures_application():
+    from tools.nlp_application_fixtures import application_fixtures
+    return application_fixtures(fixtures_v2()['joint-profile.json'])
+
+
 def fixtures_v2():
     """Small synthetic examples, generated through the same authoritative models."""
     import copy
@@ -163,6 +190,13 @@ def fixtures_v2():
     return result
 
 if __name__ == "__main__":
+    target = ROOT / 'shared/nlp/application/v1'
+    target.mkdir(parents=True, exist_ok=True)
+    for name, schema in documents_application().items():
+        (target / name).write_text(json.dumps(schema, indent=2) + '\n', encoding='utf-8')
+    (target / 'fixtures').mkdir(exist_ok=True)
+    for name, value in fixtures_application().items():
+        (target / 'fixtures' / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     target = ROOT / 'shared/nlp/v3'
     target.mkdir(parents=True, exist_ok=True)
     for name, schema in documents_v3().items():

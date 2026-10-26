@@ -1,0 +1,46 @@
+{
+  "$defs": {
+    "PreviewSavedId": {
+      "additionalProperties": false,
+      "properties": {
+        "contribution_id": {
+          "title": "Contribution Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contribution_id"
+      ],
+      "title": "PreviewSavedId",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/$defs/PreviewSavedId"
+      },
+      "maxItems": 64,
+      "title": "Items",
+      "type": "array"
+    },
+    "next_after": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Next After"
+    }
+  },
+  "required": [
+    "items",
+    "next_after"
+  ],
+  "title": "PreviewSavedPage",
+  "type": "object"
+}

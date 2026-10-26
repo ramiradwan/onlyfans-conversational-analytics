@@ -1,0 +1,64 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "installation_id": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Installation Id",
+      "type": "string"
+    },
+    "creator_account_id": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Creator Account Id",
+      "type": "string"
+    },
+    "principal_id": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Principal Id",
+      "type": "string"
+    },
+    "mode_version": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Mode Version",
+      "type": "integer"
+    },
+    "enrollment_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Enrollment Id"
+    },
+    "state": {
+      "enum": [
+        "enabled",
+        "paused",
+        "retired"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "capsule_available": {
+      "title": "Capsule Available",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "installation_id",
+    "creator_account_id",
+    "principal_id",
+    "mode_version",
+    "enrollment_id",
+    "state",
+    "capsule_available"
+  ],
+  "title": "CurrentEnrollment",
+  "type": "object"
+}

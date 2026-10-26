@@ -1,0 +1,252 @@
+{
+  "schema_version": "text-analysis-preview-saved.v1",
+  "scope": {
+    "schema_version": "text-analysis-preview-scope.v1",
+    "cutoff": "2026-10-25T00:00:00Z",
+    "lower_exclusive": "2026-07-27T00:00:00Z",
+    "directions": "both",
+    "message_cap": 32,
+    "source_count": 1,
+    "earliest": "2026-10-25T00:00:00Z",
+    "latest": "2026-10-25T00:00:00Z",
+    "inventory_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "disclosure": {
+    "profile_sha256": "96a0e1d535c94f70912235a2a2a8fa60600a8f509fdd43bb21a38a29a9110dd8",
+    "languages": [
+      "en"
+    ],
+    "tasks": [
+      {
+        "task": "message_topics",
+        "task_contract": "message_topics.v1",
+        "taxonomy": {
+          "policy_id": "taxonomy",
+          "revision": "1",
+          "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+        },
+        "enabled_ids": [
+          "topic.synthetic"
+        ],
+        "score_policy": {
+          "kind": "probability",
+          "semantics_id": "model_score_not_accuracy",
+          "calibration": "not_calibrated",
+          "calibration_sha256": null
+        }
+      },
+      {
+        "task": "concept_mentions",
+        "task_contract": "concept_mentions.v1",
+        "taxonomy": {
+          "policy_id": "taxonomy",
+          "revision": "1",
+          "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+        },
+        "enabled_ids": [
+          "concept.synthetic"
+        ],
+        "score_policy": {
+          "kind": "probability",
+          "semantics_id": "model_score_not_accuracy",
+          "calibration": "not_calibrated",
+          "calibration_sha256": null
+        }
+      }
+    ],
+    "presentation": {
+      "policy_id": "presentation",
+      "revision": "1",
+      "sha256": "bfac314fefdc07451af1792a81cbaeda24a9363f7d4d4b7ff2938c4231ea7e36"
+    },
+    "selection_policy": {
+      "policy_id": "example-selection",
+      "revision": "1",
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "output_profile": "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+    "output_version": 1
+  },
+  "output": {
+    "job_id": "00000000-0000-4000-8000-000000000002",
+    "contribution_id": "00000000-0000-4000-8000-000000000003",
+    "spec_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "input_inventory_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+    "profile_sha256": "96a0e1d535c94f70912235a2a2a8fa60600a8f509fdd43bb21a38a29a9110dd8",
+    "selection_policy": {
+      "policy_id": "example-selection",
+      "revision": "1",
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "schema_version": "text-analysis-preview.v1",
+    "source_count": 1,
+    "examination": [
+      {
+        "ordinal": 0,
+        "task": "message_topics",
+        "assessment": "assessed",
+        "reason": "none",
+        "coverage": {
+          "source_codepoints": 11,
+          "examined": [
+            {
+              "start": 0,
+              "end": 11
+            }
+          ],
+          "excluded": [],
+          "limits_reached": []
+        }
+      },
+      {
+        "ordinal": 0,
+        "task": "concept_mentions",
+        "assessment": "partial",
+        "reason": "limit_reached",
+        "coverage": {
+          "source_codepoints": 11,
+          "examined": [
+            {
+              "start": 0,
+              "end": 6
+            }
+          ],
+          "excluded": [
+            {
+              "start": 6,
+              "end": 11
+            }
+          ],
+          "limits_reached": [
+            "windows"
+          ]
+        }
+      }
+    ],
+    "tasks": [
+      {
+        "task": "message_topics",
+        "eligible": 1,
+        "assessed": 1,
+        "partial": 0,
+        "uncertain": 0,
+        "unsupported": 0,
+        "failed": 0,
+        "unprocessed": 0
+      },
+      {
+        "task": "concept_mentions",
+        "eligible": 1,
+        "assessed": 0,
+        "partial": 1,
+        "uncertain": 0,
+        "unsupported": 0,
+        "failed": 0,
+        "unprocessed": 0
+      }
+    ],
+    "summaries": [
+      {
+        "kind": "topic_category",
+        "label": {
+          "presentation": {
+            "policy_id": "presentation",
+            "revision": "1",
+            "sha256": "bfac314fefdc07451af1792a81cbaeda24a9363f7d4d4b7ff2938c4231ea7e36"
+          },
+          "task_contract": "message_topics.v1",
+          "taxonomy": {
+            "policy_id": "taxonomy",
+            "revision": "1",
+            "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+          },
+          "category_id": "topic.synthetic",
+          "display_label": "topic.synthetic",
+          "label_status": "id_only",
+          "label_identity_sha256": "15ade58b258757f5b099b6dab5d620365b42cf1e13a9a2eaf25ff14e1835f56c"
+        },
+        "evidence": [
+          {
+            "ordinal": 0,
+            "source": {
+              "account_scope": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "source_ref": "m1:eea4e11a896824fdcc91ab589158cb327cfbfaaa36b0b82a433a0a2b359f2a7e",
+              "source_version": "80d1dd62247c66a50cc583e19ffda78363237d2554ab24124e5ad61394e03d69",
+              "speaker_ref": "p1:232acef1f3c6156e906bd0bd71aa296ad0302c257eb5077a196efe27434044e7"
+            },
+            "reference": {
+              "account_ref": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "conversation_ref": "c1:981e06f08656abc7b6034b46e2af5801f2e4face458da11a9b37a1813d736949",
+              "message_ref": "m1:eea4e11a896824fdcc91ab589158cb327cfbfaaa36b0b82a433a0a2b359f2a7e",
+              "source_revision": 7,
+              "source_version_digest": "sha256:80d1dd62247c66a50cc583e19ffda78363237d2554ab24124e5ad61394e03d69",
+              "sent_at": "2026-10-25T00:00:00Z",
+              "span": null
+            },
+            "assessment": "complete"
+          }
+        ],
+        "supporting_conversations": 1,
+        "supporting_messages": 1,
+        "occurrences": 1,
+        "complete_supporting_messages": 1,
+        "partial_supporting_messages": 0,
+        "share_of_complete_messages": 1.0,
+        "ranking_scope": "frozen_scope",
+        "additional_categories": 0
+      },
+      {
+        "kind": "mention_category",
+        "label": {
+          "presentation": {
+            "policy_id": "presentation",
+            "revision": "1",
+            "sha256": "bfac314fefdc07451af1792a81cbaeda24a9363f7d4d4b7ff2938c4231ea7e36"
+          },
+          "task_contract": "concept_mentions.v1",
+          "taxonomy": {
+            "policy_id": "taxonomy",
+            "revision": "1",
+            "sha256": "49a8ed7c48e45d451bea1754d1f10f9341de34915df0515d0dda7d3a6316ca09"
+          },
+          "category_id": "concept.synthetic",
+          "display_label": "concept.synthetic",
+          "label_status": "id_only",
+          "label_identity_sha256": "df7edbd333beac958d70f196fdfb381ed48090e67a3db8a17252b903e2d52e8f"
+        },
+        "evidence": [
+          {
+            "ordinal": 0,
+            "source": {
+              "account_scope": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "source_ref": "m1:eea4e11a896824fdcc91ab589158cb327cfbfaaa36b0b82a433a0a2b359f2a7e",
+              "source_version": "80d1dd62247c66a50cc583e19ffda78363237d2554ab24124e5ad61394e03d69",
+              "speaker_ref": "p1:232acef1f3c6156e906bd0bd71aa296ad0302c257eb5077a196efe27434044e7"
+            },
+            "reference": {
+              "account_ref": "a1:5954294138b859b700c6c7f57c6307cc6bb1ba38433965370a4d2e9866b2062d",
+              "conversation_ref": "c1:981e06f08656abc7b6034b46e2af5801f2e4face458da11a9b37a1813d736949",
+              "message_ref": "m1:eea4e11a896824fdcc91ab589158cb327cfbfaaa36b0b82a433a0a2b359f2a7e",
+              "source_revision": 7,
+              "source_version_digest": "sha256:80d1dd62247c66a50cc583e19ffda78363237d2554ab24124e5ad61394e03d69",
+              "sent_at": "2026-10-25T00:00:00Z",
+              "span": {
+                "start": 2,
+                "end": 6
+              }
+            },
+            "assessment": "partial"
+          }
+        ],
+        "supporting_conversations": 1,
+        "supporting_messages": 1,
+        "occurrences": 1,
+        "complete_supporting_messages": 0,
+        "partial_supporting_messages": 1,
+        "share_of_complete_messages": null,
+        "ranking_scope": "assessed_portion",
+        "additional_categories": null
+      }
+    ]
+  }
+}

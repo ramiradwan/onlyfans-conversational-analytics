@@ -72,11 +72,33 @@ class TextAnalysisPreviewStore:
                                   detailed_scope_available=False, disclosure=None)
         capsule, _, profile, _ = self.read_capsule_in(db, job_id, policy=policy)
         confirmation = _load(PreviewConfirmation, receipt.confirmation) if receipt.confirmation is not None else None
-        return PreviewOutcome(request=request, receipt=public_receipt, scope=capsule.scope,
-            confirmation=confirmation, detailed_scope_available=True,
-            disclosure=PreviewDisclosure(profile_sha256=profile.identity_digest(),
-                tasks=tuple(descriptor for component in profile.components for descriptor in component.tasks),
-                presentation=profile.presentation, selection_policy=capsule.selection_policy))
+        return PreviewOutcome(
+            request=request,
+            receipt=public_receipt,
+            scope=capsule.scope,
+            confirmation=confirmation,
+            detailed_scope_available=True,
+            disclosure=PreviewDisclosure(
+                profile_sha256=profile.identity_digest(),
+                languages=tuple(
+                    sorted({component.language for component in profile.components})
+                ),
+                tasks=tuple(
+                    sorted(
+                        (
+                            descriptor
+                            for component in profile.components
+                            for descriptor in component.tasks
+                        ),
+                        key=lambda task: ('message_topics', 'concept_mentions').index(
+                            task.task
+                        ),
+                    )
+                ),
+                presentation=profile.presentation,
+                selection_policy=capsule.selection_policy,
+            ),
+        )
 
     def _capsule_in(self, db, job_id):
         self.repository._owned_connection(db)
@@ -255,3 +277,82 @@ class TextAnalysisPreviewStore:
             self.repository.source_guard.preview_source(output, profile, member, source)
         budget.check()
         return output
+
+    def saved_view_in(self, db, output, *, policy):
+        from app.models.text_analysis_preview_execution import (
+            PreviewSavedEnvelope,
+            SavedPreviewDisclosure,
+        )
+
+        capsule, _, profile, _ = self._bound_capsule_in(
+            db, output.job_id, policy=policy
+        )
+        return PreviewSavedEnvelope(
+            scope=capsule.scope,
+            output=output,
+            disclosure=SavedPreviewDisclosure(
+                profile_sha256=profile.identity_digest(),
+                languages=tuple(
+                    sorted({component.language for component in profile.components})
+                ),
+                tasks=tuple(
+                    sorted(
+                        (
+                            task
+                            for component in profile.components
+                            for task in component.tasks
+                        ),
+                        key=lambda task: ('message_topics', 'concept_mentions').index(
+                            task.task
+                        ),
+                    )
+                ),
+                presentation=profile.presentation,
+                selection_policy=capsule.selection_policy,
+            ),
+        )
+
+    def saved_list_in(self, db, *, policy, after_contribution='', limit=64):
+        from app.models.text_analysis_preview_execution import (
+            PreviewSavedPage,
+            PreviewSavedId,
+        )
+        from app.models.text_analysis_jobs import ExecutionIntent
+        from app.security.runtime_policy import authorized_account
+
+        self.repository._owned_connection(db)
+        if (
+            type(limit) is not int
+            or not 1 <= limit <= 64
+            or type(after_contribution) is not str
+        ):
+            raise ValueError('preview_page_invalid')
+        if after_contribution:
+            ExecutionIntent.uuid4(after_contribution)
+        account = authorized_account(policy, policy.identity.creator_account_id)
+        authority = policy.identity_authority
+        if authority is None:
+            raise ValueError('knowledge_scope_invalid')
+        rows = db.execute(
+            "SELECT o.contribution_id,o.job_id FROM text_analysis_preview_outputs o "
+            "JOIN knowledge_jobs j USING(job_id) WHERE j.state='committed' AND j.installation_id=? "
+            "AND j.creator_account_id=? AND json_extract(j.spec,'$.organization_id')=? AND o.contribution_id>? "
+            "ORDER BY o.contribution_id LIMIT ?",
+            (
+                authority.installation_id,
+                account,
+                authority.organization_id,
+                after_contribution,
+                limit + 1,
+            ),
+        ).fetchall()
+        for row in rows:
+            self.repository._job(db, row['job_id'], policy)
+        items = tuple(
+            PreviewSavedId(contribution_id=row['contribution_id'])
+            for row in rows[:limit]
+        )
+        return PreviewSavedPage(
+            items=items,
+            next_after=items[-1].contribution_id if len(rows) > limit else None,
+        )

@@ -238,3 +238,37 @@ class TextAnalysisEnrollmentStore:
             'ORDER BY c.creator_account_id LIMIT ?', (installation_id, after_account, limit)).fetchall()
         return tuple(EnrollmentLocator(installation_id=row['installation_id'], creator_account_id=row['creator_account_id'],
             principal_id=row['principal_id'], enrollment_id=row['enrollment_id'], mode_version=row['mode_version']) for row in rows)
+
+    def view_in(self, db, *, policy):
+        from app.models.text_analysis_enrollment import (
+            EnrollmentView,
+            EnrollmentProfileDisclosure,
+        )
+
+        current = self.read_current_in(db, policy=policy)
+        disclosure = None
+        if current.capsule_available:
+            capsule = self.read_capsule_in(db, current.enrollment_id, policy=policy)
+            profile = read_profile(capsule.profile_bytes)
+            disclosure = EnrollmentProfileDisclosure(
+                profile_sha256=profile.identity_digest(),
+                profile_id=profile.profile_id,
+                revision=profile.revision,
+                languages=tuple(
+                    sorted({component.language for component in profile.components})
+                ),
+                tasks=tuple(
+                    sorted(
+                        (
+                            task
+                            for component in profile.components
+                            for task in component.tasks
+                        ),
+                        key=lambda task: ('message_topics', 'concept_mentions').index(
+                            task.task
+                        ),
+                    )
+                ),
+                presentation=profile.presentation,
+            )
+        return EnrollmentView(current=current, profile=disclosure)

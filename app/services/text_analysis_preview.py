@@ -269,6 +269,23 @@ class TextAnalysisPreviewService:
                 return self.store.jobs.read_in(db, token.job_id, policy=binding.policy)
 
     def read_shown(self, http_policy, contribution_id):
+        return self._read_saved(http_policy, contribution_id, view=False)
+
+    def read_saved_view(self, http_policy, contribution_id):
+        return self._read_saved(http_policy, contribution_id, view=True)
+
+    def saved_list(self, http_policy, *, after_contribution='', limit=64):
+        with self.dependencies.gate:
+            _, baseline = self._http(http_policy)
+            with self._baseline_transaction(baseline, http_policy) as (_, db):
+                return self.store.saved_list_in(
+                    db,
+                    policy=baseline,
+                    after_contribution=after_contribution,
+                    limit=limit,
+                )
+
+    def _read_saved(self, http_policy, contribution_id, *, view):
         ExecutionIntent.uuid4(contribution_id)
         with self.dependencies.gate:
             _, baseline = self._http(http_policy)
@@ -285,13 +302,19 @@ class TextAnalysisPreviewService:
                     self.repository._job(db, row['job_id'], baseline)
                     db.execute('DELETE FROM knowledge_jobs WHERE job_id=?', (row['job_id'],))
                     output = None
+                result = None
                 if output is not None:
                     self._saved_reference_in(auth_db, db, output)
+                    result = (
+                        self.store.saved_view_in(db, output, policy=baseline)
+                        if view
+                        else output
+                    )
                 self._baseline_in(auth_db, baseline)
             # Refusal occurs after the authorized erasure transaction commits.
             if output is None:
                 raise ValueError('preview_output_unavailable')
-            return output
+            return result
 
     def _saved_reference_in(self, auth_db, db, output):
         intent = self.repository._module_intent(db, output.job_id)

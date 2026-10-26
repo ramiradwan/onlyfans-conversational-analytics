@@ -3,11 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NlpDependencyControls } from '../src/components/NlpDependencyControls';
+import { TextAnalysisExecutionControls } from '../src/components/TextAnalysisExecutionControls';
 import type { EngineAcquisitionApi } from '../src/api/engineAcquisition';
 import type { NlpDependenciesApi, NlpDependencyCommand, NlpDependencyObservation, NlpDependencyPlan, NlpDependencyResult, NlpDependencyStatus } from '../src/services/nlpDependenciesApi';
 import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
+
+vi.mock('../src/components/TextAnalysisExecutionControls', () => ({ TextAnalysisExecutionControls: vi.fn(() => null) }));
 
 const profile = { profile_id: 'topics-and-mentions', revision: 'one', profile_sha256: 'a'.repeat(64), catalogued: true, installed: false, prepared: false, withdrawn: false, storage_state: 'absent', languages: ['en'], tasks: ['message_topics', 'concept_mentions'], resources: { download_bytes: 2048, installed_bytes: 4096, rollback_bytes: 2048, temporary_bytes: 4096, transition_peak_memory_bytes: 8192, inference_threads: 2 } };
 const status: NlpDependencyStatus = { configured: true, profiles: [profile], available_profiles: [], acquisitions: [], selected: null, failure: null, resume_granularity: 'verified_files_current_file_restarts' };
@@ -158,9 +161,9 @@ describe('NlpDependencyControls', () => {
   });
   it('keeps download pause resume and cancellation distinct from processing controls', async () => {
     const api = fixture({ ...status, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'enabled', selection_epoch: 1, admission_epoch: 1 } });
-    render(view(api)); fireEvent.click(await screen.findByRole('button', { name: 'Pause processing' }));
-    await waitFor(() => expect(api.command.mock.calls[0][0]).toEqual({ action: 'account_pause' }));
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Review download for topics-and-mentions' }) as HTMLButtonElement).disabled).toBe(false));
+    render(view(api));
+    await screen.findByRole('button', { name: 'Review download for topics-and-mentions' });
+    expect(screen.queryByRole('button', { name: 'Pause processing' })).toBeNull();
     await review(); fireEvent.click(screen.getByRole('button', { name: 'Download reviewed files' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Pause download' }));
     await waitFor(() => expect(screen.getByText(/Download paused/)).toBeTruthy());
@@ -168,7 +171,7 @@ describe('NlpDependencyControls', () => {
     await waitFor(() => expect(screen.getByText(/Downloading/)).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Cancel download' }));
     await waitFor(() => expect(screen.getByText(/Download cancelled/)).toBeTruthy());
-    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['account_pause', 'plan', 'acquire', 'pause', 'resume', 'cancel']);
+    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan', 'acquire', 'pause', 'resume', 'cancel']);
   });
   it('aborts and discards pending plan results when the account changes', async () => {
     const api = fixture(); let resolve!: (result: NlpDependencyResult) => void;
@@ -193,7 +196,7 @@ describe('NlpDependencyControls', () => {
   it('distinguishes installed files from prepared profiles and hides exception text', async () => {
     const api = fixture({ ...status, profiles: [{ ...profile, installed: true }] }); render(view(api));
     expect(await screen.findByText(/Files installed; preparation required/)).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Use topics-and-mentions' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Use topics-and-mentions' })).toBeNull();
     api.command.mockRejectedValueOnce(new Error('untrusted server secret'));
     fireEvent.click(screen.getByRole('button', { name: 'Prepare topics-and-mentions' }));
     expect(await screen.findByRole('alert')).toBeTruthy(); expect(screen.queryByText(/untrusted server secret/)).toBeNull();
@@ -219,10 +222,11 @@ describe('NlpDependencyControls', () => {
     expect(await screen.findByRole('button', { name: 'Pause download' })).toBeTruthy();
     expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan', 'acquire']);
   });
-  it('preserves the saved selection when the runtime is unavailable', async () => {
+  it('does not infer durable processing state from cached dependency selection', async () => {
     const api = fixture({ ...unavailable, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'paused', selection_epoch: 1, admission_epoch: 1 } });
     render(view(api));
-    expect(await screen.findByText(/Saved selection: topics-and-mentions/)).toBeTruthy();
+    await screen.findByText(/Text analysis is unavailable until/);
+    expect(screen.queryByText(/Saved selection:/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Enable processing' })).toBeNull();
     expect(api.command).not.toHaveBeenCalled();
   });
@@ -233,16 +237,16 @@ describe('NlpDependencyControls', () => {
     expect(api.observe).not.toHaveBeenCalledWith(paused.id, expect.anything());
     expect(await screen.findByRole('button', { name: 'Pause download' })).toBeTruthy();
   });
-  it('confirms account removal separately from shared profile cleanup', async () => {
+  it('delegates account processing to the durable controls', async () => {
     const api = fixture({ ...status, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'paused', selection_epoch: 1, admission_epoch: 1 } });
     render(view(api));
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove text analysis for this account' }));
+    await screen.findByRole('button', { name: 'Review download for topics-and-mentions' });
+    expect(TextAnalysisExecutionControls).toHaveBeenCalledWith(expect.objectContaining({ creatorAccountId: 'account-one', dependenciesApi: api }), undefined);
+    expect(screen.queryByRole('button', { name: 'Remove text analysis for this account' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use previous profile' })).toBeNull();
     expect(api.command).not.toHaveBeenCalled();
-    expect(await screen.findByText(/Text processing stops for this account/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove for this account' }));
-    await waitFor(() => expect(api.command).toHaveBeenCalledWith({ action: 'remove' }, expect.any(AbortSignal)));
   });
-  it('requires explicit preparation selection and removal confirmation', async () => {
+  it('requires explicit preparation and shared file removal confirmation', async () => {
     const installed = { ...profile, installed: true };
     const prepared = { ...installed, prepared: true };
     const api = fixture({ ...status, profiles: [installed] }); render(view(api));
@@ -251,14 +255,12 @@ describe('NlpDependencyControls', () => {
     expect(api.command.mock.calls).toHaveLength(1);
     api.command.mockResolvedValueOnce({ operation: null, status: { ...status, profiles: [prepared] } });
     fireEvent.click(screen.getByRole('button', { name: 'Check available profiles' }));
-    const use = await screen.findByRole('button', { name: 'Use topics-and-mentions' });
-    await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(use);
-    await waitFor(() => expect(api.command.mock.calls.at(-1)?.[0]).toEqual({ action: 'select', profile_id: profile.profile_id, revision: profile.revision }));
+    expect(screen.queryByRole('button', { name: 'Use topics-and-mentions' })).toBeNull();
     await waitFor(() => expect((screen.getByRole('button', { name: 'Remove topics-and-mentions' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: 'Remove topics-and-mentions' }));
     expect(api.command.mock.calls.some(([input]) => input.action === 'remove')).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Remove profile' }));
     await waitFor(() => expect(api.command.mock.calls.at(-1)?.[0]).toEqual({ action: 'remove', profile_id: profile.profile_id, revision: profile.revision }));
+    expect(api.command.mock.calls.some(([input]) => ['select', 'account_enable', 'account_pause', 'rollback'].includes(input.action))).toBe(false);
   });
 });

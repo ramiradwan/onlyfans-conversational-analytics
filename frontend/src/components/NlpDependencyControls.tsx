@@ -1,7 +1,8 @@
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { EngineDependencyControls } from './EngineDependencyControls';
+import { TextAnalysisExecutionControls } from './TextAnalysisExecutionControls';
 import { Panel, SectionHeader, useRevealHold } from './ui';
 import type { EngineAcquisitionApi } from '../api/engineAcquisition';
 import { usePermissions } from '../hooks/usePermissions';
@@ -10,9 +11,10 @@ import {
   type NlpDependenciesApi, type NlpDependencyCommand, type NlpDependencyObservation,
   type NlpDependencyPlan, type NlpDependencyProfile, type NlpDependencyStatus,
 } from '../services/nlpDependenciesApi';
+import type { TextAnalysisClient } from '../services/textAnalysisClient';
 import { bridgeTransportStore } from '../store/transportStore';
 
-interface Props { api?: NlpDependenciesApi; engineApi?: EngineAcquisitionApi; creatorAccountId: string | null }
+interface Props { api?: NlpDependenciesApi; engineApi?: EngineAcquisitionApi; client?: TextAnalysisClient; creatorAccountId: string | null }
 const number = new Intl.NumberFormat();
 const formatBytes = (value: number) => `${number.format(value)} bytes`;
 const taskNames: Record<string, string> = { message_topics: 'Message topics', concept_mentions: 'Exact mentions' };
@@ -56,12 +58,15 @@ function pendingAcquisition(status: NlpDependencyStatus) {
 }
 
 /** Account-bound presentation. Changing accounts discards the prior account's view immediately. */
-export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, creatorAccountId }: Props) {
+export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, client, creatorAccountId }: Props) {
   const { isCreator } = usePermissions();
+  const transport = useSyncExternalStore(bridgeTransportStore.subscribe, bridgeTransportStore.getState, bridgeTransportStore.getState);
   const account = isCreator ? creatorAccountId : null;
+  const binding = `${creatorAccountId}:${isCreator}:${transport.session?.connection_id ?? ''}:${transport.session?.bridge_session_id ?? ''}`;
   return <Stack spacing={2}>
-    <EngineDependencyControls account={account} api={engineApi} />
-    <DependencySession key={`${creatorAccountId}:${isCreator}`} api={api} account={account} />
+    <EngineDependencyControls key={`engine:${binding}`} account={account} api={engineApi} />
+    <DependencySession key={binding} api={api} account={account} />
+    <TextAnalysisExecutionControls creatorAccountId={account} client={client} dependenciesApi={api} />
   </Stack>;
 }
 
@@ -70,7 +75,7 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [review, setReview] = useState<{ profile: NlpDependencyProfile; plan: NlpDependencyPlan } | null>(null);
-  const [removal, setRemoval] = useState<NlpDependencyProfile | 'account' | null>(null);
+  const [removal, setRemoval] = useState<NlpDependencyProfile | null>(null);
   const [operation, setOperation] = useState<NlpDependencyObservation | null>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
   const [pollRevision, setPollRevision] = useState(0);
@@ -168,7 +173,6 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
       {account && <Button disabled={busy} onClick={() => { void checkStatus(); }}>Check status</Button>}
       {busy && <Typography role="status">Updating text analysis settings…</Typography>}
       {error && <Alert severity="error">Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again.</Alert>}
-      {unavailable && status?.selected && <Typography>Saved selection: {status.selected.profile_id} · {status.selected.revision}. Text processing is currently unavailable.</Typography>}
       {account && !status && !error ? <Typography role="status">Checking text analysis availability…</Typography> : unavailable ? <Alert severity="info" data-journey-state="textanalysis.unavailable">Text analysis is unavailable until a qualified profile and compatible installed engine are available.</Alert> : (
         <Stack spacing={2} data-journey-state="textanalysis.controls">
           <Button disabled={busy} onClick={() => { void run({ action: 'refresh' }); }}>Check available profiles</Button>
@@ -181,21 +185,11 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
                 <Button disabled={busy || profile.withdrawn || !profile.catalogued} onClick={() => { void run({ action: 'plan', profile_id: profile.profile_id, revision: profile.revision }, profile); }}>Review download for {profile.profile_id}</Button>
                 {profile.installed && <Button disabled={busy || profile.prepared || profile.withdrawn} onClick={() => { void run({ action: 'prepare', profile_sha256: profile.profile_sha256 }); }}>Prepare {profile.profile_id}</Button>}
-                <Button disabled={busy || !profile.prepared || !profile.installed || profile.withdrawn || !profile.catalogued} onClick={() => { void run({ action: 'select', profile_id: profile.profile_id, revision: profile.revision }); }}>Use {profile.profile_id}</Button>
                 {profile.installed && <Button disabled={busy} onClick={() => setRemoval(profile)}>Remove {profile.profile_id}</Button>}
               </Stack>
             </Stack>
           ))}
-          {status.selected && <Stack spacing={1}>
-            <Typography>Selected: {status.selected.profile_id} · {status.selected.revision}. Processing: {status.selected.mode === 'enabled' ? 'enabled' : status.selected.mode === 'paused' ? 'paused' : status.selected.mode === 'removed' ? 'removed for this account' : 'unavailable'}.</Typography>
-            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
-              <Button disabled={busy || status.selected.mode !== 'enabled'} onClick={() => { void run({ action: 'account_pause' }); }}>Pause processing</Button>
-              <Button disabled={busy || status.selected.mode !== 'paused'} onClick={() => { void run({ action: 'account_enable' }); }}>Enable processing</Button>
-              <Button disabled={busy} onClick={() => { void run({ action: 'rollback' }); }}>Use previous profile</Button>
-              <Button disabled={busy || status.selected.mode === 'removed'} onClick={() => setRemoval('account')}>Remove text analysis for this account</Button>
-            </Stack>
-            <Typography>Processing controls apply to this account. Pausing a download does not pause processing.</Typography>
-          </Stack>}
+          <Typography>Manage this account’s processing in the processing controls below. Download controls apply to shared files on this device.</Typography>
         </Stack>
       )}
       {operation && <Stack role="status" spacing={1}>
@@ -229,9 +223,9 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
         <DialogActions><Button onClick={() => setReview(null)}>Back</Button><Button disabled={busy || unavailable || !reviewMatchesStatus} onClick={() => { if (review && reviewMatchesStatus) void run({ action: 'acquire', profile_id: review.profile.profile_id, revision: review.profile.revision, operation_id: review.plan.operation_id }); }}>Download reviewed files</Button></DialogActions>
       </Dialog>
       <Dialog open={removal !== null} onClose={() => setRemoval(null)} aria-labelledby="text-analysis-remove-title">
-        <DialogTitle id="text-analysis-remove-title">{removal === 'account' ? 'Remove text analysis for this account?' : 'Remove installed profile?'}</DialogTitle>
-        <DialogContent>{removal === 'account' && 'Text processing stops for this account. '}Files still used by an account or an active operation are retained. Other analytics and stored messages are preserved.</DialogContent>
-        <DialogActions><Button onClick={() => setRemoval(null)}>Keep profile</Button><Button disabled={busy || unavailable} onClick={() => { if (removal === 'account') void run({ action: 'remove' }); else if (removal) void run({ action: 'remove', profile_id: removal.profile_id, revision: removal.revision }); setRemoval(null); }}>{removal === 'account' ? 'Remove for this account' : 'Remove profile'}</Button></DialogActions>
+        <DialogTitle id="text-analysis-remove-title">Remove installed profile?</DialogTitle>
+        <DialogContent>Files still used by an account or an active operation are retained. Other analytics and stored messages are preserved.</DialogContent>
+        <DialogActions><Button onClick={() => setRemoval(null)}>Keep profile</Button><Button disabled={busy || unavailable} onClick={() => { if (removal) void run({ action: 'remove', profile_id: removal.profile_id, revision: removal.revision }); setRemoval(null); }}>Remove profile</Button></DialogActions>
       </Dialog>
     </Panel>
   );

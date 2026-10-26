@@ -366,6 +366,7 @@
     "tests/test_startup_maintenance.py": 3,
     "tests/test_streamed_conversation_pending.py": 2,
     "tests/test_targeted_visibility_benchmark.py": 3,
+    "tests/test_text_analysis_client.py": 3,
     "tests/test_text_analysis_enrollment.py": 4,
     "tests/test_text_analysis_enrollment_runtime.py": 4,
     "tests/test_text_analysis_execution_api.py": 3,
@@ -377,6 +378,7 @@
     "tests/test_text_analysis_preview_reader.py": 3,
     "tests/test_text_analysis_preview_runtime.py": 2,
     "tests/test_text_analysis_preview_service.py": 2,
+    "tests/test_text_analysis_views.py": 4,
     "tests/test_tied_insertion_admission.py": 3,
     "tests/test_tied_insertion_metric_reuse.py": 2,
     "tests/test_tied_insertion_reuse.py": 1,
@@ -703,6 +705,14 @@
       {
         "selector": "tests/test_text_analysis_preview_runtime.py",
         "reason": "Preview output and admission share the existing Windows inference lifecycle."
+      },
+      {
+        "selector": "tests/test_text_analysis_client.py",
+        "reason": "Encrypted request retention, original session ownership and lifetime receipt recovery."
+      },
+      {
+        "selector": "tests/test_text_analysis_views.py",
+        "reason": "Retained profile disclosures and source-verified saved preview reads."
       }
     ],
     "analytics": [
