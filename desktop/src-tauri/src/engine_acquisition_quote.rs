@@ -1,6 +1,7 @@
 //! Publisher-expected package facts; Windows transfer bytes are not observed.
 use crate::{
     deployment::{DesktopRelease, EngineRelease, InstalledArtifact, PackageIdentity},
+    engine_acquisition::Selection,
     servicing, servicing_feed, worker_host,
 };
 use serde::{Deserialize, Serialize};
@@ -11,12 +12,16 @@ const MAX_SAFE: u64 = 9_007_199_254_740_991;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Binding {
+    pub explicit_selection: Selection,
     pub quote_sha256: String,
     pub review_digest: String,
 }
 impl Binding {
     pub(crate) fn valid(&self) -> bool {
         worker_host::hex(&self.quote_sha256, 64) && worker_host::hex(&self.review_digest, 64)
+    }
+    pub(crate) fn valid_for(&self, selection: Selection) -> bool {
+        self.valid() && self.explicit_selection == selection
     }
 }
 #[derive(Clone, Debug, Deserialize)]
@@ -73,6 +78,7 @@ pub(crate) struct DeclaredDisk {
 #[serde(tag = "availability", rename_all = "snake_case")]
 pub(crate) enum Review {
     Available {
+        explicit_selection: Selection,
         review_digest: String,
         engine_package_version: String,
         expected_complete_package_bytes: u64,
@@ -142,6 +148,7 @@ fn parse(raw: &[u8], descriptor: &[u8], release: &DesktopRelease) -> Result<Quot
     Ok(quote)
 }
 fn bind(
+    selection: Selection,
     quote: &Quote,
     raw: &[u8],
     descriptor: &[u8],
@@ -166,30 +173,34 @@ fn bind(
         return Err("optional_quote_stale");
     }
     let digest = serde_json::to_vec(&(
-        "optional-engine-review.v1",
-        worker_host::sha(raw),
-        worker_host::sha(descriptor),
-        full_name,
-        &actual.name,
-        &actual.publisher,
-        &actual.version,
-        &actual.family,
-        &release.app_installer_uri,
-        &core.package_uri,
-        &engine_identity.name,
-        &engine_identity.publisher,
-        &engine_identity.family,
-        &engine_identity.architecture,
-        &engine.version,
-        &engine.package_uri,
+        "optional-engine-review.v2",
+        selection,
+        (
+            worker_host::sha(raw),
+            worker_host::sha(descriptor),
+            full_name,
+            &actual.name,
+            &actual.publisher,
+            &actual.version,
+            &actual.family,
+            &release.app_installer_uri,
+            &core.package_uri,
+            &engine_identity.name,
+            &engine_identity.publisher,
+            &engine_identity.family,
+            &engine_identity.architecture,
+            &engine.version,
+            &engine.package_uri,
+        ),
     ))
     .map_err(|_| "optional_quote_invalid")?;
     Ok(Binding {
+        explicit_selection: selection,
         quote_sha256: worker_host::sha(raw),
         review_digest: worker_host::sha(&digest),
     })
 }
-pub(crate) fn verified(cancelled: &impl Fn() -> bool) -> Result<Verified> {
+pub(crate) fn verified(selection: Selection, cancelled: &impl Fn() -> bool) -> Result<Verified> {
     if cancelled() {
         return Err("optional_cancelled");
     }
@@ -233,6 +244,7 @@ pub(crate) fn verified(cancelled: &impl Fn() -> bool) -> Result<Verified> {
         .map_err(|_| "optional_quote_invalid")?
         .to_string();
     let binding = bind(
+        selection,
         &quote,
         &metadata.quote,
         &metadata.descriptor,
@@ -245,6 +257,7 @@ pub(crate) fn verified(cancelled: &impl Fn() -> bool) -> Result<Verified> {
         return Err("optional_cancelled");
     }
     let response = Review::Available {
+        explicit_selection: selection,
         review_digest: binding.review_digest.clone(),
         engine_package_version: quote.engine.package_version,
         expected_complete_package_bytes: quote.bundle.size_bytes,
@@ -261,8 +274,8 @@ pub(crate) fn verified(cancelled: &impl Fn() -> bool) -> Result<Verified> {
         _metadata: metadata,
     })
 }
-pub(crate) fn review(cancelled: &impl Fn() -> bool) -> Result<Review> {
-    match verified(cancelled) {
+pub(crate) fn review(selection: Selection, cancelled: &impl Fn() -> bool) -> Result<Review> {
+    match verified(selection, cancelled) {
         Ok(v) => Ok(v.response),
         Err(
             reason @ ("optional_quote_unavailable"
@@ -276,7 +289,7 @@ pub(crate) fn recheck(expected: &Binding, cancelled: &impl Fn() -> bool) -> Resu
     if !expected.valid() {
         return Err("optional_quote_stale");
     }
-    let current = verified(cancelled)?;
+    let current = verified(expected.explicit_selection, cancelled)?;
     if current.binding != *expected {
         return Err("optional_quote_stale");
     }
@@ -323,6 +336,7 @@ mod tests {
         assert_eq!(quote.disk.total().unwrap(), 6144);
         assert_eq!(quote.bundle.size_bytes, 12345);
         let binding = bind(
+            Selection::Module,
             &quote,
             RAW,
             DESCRIPTOR,
@@ -392,20 +406,60 @@ mod tests {
     #[test]
     fn exact_fresh_source_coordinates_and_release_bind_review() {
         let (q, actual, target) = fixture();
-        let original = bind(&q, RAW, DESCRIPTOR, &release(), &actual, "CoreA", &target).unwrap();
+        let original = bind(
+            Selection::Module,
+            &q,
+            RAW,
+            DESCRIPTOR,
+            &release(),
+            &actual,
+            "CoreA",
+            &target,
+        )
+        .unwrap();
         let mut other = target.clone();
         if let servicing_feed::Target::RelatedBundle { engine, .. } = &mut other {
             engine.package_uri = engine.package_uri.replace(&"b".repeat(64), &"d".repeat(64));
         }
-        assert!(bind(&q, RAW, DESCRIPTOR, &release(), &actual, "CoreA", &other).is_err());
+        assert!(bind(
+            Selection::Module,
+            &q,
+            RAW,
+            DESCRIPTOR,
+            &release(),
+            &actual,
+            "CoreA",
+            &other
+        )
+        .is_err());
         let mut other = target.clone();
         if let servicing_feed::Target::RelatedBundle { engine, .. } = &mut other {
             engine.version = "1.0.43.0".into();
         }
-        assert!(bind(&q, RAW, DESCRIPTOR, &release(), &actual, "CoreA", &other).is_err());
+        assert!(bind(
+            Selection::Module,
+            &q,
+            RAW,
+            DESCRIPTOR,
+            &release(),
+            &actual,
+            "CoreA",
+            &other
+        )
+        .is_err());
         assert_ne!(
             original,
-            bind(&q, RAW, DESCRIPTOR, &release(), &actual, "CoreB", &target).unwrap()
+            bind(
+                Selection::Module,
+                &q,
+                RAW,
+                DESCRIPTOR,
+                &release(),
+                &actual,
+                "CoreB",
+                &target
+            )
+            .unwrap()
         );
         let mut other = target;
         if let servicing_feed::Target::RelatedBundle { core, .. } = &mut other {
@@ -413,8 +467,62 @@ mod tests {
         }
         assert_ne!(
             original,
-            bind(&q, RAW, DESCRIPTOR, &release(), &actual, "CoreA", &other).unwrap()
+            bind(
+                Selection::Module,
+                &q,
+                RAW,
+                DESCRIPTOR,
+                &release(),
+                &actual,
+                "CoreA",
+                &other
+            )
+            .unwrap()
         );
+    }
+    #[test]
+    fn explicit_selection_changes_review_and_cannot_be_omitted_or_substituted() {
+        let (q, actual, target) = fixture();
+        let module = bind(
+            Selection::Module,
+            &q,
+            RAW,
+            DESCRIPTOR,
+            &release(),
+            &actual,
+            "CoreA",
+            &target,
+        )
+        .unwrap();
+        let preview = bind(
+            Selection::Preview,
+            &q,
+            RAW,
+            DESCRIPTOR,
+            &release(),
+            &actual,
+            "CoreA",
+            &target,
+        )
+        .unwrap();
+        assert_eq!(module.quote_sha256, preview.quote_sha256);
+        assert_ne!(module.review_digest, preview.review_digest);
+        assert!(module.valid_for(Selection::Module));
+        assert!(!module.valid_for(Selection::Preview));
+        assert!(preview.valid_for(Selection::Preview));
+        assert!(!preview.valid_for(Selection::Module));
+        let mut value = serde_json::to_value(&preview).unwrap();
+        value.as_object_mut().unwrap().remove("explicit_selection");
+        assert!(worker_host::decode::<Binding>(&serde_json::to_vec(&value).unwrap()).is_err());
+        for selection in [serde_json::Value::Null, serde_json::json!("other")] {
+            let mut value = serde_json::to_value(&preview).unwrap();
+            value["explicit_selection"] = selection;
+            assert!(worker_host::decode::<Binding>(&serde_json::to_vec(&value).unwrap()).is_err());
+        }
+        let duplicate = String::from_utf8(serde_json::to_vec(&preview).unwrap())
+            .unwrap()
+            .replacen("{", "{\"explicit_selection\":\"module\",", 1);
+        assert!(worker_host::decode::<Binding>(duplicate.as_bytes()).is_err());
     }
     #[test]
     fn no_quote_and_unsupported_release_never_create_an_offer() {

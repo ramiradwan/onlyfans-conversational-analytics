@@ -4,6 +4,7 @@
 
 - Status: Accepted contract; installed delivery and rollout require separate qualification.
 - Date: 2026-10-22
+- Amended: 2026-10-26
 - Extends: ADRs 0056 and 0057.
 
 ## Decision
@@ -22,7 +23,7 @@ Canonical names are `ConversationAnalytics_<CoreVersion>_x64.msix` or `.msixbund
 
 Packing a related release requires an explicit prebuilt Engine bundle whose metadata matches the selected profile. It does not build or admit an analysis runtime. No production or Store profile is switched by this change, and the workflow gains no Engine acquisition source. A future profile transition must supply a qualified producer input and supported-client/channel migration policy. Both protected publication consumers explicitly refuse related stable promotion until that policy exists. Read-only serving of canonical bundle paths creates no publication authority.
 
-Explicit optional acquisition is a separate installed operation. The admitted local application window reviews metadata before confirming a module selection with its opaque review digest. The request accepts no URI, path, package identity or resource amounts. Review, Start and the broker's Commit bind the current Core, protected metadata and exact registered source coordinates. Recorded preview operations remain observable; fresh preview acquisition is unavailable. Ordinary updater parsing remains forward-only. Startup, installation and Engine-absent ordinary servicing do not call acquisition. Installation does not grant analysis authority.
+Explicit optional acquisition is a separate installed operation. The admitted local application window reviews metadata before confirming an explicit module or preview setup choice with its opaque review digest. Both choices install the same shared Engine code. The request accepts no URI, path, package identity or resource amounts. Review, Start and the broker's Commit bind the exact choice, current Core, protected metadata and registered source coordinates. The local review digest uses a distinct versioned domain. Fresh reconnect records use version 3; versions 1 and 2 remain readable for passive status and cancellation but cannot admit a fresh Commit. Unresolved historical ownership is never upgraded or replaced automatically. Ordinary updater parsing remains forward-only. Startup, installation and Engine-absent ordinary servicing do not call acquisition. Installation grants no analysis or preview authority and does not acquire models.
 
 The optional [acquisition quote](../../packaging/msix/schemas/engine-acquisition-quote.schema.json) is part of the signed Core payload, bound to the raw desktop descriptor, related set and final signed Engine artifact. Packing opts in through `-EngineAcquisitionQuoteInputs`, which pins the Engine, exact payload inventory, explicit disk declaration and prior independently admitted signature-verification receipt. Engine admission precedes Core sealing; final verification compares the quote with the actual artifact set. Prior Core fields remain historical. Expected complete package bytes and declared installed, temporary and rollback budgets do not measure Windows transfer, cache reuse or actual disk use. Missing or stale quotes refuse new acquisition without affecting passive status or cancellation.
 

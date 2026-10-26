@@ -13,6 +13,7 @@ import {
   clientIntent, parseSavedPreview, textAnalysisDigest, verifyPreviewOutcome,
   type ClientIntent, type ClientIntentRecord, type PreviewOutcome,
 } from '../src/analytics/textAnalysisContract';
+import type { EngineAcquisitionApi, EngineStatus } from '../src/api/engineAcquisition';
 import { TextAnalysisPreviews } from '../src/components/analytics/TextAnalysisPreviews';
 import type { NlpDependenciesApi, NlpDependencyStatus } from '../src/services/nlpDependenciesApi';
 import { TextAnalysisApiError, type TextAnalysisApi } from '../src/services/textAnalysisApi';
@@ -23,6 +24,19 @@ import { theme } from '../src/theme';
 
 const ACCOUNT = 'example-account', KEY = outcomeExample.request.external_key;
 const clone = <T,>(value: T): T => structuredClone(value);
+function engineFixture() {
+  const idle: EngineStatus = { operation_id: null, state: 'not_requested', installed: false, in_flight: false,
+    cancel_requested: false, deadline_reached: false, progress_percent: null, reason: null, hresult: null };
+  const quote = { availability: 'available' as const, explicit_selection: 'preview' as const, review_digest: 'a'.repeat(64),
+    engine_package_version: '1.0.42.0', expected_complete_package_bytes: 12345,
+    declared_disk: { installed_space_budget_bytes: 4096, temporary_space_budget_bytes: 2048,
+      rollback_space_budget_bytes: 0, required_free_space_bytes: 6144 } };
+  return { selection: 'preview' as const, supported: vi.fn(() => true),
+    status: vi.fn<EngineAcquisitionApi['status']>().mockResolvedValue(idle),
+    review: vi.fn<EngineAcquisitionApi['review']>().mockResolvedValue(quote),
+    start: vi.fn<EngineAcquisitionApi['start']>().mockResolvedValue({ ...idle, operation_id: 'b'.repeat(32), state: 'acquiring', in_flight: true }),
+    cancel: vi.fn<EngineAcquisitionApi['cancel']>(), quote };
+}
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });
@@ -38,7 +52,7 @@ async function retained(intent: ClientIntent): Promise<ClientIntentRecord> {
   return { ...intent, schema_version: 'text-analysis-client-intent-record.v1',
     body_sha256: await textAnalysisDigest(intent.body), retained_at: '2026-10-25T00:00:00Z' };
 }
-function fixture(partial = false) {
+function fixture(partial = false, engineApi?: EngineAcquisitionApi) {
   let original: PreviewOutcome | null = null;
   const journal = new Map<string, ClientIntentRecord>();
   const api = {
@@ -77,7 +91,7 @@ function fixture(partial = false) {
   const transport = createBridgeTransportStore(); connect(transport);
   const client = createTextAnalysisClient(api);
   const view = (account = ACCOUNT) => <ThemeProvider theme={theme}><TextAnalysisPreviews creatorAccountId={account}
-    transport={transport} client={client} dependenciesApi={dependencies} /></ThemeProvider>;
+    transport={transport} client={client} dependenciesApi={dependencies} engineApi={engineApi} /></ThemeProvider>;
   return { api, dependencies, transport, view, journal, setOutcome: (value: PreviewOutcome | null) => { original = value; } };
 }
 async function selectProfile() {
@@ -97,6 +111,55 @@ beforeEach(() => {
 afterEach(() => { cleanup(); useUserStore.setState({ role: null, roleResolved: false }); vi.unstubAllGlobals(); });
 
 describe('Text analysis preview controls', () => {
+  it('reviews explicit preview Engine setup independently of preview execution and model acquisition', async () => {
+    const engine = engineFixture(), x = fixture(false, engine); render(x.view());
+    await screen.findByText('Engine installation has not been requested.');
+    expect(document.querySelector('[data-journey-state="textanalysis.engine_controls"]')).toBeTruthy();
+    expect(engine.status).toHaveBeenCalledOnce(); expect(engine.review).not.toHaveBeenCalled(); expect(engine.start).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Review Engine installation' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Review Engine installation' });
+    expect(dialog.querySelector('[data-journey-state="textanalysis.engine_review"]')).toBeTruthy();
+    expect(within(dialog).getByText('Setup choice: Preview.')).toBeTruthy();
+    expect(within(dialog).getByText(/shared Engine code only/)).toBeTruthy();
+    expect(engine.start).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Install reviewed Engine' }));
+    await waitFor(() => expect(engine.start).toHaveBeenCalledExactlyOnceWith(engine.quote.review_digest, expect.any(AbortSignal)));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText('Windows is installing the Engine.')).toBeTruthy();
+    expect(x.api.prepare).not.toHaveBeenCalled(); expect(x.api.confirm).not.toHaveBeenCalled(); expect(x.api.retain).not.toHaveBeenCalled();
+    expect(x.dependencies.command).not.toHaveBeenCalled();
+    await openSaved();
+    expect(engine.start).toHaveBeenCalledOnce(); expect(x.api.prepare).not.toHaveBeenCalled(); expect(x.api.confirm).not.toHaveBeenCalled();
+  });
+
+  it('keeps saved preview evidence readable when Engine setup cannot be checked', async () => {
+    const engine = engineFixture(); engine.status.mockRejectedValue(new Error('unavailable'));
+    const x = fixture(false, engine); render(x.view());
+    await screen.findByText(/Engine setup could not be verified/); await openSaved();
+    expect(engine.review).not.toHaveBeenCalled(); expect(engine.start).not.toHaveBeenCalled();
+    expect(x.api.prepare).not.toHaveBeenCalled(); expect(x.api.confirm).not.toHaveBeenCalled(); expect(x.dependencies.command).not.toHaveBeenCalled();
+  });
+
+  it.each(['account', 'same_account_session', 'role'] as const)('discards a late Engine review when %s changes without cancelling device work', async (change) => {
+    const engine = engineFixture(), review = deferred<Awaited<ReturnType<EngineAcquisitionApi['review']>>>();
+    engine.review.mockReturnValue(review.promise);
+    const x = fixture(false, engine), rendered = render(x.view());
+    await screen.findByText('Engine installation has not been requested.');
+    fireEvent.click(screen.getByRole('button', { name: 'Review Engine installation' }));
+    await waitFor(() => expect(engine.review).toHaveBeenCalledOnce());
+    const signal = engine.review.mock.calls[0][0];
+    act(() => {
+      if (change === 'account') connect(x.transport, 'other-account', '2');
+      if (change === 'same_account_session') connect(x.transport, ACCOUNT, '2');
+      if (change === 'role') useUserStore.getState().actions.setUserRole('operator');
+    });
+    if (change === 'account') rendered.rerender(x.view('other-account'));
+    await act(async () => review.resolve(engine.quote));
+    expect(signal?.aborted).toBe(true); expect(screen.queryByRole('dialog')).toBeNull();
+    expect(engine.start).not.toHaveBeenCalled(); expect(engine.cancel).not.toHaveBeenCalled();
+    expect(x.api.prepare).not.toHaveBeenCalled(); expect(x.api.confirm).not.toHaveBeenCalled(); expect(x.dependencies.command).not.toHaveBeenCalled();
+  });
+
   it('prepares an explicitly reviewed original scope before confirmation and keeps pending work read-only', async () => {
     const x = fixture(); render(x.view()); await selectProfile();
     expect(x.api.retain).not.toHaveBeenCalled(); expect(x.api.prepare).not.toHaveBeenCalled(); expect(x.api.confirm).not.toHaveBeenCalled();

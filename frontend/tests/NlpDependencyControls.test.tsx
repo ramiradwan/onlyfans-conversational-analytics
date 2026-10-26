@@ -40,7 +40,7 @@ describe('NlpDependencyControls', () => {
     const api = fixture(unavailable);
     const idle = { operation_id: null, state: 'not_requested' as const, installed: false, in_flight: false,
       cancel_requested: false, deadline_reached: false, progress_percent: null, reason: null, hresult: null };
-    const engineApi = { supported: () => true, status: vi.fn().mockResolvedValue(idle),
+    const engineApi = { selection: 'module' as const, supported: () => true, status: vi.fn().mockResolvedValue(idle),
       review: vi.fn().mockResolvedValue({ availability: 'unavailable', reason: 'optional_quote_unavailable' }),
       start: vi.fn(), cancel: vi.fn() };
     render(view(api, 'account-one', engineApi));
@@ -245,6 +245,14 @@ describe('NlpDependencyControls', () => {
     expect(screen.queryByRole('button', { name: 'Remove text analysis for this account' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Use previous profile' })).toBeNull();
     expect(api.command).not.toHaveBeenCalled();
+  });
+  it('refuses a preview Engine API in the module setup location without downloading a profile', () => {
+    const api = fixture(unavailable);
+    const engineApi = { selection: 'preview' as const, supported: vi.fn(() => true), status: vi.fn(), review: vi.fn(), start: vi.fn(), cancel: vi.fn() };
+    render(view(api, 'account-one', engineApi));
+    expect(screen.getByText(/Engine setup selection could not be verified/)).toBeTruthy();
+    expect(engineApi.status).not.toHaveBeenCalled(); expect(engineApi.review).not.toHaveBeenCalled();
+    expect(engineApi.start).not.toHaveBeenCalled(); expect(engineApi.cancel).not.toHaveBeenCalled(); expect(api.command).not.toHaveBeenCalled();
   });
   it('requires explicit preparation and shared file removal confirmation', async () => {
     const installed = { ...profile, installed: true };

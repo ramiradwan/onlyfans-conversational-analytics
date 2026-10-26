@@ -4,17 +4,20 @@ import { useStore } from 'zustand';
 
 import { MentionEvidenceDialog } from './MentionEvidenceDialog';
 import type { PreviewSummary, SavedPreview } from '../../analytics/textAnalysisContract';
+import { previewEngineAcquisitionApi, type EngineAcquisitionApi } from '../../api/engineAcquisition';
 import { nlpDependenciesApi, type NlpDependencyProfile } from '../../services/nlpDependenciesApi';
 import { textAnalysisScopeKey, textAnalysisScopeReady } from '../../store/textAnalysisExecutionStore';
 import { createTextAnalysisPreviewStore } from '../../store/textAnalysisPreviewStore';
 import { bridgeTransportStore } from '../../store/transportStore';
 import { useUserRole, useUserStore } from '../../store/userStore';
+import { EngineDependencyControls } from '../EngineDependencyControls';
 import { approvedTextAnalysisProfile, type TextAnalysisControlProps } from '../TextAnalysisExecutionControls';
 import { Panel, SectionHeader } from '../ui';
 
 const number = new Intl.NumberFormat();
 const taskLabel = (task: string) => task === 'message_topics' ? 'Topics' : 'Exact mentions';
 const date = (value: string) => new Date(value).toLocaleString();
+type PreviewProps = TextAnalysisControlProps & { engineApi?: EngineAcquisitionApi };
 function Scope({ scope, disclosure }: Pick<SavedPreview, 'scope' | 'disclosure'>) {
   return <Stack spacing={1} data-journey-state="textanalysis.preview_scope">
     <Typography>Frozen sample: {scope.source_count} messages, up to {scope.message_cap}, received and sent.</Typography>
@@ -43,12 +46,13 @@ function Summary({ item, offset, onPage, onSource }: { item: PreviewSummary; off
     </Stack>
   </Stack>;
 }
-export function TextAnalysisPreviews(props: TextAnalysisControlProps) {
+export function TextAnalysisPreviews(props: PreviewProps) {
   const transport = props.transport ?? bridgeTransportStore;
   const context = useSyncExternalStore(transport.subscribe, transport.getState, transport.getState), role = useUserRole();
   return <PreviewSession key={textAnalysisScopeKey(context, role, props.creatorAccountId)} {...props} transport={transport} />;
 }
-function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDependenciesApi, transport = bridgeTransportStore }: TextAnalysisControlProps) {
+function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDependenciesApi, transport = bridgeTransportStore,
+  engineApi = previewEngineAcquisitionApi }: PreviewProps) {
   const store = useMemo(() => createTextAnalysisPreviewStore(client), [client]); const state = useStore(store);
   const [profiles, setProfiles] = useState<NlpDependencyProfile[]>([]), [selected, setSelected] = useState('');
   const [offsets, setOffsets] = useState<Record<string, number>>({});
@@ -72,7 +76,10 @@ function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDepende
   const inProgress = outcome && ['prepared', 'pending', 'running'].includes(outcome.receipt.state)
     || state.observations.some((item) => item.state === 'resolved' && item.intent.kind !== 'enrollment_command'
       && 'receipt' in item.result && ['prepared', 'pending', 'running'].includes(item.result.receipt.state));
-  return <Panel component="section" aria-label="Text analysis previews">
+  const engineAccount = textAnalysisScopeReady(transport.getState(), useUserStore.getState().role, creatorAccountId) ? creatorAccountId : null;
+  return <Stack spacing={2}>
+    <EngineDependencyControls account={engineAccount} api={engineApi} selection="preview" />
+    <Panel component="section" aria-label="Text analysis previews">
     <SectionHeader title="Text analysis previews" />
     <Stack spacing={2} data-journey-state="textanalysis.preview_controls">
       <Typography>Review a frozen message sample before confirming one preview. Saved preview reads do not run analysis or acquire files.</Typography>
@@ -131,5 +138,6 @@ function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDepende
       </Stack>}
     </Stack>
     <MentionEvidenceDialog state={state} actions={{ closeSource: store.actions.closeSource }} />
-  </Panel>;
+    </Panel>
+  </Stack>;
 }

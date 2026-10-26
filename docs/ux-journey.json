@@ -24,6 +24,7 @@
         "frontend/src/components/CommercialActivationControls.tsx",
         "frontend/src/components/CreatorVaultControls.tsx",
         "frontend/src/components/NlpDependencyControls.tsx",
+        "frontend/src/components/EngineDependencyControls.tsx",
         "frontend/src/components/TextAnalysisExecutionControls.tsx",
         "frontend/src/components/analytics/TextAnalysisPreviews.tsx",
         "frontend/src/components/analytics/TaskFindings.tsx",
@@ -92,6 +93,16 @@
     }
   },
   "journeys": [
+    {
+      "id": "explicit-engine-setup",
+      "entry_state": "textanalysis.engine_controls",
+      "success_state": "textanalysis.engine_review"
+    },
+    {
+      "id": "preview-engine-setup",
+      "entry_state": "textanalysis.preview_controls",
+      "success_state": "textanalysis.engine_review"
+    },
     {
       "id": "account-text-processing",
       "entry_state": "textanalysis.processing_controls",
@@ -190,6 +201,50 @@
   ],
   "states": [
     {
+      "id": "textanalysis.engine_controls",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/EngineDependencyControls.tsx",
+        "text": "data-journey-state=\"textanalysis.engine_controls\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.engine_review",
+          "by": "user",
+          "action": "Review Engine installation for the selected setup choice"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
+          "name": "reviews explicit preview Engine setup independently of preview execution and model acquisition"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.engine_review",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/EngineDependencyControls.tsx",
+        "text": "data-journey-state=\"textanalysis.engine_review\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.engine_controls",
+          "by": "user",
+          "action": "Install the reviewed Engine or return to setup status"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
+          "name": "reviews explicit preview Engine setup independently of preview execution and model acquisition"
+        }
+      ]
+    },
+    {
       "id": "textanalysis.processing_controls",
       "surface": "desktop.app",
       "anchor": {
@@ -284,6 +339,11 @@
         {
           "to": "textanalysis.preview_recovery",
           "by": "system"
+        },
+        {
+          "to": "textanalysis.engine_review",
+          "by": "user",
+          "action": "Review shared Engine installation for this setup choice"
         }
       ],
       "evidence": [
@@ -532,6 +592,11 @@
           "to": "textanalysis.cost_review",
           "by": "user",
           "action": "Review a profile download plan"
+        },
+        {
+          "to": "textanalysis.engine_review",
+          "by": "user",
+          "action": "Review shared Engine installation for this setup choice"
         }
       ],
       "evidence": [

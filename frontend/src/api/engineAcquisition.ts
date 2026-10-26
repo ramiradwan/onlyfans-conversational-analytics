@@ -4,6 +4,8 @@ const safeBytes = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const operationId = z.string().regex(/^[a-f0-9]{32}$/);
 const reason = z.string().regex(/^[a-z_]{1,64}$/);
+const selection = z.enum(['module', 'preview']);
+export type EngineSelection = z.infer<typeof selection>;
 const disk = z.object({
   installed_space_budget_bytes: safeBytes.refine((value) => value > 0),
   temporary_space_budget_bytes: safeBytes,
@@ -16,7 +18,7 @@ const disk = z.object({
 const version = z.string().max(23).refine((value) => /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(value)
   && value.split('.').every((part) => Number(part) <= 65535));
 const review = z.discriminatedUnion('availability', [
-  z.object({ availability: z.literal('available'), review_digest: digest, engine_package_version: version,
+  z.object({ availability: z.literal('available'), explicit_selection: selection, review_digest: digest, engine_package_version: version,
     expected_complete_package_bytes: safeBytes.refine((value) => value > 0), declared_disk: disk }).strict(),
   z.object({ availability: z.literal('unavailable'), reason }).strict(),
 ]);
@@ -31,6 +33,7 @@ const status = z.object({
 export type EngineReview = z.infer<typeof review>;
 export type EngineStatus = z.infer<typeof status>;
 export interface EngineAcquisitionApi {
+  readonly selection: EngineSelection;
   supported(): boolean;
   status(signal?: AbortSignal): Promise<EngineStatus>;
   review(signal?: AbortSignal): Promise<EngineReview>;
@@ -55,13 +58,15 @@ function failure(error: unknown): EngineAcquisitionError {
     'update_check_in_progress', 'optional_acquisition_busy'].includes(error)) return new EngineAcquisitionError('ownership');
   return new EngineAcquisitionError('unavailable');
 }
-export function createEngineAcquisitionApi(options: { invoke?: Invoke } = {}): EngineAcquisitionApi {
+export function createEngineAcquisitionApi(options: { selection: EngineSelection; invoke?: Invoke }): EngineAcquisitionApi {
+  const selected = selection.parse(options.selection);
+  const invoke = options.invoke;
   async function call(command: Command, args?: Record<string, string>, signal?: AbortSignal): Promise<unknown> {
     signal?.throwIfAborted();
     try {
       const core = nativeCore();
-      if (!options.invoke && typeof core?.invoke !== 'function') throw new EngineAcquisitionError('unavailable');
-      const result = await (options.invoke ? options.invoke(command, args) : core!.invoke(command, args));
+      if (!invoke && typeof core?.invoke !== 'function') throw new EngineAcquisitionError('unavailable');
+      const result = await (invoke ? invoke(command, args) : core!.invoke(command, args));
       // Presentation cancellation never cancels the retained Windows operation.
       signal?.throwIfAborted();
       return result;
@@ -70,20 +75,27 @@ export function createEngineAcquisitionApi(options: { invoke?: Invoke } = {}): E
       throw failure(error);
     }
   }
-  return {
-    supported: () => Boolean(options.invoke || typeof nativeCore()?.invoke === 'function'),
-    async status(signal) { return status.parse(await call('desktop_engine_acquisition_status', undefined, signal)); },
-    async review(signal) { return review.parse(await call('desktop_engine_acquisition_review', undefined, signal)); },
-    async start(reviewDigest, signal) {
-      digest.parse(reviewDigest);
-      return status.parse(await call('desktop_engine_acquisition_start', { explicitSelection: 'module', reviewDigest }, signal));
+  return Object.freeze({
+    selection: selected,
+    supported: () => Boolean(invoke || typeof nativeCore()?.invoke === 'function'),
+    async status(signal?: AbortSignal) { return status.parse(await call('desktop_engine_acquisition_status', undefined, signal)); },
+    async review(signal?: AbortSignal) {
+      const value = review.parse(await call('desktop_engine_acquisition_review', { explicitSelection: selected }, signal));
+      if (value.availability === 'available' && value.explicit_selection !== selected) throw new EngineAcquisitionError('unavailable');
+      return value;
     },
-    async cancel(id, signal) {
+    async start(reviewDigest: string, signal?: AbortSignal) {
+      digest.parse(reviewDigest);
+      return status.parse(await call('desktop_engine_acquisition_start', { explicitSelection: selected, reviewDigest }, signal));
+    },
+    async cancel(id: string, signal?: AbortSignal) {
       operationId.parse(id);
       const value = status.parse(await call('desktop_engine_acquisition_cancel', { operationId: id }, signal));
       if (value.operation_id !== id) throw new EngineAcquisitionError('unavailable');
       return value;
     },
-  };
+  });
 }
-export const engineAcquisitionApi = createEngineAcquisitionApi();
+export const moduleEngineAcquisitionApi = createEngineAcquisitionApi({ selection: 'module' });
+export const previewEngineAcquisitionApi = createEngineAcquisitionApi({ selection: 'preview' });
+export const engineAcquisitionApi = moduleEngineAcquisitionApi;
