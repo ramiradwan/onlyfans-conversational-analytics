@@ -227,8 +227,13 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     expect(await popupConsent(controls, 'read paused consent after worker replacement'))
       .toEqual({ mode: 'paused', reload: false });
     expect((await readBrainSummary(context)).messageCount).toBe(3);
-    await expect.poll(async () => (await readBrainSummary(context)).browser?.capture ?? null,
-      { timeout: 30_000, message: 'wait for paused browser control state' }).toBe('paused');
+    await expect.poll(async () => {
+      const ready = await worker.evaluate(async () => {
+        const { companionClient } = await import(chrome.runtime.getURL('background.js'));
+        return companionClient.controlReady();
+      });
+      return ready && (await readBrainSummary(context)).browser?.capture === 'paused';
+    }, { timeout: 30_000, message: 'wait for replacement paused browser control admission' }).toBe(true);
     await capture('resume');
     await expect.poll(() => popupConsent(controls, 'read resumed consent'),
       { timeout: 8_000, message: 'wait for Full consent after resume' })

@@ -14,7 +14,7 @@ const SURFACE = { schema: 'ofca-browser-surface/v2', capture: 'paused', site_acc
 function event() { const listeners = []; return { listeners, addListener(fn) { listeners.push(fn); }, removeListener(fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } }; }
 function area() { const values = {}; return { values, async get(keys) { return Object.fromEntries(keys.filter((k) => Object.hasOwn(values, k)).map((k) => [k, values[k]])); }, async set(update) { Object.assign(values, structuredClone(update)); }, async remove(keys) { for (const k of keys) delete values[k]; } }; }
 
-function harness({ mode = 'paused', onBrowserTask = null } = {}) {
+function harness({ mode = 'paused', onBrowserTask = null, beforeRpc = null } = {}) {
   let consent = mode, paired = true, time = 1_800_000_000_000;
   const timers = new Set();
   const scheduler = {
@@ -51,6 +51,7 @@ function harness({ mode = 'paused', onBrowserTask = null } = {}) {
         control(value) { for (const fn of controlListeners) fn(value); },
         async rpc(method, params) {
           rpcCalls.push({ method, params });
+          if (beforeRpc) await beforeRpc(method, params, channel);
           if (method === 'agent.challenge') return { challenge_id: crypto.randomUUID(), challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-12T12:00:00Z' };
           if (method === 'agent.authenticate') return { creator_account_id: ACCOUNT, auth_ticket: 'ticket', storage_bootstrap: 'sealed-bootstrap' };
           if (method === 'agent.storage.unseal') return { schema: 'ofca-extension-storage-unlock/v1', creator_account_id: ACCOUNT, credential_kind: 'pairing', auth_ticket: 'ticket', storage_key_base64: STORAGE_KEY };
@@ -65,6 +66,36 @@ function harness({ mode = 'paused', onBrowserTask = null } = {}) {
   });
   client.onRevoked(async () => { stats.revoked++; });
   return { client, chrome, channels, controls, stats, advance, setMode(value) { consent = value; } };
+}
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+function delayedSurfaceHarness({ delayAuthentication = false } = {}) {
+  const authenticationStarted = deferred(), authentication = deferred(), reports = [];
+  let nextReport = deferred();
+  const h = harness({ beforeRpc: async (method, params, channel) => {
+    if (method === 'agent.authenticate') {
+      authenticationStarted.resolve();
+      if (delayAuthentication) await authentication.promise;
+    }
+    if (method === 'agent.surface.report') {
+      const report = { ...deferred(), params, channel };
+      reports.push(report);
+      nextReport.resolve(report);
+      nextReport = deferred();
+      await report.promise;
+    }
+  } });
+  return { ...h, authenticationStarted, authentication, reports,
+    report(index) {
+      if (reports[index]) return Promise.resolve(reports[index]);
+      assert.equal(index, reports.length);
+      return nextReport.promise;
+    } };
 }
 
 test('a paused Full extension holds one authenticated control-only session', async () => {
@@ -164,6 +195,7 @@ test('controls are applied once through the consent callback and revocation wait
 
 test('surface pages learn when the desktop app can control this browser', async () => {
   const h = harness();
+  h.client.reportSurface(SURFACE);
   const states = [];
   h.client.registerPopup();
   const port = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL('popup.html'), frameId: 0 },
@@ -177,6 +209,116 @@ test('surface pages learn when the desktop app can control this browser', async 
   port.onMessage.listeners[0]({ type: 'status' });
   await tick(); await tick();
   assert.equal(states.at(-1).desktop_control, true);
+});
+
+test('desktop control waits for current authentication and surface acknowledgment', async () => {
+  const h = delayedSurfaceHarness({ delayAuthentication: true }), states = [], readiness = [];
+  h.client.registerPopup();
+  const port = { name: PAIRING_PORT_NAME, sender: { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL('popup.html'), frameId: 0 },
+    onMessage: event(), onDisconnect: event(), postMessage(value) { states.push(value); } };
+  h.chrome.runtime.onConnect.listeners[0](port);
+  h.client.subscribe(() => readiness.push(h.client.controlReady()));
+  h.client.reportSurface(SURFACE);
+  const opening = h.client.ensureControl();
+  await h.authenticationStarted.promise;
+  assert.equal(h.client.controlReady(), false);
+  h.authentication.resolve();
+  const report = await h.report(0);
+  port.onMessage.listeners[0]({ type: 'status' });
+  await tick();
+  assert.equal(h.client.controlReady(), false);
+  assert.equal(states.at(-1).desktop_control, false);
+  report.resolve();
+  await opening;
+  assert.equal(h.client.controlReady(), true);
+  assert.equal(readiness.at(-1), true);
+  port.onMessage.listeners[0]({ type: 'status' });
+  await tick();
+  assert.equal(states.at(-1).desktop_control, true);
+  h.client.reportSurface({ ...SURFACE });
+  assert.equal(h.reports.length, 1, 'unchanged meaning retains its acknowledgment');
+  h.setMode('off');
+  await h.client.ensureControl();
+  assert.equal(h.client.controlReady(), false);
+  assert.equal(readiness.at(-1), false);
+  assert.ok(!h.channels[0].rpcCalls.some(call => call.method === 'agent.storage.unseal'));
+});
+
+test('changed surface meaning fences stale acknowledgments and failed reports', async () => {
+  const h = delayedSurfaceHarness(), readiness = [];
+  h.client.subscribe(() => readiness.push(h.client.controlReady()));
+  h.client.reportSurface(SURFACE);
+  const opening = h.client.ensureControl(), first = await h.report(0);
+  const changed = { ...SURFACE, history_permission: 'granted' };
+  h.client.reportSurface(changed);
+  const second = await h.report(1);
+  h.client.reportSurface(SURFACE);
+  const current = await h.report(2);
+  first.resolve();
+  await opening;
+  assert.equal(h.client.controlReady(), false, 'an earlier identical surface cannot acknowledge the current report');
+  second.resolve();
+  await tick();
+  assert.equal(h.client.controlReady(), false);
+  current.resolve();
+  await tick();
+  assert.equal(h.client.controlReady(), true);
+  h.client.reportSurface(changed);
+  const failed = await h.report(3);
+  assert.equal(h.client.controlReady(), false);
+  assert.equal(readiness.at(-1), false);
+  failed.reject(new Error('report_failed'));
+  await tick();
+  assert.equal(h.client.controlReady(), false);
+  h.client.reportSurface(changed);
+  const retry = await h.report(4);
+  retry.resolve();
+  await tick();
+  assert.equal(h.client.controlReady(), true);
+  h.client.reportSurface(SURFACE);
+  const oldFailure = await h.report(5);
+  h.client.reportSurface(changed);
+  const latest = await h.report(6);
+  latest.resolve();
+  await tick();
+  oldFailure.reject(new Error('old_report_failed'));
+  await tick();
+  assert.equal(h.client.controlReady(), true, 'an old failure cannot clear the current acknowledgment');
+  assert.ok(!h.channels[0].rpcCalls.some(call => call.method === 'agent.storage.unseal'));
+  h.setMode('off');
+  await h.client.ensureControl();
+});
+
+test('old channel replies cannot acknowledge or clear a replacement control channel', async () => {
+  const h = delayedSurfaceHarness();
+  h.client.reportSurface(SURFACE);
+  const opening = h.client.ensureControl(), first = await h.report(0);
+  first.resolve();
+  await opening;
+  h.client.reportSurface({ ...SURFACE, history_permission: 'granted' });
+  const oldSuccess = await h.report(1);
+  h.client.reportSurface({ ...SURFACE, history_permission: 'granted' });
+  const oldFailure = await h.report(2);
+  h.channels[0].close();
+  assert.equal(h.client.controlReady(), false);
+  await tick();
+  h.advance(1_000);
+  const replacement = await h.report(3);
+  assert.notEqual(replacement.channel, oldSuccess.channel);
+  oldSuccess.resolve();
+  await tick();
+  assert.equal(h.client.controlReady(), false);
+  replacement.resolve();
+  await tick();
+  assert.equal(h.client.controlReady(), true);
+  oldFailure.reject(new Error('old_channel_failed'));
+  await tick();
+  assert.equal(h.client.controlReady(), true);
+  h.channels[1].close();
+  assert.equal(h.client.controlReady(), false);
+  assert.ok(!h.channels.flatMap(channel => channel.rpcCalls).some(call => call.method === 'agent.storage.unseal'));
+  h.setMode('off');
+  await h.client.ensureControl();
 });
 
 test('the reported browser state is closed and identifier-free', () => {

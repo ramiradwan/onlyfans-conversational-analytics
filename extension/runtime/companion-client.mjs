@@ -227,7 +227,7 @@ export function createCompanionClient({
   // Session controls and browser state reports (ADR 0045). Controls change
   // nothing here: the consent and companion controllers apply them.
   const seenControls = new Set();
-  let lastSurface = null, lastSurfaceEncoded = null, reportedSurfaceChannel = null;
+  let lastSurface = null, lastSurfaceEncoded = null, reportedSurfaceChannel = null, surfaceMeaning = null;
   function attachControls(channel) {
     const lifetime = new AbortController();
     channel.onClose(() => lifetime.abort());
@@ -272,34 +272,52 @@ export function createCompanionClient({
     if (control && !control.channel.closed) return control.channel;
     return null;
   }
-  function controlReady() { return controlChannel() !== null; }
+  function controlReady() {
+    const channel = controlChannel();
+    return channel !== null && lastSurface !== null && reportedSurfaceChannel === channel;
+  }
   async function sendSurface() {
     const channel = controlChannel();
     if (channel === null || lastSurface === null) return false;
-    const surface = lastSurface, encoded = lastSurfaceEncoded;
+    const surface = lastSurface, encoded = lastSurfaceEncoded, meaning = surfaceMeaning;
     try {
       await channel.rpc('agent.surface.report', surface);
-      if (channel === controlChannel() && encoded === lastSurfaceEncoded) reportedSurfaceChannel = channel;
+      if (channel === controlChannel() && encoded === lastSurfaceEncoded && meaning === surfaceMeaning) {
+        const wasReady = controlReady();
+        reportedSurfaceChannel = channel;
+        if (!wasReady) notifySurfaces();
+      }
       return true;
     } catch {
-      if (reportedSurfaceChannel === channel) reportedSurfaceChannel = null;
+      if (channel === controlChannel() && encoded === lastSurfaceEncoded && meaning === surfaceMeaning
+        && reportedSurfaceChannel === channel) {
+        reportedSurfaceChannel = null;
+        notifySurfaces();
+      }
       return false;
     }
   }
   function reportSurface(surface) {
     const encoded = JSON.stringify(surface);
     const changed = encoded !== lastSurfaceEncoded;
+    const wasReady = controlReady();
     lastSurface = surface; lastSurfaceEncoded = encoded;
     const channel = controlChannel();
-    if (changed) reportedSurfaceChannel = null;
+    if (changed) {
+      surfaceMeaning = {};
+      reportedSurfaceChannel = null;
+      if (wasReady) notifySurfaces();
+    }
     if (!changed && channel !== null && reportedSurfaceChannel === channel) return;
     void sendSurface();
   }
   let control = null, controlOpening = null, controlRetryTimer = null;
   function closeControl() {
     if (controlRetryTimer !== null) { timers.clearTimeout(controlRetryTimer); controlRetryTimer = null; }
+    const wasReady = controlReady();
     const current = control; control = null;
     current?.controller.abort(); current?.channel.close();
+    if (wasReady && !controlReady()) notifySurfaces();
   }
   function scheduleControl(delay) {
     if (controlRetryTimer !== null) return;
