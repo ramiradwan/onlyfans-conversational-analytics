@@ -89,7 +89,8 @@
         "0015_text_analysis_jobs.sql": "e71fe0c2d8399f0f33a6ec0f6f01e52a18b15175065ba6297319cded3e4c9e73",
         "0016_text_analysis_enrollment.sql": "500596f708ec3aa13df4d086a80175fb370bc6c94250d1f39ccdb9164cfed73b",
         "0017_authoritative_pair.sql": "5602412494ccab06019eec8893515f94bb93fc59d46f56a3b10d7fef2bb60dec",
-        "0018_text_analysis_preview_execution.sql": "5ff39ff25d8907dd494fac7d27b3ccf8fe090fbbf426381a0eab9d77286e78a0"
+        "0018_text_analysis_preview_execution.sql": "5ff39ff25d8907dd494fac7d27b3ccf8fe090fbbf426381a0eab9d77286e78a0",
+        "0019_text_analysis_client_intents.sql": "a0eab64cd283eaacaea5a8bfe46f4e8558f434910e75a2f458be126b0a205300"
       }
     },
     {
@@ -182,10 +183,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "c39ab23f45305f4da7e4c057c894011a43168b3fa20c44e3c62ba2d852f1f4f3",
-    "consumer_pin_sha256": "ff42d1780379cd887f5ac1ee98bd26b6b749a14824f5301f27c79d9328e55681",
+    "manifest_sha256": "6c8eed0f70697b1fc7b3310183f0f10364c7072685b612f595956a7d5bdef748",
+    "consumer_pin_sha256": "0655500c3c9ff3839da75acbbed15bac884fdfa49635171e6a6fe81446935069",
     "root_file_sha256": {
-      "loader.py": "50c5ec517d23f0b59210d1604ec326ffd01fe49e43860ec4056ee017129aae18",
+      "loader.py": "8ea12c8af0ca0a588140543032e127d06bb49b4be785433cc3e254708ca423ec",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [
