@@ -13,7 +13,13 @@ test('processing commands preserve durable enrollment and canonical findings', a
     await processingCommand(x.page, 'enable', { unknown: true });
     const forwarded = await lostEnable.received; await lostEnable.close();
     check(forwarded.value.receipt.command_key === forwarded.body.command_key && forwarded.value.current.state === 'enabled', 'lost_enable_identity');
-    await expect(x.page.getByText('The command outcome is unknown. Check the original retained request before continuing.', { exact: true })).toBeVisible();
+    const processing = x.page.getByRole('region', { name: 'Account text processing', exact: true });
+    await expect(processing.getByRole('button', { name: 'Check processing status', exact: true })).toBeEnabled();
+    await processing.locator('[data-reserved-region="processing-feedback"]').getByRole('button', { name: 'Show details', exact: true }).click();
+    const details = x.page.getByRole('dialog', { name: 'Details', exact: true });
+    await expect(details.getByText('The command outcome is unknown. Check the original retained request before continuing.', { exact: true })).toBeVisible();
+    await details.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(details).toHaveCount(0);
     await expect(x.page.getByRole('button', { name: 'Review enablement', exact: true })).toBeDisabled();
     const firstRecovery = x.page.locator('[data-journey-state="textanalysis.processing_recovery"]');
     await expect(firstRecovery).toHaveCount(1);
