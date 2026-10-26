@@ -60,6 +60,141 @@ def shutdown_listener_type(phases):
     return namespace['_ShutdownListener']
 
 
+def loop_exception_observation_type():
+    entry = SOURCE.with_name('brain_entry.py')
+    tree = ast.parse(entry.read_text(encoding='utf-8'), filename=str(entry))
+    nodes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == '_LoopExceptionObservation']
+    assert len(nodes) == 1
+    namespace = {'asyncio': asyncio, 'sys': sys, 'json': json}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(entry), 'exec'), namespace)
+    return namespace['_LoopExceptionObservation']
+
+
+@pytest.mark.skipif(sys.implementation.name != 'cpython' or sys.version_info[:2] != (3, 13),
+                    reason='Exact callback identities require CPython 3.13')
+@pytest.mark.parametrize('callback', ['connection_lost', 'write', 'read'])
+@pytest.mark.parametrize('delegation', ['prior', 'default'])
+def test_loop_observation_classifies_actual_callback_and_delegates_original_context(callback, delegation, capsys, monkeypatch):
+    from asyncio import proactor_events
+    observation_type = loop_exception_observation_type()
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        calls = []
+        original_default = loop.default_exception_handler
+
+        def default(context):
+            calls.append((loop, context))
+            original_default(context)
+
+        def prior(actual_loop, context):
+            calls.append((actual_loop, context))
+
+        monkeypatch.setattr(loop, 'default_exception_handler', default)
+        previous = prior if delegation == 'prior' else None
+        loop.set_exception_handler(previous)
+        with observation_type(loop):
+            if callback == 'connection_lost':
+                failure = OSError(9, 'private callback detail')
+
+                class Socket:
+                    def fileno(self):
+                        return 42
+
+                    def shutdown(self, how):
+                        raise failure
+
+                receiver = SimpleNamespace(_called_connection_lost=False,
+                    _protocol=SimpleNamespace(connection_lost=lambda error: None), _sock=Socket())
+                function = proactor_events._ProactorBasePipeTransport._call_connection_lost
+                args = (receiver, None)
+                expected_kind, expected_errno = 'OSError', 9
+            elif callback == 'write':
+                future = loop.create_future()
+                future.cancel()
+                receiver = SimpleNamespace(_write_fut=future, _closing=True, _pending_write=1, _buffer=None)
+                function = proactor_events._ProactorBaseWritePipeTransport._loop_writing
+                args = (receiver, future)
+                expected_kind, expected_errno = 'CancelledError', None
+            else:
+                receiver = SimpleNamespace(_read_fut=None, _closing=False)
+                function = proactor_events._ProactorReadPipeTransport._loop_reading
+                args = (receiver, object())
+                expected_kind, expected_errno = 'AssertionError', None
+            loop.call_soon(function, *args)
+            await asyncio.sleep(0)
+            assert len(calls) == 1 and calls[0][0] is loop
+            context = calls[0][1]
+            assert context['handle']._callback is function
+            exception = context['exception']
+            if callback == 'connection_lost':
+                assert exception is failure
+            traceback = exception.__traceback__
+            while traceback.tb_frame.f_code is not function.__code__:
+                traceback = traceback.tb_next
+            record = json.loads(capsys.readouterr().out)
+            assert record == {'schema': 'browser-fixture-loop-exception.v1', 'callback': callback,
+                'kind': expected_kind, 'line_offset': traceback.tb_lineno - function.__code__.co_firstlineno,
+                'errno': expected_errno, 'winerror': None}
+            assert 'private' not in json.dumps(record) and 'Socket' not in json.dumps(record)
+        assert loop.get_exception_handler() is previous
+
+    asyncio.run(run())
+
+
+def test_loop_observation_caps_unknown_callbacks_and_restores_handler_on_failure(capsys):
+    observation_type = loop_exception_observation_type()
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        calls = []
+        previous = lambda actual_loop, context: calls.append(context)
+        loop.set_exception_handler(previous)
+        failure = RuntimeError('private body detail')
+
+        def unrelated():
+            raise ValueError('private callback detail')
+
+        unrelated.__name__ = '_loop_reading'
+        unrelated.__qualname__ = '_ProactorReadPipeTransport._loop_reading'
+        with pytest.raises(RuntimeError) as caught:
+            with observation_type(loop):
+                for _ in range(6):
+                    loop.call_soon(unrelated)
+                await asyncio.sleep(0)
+                raise failure
+        assert caught.value is failure and loop.get_exception_handler() is previous
+        assert len(calls) == 6 and len({id(context) for context in calls}) == 6
+        records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert records == [observation_type._unknown()] * 4
+        assert 'private' not in json.dumps(records)
+
+    asyncio.run(run())
+
+
+def test_loop_observation_errors_do_not_replace_or_duplicate_delegation(capsys):
+    observation_type = loop_exception_observation_type()
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        calls = []
+        previous = lambda actual_loop, context: calls.append(context)
+        loop.set_exception_handler(previous)
+
+        def observation_failure(context):
+            raise RuntimeError('private observation detail')
+
+        context = {'exception': ValueError('private original detail')}
+        with observation_type(loop) as observer:
+            observer._classify = observation_failure
+            loop.call_exception_handler(context)
+        assert calls == [context] and calls[0] is context
+        assert loop.get_exception_handler() is previous
+        assert json.loads(capsys.readouterr().out) == observation_type._unknown()
+
+    asyncio.run(run())
+
+
 @pytest.mark.skipif(not hasattr(asyncio.Server, 'close_clients'), reason='Server.close_clients requires Python 3.13')
 @pytest.mark.parametrize('queued_writes', [False, True])
 def test_listener_gracefully_closes_real_attached_client_before_waiting(queued_writes, capsys):

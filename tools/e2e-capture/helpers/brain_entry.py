@@ -188,6 +188,89 @@ class _FixtureServer(uvicorn.Server):
         return result
 
 
+class _LoopExceptionObservation:
+    def __init__(self, loop):
+        self._loop = loop
+        self._count = 0
+        self._codes = ()
+        if sys.implementation.name == 'cpython' and sys.version_info[:2] == (3, 13):
+            try:
+                from asyncio import proactor_events
+                self._codes = (
+                    (proactor_events._ProactorBasePipeTransport._call_connection_lost.__code__, 'connection_lost'),
+                    (proactor_events._ProactorBaseWritePipeTransport._loop_writing.__code__, 'write'),
+                    (proactor_events._ProactorReadPipeTransport._loop_reading.__code__, 'read'),
+                )
+            except (ImportError, AttributeError):
+                pass
+
+    @staticmethod
+    def _unknown():
+        return {'schema': 'browser-fixture-loop-exception.v1', 'callback': 'other',
+                'kind': 'other', 'line_offset': None, 'errno': None, 'winerror': None}
+
+    def _classify(self, context):
+        record = self._unknown()
+        exception = context.get('exception') if type(context) is dict else None
+        kinds = {OSError: 'OSError', ConnectionResetError: 'ConnectionResetError',
+                 ConnectionAbortedError: 'ConnectionAbortedError', BrokenPipeError: 'BrokenPipeError',
+                 PermissionError: 'PermissionError', TimeoutError: 'TimeoutError',
+                 ValueError: 'ValueError', RuntimeError: 'RuntimeError', AssertionError: 'AssertionError',
+                 KeyError: 'KeyError', AttributeError: 'AttributeError', TypeError: 'TypeError',
+                 asyncio.CancelledError: 'CancelledError', asyncio.InvalidStateError: 'InvalidStateError'}
+        kind = kinds.get(type(exception))
+        if kind is None:
+            return record
+        traceback = exception.__traceback__
+        match = None
+        for _ in range(32):
+            if traceback is None:
+                break
+            code = traceback.tb_frame.f_code
+            callback = next((name for original, name in self._codes if code is original), None)
+            if callback is not None:
+                offset = traceback.tb_lineno - code.co_firstlineno
+                if match is not None or not 0 <= offset <= 512:
+                    return record
+                match = (callback, offset)
+            traceback = traceback.tb_next
+        if traceback is not None or match is None:
+            return record
+        record.update(callback=match[0], kind=kind, line_offset=match[1])
+        for name in ('errno', 'winerror'):
+            value = getattr(exception, name, None)
+            if type(value) is int and 0 <= value <= 2_147_483_647:
+                record[name] = value
+        return record
+
+    def _handle(self, loop, context):
+        try:
+            if self._count < 4:
+                self._count += 1
+                try:
+                    record = self._classify(context)
+                except BaseException:
+                    record = self._unknown()
+                print(json.dumps(record, separators=(',', ':')), flush=True)
+        except BaseException:
+            pass
+        if self._previous is None:
+            loop.default_exception_handler(context)
+        else:
+            self._previous(loop, context)
+
+    def __enter__(self):
+        self._previous = self._loop.get_exception_handler()
+        self._installed = self._handle
+        self._loop.set_exception_handler(self._installed)
+        return self
+
+    def __exit__(self, *exception):
+        if self._loop.get_exception_handler() is self._installed:
+            self._loop.set_exception_handler(self._previous)
+        return False
+
+
 async def _serve_fixture(selected):
     from text_analysis_fixture import install_fixture, read_stop
     callbacks = app.router.on_shutdown
@@ -216,13 +299,14 @@ async def _serve_fixture(selected):
     reader = threading.Thread(target=stop_reader, name='browser-fixture-control', daemon=True)
     reader.start()
     drained = False
-    try:
-        await server.serve()
-        _shutdown_phase("server_returned")
-    finally:
-        drained = await owner.close()
-        _shutdown_phase("owner_close_returned")
-        reader.join(timeout=1)
+    with _LoopExceptionObservation(asyncio.get_running_loop()):
+        try:
+            await server.serve()
+            _shutdown_phase("server_returned")
+        finally:
+            drained = await owner.close()
+            _shutdown_phase("owner_close_returned")
+            reader.join(timeout=1)
     if (reader.is_alive() or not command['valid'] or not drained
             or not getattr(app.state, 'runtime_shutdown_drained', False)):
         try:

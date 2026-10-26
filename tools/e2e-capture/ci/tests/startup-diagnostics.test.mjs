@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { createStartupObservations, startupDiagnosticFromMessage, validStartupDiagnostic } from '../../lib/startup-diagnostics.mjs';
-import { brainHealthIsReady, fixtureProactorCallbackFailure, lastFixtureListenerResidual, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
+import { brainHealthIsReady, fixtureLoopExceptions, fixtureProactorCallbackFailure, lastFixtureListenerResidual, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
 
 function fixture(owner = 'brain') {
   let time = 0;
@@ -116,6 +116,35 @@ test('callback failure extraction retains only recognized sites, kinds and bound
     standard.replace('    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^', '    private continuation'),
     standard + '\n'.repeat(1100), standard.slice(0, standard.indexOf('OSError:'))]) {
     assert.equal(fixtureProactorCallbackFailure(output), null);
+  }
+});
+
+test('loop exception records retain only four closed canonical code observations', () => {
+  const value = { schema: 'browser-fixture-loop-exception.v1', callback: 'connection_lost',
+    kind: 'OSError', line_offset: 11, errno: null, winerror: 10057 };
+  const line = JSON.stringify(value);
+  const unknown = { schema: value.schema, callback: 'other', kind: 'other', line_offset: null, errno: null, winerror: null };
+  assert.deepEqual(fixtureLoopExceptions(`${line}\n`), [value]);
+  assert.deepEqual(fixtureLoopExceptions(`${'private'.repeat(20_000)}\n${line}\r\n`), [value]);
+  assert.deepEqual(fixtureLoopExceptions(Array(4).fill(line).join('\n')), Array(4).fill(value));
+  assert.deepEqual(fixtureLoopExceptions(JSON.stringify(unknown)), [unknown]);
+  for (const callback of ['read', 'write']) {
+    const record = { ...value, callback, kind: 'CancelledError', errno: null, winerror: null };
+    assert.deepEqual(fixtureLoopExceptions(JSON.stringify(record)), [record]);
+  }
+  for (const output of [null, undefined, {}, [], 'private output', line.slice(0, -1),
+    Array(5).fill(line).join('\n'), JSON.stringify({ ...value, raw: 'private' }),
+    JSON.stringify({ ...value, callback: 'private' }), JSON.stringify({ ...value, kind: 'PrivateError' }),
+    JSON.stringify({ ...value, line_offset: 513 }), JSON.stringify({ ...value, line_offset: -1 }),
+    JSON.stringify({ ...value, line_offset: 0.5 }), JSON.stringify({ ...value, errno: true }),
+    JSON.stringify({ ...value, winerror: 'private' }), JSON.stringify({ ...value, winerror: 2_147_483_648 }),
+    JSON.stringify({ ...value, winerror: -1 }), JSON.stringify({ ...unknown, kind: 'OSError' }),
+    JSON.stringify({ ...unknown, errno: 9 }), ' ' + line, line + ' ',
+    line.replace('"line_offset":11', '"line_offset":11,"line_offset":11'),
+    line.replace('"line_offset":11', '"line_offset":NaN'),
+    line.replace('connection_lost', 'connection\\u005flost'),
+    line.replace('OSError', 'x'.repeat(600))]) {
+    assert.deepEqual(fixtureLoopExceptions(output), []);
   }
 });
 

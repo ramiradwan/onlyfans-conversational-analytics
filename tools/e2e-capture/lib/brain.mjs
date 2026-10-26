@@ -229,6 +229,41 @@ export function fixtureProactorCallbackFailure(output) {
   return { site, kind: exception[1].replace('asyncio.exceptions.', ''), errno, winerror };
 }
 
+export function fixtureLoopExceptions(output) {
+  if (typeof output !== 'string') return [];
+  let tail = output.slice(-65_536);
+  if (tail.length !== output.length) {
+    const end = tail.indexOf('\n');
+    if (end === -1) return [];
+    tail = tail.slice(end + 1);
+  }
+  const kinds = new Set(['OSError', 'ConnectionResetError', 'ConnectionAbortedError', 'BrokenPipeError',
+    'PermissionError', 'TimeoutError', 'ValueError', 'RuntimeError', 'AssertionError', 'KeyError',
+    'AttributeError', 'TypeError', 'CancelledError', 'InvalidStateError']);
+  const records = [];
+  for (const raw of tail.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (line.length > 512 || !line.startsWith('{"schema":"browser-fixture-loop-exception.v1",')) continue;
+    try {
+      const value = JSON.parse(line);
+      if (value === null || typeof value !== 'object' || Array.isArray(value)
+          || Object.keys(value).sort().join(',') !== 'callback,errno,kind,line_offset,schema,winerror'
+          || value.schema !== 'browser-fixture-loop-exception.v1'
+          || !['errno', 'winerror'].every(key => value[key] === null
+            || (Number.isSafeInteger(value[key]) && value[key] >= 0 && value[key] <= 2_147_483_647))) continue;
+      if (value.callback === 'other') {
+        if (value.kind !== 'other' || value.line_offset !== null || value.errno !== null || value.winerror !== null) continue;
+      } else if (!['connection_lost', 'write', 'read'].includes(value.callback) || !kinds.has(value.kind)
+          || !Number.isSafeInteger(value.line_offset) || value.line_offset < 0 || value.line_offset > 512) continue;
+      const canonical = { schema: value.schema, callback: value.callback, kind: value.kind,
+        line_offset: value.line_offset, errno: value.errno, winerror: value.winerror };
+      if (line === JSON.stringify(canonical)) records.push(canonical);
+      if (records.length > 4) return [];
+    } catch { /* Only complete closed exception records are retained. */ }
+  }
+  return records;
+}
+
 export class BrainProcess {
   constructor({
     authDatabasePath,
@@ -388,6 +423,7 @@ export class BrainProcess {
         last_phase: lastFixtureShutdownPhase(this.output.join('')),
         listener_residual: lastFixtureListenerResidual(this.output.join('')),
         callback_failure: fixtureProactorCallbackFailure(this.output.join('')),
+        loop_exceptions: fixtureLoopExceptions(this.output.join('')),
       };
       throw new Error(`Text analysis fixture did not complete its owned shutdown. ${JSON.stringify(failure)}`);
     }
