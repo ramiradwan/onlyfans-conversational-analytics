@@ -235,6 +235,10 @@ class PreviewAccumulator:
         self._overflow = False
         self._finished = False
 
+    @property
+    def overflowed(self):
+        return self._overflow
+
     def _member(self, ordinal):
         _need(not self._finished and not self._overflow, "preview_accumulator_closed")
         _need(type(ordinal) is int and 0 <= ordinal < len(self.sources) and ordinal not in self._seen,
@@ -247,11 +251,12 @@ class PreviewAccumulator:
         if self._metadata_bytes > MAX_PREVIEW_BYTES:
             self._overflow = True
 
-    def unprocessed(self, ordinal):
+    def unprocessed(self, ordinal, *, reason="dependency_unavailable"):
+        _need(reason in ("dependency_unavailable", "deadline"), "preview_reason_invalid")
         self._member(ordinal)
         for task in self._tasks:
             self._examine(PreviewExamination(ordinal=ordinal, task=task, assessment="unprocessed",
-                                           reason="dependency_unavailable", coverage=None))
+                                           reason=reason, coverage=None))
         self._seen.add(ordinal)
         if self._overflow:
             self._discard()

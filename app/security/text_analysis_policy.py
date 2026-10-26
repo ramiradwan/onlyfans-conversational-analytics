@@ -124,7 +124,7 @@ def capability_binding(reference: TextAnalysisReference, context: TextAnalysisRu
 
 
 def require_text_analysis_fence(policy: RuntimePolicy, context: TextAnalysisRunContext, *, kind: str, phase: str,
-                                canonical_database=None) -> TextAnalysisReference:
+                                canonical_database=None, canonical_connection=None) -> TextAnalysisReference:
     from app.core.optional_execution import require_optional_execution
     require_optional_execution()
     reference = require_text_analysis(policy, context, kind=kind, phase=phase)
@@ -134,4 +134,8 @@ def require_text_analysis_fence(policy: RuntimePolicy, context: TextAnalysisRunC
         _deny('text_analysis_transition_fence_missing')
     if canonical_database is not None and not fence.owns_canonical_database(canonical_database):
         _deny('text_analysis_canonical_owner_mismatch')
+    if canonical_connection is not None:
+        if canonical_database is None:
+            _deny('text_analysis_canonical_owner_mismatch')
+        fence.validate_canonical_connection(canonical_database, canonical_connection)
     return reference

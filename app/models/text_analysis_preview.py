@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from app.analytics.query_contracts import QuestionEvidence
+from app.models.question_evidence import QuestionEvidence
 from app.models.knowledge_contributions import UUIDRecord
 from app.nlp.contracts import Contract, Coverage, Digest, Identifier, SourceBinding
 from app.nlp.profiles import PolicyIdentity, TaskName

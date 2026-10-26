@@ -5,6 +5,7 @@ import hashlib
 from app.core.optional_execution import require_optional_execution
 from app.nlp.execution_parameters import execution_parameters
 from app.persistence.auth import SQLiteAuthenticationStore
+from app.persistence.authoritative_pair import AuthoritativePairOwner
 from app.persistence.text_analysis_authority import (
     FixtureTextAnalysisLifecycle, TextAnalysisAuthorityStore, TextAnalysisCurrentEvidence, trust_digest,
 )
@@ -28,6 +29,7 @@ class FixtureTextAnalysisSelectionOwner:
     schemas: TextAnalysisSchemas
     installation_id: str
     selections: tuple[FixtureTextAnalysisSelection, ...]
+    pair_owner: AuthoritativePairOwner
 
     def __post_init__(self):
         require_optional_execution()
@@ -35,6 +37,10 @@ class FixtureTextAnalysisSelectionOwner:
                 or type(self.enrollments) is not TextAnalysisEnrollmentStore
                 or type(self.trust) is not TextAnalysisTrust or not self.trust.fixture_only
                 or type(self.schemas) is not TextAnalysisSchemas
+                or type(self.pair_owner) is not AuthoritativePairOwner
+                or self.pair_owner.authentication is not self.authority.authentication
+                or self.pair_owner.canonical_database is not self.enrollments.repository.database
+                or self.pair_owner.installation_id != self.installation_id
                 or type(self.selections) is not tuple or not 1 <= len(self.selections) <= 64
                 or any(type(s) is not FixtureTextAnalysisSelection or type(s.context) is not TextAnalysisRunContext
                     or s.context.installation_id != self.installation_id
@@ -45,7 +51,8 @@ class FixtureTextAnalysisSelectionOwner:
 
     @property
     def lifecycle(self):
-        return FixtureTextAnalysisLifecycle(self.authority.database, self.enrollments.repository.database)
+        return FixtureTextAnalysisLifecycle(self.authority.database, self.enrollments.repository.database,
+                                           pair_owner=self.pair_owner)
 
     def choose(self, digest, identity, dependencies):
         require_optional_execution()

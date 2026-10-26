@@ -4,7 +4,7 @@
 
 - Status: Accepted; runtime activation requires separate qualification.
 - Date: 2026-10-19
-- Amended: 2026-10-25
+- Amended: 2026-10-26
 - Extends: ADRs 0009, 0027 and 0056. ADR 0012 remains proposed.
 
 ## Decision
@@ -45,6 +45,8 @@ One inference job runs across all profiles. The default resource policy permits 
 
 ### Execution identity and preview
 
+<!-- CODE-VERIFY: Check app/services/text_analysis_preview.py, app/persistence/text_analysis_preview.py, app/persistence/authoritative_pair.py, app/persistence/authoritative_backup.py and app/core/startup_maintenance.py for preview recovery and matched-store lifecycle behavior. -->
+
 Brain owns durable canonical execution intents. Licensed account enablement creates an enrollment for automatic incremental processing; disposable queues do not own its identity. Pause preserves the enrollment. Account deletion retires it and its child work atomically; account recreation requires a new explicit enrollment. Child work binds exact source versions, profile and processing parameters. Sealed or deleted work cannot become a new execution through restart or projection loss.
 
 Retiring processing preserves saved contributions and child receipts while preventing further execution. An explicitly selected replacement receives a new enrollment with immutable profile and authority bindings. Source deletion and retention expiry retain their erasure behavior; processing retirement does not erase saved results or release storage capacity.
@@ -52,6 +54,8 @@ Retiring processing preserves saved contributions and child receipts while preve
 An enrollment retains the exact original profile and verified identity-grant lineage within the canonical storage limit. Background identity is rebuilt from those grants with the original account, principal, role, organization and installation bindings; an HTTP session is not retained as execution authority. A current-account pointer and monotonic version order explicit commands across enrollment replacements. Command receipts are immutable and idempotent; projection reconciliation uses current canonical state rather than historical receipts. Automatic recovery selects only the current enrollment, and explicit historical recovery cannot replace another current owner. Capsules, commands and current pointers participate in canonical capacity accounting and backup identity.
 
 For an explicit preview, Bridge retains a random UUIDv4 idempotency key before prepare. Brain atomically records its immutable scope, random job and promised contribution IDs, profile and ordered source inventory as a nonrunnable `prepared` job. Identical retries return the original identities; changed bindings conflict. Confirmation, preview reservation and `prepared` to `pending` occur in one canonical transaction. Licensed children use automatic admission. This prepared row represents intent rather than execution authority; it does not change the starter permit profile.
+
+Preview preparation uses a compiled source-selection policy and discloses the frozen sample before confirmation. A retained capsule binds that disclosure, the original request and identity lineage to the job. Recovery reads the original receipt before checking current dependencies; it never selects another sample under an existing key. Source erasure removes detailed capsules while retaining content-free intent receipts.
 
 The live account head is validated when preparing the inventory. Later transitions validate the exact retained members, eligibility and retention barriers; unrelated additions neither enlarge nor invalidate the frozen set. Changed or deleted members cannot be replaced under the same intent. Claiming requires an explicitly runnable state and a current attempt fence. Canonical commitment precedes projection replay; a lost response or projection does not require another inference.
 
@@ -64,6 +68,8 @@ Preview has two initial kinds: `topic_category` and `mention_category`. Each sho
 Preview uses a separate versioned canonical representation. Retain selected summaries, supporting assignments or exact occurrences, source and chat references, coverage, permitted counts and immutable provenance. Declared taxonomy and input inventory remain input metadata. Examination metadata must not reveal discarded positives. Unshown findings and full candidate records remain bounded transient state, including before commitment; ordinary full-record staging is unsuitable. Evidence overflow ends before output rather than truncating evidence or substituting another category.
 
 Permitted preview output, its manifest, job/result links and spend commit in one canonical transaction. No showable result means no output and no spend, with complete empty assessment distinguished from unavailable or incomplete examination. Deletion and projection failure never replenish admission. Installation-lifetime content-free intent and consumption receipts survive content cascades. Supported authoritative backup and restore verify one matched auth/canonical set before transitions; an older internally matching set can restore earlier local admission.
+
+Durable store identities and a mirrored pairing incarnation bind that authoritative set. Pair coherence grants no execution authority. Supported replacement uses the process root lease; a single-store restore invalidates the pair. Matched restore verifies encrypted files, protected key sidecars, schemas, high-water values and current security compatibility before publication, preserving deletion barriers. A durable restore journal precedes either file replacement. Normal startup refuses an incomplete restore; exact recovery uses nonmigrating, noncreating store handles before normal constructors, validates both files, then establishes a fresh pair and clears the journal. Restoration refuses security-state differences rather than undoing newer denials or merging authority. This permits compatible earlier local preview admission without providing filesystem rollback protection.
 
 Saved reads remain independent of execution authority and installed models. Shipping frozen builds retain refusal at worker execution and canonical commitment regardless of mutable environment settings until qualified release composition is approved.
 

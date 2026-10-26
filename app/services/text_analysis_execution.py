@@ -11,6 +11,7 @@ from app.models.text_analysis_jobs import EnrollmentIntent
 from app.nlp.execution_parameters import require_original_parameters
 from app.nlp.profiles import AnalysisProfile, canonical_bytes, read_profile
 from app.persistence.auth import AuthenticationStateError, RevocationKey, RevocationScopeType, SQLiteAuthenticationStore
+from app.persistence.authoritative_pair import AuthoritativePairOwner
 from app.security.runtime_policy import RuntimeAuthorizationDenied, RuntimePolicy, authorized_account
 from app.security.text_analysis_identity import TextAnalysisIdentityOwner
 from app.security.text_analysis_policy import decode_run_context, encode_run_context
@@ -32,6 +33,7 @@ class TextAnalysisExecutionService:
         require_optional_execution()
         if (type(authentication) is not SQLiteAuthenticationStore
                 or type(selection) is not FixtureTextAnalysisSelectionOwner
+                or type(selection.pair_owner) is not AuthoritativePairOwner
                 or selection.authority.authentication is not authentication
                 or dependencies.persistence.authentication is not authentication
                 or dependencies.execution_owner is not None
@@ -74,6 +76,7 @@ class TextAnalysisExecutionService:
             if prior is not None or command.action in ('pause', 'retire'):
                 with self.authentication.database.transaction() as auth_db, self.repository.database.transaction() as db:
                     self._session_in(auth_db, http_policy)
+                    self.selection.pair_owner.validate_in(auth_db, db)
                     result = self.enrollments.apply_command_in(db, command, policy=baseline)
                     self._session_in(auth_db, http_policy)
             else:

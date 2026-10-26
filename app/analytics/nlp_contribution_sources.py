@@ -14,8 +14,10 @@ from app.analytics.source_snapshot import scan_identity
 
 
 class ContributionSourceGuard:
-    def budget(self):
-        return QuestionBudget(QuestionLimits(max_records=100_000, wall_clock_ms=30_000))
+    def budget(self, *, wall_clock_ms=30_000):
+        if type(wall_clock_ms) is not int or not 1 <= wall_clock_ms <= 30_000:
+            raise ValueError('knowledge_validation_budget_invalid')
+        return QuestionBudget(QuestionLimits(max_records=100_000, wall_clock_ms=wall_clock_ms))
 
     def origin_budget(self):
         return QuestionBudget(QuestionLimits(max_records=8, wall_clock_ms=1000))

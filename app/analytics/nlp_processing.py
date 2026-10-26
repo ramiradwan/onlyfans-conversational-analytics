@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import hashlib
 import json
 import time
 from threading import Lock
+from typing import Literal
 from uuid import uuid4
 
 from app.analytics.evidence_contracts import EvidenceLocation
@@ -22,6 +23,57 @@ from app.nlp import v2
 from app.nlp.profiles import read_profile
 
 _EXECUTION = Lock()
+
+
+@contextmanager
+def execution_slot():
+    """Acquire the shared nonblocking inference owner."""
+    require_findings_execution()
+    acquired = _EXECUTION.acquire(blocking=False)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            _EXECUTION.release()
+
+
+def infer_source(profile, original, execute, *, cancelled, remaining_ms, failure_policy: Literal["licensed_failed_tasks", "propagate"] = "licensed_failed_tasks"):
+    """Validate sequential component results for one original source."""
+    if failure_policy not in ('licensed_failed_tasks', 'propagate'):
+        raise ValueError('nlp_failure_policy_invalid')
+    results = []
+    for component in profile.components:
+        if cancelled():
+            return False
+        remaining = min(120_000, remaining_ms())
+        if remaining < 1:
+            return False
+        request = v2.WorkerRequest(request_id=uuid4().hex, profile_sha256=profile.identity_digest(),
+            component_id=component.component_id, component_sha256=component.identity_digest(),
+            tasks=tuple(task.task for task in component.tasks), deadline_ms=remaining,
+            items=(v2.WorkerInput(request_item_id='message', text=original.text,
+                text_sha256=hashlib.sha256(original.text.encode()).hexdigest()),))
+        v2.validate_request(profile, request.model_dump_json().encode())
+        failed = False
+        try:
+            response = v2.validate_response(profile, request, execute(request, cancelled))
+            results.extend(response.items[0].tasks)
+        except Exception:
+            if failure_policy == 'propagate':
+                raise
+            failed = True
+        if cancelled():
+            return False
+        if failed:
+            for task in component.tasks:
+                payload = {'task': task.task, 'outcome': 'failed', 'reason': 'worker_failure',
+                    'coverage': {'source_codepoints': len(original.text), 'examined': [],
+                        'excluded': ([{'start': 0, 'end': len(original.text)}] if original.text else []),
+                        'limits_reached': []}, 'findings': []}
+                results.append(v2.BoundTaskResult.model_validate_json(encoded(dict(
+                    component_id=component.component_id, component_sha256=component.identity_digest(),
+                    text_sha256=request.items[0].text_sha256, payload=payload))))
+    return results
 
 
 @dataclass(slots=True)
@@ -387,42 +439,19 @@ class FindingsRunner(FindingsReadContext):
 
 
     def _infer_components(self, profile, original, claim, cancelled, bound_adapter, cancellation, *, work=None):
-        results=[]
-        for component in profile.components:
-            if cancelled():
-                return False
-            remaining_ms=min(120_000,int((claim.expires_at-self.findings.clock())*1000))
+        def remaining():
+            value = min(120_000, int((claim.expires_at-self.findings.clock())*1000))
             if work is not None:
-                remaining_ms = min(remaining_ms,int((work.attempt.lease_expires_at-self.canonical_execution.repository.clock())*1000))
-            if remaining_ms<1:
-                return False
-            request=v2.WorkerRequest(request_id=uuid4().hex,profile_sha256=profile.identity_digest(),
-                component_id=component.component_id,component_sha256=component.identity_digest(),
-                tasks=tuple(task.task for task in component.tasks),deadline_ms=remaining_ms,
-                items=(v2.WorkerInput(request_item_id='message',text=original.text,
-                    text_sha256=hashlib.sha256(original.text.encode()).hexdigest()),))
-            v2.validate_request(profile,request.model_dump_json().encode())
-            failed=False
-            try:
-                execute = self.adapter if bound_adapter is None else bound_adapter
-                response=v2.validate_response(profile,request,execute(request,cancelled))
-                results.extend(response.items[0].tasks)
-            except Exception:
-                failed=True
+                value = min(value, int((work.attempt.lease_expires_at-self.canonical_execution.repository.clock())*1000))
+            return value
+        def check():
+            stopped = cancelled()
             if cancellation.error is not None:
                 self.authorize(original.account_id)
                 raise cancellation.error
-            if failed:
-                if cancelled():
-                    return False
-                # A failed component retains a truthful result for each of its tasks.
-                for task in component.tasks:
-                    payload={'task':task.task,'outcome':'failed','reason':'worker_failure',
-                        'coverage':{'source_codepoints':len(original.text),'examined':[],
-                            'excluded':([{'start':0,'end':len(original.text)}] if original.text else []),'limits_reached':[]},'findings':[]}
-                    results.append(v2.BoundTaskResult.model_validate_json(encoded(dict(component_id=component.component_id,
-                        component_sha256=component.identity_digest(),text_sha256=request.items[0].text_sha256,payload=payload))))
-        return results
+            return stopped
+        return infer_source(profile, original, self.adapter if bound_adapter is None else bound_adapter,
+                            cancelled=check, remaining_ms=remaining)
 
     def frozen_pipeline(self, account_id):
         """Revalidate live eligibility before freezing immutable publication input."""

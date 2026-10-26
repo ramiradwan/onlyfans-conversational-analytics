@@ -64,6 +64,7 @@ class FixtureTextAnalysisLifecycle:
     auth_database: object
     canonical_database: CanonicalSQLite | None = None
     fixture_only: bool = True
+    pair_owner: object | None = None
 
 
 _SEAL = object()
@@ -115,6 +116,16 @@ class TextAnalysisTransitionFence:
             return self._connection.in_transaction and self._lifecycle.canonical_database is database
         except sqlite3.Error:
             return False
+
+    def validate_canonical_connection(self, database, connection):
+        if not self.owns_canonical_database(database) or not database.owns_connection(connection) or not connection.in_transaction:
+            raise RuntimeAuthorizationDenied('text_analysis_canonical_owner_mismatch')
+        pair = self._lifecycle.pair_owner
+        if pair is not None:
+            from app.persistence.authoritative_pair import AuthoritativePairOwner
+            if type(pair) is not AuthoritativePairOwner or pair.auth_database is not self._store.database or pair.canonical_database is not database:
+                raise RuntimeAuthorizationDenied('authoritative_pair_unavailable')
+            pair.validate_in(self._connection, connection)
 
 
 class TextAnalysisAuthorityStore:
@@ -200,19 +211,23 @@ class TextAnalysisAuthorityStore:
         if fence._store is not self or fence._lifecycle is not lifecycle or fence._phase != 'import':
             raise RuntimeAuthorizationDenied('text_analysis_activation_owner_mismatch')
         db = fence._connection
-        if kind == 'preview':
+        if kind == 'preview' or lifecycle.pair_owner is not None:
             canonical_database = lifecycle.canonical_database
             if type(canonical_database) is not CanonicalSQLite:
                 raise RuntimeAuthorizationDenied('text_analysis_canonical_owner_missing')
             # A separate connection observes committed admission, never a caller's uncommitted row.
             with canonical_database.read() as canonical_db:
-                row = canonical_db.execute('SELECT installation_id,permit_id,reference_id,compact_jws_sha256,issuance_id '
-                    'FROM text_analysis_preview_admissions WHERE installation_id=? AND permit_id=?',
-                    (context.installation_id, reference.object_id)).fetchone()
-                expected = (context.installation_id, reference.object_id, reference.reference_id,
-                            reference.compact_jws_sha256, reference.issuance_id)
-                if row is None or tuple(row) != expected:
-                    raise RuntimeAuthorizationDenied('text_analysis_canonical_admission_mismatch')
+                canonical_db.execute('BEGIN')
+                if lifecycle.pair_owner is not None:
+                    lifecycle.pair_owner.validate_read_in(db,canonical_db)
+                if kind == 'preview':
+                    row = canonical_db.execute('SELECT installation_id,permit_id,reference_id,compact_jws_sha256,issuance_id '
+                        'FROM text_analysis_preview_admissions WHERE installation_id=? AND permit_id=?',
+                        (context.installation_id, reference.object_id)).fetchone()
+                    expected = (context.installation_id, reference.object_id, reference.reference_id,
+                                reference.compact_jws_sha256, reference.issuance_id)
+                    if row is None or tuple(row) != expected:
+                        raise RuntimeAuthorizationDenied('text_analysis_canonical_admission_mismatch')
         row = db.execute('SELECT state,version FROM text_analysis_authority_references WHERE reference_id=?',
                          (reference.reference_id,)).fetchone()
         if row is None or row['state'] == 'revoked':
@@ -250,6 +265,14 @@ class TextAnalysisAuthorityStore:
             if self._schemas is None:
                 self._schemas = TextAnalysisSchemas()
             with self.database.transaction() as db:
+                if lifecycle.pair_owner is not None:
+                    from app.persistence.authoritative_pair import AuthoritativePairOwner
+                    pair = lifecycle.pair_owner
+                    if (type(pair) is not AuthoritativePairOwner or pair.auth_database is not self.database
+                            or pair.canonical_database is not lifecycle.canonical_database
+                            or pair.installation_id != context.installation_id):
+                        raise RuntimeAuthorizationDenied('authoritative_pair_unavailable')
+                    pair.validate_auth_in(db)
                 policy = self.compose_policy_in(db, identity_policy, context.reference_id, context,
                     trust=evidence.trust, schemas=self._schemas, kind=kind, now=self.authentication._clock())
                 self._check_current_in(db, policy, context, evidence, phase=phase)

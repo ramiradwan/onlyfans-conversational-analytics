@@ -85,10 +85,14 @@ class ContributionRepository:
         self.database, self.clock, self.max_storage_bytes = database, clock, max_storage_bytes
         self.source_guard = source_guard
 
-    def _budget(self):
+    def _budget(self, *, wall_clock_ms=None):
         if self.source_guard is None:
             raise ValueError('knowledge_source_guard_unavailable')
-        return self.source_guard.budget()
+        if wall_clock_ms is None:
+            return self.source_guard.budget()
+        if type(wall_clock_ms) is not int or not 1 <= wall_clock_ms <= 30_000:
+            raise ValueError('knowledge_validation_budget_invalid')
+        return self.source_guard.budget(wall_clock_ms=wall_clock_ms)
 
     def _scope(self, policy, spec):
         if type(policy) is not RuntimePolicy:
@@ -119,6 +123,14 @@ class ContributionRepository:
                 ('text_analysis_enrollment_commands', ('installation_id', 'command_key', 'creator_account_id',
                     'principal_id', 'meaning', 'meaning_sha256', 'receipt')),
             ) for column in names]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_preview_requests'").fetchone():
+            columns += [(table, column) for table, names in (
+                ('text_analysis_preview_requests', ('job_id', 'request', 'request_sha256')),
+                ('text_analysis_preview_capsules', ('job_id', 'document', 'document_sha256')),
+            ) for column in names]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='authoritative_pair'").fetchone():
+            columns += [('authoritative_pair', column) for column in
+                        ('singleton', 'auth_store_id', 'canonical_store_id', 'installation_id', 'incarnation', 'valid')]
         return sum(db.execute(f'SELECT COALESCE(sum(CASE WHEN typeof({column})=\'integer\' '
                               f'THEN 8 ELSE length({column}) END),0) FROM {table}').fetchone()[0]
                    for table, column in columns)
@@ -219,11 +231,11 @@ class ContributionRepository:
                                     (intent['enrollment_id'],)).fetchone()
             if enrollment is None or enrollment['state'] != 'enabled':
                 raise ValueError('text_analysis_enrollment_unavailable')
-        if phase == 'prepare':
+        if phase == 'prepare' and policy.text_analysis_fence is None:
             reference = require_text_analysis(policy, context, kind=intent['authority_kind'], phase=phase)
         else:
             reference = require_text_analysis_fence(policy, context, kind=intent['authority_kind'], phase=phase,
-                                                    canonical_database=self.database)
+                                                    canonical_database=self.database, canonical_connection=db)
         if (spec.capability != capability_binding(reference, context)
                 or spec.creator_account_id != context.creator_account_id
                 or spec.organization_id != context.organization_id
@@ -588,6 +600,10 @@ def storage_high_water(connection):
     if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_enrollment_capsules'").fetchone():
         tables += ['text_analysis_enrollment_capsules', 'text_analysis_account_current',
                    'text_analysis_enrollment_commands']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_preview_requests'").fetchone():
+        tables += ['text_analysis_preview_requests', 'text_analysis_preview_capsules']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='authoritative_pair'").fetchone():
+        tables += ['authoritative_pair']
     for table in tables:
         for row in connection.execute(f'SELECT * FROM {table} ORDER BY 1,2'):
             value = [v.hex() if type(v) is bytes else v for v in row]

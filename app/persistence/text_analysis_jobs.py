@@ -252,7 +252,7 @@ class TextAnalysisJobStore:
         self._guard(db)
         context = decode_run_context(run_context)
         reference = require_text_analysis_fence(policy, context, kind='preview', phase='import',
-                                               canonical_database=self.repository.database)
+                                               canonical_database=self.repository.database, canonical_connection=db)
         old = db.execute('SELECT * FROM text_analysis_preview_admissions WHERE installation_id=? AND permit_id=?',
                          (context.installation_id, reference.object_id)).fetchone()
         if old:
@@ -343,7 +343,8 @@ class TextAnalysisJobStore:
         self.repository._write_scope(db, spec, policy, 'commit')
         return token, row, spec, profile, intent
 
-    def commit_preview_in(self, db, token, frame, *, policy):
+    def commit_preview_in(self, db, token, frame, *, policy, validation_wall_clock_ms=30000):
+        budget = self.repository._budget(wall_clock_ms=validation_wall_clock_ms)
         token, row, spec, profile, intent = self._preview_attempt(db, token, policy)
         old = db.execute('SELECT * FROM text_analysis_preview_outputs WHERE job_id=?', (token.job_id,)).fetchone()
         if old:
@@ -359,7 +360,6 @@ class TextAnalysisJobStore:
         output = self.repository.source_guard.preview_output(spec, profile, sources, frame)
         if output.selection_policy != _load(PolicyIdentity, bytes(intent['preview_selection_policy'])):
             raise ValueError('text_analysis_preview_policy_mismatch')
-        budget = self.repository._budget()
         for member in sources:
             source = self.repository._source(db, spec, member, budget)
             self.repository.source_guard.preview_source(output, profile, member, source)
@@ -368,8 +368,10 @@ class TextAnalysisJobStore:
         if valid_until is not None and valid_until <= self.repository.clock():
             raise ValueError('knowledge_source_expired')
         if old:
+            self.repository._write_scope(db, spec, policy, 'commit')
             return output
         self.repository._attempt(row, token)
+        self.repository._write_scope(db, spec, policy, 'commit')
         if self.repository._storage(db) + len(frame) > self.repository.max_storage_bytes:
             raise ValueError('knowledge_storage_full')
         db.execute('INSERT INTO text_analysis_preview_outputs VALUES(?,?,?,?,?,?)',
@@ -381,7 +383,8 @@ class TextAnalysisJobStore:
                    (self.repository.clock(), token.job_id))
         return output
 
-    def finish_without_output_in(self, db, token, outcome, *, policy):
+    def finish_without_output_in(self, db, token, outcome, *, policy, validation_wall_clock_ms=30000):
+        budget = self.repository._budget(wall_clock_ms=validation_wall_clock_ms)
         token, row, spec, profile, intent = self._preview_attempt(db, token, policy)
         self.repository._attempt(row, token)
         self._admission(db, intent, token.job_id)
@@ -389,6 +392,11 @@ class TextAnalysisJobStore:
             spec, profile, tuple(self.repository._sources(db, token.job_id)), outcome)
         if outcome.selection_policy != _load(PolicyIdentity, bytes(intent['preview_selection_policy'])):
             raise ValueError('text_analysis_preview_policy_mismatch')
+        for member in self.repository._sources(db, token.job_id):
+            self.repository._source(db, spec, member, budget)
+        budget.check()
+        self.repository._attempt(row, token)
+        self.repository._write_scope(db, spec, policy, 'commit')
         db.execute("UPDATE text_analysis_preview_admissions SET state='available',job_id=NULL WHERE reference_id=?",
                    (intent['reference_id'],))
         db.execute("UPDATE text_analysis_intents SET terminal_reason=? WHERE job_id=?", (outcome.disposition, token.job_id))

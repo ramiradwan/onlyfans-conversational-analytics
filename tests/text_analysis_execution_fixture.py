@@ -9,6 +9,7 @@ from app.models.text_analysis_enrollment import EnrollmentCommand
 from app.nlp.execution_parameters import execution_parameters
 from app.nlp.profiles import artifact_closure_digest
 from app.persistence.contributions import ContributionRepository
+from app.persistence.authoritative_pair import AuthoritativePairOwner, FixtureAuthoritativeRootLease
 from app.persistence.text_analysis_authority import TextAnalysisAuthorityStore
 from app.persistence.text_analysis_enrollment import TextAnalysisEnrollmentStore
 from app.persistence.text_analysis_jobs import TextAnalysisJobStore
@@ -58,6 +59,9 @@ def _bind_execution_fixture(environment, path):
     repository = ContributionRepository(f.repositories.database, source_guard=ContributionSourceGuard(),
                                         clock=lambda: f.clock.now.timestamp())
     enrollments = TextAnalysisEnrollmentStore(TextAnalysisJobStore(repository))
+    pair_owner = AuthoritativePairOwner(auth, repository.database, installation_id=scope['installation_id'],
+                                       root_lease=FixtureAuthoritativeRootLease(path))
+    pair_owner.establish()
     profile = environment.profile
     closure = artifact_closure_digest(tuple(a for a in profile.artifacts
                                             if a.role in ('weights', 'tokenizer', 'configuration')))
@@ -67,7 +71,7 @@ def _bind_execution_fixture(environment, path):
         scope['installation_key_id'], scope['installation_key_jkt'], payload['seat_id'], payload['seat_scope'],
         1, 1, 'text-analysis-artifact', profile.identity_digest(), closure, parameters.policy_identity_sha256)
     selection = FixtureTextAnalysisSelectionOwner(authority, enrollments, trust, schemas, scope['installation_id'],
-                                                 (FixtureTextAnalysisSelection(profile.identity_digest(), context),))
+        (FixtureTextAnalysisSelection(profile.identity_digest(), context),), pair_owner)
     baseline = identity.owner.rebuild(identity.identity)
     authority.activate_reference(baseline, context, kind='license', evidence=selection.evidence(baseline, context),
                                 lifecycle=selection.lifecycle, fixture_only=True)
@@ -82,7 +86,8 @@ def _bind_execution_fixture(environment, path):
 
     return SimpleNamespace(environment=environment, f=f, source=f.source, auth=auth, identity=identity,
         authority=authority, reference=reference, context=context, profile=profile, parameters=parameters,
-        repository=repository, enrollments=enrollments, selection=selection, configuration=configuration,
+        repository=repository, enrollments=enrollments, pair_owner=pair_owner,
+        selection=selection, configuration=configuration,
         service=service, dependencies=environment.service, construct_dependencies=construct_dependencies,
         http_policy=lambda: auth.read_bridge_session(identity.session.session_value).policy)
 

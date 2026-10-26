@@ -530,6 +530,8 @@ def restore_migration_backup_with_deletion_barriers(
                 staged.execute("PRAGMA foreign_keys=ON")
                 staged.execute("BEGIN IMMEDIATE")
                 _merge_authority(staged, policies, barriers)
+                from app.persistence.authoritative_pair import invalidate_pair_in
+                invalidate_pair_in(staged)
                 from app.persistence.contributions import reconcile_restored
                 reconcile_restored(staged, current_time)
                 if staged.execute("PRAGMA foreign_key_check").fetchall():

@@ -16,6 +16,7 @@ from typing import Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from app.services.text_analysis_selection import FixtureTextAnalysisExecutionConfiguration
     from app.services.text_analysis_execution import LicensedFindingsBinding
+    from app.services.text_analysis_preview_selection import FixtureTextAnalysisPreviewConfiguration
 
 from app.analytics.errors import ProjectionBuildCancelled, ProjectionCoordinatorClosed, ProjectionStorageUnavailable
 from app.analytics.nlp_findings_store import FindingsStore, MAX_ACCOUNTS
@@ -38,6 +39,7 @@ class FindingsConfiguration:
     label_resolver: Callable | None = None
     interval: float = .25
     execution: FixtureTextAnalysisExecutionConfiguration | None = None
+    preview: FixtureTextAnalysisPreviewConfiguration | None = None
 
     def __post_init__(self):
         if not all(callable(value) for value in (self.dependencies, self.authorize, self.clock)):
@@ -48,6 +50,13 @@ class FindingsConfiguration:
             from app.services.text_analysis_selection import FixtureTextAnalysisExecutionConfiguration
             if type(self.execution) is not FixtureTextAnalysisExecutionConfiguration:
                 raise ValueError('findings_execution_configuration_invalid')
+        if self.preview is not None:
+            from app.services.text_analysis_preview_selection import FixtureTextAnalysisPreviewConfiguration
+            if type(self.preview) is not FixtureTextAnalysisPreviewConfiguration:
+                raise ValueError('findings_preview_configuration_invalid')
+        if self.preview is not None and self.execution is not None:
+            if self.preview.authentication is not self.execution.authentication:
+                raise ValueError('findings_authority_owner_mismatch')
 
 
 class _BoundDatabase:
@@ -205,13 +214,18 @@ class FindingsRuntime:
         self._service = None
         self._store = None
         self._runner = None
-        self._gate = (configuration.execution.authentication.database.dependency_authority_gate
-                      if configuration.execution is not None else None)
+        authority = configuration.execution or configuration.preview
+        self._gate = (authority.authentication.database.dependency_authority_gate if authority is not None else None)
         self._baseline = _GatedPipeline(pipeline, self._gate) if self._gate is not None else pipeline
         self._execution_service = None
         self._enrollments = OrderedDict()
         self._locator_page = deque()
         self._after_account = ''
+        self._preview_service = None
+        self._preview_owner = None
+        self._preview_page = deque()
+        self._after_preview = ''
+        self._prefer_preview = True
         self._accounts = deque(maxlen=MAX_ACCOUNTS)
         self._published = OrderedDict()
         self._preparation_attempts = set()
@@ -254,6 +268,13 @@ class FindingsRuntime:
                 self._service.execution_owner = None
         if self._service is not None and dependency_service() is self._service:
             configure_dependency_service(None)
+        if self._preview_service is not None:
+            from app.services.text_analysis_preview import preview_service, configure_preview_service
+            if preview_service() is self._preview_service:
+                configure_preview_service(None)
+        self._preview_service = self._preview_owner = None
+        self._preview_page.clear()
+        self._after_preview = ''
         self._service, self._runner, self._store = None, None, None
         self._accounts.clear()
         self._published.clear()
@@ -290,6 +311,14 @@ class FindingsRuntime:
             if execution_service() is not None:
                 raise ValueError('findings_execution_owner_conflict')
             self._execution_service = self.configuration.execution.bind(self.source, service)
+        if self.configuration.preview is not None:
+            from app.services.text_analysis_preview import preview_service
+            from app.analytics.nlp_preview_execution import PreviewComputeOwner
+            if preview_service() is not None:
+                raise ValueError('findings_preview_owner_conflict')
+            self._preview_service = self.configuration.preview.bind(self.source, service)
+            self._preview_owner = PreviewComputeOwner(self._preview_service, service, self.source,
+                clock=self.configuration.clock, cancellation_check=self._stop.is_set)
         service.start()
         configure_dependency_service(service)
         self._runner = FindingsRunner(self.source, bound,
@@ -301,6 +330,9 @@ class FindingsRuntime:
         if self.configuration.execution is not None:
             from app.services.text_analysis_execution import configure_execution_service
             configure_execution_service(self._execution_service)
+        if self._preview_service is not None:
+            from app.services.text_analysis_preview import configure_preview_service
+            configure_preview_service(self._preview_service)
         self._failed = False
         self.failure = None
         return True
@@ -349,8 +381,31 @@ class FindingsRuntime:
         if self._stop.is_set() or not self._bind():
             return None
         runner = self._runner
+        if self._preview_service is not None:
+            preview_first = self._prefer_preview
+            self._prefer_preview = not preview_first
+            if preview_first and self._preview_turn():
+                return None
+            if not preview_first:
+                return self._enrollment_turn() if self._execution_service is not None else self._legacy_turn()
         if self._execution_service is not None:
             return self._enrollment_turn()
+        return self._legacy_turn()
+
+    def _preview_turn(self):
+        if not self._preview_page:
+            page = self._preview_service.pending_locators(after_job=self._after_preview, limit=64)
+            self._after_preview = page[-1].job_id if len(page) == 64 else ''
+            self._preview_page.extend(page)
+        if not self._preview_page:
+            return False
+        started = time.monotonic()
+        binding = self._preview_service.bind_pending(self._preview_page.popleft())
+        self._preview_owner.run(binding, started_at=started)
+        return True
+
+    def _legacy_turn(self):
+        runner = self._runner
         with runner.dependencies.gate:
             selections = runner.findings.selected_profiles()
             selected = {row['account_ref'] for row in selections}

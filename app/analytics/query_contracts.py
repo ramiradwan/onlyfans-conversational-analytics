@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
     Field,
     StrictBool,
     StrictInt,
@@ -18,42 +14,13 @@ from pydantic import (
     model_validator,
 )
 
-from app.models.analytics import AccountRef, ConversationRef, MessageRef, Sha256Digest
+from app.models.question_evidence import (
+    AccountRef, ConversationRef, Count, Instant, MessageRef as MessageRef, QuestionEvidence,
+    QuestionRecord, Sha256Digest, SourceSpan as SourceSpan, utc_instant as utc_instant,
+)
 
 QuestionId = Literal["no_later_creator_reply.v1", "pricing_discussions.v1"]
 Coverage = Literal["complete", "partial", "unknown"]
-Count = Annotated[StrictInt, Field(ge=0)]
-
-
-def utc_instant(value: object) -> datetime:
-    if isinstance(value, str) and len(value) <= 64:
-        try:
-            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            raise ValueError("question_timestamp_invalid") from None
-    if (
-        not isinstance(value, datetime)
-        or value.tzinfo is None
-        or value.utcoffset() is None
-    ):
-        raise ValueError("question_timestamp_requires_offset")
-    try:
-        return value.astimezone(timezone.utc)
-    except (OverflowError, ValueError):
-        raise ValueError("question_timestamp_invalid") from None
-
-
-Instant = Annotated[datetime, BeforeValidator(utc_instant)]
-
-
-class QuestionRecord(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-        hide_input_in_errors=True,
-        allow_inf_nan=False,
-        revalidate_instances="always",
-    )
 
 
 class QuestionFilters(QuestionRecord):
@@ -93,27 +60,6 @@ class QuestionPlan(QuestionRecord):
         ):
             raise ValueError("question_filter_unsupported")
         return self
-
-
-class SourceSpan(QuestionRecord):
-    start: Count
-    end: Count
-
-    @model_validator(mode="after")
-    def nonempty(self) -> SourceSpan:
-        if self.start >= self.end:
-            raise ValueError("question_span_invalid")
-        return self
-
-
-class QuestionEvidence(QuestionRecord):
-    account_ref: AccountRef
-    conversation_ref: ConversationRef
-    message_ref: MessageRef
-    source_revision: Count
-    source_version_digest: Sha256Digest
-    sent_at: Instant
-    span: SourceSpan | None = None
 
 
 class QuestionRow(QuestionRecord):
