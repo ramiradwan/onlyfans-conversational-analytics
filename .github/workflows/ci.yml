@@ -436,7 +436,7 @@ jobs:
     runs-on: windows-latest
     # Leave bounded room for SDK producer contracts, dependency setup,
     # production boot and all three persistence profiles.
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
