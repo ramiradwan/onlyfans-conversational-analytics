@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { createStartupObservations, startupDiagnosticFromMessage, validStartupDiagnostic } from '../../lib/startup-diagnostics.mjs';
-import { brainHealthIsReady, lastFixtureListenerResidual, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
+import { brainHealthIsReady, fixtureProactorCallbackFailure, lastFixtureListenerResidual, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
 
 function fixture(owner = 'brain') {
   let time = 0;
@@ -68,6 +68,54 @@ test('listener residual extraction retains only bounded canonical transport coun
     line.replace('"closing":2', '"closing":NaN'), line.replace('closing', 'clo\\u0073ing'),
     line.replace('"closing":2', '"closing":"' + 'x'.repeat(600) + '"')]) {
     assert.equal(lastFixtureListenerResidual(output), null);
+  }
+});
+
+test('callback failure extraction retains only recognized sites, kinds and bounded error codes', () => {
+  const trace = (source = 'self._sock.shutdown(socket.SHUT_RDWR)', exception = 'OSError: [WinError 10057] private detail', method = '_call_connection_lost') => {
+    const owner = method === '_call_connection_lost' ? '_ProactorBasePipeTransport' : '_ProactorBaseWritePipeTransport';
+    return `Exception in callback ${owner}.${method}() at C:\\Python313\\Lib\\asyncio\\proactor_events.py:154\n`
+      + `handle: <Handle ${owner}.${method}() at C:\\Python313\\Lib\\asyncio\\proactor_events.py:154>\n`
+      + 'Traceback (most recent call last):\n'
+      + '  File "C:\\Python313\\Lib\\asyncio\\events.py", line 89, in _run\n'
+      + '    self._context.run(self._callback, *self._args)\n'
+      + '    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^\n'
+      + `  File "C:\\Python313\\Lib\\asyncio\\proactor_events.py", line 165, in ${method}\n`
+      + `    ${source}\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n${exception}\n`;
+  };
+  const standard = trace();
+  assert.deepEqual(fixtureProactorCallbackFailure(standard), { site: 'socket_shutdown', kind: 'OSError', errno: null, winerror: 10057 });
+  const boundMethod = standard.replaceAll(' at C:\\Python313\\Lib\\asyncio\\proactor_events.py:154', '');
+  assert.deepEqual(fixtureProactorCallbackFailure(boundMethod), fixtureProactorCallbackFailure(standard));
+  assert.deepEqual(fixtureProactorCallbackFailure(trace('self._sock.close()', 'OSError: [Errno 9] private detail')),
+    { site: 'socket_close', kind: 'OSError', errno: 9, winerror: null });
+  assert.deepEqual(fixtureProactorCallbackFailure(trace('f.result()', 'asyncio.exceptions.CancelledError', '_loop_writing')),
+    { site: 'write_result', kind: 'CancelledError', errno: null, winerror: null });
+  assert.deepEqual(fixtureProactorCallbackFailure(trace('self._sock.close()', 'OSError: [Errno 2147483647] private')),
+    { site: 'socket_close', kind: 'OSError', errno: 2147483647, winerror: null });
+  assert.deepEqual(fixtureProactorCallbackFailure('ERROR:asyncio:' + standard), fixtureProactorCallbackFailure(standard));
+  assert.deepEqual(fixtureProactorCallbackFailure(standard.replaceAll('\n', '\r\n')), fixtureProactorCallbackFailure(standard));
+  assert.deepEqual(fixtureProactorCallbackFailure(`${'private'.repeat(20_000)}\n${standard}`), fixtureProactorCallbackFailure(standard));
+  assert.doesNotMatch(JSON.stringify(fixtureProactorCallbackFailure(standard)), /private|Python313|Handle|SHUT_RDWR/);
+  for (const output of [null, undefined, {}, [], 'private output', standard.trimEnd(), standard + standard,
+    standard + 'Exception in callback _ProactorBasePipeTransport._call_connection_lost(',
+    standard.replace('Traceback (most recent call last):', 'private'),
+    standard.replace('    self._sock.shutdown(socket.SHUT_RDWR)', '    private()'),
+    standard.replaceAll('_call_connection_lost', 'private'),
+    standard.replaceAll('proactor_events.py', 'private.py'), standard.replace('in _run', 'in private'),
+    trace('f.result()', 'OSError: [Errno 9] private detail'), trace('self._sock.close()', 'PrivateError: private'),
+    trace('self._sock.close()', 'OSError: [WinError private] private'),
+    trace('self._sock.close()', 'OSError: [WinError 2147483648] private'),
+    trace('self._sock.close()', 'OSError: [Errno -1] private'),
+    trace('self._sock.close()', 'OSError: private [Errno 9]'),
+    standard.replace('handle: <Handle', 'private: <Handle'),
+    standard.replace('Traceback (most recent call last):', 'private\nTraceback (most recent call last):'),
+    standard.replace('private detail', 'x'.repeat(3000)),
+    standard.replace('OSError:', '  File "C:\\private\\other.py", line 1, in unrelated\n    private()\nOSError:'),
+    standard + 'During handling of the above exception, another exception occurred:\n',
+    standard.replace('    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^', '    private continuation'),
+    standard + '\n'.repeat(1100), standard.slice(0, standard.indexOf('OSError:'))]) {
+    assert.equal(fixtureProactorCallbackFailure(output), null);
   }
 });
 

@@ -170,6 +170,65 @@ export function lastFixtureListenerResidual(output) {
   return residual;
 }
 
+export function fixtureProactorCallbackFailure(output) {
+  if (typeof output !== 'string') return null;
+  let tail = output.slice(-65_536);
+  if (tail.length !== output.length) {
+    const end = tail.indexOf('\n');
+    if (end === -1) return null;
+    tail = tail.slice(end + 1);
+  }
+  if (!tail.endsWith('\n')) return null;
+  const lines = tail.slice(0, -1).split('\n').map(line => line.replace(/\r$/, ''));
+  if (lines.length > 1024) return null;
+  const callbacks = '_ProactorBasePipeTransport\\._call_connection_lost|_ProactorBaseWritePipeTransport\\._loop_writing';
+  const prefix = new RegExp(`^(?:ERROR:asyncio:)?Exception in callback (${callbacks})\\(`);
+  const headers = lines.flatMap((line, index) => prefix.test(line) ? [index] : []);
+  if (headers.length !== 1) return null;
+  const start = headers[0];
+  const block = lines.slice(start, start + 64);
+  if (block.some(line => line.length > 2048) || block.join('\n').length > 16_384) return null;
+  const header = new RegExp(`^(?:ERROR:asyncio:)?Exception in callback (${callbacks})\\(.*\\)(?: at [^\\r\\n]+[\\\\/]proactor_events\\.py:[1-9][0-9]{0,5})?$`).exec(block[0]);
+  if (header === null || !block[1]?.startsWith(`handle: <Handle ${header[1]}(`)
+      || !block[1].endsWith('>') || block[2] !== 'Traceback (most recent call last):') return null;
+  const method = header[1].split('.').at(-1);
+  const sites = method === '_call_connection_lost'
+    ? new Map([['self._sock.shutdown(socket.SHUT_RDWR)', 'socket_shutdown'], ['self._sock.close()', 'socket_close']])
+    : new Map([['f.result()', 'write_result']]);
+  let position = 3, frames = 0, site = null, siteFrame = 0;
+  while (position < block.length) {
+    const frame = /^  File "[^"\r\n]+[\\/]([^\\/"\r\n]+)", line [1-9][0-9]{0,5}, in ([A-Za-z_][A-Za-z_0-9.]*)$/.exec(block[position]);
+    if (frame === null) break;
+    if (++frames > 16 || !block[position + 1]?.startsWith('    ')) return null;
+    const source = block[position + 1].slice(4);
+    if (frames === 1 && (frame[1] !== 'events.py' || frame[2] !== '_run'
+        || source !== 'self._context.run(self._callback, *self._args)')) return null;
+    if (frame[1] === 'proactor_events.py') {
+      if (frame[2] !== method || !sites.has(source) || site !== null) return null;
+      site = sites.get(source);
+      siteFrame = frames;
+    }
+    position += 2;
+    if (/^    [ ~^]*[~^][ ~^]*$/.test(block[position] ?? '')) position++;
+  }
+  if (frames < 2 || site === null || (site !== 'write_result' && siteFrame !== frames)) return null;
+  const exception = /^(OSError|ConnectionResetError|ConnectionAbortedError|BrokenPipeError|PermissionError|TimeoutError|ValueError|RuntimeError|AssertionError|KeyError|asyncio\.exceptions\.CancelledError)(?:: (.*))?$/.exec(block[position] ?? '');
+  if (exception === null) return null;
+  const following = block.slice(position + 1);
+  if (following.some(line => line === 'Traceback (most recent call last):'
+      || line === 'During handling of the above exception, another exception occurred:'
+      || line === 'The above exception was the direct cause of the following exception:')) return null;
+  let errno = null, winerror = null;
+  const message = exception[2] ?? '';
+  if (message.startsWith('[')) {
+    const code = /^\[(Errno|WinError) ([0-9]{1,10})\](?: .*)?$/.exec(message);
+    if (code === null || Number(code[2]) > 2_147_483_647) return null;
+    if (code[1] === 'Errno') errno = Number(code[2]);
+    else winerror = Number(code[2]);
+  } else if (/\[(?:Errno|WinError)\b/.test(message)) return null;
+  return { site, kind: exception[1].replace('asyncio.exceptions.', ''), errno, winerror };
+}
+
 export class BrainProcess {
   constructor({
     authDatabasePath,
@@ -328,6 +387,7 @@ export class BrainProcess {
         child_failure: fixtureShutdownFailure(this.recentOutput()),
         last_phase: lastFixtureShutdownPhase(this.output.join('')),
         listener_residual: lastFixtureListenerResidual(this.output.join('')),
+        callback_failure: fixtureProactorCallbackFailure(this.output.join('')),
       };
       throw new Error(`Text analysis fixture did not complete its owned shutdown. ${JSON.stringify(failure)}`);
     }
