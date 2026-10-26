@@ -48,6 +48,8 @@ def _is_kernel_path(path: Path) -> bool:
         "persistence/auth.py",
         "persistence/companion_pairing.py",
         "persistence/text_analysis_authority.py",
+        "persistence/authoritative_pair.py",
+        "persistence/authoritative_backup.py",
     }
 
 
@@ -169,4 +171,21 @@ def test_text_analysis_authority_persistence_has_an_exact_kernel_owner(tmp_path:
     (persistence / "unapproved_analysis.py").write_text(authority, encoding="utf-8")
     assert _runtime_policy_boundary_violations(root) == [
         "persistence/unapproved_analysis.py: ['references authorization row text_analysis_authority_references']"
+    ]
+
+
+@pytest.mark.parametrize('owner', ['authoritative_pair', 'authoritative_backup'])
+def test_authoritative_store_security_has_only_exact_kernel_owners(tmp_path: Path, owner: str) -> None:
+    root = tmp_path / 'app'
+    persistence = root / 'persistence'
+    persistence.mkdir(parents=True)
+    authority = ('from app.security.grant_verifier import load_pinned_trust_set\n'
+                 'TABLE = "text_analysis_authority_references"\n')
+    (persistence / f'{owner}.py').write_text(authority, encoding='utf-8')
+    assert _runtime_policy_boundary_violations(root) == []
+    sibling = f'{owner}_copy.py'
+    (persistence / sibling).write_text(authority, encoding='utf-8')
+    assert _runtime_policy_boundary_violations(root) == [
+        f"persistence/{sibling}: ['imports signed-object verifier app.security.grant_verifier', "
+        "'references authorization row text_analysis_authority_references']"
     ]

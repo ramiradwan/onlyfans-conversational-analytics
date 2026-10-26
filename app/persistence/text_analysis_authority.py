@@ -13,7 +13,8 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from app.security.runtime_policy import RuntimeAuthorizationDenied, RuntimePolicy
 from app.security.text_analysis_authority import TextAnalysisTrust, verify_authority
-from app.security.text_analysis_contract import TextAnalysisSchemas, canonical
+from app.security.signed_objects import decode
+from app.security.text_analysis_contract import TextAnalysisSchemas, canonical, parse_json
 from app.security.text_analysis_policy import TextAnalysisRunContext, encode_run_context, require_text_analysis, require_text_analysis_fence
 from app.security.text_analysis_references import TextAnalysisReference, reference_from_verified
 
@@ -133,6 +134,49 @@ class TextAnalysisAuthorityStore:
         self.authentication = authentication
         self.database = authentication.database
         self._schemas = None
+
+    def require_active_preview(self, reference_id: str) -> None:
+        with self.database.read() as db:
+            row = db.execute('SELECT kind,state FROM text_analysis_authority_references WHERE reference_id=?',
+                             (reference_id,)).fetchone()
+        if row is None or tuple(row) != ('preview', 'active'):
+            raise ValueError('text_analysis_preview_authority_unavailable')
+
+    def fixture_current_evidence(self, policy: RuntimePolicy, context: TextAnalysisRunContext,
+                                 *, trust: TextAnalysisTrust) -> TextAnalysisCurrentEvidence:
+        from app.persistence.nlp_dependencies import DependencyPersistence
+        with self.database.dependency_authority_gate, self.database.read() as db:
+            state = DependencyPersistence._authority(db)
+            row = db.execute('SELECT version FROM text_analysis_authority_references WHERE reference_id=?',
+                             (context.reference_id,)).fetchone()
+            if row is None:
+                raise ValueError('text_analysis_reference_unavailable')
+            return TextAnalysisCurrentEvidence(trust, trust_digest(trust), policy.authorization_epoch.value,
+                row['version'], state['epoch'], state['trust_sha256'], state['catalog_sha256'],
+                hashlib.sha256(encode_run_context(context)).hexdigest(), context.activation_lineage_sha256,
+                context.seat_id, context.installation_key_id, context.installation_key_jkt, True)
+
+    def validate_saved_preview_reference_in(self, auth_connection, *, reference_id: str,
+                                           compact_jws_sha256: str, permit_id: str,
+                                           issuance_id: str) -> None:
+        """Check retained identity bytes without renewing execution authority."""
+        if not self.database.owns_connection(auth_connection) or not auth_connection.in_transaction:
+            raise RuntimeAuthorizationDenied('text_analysis_auth_owner_mismatch')
+        reference = auth_connection.execute('SELECT * FROM text_analysis_authority_references WHERE reference_id=?',
+                                           (reference_id,)).fetchone()
+        if reference is None or reference['kind'] != 'preview':
+            raise ValueError('preview_reference_corrupt')
+        token = reference['compact_jws']
+        parts = token.split('.')
+        if len(parts) != 3:
+            raise ValueError('preview_reference_corrupt')
+        payload = parse_json(decode(parts[1], 16384), maximum=16384, require_canonical=True)
+        if (type(payload) is not dict
+                or hashlib.sha256(token.encode('ascii')).hexdigest() != compact_jws_sha256
+                or reference['compact_jws_sha256'] != compact_jws_sha256
+                or hashlib.sha256(decode(parts[1], 16384)).hexdigest() != reference['payload_sha256']
+                or (payload.get('permit_id'), payload.get('issuance_id')) != (permit_id, issuance_id)):
+            raise ValueError('preview_reference_corrupt')
 
     def import_verified_reference(self, token: str, *, kind: str, context: dict,
                                   trust: TextAnalysisTrust, schemas: TextAnalysisSchemas) -> TextAnalysisReference:

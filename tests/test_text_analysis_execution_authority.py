@@ -109,6 +109,115 @@ def test_original_compact_and_payload_and_contract_digests_are_distinct(basis):
     assert policy.signed_object_reference_ids == ()
 
 
+def test_active_preview_selection_requires_original_kind_and_active_state(preview_basis):
+    auth,store,ref,context,policy,evidence,lifecycle = preview_basis
+    with auth.database.read() as db:
+        license_id = db.execute("SELECT reference_id FROM text_analysis_authority_references WHERE kind='license'").fetchone()[0]
+    for reference_id in (ref.reference_id, license_id, 'missing'):
+        with pytest.raises(ValueError,match='^text_analysis_preview_authority_unavailable$'):
+            store.require_active_preview(reference_id)
+    _import_preview_admission(store,ref,context,policy,evidence,lifecycle)
+    store.activate_reference(policy,context,kind='preview',evidence=evidence,lifecycle=lifecycle,fixture_only=True)
+    assert store.require_active_preview(ref.reference_id) is None
+    store.revoke(ref.reference_id)
+    with pytest.raises(ValueError,match='^text_analysis_preview_authority_unavailable$'):
+        store.require_active_preview(ref.reference_id)
+
+
+def test_fixture_evidence_preserves_exact_license_observation_and_gate(basis,monkeypatch):
+    auth,store,_,ref,context,policy,evidence,_ = basis
+    original_read = auth.database.read
+    @contextmanager
+    def gated_read():
+        assert auth.database.dependency_authority_gate._is_owned()
+        with original_read() as db:
+            yield db
+    monkeypatch.setattr(auth.database,'read',gated_read)
+    assert store.fixture_current_evidence(policy,context,trust=evidence.trust) == evidence
+    store.revoke(ref.reference_id)
+    observed = store.fixture_current_evidence(policy,context,trust=evidence.trust)
+    assert observed == replace(evidence,reference_version=evidence.reference_version+1)
+    with pytest.raises(ValueError,match='^text_analysis_reference_unavailable$'):
+        store.fixture_current_evidence(policy,replace(context,reference_id='missing'),trust=evidence.trust)
+
+
+def test_fixture_evidence_preserves_exact_preview_observation(preview_basis):
+    _,store,_,context,policy,evidence,_ = preview_basis
+    assert store.fixture_current_evidence(policy,context,trust=evidence.trust) == evidence
+
+
+def test_saved_preview_reference_integrity_uses_held_snapshot_without_fresh_authority(preview_basis,monkeypatch):
+    auth,store,ref,_,_,_,lifecycle = preview_basis
+    expected = dict(reference_id=ref.reference_id,compact_jws_sha256=ref.compact_jws_sha256,
+                    permit_id=ref.object_id,issuance_id=ref.issuance_id)
+    store.revoke(ref.reference_id)
+    def unavailable(*args,**kwargs):
+        pytest.fail('Retained identity validation attempted fresh authority or another snapshot')
+    with auth.database.transaction() as auth_db, lifecycle.canonical_database.transaction() as canonical_db:
+        with monkeypatch.context() as patch:
+            patch.setattr(authority_module,'verify_authority',unavailable)
+            patch.setattr(auth.database,'read',unavailable)
+            patch.setattr(auth.database,'transaction',unavailable)
+            patch.setattr(auth,'_clock',unavailable)
+            assert store.validate_saved_preview_reference_in(auth_db,**expected) is None
+            assert auth_db.in_transaction and canonical_db.in_transaction
+
+
+def test_saved_preview_reference_integrity_rejects_substitution_and_corruption(preview_basis):
+    auth,store,ref,_,_,_,_ = preview_basis
+    expected = dict(reference_id=ref.reference_id,compact_jws_sha256=ref.compact_jws_sha256,
+                    permit_id=ref.object_id,issuance_id=ref.issuance_id)
+    with auth.database.transaction() as db:
+        license_id = db.execute("SELECT reference_id FROM text_analysis_authority_references WHERE kind='license'").fetchone()[0]
+        with pytest.raises(ValueError,match='^preview_reference_corrupt$'):
+            store.validate_saved_preview_reference_in(db,**dict(expected,reference_id=license_id))
+        for field in expected:
+            changed = dict(expected,**{field:'f'*64 if field=='compact_jws_sha256' else 'other'})
+            with pytest.raises(ValueError,match='^preview_reference_corrupt$'):
+                store.validate_saved_preview_reference_in(db,**changed)
+        for field,value in (('compact_jws','not.compact'),
+                            ('compact_jws',ref.compact_jws[:-1]+'!'),
+                            ('compact_jws_sha256','f'*64),('payload_sha256','f'*64)):
+            db.execute('SAVEPOINT reference_corruption')
+            try:
+                db.execute(f'UPDATE text_analysis_authority_references SET {field}=? WHERE reference_id=?',
+                           (value,ref.reference_id))
+                with pytest.raises(ValueError,match='^preview_reference_corrupt$'):
+                    store.validate_saved_preview_reference_in(db,**expected)
+            finally:
+                db.execute('ROLLBACK TO reference_corruption')
+                db.execute('RELEASE reference_corruption')
+        assert store.validate_saved_preview_reference_in(db,**expected) is None
+
+
+def test_saved_preview_reference_requires_exact_live_auth_transaction_owner(preview_basis):
+    auth,store,ref,_,_,_,_ = preview_basis
+    expected = dict(reference_id=ref.reference_id,compact_jws_sha256=ref.compact_jws_sha256,
+                    permit_id=ref.object_id,issuance_id=ref.issuance_id)
+    def refused(connection):
+        with pytest.raises(RuntimeAuthorizationDenied,match='^text_analysis_auth_owner_mismatch$'):
+            store.validate_saved_preview_reference_in(connection,**expected)
+    with auth.database.read() as db:
+        assert not db.in_transaction
+        refused(db)
+    closed = auth.database.connect()
+    closed.close()
+    refused(closed)
+    other = SQLiteAuthenticationStore(auth.database.path,clock=lambda: NOW)
+    with other.database.transaction() as db:
+        assert db.in_transaction and other.database.owns_connection(db)
+        assert not auth.database.owns_connection(db)
+        refused(db)
+    detached = auth.database.open_detached(auth.database.path,read_only=True,query_only=True)
+    try:
+        detached.execute('BEGIN')
+        refused(detached)
+    finally:
+        detached.close()
+    with auth.database.transaction() as db:
+        assert store.validate_saved_preview_reference_in(db,**expected) is None
+
+
 @pytest.mark.parametrize('field,value', [('reference_id','wrong'),('compact_jws_sha256','f'*64),
     ('principal_id','other'),('creator_account_id','other'),('organization_id','other'),
     ('installation_id','other'),('installation_key_id','other'),('installation_key_jkt','other'),

@@ -1,6 +1,5 @@
 """Session-bound one-shot previews and baseline-authorized shown-output reads."""
 from contextlib import contextmanager
-import hashlib
 import weakref
 
 from app.analytics.evidence_contracts import ResolvedEvidence
@@ -19,8 +18,6 @@ from app.persistence.auth import AuthenticationStateError, RevocationKey, Revoca
 from app.persistence.authoritative_pair import AuthoritativePairOwner
 from app.persistence.text_analysis_preview import PreviewSourceUnavailable
 from app.security.runtime_policy import RuntimeAuthorizationDenied, authorized_account
-from app.security.signed_objects import decode
-from app.security.text_analysis_contract import parse_json
 from app.security.text_analysis_identity import TextAnalysisIdentityOwner
 from app.security.text_analysis_policy import decode_run_context, encode_run_context, require_text_analysis_fence
 from app.services.text_analysis_preview_selection import FixtureTextAnalysisPreviewSelectionOwner
@@ -354,23 +351,13 @@ class TextAnalysisPreviewService:
 
     def _saved_reference_in(self, auth_db, db, output):
         intent = self.repository._module_intent(db, output.job_id)
-        reference = auth_db.execute('SELECT * FROM text_analysis_authority_references WHERE reference_id=?',
-            (intent['reference_id'],)).fetchone()
         admission = db.execute('SELECT * FROM text_analysis_preview_admissions WHERE reference_id=?',
             (intent['reference_id'],)).fetchone()
-        if reference is None or reference['kind'] != 'preview':
+        if admission is None:
             raise ValueError('preview_reference_corrupt')
-        token = reference['compact_jws']
-        parts = token.split('.')
-        if len(parts) != 3:
-            raise ValueError('preview_reference_corrupt')
-        payload = parse_json(decode(parts[1], 16384), maximum=16384, require_canonical=True)
-        if (type(payload) is not dict
-                or hashlib.sha256(token.encode('ascii')).hexdigest() != intent['compact_jws_sha256']
-                or reference['compact_jws_sha256'] != intent['compact_jws_sha256']
-                or hashlib.sha256(decode(parts[1], 16384)).hexdigest() != reference['payload_sha256']
-                or (payload.get('permit_id'), payload.get('issuance_id')) != (admission['permit_id'], admission['issuance_id'])):
-            raise ValueError('preview_reference_corrupt')
+        self.selection.authority.validate_saved_preview_reference_in(auth_db,
+            reference_id=intent['reference_id'], compact_jws_sha256=intent['compact_jws_sha256'],
+            permit_id=admission['permit_id'], issuance_id=admission['issuance_id'])
 
 
 _service = None

@@ -1,18 +1,17 @@
 """Explicit fixture-only module selection and current store evidence."""
 from dataclasses import dataclass
-import hashlib
 
 from app.core.optional_execution import require_optional_execution
 from app.nlp.execution_parameters import execution_parameters
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.persistence.authoritative_pair import AuthoritativePairOwner
 from app.persistence.text_analysis_authority import (
-    FixtureTextAnalysisLifecycle, TextAnalysisAuthorityStore, TextAnalysisCurrentEvidence, trust_digest,
+    FixtureTextAnalysisLifecycle, TextAnalysisAuthorityStore,
 )
 from app.persistence.text_analysis_enrollment import TextAnalysisEnrollmentStore
 from app.security.text_analysis_authority import TextAnalysisTrust
 from app.security.text_analysis_contract import TextAnalysisSchemas
-from app.security.text_analysis_policy import TextAnalysisRunContext, encode_run_context
+from app.security.text_analysis_policy import TextAnalysisRunContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,17 +75,7 @@ class FixtureTextAnalysisSelectionOwner:
 
     def evidence(self, policy, context):
         require_optional_execution()
-        with self.authority.database.dependency_authority_gate, self.authority.database.read() as db:
-            from app.persistence.nlp_dependencies import DependencyPersistence
-            state = DependencyPersistence._authority(db)
-            row = db.execute('SELECT version FROM text_analysis_authority_references WHERE reference_id=?',
-                             (context.reference_id,)).fetchone()
-            if row is None:
-                raise ValueError('text_analysis_reference_unavailable')
-            return TextAnalysisCurrentEvidence(self.trust, trust_digest(self.trust), policy.authorization_epoch.value,
-                row['version'], state['epoch'], state['trust_sha256'], state['catalog_sha256'],
-                hashlib.sha256(encode_run_context(context)).hexdigest(), context.activation_lineage_sha256,
-                context.seat_id, context.installation_key_id, context.installation_key_jkt, True)
+        return self.authority.fixture_current_evidence(policy, context, trust=self.trust)
 
 
 @dataclass(frozen=True, slots=True)
