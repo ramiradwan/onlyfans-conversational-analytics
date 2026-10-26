@@ -32,6 +32,8 @@ def _is_skipped_markdown_path(relative_path: Path) -> bool:
         len(parts) > 1 and parts[0].startswith(".pytest_temp")
     ) or (
         len(parts) > 2 and parts[0] == "artifacts" and parts[1].startswith(("ci-", "browser-"))
+    ) or (
+        len(parts) > 3 and parts[:3] == ("tools", "e2e-capture", "test-results")
     )
 
 

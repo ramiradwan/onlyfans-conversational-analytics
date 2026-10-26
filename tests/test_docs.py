@@ -45,3 +45,28 @@ def test_markdown_discovery_excludes_generated_test_reports_only(tmp_path, monke
         path.write_text("# Summary\n", encoding="utf-8")
     monkeypatch.setattr(check_docs, "ROOT", tmp_path)
     assert check_docs.markdown_files() == [document]
+
+
+@pytest.mark.parametrize("document_path", [
+    "docs/tools/e2e-capture/test-results/sample.md",
+    "tools/e2e-capture/docs/test-results/sample.md",
+    "tools/e2e-capture/test-results-docs/sample.md",
+    "tools/other/test-results/sample.md",
+])
+def test_markdown_discovery_excludes_only_root_browser_results(
+    tmp_path, monkeypatch, capsys, document_path,
+):
+    generated = tmp_path / "tools/e2e-capture/test-results/failed-case/error-context.md"
+    document = tmp_path / document_path
+    for path in (generated, document):
+        path.parent.mkdir(parents=True)
+        path.write_text("# Report\n\n[Missing](missing.md)\n", encoding="utf-8")
+    monkeypatch.setattr(check_docs, "ROOT", tmp_path)
+    assert "tools/e2e-capture/test-results/" in (
+        REPOSITORY_ROOT / ".gitignore"
+    ).read_text(encoding="utf-8")
+    assert check_docs.markdown_files() == [document]
+    assert check_docs.main() == 1
+    output = capsys.readouterr().out
+    assert f"{document_path}:3: broken relative link: missing.md" in output
+    assert "error-context.md" not in output
