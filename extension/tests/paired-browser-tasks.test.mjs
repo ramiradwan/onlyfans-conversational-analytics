@@ -65,7 +65,18 @@ test('paired dispatch reuses its exact flow and pushes only bounded outcome corr
 test('popup closure sends the same bounded local withdrawal on paired redispatch without reopening', async t => {
   const h = harness(t);
   await h.tasks.run(h.value, h.controls);
-  h.flows[0].reject(Error('The user did not approve access.')); await tick(); await tick();
+  let timer;
+  t.after(() => clearTimeout(timer));
+  const closed = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(Error('notification_timeout')), 5000);
+    const notify = h.controls.notify;
+    h.controls.notify = async value => {
+      await notify(value);
+      if (value.state === 'closed') { clearTimeout(timer); resolve(); }
+    };
+  });
+  h.flows[0].reject(Error('The user did not approve access.'));
+  await closed;
   assert.deepEqual(h.notifications.at(-1), { state: 'closed', notification: null });
   await h.tasks.run(h.value, h.controls);
   assert.equal(h.flows.length, 1);

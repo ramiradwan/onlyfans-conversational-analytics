@@ -19,6 +19,7 @@ import { captureDynamicTransitions, REQUIRED_REGIONS } from './dynamic-transitio
 
 import { captureReviewChecks } from './review-contracts.mjs';
 import { assertNumericTypography } from './appearance-contracts.mjs';
+import { collectObserverDiagnostics } from './observer-diagnostics.mjs';
 import { captureVisionDiagnostics } from './vision-diagnostics.mjs';
 import { ordinaryCases, ordinaryName } from './ci/inventory.mjs';
 import { assertSafeCaptureOutput, CaptureRecorder, parseCaptureOptions, sourceIdentity } from './ci/recording.mjs';
@@ -202,6 +203,7 @@ export async function capture(argv = process.argv.slice(2)) {
         const name = ordinaryName({ viewport, mode, screen });
         const finish = recorder.begin(`ordinary-${name}`, { workspace: screen.workspace, state: screen.state, variant: screen.variant ?? null, mode, viewport: viewport.name, width: viewport.width, height: viewport.height });
         const observations = [], files = []; let caseFailed = false;
+        let observerDiagnostics = [], observerReadFailed = false;
         const context = await browser.newContext({
           colorScheme: mode,
           deviceScaleFactor: 1,
@@ -246,7 +248,7 @@ export async function capture(argv = process.argv.slice(2)) {
             await assertBrandMarkIfPresent(page);
             await assertNumericTypography(page, viewport);
             if (screen.assert) await screen.assert(page, viewport);
-            const watcher = await readWatcher(page);
+            const watcher = await readWatcher(page).catch(error => { observerReadFailed = true; throw error; });
             if (settings) {
               const tail = { id: 'fixture:scroll-audit', before: transitions.at(-1).after,
                 after: { at: watcher.frames.at(-1).at, frame: watcher.frames.length, nativeAt: watcher.nativeTimeline.endAt } };
@@ -257,6 +259,7 @@ export async function capture(argv = process.argv.slice(2)) {
               watcher.shiftAttribution = geometry.shiftAttribution;
               watcher.auxiliary = [tail];
             }
+            observerDiagnostics = collectObserverDiagnostics(screen.workspace, watcher.failures, observerReadFailed);
             await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, ...watcher }) + '\n');
             files.push(`${name}-geometry.json`);
             if (watcher.failures.length) throw new Error(watcher.failures.join('\n'));
@@ -308,11 +311,14 @@ export async function capture(argv = process.argv.slice(2)) {
           } catch (error) {
             caseFailed = true;
             await page.screenshot({ path: join(outDir, `${name}-failure.png`) });
-            await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, error: error.message, ...await readWatcher(page) }) + '\n');
+            const watcher = await readWatcher(page).catch(readError => { observerReadFailed = true; return { failures: [readError.message] }; });
+            observerDiagnostics = collectObserverDiagnostics(screen.workspace, watcher.failures, observerReadFailed);
+            await writeFile(join(outDir, `${name}-geometry.json`), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view: screen.workspace, transition: `boot:${screen.state}`, viewport, mode, error: error.message, ...watcher }) + '\n');
             failures.push(`${name}: ${error.message.split('\n')[0]}`);
-            console.error(`failed ${name}: ${error.message}`);
+            console.error(`failed ${name}: visual_capture_failed`);
+            if (observerDiagnostics.length) console.log(`observer-diagnostics ordinary-${name}: ${JSON.stringify(observerDiagnostics)}`);
           } finally {
-            finish({ outcome: caseFailed ? 'failed' : 'passed', observations, files });
+            finish({ outcome: caseFailed ? 'failed' : 'passed', observations, files, observerDiagnostics });
             await page.close();
           }
         await context.close();

@@ -13,18 +13,8 @@ import { failureSummary } from './failure-summary.mjs';
 
 import { DYNAMIC_VIEWS, dynamicCases, dynamicSequence } from './dynamic-matrix.mjs';
 export { DYNAMIC_VIEWS } from './dynamic-matrix.mjs';
-export const REQUIRED_REGIONS = {
-  home: ['freshness-status', 'issue-band', 'dashboard-notice', 'dashboard-overview', 'dashboard-basis', 'dashboard-recent', 'dashboard-setup'],
-  analytics: ['freshness-status', 'issue-band', 'analytics-content'],
-  inbox: ['freshness-status', 'issue-band', 'inbox-notice', 'inbox-content'],
-  settings: ['freshness-status', 'issue-band', 'settings-browser', 'settings-history', 'settings-activation', 'settings-vault'],
-  graph: ['freshness-status', 'issue-band', 'graph-notice'],
-  passkey: ['passkey-card', 'passkey-feedback'],
-  'production-boot': ['passkey-card', 'passkey-feedback'],
-  popup: ['popup-content', 'popup-status', 'surface-feedback'],
-  setup: ['extension-stage', 'surface-feedback'],
-  options: ['options-notice', 'options-capture', 'options-connection', 'options-data', 'surface-feedback'],
-};
+import { OBSERVER_REGIONS as REQUIRED_REGIONS, collectObserverDiagnostics } from './observer-diagnostics.mjs';
+export { OBSERVER_REGIONS as REQUIRED_REGIONS } from './observer-diagnostics.mjs';
 export const REQUIRED_STATES = {
   home: ['loading', 'snapshot:fresh', 'snapshot:syncing', 'snapshot:populated', 'read-model:resyncing', 'read-model:realtime', 'agent:config-mismatch', 'counts:null', 'coverage:blocked'],
   analytics: ['loading', 'loading:model', 'model:error', 'tone:Table', 'tone:Chart', 'dates:invalid'],
@@ -279,7 +269,8 @@ export async function captureDynamicTransitions(browser, base, outDir, only = DY
         else scrolling = await auditScrolling(page);
         if (scrolling.some((entry) => !entry.positions.at(-1).endReached || entry.positions.some((position) => position.horizontalEscape))) errors.push('Reading coverage failed');
       } catch (error) { errors.push(error.message); }
-      const watcher = await readWatcher(page).catch((error) => ({ failures: [error.message] }));
+      let observerReadFailed = false;
+      const watcher = await readWatcher(page).catch((error) => { observerReadFailed = true; return { failures: [error.message] }; });
       if (view === 'settings' && watcher.frames) {
         const geometry = inspectSettingsFrames(watcher.frames, transitions, REQUIRED_REGIONS.settings, { ...watcher, auxiliary });
         watcher.failures = geometry.failures;
@@ -287,13 +278,15 @@ export async function captureDynamicTransitions(browser, base, outDir, only = DY
         watcher.shiftAttribution = geometry.shiftAttribution;
         watcher.auxiliaryGeometry = geometry.auxiliaryPolicies;
       }
+      const observerDiagnostics = collectObserverDiagnostics(view, watcher.failures, observerReadFailed);
       const failures = [...errors, ...watcher.failures];
       if (failures.length) await page.screenshot({ path: join(directory, name + '-failure.png') });
       await writeFile(join(directory, name + '.json'), JSON.stringify({ revision: process.env.VISUAL_CAPTURE_REVISION ?? null, view, viewport, mode, fontScale, motion, seed, transitions, auxiliary, scrolling, segments, ...watcher, failures }) + '\n');
       reports.push({ view, width, file: `transitions/${name}.json`, transitions: transitions.length, states: transitions.map(({ id }) => id), failures });
-      finish?.({ outcome: failures.length ? 'failed' : 'passed', observations: transitions.map(({ id }) => id), files: [`transitions/${name}.json`] });
+      finish?.({ outcome: failures.length ? 'failed' : 'passed', observations: transitions.map(({ id }) => id), files: [`transitions/${name}.json`], observerDiagnostics });
       await page.close();
       console.log(`transitions ${name}: ${transitions.length}, failures=${failures.length}`);
+      if (observerDiagnostics.length) console.log(`observer-diagnostics dynamic-${name}: ${JSON.stringify(observerDiagnostics)}`);
       if (failures.length) console.log(`transition-failure-counts ${name}: ${JSON.stringify(failureSummary(errors, watcher.failures))}`);
       if (view === 'settings' && watcher.failures.length) console.log(`settings-failure-stages ${name}: ${JSON.stringify(settingsFailureSummary(watcher.failures))}`);
       if (view === 'settings' && watcher.failures.length) console.log(`settings-shift-gaps ${name}: ${JSON.stringify(settingsUnassignedShiftSummary(watcher.shiftAttribution, transitions, auxiliary))}`);

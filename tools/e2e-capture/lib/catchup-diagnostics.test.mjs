@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
-import { readCatchupMessageIds } from './catchup-diagnostics.mjs';
+import { readCatchupMessageIds, withCatchupDiagnostics } from './catchup-diagnostics.mjs';
 
 const response = (status, body) => ({ status, ok: status === 200, json: async () => body });
 const conflict = () => response(409, { detail: { code: 'cursor_stale' } });
@@ -84,4 +84,15 @@ test('failure diagnostics exclude arbitrary response text', async () => {
   const result = await execute(() => response(500, { detail: 'private response text' }));
   assert.match(result.error.message, /code=unavailable attempts=1 outcome=response_rejected$/);
   assert(!result.error.message.includes('private response text'));
+});
+
+test('checkpoint reporting preserves the original exception without labeling every failure a timeout', async () => {
+  const original = new Error('private assertion data'), lines = [];
+  await assert.rejects(withCatchupDiagnostics(async () => { throw original; }, {
+    summary: async () => null, platform: { requestCounts: {} }, context: {},
+    readWorker: async () => null, log: line => lines.push(line),
+  }), error => error === original);
+  assert.equal(lines.length, 1);
+  assert(lines[0].startsWith('Catch-up checkpoint failed '));
+  assert(!lines[0].includes('timed out') && !lines[0].includes(original.message));
 });
