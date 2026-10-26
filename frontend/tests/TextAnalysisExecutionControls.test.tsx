@@ -4,8 +4,6 @@ import { ThemeProvider } from '@mui/material/styles';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mockFeedbackOverflow } from './feedbackGeometry';
-
 import commandExample from '../../shared/nlp/application/v1/fixtures/enrollment-command.json';
 import resultExample from '../../shared/nlp/application/v1/fixtures/enrollment-result.json';
 import viewExample from '../../shared/nlp/application/v1/fixtures/enrollment-view.json';
@@ -84,6 +82,13 @@ function feedbackRegion() {
   if (!(node instanceof HTMLElement)) throw new Error('Processing feedback is missing');
   return node;
 }
+async function readFeedback(text: string | RegExp) {
+  fireEvent.click(within(feedbackRegion()).getByRole('button', { name: 'Show details' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Details' });
+  expect(within(dialog).getByText(text)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull());
+}
 beforeEach(() => {
   vi.stubGlobal('crypto', { subtle: webcrypto.subtle, randomUUID: () => KEY });
   useUserStore.getState().actions.setUserRole('creator-ceo');
@@ -122,10 +127,11 @@ describe('Account processing controls', () => {
     const x = fixture(); x.api.retain.mockRejectedValueOnce(new TextAnalysisApiError('unknown'));
     render(x.view()); const dialog = await review();
     fireEvent.click(dialog.getByRole('button', { name: 'Confirm processing change' }));
-    await screen.findByText(/The command outcome is unknown/);
+    await screen.findByRole('button', { name: 'Retry exact command' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review processing change' })).toBeNull());
+    await readFeedback(/The command outcome is unknown/);
     const original = clone(x.api.retain.mock.calls[0][0]);
     expect(x.api.command).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review processing change' })).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: 'Check processing status' }));
     await waitFor(() => expect((screen.getByRole('button', { name: 'Retry exact command' }) as HTMLButtonElement).disabled).toBe(false));
     expect((screen.getByRole('button', { name: 'Review enablement' }) as HTMLButtonElement).disabled).toBe(true);
@@ -147,7 +153,7 @@ describe('Account processing controls', () => {
     if (change === 'account') rendered.rerender(x.view('other-account'));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review processing change' })).toBeNull());
     if (change === 'disconnect') {
-      expect(feedbackRegion().textContent).toContain('Connect with an authorized creator session');
+      await readFeedback(/Connect with an authorized creator session/);
       expect(screen.queryByRole('combobox', { name: 'Approved processing profile' })).toBeNull();
     }
     expect(x.api.retain).not.toHaveBeenCalled(); expect(x.api.command).not.toHaveBeenCalled();
@@ -173,7 +179,7 @@ describe('Account processing controls', () => {
     const x = fixture(), first = deferred<EnrollmentView>(), next = deferred<EnrollmentView>();
     x.api.current.mockReturnValueOnce(first.promise);
     render(x.view());
-    await screen.findByText('Checking account processing…');
+    await readFeedback('Checking account processing…');
     const region = feedbackRegion(), classes = region.className;
     await act(async () => first.resolve(parseEnrollmentView(viewExample, ACCOUNT)));
     await screen.findByText('Processing: enabled.');
@@ -181,12 +187,13 @@ describe('Account processing controls', () => {
     expect(feedbackRegion().className).toBe(classes);
     x.api.current.mockRejectedValueOnce(new TextAnalysisApiError('unavailable'));
     fireEvent.click(screen.getByRole('button', { name: 'Check processing status' }));
-    await screen.findByText(/Processing management is unavailable for this session/);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check processing status' }).hasAttribute('disabled')).toBe(false));
+    await readFeedback(/Processing management is unavailable for this session/);
     expect(feedbackRegion()).toBe(region);
     expect(feedbackRegion().className).toBe(classes);
     x.api.current.mockReturnValueOnce(next.promise);
     fireEvent.click(screen.getByRole('button', { name: 'Check processing status' }));
-    await screen.findByText('Checking account processing…');
+    await readFeedback('Checking account processing…');
     expect(feedbackRegion()).toBe(region);
     await act(async () => next.resolve(parseEnrollmentView(viewExample, ACCOUNT)));
     await screen.findByText('Processing: enabled.');
@@ -199,15 +206,15 @@ describe('Account processing controls', () => {
     const x = fixture(); x.api.retain.mockRejectedValueOnce(new TextAnalysisApiError('unknown'));
     render(x.view()); const dialog = await review();
     fireEvent.click(dialog.getByRole('button', { name: 'Confirm processing change' }));
-    await screen.findByText(/The command outcome is unknown/);
+    await screen.findByRole('button', { name: 'Retry exact command' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review processing change' })).toBeNull());
+    await readFeedback(/The command outcome is unknown/);
     const original = x.api.retain.mock.calls[0][0];
     if (original.kind !== 'enrollment_command') throw new Error('Unexpected retained request');
     const changed = await retained({ ...original, body: { ...original.body, expected_mode_version: 1 } });
     x.journal.set(`${changed.kind}:${changed.key}`, changed);
     x.api.retainedList.mockResolvedValueOnce({ items: [changed], next_after: null });
     x.api.current.mockRejectedValueOnce(new TextAnalysisApiError('unavailable'));
-    mockFeedbackOverflow();
     fireEvent.click(screen.getByRole('button', { name: 'Check processing status' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Check processing status' }).hasAttribute('disabled')).toBe(false));
     fireEvent.click(await screen.findByRole('button', { name: 'Show details' }));
@@ -224,7 +231,8 @@ describe('Account processing controls', () => {
   it('keeps management unavailable when the original-owner view cannot be read', async () => {
     const x = fixture(); x.api.current.mockRejectedValue(new TextAnalysisApiError('conflict'));
     render(x.view());
-    await screen.findByText(/Processing management is unavailable for this session/);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check processing status' }).hasAttribute('disabled')).toBe(false));
+    await readFeedback(/Processing management is unavailable for this session/);
     expect(screen.queryByText('Processing: not enrolled.')).toBeNull();
     expect(x.api.retain).not.toHaveBeenCalled(); expect(x.api.command).not.toHaveBeenCalled();
   });

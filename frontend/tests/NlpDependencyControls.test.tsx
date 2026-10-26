@@ -35,7 +35,86 @@ function view(api: NlpDependenciesApi, account = 'account-one', engineApi?: Engi
 beforeEach(() => { useUserStore.getState().actions.setUserRole('creator-ceo'); bridgeTransportStore.bindAccount('account-one'); });
 afterEach(() => { cleanup(); bridgeTransportStore.reset(); useUserStore.getState().actions.setUserRole(null); });
 async function review() { fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' })); await screen.findByRole('dialog', { name: 'Review download costs' }); }
+function feedbackRegion() {
+  const node = document.querySelector('[data-reserved-region="dependency-feedback"]');
+  if (!(node instanceof HTMLElement)) throw new Error('Dependency feedback is missing');
+  return node;
+}
+async function readFeedback(text: string | RegExp) {
+  fireEvent.click(within(feedbackRegion()).getByRole('button', { name: 'Show details' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Details' });
+  expect(within(dialog).getByText(text)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull());
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+function connect(suffix = '1') {
+  bridgeTransportStore.acceptSession({ connection_id: `10000000-0000-4000-8000-00000000000${suffix}`,
+    bridge_session_id: `20000000-0000-4000-8000-00000000000${suffix}`, creator_account_id: 'account-one',
+    negotiated_protocol_version: '2', server_version: 'example' });
+}
 describe('NlpDependencyControls', () => {
+  it('reserves compact feedback from loading through combined failure and recovery', async () => {
+    const api = fixture(), initial = deferred<NlpDependencyStatus>(), refreshed = deferred<NlpDependencyStatus>();
+    api.get.mockReturnValueOnce(initial.promise);
+    render(view(api));
+    const region = feedbackRegion(), classes = region.className;
+    expect(within(region).getByRole('status').textContent).toBe('Checking…');
+    expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeNull();
+    await readFeedback('Checking text analysis availability…');
+    await act(async () => initial.reject(new Error('untrusted failure')));
+    expect(feedbackRegion()).toBe(region);
+    expect(within(region).getByRole('alert').textContent).toBe('Needs attention');
+    expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy();
+    await readFeedback('Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again. Text analysis is unavailable until a qualified profile and compatible installed engine are available.');
+    expect(screen.queryByText('untrusted failure')).toBeNull();
+    api.get.mockReturnValueOnce(refreshed.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+    expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeNull();
+    await readFeedback('Updating text analysis settings… Checking text analysis availability…');
+    await act(async () => refreshed.resolve(status));
+    await screen.findByRole('button', { name: 'Review download for topics-and-mentions' });
+    expect(feedbackRegion()).toBe(region);
+    expect(feedbackRegion().className).toBe(classes);
+    expect(document.querySelectorAll('[data-reserved-region="dependency-feedback"]')).toHaveLength(1);
+    expect(within(region).queryByRole('button', { name: 'Show details' })).toBeNull();
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it.each(['disconnect', 'session'] as const)('aborts a pending review and discards its late result after %s', async (change) => {
+    connect();
+    const api = fixture(), pending = deferred<NlpDependencyResult>();
+    api.command.mockReturnValueOnce(pending.promise);
+    render(view(api));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' }));
+    const signal = api.command.mock.calls[0][1];
+    api.get.mockResolvedValue(unavailable);
+    act(() => { if (change === 'disconnect') bridgeTransportStore.markDisconnected(); else connect('2'); });
+    await act(async () => pending.resolve({ operation: quote, status }));
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review download for topics-and-mentions' })).toBeNull();
+    await readFeedback(/Text analysis is unavailable until/);
+    expect(api.command).toHaveBeenCalledTimes(1);
+  });
+  it('clears expanded failure feedback when the connection changes', async () => {
+    connect();
+    const api = fixture(); api.get.mockRejectedValueOnce(new Error('untrusted failure'));
+    render(view(api));
+    await waitFor(() => expect(within(feedbackRegion()).getByRole('alert').textContent).toBe('Needs attention'));
+    fireEvent.click(within(feedbackRegion()).getByRole('button', { name: 'Show details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Details' });
+    expect(dialog.textContent).toContain('Text analysis settings could not be updated.');
+    api.get.mockResolvedValue(unavailable);
+    act(() => bridgeTransportStore.markDisconnected());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull());
+    await readFeedback('Text analysis is unavailable until a qualified profile and compatible installed engine are available.');
+    expect(api.command).not.toHaveBeenCalled();
+  });
   it('keeps shared Engine review separate when no qualified profile service is configured', async () => {
     const api = fixture(unavailable);
     const idle = { operation_id: null, state: 'not_requested' as const, installed: false, in_flight: false,
@@ -45,7 +124,8 @@ describe('NlpDependencyControls', () => {
       start: vi.fn(), cancel: vi.fn() };
     render(view(api, 'account-one', engineApi));
     expect(await screen.findByText('Engine installation has not been requested.')).toBeTruthy();
-    expect(screen.getByText(/Text analysis is unavailable until a qualified profile/)).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy());
+    await readFeedback(/Text analysis is unavailable until a qualified profile/);
     fireEvent.click(screen.getByRole('button', { name: 'Review Engine installation' }));
     expect(await screen.findByText(/A verified Engine installation quote is unavailable/)).toBeTruthy();
     expect(engineApi.review).toHaveBeenCalledOnce(); expect(engineApi.start).not.toHaveBeenCalled();
@@ -108,7 +188,8 @@ describe('NlpDependencyControls', () => {
     const api = fixture(); api.command.mockResolvedValueOnce({ operation: quote, status: { ...status, profiles: [...profiles] } });
     render(view(api));
     fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' }));
-    expect(await screen.findByText(/Text analysis settings could not be updated/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check status' }).hasAttribute('disabled')).toBe(false));
+    await readFeedback(/Text analysis settings could not be updated/);
     expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Download reviewed files' })).toBeNull();
     expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
@@ -130,7 +211,8 @@ describe('NlpDependencyControls', () => {
   ])('refuses an incoherent returned plan %#', async (operation) => {
     const api = fixture(); api.command.mockResolvedValueOnce({ operation, status });
     render(view(api)); fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' }));
-    expect(await screen.findByText(/Text analysis settings could not be updated/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check status' }).hasAttribute('disabled')).toBe(false));
+    await readFeedback(/Text analysis settings could not be updated/);
     expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull();
     expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
   });
@@ -143,7 +225,8 @@ describe('NlpDependencyControls', () => {
   });
   it('preserves the unavailable baseline without automatic setup actions', async () => {
     const api = fixture(unavailable); render(view(api));
-    expect(await screen.findByText(/Text analysis is unavailable until/)).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy());
+    await readFeedback(/Text analysis is unavailable until/);
     expect(screen.getByText(/other analytics remain available/)).toBeTruthy();
     expect(api.get).toHaveBeenCalledTimes(1); expect(api.command).not.toHaveBeenCalled(); expect(api.observe).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'Check status' }));
@@ -181,7 +264,7 @@ describe('NlpDependencyControls', () => {
     act(() => bridgeTransportStore.bindAccount('account-two')); rendered.rerender(view(api, 'account-two'));
     await act(async () => resolve({ operation: quote, status }));
     expect(signal?.aborted).toBe(true); expect(screen.queryByRole('dialog')).toBeNull();
-    expect(await screen.findByText(/Text analysis is unavailable until/)).toBeTruthy();
+    await readFeedback(/Text analysis is unavailable until/);
     expect(api.command).toHaveBeenCalledTimes(1);
   });
   it('does not observe or display an acquisition returned after an account switch', async () => {
@@ -200,6 +283,7 @@ describe('NlpDependencyControls', () => {
     api.command.mockRejectedValueOnce(new Error('untrusted server secret'));
     fireEvent.click(screen.getByRole('button', { name: 'Prepare topics-and-mentions' }));
     expect(await screen.findByRole('alert')).toBeTruthy(); expect(screen.queryByText(/untrusted server secret/)).toBeNull();
+    await readFeedback(/Text analysis settings could not be updated/);
     expect(screen.getByText(/Files installed; preparation required/)).toBeTruthy();
     expect(api.command).toHaveBeenCalledWith({ action: 'prepare', profile_sha256: profile.profile_sha256 }, expect.any(AbortSignal));
   });
@@ -215,7 +299,9 @@ describe('NlpDependencyControls', () => {
     const api = fixture(); render(view(api)); await review();
     api.command.mockRejectedValueOnce(new Error('response lost'));
     fireEvent.click(screen.getByRole('button', { name: 'Download reviewed files' }));
-    expect(await screen.findByText(/Text analysis settings could not be updated/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check status' }).hasAttribute('disabled')).toBe(false));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull());
+    await readFeedback(/Text analysis settings could not be updated/);
     api.get.mockResolvedValue({ ...status, acquisitions: [observation] });
     fireEvent.click(await screen.findByRole('button', { name: 'Check status' }));
     await waitFor(() => expect(api.observe).toHaveBeenCalledWith(observation.id, expect.any(AbortSignal)));
@@ -225,7 +311,8 @@ describe('NlpDependencyControls', () => {
   it('does not infer durable processing state from cached dependency selection', async () => {
     const api = fixture({ ...unavailable, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'paused', selection_epoch: 1, admission_epoch: 1 } });
     render(view(api));
-    await screen.findByText(/Text analysis is unavailable until/);
+    await waitFor(() => expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy());
+    await readFeedback(/Text analysis is unavailable until/);
     expect(screen.queryByText(/Saved selection:/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Enable processing' })).toBeNull();
     expect(api.command).not.toHaveBeenCalled();

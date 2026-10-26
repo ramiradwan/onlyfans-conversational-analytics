@@ -65,7 +65,8 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
     <Stack spacing={2} data-journey-state="textanalysis.processing_controls">
       <Typography>Enable automatic processing for this account, pause it, or retire its enrollment. Downloads and Engine installation are separate.</Typography>
       <Button disabled={state.busy} onClick={() => void store.actions.refresh()}>Check processing status</Button>
-      <StatusLine id="processing-feedback" text={feedback || null} summary="Processing status"
+      <StatusLine id="processing-feedback" text={feedback || null}
+        summary={state.status === 'error' || state.recoveryOverflow || state.recoveryConflict ? 'Needs attention' : state.busy ? 'Checking…' : 'Status'} detailsOnly
         tone={state.status === 'error' || state.recoveryOverflow || state.recoveryConflict ? 'error' : 'secondary'} />
       {current && <>
         <Typography>Processing: {current.enrollment_id === null ? 'not enrolled' : current.state}.</Typography>

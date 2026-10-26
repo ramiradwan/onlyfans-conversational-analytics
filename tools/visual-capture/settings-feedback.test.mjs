@@ -235,7 +235,10 @@ for (const scale of [1, 2]) test(`processing feedback stays stable through disco
   const owner = await context({ viewport: { width: 390, height: 844 }, colorScheme: 'light', reducedMotion: 'reduce' });
   const page = await owner.newPage();
   try {
-    await settings(page, 'light', scale);
+    await page.goto(`${harness.base}?workspace=settings&state=populated&mode=light`, { waitUntil: 'networkidle' });
+    await page.getByRole('region', { name: 'Optional text analysis', exact: true }).waitFor();
+    await page.evaluate(async scale => { await document.fonts.ready; document.documentElement.style.fontSize = `${16 * scale}px`; }, scale);
+    await settle(page);
     await page.getByRole('region', { name: 'Account text processing' }).waitFor();
     await startPassive(page, ['settings-text-analysis', 'settings-vault', 'vault-feedback']);
     await page.evaluate(async () => {

@@ -1,9 +1,10 @@
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { EngineDependencyControls } from './EngineDependencyControls';
 import { TextAnalysisExecutionControls } from './TextAnalysisExecutionControls';
 import { Panel, SectionHeader, useRevealHold } from './ui';
+import { StatusLine } from './ui/ReservedRegion';
 import type { EngineAcquisitionApi } from '../api/engineAcquisition';
 import { usePermissions } from '../hooks/usePermissions';
 import {
@@ -155,6 +156,13 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
     finally { if (active()) setBusy(false); }
   };
   const unavailable = !account || !status?.configured;
+  const loading = Boolean(account && !status && !error);
+  const feedback = [
+    busy ? 'Updating text analysis settings…' : null,
+    error ? 'Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again.' : null,
+    loading ? 'Checking text analysis availability…' : null,
+    !loading && unavailable ? 'Text analysis is unavailable until a qualified profile and compatible installed engine are available.' : null,
+  ].filter(Boolean).join(' ');
   const reviewMatchesStatus = Boolean(review && status?.configured
     && status.profiles.filter((profile) => profile.profile_sha256 === review.profile.profile_sha256).length === 1
     && status.profiles.filter((profile) =>
@@ -171,9 +179,12 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
       <Typography>Find topics and mentions in messages. Setup is optional; other analytics remain available.</Typography>
       <Typography>Language and task support are profile-specific. Review the profile before choosing it.</Typography>
       {account && <Button disabled={busy} onClick={() => { void checkStatus(); }}>Check status</Button>}
-      {busy && <Typography role="status">Updating text analysis settings…</Typography>}
-      {error && <Alert severity="error">Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again.</Alert>}
-      {account && !status && !error ? <Typography role="status">Checking text analysis availability…</Typography> : unavailable ? <Alert severity="info" data-journey-state="textanalysis.unavailable">Text analysis is unavailable until a qualified profile and compatible installed engine are available.</Alert> : (
+      <Box data-journey-state={!loading && unavailable ? 'textanalysis.unavailable' : undefined}>
+        <StatusLine id="dependency-feedback" text={feedback || null}
+          summary={error ? 'Needs attention' : loading || busy ? 'Checking…' : unavailable ? 'Unavailable' : 'Status'}
+          detailsOnly tone={error ? 'error' : 'secondary'} />
+      </Box>
+      {!loading && !unavailable && status && (
         <Stack spacing={2} data-journey-state="textanalysis.controls">
           <Button disabled={busy} onClick={() => { void run({ action: 'refresh' }); }}>Check available profiles</Button>
           {status.profiles.length === 0 && <Typography>No qualified profiles are currently listed.</Typography>}
