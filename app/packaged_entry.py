@@ -12,6 +12,7 @@ from app.core.customer_release import (
     resolve_hosted_api_origin,
 )
 from app.core.runtime_paths import runtime_configuration_file
+from app.core.server_loop import uvicorn_loop
 
 
 PROVISIONING_HANDOFF_ENVIRONMENT_VARIABLE = "LOCAL_PROVISIONING_HANDOFF_TOKEN"
@@ -187,6 +188,7 @@ def run_brain() -> int:
         configuration = uvicorn.Config(
             observed_application, host="127.0.0.1", port=17871, workers=1, access_log=False, lifespan="on",
             ws_max_size=36_864, ws_max_queue=8, ws_per_message_deflate=False,
+            loop=uvicorn_loop(),
         )
         server = supervised_server(configuration, application)
         if stopped.is_set():

@@ -40,6 +40,7 @@ _selected_fixture = _selection(sys.argv[1:]) if __name__ == '__main__' else None
 
 import uvicorn  # noqa: E402
 from uvicorn import server as uvicorn_server  # noqa: E402
+from app.core.server_loop import server_loop_factory, uvicorn_loop  # noqa: E402
 
 _startup_phase("uvicorn_imported")
 if _selected_fixture is not None:
@@ -286,7 +287,7 @@ async def _serve_fixture(selected):
     callbacks[positions[0]] = observed_shutdown
     owner = install_fixture(application, _fixture_paths, selected, _fixture_marker)
     server = _FixtureServer(uvicorn.Config(app, host='127.0.0.1', port=17871,
-        workers=1, access_log=False, log_level='warning'))
+        workers=1, access_log=False, log_level='warning', loop=uvicorn_loop()))
     command = {'valid': False}
     def stop_reader():
         try:
@@ -331,7 +332,9 @@ if __name__ == "__main__":
             workers=1,
             access_log=False,
             log_level="warning",
+            loop=uvicorn_loop(),
         )
     else:
-        asyncio.run(_serve_fixture(_selected_fixture))
+        with asyncio.Runner(loop_factory=server_loop_factory()) as runner:
+            runner.run(_serve_fixture(_selected_fixture))
         _shutdown_phase("event_loop_returned")

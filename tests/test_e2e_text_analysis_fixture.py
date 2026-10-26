@@ -8,12 +8,14 @@ import json
 from itertools import islice
 from pathlib import Path
 import socket
+import struct
 import sys
 from types import SimpleNamespace
 
 import pytest
 
 from app.core.config import settings
+from app.core.server_loop import server_loop_factory
 from app.nlp import v2
 from app.persistence.auth import SQLiteAuthenticationStore
 from app.security.text_analysis_identity import TextAnalysisIdentityOwner
@@ -68,6 +70,102 @@ def loop_exception_observation_type():
     namespace = {'asyncio': asyncio, 'sys': sys, 'json': json}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(entry), 'exec'), namespace)
     return namespace['_LoopExceptionObservation']
+
+
+@pytest.mark.skipif(sys.platform != 'win32' or not hasattr(asyncio.Server, 'close_clients'),
+                    reason='Windows socket-loop cleanup requires Server.close_clients')
+@pytest.mark.parametrize('operation', ['reset', 'queued_write', 'cancel_waiter'])
+def test_selected_loop_completes_owned_listener_after_peer_reset_or_queued_write(operation):
+    phases = []
+    listener_type = shutdown_listener_type(phases)
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        assert type(loop) is asyncio.SelectorEventLoop
+        accepted, server_lost, client_lost = (loop.create_future() for _ in range(3))
+        received = 0
+        failures = []
+        previous = loop.get_exception_handler()
+
+        def observe(actual_loop, context):
+            failures.append(context)
+            if previous is None:
+                actual_loop.default_exception_handler(context)
+            else:
+                previous(actual_loop, context)
+
+        class ServerProtocol(asyncio.Protocol):
+            def connection_made(self, transport):
+                accepted.set_result(transport)
+
+            def connection_lost(self, error):
+                server_lost.set_result(error)
+
+        class ClientProtocol(asyncio.Protocol):
+            def connection_made(self, transport):
+                transport.pause_reading()
+
+            def data_received(self, data):
+                nonlocal received
+                received += len(data)
+
+            def connection_lost(self, error):
+                client_lost.set_result(error)
+
+        server = await loop.create_server(ServerProtocol, '127.0.0.1', 0)
+        peer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client = None
+        loop.set_exception_handler(observe)
+        try:
+            peer.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65_536)
+            peer.setblocking(False)
+            await asyncio.wait_for(loop.sock_connect(peer, server.sockets[0].getsockname()), 2)
+            transport = await asyncio.wait_for(accepted, 2)
+            if operation == 'reset':
+                peer.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('HH', 1, 0))
+                peer.close()
+                assert isinstance(await asyncio.wait_for(server_lost, 2), ConnectionResetError)
+                server.close()
+                assert await asyncio.wait_for(listener_type(server).wait_closed(), 2) is None
+            else:
+                client, _ = await loop.create_connection(ClientProtocol, sock=peer)
+                transport.get_extra_info('socket').setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65_536)
+                transport.write(b'x' * (4 * 1024 * 1024))
+                transport.write(b'x' * (4 * 1024 * 1024))
+                server.close()
+                waiting = asyncio.create_task(listener_type(server).wait_closed())
+                await asyncio.sleep(0)
+                assert transport.is_closing() and not waiting.done() and not server_lost.done()
+                if operation == 'cancel_waiter':
+                    waiting.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await waiting
+                    assert 'server_listener_wait_returned' not in phases
+                client.resume_reading()
+                if operation == 'cancel_waiter':
+                    assert await asyncio.wait_for(listener_type(server).wait_closed(), 2) is None
+                else:
+                    assert await asyncio.wait_for(waiting, 2) is None
+                assert await asyncio.wait_for(server_lost, 2) is None
+                assert await asyncio.wait_for(client_lost, 2) is None
+                assert received == 8 * 1024 * 1024
+            assert not server.is_serving() and not failures
+            assert phases[-1] == 'server_listener_wait_returned'
+        finally:
+            if client is not None:
+                client.resume_reading()
+                client.close()
+            else:
+                peer.close()
+            server.close()
+            server.close_clients()
+            try:
+                await asyncio.wait_for(server.wait_closed(), 2)
+            finally:
+                loop.set_exception_handler(previous)
+
+    with asyncio.Runner(loop_factory=server_loop_factory()) as runner:
+        runner.run(run())
 
 
 @pytest.mark.skipif(sys.implementation.name != 'cpython' or sys.version_info[:2] != (3, 13),
