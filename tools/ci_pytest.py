@@ -115,6 +115,7 @@ class Evidence:
             "lane": self.lane(),
             "platform": platform.system(),
             "python": platform.python_version(),
+            "python_implementation": platform.python_implementation(),
             "pytest": pytest.__version__,
             "profile": os.environ.get("HYPOTHESIS_PROFILE", ""),
             "selection_profile": self.config.getoption("ci_profile") or "",

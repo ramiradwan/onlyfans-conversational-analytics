@@ -3,6 +3,7 @@ import ast
 import asyncio
 import hashlib
 import importlib.util
+from functools import cache
 from io import BytesIO
 import json
 from itertools import islice
@@ -14,19 +15,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.core.config import settings
 from app.core.server_loop import server_loop_factory
-from app.nlp import v2
-from app.persistence.auth import SQLiteAuthenticationStore
-from app.security.text_analysis_identity import TextAnalysisIdentityOwner
 
 pytestmark = pytest.mark.ci_tier('integration')
 
 SOURCE = Path(__file__).resolve().parents[1]/'tools/e2e-capture/helpers/text_analysis_fixture.py'
-spec = importlib.util.spec_from_file_location('e2e_text_analysis_fixture', SOURCE)
-fixture = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = fixture
-spec.loader.exec_module(fixture)
+
+
+@cache
+def fixture_module():
+    spec = importlib.util.spec_from_file_location('e2e_text_analysis_fixture', SOURCE)
+    fixture = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = fixture
+    spec.loader.exec_module(fixture)
+    return fixture
 
 
 def configuration(tmp_path):
@@ -38,17 +40,18 @@ def configuration(tmp_path):
 
 
 def profile(scenario):
-    owner = fixture.FixtureOwner.__new__(fixture.FixtureOwner)
+    owner = fixture_module().FixtureOwner.__new__(fixture_module().FixtureOwner)
     owner.scenario = scenario
     return owner._profile()[0]
 
 
 def request(selected, component):
+    from app.nlp import v2
     return v2.WorkerRequest(request_id='fixture-request', profile_sha256=selected.identity_digest(),
         component_id=component.component_id, component_sha256=component.identity_digest(),
         tasks=tuple(task.task for task in component.tasks), deadline_ms=5000,
         items=tuple(v2.WorkerInput(request_item_id=row['message_id'], text=row['text'],
-            text_sha256=hashlib.sha256(row['text'].encode()).hexdigest()) for row in fixture.source_fixture()['messages']))
+            text_sha256=hashlib.sha256(row['text'].encode()).hexdigest()) for row in fixture_module().source_fixture()['messages']))
 
 
 def shutdown_listener_type(phases):
@@ -480,11 +483,12 @@ def test_listener_preserves_original_failure_without_return_phase(failing_method
 
 @pytest.mark.parametrize('scenario', ['joint', 'split-partial', 'empty'])
 def test_worker_frames_validate_against_real_component_and_original_unicode(scenario):
+    from app.nlp import v2
     selected = profile(scenario)
     observed = {}
     for component in selected.components:
         original = request(selected, component)
-        response = v2.validate_response(selected, original, fixture.worker_response(selected, scenario, original, lambda: False))
+        response = v2.validate_response(selected, original, fixture_module().worker_response(selected, scenario, original, lambda: False))
         for item in response.items:
             for task in item.tasks:
                 observed.setdefault(task.payload.task, []).append(task.payload)
@@ -496,7 +500,7 @@ def test_worker_frames_validate_against_real_component_and_original_unicode(scen
     assert sum(finding.concept_id == 'concept.synthetic' for task in mentions for finding in task.findings) == 4
     assert sum(finding.concept_id == 'concept.secondary' for task in mentions for finding in task.findings) == 1
     assert all(task.coverage.complete for task in mentions)
-    rows = fixture.source_fixture()['messages']
+    rows = fixture_module().source_fixture()['messages']
     for row, task in zip(rows, mentions):
         for finding in task.findings:
             assert row['text'][finding.span.start:finding.span.end] == (
@@ -505,30 +509,31 @@ def test_worker_frames_validate_against_real_component_and_original_unicode(scen
     assert sum(finding.topic_id == 'topic.secondary' for task in topics for finding in task.findings) == 1
     assert all(task.outcome == ('partial' if scenario == 'split-partial' else 'assessed_findings') for task in topics)
     assert all(task.coverage.complete == (scenario != 'split-partial') for task in topics)
-    expected = fixture.source_fixture()['scenarios'][scenario]
+    expected = fixture_module().source_fixture()['scenarios'][scenario]
     assert expected['mentions']['additional_categories'] == 1
     assert expected['topic']['additional_categories'] == (None if scenario == 'split-partial' else 1)
 
 
 def test_worker_refuses_unselected_source_and_cancellation():
+    from app.nlp import v2
     selected = profile('joint')
     original = request(selected, selected.components[0])
     with pytest.raises(ValueError):
-        fixture.worker_response(selected, 'joint', original, lambda: True)
+        fixture_module().worker_response(selected, 'joint', original, lambda: True)
     item = v2.WorkerInput(request_item_id='foreign', text='other', text_sha256=hashlib.sha256(b'other').hexdigest())
     with pytest.raises(ValueError):
-        fixture.worker_response(selected, 'joint', original.model_copy(update={'items': (item,)}), lambda: False)
+        fixture_module().worker_response(selected, 'joint', original.model_copy(update={'items': (item,)}), lambda: False)
 
 
 def test_disposable_root_refuses_existing_unmarked_store_and_foreign_paths(tmp_path):
     configured = configuration(tmp_path)
     configured.auth_database_path.write_bytes(b'preserved')
     with pytest.raises(ValueError):
-        fixture.prepare_paths(configured, 'joint')
+        fixture_module().prepare_paths(configured, 'joint')
     assert configured.auth_database_path.read_bytes() == b'preserved'
     configured.canonical_database_path = tmp_path/'foreign.sqlite3'
     with pytest.raises(ValueError):
-        fixture.validate_paths(configured, 'joint')
+        fixture_module().validate_paths(configured, 'joint')
     assert not configured.canonical_database_path.exists()
 
 
@@ -536,54 +541,56 @@ def test_disposable_root_refuses_existing_unmarked_store_and_foreign_paths(tmp_p
 def test_unadmitted_selector_never_creates_marker(tmp_path, scenario):
     configured = configuration(tmp_path)
     with pytest.raises(ValueError):
-        fixture.prepare_paths(configured, scenario)
+        fixture_module().prepare_paths(configured, scenario)
     assert not tuple(configured.auth_database_path.parent.iterdir())
 
 
 def test_incomplete_marker_is_private_and_not_restart_authority(tmp_path):
     from app.persistence.private_files import private_file_identity
     configured = configuration(tmp_path)
-    paths, old = fixture.prepare_paths(configured, 'joint')
-    assert old is None and private_file_identity(paths.root/fixture.MARKER, repair_permissions=False)
-    original = (paths.root/fixture.MARKER).read_bytes()
+    paths, old = fixture_module().prepare_paths(configured, 'joint')
+    assert old is None and private_file_identity(paths.root/fixture_module().MARKER, repair_permissions=False)
+    original = (paths.root/fixture_module().MARKER).read_bytes()
     with pytest.raises(ValueError):
-        fixture.prepare_paths(configured, 'joint')
-    assert (paths.root/fixture.MARKER).read_bytes() == original
+        fixture_module().prepare_paths(configured, 'joint')
+    assert (paths.root/fixture_module().MARKER).read_bytes() == original
 
 
 def test_restart_preflight_preserves_exact_marker_and_rejects_changed_scenario(tmp_path):
     configured = configuration(tmp_path)
-    paths, _ = fixture.prepare_paths(configured, 'joint')
+    paths, _ = fixture_module().prepare_paths(configured, 'joint')
     for path in (paths.auth, paths.canonical, paths.projection, paths.analytics):
         path.write_bytes(b'retained')
     document = {'schema': 'e2e-text-analysis-store.v1', 'phase': 'ready', 'scenario': 'joint',
-        'fixture_sha256': hashlib.sha256(fixture.SOURCE.read_bytes()).hexdigest(),
+        'fixture_sha256': hashlib.sha256(fixture_module().SOURCE.read_bytes()).hexdigest(),
         'scope': {}, 'principal_id': 'principal', 'account_id': 'account', 'grant_reference_ids': [],
         'auth_store_id': 'auth', 'canonical_store_id': 'canonical', 'profile_sha256': 'a'*64, 'contexts': {}}
-    fixture._publish(paths.root/fixture.MARKER, document)
+    fixture_module()._publish(paths.root/fixture_module().MARKER, document)
     before = {path: path.read_bytes() for path in paths.root.iterdir()}
-    assert fixture.prepare_paths(configured, 'joint') == (paths, document)
-    assert fixture.prepare_paths(configured, 'saved-only') == (paths, document)
+    assert fixture_module().prepare_paths(configured, 'joint') == (paths, document)
+    assert fixture_module().prepare_paths(configured, 'saved-only') == (paths, document)
     with pytest.raises(ValueError):
-        fixture.prepare_paths(configured, 'empty')
+        fixture_module().prepare_paths(configured, 'empty')
     assert {path: path.read_bytes() for path in paths.root.iterdir()} == before
 
 
 def test_frozen_and_non_test_settings_refuse_before_writing(tmp_path, monkeypatch):
+    from app.core.config import settings
+    fixture_module()
     configured = configuration(tmp_path)
     monkeypatch.setattr(sys, 'frozen', True, raising=False)
     with pytest.raises(ValueError, match='findings_execution_unavailable'):
-        fixture.prepare_paths(configured, 'joint')
+        fixture_module().prepare_paths(configured, 'joint')
     monkeypatch.delattr(sys, 'frozen')
     monkeypatch.setattr(settings, 'environment', 'production')
     with pytest.raises(ValueError, match='findings_execution_unavailable'):
-        fixture.prepare_paths(configured, 'joint')
+        fixture_module().prepare_paths(configured, 'joint')
     assert not tuple(configured.auth_database_path.parent.iterdir())
 
 
 @pytest.mark.parametrize('raw', [b'', b'stop', b'stop\r\n', b'start\n', b'stop\nextra', b'stop\nstop\n'])
 def test_control_pipe_rejects_everything_except_exact_stop_and_eof(raw):
-    assert not fixture.read_stop(BytesIO(raw))
+    assert not fixture_module().read_stop(BytesIO(raw))
     calls = []
     class Stream(BytesIO):
         def readline(self, size=-1):
@@ -595,13 +602,13 @@ def test_control_pipe_rejects_everything_except_exact_stop_and_eof(raw):
     def observed():
         calls.append(('seen', None))
         raise RuntimeError('Observer unavailable')
-    assert not fixture.read_stop(Stream(raw), command_seen=observed)
+    assert not fixture_module().read_stop(Stream(raw), command_seen=observed)
     assert calls == ([('readline', 6), ('seen', None), ('read', 1)]
                      if raw.startswith(b'stop\n') else [('readline', 6)])
 
 
 def test_control_pipe_accepts_exact_stop_and_eof():
-    assert fixture.read_stop(BytesIO(b'stop\n'))
+    assert fixture_module().read_stop(BytesIO(b'stop\n'))
     for raises in (False, True):
         calls = []
         class Stream(BytesIO):
@@ -616,11 +623,13 @@ def test_control_pipe_accepts_exact_stop_and_eof():
             if raises:
                 raise RuntimeError('Observer unavailable')
             return False
-        assert fixture.read_stop(Stream(b'stop\n'), command_seen=observed)
+        assert fixture_module().read_stop(Stream(b'stop\n'), command_seen=observed)
         assert calls == [('readline', 6), ('seen', None), ('read', 1)]
 
 
 def test_signed_identity_setup_leaves_credential_and_session_to_browser(tmp_path, monkeypatch):
+    from app.persistence.auth import SQLiteAuthenticationStore
+    from app.security.text_analysis_identity import TextAnalysisIdentityOwner
     from app.security.webauthn import configured_webauthn_authority_port
     from app.security.runtime_policy import RuntimePolicy
     from app.security.hosted_grants import HostedGrantClient
@@ -632,14 +641,14 @@ def test_signed_identity_setup_leaves_credential_and_session_to_browser(tmp_path
                                 for kind, token in tokens.items()})
         return result
     monkeypatch.setattr(HostedGrantClient, '_verify_bundle', verified_bundle)
-    owner = fixture.FixtureOwner.__new__(fixture.FixtureOwner)
+    owner = fixture_module().FixtureOwner.__new__(fixture_module().FixtureOwner)
     owner.auth = SQLiteAuthenticationStore(tmp_path/'auth.sqlite3')
     owner.identity_owner = TextAnalysisIdentityOwner(owner.auth)
     cases = json.loads((SOURCE.parents[3]/'contracts/text-analysis-authority-v1/signed-cases.json').read_bytes())
     case = next(row for row in cases if row['case_id'] == 'license-accepted')
     owner.scope = {name: case['payload'][name] for name in
         ('organization_id', 'installation_id', 'installation_key_id', 'installation_key_jkt')}
-    owner.account = fixture.source_fixture()['account_id']
+    owner.account = fixture_module().source_fixture()['account_id']
     owner._seed_identity()
     baseline = owner._baseline()
     assert set(baseline.identity_authority.grant_reference_ids) == set(owner.grant_ids)
@@ -671,9 +680,10 @@ def test_signed_identity_setup_leaves_credential_and_session_to_browser(tmp_path
 
 
 def test_real_artifact_installation_does_not_open_engine(tmp_path):
+    from app.persistence.auth import SQLiteAuthenticationStore
     from app.persistence.nlp_dependencies import DependencyPersistence
     from app.nlp.profiles import artifact_closure_digest
-    owner = fixture.FixtureOwner.__new__(fixture.FixtureOwner)
+    owner = fixture_module().FixtureOwner.__new__(fixture_module().FixtureOwner)
     owner.scenario = 'joint'
     owner.paths = SimpleNamespace(root=tmp_path)
     owner.auth = SQLiteAuthenticationStore(tmp_path/'auth.sqlite3')
@@ -688,7 +698,7 @@ def test_real_artifact_installation_does_not_open_engine(tmp_path):
 
 def test_fixture_transport_never_opens_network():
     with pytest.raises(RuntimeError, match='text_analysis_fixture_network_unavailable'):
-        fixture.NoNetwork().request('POST', '/anything')
+        fixture_module().NoNetwork().request('POST', '/anything')
 
 
 def test_source_seed_queues_real_projection_work_without_opening_engine(tmp_path, monkeypatch):
@@ -698,8 +708,8 @@ def test_source_seed_queues_real_projection_work_without_opening_engine(tmp_path
     configured = configuration(tmp_path)
     repositories = create_canonical_repositories('sqlite', canonical_path=configured.canonical_database_path,
                                                  projection_path=configured.projection_database_path)
-    owner = fixture.FixtureOwner.__new__(fixture.FixtureOwner)
-    owner.canonical, owner.account, owner.scenario = repositories.database, fixture.source_fixture()['account_id'], 'joint'
+    owner = fixture_module().FixtureOwner.__new__(fixture_module().FixtureOwner)
+    owner.canonical, owner.account, owner.scenario = repositories.database, fixture_module().source_fixture()['account_id'], 'joint'
     owner._lock = Lock()
     owner.prepare_count = owner.analyze_count = 0
     owner.engine = owner._engine()
@@ -730,7 +740,7 @@ def test_source_seed_queues_real_projection_work_without_opening_engine(tmp_path
         actual = [tuple(row) for row in db.execute(
             'SELECT message_id,text,direction,sentiment FROM projection_messages ORDER BY message_id')]
         expected = sorted((row['message_id'], row['text'], row['direction'], 'unknown')
-                          for row in fixture.source_fixture()['messages'])
+                          for row in fixture_module().source_fixture()['messages'])
         assert actual == expected
         assert [tuple(row) for row in db.execute(
             'SELECT analysis_status,sentiment,analyzer_id FROM projection_message_analysis'
