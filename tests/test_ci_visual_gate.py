@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import struct
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -362,6 +363,71 @@ def test_partial_phase_summary_keeps_only_closed_names_and_valid_durations(tmp_p
         assert result["status"] == "metadata_unavailable"
         assert result["phase_timings"] == {}
     assert "private-phase-canary" not in summary.read_text()
+
+
+def test_observer_region_registry_matches_compiled_capture_source():
+    raw = subprocess.check_output(['node', '--input-type=module', '-e',
+        "import {OBSERVER_REGIONS} from './tools/visual-capture/observer-diagnostics.mjs'; console.log(JSON.stringify(OBSERVER_REGIONS));"],
+        cwd=gate.ROOT, text=True)
+    assert json.loads(raw) == gate.OBSERVER_REGIONS
+
+
+@pytest.mark.parametrize('code,phase,region', [
+    ('required_region_missing_at_first_surface', 'first_surface', 'freshness-status'),
+    ('observer_read_failed', 'observer_read', None),
+    ('observer_unclassified', 'observer_inspection', None),
+])
+def test_closed_observer_diagnostics_survive_restricted_retention_without_qualifying_failure(
+        tmp_path, inventory, monkeypatch, capsys, code, phase, region):
+    raw = _make(tmp_path/'inputs', inventory, 'dynamic')
+    diagnostic = {'code':code, 'phase':phase, 'region':region}
+    def fail(receipt):
+        receipt.update(complete=False, exit_code=1)
+        receipt['cases'][0].update(outcome='failed', observer_diagnostics=[diagnostic])
+    _edit(raw, 'capture-ci.json', fail)
+    summary = tmp_path/'summary.md'
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    result = gate.publish_diagnostics(raw, tmp_path/'diagnostics', inventory[0], source=SOURCE, run_id=42, attempt=1)
+    assert result['status'] == 'restricted_metadata'
+    assert result['cases'][0]['observer_diagnostics'] == [diagnostic]
+    assert code in summary.read_text() and phase in summary.read_text()
+    assert code in capsys.readouterr().out
+    with pytest.raises(gate.VisualGateError, match='incomplete_capture'):
+        gate.publish_complete(raw, tmp_path/'published', inventory=inventory[0], digest=inventory[1],
+                              source=SOURCE, run_id=42, attempt=1)
+    assert not (tmp_path/'published').exists()
+
+
+@pytest.mark.parametrize('mutation', ['extra-key','unknown-code','wrong-phase','private-region','cross-view',
+    'missing-region','non-null-region','duplicate','oversized','empty','object','passed','code-type'])
+def test_malformed_observer_diagnostics_cannot_enter_restricted_artifacts(tmp_path, inventory, monkeypatch, capsys, mutation):
+    raw = _make(tmp_path/'inputs', inventory, 'dynamic')
+    canary = 'PRIVATE-observer-cookie-url'
+    value = [{'code':'required_region_missing_at_first_surface', 'phase':'first_surface', 'region':'freshness-status'}]
+    if mutation == 'extra-key': value[0]['error'] = canary
+    if mutation == 'unknown-code': value[0]['code'] = canary
+    if mutation == 'wrong-phase': value[0]['phase'] = 'observer_read'
+    if mutation == 'private-region': value[0]['region'] = canary
+    if mutation == 'cross-view': value[0]['region'] = 'popup-status'
+    if mutation == 'missing-region': del value[0]['region']
+    if mutation == 'non-null-region': value[0] = {'code':'observer_read_failed','phase':'observer_read','region':canary}
+    if mutation == 'duplicate': value *= 2
+    if mutation == 'oversized': value *= 100
+    if mutation == 'empty': value = []
+    if mutation == 'object': value = {'error':canary}
+    if mutation == 'code-type': value[0]['code'] = {'private':canary}
+    def fail(receipt):
+        receipt.update(complete=False, exit_code=1)
+        receipt['cases'][0].update(outcome='passed' if mutation == 'passed' else 'failed', observer_diagnostics=value)
+        # A producer's substituted view cannot expand the independent case allowlist.
+        if mutation == 'cross-view': receipt['cases'][0]['configuration'] = {'view':'popup'}
+    _edit(raw, 'capture-ci.json', fail)
+    summary = tmp_path/'summary.md'
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    result = gate.publish_diagnostics(raw, tmp_path/'diagnostics', inventory[0], source=SOURCE, run_id=42, attempt=1)
+    assert result['status'] == 'metadata_unavailable' and result['cases'] == []
+    assert canary not in json.dumps(result) and canary not in summary.read_text()
+    assert canary not in capsys.readouterr().out
 
 
 def test_assembly_preserves_approved_files_and_finalize_binds_color(tmp_path, inventory, monkeypatch):

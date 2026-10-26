@@ -9,6 +9,7 @@
   "scripts": {
     "test": "playwright test",
     "test:standalone": "playwright test tests/standalone-preview.spec.mjs",
+    "test:text-analysis": "playwright test --config playwright.text-analysis.config.mjs",
     "test:headed": "playwright test --headed",
     "install:browser": "playwright install chromium",
     "test:ci": "node ci/run.mjs",

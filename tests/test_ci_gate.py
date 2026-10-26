@@ -23,6 +23,7 @@ WINDOWS_FILES = {
     "tests/test_projection3.py": 2,
     "tests/test_projection4.py": 2,
     "tests/test_boot.py": 2,
+    gate.LOOP_TEST_FILE: 2,
 }
 
 
@@ -34,6 +35,7 @@ def windows_manifest(monkeypatch):
         "platform": [{"selector": node} for node in (
             "tests/test_platform.py::test_fs", "tests/test_boot.py::test_boot",
             "tests/test_packaged_runtime.py", "tests/test_packaging_smoke.py",
+            gate.LOOP_TEST_FILE,
         )],
         "analytics": [{"selector": node} for node in (
             "tests/test_projection1.py::test_store", "tests/test_analytics_closure_process.py",
@@ -64,23 +66,27 @@ def _reports():
     boot = row("tests/test_boot.py::test_boot", ["windows_production"], windows=True, contract="platform")
     profile_nodes = {}
     for lane, spec in gate.SPECS.items():
-        if spec.selectors:
+        if spec.selectors and lane != gate.PYTHON313_LOOP_LANE:
             profile_nodes[lane] = {row(selector + ("::runTest" if "::Test" in selector else ""),
                                        ["stateful_tier_b" if spec.platform == "Windows" else "stateful_tier_a"])
                                    for selector in spec.selectors}
     scales = {row(f"tests/test_scale_family{number}.py::test_large", ["slow"]) for number in range(1, 5)}
     row("tests/test_packaged_runtime.py::test_large", ["slow"])
     row("tests/test_installation_key.py::test_large", ["slow"])
-    linux = fast | set(integrations.values())
+    loop_nodes = {row(node, ["ci_tier", "parametrize", "skipif"], windows=True, contract="platform")
+                  for node in gate.PYTHON313_LOOP_CASES}
+    linux = fast | set(integrations.values()) | loop_nodes
     windows = linux | {boot}
     result = {}
     for lane, spec in gate.SPECS.items():
         if lane == "backend-fast":
             selected = fast
         elif lane.startswith("analytics-integration-"):
-            selected = {integrations[int(lane[-1])]}
+            selected = {integrations[int(lane[-1])]} | (loop_nodes if lane.endswith("1") else set())
         elif lane == "windows-platform-contract":
-            selected = {"tests/test_platform.py::test_fs", boot}
+            selected = {"tests/test_platform.py::test_fs", boot} | loop_nodes
+        elif lane == gate.PYTHON313_LOOP_LANE:
+            selected = loop_nodes
         elif lane == "analytics-windows-contract":
             selected = {integrations[1]}
         elif lane in gate.WINDOWS_FULL_LANES:
@@ -107,6 +113,20 @@ def _reports():
             "collection_errors": [], "complete": True, "collect_only": spec.reference,
             "exit_code": 0, "wall_seconds": 0.1,
         }
+        if lane == gate.PYTHON313_LOOP_LANE:
+            result[lane].update(python="3.13.6", python_implementation="CPython", partial=False,
+                collected=[copy.deepcopy(rows[node]) for node in sorted(loop_nodes)], deselected=[],
+                selection={"keyword": "", "marker": "", "targets": list(gate.PYTHON313_LOOP_SELECTORS)})
+        elif not spec.reference:
+            result[lane]["reports"] = [phase for phase in result[lane]["reports"]
+                                        if phase["nodeid"] not in loop_nodes]
+            for node in sorted(selected & loop_nodes):
+                result[lane]["reports"].extend([
+                    {"nodeid": node, "when": "setup", "outcome": "skipped", "duration": 0.01,
+                     "wasxfail": None, "skip_reason": gate.PYTHON313_LOOP_CASES[node], "detail": ""},
+                    {"nodeid": node, "when": "teardown", "outcome": "passed", "duration": 0.01,
+                     "wasxfail": None, "detail": ""},
+                ])
     return result
 
 
@@ -149,7 +169,7 @@ def test_complete_required_graph_and_independent_coverage_pass(tmp_path):
     gate.validate_needs(_needs(), jobs)
     selected = gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs)
     assert gate.validate_coverage(selected) == {
-        "legacy_linux": 7, "legacy_windows": 8, "required_windows": 3, "scale": 4, "reports": 25,
+        "legacy_linux": 18, "legacy_windows": 19, "required_windows": 14, "scale": 4, "reports": 26,
     }
 
 
@@ -211,6 +231,8 @@ def test_windows_shards_cannot_split_one_file_even_with_exact_node_union():
     reports = _reports()
     node = "tests/test_unit.py::test_second"
     for report in reports.values():
+        if report["lane"] == gate.PYTHON313_LOOP_LANE:
+            continue
         report["collected"].append({"nodeid": node, "path": "tests/test_unit.py", "markers": []})
         report["deselected"].append(node)
     for lane in ("legacy-linux-reference", "legacy-windows-reference", "backend-fast", "windows-full-regression-2"):
@@ -633,7 +655,7 @@ def test_pr_requires_expected_producer_skips_and_no_exhaustive_or_scale_artifact
     gate.validate_needs(needs, jobs, event="pull_request")
     selected = gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs, event="pull_request")
     assert gate.validate_coverage(selected, event="pull_request")["scale"] == 0
-    assert len(selected) == 22
+    assert len(selected) == 23
     _write_reports(tmp_path, {unexpected_lane: _reports()[unexpected_lane]})
     with pytest.raises(gate.GateError, match="unexpected report lane"):
         gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs, event="pull_request")
@@ -809,7 +831,9 @@ def test_retained_windows_process_requires_contract_execution(event, monkeypatch
     manifest["windows_contracts"]["platform"].append({"selector": node})
     monkeypatch.setattr(gate, "load_backend_manifest", lambda root: manifest)
     for report in reports.values():
-        next(row for row in report["collected"] if row["nodeid"] == node)["markers"] = ["windows_compat"]
+        for row in report["collected"]:
+            if row["nodeid"] == node:
+                row["markers"] = ["windows_compat"]
     _skip(reports["backend-fast"], node, gate.PR_SKIP_BASELINE[(node, "Linux")])
     if event == "push":
         owner = _windows_owner(reports, node)
@@ -831,6 +855,8 @@ def test_raw_windows_marker_cannot_be_hidden_by_classifier_fields():
     _, _, reports = _pr_inputs()
     node = "tests/test_platform.py::test_fs"
     for report in reports.values():
+        if node not in gate.inventory(report):
+            continue
         row = next(row for row in report["collected"] if row["nodeid"] == node)
         row.update(markers=["windows_compat"], windows_compat=False, windows_contract=None)
     _replace_selection(reports["windows-platform-contract"],
@@ -844,6 +870,8 @@ def test_independent_native_marker_refuses_a_contradictory_derived_flag(marker):
     _, _, reports = _pr_inputs()
     node = "tests/test_platform.py::test_fs"
     for report in reports.values():
+        if node not in gate.inventory(report):
+            continue
         row = next(row for row in report["collected"] if row["nodeid"] == node)
         row.update(markers=[marker], windows_compat=False)
     if marker == "windows_production":
@@ -911,6 +939,8 @@ def test_new_slow_module_automatically_requires_main_qualification():
     reports = _reports()
     node = "tests/test_future_analytics_family.py::test_large_graph"
     for report in reports.values():
+        if report["lane"] == gate.PYTHON313_LOOP_LANE:
+            continue
         report["collected"].append({"nodeid": node, "path": node.split("::", 1)[0], "markers": ["slow"],
                                     "windows_compat": False, "windows_contract": None})
         report["deselected"].append(node)
@@ -925,3 +955,131 @@ def test_wrong_event_or_unexpected_scale_success_on_pr_fails_closed():
         gate.validate_needs(_needs(), _jobs(), event="pull_request_target")
     with pytest.raises(gate.GateError, match="required result 'skipped'"):
         gate.validate_needs(_needs(), _jobs(), event="pull_request")
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push", "workflow_dispatch"])
+def test_version_specific_loop_skips_require_real_windows_python313_counterpart(event):
+    reports = _pr_inputs()[2] if event == "pull_request" else _reports()
+    gate.validate_coverage(reports, event=event)
+    assert not set(gate.PYTHON313_LOOP_CASES) & {node for node, _ in gate.PR_SKIP_BASELINE}
+    reports.pop(gate.PYTHON313_LOOP_LANE)
+    with pytest.raises(gate.GateError, match="report set"):
+        gate.validate_coverage(reports, event=event)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("platform", "Linux"), ("python", "3.11.17"), ("python", "3.14.0"),
+    ("python", "3.13.invalid"), ("python_implementation", "PyPy"),
+    ("python_implementation", None), ("collect_only", True), ("complete", False),
+    ("exit_code", 1), ("collection_errors", [{"detail": "collection failed"}]),
+])
+def test_python313_counterpart_requires_actual_runtime_and_complete_execution(field, value):
+    reports = _reports()
+    reports[gate.PYTHON313_LOOP_LANE][field] = value
+    with pytest.raises(gate.GateError):
+        gate.validate_coverage(reports)
+
+
+@pytest.mark.parametrize("fault", ["skip", "xfail", "xpass", "missing-call", "failed-teardown", "duplicate-call", "subtest"])
+def test_python313_counterpart_cannot_hide_missing_or_unsuccessful_phases(fault):
+    reports = _reports()
+    report = reports[gate.PYTHON313_LOOP_LANE]
+    node = report["selected"][0]
+    call = next(phase for phase in report["reports"] if phase["nodeid"] == node and phase["when"] == "call")
+    if fault in {"skip", "xfail"}:
+        call.update(outcome="skipped", skip_reason="Skipped: unavailable")
+        if fault == "xfail":
+            call["wasxfail"] = "known failure"
+    elif fault == "xpass":
+        call["wasxfail"] = "unexpected success"
+    elif fault == "missing-call":
+        report["reports"].remove(call)
+    elif fault == "failed-teardown":
+        next(phase for phase in report["reports"] if phase["nodeid"] == node and phase["when"] == "teardown")["outcome"] = "failed"
+    elif fault == "subtest":
+        report["reports"].insert(1, dict(call, subtest={"index": 1, "msg": None, "kwargs": {}}))
+    else:
+        report["reports"].append(copy.deepcopy(call))
+    with pytest.raises(gate.GateError):
+        gate.validate_coverage(reports)
+
+
+@pytest.mark.parametrize("fault", ["missing", "extra", "markers", "path", "partial", "keyword", "marker", "targets", "selection"])
+def test_python313_counterpart_requires_exact_independent_inventory_and_selectors(fault):
+    reports = _reports()
+    report = reports[gate.PYTHON313_LOOP_LANE]
+    if fault == "missing":
+        node = report["selected"].pop()
+        report["collected"] = [row for row in report["collected"] if row["nodeid"] != node]
+        report["reports"] = [phase for phase in report["reports"] if phase["nodeid"] != node]
+    elif fault == "extra":
+        node = "tests/test_extra.py::test_other"
+        report["collected"].append({"nodeid": node, "path": "tests/test_extra.py", "markers": []})
+        report["deselected"].append(node)
+    elif fault in {"markers", "path"}:
+        report["collected"][0][fault] = [] if fault == "markers" else "tests/test_extra.py"
+    elif fault == "partial":
+        report["partial"] = True
+    elif fault == "targets":
+        report["selection"]["targets"] = [gate.LOOP_TEST_FILE]
+    elif fault == "selection":
+        report["selection"] = []
+    else:
+        report["selection"][fault] = "narrowed"
+    with pytest.raises(gate.GateError):
+        gate.validate_coverage(reports)
+
+
+@pytest.mark.parametrize("field,value", [("source_commit", "b" * 40), ("workflow_run_id", "82"),
+                                         ("job_id", "backend-fast"), ("run_attempt", "2")])
+def test_python313_counterpart_cannot_cross_producer_executions(field, value):
+    reports = _reports()
+    reports[gate.PYTHON313_LOOP_LANE][field] = value
+    with pytest.raises(gate.GateError, match="producer execution"):
+        gate.validate_coverage(reports)
+
+
+@pytest.mark.parametrize("field,value", [("source_commit", "b" * 40), ("workflow_run_id", "82"),
+                                         ("job_id", "backend-fast"), ("run_attempt", "2")])
+def test_python313_counterpart_artifact_obeys_existing_source_run_and_attempt_guards(tmp_path, field, value):
+    reports = _reports()
+    reports[gate.PYTHON313_LOOP_LANE][field] = value
+    _write_reports(tmp_path, reports)
+    with pytest.raises(gate.GateError, match="identity mismatch|newer than"):
+        gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=_jobs())
+
+
+def test_latest_platform_attempt_requires_its_own_python313_counterpart(tmp_path):
+    reports, jobs = _reports(), _jobs()
+    _write_reports(tmp_path, reports)
+    jobs["windows-platform-contract"].update(run_attempt=2, id=2000)
+    latest = {lane: dict(report, run_attempt="2") for lane, report in reports.items()
+              if gate.SPECS[lane].job == "windows-platform-contract" and lane != gate.PYTHON313_LOOP_LANE}
+    _write_reports(tmp_path, latest)
+    with pytest.raises(gate.GateError, match="missing evidence for latest"):
+        gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs)
+    _write_reports(tmp_path, {gate.PYTHON313_LOOP_LANE: dict(reports[gate.PYTHON313_LOOP_LANE], run_attempt="2")})
+    chosen = gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs)
+    gate.validate_coverage(chosen)
+
+
+@pytest.mark.parametrize("lane", ["analytics-integration-1", "windows-platform-contract", "windows-full-regression-2"])
+def test_python313_execution_only_admits_exact_existing_version_skip_reasons(lane):
+    reports = _reports()
+    report = reports[lane]
+    phase = next(phase for phase in report["reports"] if phase["nodeid"] in gate.PYTHON313_LOOP_CASES
+                 and phase["outcome"] == "skipped")
+    phase["skip_reason"] += " changed"
+    with pytest.raises(gate.GateError, match="version skip reason changed"):
+        gate.validate_coverage(reports)
+
+
+def test_added_loop_parameter_requires_explicit_counterpart_inventory_review():
+    reports = _reports()
+    node = gate.PYTHON313_LOOP_SELECTORS[1] + "[another-operation]"
+    for lane, report in reports.items():
+        if lane != gate.PYTHON313_LOOP_LANE:
+            report["collected"].append({"nodeid": node, "path": gate.LOOP_TEST_FILE, "markers": ["slow"]})
+            report["deselected"].append(node)
+    with pytest.raises(gate.GateError):
+        gate.validate_coverage(reports)

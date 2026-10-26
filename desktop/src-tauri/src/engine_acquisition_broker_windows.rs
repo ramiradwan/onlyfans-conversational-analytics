@@ -243,8 +243,11 @@ fn request(
     write_frame(h.0, &raw)?;
     let answer = Journal::decode(&read_frame(h.0, Instant::now() + Duration::from_secs(3))?)?;
     if answer.nonce != j.nonce
+        || answer.schema != j.schema
         || answer.binding != j.binding
         || answer.broker != j.broker
+        || answer.launcher != j.launcher
+        || answer.selection != j.selection
         || answer.quote_sha256 != j.quote_sha256
         || answer.review_digest != j.review_digest
         || (committing && !answer.committed)
@@ -338,10 +341,7 @@ pub(super) fn start(
     review_digest: &str,
     cancelled: &impl Fn() -> bool,
 ) -> Result<Status> {
-    if selection != Selection::Module {
-        return Err("optional_preview_unavailable");
-    }
-    let reviewed = crate::engine_acquisition_quote::verified(cancelled)?;
+    let reviewed = crate::engine_acquisition_quote::verified(selection, cancelled)?;
     if reviewed.binding.review_digest != review_digest {
         return Err("optional_quote_stale");
     }
@@ -456,7 +456,7 @@ pub(super) fn start(
         return Err("optional_broker_launch");
     }
     let j = Journal {
-        schema: "optional-engine-reconnect.v2".into(),
+        schema: "optional-engine-reconnect.v3".into(),
         quote_sha256: Some(reviewed.binding.quote_sha256.clone()),
         review_digest: Some(reviewed.binding.review_digest.clone()),
         nonce: nonce.clone(),
@@ -604,13 +604,18 @@ pub(super) fn run(args: &[String]) -> Result<()> {
                     return Err("optional_broker_peer");
                 }
                 if matches!(request.action, Action::Commit {}) {
-                    if !commit_authorized(&j, &request)
-                        || j.selection != Selection::Module
-                        || j.review().is_err()
-                    {
+                    if !commit_authorized(&j, &request) {
                         return Err("optional_broker_peer");
                     }
                     if !j.committed {
+                        if !lease.bound(&ctx.binding)? {
+                            return Err("optional_broker_lease");
+                        }
+                        let _review =
+                            crate::engine_acquisition_quote::recheck(&j.review()?, &|| {
+                                (unsafe { WaitForSingleObject(_peer.0, 0) }) != WAIT_TIMEOUT
+                            })?;
+                        let _current_peer = validate_peer(pid, &request.peer, &ctx)?;
                         if !lease.bound(&ctx.binding)? {
                             return Err("optional_broker_lease");
                         }

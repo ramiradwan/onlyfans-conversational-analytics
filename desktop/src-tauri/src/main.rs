@@ -94,6 +94,7 @@ async fn desktop_update_status(
 async fn desktop_engine_acquisition_review(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, std::sync::Arc<host::Host>>,
+    explicit_selection: engine_acquisition::Selection,
 ) -> Result<engine_acquisition_quote::Review, &'static str> {
     use std::sync::atomic::Ordering;
     desktop_state(window.clone(), state.clone())?;
@@ -108,7 +109,7 @@ async fn desktop_engine_acquisition_review(
     let guard = UpdateCheckGuard(owner.clone());
     let review = tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
-        engine_acquisition_quote::review(&|| {
+        engine_acquisition_quote::review(explicit_selection, &|| {
             owner.quitting.load(Ordering::SeqCst) || !owner.admitted.load(Ordering::SeqCst)
         })
     })
@@ -127,9 +128,6 @@ async fn desktop_engine_acquisition_start(
 ) -> Result<engine_acquisition::Status, &'static str> {
     use std::sync::atomic::Ordering;
     desktop_state(window.clone(), state.clone())?;
-    if explicit_selection != engine_acquisition::Selection::Module {
-        return Err("optional_preview_unavailable");
-    }
     let owner = state.inner().clone();
     owner
         .update_check_active

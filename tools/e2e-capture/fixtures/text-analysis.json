@@ -1,0 +1,21 @@
+{
+  "schema": "e2e-text-analysis-source.v1",
+  "account_id": "dev-creator-account",
+  "messages": [
+    {"message_id": "text-analysis-one", "conversation_id": "text-analysis-chat-one", "text": "😀 café café tea", "direction": "inbound", "mentions": [{"start": 2, "end": 6, "text": "café"}, {"start": 7, "end": 11, "text": "café"}], "secondary_mention": {"start": 12, "end": 15, "text": "tea"}},
+    {"message_id": "text-analysis-two", "conversation_id": "text-analysis-chat-two", "text": "🧪 café café", "direction": "outbound", "mentions": [{"start": 2, "end": 6, "text": "café"}, {"start": 7, "end": 11, "text": "café"}]}
+  ],
+  "scenarios": {
+    "joint": {
+      "profile_id": "profile.synthetic", "revision": "1",
+      "topic": {"category_id": "topic.synthetic", "display_label": "topic.synthetic", "label_status": "id_only", "supporting_conversations": 2, "supporting_messages": 2, "occurrences": 2, "ranking_scope": "frozen_scope", "additional_categories": 1},
+      "mentions": {"category_id": "concept.synthetic", "display_label": "concept.synthetic", "label_status": "id_only", "supporting_conversations": 2, "supporting_messages": 2, "occurrences": 4, "ranking_scope": "frozen_scope", "additional_categories": 1}
+    },
+    "split-partial": {
+      "profile_id": "profile.synthetic", "revision": "1",
+      "topic": {"category_id": "topic.synthetic", "display_label": "topic.synthetic", "label_status": "id_only", "supporting_conversations": 2, "supporting_messages": 2, "occurrences": 2, "ranking_scope": "assessed_portion", "additional_categories": null},
+      "mentions": {"category_id": "concept.synthetic", "display_label": "concept.synthetic", "label_status": "id_only", "supporting_conversations": 2, "supporting_messages": 2, "occurrences": 4, "ranking_scope": "frozen_scope", "additional_categories": 1}
+    },
+    "empty": {"profile_id": "profile.synthetic", "revision": "1", "disposition": "empty"}
+  }
+}

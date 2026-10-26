@@ -98,3 +98,24 @@ test('receipt provenance must resolve actual HEAD even with an expected revision
   assert.throws(() => sourceIdentity({ PRODUCT_SHA: 'b'.repeat(40) }, '.', head), /invalid_provenance/);
   assert.equal(reads, 2);
 });
+
+test('observer diagnostics retain closed failure metadata without changing case outcome rules', () => {
+  const definition = inventory.cases.find(value => value.kind === 'dynamic' && value.configuration.view === 'popup');
+  const diagnostic = { code: 'required_region_missing_at_first_surface', phase: 'first_surface', region: 'popup-status' };
+  const recorder = new CaptureRecorder({ group: 'dynamic', source });
+  recorder.begin(definition.id, definition.configuration)({ outcome: 'failed', observations: definition.observations,
+    files: definition.files, observerDiagnostics: [diagnostic], error: 'PRIVATE-error' });
+  diagnostic.region = 'PRIVATE-mutated';
+  const record = recorder.records.get(definition.id);
+  assert.equal(record.outcome, 'failed');
+  assert.equal(record.observer_diagnostics[0].region, 'popup-status');
+  assert(!JSON.stringify(record).includes('PRIVATE'));
+  const success = new CaptureRecorder({ group: 'dynamic', source });
+  success.begin(definition.id, definition.configuration)({ outcome: 'passed', observations: definition.observations, files: definition.files });
+  assert.equal(success.records.get(definition.id).outcome, 'passed');
+  assert(!('observer_diagnostics' in success.records.get(definition.id)));
+  const invalid = new CaptureRecorder({ group: 'dynamic', source });
+  assert.throws(() => invalid.begin(definition.id, definition.configuration)({ outcome: 'passed', observations: definition.observations,
+    files: definition.files, observerDiagnostics: [{ code: 'observer_read_failed', phase: 'observer_read', region: null }] }), /invalid_observer_diagnostics/);
+  assert.equal(invalid.records.get(definition.id).outcome, 'incomplete');
+});

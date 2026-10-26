@@ -410,6 +410,75 @@ def _projection_is_current(
     )
 
 
+def _saved_projection_is_current(projection, runtime, account_id, account, cancellation_check):
+    """Admit a witnessed saved findings publication without execution owners."""
+    from contextlib import ExitStack
+    from app.analytics.errors import AnalyticsError
+    from app.analytics.identity import canonical_identity
+    from app.analytics.nlp_findings_store import digest, effective_config
+    from app.analytics.query_execution import QuestionBudget, QuestionLimits
+
+    if (projection is None or projection.source_revision != account.view_revision
+            or projection.pipeline_revision != runtime.pipeline.pipeline_revision + '+nlp.snapshot.v1'):
+        return False
+    publications = getattr(runtime.pipeline.projections, 'question_publications', None)
+    open_scope = getattr(runtime.source, 'open_question_scope', None)
+    activation_scope = getattr(getattr(runtime.pipeline.projections, 'activation', None), 'read_scope', None)
+    if not all(callable(port) for port in (publications, open_scope, activation_scope)):
+        return False
+    budget = QuestionBudget(QuestionLimits(max_records=100_000, wall_clock_ms=5000),
+                            cancellation_check=cancellation_check)
+    try:
+        identity = canonical_identity(account)
+        budget.check()
+        with ExitStack() as owned:
+            scope = owned.enter_context(open_scope(account_id, budget,
+                verify_source_token=True, prepare_identity=False))
+            if scope.identity != identity:
+                return False
+            owned.enter_context(activation_scope(connection=scope.connection))
+            publication = owned.enter_context(publications(account_id, budget))
+            findings = getattr(publication, 'findings', None)
+            if not callable(findings):
+                return False
+            observed = publication(account_id, identity, budget)
+            snapshot, revision, config = observed
+            if (snapshot.account_ref != projection.account_ref
+                    or snapshot.source_revision != projection.source_revision
+                    or snapshot.canonical_content_digest != projection.canonical_content_digest
+                    or snapshot.projection_generation != projection.projection_generation
+                    or snapshot.projection_digest != projection.projection_digest
+                    or revision != projection.pipeline_revision or config != projection.pipeline_config_digest
+                    or (snapshot.retention_due_at is not None
+                        and snapshot.retention_due_at <= runtime.pipeline._retention_clock())):
+                return False
+            value, _, generation, _ = findings(snapshot)
+            expected = {
+                'generation_id': snapshot.generation_id,
+                'creator_account_id': projection.account_ref,
+                'canonical_revision': projection.source_revision,
+                'canonical_content_digest': projection.canonical_content_digest,
+                'projection_digest': projection.projection_digest,
+                'graph_digest': projection.graph_digest,
+                'pipeline_revision': projection.pipeline_revision,
+                'pipeline_config_digest': projection.pipeline_config_digest,
+                'pipeline_identity_digest': projection.pipeline_identity_digest,
+            }
+            if (any(generation[key] != item for key, item in expected.items())
+                    or config != effective_config(runtime.pipeline.pipeline_config_digest, digest(value))):
+                return False
+            budget.check()
+            scope.check(budget)
+            if publication(account_id, identity, budget) != observed:
+                return False
+            scope.check(budget)
+        budget.check()
+        return (snapshot.retention_due_at is None
+                or snapshot.retention_due_at > runtime.pipeline._retention_clock())
+    except (AnalyticsError, ValueError, KeyError, TypeError):
+        return False
+
+
 async def _canonical_account(
     runtime: AnalyticsRuntime,
     creator_account_id: str,
@@ -443,6 +512,19 @@ async def active_projection(
         ) from error
     if _projection_is_current(projection, runtime, account.view_revision):
         return projection  # type: ignore[return-value]
+    from functools import partial
+    from threading import Event
+    import anyio
+
+    cancelled = Event()
+    try:
+        saved_current = await anyio.to_thread.run_sync(
+            partial(_saved_projection_is_current, projection, runtime, creator_account_id, account, cancelled.is_set),
+            abandon_on_cancel=True)
+    finally:
+        cancelled.set()
+    if saved_current:
+        return projection
     state = runtime.scheduler.state(
         creator_account_id,
         canonical_revision=account.view_revision,

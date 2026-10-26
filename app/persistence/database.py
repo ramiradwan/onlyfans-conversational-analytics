@@ -113,6 +113,7 @@ def _connection_locks(path: Path) -> tuple[RLock, RLock]:
 
 class _TrackedConnection(sqlite3.Connection):
     _tracked_path: Path | None = None
+    _owner_token: object | None = None
     _transition_lock: RLock | None = None
     _tracking_closed: bool = False
     _secured_file_identity: tuple[int, int] | None = None
@@ -163,6 +164,7 @@ class LocalSQLite:
         except PrivateFileSecurityError as error:
             raise SQLiteConfigurationError("SQLite path is not safe") from error
         self.busy_timeout_ms = busy_timeout_ms
+        self._connection_owner_token = object()
         self._private_observation_local = local()
         self.key_scope = key_scope or self.store_name
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,6 +193,7 @@ class LocalSQLite:
                     factory=_TrackedConnection,
                 )
                 connection._tracked_path = self.path
+                connection._owner_token = self._connection_owner_token
                 connection._transition_lock = transition
                 with _CONNECTION_COUNTS_LOCK:
                     _CONNECTION_COUNTS[self.path] = (
@@ -222,6 +225,13 @@ class LocalSQLite:
         except BaseException:
             connection.close()
             raise
+
+    def owns_connection(self, connection: sqlite3.Connection) -> bool:
+        """Identify a live native connection opened by this exact store owner."""
+        return (type(connection) is _TrackedConnection
+                and connection._owner_token is self._connection_owner_token
+                and connection._tracked_path == self.path
+                and not connection._tracking_closed)
 
     def open_detached(
         self,

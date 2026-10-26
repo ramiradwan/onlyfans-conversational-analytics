@@ -390,7 +390,13 @@
         "app/persistence/json_header.py",
         "app/persistence/signing_parameters.py",
         "app/persistence/nlp_dependencies.py",
-        "app/persistence/contributions.py"
+        "app/persistence/contributions.py",
+        "app/persistence/text_analysis_authority.py",
+        "app/persistence/text_analysis_jobs.py",
+        "app/persistence/text_analysis_enrollment.py",
+        "app/persistence/text_analysis_preview.py",
+        "app/persistence/text_analysis_client.py",
+        "app/persistence/authoritative_pair.py"
       ],
       "role": "Authoritative canonical conversation storage, SQLite database lifecycle and SQLCipher runtime qualification, schema migrations, and irreversible deletion closure.",
       "authority": "authoritative",
@@ -423,7 +429,8 @@
       "path_patterns": [
         "app/persistence/repositories.py",
         "app/persistence/backup.py",
-        "app/persistence/retention_restore.py"
+        "app/persistence/retention_restore.py",
+        "app/persistence/authoritative_backup.py"
       ],
       "role": "Repository aggregation, backup coordination, and retention restore operations bridging persistence with service, transport, and analytics concerns.",
       "authority": "authoritative",
@@ -703,7 +710,11 @@
         "app/analytics/nlp_contribution_replay.py",
         "app/analytics/nlp_contribution_sources.py",
         "app/analytics/nlp_contribution_origins.py",
-        "app/analytics/nlp_recovery.py"
+        "app/analytics/nlp_canonical_execution.py",
+        "app/analytics/nlp_recovery.py",
+        "app/analytics/nlp_preview.py",
+        "app/analytics/nlp_preview_execution.py",
+        "app/analytics/nlp_preview_scope.py"
       ],
       "role": "Derived semantic foundation: canonical-read gateway, graph identity and schema, deterministic pipeline, projection stores, and explicitly configured process-local analytics runtime.",
       "authority": "derived",

@@ -214,9 +214,6 @@ impl Owner {
         review_digest: String,
         cancelled: impl Fn() -> bool + Send + 'static,
     ) -> Result<Status, &'static str> {
-        if selection != Selection::Module {
-            return Err("optional_preview_unavailable");
-        }
         if !crate::worker_host::hex(&review_digest, 64) {
             return Err("optional_quote_stale");
         }
@@ -241,7 +238,7 @@ impl Owner {
         id: String,
         review: crate::engine_acquisition_quote::Binding,
     ) -> Result<Status, &'static str> {
-        if selection != Selection::Module || !review.valid() {
+        if !review.valid_for(selection) {
             return Err("optional_quote_stale");
         }
         self.spawn_work_id(Some(id), move |owner, id| {
@@ -361,24 +358,20 @@ mod tests {
     #[test]
     fn fresh_start_requires_review_and_never_uses_a_local_fallback() {
         let owner = owner();
-        assert_eq!(
-            owner
-                .start(Selection::Preview, None, "a".repeat(64), || false)
-                .unwrap_err(),
-            "optional_preview_unavailable"
-        );
-        assert_eq!(
-            owner
-                .start(Selection::Module, None, String::new(), || false)
-                .unwrap_err(),
-            "optional_quote_stale"
-        );
-        assert_eq!(
-            owner
-                .start(Selection::Module, None, "a".repeat(64), || false)
-                .unwrap_err(),
-            "optional_broker_required"
-        );
+        for selection in [Selection::Module, Selection::Preview] {
+            assert_eq!(
+                owner
+                    .start(selection, None, String::new(), || false)
+                    .unwrap_err(),
+                "optional_quote_stale"
+            );
+            assert_eq!(
+                owner
+                    .start(selection, None, "a".repeat(64), || false)
+                    .unwrap_err(),
+                "optional_broker_required"
+            );
+        }
         assert!(owner.inner.lock().unwrap().thread.is_none());
         assert_eq!(owner.status().state, Phase::NotRequested);
     }

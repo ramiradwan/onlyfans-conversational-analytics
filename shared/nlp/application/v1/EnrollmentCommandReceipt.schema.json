@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "command_key": {
+      "title": "Command Key",
+      "type": "string"
+    },
+    "meaning_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Meaning Sha256",
+      "type": "string"
+    },
+    "mode_version": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Mode Version",
+      "type": "integer"
+    },
+    "enrollment_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Enrollment Id"
+    },
+    "state": {
+      "enum": [
+        "enabled",
+        "paused",
+        "retired"
+      ],
+      "title": "State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command_key",
+    "meaning_sha256",
+    "mode_version",
+    "enrollment_id",
+    "state"
+  ],
+  "title": "EnrollmentCommandReceipt",
+  "type": "object"
+}

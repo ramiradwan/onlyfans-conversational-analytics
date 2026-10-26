@@ -23,6 +23,7 @@ from app.persistence import sqlite_api as sqlite3
 from app.persistence.database import (
     ANALYTICS_PROJECTION_KEY_SCOPE,
     CanonicalSQLite,
+    AuthSQLite,
     LocalSQLite,
     ProjectionsSQLite,
     SQLiteConfigurationError,
@@ -44,6 +45,34 @@ from app.security.local_data_key import LocalDataKeyError, unprotect_local_secre
 
 HighWaterReader = Callable[[sqlite3.Connection], dict[str, Any]]
 _BACKUP_KEY_SUFFIX = ".key.dpapi"
+_PINNED_READ_SEAL = object()
+_ACTIVE_PINNED_READS = {}
+
+
+class _PinnedReadSnapshot:
+    __slots__ = ('database','connection','active')
+
+    def __init__(self, seal, database, connection):
+        if seal is not _PINNED_READ_SEAL:
+            raise SQLiteBackupError('backup_snapshot_invalid')
+        self.database, self.connection, self.active = database, connection, True
+
+
+@contextmanager
+def _pinned_read_snapshot(database):
+    """Issue only newly opened query-only snapshots; never borrow a writer."""
+    with database.read() as connection:
+        connection.execute('PRAGMA query_only=ON')
+        connection.execute('BEGIN')
+        connection.execute('SELECT count(*) FROM sqlite_master').fetchone()
+        snapshot = _PinnedReadSnapshot(_PINNED_READ_SEAL,database,connection)
+        _ACTIVE_PINNED_READS[snapshot] = (database,connection)
+        try:
+            yield snapshot
+        finally:
+            _ACTIVE_PINNED_READS.pop(snapshot,None)
+            snapshot.active = False
+            connection.rollback()
 
 
 class SQLiteBackupError(RuntimeError):
@@ -139,7 +168,17 @@ def create_online_backup(
     store_name: str,
     high_water_reader: HighWaterReader,
     overwrite: bool = False,
+    _pinned_source: _PinnedReadSnapshot | None = None,
 ) -> BackupManifest:
+    from contextlib import nullcontext
+    if _pinned_source is not None:
+        if (type(_pinned_source) is not _PinnedReadSnapshot or not _pinned_source.active
+                or _ACTIVE_PINNED_READS.get(_pinned_source) != (database,_pinned_source.connection)
+                or _pinned_source.database is not database
+                or not database.owns_connection(_pinned_source.connection)
+                or not _pinned_source.connection.in_transaction
+                or _pinned_source.connection.execute('PRAGMA query_only').fetchone()[0] != 1):
+            raise SQLiteBackupError('backup_snapshot_invalid')
     destination_candidate = _path_identity(destination).path
     temporary_candidate = destination_candidate.with_name(
         f".{destination_candidate.name}.{uuid4().hex}.tmp"
@@ -171,7 +210,7 @@ def create_online_backup(
     try:
         with LocalSQLite.exclusive_lifecycle(destination_path):
             _require_exclusive(destination_path)
-            with database.read() as source:
+            with (database.read() if _pinned_source is None else nullcontext(_pinned_source.connection)) as source:
                 source_high_water = high_water_reader(source)
                 witnesses = _witnesses(source) if store_name == "canonical" else []
                 schema_version = int(source.execute("PRAGMA user_version").fetchone()[0])
@@ -215,9 +254,14 @@ def create_online_backup(
                     ),
                 )
                 verification.commit()
+                mode = verification.execute('PRAGMA journal_mode=DELETE').fetchone()[0]
+                if str(mode).lower() != 'delete':
+                    raise SQLiteBackupError('backup_journal_sealing_failed')
                 _verify_database(verification, store_name)
             finally:
                 verification.close()
+            if any(Path(f'{temporary}{suffix}').exists() for suffix in ('-wal','-shm','-journal')):
+                raise SQLiteBackupError('backup_journal_sealing_failed')
             sync_file(temporary)
             digest = file_sha256(temporary)
             manifest = BackupManifest(
@@ -240,7 +284,8 @@ def create_online_backup(
             apply_private_file_security(manifest_path)
             apply_private_file_security(key_path)
             sync_directory(destination_path.parent)
-            prune_managed_recovery_files(destination_path.parent, now=created_at)
+            if _pinned_source is None:
+                prune_managed_recovery_files(destination_path.parent, now=created_at)
             return manifest
     except (
         PrivateFileSecurityError,
@@ -357,6 +402,8 @@ def restore_backup(
     overwrite: bool = False,
     discard_projections_path: str | Path | None = None,
 ) -> BackupManifest:
+    if expected_store == 'auth':
+        raise SQLiteBackupError('auth_restore_requires_matched_set')
     source_candidate = _path_identity(backup_path).path
     destination_candidate = _path_identity(destination).path
     temporary_candidate = destination_candidate.with_name(
@@ -564,6 +611,7 @@ def _stage_verified_file_unlocked(
     temporary: Path,
     manifest: BackupManifest,
     destination_database: LocalSQLite | None,
+    *, _preserve_pair: bool = False,
 ) -> None:
     if temporary.exists():
         raise SQLiteBackupError("restore_temporary_exists")
@@ -585,6 +633,10 @@ def _stage_verified_file_unlocked(
             _verify_database(target, manifest.store_name)
             if _reader_for_store(manifest.store_name)(target) != manifest.high_water:
                 raise SQLiteBackupError("restored_rows_differ")
+            if manifest.store_name in ('auth','canonical') and not _preserve_pair:
+                from app.persistence.authoritative_pair import invalidate_pair_in
+                invalidate_pair_in(target)
+                target.commit()
         finally:
             target.close()
             source.close()
@@ -632,6 +684,7 @@ def _verify_database(connection: sqlite3.Connection, store_name: str) -> None:
     if connection.execute("PRAGMA foreign_key_check").fetchall():
         raise SQLiteBackupError("backup foreign-key verification failed")
     directory = (
+        Path(__file__).with_name('auth_sql') if store_name == 'auth' else
         Path(__file__).parents[1] / "analytics" / "sql"
         if store_name == "projections"
         else None
@@ -961,6 +1014,9 @@ def _paired_witnesses_match(
 
 
 def _reader_for_store(store_name: str) -> HighWaterReader:
+    if store_name == 'auth':
+        from app.persistence.authoritative_backup import auth_high_water
+        return auth_high_water
     if store_name == "canonical":
         return _canonical_high_water
     if store_name == "projections":
@@ -1005,6 +1061,8 @@ def _backup_key(path: Path, store_name: str) -> bytes:
 
 
 def _destination_database(store_name: str, path: Path) -> LocalSQLite:
+    if store_name == 'auth':
+        return AuthSQLite(path)
     if store_name == "canonical":
         return CanonicalSQLite(path)
     if store_name == "projections":

@@ -16,14 +16,27 @@ class ContractsIntegrityError(RuntimeError):
 _MANIFEST = "manifest.json"
 _PIN = "consumer-pin.json"
 _APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-_APPROVED_SOURCE_COMMIT = "3ad41b7f02236cf2a71b3f917fb2e487c54769fe"
-_APPROVED_SOURCE_TREE = "841e6c2700eb5539cbb63aed31525d52c2191daa"
-_APPROVED_SOURCE_MANIFEST_SHA256 = "3391ce59f60d6162df72872965e16facb22ee6230efb27bdcb618ddb6f616477"
+_APPROVED_SOURCE_COMMIT = "5c1d9b58f56258c905ccfc803806cb271f4e721a"
+_APPROVED_SOURCE_TREE = "f1348abf33d3d217717a6bffc16093cc9dfb240e"
+_APPROVED_SOURCE_MANIFEST_SHA256 = "fdec45fabe3b657d33bbf4c6b05133eee06952be5d4669b4914fcf9135fedb39"
 _TEXT_ANALYSIS_EXPORT = "text-analysis-authority-v1"
 _TEXT_ANALYSIS_VECTOR_SHA256 = "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a"
 _TEXT_ANALYSIS_TRUST_SHA256 = "c1020fc2fb8faf2e42d3a3e204452a420ac4c0badc37a22f9217f37f82f8ab7b"
 _TEXT_ANALYSIS_VECTOR_PROFILE = "urn:bridge-clean:text-analysis-authority-vectors:v1"
 _TEXT_ANALYSIS_GENERATOR_VERSION = "1.0.1"
+_UNSIGNED_VECTOR_EXPORT = "complimentary-onboarding-activation-v2"
+_ADDITIONAL_VECTOR_PINS = {
+    _UNSIGNED_VECTOR_EXPORT: {
+        "sha256": "ac40ba0edeef98847bdc63485b7df144d4b64db91abd17cc85af724df4fa85bd",
+        "profile": "urn:bridge-clean:complimentary-onboarding-activation-vectors:v2",
+        "trust_sha256": None,
+    },
+    "text-analysis-license-reissue-v1": {
+        "sha256": "680455193f7ced9e6649da05dabfcf6941de876361cf7cac21511f36c356d50d",
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-vectors:v1",
+        "trust_sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b",
+    },
+}
 _MANIFEST_KEYS = {
     "content_digest",
     "export_set",
@@ -256,7 +269,10 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
     conformance_manifests = verify_artifact_collection(
         pin.get("conformance_manifests"), "conformance manifests"
     )
-    if set(vector_manifests) != set(trust_sets):
+    if not _ADDITIONAL_VECTOR_PINS.keys() <= vector_manifests.keys():
+        raise ContractsIntegrityError("additional fixture vector pins are missing")
+    if (_UNSIGNED_VECTOR_EXPORT in trust_sets
+            or set(vector_manifests) - {_UNSIGNED_VECTOR_EXPORT} != set(trust_sets)):
         raise ContractsIntegrityError("consumer pin artifact exports do not match")
     for export, item in conformance_manifests.items():
         vector_manifest = _read_json(contract_root / item["path"])
@@ -315,6 +331,22 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
                     or vector_manifest.get("profile") != _TEXT_ANALYSIS_VECTOR_PROFILE
                     or vector_manifest.get("production_usable") is not False):
                 raise ContractsIntegrityError("text-analysis authority pins drifted")
+        elif export in _ADDITIONAL_VECTOR_PINS:
+            expected = _ADDITIONAL_VECTOR_PINS[export]
+            expected_vector = {
+                "export": export, "path": f"{export}/manifest.json",
+                "sha256": expected["sha256"],
+            }
+            expected_trust = None if expected["trust_sha256"] is None else {
+                "export": export, "path": f"{export}/trust-set.json",
+                "sha256": expected["trust_sha256"],
+            }
+            if (item != expected_vector or conformance_manifests.get(export) != expected_vector
+                    or trust_sets.get(export) != expected_trust
+                    or versions[export] != "1.0.0"
+                    or vector_manifest.get("profile") != expected["profile"]
+                    or vector_manifest.get("production_usable") is not False):
+                raise ContractsIntegrityError("additional fixture vector pins drifted")
         elif vector_manifest.get("profile") not in manifest["profiles"]:
             raise ContractsIntegrityError("vector manifest profile is not supported")
         if versions[export] != vector_manifest.get("generator_version"):

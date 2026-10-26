@@ -1,0 +1,18 @@
+{
+  "environment": "TEST-VECTORS-ONLY-NOT-A-PRODUCTION-TRUST-SET",
+  "keys": [
+    {
+      "fixture_only": true,
+      "jwk": {
+        "crv": "P-256",
+        "kid": "bc1.tl.NOXqUvwm3OWsuqB6PNyUVg",
+        "kty": "EC",
+        "x": "WHVesmxpEFPOvjAZVU7uVpPcJLAJ0n3q1-dDdEfZy78",
+        "y": "uaY7_-7T51iMy_9G68o5yy2b4ZbtFd4YqmPBVpmJ7_g"
+      },
+      "purpose": "text-analysis-license"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:text-analysis-authority-test-trust:v1"
+}

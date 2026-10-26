@@ -36,11 +36,37 @@ def test_markdown_discovery_skips_only_root_pytest_basetemp_directories(
     assert root_basetemp_document not in discovered
 
 
-def test_markdown_discovery_excludes_generated_ci_reports_only(tmp_path, monkeypatch):
-    generated = tmp_path / "artifacts/ci-tests/failed-lane/summary.md"
-    document = tmp_path / "docs/artifacts/ci-tests/summary.md"
+@pytest.mark.parametrize("artifact_directory", ["ci-tests", "browser-tests"])
+def test_markdown_discovery_excludes_generated_test_reports_only(tmp_path, monkeypatch, artifact_directory):
+    generated = tmp_path / "artifacts" / artifact_directory / "failed-lane/summary.md"
+    document = tmp_path / "docs/artifacts" / artifact_directory / "summary.md"
     for path in (generated, document):
         path.parent.mkdir(parents=True)
         path.write_text("# Summary\n", encoding="utf-8")
     monkeypatch.setattr(check_docs, "ROOT", tmp_path)
     assert check_docs.markdown_files() == [document]
+
+
+@pytest.mark.parametrize("document_path", [
+    "docs/tools/e2e-capture/test-results/sample.md",
+    "tools/e2e-capture/docs/test-results/sample.md",
+    "tools/e2e-capture/test-results-docs/sample.md",
+    "tools/other/test-results/sample.md",
+])
+def test_markdown_discovery_excludes_only_root_browser_results(
+    tmp_path, monkeypatch, capsys, document_path,
+):
+    generated = tmp_path / "tools/e2e-capture/test-results/failed-case/error-context.md"
+    document = tmp_path / document_path
+    for path in (generated, document):
+        path.parent.mkdir(parents=True)
+        path.write_text("# Report\n\n[Missing](missing.md)\n", encoding="utf-8")
+    monkeypatch.setattr(check_docs, "ROOT", tmp_path)
+    assert "tools/e2e-capture/test-results/" in (
+        REPOSITORY_ROOT / ".gitignore"
+    ).read_text(encoding="utf-8")
+    assert check_docs.markdown_files() == [document]
+    assert check_docs.main() == 1
+    output = capsys.readouterr().out
+    assert f"{document_path}:3: broken relative link: missing.md" in output
+    assert "error-context.md" not in output

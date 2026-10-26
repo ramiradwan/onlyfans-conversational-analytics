@@ -37,6 +37,47 @@ def test_fresh_inspection_does_not_create_root_key_configuration_or_database(tmp
     assert not root.exists()
 
 
+@pytest.mark.parametrize('payload', [b'', b'interrupted-encrypted-restore'])
+def test_restore_journal_refuses_before_provisioning_or_key_access(tmp_path, monkeypatch, payload):
+    from app.core import startup_maintenance
+    from app.persistence.authoritative_pair import RESTORE_JOURNAL_FILENAME
+    root = tmp_path / 'interrupted'
+    root.mkdir()
+    (root / RESTORE_JOURNAL_FILENAME).write_bytes(payload)
+    before = snapshot(root)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('incomplete restore accessed installation keys')
+
+    monkeypatch.setattr(startup_maintenance, 'database_key', forbidden)
+    with pytest.raises(StartupRefused, match='authoritative_restore_incomplete'):
+        inspect_retained_state(root)
+    assert snapshot(root) == before
+
+
+def test_restore_journal_created_during_writer_wait_refuses_startup(tmp_path, monkeypatch):
+    from app.core import startup_maintenance
+    from app.persistence.authoritative_pair import RESTORE_JOURNAL_FILENAME
+    from app.persistence.migrations import InstallationMigrationLock
+    root = tmp_path / 'interrupted'
+    root.mkdir()
+    enter = InstallationMigrationLock.__enter__
+
+    def acquired(lock):
+        result = enter(lock)
+        (root / RESTORE_JOURNAL_FILENAME).write_bytes(b'interrupted-encrypted-restore')
+        return result
+
+    monkeypatch.setattr(startup_maintenance, '_held_lease', None)
+    monkeypatch.setattr(InstallationMigrationLock, '__enter__', acquired)
+    with pytest.raises(StartupRefused, match='authoritative_restore_incomplete'):
+        startup_maintenance.acquire_runtime_ownership(root)
+    assert startup_maintenance._held_lease is None
+    assert (root / RESTORE_JOURNAL_FILENAME).exists()
+    with InstallationMigrationLock(root / startup_maintenance.WRITER_LOCK_FILENAME):
+        pass
+
+
 def test_packaged_v2_fresh_admission_uses_durable_release_coordinate(tmp_path, monkeypatch):
     from app.core import desktop_release, startup_maintenance
     from app.persistence import sqlite_api, upgrade_lifecycle

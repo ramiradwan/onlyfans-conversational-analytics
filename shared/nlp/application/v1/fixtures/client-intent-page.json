@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "schema_version": "text-analysis-client-intent-record.v1",
+      "kind": "enrollment_command",
+      "key": "00000000-0000-4000-8000-000000000001",
+      "body": {
+        "schema_version": "text-analysis-enrollment-command.v1",
+        "command_key": "00000000-0000-4000-8000-000000000001",
+        "expected_enrollment_id": null,
+        "expected_mode_version": 0,
+        "action": "enable",
+        "expected_profile_sha256": "96a0e1d535c94f70912235a2a2a8fa60600a8f509fdd43bb21a38a29a9110dd8"
+      },
+      "body_sha256": "8667745d0d85c124a0a5408f9d0bf034a3132470efa0f3fe65ca57691cfdcbd8",
+      "retained_at": "2026-10-25T00:00:00Z"
+    }
+  ],
+  "next_after": null
+}

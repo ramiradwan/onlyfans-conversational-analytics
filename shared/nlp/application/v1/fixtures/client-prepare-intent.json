@@ -1,0 +1,10 @@
+{
+  "schema_version": "text-analysis-client-intent.v1",
+  "kind": "preview_prepare",
+  "key": "00000000-0000-4000-8000-000000000001",
+  "body": {
+    "schema_version": "text-analysis-preview-prepare.v1",
+    "external_key": "00000000-0000-4000-8000-000000000001",
+    "expected_profile_sha256": "96a0e1d535c94f70912235a2a2a8fa60600a8f509fdd43bb21a38a29a9110dd8"
+  }
+}

@@ -34,6 +34,36 @@ async function popupConsent(popup, step) {
   }, step);
 }
 
+async function popupControlReady(popup) {
+  return popup.evaluate(() => new Promise((resolve) => {
+    let port = null, timer, settled = false;
+    const finish = (ready) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        port?.onMessage.removeListener(onMessage);
+        port?.onDisconnect.removeListener(onDisconnect);
+      } catch {}
+      try { port?.disconnect(); } catch {}
+      resolve(ready);
+    };
+    const onMessage = (value) => {
+      if (typeof value?.state === 'string' && typeof value.desktop_control === 'boolean') {
+        finish(value.desktop_control);
+      }
+    };
+    const onDisconnect = () => { void chrome.runtime.lastError; finish(false); };
+    timer = setTimeout(() => finish(false), 6_000);
+    try {
+      port = chrome.runtime.connect({ name: 'ofca.companion.pairing' });
+      port.onMessage.addListener(onMessage);
+      port.onDisconnect.addListener(onDisconnect);
+      port.postMessage({ type: 'status' });
+    } catch { finish(false); }
+  })).catch(() => false);
+}
+
 async function setCaptureFromBridge(page, action) {
   const result = await page.evaluate(async (captureAction) => {
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -227,8 +257,10 @@ test('soft pause survives worker replacement and resumes the existing socket wit
     expect(await popupConsent(controls, 'read paused consent after worker replacement'))
       .toEqual({ mode: 'paused', reload: false });
     expect((await readBrainSummary(context)).messageCount).toBe(3);
-    await expect.poll(async () => (await readBrainSummary(context)).browser?.capture ?? null,
-      { timeout: 30_000, message: 'wait for paused browser control state' }).toBe('paused');
+    await expect.poll(async () => {
+      const ready = await popupControlReady(controls);
+      return ready && (await readBrainSummary(context)).browser?.capture === 'paused';
+    }, { timeout: 30_000, message: 'wait for replacement paused browser control admission' }).toBe(true);
     await capture('resume');
     await expect.poll(() => popupConsent(controls, 'read resumed consent'),
       { timeout: 8_000, message: 'wait for Full consent after resume' })

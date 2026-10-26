@@ -40,6 +40,8 @@ class ReportSpec:
     selection_profile: str = ""
     selectors: tuple[str, ...] = ()
     reference: bool = False
+    python: str = "3.11"
+    implementation: str | None = None
 
     @property
     def logical_job(self) -> str:
@@ -48,12 +50,32 @@ class ReportSpec:
         return "analytics-integration" if self.job.startswith("analytics-integration-") else self.job
 
 
+PYTHON313_LOOP_LANE = "windows-python313-loop-contract"
+LOOP_TEST_FILE = "tests/test_e2e_text_analysis_fixture.py"
+PYTHON313_LOOP_SELECTORS = tuple(LOOP_TEST_FILE + "::" + name for name in (
+    "test_loop_observation_classifies_actual_callback_and_delegates_original_context",
+    "test_selected_loop_completes_owned_listener_after_peer_reset_or_queued_write",
+    "test_listener_gracefully_closes_real_attached_client_before_waiting",
+))
+PYTHON313_LOOP_CASES = {
+    **{PYTHON313_LOOP_SELECTORS[0] + f"[{delegation}-{callback}]":
+       "Skipped: Exact callback identities require CPython 3.13"
+       for delegation in ("prior", "default") for callback in ("connection_lost", "write", "read")},
+    **{PYTHON313_LOOP_SELECTORS[1] + f"[{operation}]":
+       "Skipped: Windows socket-loop cleanup requires Server.close_clients"
+       for operation in ("reset", "queued_write", "cancel_waiter")},
+    **{PYTHON313_LOOP_SELECTORS[2] + f"[{queued}]":
+       "Skipped: Server.close_clients requires Python 3.13" for queued in ("False", "True")},
+}
+
 # Frozen from the old explicit CI invocations. A classifier or manifest edit
 # cannot silently remove one of these profiles from mandatory PR coverage.
 SPECS = {
     "backend-fast": ReportSpec("backend-fast", "Linux"),
     **{f"analytics-integration-{n}": ReportSpec(f"analytics-integration-{n}", "Linux") for n in range(1, 5)},
     "windows-platform-contract": ReportSpec("windows-platform-contract", "Windows"),
+    PYTHON313_LOOP_LANE: ReportSpec("windows-platform-contract", "Windows",
+                                  selectors=PYTHON313_LOOP_SELECTORS, python="3.13", implementation="CPython"),
     "analytics-windows-contract": ReportSpec("analytics-windows-contract", "Windows"),
     "analytics-scale-qualification": ReportSpec("analytics-scale-qualification", "Windows"),
     **{f"windows-full-regression-{n}": ReportSpec(f"windows-full-regression-{n}", "Windows") for n in (1, 2)},
@@ -221,8 +243,11 @@ def validate_report(report: dict[str, Any], spec: ReportSpec) -> dict[str, str]:
         raise GateError(f"{report['lane']}: invalid pytest elapsed time")
     if (report.get("platform") != spec.platform or report.get("profile") != spec.profile
             or report.get("selection_profile", "") != spec.selection_profile
-            or not str(report.get("python", "")).startswith("3.11.")):
+            or not str(report.get("python", "")).startswith(spec.python + ".")
+            or spec.implementation is not None and report.get("python_implementation") != spec.implementation):
         raise GateError(f"{report['lane']}: platform, Python, or profile mismatch")
+    if spec.implementation is not None and not re.fullmatch(r"3\.13\.[0-9]+", str(report.get("python", ""))):
+        raise GateError(f"{report['lane']}: invalid CPython version")
     rows = inventory(report)
     selected = _unique_strings(report.get("selected"), "selected")
     deselected = _unique_strings(report.get("deselected"), "deselected")
@@ -342,6 +367,46 @@ def _skip_reason(report: dict[str, Any], node: str) -> str | None:
         if phase["nodeid"] == node and phase["outcome"] == "skipped" and not phase.get("wasxfail"):
             return phase.get("skip_reason")
     return None
+
+
+def _validate_python313_loop_coverage(reports, inventories, outcomes) -> set[str]:
+    lane = PYTHON313_LOOP_LANE
+    report = reports[lane]
+    expected = set(PYTHON313_LOOP_CASES)
+    for system, rows in inventories.items():
+        actual = {node for node in rows if any(_matches(node, selector) for selector in PYTHON313_LOOP_SELECTORS)}
+        if actual != expected:
+            raise GateError(f"{system}: CPython loop inventory differs from the eleven required cases")
+    if (_raw_inventory_signature(inventory(report)) != _raw_inventory_signature(
+            {node: inventories["Windows"][node] for node in expected})
+            or set(report["selected"]) != expected or report["deselected"] != []):
+        raise GateError("CPython loop counterpart requires the exact eleven-case inventory")
+    selection = report.get("selection", {})
+    if (not isinstance(selection, dict) or set(selection) != {"keyword", "marker", "targets"}
+            or report.get("partial") is not False or selection.get("keyword") != ""
+            or selection.get("marker") != "" or selection.get("targets") != list(PYTHON313_LOOP_SELECTORS)):
+        raise GateError("CPython loop counterpart has a narrowed or changed selection")
+    owner = reports["windows-platform-contract"]
+    if any(report.get(key) != owner.get(key) for key in
+           ("source_commit", "workflow_run_id", "run_attempt", "job_id")):
+        raise GateError("CPython loop counterpart must match its current producer execution")
+    if (len(report["reports"]) != 3 * len(expected)
+            or any(outcome != "executed" for outcome in outcomes[lane].values())
+            or any(phase.get("wasxfail") is not None or phase.get("outcome") != "passed"
+                   or "subtest" in phase
+                   for phase in report["reports"])):
+        raise GateError("CPython loop counterpart requires successful execution without skips or xfails")
+    for other, observed in outcomes.items():
+        if other == lane:
+            continue
+        for node in expected & set(observed):
+            if observed[node] == "skipped":
+                if (not re.fullmatch(r"3\.11\.[0-9]+", str(reports[other].get("python", "")))
+                        or _skip_reason(reports[other], node) != PYTHON313_LOOP_CASES[node]):
+                    raise GateError(f"{node}: CPython loop version skip reason changed")
+            if observed[node] == "xfailed":
+                raise GateError(f"{node}: CPython loop coverage cannot use an xfail")
+    return expected
 
 
 def _raw_inventory_signature(rows: dict[str, dict[str, Any]]) -> dict[str, frozenset[str]]:
@@ -467,10 +532,13 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
         raise GateError("Windows legacy tests are missing from the new required lanes")
 
     outcomes = {lane: validate_report(report, SPECS[lane]) for lane, report in reports.items()}
+    loop_coverage = _validate_python313_loop_coverage(reports, inventories, outcomes)
     if any(value != "executed" for value in outcomes["windows-production-boot"].values()):
         raise GateError("Windows production boot requires actual execution of every selected case")
     shadow = {node: outcomes[lane][node] for node, lane in shadow_owners.items()}
     for node in legacy["Linux"] | legacy["Windows"]:
+        if node in loop_coverage:
+            continue
         lanes = windows_lanes if node in required_windows else linux_lanes + windows_lanes
         observed = [outcomes[lane][node] for lane in lanes if node in outcomes[lane]]
         if not any(value in {"executed", "xfailed"} for value in observed):

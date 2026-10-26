@@ -3159,6 +3159,12 @@ class SQLiteAuthenticationStore:
             identity_authority=identity_authority,
         )
 
+    def runtime_policy_is_current_in(
+        self, connection: sqlite3.Connection, policy: RuntimePolicy, *, now: datetime
+    ) -> bool:
+        """Check current inputs using the caller's held auth connection."""
+        return self._policy_is_current(connection, policy, now)
+
     def _policy_is_current(
         self,
         connection: sqlite3.Connection,

@@ -1,5 +1,5 @@
 import { Alert, Box, Button, MenuItem, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from '@mui/material';
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 
 import { ChartPanel } from './ChartPanel';
@@ -77,25 +77,58 @@ function TaskSection({ task, previous = false, onCategory, selected, navigation 
 interface Props {
   baseline: FindingsBaseline | null; controller?: FindingsStore; literalsController?: LiteralsStore;
   transport?: Pick<BridgeTransportStore, 'getState' | 'subscribe'>;
+  onRefreshBaseline?: () => Promise<void>;
+}
+interface RefreshRun {
+  ready: boolean; current: () => boolean; invalidate: () => void; finish: () => void;
 }
 export function TaskFindings(props: Props) {
   const transport = props.transport ?? bridgeTransportStore;
   const account = useSyncExternalStore(transport.subscribe, () => transport.getState().creatorAccountId);
   return <FindingsSession key={account ?? 'unbound'} {...props} transport={transport} />;
 }
-function FindingsSession({ baseline, controller, literalsController, transport = bridgeTransportStore }: Props) {
+function FindingsSession({ baseline, controller, literalsController, transport = bridgeTransportStore, onRefreshBaseline }: Props) {
   const store = useMemo(() => controller ?? createFindingsStore(), [controller]);
   const state = useStore(store);
   const [direction, setDirection] = useState<FindingsDirection>('all');
   const [conversation, setConversation] = useState<string | null>(null);
   const [category, setCategory] = useState<{ filter: FindingsCategoryFilter; label: string } | null>(null);
   const [view, setView] = useState<'grouped' | null>(store.view);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshRevision, setRefreshRevision] = useState(0);
+  const refreshScope = useRef<object | null>(null);
+  const pendingRefresh = useRef<RefreshRun | null>(null);
+  const requestedWindow = baseline ? JSON.stringify(baseline.requested_window) : null;
+  const lastRequestedWindow = useRef(requestedWindow);
+  useLayoutEffect(() => {
+    if (requestedWindow !== null) {
+      if (lastRequestedWindow.current !== requestedWindow) pendingRefresh.current?.invalidate();
+      lastRequestedWindow.current = requestedWindow;
+    }
+  }, [requestedWindow]);
+  useLayoutEffect(() => {
+    const scope = {};
+    refreshScope.current = scope;
+    return () => {
+      refreshScope.current = null;
+      pendingRefresh.current?.invalidate();
+    };
+  }, [store, transport, onRefreshBaseline, direction, conversation, category, view]);
   const binding = findingsBinding(baseline, direction, conversation, category?.filter, view);
   useEffect(() => {
     const sync = () => store.actions.setContext(baseline, transport.getState(), direction, conversation, category?.filter, view);
     const unsubscribe = transport.subscribe(sync); sync();
+    const run = pendingRefresh.current;
+    if (run?.ready) {
+      run.ready = false;
+      if (!run.current()) run.finish();
+      else {
+        try { void Promise.resolve(store.actions.reload()).then(run.finish, run.finish); }
+        catch { run.finish(); }
+      }
+    }
     return unsubscribe;
-  }, [baseline, direction, conversation, category, view, store, transport]);
+  }, [baseline, direction, conversation, category, view, store, transport, refreshRevision]);
   useEffect(() => () => store.actions.dispose(), [store]);
   const result = state.binding === binding ? state.result : null;
   const navigation = result?.schema_version === 'analytics-findings.v4' ? result.navigation : null;
@@ -103,6 +136,58 @@ function FindingsSession({ baseline, controller, literalsController, transport =
   const selectCategory = (filter: FindingsCategoryFilter | null, label = '') => {
     store.actions.invalidate(); setConversation(null); setCategory(filter ? { filter, label } : null);
   };
+  async function refresh() {
+    const scope = refreshScope.current;
+    if (!scope || pendingRefresh.current) return;
+    const identity = () => {
+      const value = transport.getState();
+      return JSON.stringify([value.creatorAccountId, value.session, value.connection, value.readModelState]);
+    };
+    let original: string | null = null;
+    let invalidated = false;
+    let finished = false;
+    let queued = false;
+    let unsubscribe = () => {};
+    const release = () => {
+      const dispose = unsubscribe;
+      unsubscribe = () => {};
+      try { dispose(); } catch { /* Cleanup must not strand the refresh. */ }
+    };
+    const run: RefreshRun = {
+      ready: false,
+      current: () => {
+        try {
+          return !finished && !invalidated && pendingRefresh.current === run
+            && refreshScope.current === scope && identity() === original;
+        } catch { return false; }
+      },
+      invalidate: () => { invalidated = true; release(); },
+      finish: () => {
+        if (finished) return;
+        finished = true;
+        release();
+        if (pendingRefresh.current === run) {
+          pendingRefresh.current = null;
+          if (refreshScope.current) setRefreshing(false);
+        }
+      },
+    };
+    pendingRefresh.current = run;
+    setRefreshing(true);
+    try {
+      original = identity();
+      unsubscribe = transport.subscribe(() => { if (!run.current()) run.invalidate(); });
+      if (onRefreshBaseline) await onRefreshBaseline();
+      if (run.current()) {
+        run.ready = true;
+        queued = true;
+        setRefreshRevision(value => value + 1);
+      }
+    } catch { /* A failed baseline refresh must not reload its previous identity. */ }
+    finally {
+      if (!queued) run.finish();
+    }
+  }
   return <Stack component="section" spacing={2} aria-label="Profile text analysis" data-journey-state="findings.controls">
     <Box><Typography component="h2" variant="h6">Profile text analysis</Typography>
       <Typography>Available topic and mention findings from the selected analysis profile. These are separate from the baseline topics in Summary. Viewing results does not download files or run analysis.</Typography></Box>
@@ -115,7 +200,7 @@ function FindingsSession({ baseline, controller, literalsController, transport =
       <Button onClick={() => selectCategory(null)}>Clear category filter</Button></Alert>}
     {state.status === 'loading' && <Typography role="status">Loading saved text analysis…</Typography>}
     {!result && state.status !== 'loading' && <Alert severity={state.status === 'error' ? 'error' : 'info'} data-journey-state="findings.unavailable">{state.message ?? 'Text analysis is unavailable for the current analytics view.'}</Alert>}
-    {baseline && <Button disabled={state.status === 'loading'} onClick={() => void store.actions.reload()}>Refresh saved findings</Button>}
+    {baseline && <Button disabled={refreshing || state.status === 'loading'} onClick={() => void refresh()}>Refresh saved findings</Button>}
     {result && <Stack spacing={2} data-journey-state="findings.results">
       <Typography>Available message dates: {windowLabel(result.effective_window, 'No message dates in this selection')} · {result.direction === 'all' ? 'All directions' : result.direction === 'inbound' ? 'Received messages' : 'Sent messages'}</Typography>
       <Typography>Processing state when saved: {result.processing_mode === 'paused' ? 'paused; these saved findings remain visible' : 'enabled'}.</Typography>

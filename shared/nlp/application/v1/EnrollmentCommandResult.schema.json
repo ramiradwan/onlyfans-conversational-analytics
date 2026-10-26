@@ -1,0 +1,132 @@
+{
+  "$defs": {
+    "CurrentEnrollment": {
+      "additionalProperties": false,
+      "properties": {
+        "installation_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Installation Id",
+          "type": "string"
+        },
+        "creator_account_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Creator Account Id",
+          "type": "string"
+        },
+        "principal_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Principal Id",
+          "type": "string"
+        },
+        "mode_version": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Mode Version",
+          "type": "integer"
+        },
+        "enrollment_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Enrollment Id"
+        },
+        "state": {
+          "enum": [
+            "enabled",
+            "paused",
+            "retired"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "capsule_available": {
+          "title": "Capsule Available",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "installation_id",
+        "creator_account_id",
+        "principal_id",
+        "mode_version",
+        "enrollment_id",
+        "state",
+        "capsule_available"
+      ],
+      "title": "CurrentEnrollment",
+      "type": "object"
+    },
+    "EnrollmentCommandReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "command_key": {
+          "title": "Command Key",
+          "type": "string"
+        },
+        "meaning_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Meaning Sha256",
+          "type": "string"
+        },
+        "mode_version": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Mode Version",
+          "type": "integer"
+        },
+        "enrollment_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Enrollment Id"
+        },
+        "state": {
+          "enum": [
+            "enabled",
+            "paused",
+            "retired"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_key",
+        "meaning_sha256",
+        "mode_version",
+        "enrollment_id",
+        "state"
+      ],
+      "title": "EnrollmentCommandReceipt",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "receipt": {
+      "$ref": "#/$defs/EnrollmentCommandReceipt"
+    },
+    "current": {
+      "$ref": "#/$defs/CurrentEnrollment"
+    }
+  },
+  "required": [
+    "receipt",
+    "current"
+  ],
+  "title": "EnrollmentCommandResult",
+  "type": "object"
+}

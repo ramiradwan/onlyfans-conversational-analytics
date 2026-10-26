@@ -201,16 +201,18 @@ def test_forward_admission_preserves_raw_rows_backup_and_mixed_public_artifacts(
         upgraded = ProjectionsDatabase(legacy.path)
         assert stored_chunks(upgraded) == before
         with upgraded.read() as connection:
-            schema33 = {(row[0], row[1]): row[2] for row in connection.execute(
+            current_schema = {(row[0], row[1]): row[2] for row in connection.execute(
                 'SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL')}
-            added = schema33.keys() - schema32.keys()
+            added = current_schema.keys() - schema32.keys()
             literal_tables = {'nlp_literal_accounts', 'nlp_literal_derivations', 'nlp_literal_derivation_batches',
                               'nlp_literal_publications', 'nlp_literal_publication_batches'}
             origin_tables = {'nlp_record_origins', 'nlp_origin_epochs'}
-            assert {name for kind, name in added if kind == 'table'} == literal_tables | origin_tables
-            assert len(added) == 40 and sum(kind == 'trigger' for kind, _ in added) == 33
-            assert {key: schema33[key] for key in schema32} == schema32
-            assert connection.execute('PRAGMA schema_version').fetchone()[0] == schema_cookie + 40
+            reconciliation_tables = {'nlp_enrollment_reconciliation'}
+            assert {name for kind, name in added if kind == 'table'} == literal_tables | origin_tables | reconciliation_tables
+            assert len(added) == 41 and sum(kind == 'trigger' for kind, _ in added) == 33
+            assert {key: current_schema[key] for key in schema32} == schema32
+            assert connection.execute('PRAGMA schema_version').fetchone()[0] == schema_cookie + 41
+            assert connection.execute('SELECT count(*) FROM nlp_enrollment_reconciliation').fetchone()[0] == 0
             after_stamp = content_stamp(connection)
             assert after_stamp is not None and after_stamp[:2] == stamp[:2] and after_stamp[3] == stamp[3]
             assert codec.admitted(connection)

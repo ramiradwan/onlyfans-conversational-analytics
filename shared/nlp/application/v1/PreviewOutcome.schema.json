@@ -1,0 +1,472 @@
+{
+  "$defs": {
+    "PolicyIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "revision",
+        "sha256"
+      ],
+      "title": "PolicyIdentity",
+      "type": "object"
+    },
+    "PreviewConfirmation": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-confirmation.v1",
+          "default": "text-analysis-confirmation.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "external_key": {
+          "title": "External Key",
+          "type": "string"
+        },
+        "job_id": {
+          "title": "Job Id",
+          "type": "string"
+        },
+        "contribution_id": {
+          "title": "Contribution Id",
+          "type": "string"
+        },
+        "spec_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Spec Sha256",
+          "type": "string"
+        },
+        "context_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Context Sha256",
+          "type": "string"
+        },
+        "scope_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Scope Sha256",
+          "type": "string"
+        },
+        "parameter_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Parameter Sha256",
+          "type": "string"
+        },
+        "input_inventory_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Input Inventory Sha256",
+          "type": "string"
+        },
+        "reference_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "compact_jws_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Compact Jws Sha256",
+          "type": "string"
+        },
+        "preview_selection_policy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        }
+      },
+      "required": [
+        "external_key",
+        "job_id",
+        "contribution_id",
+        "spec_sha256",
+        "context_sha256",
+        "scope_sha256",
+        "parameter_sha256",
+        "input_inventory_sha256",
+        "reference_id",
+        "compact_jws_sha256",
+        "preview_selection_policy"
+      ],
+      "title": "PreviewConfirmation",
+      "type": "object"
+    },
+    "PreviewDisclosure": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Sha256",
+          "type": "string"
+        },
+        "languages": {
+          "items": {
+            "const": "en",
+            "type": "string"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "title": "Languages",
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/TaskDescriptor"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Tasks",
+          "type": "array"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "selection_policy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "output_profile": {
+          "const": "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+          "default": "urn:bridge-clean:text-analysis-preview-output-policy:v1",
+          "title": "Output Profile",
+          "type": "string"
+        },
+        "output_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Output Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "profile_sha256",
+        "languages",
+        "tasks",
+        "presentation",
+        "selection_policy"
+      ],
+      "title": "PreviewDisclosure",
+      "type": "object"
+    },
+    "PreviewPrepareRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-preview-prepare.v1",
+          "default": "text-analysis-preview-prepare.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "external_key": {
+          "title": "External Key",
+          "type": "string"
+        },
+        "expected_profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Expected Profile Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "external_key",
+        "expected_profile_sha256"
+      ],
+      "title": "PreviewPrepareRequest",
+      "type": "object"
+    },
+    "PreviewReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "title": "Job Id",
+          "type": "string"
+        },
+        "contribution_id": {
+          "title": "Contribution Id",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "pending",
+            "running",
+            "committed",
+            "failed",
+            "result_deleted"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "terminal_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "empty",
+                "incomplete",
+                "overflow",
+                "source_retired"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Terminal Reason"
+        }
+      },
+      "required": [
+        "job_id",
+        "contribution_id",
+        "state",
+        "terminal_reason"
+      ],
+      "title": "PreviewReceipt",
+      "type": "object"
+    },
+    "PreviewScope": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-preview-scope.v1",
+          "default": "text-analysis-preview-scope.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "cutoff": {
+          "format": "date-time",
+          "title": "Cutoff",
+          "type": "string"
+        },
+        "lower_exclusive": {
+          "format": "date-time",
+          "title": "Lower Exclusive",
+          "type": "string"
+        },
+        "directions": {
+          "const": "both",
+          "default": "both",
+          "title": "Directions",
+          "type": "string"
+        },
+        "message_cap": {
+          "const": 32,
+          "default": 32,
+          "title": "Message Cap",
+          "type": "integer"
+        },
+        "source_count": {
+          "maximum": 32,
+          "minimum": 0,
+          "title": "Source Count",
+          "type": "integer"
+        },
+        "earliest": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Earliest"
+        },
+        "latest": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Latest"
+        },
+        "inventory_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Inventory Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cutoff",
+        "lower_exclusive",
+        "source_count",
+        "earliest",
+        "latest",
+        "inventory_sha256"
+      ],
+      "title": "PreviewScope",
+      "type": "object"
+    },
+    "ScorePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "probability",
+            "logit",
+            "margin",
+            "none"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "semantics_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Semantics Id",
+          "type": "string"
+        },
+        "calibration": {
+          "default": "not_calibrated",
+          "enum": [
+            "not_calibrated",
+            "calibrated"
+          ],
+          "title": "Calibration",
+          "type": "string"
+        },
+        "calibration_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Sha256"
+        }
+      },
+      "required": [
+        "kind",
+        "semantics_id"
+      ],
+      "title": "ScorePolicy",
+      "type": "object"
+    },
+    "TaskDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "enum": [
+            "message_topics",
+            "concept_mentions"
+          ],
+          "title": "Task",
+          "type": "string"
+        },
+        "task_contract": {
+          "enum": [
+            "message_topics.v1",
+            "concept_mentions.v1"
+          ],
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "taxonomy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "enabled_ids": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Enabled Ids",
+          "type": "array"
+        },
+        "score_policy": {
+          "$ref": "#/$defs/ScorePolicy"
+        }
+      },
+      "required": [
+        "task",
+        "task_contract",
+        "taxonomy",
+        "enabled_ids",
+        "score_policy"
+      ],
+      "title": "TaskDescriptor",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "request": {
+      "$ref": "#/$defs/PreviewPrepareRequest"
+    },
+    "receipt": {
+      "$ref": "#/$defs/PreviewReceipt"
+    },
+    "scope": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PreviewScope"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "confirmation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PreviewConfirmation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "detailed_scope_available": {
+      "title": "Detailed Scope Available",
+      "type": "boolean"
+    },
+    "disclosure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PreviewDisclosure"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "request",
+    "receipt",
+    "scope",
+    "confirmation",
+    "detailed_scope_available",
+    "disclosure"
+  ],
+  "title": "PreviewOutcome",
+  "type": "object"
+}

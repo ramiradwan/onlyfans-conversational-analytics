@@ -231,6 +231,41 @@ test('pairing driver completes the waiting presentation before a passive compani
   } finally { await owner.close(); }
 });
 
+for (const scale of [1, 2]) test(`processing feedback stays stable through disconnect at 390px and ${scale}x text`, async () => {
+  const owner = await context({ viewport: { width: 390, height: 844 }, colorScheme: 'light', reducedMotion: 'reduce' });
+  const page = await owner.newPage();
+  try {
+    await page.goto(`${harness.base}?workspace=settings&state=populated&mode=light`, { waitUntil: 'networkidle' });
+    await page.getByRole('region', { name: 'Optional text analysis', exact: true }).waitFor();
+    await page.evaluate(async scale => { await document.fonts.ready; document.documentElement.style.fontSize = `${16 * scale}px`; }, scale);
+    await settle(page);
+    await page.getByRole('region', { name: 'Account text processing' }).waitFor();
+    await startPassive(page, ['settings-text-analysis', 'settings-vault', 'vault-feedback']);
+    await page.evaluate(async () => {
+      const { bridgeTransportStore } = await import('/src/store/transportStore.ts');
+      bridgeTransportStore.markDisconnected();
+    });
+    await page.getByText('Extension linked to this app', { exact: true }).waitFor();
+    await settleNativeWatcher(page);
+    const report = await passiveReport(page);
+    const containmentIds = new Set(await page.locator('#text-analysis [data-reserved-region], [data-reserved-region="settings-vault"], [data-reserved-region="settings-vault"] [data-reserved-region]')
+      .evaluateAll(nodes => nodes.map(node => node.dataset.reservedRegion)));
+    // Doubled-text containment covers these controls; every region's movement,
+    // observer error and native shift remains checked.
+    const failures = inspectFrames(report.frames.map(frame => ({ ...frame,
+      shifts: frame.shifts.filter(shift => shift.at >= report.passiveWindow.start),
+      regions: frame.regions.map(region => scale === 2 && !containmentIds.has(region.id) ? { ...region, overflow: false } : region),
+    })));
+    const outsideContainmentOverflow = report.frames.flatMap(frame => frame.regions.filter(region => region.overflow && !containmentIds.has(region.id)));
+    await record(page, `processing-disconnect-${scale}`, { ...report, failures, outsideContainmentOverflow,
+      containmentScope: scale === 2 ? 'processing and stored-message controls; full raw overflow retained; all movement and native shifts checked' : 'full page' });
+    assert.deepEqual(failures, []);
+    assert.equal(report.passiveWindow.observed.length, 0, 'Disconnect feedback must not move the following settings');
+    assert.equal(await page.getByRole('dialog', { name: 'Review processing change' }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Review enablement' }).count(), 0);
+  } finally { await owner.close(); }
+});
+
 for (const [width, height, scale] of [[640, 480, 1], [390, 844, 1.25]])
 for (const mode of ['light', 'dark']) test(`compact Settings keeps passive browser feedback stable at ${width}x${height}/${scale} in ${mode}`, async () => {
   const owner = await context({ viewport: { width, height }, colorScheme: mode, reducedMotion: 'reduce' });

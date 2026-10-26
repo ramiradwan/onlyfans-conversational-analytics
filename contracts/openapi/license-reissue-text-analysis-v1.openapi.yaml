@@ -1,0 +1,706 @@
+openapi: 3.1.0
+info:
+  title: Text-analysis licence reissue
+  version: 1.0.0
+paths:
+  /v1/text-analysis-license-reissue-proof-challenges:
+    post:
+      operationId: issueTextAnalysisLicenseReissueProofChallenge
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      x-request-max-bytes: 12288
+      x-response-max-bytes: 4096
+      x-error-precedence:
+      - invalid/413
+      - invalid/400
+      - rate_limited
+      - required-dependency-unavailable
+      x-replay: uniform-nonauthorizing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/license-reissue-text-analysis-proof/v1/challenge-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-proof/v1/challenge-response.schema.json
+        '400':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-proof/v1/error.schema.json
+        '413':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-proof/v1/error.schema.json
+        '429':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-proof/v1/error.schema.json
+        '503':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-proof/v1/error.schema.json
+      security: []
+  /v1/text-analysis-license-reissues:prepare:
+    post:
+      operationId: prepareTextAnalysisLicenseReissue
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      x-request-max-bytes: 8192
+      x-response-max-bytes: 4096
+      x-error-precedence:
+      - invalid/413
+      - invalid/400
+      - rate_limited
+      - required-dependency-unavailable
+      - proof_invalid
+      - request_conflict
+      - retained-preparation
+      - expired
+      - unsupported_profile
+      - unsupported_release
+      - temporarily_unavailable
+      x-replay: fresh-proof-and-exact-phase-digest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/license-reissue-text-analysis/v1/prepare-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/prepare-response.schema.json
+        '400':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '401':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '409':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '410':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '413':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '429':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '503':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+      security: []
+      x-proof-purpose: text-analysis-license-reissue-prepare
+  /v1/text-analysis-license-reissues:read:
+    post:
+      operationId: readTextAnalysisLicenseReissue
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      x-request-max-bytes: 8192
+      x-response-max-bytes: 24576
+      x-error-precedence:
+      - invalid/413
+      - invalid/400
+      - rate_limited
+      - required-dependency-unavailable
+      - proof_invalid
+      - request_conflict
+      - committed-result
+      - owned-projection
+      x-replay: fresh-proof-and-exact-phase-digest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/license-reissue-text-analysis/v1/read-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/read-response.schema.json
+        '400':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '401':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '409':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '413':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '429':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '503':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+      security: []
+      x-proof-purpose: text-analysis-license-reissue-read
+  /v1/text-analysis-license-reissues:finalize:
+    post:
+      operationId: finalizeTextAnalysisLicenseReissue
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      x-request-max-bytes: 8192
+      x-response-max-bytes: 24576
+      x-error-precedence:
+      - invalid/413
+      - invalid/400
+      - rate_limited
+      - required-dependency-unavailable
+      - proof_invalid
+      - request_conflict
+      - committed-result
+      - authority_unavailable
+      - unsupported_profile
+      - unsupported_release
+      - temporarily_unavailable
+      x-replay: fresh-proof-and-exact-phase-digest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/license-reissue-text-analysis/v1/finalize-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/result.schema.json
+        '201':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/result.schema.json
+        '400':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '401':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '403':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '409':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '413':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '429':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '503':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+      security: []
+      x-proof-purpose: text-analysis-license-reissue-finalize
+  /v1/text-analysis-license-reissues:recover:
+    post:
+      operationId: recoverTextAnalysisLicenseReissue
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      x-request-max-bytes: 8192
+      x-response-max-bytes: 24576
+      x-error-precedence:
+      - invalid/413
+      - invalid/400
+      - rate_limited
+      - required-dependency-unavailable
+      - proof_invalid
+      - request_conflict
+      - not_completed
+      - temporarily_unavailable
+      x-replay: fresh-proof-and-exact-phase-digest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/license-reissue-text-analysis/v1/recover-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/result.schema.json
+        '400':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '401':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '409':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '413':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '429':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+        '503':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis/v1/error.schema.json
+      security: []
+      x-proof-purpose: text-analysis-license-reissue-recover
+  /onboarding/text-analysis-license-reissues/{entry_reference}:authorize:
+    post:
+      operationId: authorizeTextAnalysisLicenseReissue
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-browser-cors: false
+      x-request-max-bytes: 2048
+      x-response-max-bytes: 4096
+      x-error-precedence:
+      - invalid/413
+      - invalid/400
+      - rate_limited
+      - required-dependency-unavailable
+      - authentication_required
+      - authorization_denied
+      - request_conflict
+      - accepted-authorization
+      - confirmation_required
+      - expired
+      - authority_unavailable
+      - unsupported_profile
+      - unsupported_release
+      - temporarily_unavailable
+      x-replay: exact-current-session-reconciliation-no-renewal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/license-reissue-text-analysis-authorization/v1/authorize-request.schema.json
+      responses:
+        '200':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/authorize-response.schema.json
+        '201':
+          description: Exact bounded result
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/authorize-response.schema.json
+        '400':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+        '401':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+        '403':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+        '409':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+        '410':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+        '413':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+        '429':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+        '503':
+          description: Closed ordered refusal
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+      security:
+      - CustomerSession: []
+      x-origin-csrf-required: true
+      x-step-up-action: text-analysis-license-reissue
+      parameters:
+      - name: entry_reference
+        in: path
+        required: true
+        schema:
+          $ref: https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32
+  /onboarding/text-analysis-license-reissues/{entry_reference}:
+    get:
+      operationId: openTextAnalysisLicenseReissue
+      parameters:
+      - name: entry_reference
+        in: path
+        required: true
+        schema:
+          $ref: https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32
+      x-query-forbidden: true
+      x-cache-control: no-store
+      x-response-max-bytes: 16384
+      x-authorizing: false
+      responses:
+        '200':
+          description: Nonauthorizing bounded presentation
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            text/html:
+              schema:
+                type: string
+                maxLength: 16384
+        '404':
+          description: Nonauthorizing bounded presentation
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            text/html:
+              schema:
+                type: string
+                maxLength: 16384
+        '429':
+          description: Nonauthorizing bounded presentation
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            text/html:
+              schema:
+                type: string
+                maxLength: 16384
+        '503':
+          description: Nonauthorizing bounded presentation
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            text/html:
+              schema:
+                type: string
+                maxLength: 16384
+components:
+  securitySchemes:
+    CustomerSession:
+      type: apiKey
+      in: cookie
+      name: customer_session

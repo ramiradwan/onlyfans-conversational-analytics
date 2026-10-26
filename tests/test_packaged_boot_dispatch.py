@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import ast
 import asyncio
 import os
 import re
@@ -17,11 +18,56 @@ from fastapi.testclient import TestClient
 
 from app import packaged_entry
 from app.core.config import Settings
+from app.core import server_loop
 
 pytestmark = [pytest.mark.ci_tier('fast'), pytest.mark.windows_compat]
 
 
 PRODUCT_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize('platform', ['win32', 'linux', 'darwin'])
+def test_process_entries_share_explicit_windows_loop_and_preserve_other_defaults(platform, monkeypatch):
+    import uvicorn
+
+    monkeypatch.setattr(server_loop, 'sys', types.SimpleNamespace(platform=platform))
+    expected = 'asyncio:SelectorEventLoop' if platform == 'win32' else 'auto'
+    assert server_loop.uvicorn_loop() == expected
+    assert server_loop.server_loop_factory() is (asyncio.SelectorEventLoop if platform == 'win32' else None)
+    assert packaged_entry.uvicorn_loop is server_loop.uvicorn_loop
+    entries = [PRODUCT_ROOT / 'app/packaged_entry.py',
+               PRODUCT_ROOT / 'tools/e2e-capture/helpers/brain_entry.py']
+    configurations = []
+
+    def configuration(application, **keywords):
+        assert keywords['loop'] == expected and keywords['workers'] == 1
+        selected = uvicorn.Config(application, log_config=None, **keywords)
+        configurations.append(selected)
+        return selected
+
+    for entry in entries:
+        tree = ast.parse(entry.read_text(encoding='utf-8'), filename=str(entry))
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == 'uvicorn' and node.func.attr in ('Config', 'run')]
+        assert len(calls) == (1 if entry == entries[0] else 2)
+        for call in calls:
+            namespace = {'uvicorn': types.SimpleNamespace(Config=configuration, run=configuration),
+                'observed_application': object(), 'app': object(), 'uvicorn_loop': server_loop.uvicorn_loop}
+            eval(compile(ast.Expression(call), str(entry), 'eval'), namespace)
+        if entry == entries[1]:
+            runners = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == 'asyncio' and node.func.attr == 'Runner']
+            assert len(runners) == 1
+            with eval(compile(ast.Expression(runners[0]), str(entry), 'eval'),
+                      {'asyncio': asyncio, 'server_loop_factory': server_loop.server_loop_factory}) as runner:
+                if platform == 'win32':
+                    assert type(runner.get_loop()) is asyncio.SelectorEventLoop
+    if platform == 'win32':
+        assert all(config.get_loop_factory() is server_loop.server_loop_factory() for config in configurations)
+    else:
+        assert all(config.loop == uvicorn.Config(object(), log_config=None).loop for config in configurations)
 
 
 def test_expected_startup_refusal_returns_a_controlled_process_exit(monkeypatch, capsys):

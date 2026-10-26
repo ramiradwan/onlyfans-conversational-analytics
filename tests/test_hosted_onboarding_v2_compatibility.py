@@ -23,7 +23,7 @@ HOSTED_API_VECTORS = (
     / "capability-license-hosted-api-v1"
     / "provisioning-quote-exchange.json"
 )
-SHARED_CONTRACT_COMMIT = "3ad41b7f02236cf2a71b3f917fb2e487c54769fe"
+SHARED_CONTRACT_COMMIT = "5c1d9b58f56258c905ccfc803806cb271f4e721a"
 HOSTED_ISSUE_CASE = "claim-v2-issue-positive"
 
 

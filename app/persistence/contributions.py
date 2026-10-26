@@ -6,19 +6,31 @@ import json
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 from uuid import uuid4
 
 from app.models.knowledge_contributions import (
     AttemptToken, ContributionManifest, JobSpec, MemberIdentity, SourceMemberSpec,
     inventory_digest, members_digest, record_digest,
 )
-from app.core.config import settings
 from app.nlp import v2
-from app.nlp.profiles import canonical_bytes, read_profile
+from app.nlp.profiles import AnalysisProfile, SubsetAnalysisProfile, canonical_bytes, read_profile
 from app.security.runtime_policy import RuntimePolicy, authorized_account
 
 MAX_MEMBERS = 4096
 PAGE_SIZE = 64
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionMember:
+    state: str
+    spec: JobSpec
+    profile: AnalysisProfile | SubsetAnalysisProfile
+    member: SourceMemberSpec
+    attempt_fence: int
+    job_attempt_id: str | None
+    lease_expires_at: float | None
+    staged_record: bytes | None
 
 
 def _load(model, raw):
@@ -56,8 +68,8 @@ def finding_ids(contribution_id, raw):
 
 
 def _require_dormant_write():
-    if settings.environment.lower() != 'test':
-        raise ValueError('findings_execution_unavailable')
+    from app.core.optional_execution import require_optional_execution
+    require_optional_execution()
 
 
 class ContributionRepository:
@@ -73,10 +85,14 @@ class ContributionRepository:
         self.database, self.clock, self.max_storage_bytes = database, clock, max_storage_bytes
         self.source_guard = source_guard
 
-    def _budget(self):
+    def _budget(self, *, wall_clock_ms=None):
         if self.source_guard is None:
             raise ValueError('knowledge_source_guard_unavailable')
-        return self.source_guard.budget()
+        if wall_clock_ms is None:
+            return self.source_guard.budget()
+        if type(wall_clock_ms) is not int or not 1 <= wall_clock_ms <= 30_000:
+            raise ValueError('knowledge_validation_budget_invalid')
+        return self.source_guard.budget(wall_clock_ms=wall_clock_ms)
 
     def _scope(self, policy, spec):
         if type(policy) is not RuntimePolicy:
@@ -91,11 +107,40 @@ class ContributionRepository:
 
     @staticmethod
     def _storage(db):
-        return sum(db.execute(f'SELECT COALESCE(sum(length({column})),0) FROM {table}').fetchone()[0]
-                   for table, column in [('knowledge_jobs', 'spec'), ('knowledge_jobs', 'profile'),
-                                         ('knowledge_sources', 'document'), ('knowledge_members', 'document')])
+        columns = [('knowledge_jobs', 'spec'), ('knowledge_jobs', 'profile'),
+                   ('knowledge_sources', 'document'), ('knowledge_members', 'document')]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_intents'").fetchone():
+            columns += [('text_analysis_enrollments', 'meaning'), ('text_analysis_enrollments', 'context'),
+                        ('text_analysis_intents', 'context'), ('text_analysis_intents', 'confirmation'),
+                        ('text_analysis_intents', 'preview_selection_policy'),
+                        ('text_analysis_preview_outputs', 'document')]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_enrollment_capsules'").fetchone():
+            columns += [(table, column) for table, names in (
+                ('text_analysis_enrollment_capsules', ('enrollment_id', 'profile', 'profile_bytes_sha256',
+                    'identity', 'identity_sha256', 'capsule_sha256')),
+                ('text_analysis_account_current', ('installation_id', 'creator_account_id', 'principal_id',
+                    'mode_version', 'enrollment_id')),
+                ('text_analysis_enrollment_commands', ('installation_id', 'command_key', 'creator_account_id',
+                    'principal_id', 'meaning', 'meaning_sha256', 'receipt')),
+            ) for column in names]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_preview_requests'").fetchone():
+            columns += [(table, column) for table, names in (
+                ('text_analysis_preview_requests', ('job_id', 'request', 'request_sha256')),
+                ('text_analysis_preview_capsules', ('job_id', 'document', 'document_sha256')),
+            ) for column in names]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='authoritative_pair'").fetchone():
+            columns += [('authoritative_pair', column) for column in
+                        ('singleton', 'auth_store_id', 'canonical_store_id', 'installation_id', 'incarnation', 'valid')]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_client_intents'").fetchone():
+            columns += [('text_analysis_client_intents', column) for column in
+                        ('installation_id', 'organization_id', 'creator_account_id', 'principal_id',
+                         'kind', 'intent_key', 'body', 'body_sha256', 'retained_at')]
+        return sum(db.execute(f'SELECT COALESCE(sum(CASE WHEN typeof({column})=\'integer\' '
+                              f'THEN 8 ELSE length({column}) END),0) FROM {table}').fetchone()[0]
+                   for table, column in columns)
 
     def _job(self, db, job_id, policy):
+        self._owned_connection(db)
         row = db.execute('SELECT * FROM knowledge_jobs WHERE job_id=?', (job_id,)).fetchone()
         if row is None:
             raise ValueError('knowledge_job_unavailable')
@@ -108,21 +153,115 @@ class ContributionRepository:
             raise ValueError('knowledge_profile_corrupt')
         return row, spec, profile
 
-    @staticmethod
-    def _sources(db, job_id):
+    def _sources(self, db, job_id):
+        self._owned_connection(db)
         for row in db.execute('SELECT document FROM knowledge_sources WHERE job_id=? ORDER BY ordinal', (job_id,)):
             yield _load(SourceMemberSpec, row[0])
 
     def _source(self, db, spec, member, budget):
+        self._owned_connection(db)
         self._budget()
         return self.source_guard.source(db, spec, member, budget, self.clock())
 
+    def read_execution_member_in(self, db, job_id, ordinal=0, *, policy, attempt=None):
+        """Read and validate one retained member without changing execution state."""
+        self._owned_connection(db)
+        if type(ordinal) is not int or not 0 <= ordinal < MAX_MEMBERS:
+            raise ValueError('knowledge_member_invalid')
+        row, spec, profile = self._job(db, job_id, policy)
+        if attempt is not None:
+            attempt = _typed(AttemptToken, attempt)
+            if attempt.job_id != job_id:
+                raise ValueError('knowledge_attempt_stale')
+            self._write_scope(db, spec, policy, 'resume')
+            self._attempt(row, attempt)
+        stored = db.execute('SELECT document FROM knowledge_sources WHERE job_id=? AND ordinal=?',
+                            (job_id, ordinal)).fetchone()
+        if stored is None:
+            raise ValueError('knowledge_member_missing')
+        member = _load(SourceMemberSpec, stored[0])
+        budget = self._budget()
+        source = self._source(db, spec, member, budget)
+        staged = db.execute('SELECT * FROM knowledge_members WHERE job_id=? AND ordinal=?', (job_id, ordinal)).fetchone()
+        raw = None
+        if staged is not None:
+            raw = bytes(staged['document'])
+            identity = _load(MemberIdentity, staged['identity'])
+            if (identity.ordinal != ordinal or identity.source_member_sha256 != record_digest(member)
+                    or identity.record_sha256 != _sha(raw)
+                    or identity.producing_attempt_fence != staged['producing_attempt_fence']
+                    or identity.producing_job_attempt_id != staged['producing_job_attempt_id']
+                    or not db.execute('SELECT 1 FROM knowledge_attempts WHERE job_id=? AND attempt_fence=? AND job_attempt_id=?',
+                        (job_id, identity.producing_attempt_fence, identity.producing_job_attempt_id)).fetchone()):
+                raise ValueError('knowledge_member_corrupt')
+            self.source_guard.record(profile, source, raw)
+        budget.check()
+        return ExecutionMember(row['state'], spec, profile, member, row['attempt_fence'],
+            row['job_attempt_id'], row['lease_expires_at'], raw)
+
     def _current_input(self, db, spec, budget):
+        self._owned_connection(db)
         self._budget()
         self.source_guard.current_input(db, spec, budget)
 
+    def _owned_connection(self, db):
+        if not self.database.owns_connection(db):
+            raise ValueError('knowledge_connection_unowned')
+
+    def _transaction(self, db):
+        self._owned_connection(db)
+        if not db.in_transaction:
+            raise ValueError('knowledge_transaction_required')
+
+    def _module_intent(self, db, job_id):
+        self._owned_connection(db)
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_intents'").fetchone():
+            return None
+        return db.execute('SELECT * FROM text_analysis_intents WHERE job_id=?', (job_id,)).fetchone()
+
+    def _write_scope(self, db, spec, policy, phase):
+        intent = self._module_intent(db, spec.job_id)
+        if intent is None:
+            if spec.capability.capability_id == 'text-analysis':
+                raise ValueError('knowledge_module_intent_required')
+            return
+        from app.security.text_analysis_policy import (
+            capability_binding, decode_run_context, require_text_analysis,
+            require_text_analysis_fence,
+        )
+        context = decode_run_context(bytes(intent['context']))
+        if phase != 'prepare' and intent['enrollment_id'] is not None:
+            enrollment = db.execute('SELECT state FROM text_analysis_enrollments WHERE enrollment_id=?',
+                                    (intent['enrollment_id'],)).fetchone()
+            if enrollment is None or enrollment['state'] != 'enabled':
+                raise ValueError('text_analysis_enrollment_unavailable')
+        if phase == 'prepare' and policy.text_analysis_fence is None:
+            reference = require_text_analysis(policy, context, kind=intent['authority_kind'], phase=phase)
+        else:
+            reference = require_text_analysis_fence(policy, context, kind=intent['authority_kind'], phase=phase,
+                                                    canonical_database=self.database, canonical_connection=db)
+        if (spec.capability != capability_binding(reference, context)
+                or spec.creator_account_id != context.creator_account_id
+                or spec.organization_id != context.organization_id
+                or spec.installation_id != context.installation_id
+                or spec.algorithm_profile_sha256 != context.algorithm_profile_sha256
+                or spec.algorithm_artifacts_sha256 != context.algorithm_artifacts_sha256
+                or spec.policy_identity_sha256 != context.policy_identity_sha256
+                or record_digest(spec) != intent['spec_sha256']):
+            raise ValueError('knowledge_module_binding_invalid')
+        if intent['authority_kind'] == 'preview' and phase in ('resume', 'commit'):
+            from app.persistence.text_analysis_jobs import TextAnalysisJobStore
+            TextAnalysisJobStore._admission(db, intent, spec.job_id, allow_spent=phase == 'commit')
+
     def create_job(self, spec, sources, *, profile_bytes, policy):
         """The owning caller persists all request UUIDs before this call."""
+        with self.database.transaction() as db:
+            return self.create_job_in(db, spec, sources, profile_bytes=profile_bytes, policy=policy)
+
+    def create_job_in(self, db, spec, sources, *, profile_bytes, policy, initial_state='pending'):
+        self._transaction(db)
+        if initial_state not in ('prepared', 'pending'):
+            raise ValueError('knowledge_initial_state_invalid')
         _require_dormant_write()
         spec = _typed(JobSpec, spec)
         self._scope(policy, spec)
@@ -144,56 +283,66 @@ class ContributionRepository:
         raw, profile_raw, budget = canonical_bytes(spec), canonical_bytes(profile), self._budget()
         if len(raw) > 16384 or len(profile_raw) > 1048576:
             raise ValueError('knowledge_document_limit')
-        with self.database.transaction() as db:
-            retired = db.execute('SELECT 1 FROM knowledge_retired_intents WHERE installation_id=? AND request_id=?',
-                                 (spec.installation_id, spec.request_id)).fetchone()
-            if retired:
-                raise ValueError('knowledge_intent_retired')
-            old = db.execute('SELECT * FROM knowledge_jobs WHERE job_id=? OR (installation_id=? AND request_id=?)',
-                             (spec.job_id, spec.installation_id, spec.request_id)).fetchone()
-            if old:
-                if (bytes(old['spec']) != raw or bytes(old['profile']) != profile_raw
-                        or list(self._sources(db, spec.job_id)) != members):
-                    raise ValueError('knowledge_intent_conflict')
-                return dict(old)
-            self._current_input(db, spec, budget)
-            if (db.execute('SELECT count(*) FROM knowledge_jobs').fetchone()[0] >= 4096
-                    or self._storage(db) + len(raw) + len(profile_raw) + sum(len(canonical_bytes(m)) for m in members) > self.max_storage_bytes):
-                raise ValueError('knowledge_storage_full')
-            checked = [(m, self._source(db, spec, m, budget)) for m in members]
-            db.execute('INSERT INTO knowledge_jobs(job_id,installation_id,request_id,contribution_id,creator_account_id,'
-                       'spec,spec_sha256,profile,state,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                       (spec.job_id, spec.installation_id, spec.request_id, spec.contribution_id,
-                        spec.creator_account_id, raw, _sha(raw), profile_raw, 'pending', self.clock()))
-            for member, source in checked:
-                db.execute('INSERT INTO knowledge_sources VALUES(?,?,?,?,?,?,?,?)',
-                           (spec.job_id, member.ordinal, spec.creator_account_id,
-                            member.location.conversation_id, member.location.message_id, source.sender_id,
-                            member.source.source_ref, canonical_bytes(member)))
-            return dict(db.execute('SELECT * FROM knowledge_jobs WHERE job_id=?', (spec.job_id,)).fetchone())
+        if self._module_intent(db, spec.job_id) and initial_state != 'prepared':
+            raise ValueError('knowledge_module_prepare_required')
+        retired = db.execute('SELECT 1 FROM knowledge_retired_intents WHERE installation_id=? AND request_id=?',
+                             (spec.installation_id, spec.request_id)).fetchone()
+        if retired:
+            raise ValueError('knowledge_intent_retired')
+        old = db.execute('SELECT * FROM knowledge_jobs WHERE job_id=? OR (installation_id=? AND request_id=?)',
+                         (spec.job_id, spec.installation_id, spec.request_id)).fetchone()
+        if old:
+            if (bytes(old['spec']) != raw or bytes(old['profile']) != profile_raw
+                    or list(self._sources(db, spec.job_id)) != members):
+                raise ValueError('knowledge_intent_conflict')
+            self._write_scope(db, spec, policy, 'prepare')
+            return dict(old)
+        self._write_scope(db, spec, policy, 'prepare')
+        if initial_state == 'prepared' and not self._module_intent(db, spec.job_id):
+            raise ValueError('knowledge_prepared_context_required')
+        self._current_input(db, spec, budget)
+        if (db.execute('SELECT count(*) FROM knowledge_jobs').fetchone()[0] >= 4096
+                or self._storage(db) + len(raw) + len(profile_raw) + sum(len(canonical_bytes(m)) for m in members) > self.max_storage_bytes):
+            raise ValueError('knowledge_storage_full')
+        checked = [(m, self._source(db, spec, m, budget)) for m in members]
+        db.execute('INSERT INTO knowledge_jobs(job_id,installation_id,request_id,contribution_id,creator_account_id,'
+                   'spec,spec_sha256,profile,state,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                   (spec.job_id, spec.installation_id, spec.request_id, spec.contribution_id,
+                    spec.creator_account_id, raw, _sha(raw), profile_raw, initial_state, self.clock()))
+        for member, source in checked:
+            db.execute('INSERT INTO knowledge_sources VALUES(?,?,?,?,?,?,?,?)',
+                       (spec.job_id, member.ordinal, spec.creator_account_id,
+                        member.location.conversation_id, member.location.message_id, source.sender_id,
+                        member.source.source_ref, canonical_bytes(member)))
+        return dict(db.execute('SELECT * FROM knowledge_jobs WHERE job_id=?', (spec.job_id,)).fetchone())
 
     def claim_attempt(self, job_id, *, expected_fence, lease_seconds, policy):
+        with self.database.transaction() as db:
+            return self.claim_attempt_in(db, job_id, expected_fence=expected_fence, lease_seconds=lease_seconds, policy=policy)
+
+    def claim_attempt_in(self, db, job_id, *, expected_fence, lease_seconds, policy):
+        self._transaction(db)
         _require_dormant_write()
         if (type(expected_fence) is not int or expected_fence < 0 or type(lease_seconds) is not int
                 or not 1 <= lease_seconds <= 120):
             raise ValueError('knowledge_lease_invalid')
-        with self.database.transaction() as db:
-            row, spec, _ = self._job(db, job_id, policy)
-            if (row['state'] == 'committed' or row['attempt_fence'] != expected_fence
-                    or (row['lease_expires_at'] is not None and row['lease_expires_at'] > self.clock())):
-                raise ValueError('knowledge_attempt_conflict')
-            if expected_fence >= 1024:
-                raise ValueError('knowledge_attempt_limit')
-            budget = self._budget()
-            for member in self._sources(db, job_id):
-                self._source(db, spec, member, budget)
-            token = AttemptToken(job_id=job_id, attempt_fence=expected_fence + 1,
-                                 job_attempt_id=str(uuid4()), lease_expires_at=float(self.clock() + lease_seconds))
-            db.execute('INSERT INTO knowledge_attempts VALUES(?,?,?,?)',
-                       (job_id, token.attempt_fence, token.job_attempt_id, self.clock()))
-            db.execute("UPDATE knowledge_jobs SET state='running',attempt_fence=?,job_attempt_id=?,lease_expires_at=? WHERE job_id=?",
-                       (token.attempt_fence, token.job_attempt_id, token.lease_expires_at, job_id))
-            return token
+        row, spec, _ = self._job(db, job_id, policy)
+        self._write_scope(db, spec, policy, 'resume')
+        if (row['state'] not in ('pending', 'running') or row['attempt_fence'] != expected_fence
+                or (row['lease_expires_at'] is not None and row['lease_expires_at'] > self.clock())):
+            raise ValueError('knowledge_attempt_conflict')
+        if expected_fence >= 1024:
+            raise ValueError('knowledge_attempt_limit')
+        budget = self._budget()
+        for member in self._sources(db, job_id):
+            self._source(db, spec, member, budget)
+        token = AttemptToken(job_id=job_id, attempt_fence=expected_fence + 1,
+                             job_attempt_id=str(uuid4()), lease_expires_at=float(self.clock() + lease_seconds))
+        db.execute('INSERT INTO knowledge_attempts VALUES(?,?,?,?)',
+                   (job_id, token.attempt_fence, token.job_attempt_id, self.clock()))
+        db.execute("UPDATE knowledge_jobs SET state='running',attempt_fence=?,job_attempt_id=?,lease_expires_at=? WHERE job_id=?",
+                   (token.attempt_fence, token.job_attempt_id, token.lease_expires_at, job_id))
+        return token
 
     def _attempt(self, row, token):
         if (row['state'] != 'running' or row['attempt_fence'] != token.attempt_fence
@@ -201,37 +350,56 @@ class ContributionRepository:
                 or token.lease_expires_at <= self.clock()):
             raise ValueError('knowledge_attempt_stale')
 
+    def _source_valid_until(self, db, job_id):
+        self._owned_connection(db)
+        from app.persistence.retention import PARTICIPANT_ANALYTICS_MAX_DAYS
+        return min((datetime.fromisoformat(r[0]).timestamp() + PARTICIPANT_ANALYTICS_MAX_DAYS * 86400
+                    for r in db.execute('SELECT m.sent_at FROM knowledge_sources s JOIN account_messages m '
+                        'ON m.creator_account_id=s.creator_account_id AND m.message_id=s.message_id WHERE s.job_id=?',
+                        (job_id,))), default=None)
+
     def stage_member(self, token, ordinal, frame, *, policy):
+        with self.database.transaction() as db:
+            return self.stage_member_in(db, token, ordinal, frame, policy=policy)
+
+    def stage_member_in(self, db, token, ordinal, frame, *, policy):
+        self._transaction(db)
         _require_dormant_write()
         token = _typed(AttemptToken, token)
         if type(ordinal) is not int or not 0 <= ordinal < MAX_MEMBERS:
             raise ValueError('knowledge_member_invalid')
-        with self.database.transaction() as db:
-            row, spec, profile = self._job(db, token.job_id, policy)
-            self._attempt(row, token)
-            member_row = db.execute('SELECT document FROM knowledge_sources WHERE job_id=? AND ordinal=?',
-                                    (token.job_id, ordinal)).fetchone()
-            if member_row is None:
-                raise ValueError('knowledge_member_missing')
-            member = _load(SourceMemberSpec, member_row[0])
-            source = self._source(db, spec, member, self._budget())
-            self.source_guard.record(profile, source, frame)
-            existing = db.execute('SELECT document,identity FROM knowledge_members WHERE job_id=? AND ordinal=?',
-                                  (token.job_id, ordinal)).fetchone()
-            if existing:
-                if bytes(existing[0]) != frame:
-                    raise ValueError('knowledge_member_conflict')
-                return _load(MemberIdentity, existing[1])
-            used = self._storage(db)
-            if used + len(frame) > self.max_storage_bytes:
-                raise ValueError('knowledge_storage_full')
-            identity = MemberIdentity(ordinal=ordinal, source_member_sha256=record_digest(member),
-                record_sha256=_sha(frame), producing_attempt_fence=token.attempt_fence,
-                producing_job_attempt_id=token.job_attempt_id)
-            db.execute('INSERT INTO knowledge_members VALUES(?,?,?,?,?,?)',
-                       (token.job_id, ordinal, frame, canonical_bytes(identity),
-                        token.attempt_fence, token.job_attempt_id))
-            return identity
+        row, spec, profile = self._job(db, token.job_id, policy)
+        self._write_scope(db, spec, policy, 'resume')
+        intent = self._module_intent(db, spec.job_id)
+        if intent and intent['authority_kind'] == 'preview':
+            raise ValueError('knowledge_preview_output_required')
+        self._attempt(row, token)
+        member_row = db.execute('SELECT document FROM knowledge_sources WHERE job_id=? AND ordinal=?',
+                                (token.job_id, ordinal)).fetchone()
+        if member_row is None:
+            raise ValueError('knowledge_member_missing')
+        member = _load(SourceMemberSpec, member_row[0])
+        budget = self._budget()
+        source = self._source(db, spec, member, budget)
+        self.source_guard.record(profile, source, frame)
+        budget.check()
+        self._attempt(row, token)
+        existing = db.execute('SELECT document,identity FROM knowledge_members WHERE job_id=? AND ordinal=?',
+                              (token.job_id, ordinal)).fetchone()
+        if existing:
+            if bytes(existing[0]) != frame:
+                raise ValueError('knowledge_member_conflict')
+            return _load(MemberIdentity, existing[1])
+        used = self._storage(db)
+        if used + len(frame) > self.max_storage_bytes:
+            raise ValueError('knowledge_storage_full')
+        identity = MemberIdentity(ordinal=ordinal, source_member_sha256=record_digest(member),
+            record_sha256=_sha(frame), producing_attempt_fence=token.attempt_fence,
+            producing_job_attempt_id=token.job_attempt_id)
+        db.execute('INSERT INTO knowledge_members VALUES(?,?,?,?,?,?)',
+                   (token.job_id, ordinal, frame, canonical_bytes(identity),
+                    token.attempt_fence, token.job_attempt_id))
+        return identity
 
     def _members(self, db, job_id, profile, spec, budget):
         identities = []
@@ -261,36 +429,53 @@ class ContributionRepository:
 
     def commit(self, token, *, policy):
         """Seal complete members; no projection write occurs in this transaction."""
+        with self.database.transaction() as db:
+            return self.commit_in(db, token, policy=policy)
+
+    def commit_in(self, db, token, *, policy):
+        """Seal complete members; no projection write occurs in this transaction."""
+        self._transaction(db)
         _require_dormant_write()
         token = _typed(AttemptToken, token)
-        with self.database.transaction() as db:
-            row, spec, profile = self._job(db, token.job_id, policy)
-            existing = db.execute('SELECT * FROM knowledge_contributions WHERE job_id=?', (token.job_id,)).fetchone()
-            if existing:
-                if (existing['sealing_attempt_fence'] != token.attempt_fence
-                        or existing['sealing_job_attempt_id'] != token.job_attempt_id):
-                    raise ValueError('knowledge_attempt_stale')
-                self._verified(db, existing, policy)
-                return _load(ContributionManifest, existing['manifest'])
-            self._attempt(row, token)
-            budget = self._budget()
-            identities = self._members(db, token.job_id, profile, spec, budget)
-            from app.persistence.retention import PARTICIPANT_ANALYTICS_MAX_DAYS
-            valid_until = min((datetime.fromisoformat(r[0]).timestamp() + PARTICIPANT_ANALYTICS_MAX_DAYS * 86400
-                for r in db.execute('SELECT m.sent_at FROM knowledge_sources s JOIN account_messages m '
-                    'ON m.creator_account_id=s.creator_account_id AND m.message_id=s.message_id WHERE s.job_id=?',
-                    (spec.job_id,))), default=None)
-            manifest = ContributionManifest(contribution_id=spec.contribution_id, job_id=spec.job_id,
-                attempt_fence=token.attempt_fence, job_attempt_id=token.job_attempt_id,
-                scope_sha256=record_digest(spec), member_count=len(identities),
-                ordered_members_sha256=members_digest(identities), profile_sha256=profile.identity_digest(),
-                authorization_epoch=policy.authorization_epoch.value, source_valid_until=valid_until)
-            db.execute('INSERT INTO knowledge_contributions VALUES(?,?,?,?,?,?,?)',
-                       (spec.contribution_id, spec.job_id, canonical_bytes(manifest), record_digest(manifest),
-                        token.attempt_fence, token.job_attempt_id, valid_until))
-            db.execute("UPDATE knowledge_jobs SET state='committed',lease_expires_at=NULL,committed_at=? WHERE job_id=?",
-                       (self.clock(), spec.job_id))
-            return manifest
+        row, spec, profile = self._job(db, token.job_id, policy)
+        self._write_scope(db, spec, policy, 'commit')
+        intent = self._module_intent(db, spec.job_id)
+        if intent and intent['authority_kind'] == 'preview':
+            raise ValueError('knowledge_preview_output_required')
+        existing = db.execute('SELECT * FROM knowledge_contributions WHERE job_id=?', (token.job_id,)).fetchone()
+        if existing:
+            if (existing['sealing_attempt_fence'] != token.attempt_fence
+                    or existing['sealing_job_attempt_id'] != token.job_attempt_id):
+                raise ValueError('knowledge_attempt_stale')
+            self._verified(db, existing, policy)
+            return _load(ContributionManifest, existing['manifest'])
+        self._attempt(row, token)
+        budget = self._budget()
+        identities = self._members(db, token.job_id, profile, spec, budget)
+        budget.check()
+        valid_until = self._source_valid_until(db, spec.job_id)
+        self._attempt(row, token)
+        if valid_until is not None and valid_until <= self.clock():
+            raise ValueError('knowledge_source_expired')
+        manifest = ContributionManifest(contribution_id=spec.contribution_id, job_id=spec.job_id,
+            attempt_fence=token.attempt_fence, job_attempt_id=token.job_attempt_id,
+            scope_sha256=record_digest(spec), member_count=len(identities),
+            ordered_members_sha256=members_digest(identities), profile_sha256=profile.identity_digest(),
+            authorization_epoch=policy.authorization_epoch.value, source_valid_until=valid_until)
+        db.execute('INSERT INTO knowledge_contributions VALUES(?,?,?,?,?,?,?)',
+                   (spec.contribution_id, spec.job_id, canonical_bytes(manifest), record_digest(manifest),
+                    token.attempt_fence, token.job_attempt_id, valid_until))
+        db.execute("UPDATE knowledge_jobs SET state='committed',lease_expires_at=NULL,committed_at=? WHERE job_id=?",
+                   (self.clock(), spec.job_id))
+        return manifest
+
+    def commit_preview_in(self, db, token, frame, *, policy):
+        from app.persistence.text_analysis_jobs import TextAnalysisJobStore
+        return TextAnalysisJobStore(self).commit_preview_in(db, token, frame, policy=policy)
+
+    def finish_without_output_in(self, db, token, outcome, *, policy):
+        from app.persistence.text_analysis_jobs import TextAnalysisJobStore
+        return TextAnalysisJobStore(self).finish_without_output_in(db, token, outcome, policy=policy)
 
     def _verified(self, db, contribution, policy):
         row, spec, profile = self._job(db, contribution['job_id'], policy)
@@ -388,6 +573,13 @@ def retire_scope(connection, account_id, scope_kind, scope_key):
     if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='knowledge_jobs'").fetchone():
         return
     if scope_kind == 'account':
+        if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_enrollments'").fetchone():
+            connection.execute("UPDATE text_analysis_enrollments SET state='retired' "
+                               "WHERE creator_account_id=? AND state!='retired'", (account_id,))
+        if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_account_current'").fetchone():
+            connection.execute('UPDATE text_analysis_account_current SET enrollment_id=NULL, '
+                'mode_version=CASE WHEN mode_version<9007199254740991 THEN mode_version+1 ELSE mode_version END '
+                'WHERE creator_account_id=? AND enrollment_id IS NOT NULL', (account_id,))
         connection.execute('DELETE FROM knowledge_jobs WHERE creator_account_id=?', (account_id,))
         return
     column = {'message': 'message_id', 'conversation': 'conversation_id', 'participant': 'participant_id'}.get(scope_kind)
@@ -403,9 +595,22 @@ def storage_high_water(connection):
         return None
     digest = hashlib.sha256(b'knowledge-storage.v1\0')
     count = 0
-    for table in ('knowledge_store_identity', 'knowledge_retirement_epochs',
+    tables = ['knowledge_store_identity', 'knowledge_retirement_epochs',
                   'knowledge_jobs', 'knowledge_attempts', 'knowledge_sources', 'knowledge_members',
-                  'knowledge_contributions', 'knowledge_retired_intents'):
+                  'knowledge_contributions', 'knowledge_retired_intents']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_intents'").fetchone():
+        tables += ['text_analysis_enrollments', 'text_analysis_intents',
+                   'text_analysis_preview_admissions', 'text_analysis_preview_outputs']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_enrollment_capsules'").fetchone():
+        tables += ['text_analysis_enrollment_capsules', 'text_analysis_account_current',
+                   'text_analysis_enrollment_commands']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_preview_requests'").fetchone():
+        tables += ['text_analysis_preview_requests', 'text_analysis_preview_capsules']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='authoritative_pair'").fetchone():
+        tables += ['authoritative_pair']
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='text_analysis_client_intents'").fetchone():
+        tables += ['text_analysis_client_intents']
+    for table in tables:
         for row in connection.execute(f'SELECT * FROM {table} ORDER BY 1,2'):
             value = [v.hex() if type(v) is bytes else v for v in row]
             raw = json.dumps([table, value], ensure_ascii=True, separators=(',', ':'), allow_nan=False).encode('ascii')

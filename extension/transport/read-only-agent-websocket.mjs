@@ -421,8 +421,10 @@ export class ReadOnlyAgentWebSocketClient {
     ))
       .catch((error) => {
         if (controls.signal.aborted) return;
-        this.reconnectAllowed = error?.code === 'companion_session_refused'
-          && ['rpc_capacity', 'rpc_backlog'].includes(error?.diagnostic?.cause);
+        try { controls.assertCurrent(); } catch { return; }
+        // Channel loss permits a fresh authenticated session, never rotation replay.
+        this.reconnectAllowed = this.reconnectAllowed && error?.code === 'companion_session_refused'
+          && ['rpc_capacity', 'rpc_backlog', 'wire_closed'].includes(error?.diagnostic?.cause);
         this.onValidationError(error);
         this.socket?.close(safeCloseCode(1011), 'Agent reconnect credential could not be stored');
       });

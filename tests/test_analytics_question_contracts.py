@@ -84,6 +84,30 @@ def test_source_spans_use_nonempty_codepoint_intervals():
         SourceSpan(start=3, end=3)
 
 
+def test_evidence_reexports_preserve_one_type_and_serialized_reference():
+    from app.analytics import query_contracts
+    from app.models import analytics, question_evidence
+
+    for name in ('AccountRef', 'ConversationRef', 'MessageRef', 'Sha256Digest'):
+        assert getattr(analytics, name) is getattr(question_evidence, name)
+    for name in ('Count', 'Instant', 'QuestionRecord', 'SourceSpan', 'QuestionEvidence', 'utc_instant'):
+        assert getattr(query_contracts, name) is getattr(question_evidence, name)
+    evidence = query_contracts.QuestionEvidence(
+        account_ref='a1:' + '1'*64, conversation_ref='c1:' + '2'*64,
+        message_ref='m1:' + '3'*64, source_revision=7,
+        source_version_digest='sha256:' + '4'*64,
+        sent_at='2026-09-18T03:00:00+03:00', span=SourceSpan(start=1, end=3),
+    )
+    expected = (
+        '{"account_ref":"a1:' + '1'*64 + '","conversation_ref":"c1:' + '2'*64
+        + '","message_ref":"m1:' + '3'*64 + '","source_revision":7,'
+        + '"source_version_digest":"sha256:' + '4'*64
+        + '","sent_at":"2026-09-18T00:00:00Z","span":{"start":1,"end":3}}'
+    ).encode('utf-8')
+    assert evidence.model_dump_json().encode('utf-8') == expected
+    assert question_evidence.QuestionEvidence.model_validate_json(expected) == evidence
+
+
 @pytest.mark.parametrize(
     "limits",
     [

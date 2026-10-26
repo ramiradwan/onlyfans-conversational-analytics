@@ -6,13 +6,18 @@ from app.analytics.canonical_source import read_transaction_evidence
 from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.analytics.nlp_findings_store import source_binding
 from app.analytics.nlp_record_validation import validate_source_bound_record
+from app.analytics.nlp_preview import (
+    validate_preview_no_output, validate_preview_output, validate_preview_source,
+)
 from app.analytics.query_execution import QuestionBudget, QuestionLimits
 from app.analytics.source_snapshot import scan_identity
 
 
 class ContributionSourceGuard:
-    def budget(self):
-        return QuestionBudget(QuestionLimits(max_records=100_000, wall_clock_ms=30_000))
+    def budget(self, *, wall_clock_ms=30_000):
+        if type(wall_clock_ms) is not int or not 1 <= wall_clock_ms <= 30_000:
+            raise ValueError('knowledge_validation_budget_invalid')
+        return QuestionBudget(QuestionLimits(max_records=100_000, wall_clock_ms=wall_clock_ms))
 
     def origin_budget(self):
         return QuestionBudget(QuestionLimits(max_records=8, wall_clock_ms=1000))
@@ -38,3 +43,15 @@ class ContributionSourceGuard:
     @staticmethod
     def record(profile, source, frame):
         return validate_source_bound_record(profile, source, frame)
+
+    @staticmethod
+    def preview_output(spec, profile, sources, frame):
+        return validate_preview_output(spec, profile, sources, frame)
+
+    @staticmethod
+    def preview_source(output, profile, member, source):
+        return validate_preview_source(output, profile, member, source)
+
+    @staticmethod
+    def preview_no_output(spec, profile, sources, outcome):
+        return validate_preview_no_output(spec, profile, sources, outcome)

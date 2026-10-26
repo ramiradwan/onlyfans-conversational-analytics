@@ -178,12 +178,15 @@ impl servicing::deployment_settlement::Operation for Optional<'_> {
 
 pub(super) fn execute(
     owner: &Owner,
-    _selection: Selection,
+    selection: Selection,
     release: Option<&DesktopRelease>,
     id: &str,
     review: &crate::engine_acquisition_quote::Binding,
     cancelled: &impl Fn() -> bool,
 ) -> Result<bool, Failure> {
+    if !review.valid_for(selection) {
+        return Err("optional_quote_stale".into());
+    }
     let previous = crate::servicing_handoff::load_engine_acquisition(&owner.data)
         .and_then(|b| b.map(|b| Journal::decode(&b)).transpose())
         .map_err(|_| recovery("optional_intent_invalid"))?;

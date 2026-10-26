@@ -1,0 +1,26 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "text-analysis-preview-prepare.v1",
+      "default": "text-analysis-preview-prepare.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "external_key": {
+      "title": "External Key",
+      "type": "string"
+    },
+    "expected_profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Expected Profile Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "external_key",
+    "expected_profile_sha256"
+  ],
+  "title": "PreviewPrepareRequest",
+  "type": "object"
+}

@@ -1181,3 +1181,105 @@ contracts:
     openapi_operations:
     - issueTextAnalysisPreviewAcquisitionProofChallenge
     governing_adr: docs/adr/0041-version-text-analysis-execution-authority-and-delivery.md
+  - id: complimentary-onboarding-activation-v2
+    owner: commercial-ledger
+    producer: hosted-customer-browser
+    consumer: commercial-control-plane
+    purpose: Explicit earmarked starter admission alongside unrelated credit history.
+    profile: urn:bridge-clean:complimentary-onboarding-activation:v2
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 2048
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/complimentary-activation/v2/prepare-request.schema.json
+    - schemas/complimentary-activation/v2/prepare-response.schema.json
+    - schemas/complimentary-activation/v2/confirm-request.schema.json
+    - schemas/complimentary-activation/v2/confirm-response.schema.json
+    - schemas/complimentary-activation/v2/read-request.schema.json
+    - schemas/complimentary-activation/v2/read-response.schema.json
+    - schemas/complimentary-activation/v2/prepared.schema.json
+    - schemas/complimentary-activation/v2/committed.schema.json
+    - schemas/complimentary-activation/v2/error.schema.json
+    openapi_operations:
+    - prepareComplimentaryOnboardingActivationV2
+    - confirmComplimentaryOnboardingActivationV2
+    - readComplimentaryOnboardingActivationV2
+    governing_adr: docs/adr/0043-admit-earmarked-starter-alongside-other-credit-history.md
+  - id: text-analysis-license-reissue-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Exact text-analysis licence replacement operation.
+    profile: urn:bridge-clean:text-analysis-license-reissue:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 8192
+    max_response_bytes: 24576
+    schema_paths:
+    - schemas/license-reissue-text-analysis/v1/definitions.schema.json
+    - schemas/license-reissue-text-analysis/v1/prepare-request.schema.json
+    - schemas/license-reissue-text-analysis/v1/read-request.schema.json
+    - schemas/license-reissue-text-analysis/v1/finalize-request.schema.json
+    - schemas/license-reissue-text-analysis/v1/recover-request.schema.json
+    - schemas/license-reissue-text-analysis/v1/prepare-response.schema.json
+    - schemas/license-reissue-text-analysis/v1/confirmation.schema.json
+    - schemas/license-reissue-text-analysis/v1/result.schema.json
+    - schemas/license-reissue-text-analysis/v1/read-response.schema.json
+    - schemas/license-reissue-text-analysis/v1/error.schema.json
+    openapi_operations:
+    - prepareTextAnalysisLicenseReissue
+    - readTextAnalysisLicenseReissue
+    - finalizeTextAnalysisLicenseReissue
+    - recoverTextAnalysisLicenseReissue
+    governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md
+  - id: text-analysis-license-reissue-authorization-v1
+    owner: commercial
+    producer: customer-browser
+    consumer: commercial-control-plane
+    purpose: Exact text-analysis licence replacement customer authorization.
+    profile: urn:bridge-clean:text-analysis-license-reissue-authorization:v1
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 2048
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/license-reissue-text-analysis-authorization/v1/authorize-request.schema.json
+    - schemas/license-reissue-text-analysis-authorization/v1/authorize-response.schema.json
+    - schemas/license-reissue-text-analysis-authorization/v1/error.schema.json
+    openapi_operations:
+    - openTextAnalysisLicenseReissue
+    - authorizeTextAnalysisLicenseReissue
+    governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md
+  - id: text-analysis-license-reissue-proof-v1
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Exact text-analysis licence replacement installation proof.
+    profile: urn:bridge-clean:text-analysis-license-reissue-proof:v1
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 12288
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/license-reissue-text-analysis-proof/v1/definitions.schema.json
+    - schemas/license-reissue-text-analysis-proof/v1/challenge-request.schema.json
+    - schemas/license-reissue-text-analysis-proof/v1/challenge-response.schema.json
+    - schemas/license-reissue-text-analysis-proof/v1/error.schema.json
+    openapi_operations:
+    - issueTextAnalysisLicenseReissueProofChallenge
+    governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md
+  - id: text-analysis-license-reissue-supported-profiles-v1
+    owner: contracts
+    producer: contracts
+    consumer: local-product
+    purpose: Exact text-analysis licence replacement supported profile set.
+    profile: urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v1
+    classification: public-release
+    retention_class: immutable-public-release
+    max_request_bytes: 3072
+    max_response_bytes: 3072
+    schema_paths:
+    - schemas/license-reissue-text-analysis-supported-profiles/v1/supported-profiles.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md

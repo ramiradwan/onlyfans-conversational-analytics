@@ -98,6 +98,7 @@ class DependencyService:
         self.withdrawals = set()
         self.active = threading.Condition(self.gate)
         self.pins = {}
+        self.execution_owner = None
 
     def disable(self):
         """Isolate optional startup failure without modifying durable authority."""
@@ -722,6 +723,7 @@ class DependencyService:
 
     def select(self, account, profile_id, revision, *, rollback=False):
         with self.gate:
+            require(self.execution_owner is None, 'nlp_authenticated_command_required')
             if rollback:
                 previous = self.findings.state(account).get('previous_profile_json')
                 require(previous is not None, 'nlp_rollback_unavailable')
@@ -739,6 +741,7 @@ class DependencyService:
 
     def _finish_selection(self, op):
         try:
+            require(self.execution_owner is None, 'nlp_authenticated_command_required')
             require(op['source_token'] == self._source_token(op['account']), 'nlp_selection_stale')
             profile = self._profile(op['profile'])
             self._admit(profile, fresh=True)
@@ -754,6 +757,7 @@ class DependencyService:
 
     def remove(self, account, profile_id=None, revision=None):
         with self.gate:
+            require(profile_id is not None or self.execution_owner is None, 'nlp_authenticated_command_required')
             self._running()
             if profile_id is not None:
                 matches = [p for p, _, _ in self.persistence.profiles() if (p.profile_id, p.revision) == (profile_id, revision)]
@@ -774,6 +778,7 @@ class DependencyService:
         with self.gate:
             self._running()
             token = self._source_token(account)
+            require(self.execution_owner is None, 'nlp_authenticated_command_required')
             with self.source.dependency_selection_guard(account, token):
                 row = self.findings.state(account)
                 require(row['mode'] in ('paused', 'enabled'), 'nlp_account_unavailable')

@@ -1,0 +1,78 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "text-analysis-preview-scope.v1",
+      "default": "text-analysis-preview-scope.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "cutoff": {
+      "format": "date-time",
+      "title": "Cutoff",
+      "type": "string"
+    },
+    "lower_exclusive": {
+      "format": "date-time",
+      "title": "Lower Exclusive",
+      "type": "string"
+    },
+    "directions": {
+      "const": "both",
+      "default": "both",
+      "title": "Directions",
+      "type": "string"
+    },
+    "message_cap": {
+      "const": 32,
+      "default": 32,
+      "title": "Message Cap",
+      "type": "integer"
+    },
+    "source_count": {
+      "maximum": 32,
+      "minimum": 0,
+      "title": "Source Count",
+      "type": "integer"
+    },
+    "earliest": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Earliest"
+    },
+    "latest": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Latest"
+    },
+    "inventory_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Inventory Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "cutoff",
+    "lower_exclusive",
+    "source_count",
+    "earliest",
+    "latest",
+    "inventory_sha256"
+  ],
+  "title": "PreviewScope",
+  "type": "object"
+}

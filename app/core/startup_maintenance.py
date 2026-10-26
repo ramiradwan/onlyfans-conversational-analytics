@@ -87,6 +87,9 @@ def inspect_retained_state(root: Path) -> RetainedState:
         names = {entry.name for entry in entries}
         if len({name.casefold() for name in names}) != len(names):
             raise StartupRefused("retained_root_alias")
+        from app.persistence.authoritative_pair import RESTORE_JOURNAL_FILENAME
+        if RESTORE_JOURNAL_FILENAME.casefold() in {name.casefold() for name in names}:
+            raise StartupRefused("authoritative_restore_incomplete")
         present = tuple(name for name in DATABASES if name in names)
         for entry in entries:
             reject_path_aliases(entry)
@@ -145,6 +148,15 @@ def acquire_runtime_ownership(data_directory: str | Path | None = None) -> Retai
             raise
         _held_lease = lease
         return state
+
+
+def runtime_root_lease():
+    """Return a proof of the root lease already held by this process."""
+    from app.persistence.authoritative_pair import RuntimeRootLease
+    with _lease_guard:
+        if _held_lease is None:
+            raise StartupRefused("runtime_writer_unavailable")
+        return RuntimeRootLease.from_held_lock(_held_lease.path.parent, _held_lease)
 
 
 def admit_retained_schemas(state: RetainedState, *,

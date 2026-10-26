@@ -1,8 +1,7 @@
 """Release boundary for optional worker execution."""
 
-from app.core.config import settings
+from app.core.optional_execution import require_optional_execution
 
 
 def require_findings_execution() -> None:
-    if settings.environment.lower() != 'test':
-        raise ValueError('findings_execution_unavailable')
+    require_optional_execution()

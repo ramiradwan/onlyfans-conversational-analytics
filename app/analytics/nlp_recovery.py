@@ -120,17 +120,39 @@ class RecoveryCoordinator:
     def _selection(self, account):
         return encoded(self.findings.selection_token(account)).decode()
 
+    def _current_owner(self, account, references):
+        for contribution, _ in references:
+            try:
+                with self.repository.read_committed(contribution, policy=self.policy) as (db, manifest, spec, _):
+                    self.authorize(account)
+                    if spec.creator_account_id != account:
+                        raise ValueError('nlp_recovery_account_mismatch')
+                    current = db.execute('SELECT enrollment_id FROM text_analysis_account_current '
+                        'WHERE installation_id=? AND creator_account_id=?', (spec.installation_id, account)).fetchone()
+                    if current is None or current['enrollment_id'] is None:
+                        continue
+                    intent = db.execute('SELECT enrollment_id FROM text_analysis_intents WHERE job_id=? '
+                        'AND contribution_id=? AND installation_id=? AND creator_account_id=?',
+                        (manifest.job_id, contribution, spec.installation_id, account)).fetchone()
+                    if intent is None or intent['enrollment_id'] != current['enrollment_id']:
+                        raise ValueError('nlp_recovery_current_owner_conflict')
+            except ValueError:
+                self.authorize(account)
+                raise
+
     @contextmanager
     def visibility(self, ticket):
         self.authorize(ticket.account)
         profile = read_profile(ticket.profile)
         with self.authority.recovery_visibility(profile.identity_digest(), expected=ticket.authority):
             self.authorize(ticket.account)
+            self._current_owner(ticket.account, ticket.references)
             self._check_selection(ticket)
             if self.source.erasure_source_identity(ticket.account) != ticket.source_token:
                 raise ValueError('nlp_recovery_source_changed')
             # Generation activation owns canonical writer transactions itself.
             yield
+            self._current_owner(ticket.account, ticket.references)
             self._check_selection(ticket)
             self.authorize(ticket.account)
 
@@ -168,6 +190,8 @@ class RecoveryCoordinator:
         self._records(account, profile, references)
         token = self.source.erasure_source_identity(account)
         with self.authority.recovery_visibility(profile.identity_digest()) as barrier:
+            self.authorize(account)
+            self._current_owner(account, references)
             with self.source.dependency_selection_guard(account, token):
                 current = self.findings.selection_token(account)
                 try:
@@ -203,8 +227,9 @@ class RecoveryCoordinator:
             if ticket.reference_index >= len(ticket.references):
                 return replace(ticket, phase='literals')
             contribution, _ = ticket.references[ticket.reference_index]
-            result = replay_contribution(self.repository, self.findings, contribution, policy=self.policy,
-                after_ordinal=ticket.after_ordinal, limit=limit)
+            with self.visibility(ticket):
+                result = replay_contribution(self.repository, self.findings, contribution, policy=self.policy,
+                    after_ordinal=ticket.after_ordinal, limit=limit)
             return replace(ticket, reference_index=ticket.reference_index + int(result['complete']),
                 after_ordinal=-1 if result['complete'] else result['after_ordinal'])
         if ticket.phase == 'literals':

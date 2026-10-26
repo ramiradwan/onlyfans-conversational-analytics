@@ -1,0 +1,328 @@
+{
+  "$defs": {
+    "ClientIntentCursor": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "enrollment_command",
+            "preview_prepare",
+            "preview_confirm"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "key"
+      ],
+      "title": "ClientIntentCursor",
+      "type": "object"
+    },
+    "ClientIntentRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-client-intent-record.v1",
+          "default": "text-analysis-client-intent-record.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "enrollment_command",
+            "preview_prepare",
+            "preview_confirm"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnrollmentCommand"
+            },
+            {
+              "$ref": "#/$defs/PreviewPrepareRequest"
+            },
+            {
+              "$ref": "#/$defs/PreviewConfirmIntent"
+            }
+          ],
+          "title": "Body"
+        },
+        "body_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Body Sha256",
+          "type": "string"
+        },
+        "retained_at": {
+          "format": "date-time",
+          "title": "Retained At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "key",
+        "body",
+        "body_sha256",
+        "retained_at"
+      ],
+      "title": "ClientIntentRecord",
+      "type": "object"
+    },
+    "EnrollmentCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-enrollment-command.v1",
+          "default": "text-analysis-enrollment-command.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "command_key": {
+          "title": "Command Key",
+          "type": "string"
+        },
+        "expected_enrollment_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expected Enrollment Id"
+        },
+        "expected_mode_version": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expected Mode Version",
+          "type": "integer"
+        },
+        "action": {
+          "enum": [
+            "enable",
+            "replace",
+            "pause",
+            "resume",
+            "retire"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "expected_profile_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Profile Sha256"
+        }
+      },
+      "required": [
+        "command_key",
+        "expected_enrollment_id",
+        "expected_mode_version",
+        "action"
+      ],
+      "title": "EnrollmentCommand",
+      "type": "object"
+    },
+    "PolicyIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "revision",
+        "sha256"
+      ],
+      "title": "PolicyIdentity",
+      "type": "object"
+    },
+    "PreviewConfirmIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "external_key": {
+          "title": "External Key",
+          "type": "string"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/PreviewConfirmation"
+        }
+      },
+      "required": [
+        "external_key",
+        "confirmation"
+      ],
+      "title": "PreviewConfirmIntent",
+      "type": "object"
+    },
+    "PreviewConfirmation": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-confirmation.v1",
+          "default": "text-analysis-confirmation.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "external_key": {
+          "title": "External Key",
+          "type": "string"
+        },
+        "job_id": {
+          "title": "Job Id",
+          "type": "string"
+        },
+        "contribution_id": {
+          "title": "Contribution Id",
+          "type": "string"
+        },
+        "spec_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Spec Sha256",
+          "type": "string"
+        },
+        "context_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Context Sha256",
+          "type": "string"
+        },
+        "scope_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Scope Sha256",
+          "type": "string"
+        },
+        "parameter_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Parameter Sha256",
+          "type": "string"
+        },
+        "input_inventory_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Input Inventory Sha256",
+          "type": "string"
+        },
+        "reference_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Reference Id",
+          "type": "string"
+        },
+        "compact_jws_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Compact Jws Sha256",
+          "type": "string"
+        },
+        "preview_selection_policy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        }
+      },
+      "required": [
+        "external_key",
+        "job_id",
+        "contribution_id",
+        "spec_sha256",
+        "context_sha256",
+        "scope_sha256",
+        "parameter_sha256",
+        "input_inventory_sha256",
+        "reference_id",
+        "compact_jws_sha256",
+        "preview_selection_policy"
+      ],
+      "title": "PreviewConfirmation",
+      "type": "object"
+    },
+    "PreviewPrepareRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "text-analysis-preview-prepare.v1",
+          "default": "text-analysis-preview-prepare.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "external_key": {
+          "title": "External Key",
+          "type": "string"
+        },
+        "expected_profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Expected Profile Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "external_key",
+        "expected_profile_sha256"
+      ],
+      "title": "PreviewPrepareRequest",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/$defs/ClientIntentRecord"
+      },
+      "maxItems": 64,
+      "title": "Items",
+      "type": "array"
+    },
+    "next_after": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClientIntentCursor"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "items",
+    "next_after"
+  ],
+  "title": "ClientIntentPage",
+  "type": "object"
+}

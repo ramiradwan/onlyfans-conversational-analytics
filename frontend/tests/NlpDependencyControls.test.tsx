@@ -3,11 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NlpDependencyControls } from '../src/components/NlpDependencyControls';
+import { TextAnalysisExecutionControls } from '../src/components/TextAnalysisExecutionControls';
 import type { EngineAcquisitionApi } from '../src/api/engineAcquisition';
 import type { NlpDependenciesApi, NlpDependencyCommand, NlpDependencyObservation, NlpDependencyPlan, NlpDependencyResult, NlpDependencyStatus } from '../src/services/nlpDependenciesApi';
 import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
+
+vi.mock('../src/components/TextAnalysisExecutionControls', () => ({ TextAnalysisExecutionControls: vi.fn(() => null) }));
 
 const profile = { profile_id: 'topics-and-mentions', revision: 'one', profile_sha256: 'a'.repeat(64), catalogued: true, installed: false, prepared: false, withdrawn: false, storage_state: 'absent', languages: ['en'], tasks: ['message_topics', 'concept_mentions'], resources: { download_bytes: 2048, installed_bytes: 4096, rollback_bytes: 2048, temporary_bytes: 4096, transition_peak_memory_bytes: 8192, inference_threads: 2 } };
 const status: NlpDependencyStatus = { configured: true, profiles: [profile], available_profiles: [], acquisitions: [], selected: null, failure: null, resume_granularity: 'verified_files_current_file_restarts' };
@@ -32,17 +35,99 @@ function view(api: NlpDependenciesApi, account = 'account-one', engineApi?: Engi
 beforeEach(() => { useUserStore.getState().actions.setUserRole('creator-ceo'); bridgeTransportStore.bindAccount('account-one'); });
 afterEach(() => { cleanup(); bridgeTransportStore.reset(); useUserStore.getState().actions.setUserRole(null); });
 async function review() { fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' })); await screen.findByRole('dialog', { name: 'Review download costs' }); }
+function feedbackRegion() {
+  const node = document.querySelector('[data-reserved-region="dependency-feedback"]');
+  if (!(node instanceof HTMLElement)) throw new Error('Dependency feedback is missing');
+  return node;
+}
+async function readFeedback(text: string | RegExp) {
+  fireEvent.click(within(feedbackRegion()).getByRole('button', { name: 'Show details' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Details' });
+  expect(within(dialog).getByText(text)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull());
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+function connect(suffix = '1') {
+  bridgeTransportStore.acceptSession({ connection_id: `10000000-0000-4000-8000-00000000000${suffix}`,
+    bridge_session_id: `20000000-0000-4000-8000-00000000000${suffix}`, creator_account_id: 'account-one',
+    negotiated_protocol_version: '2', server_version: 'example' });
+}
 describe('NlpDependencyControls', () => {
+  it('reserves compact feedback from loading through combined failure and recovery', async () => {
+    const api = fixture(), initial = deferred<NlpDependencyStatus>(), refreshed = deferred<NlpDependencyStatus>();
+    api.get.mockReturnValueOnce(initial.promise);
+    render(view(api));
+    const region = feedbackRegion(), wrapper = region.parentElement, classes = region.className;
+    expect(within(region).getByRole('status').textContent).toBe('Checking…');
+    expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeNull();
+    await readFeedback('Checking text analysis availability…');
+    await act(async () => initial.reject(new Error('untrusted failure')));
+    expect(feedbackRegion()).toBe(region);
+    expect(feedbackRegion().parentElement).toBe(wrapper);
+    expect(within(region).getByRole('alert').textContent).toBe('Needs attention');
+    expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBe(wrapper);
+    await readFeedback('Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again. Text analysis is unavailable until a qualified profile and compatible installed engine are available.');
+    expect(screen.queryByText('untrusted failure')).toBeNull();
+    api.get.mockReturnValueOnce(refreshed.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+    expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeNull();
+    await readFeedback('Updating text analysis settings… Checking text analysis availability…');
+    await act(async () => refreshed.resolve(status));
+    await screen.findByRole('button', { name: 'Review download for topics-and-mentions' });
+    expect(feedbackRegion()).toBe(region);
+    expect(feedbackRegion().parentElement).toBe(wrapper);
+    expect(feedbackRegion().className).toBe(classes);
+    expect(document.querySelectorAll('[data-reserved-region="dependency-feedback"]')).toHaveLength(1);
+    expect(within(region).queryByRole('button', { name: 'Show details' })).toBeNull();
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it.each(['disconnect', 'session'] as const)('aborts a pending review and discards its late result after %s', async (change) => {
+    connect();
+    const api = fixture(), pending = deferred<NlpDependencyResult>();
+    api.command.mockReturnValueOnce(pending.promise);
+    render(view(api));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' }));
+    const signal = api.command.mock.calls[0][1];
+    api.get.mockResolvedValue(unavailable);
+    act(() => { if (change === 'disconnect') bridgeTransportStore.markDisconnected(); else connect('2'); });
+    await act(async () => pending.resolve({ operation: quote, status }));
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review download for topics-and-mentions' })).toBeNull();
+    await readFeedback(/Text analysis is unavailable until/);
+    expect(api.command).toHaveBeenCalledTimes(1);
+  });
+  it('clears expanded failure feedback when the connection changes', async () => {
+    connect();
+    const api = fixture(); api.get.mockRejectedValueOnce(new Error('untrusted failure'));
+    render(view(api));
+    await waitFor(() => expect(within(feedbackRegion()).getByRole('alert').textContent).toBe('Needs attention'));
+    fireEvent.click(within(feedbackRegion()).getByRole('button', { name: 'Show details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Details' });
+    expect(dialog.textContent).toContain('Text analysis settings could not be updated.');
+    api.get.mockResolvedValue(unavailable);
+    act(() => bridgeTransportStore.markDisconnected());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull());
+    await readFeedback('Text analysis is unavailable until a qualified profile and compatible installed engine are available.');
+    expect(api.command).not.toHaveBeenCalled();
+  });
   it('keeps shared Engine review separate when no qualified profile service is configured', async () => {
     const api = fixture(unavailable);
     const idle = { operation_id: null, state: 'not_requested' as const, installed: false, in_flight: false,
       cancel_requested: false, deadline_reached: false, progress_percent: null, reason: null, hresult: null };
-    const engineApi = { supported: () => true, status: vi.fn().mockResolvedValue(idle),
+    const engineApi = { selection: 'module' as const, supported: () => true, status: vi.fn().mockResolvedValue(idle),
       review: vi.fn().mockResolvedValue({ availability: 'unavailable', reason: 'optional_quote_unavailable' }),
       start: vi.fn(), cancel: vi.fn() };
     render(view(api, 'account-one', engineApi));
     expect(await screen.findByText('Engine installation has not been requested.')).toBeTruthy();
-    expect(screen.getByText(/Text analysis is unavailable until a qualified profile/)).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy());
+    await readFeedback(/Text analysis is unavailable until a qualified profile/);
     fireEvent.click(screen.getByRole('button', { name: 'Review Engine installation' }));
     expect(await screen.findByText(/A verified Engine installation quote is unavailable/)).toBeTruthy();
     expect(engineApi.review).toHaveBeenCalledOnce(); expect(engineApi.start).not.toHaveBeenCalled();
@@ -105,7 +190,8 @@ describe('NlpDependencyControls', () => {
     const api = fixture(); api.command.mockResolvedValueOnce({ operation: quote, status: { ...status, profiles: [...profiles] } });
     render(view(api));
     fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' }));
-    expect(await screen.findByText(/Text analysis settings could not be updated/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check status' }).hasAttribute('disabled')).toBe(false));
+    await readFeedback(/Text analysis settings could not be updated/);
     expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Download reviewed files' })).toBeNull();
     expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
@@ -127,7 +213,8 @@ describe('NlpDependencyControls', () => {
   ])('refuses an incoherent returned plan %#', async (operation) => {
     const api = fixture(); api.command.mockResolvedValueOnce({ operation, status });
     render(view(api)); fireEvent.click(await screen.findByRole('button', { name: 'Review download for topics-and-mentions' }));
-    expect(await screen.findByText(/Text analysis settings could not be updated/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check status' }).hasAttribute('disabled')).toBe(false));
+    await readFeedback(/Text analysis settings could not be updated/);
     expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull();
     expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan']);
   });
@@ -140,7 +227,8 @@ describe('NlpDependencyControls', () => {
   });
   it('preserves the unavailable baseline without automatic setup actions', async () => {
     const api = fixture(unavailable); render(view(api));
-    expect(await screen.findByText(/Text analysis is unavailable until/)).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy());
+    await readFeedback(/Text analysis is unavailable until/);
     expect(screen.getByText(/other analytics remain available/)).toBeTruthy();
     expect(api.get).toHaveBeenCalledTimes(1); expect(api.command).not.toHaveBeenCalled(); expect(api.observe).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'Check status' }));
@@ -158,9 +246,9 @@ describe('NlpDependencyControls', () => {
   });
   it('keeps download pause resume and cancellation distinct from processing controls', async () => {
     const api = fixture({ ...status, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'enabled', selection_epoch: 1, admission_epoch: 1 } });
-    render(view(api)); fireEvent.click(await screen.findByRole('button', { name: 'Pause processing' }));
-    await waitFor(() => expect(api.command.mock.calls[0][0]).toEqual({ action: 'account_pause' }));
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Review download for topics-and-mentions' }) as HTMLButtonElement).disabled).toBe(false));
+    render(view(api));
+    await screen.findByRole('button', { name: 'Review download for topics-and-mentions' });
+    expect(screen.queryByRole('button', { name: 'Pause processing' })).toBeNull();
     await review(); fireEvent.click(screen.getByRole('button', { name: 'Download reviewed files' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Pause download' }));
     await waitFor(() => expect(screen.getByText(/Download paused/)).toBeTruthy());
@@ -168,7 +256,7 @@ describe('NlpDependencyControls', () => {
     await waitFor(() => expect(screen.getByText(/Downloading/)).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Cancel download' }));
     await waitFor(() => expect(screen.getByText(/Download cancelled/)).toBeTruthy());
-    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['account_pause', 'plan', 'acquire', 'pause', 'resume', 'cancel']);
+    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan', 'acquire', 'pause', 'resume', 'cancel']);
   });
   it('aborts and discards pending plan results when the account changes', async () => {
     const api = fixture(); let resolve!: (result: NlpDependencyResult) => void;
@@ -178,7 +266,7 @@ describe('NlpDependencyControls', () => {
     act(() => bridgeTransportStore.bindAccount('account-two')); rendered.rerender(view(api, 'account-two'));
     await act(async () => resolve({ operation: quote, status }));
     expect(signal?.aborted).toBe(true); expect(screen.queryByRole('dialog')).toBeNull();
-    expect(await screen.findByText(/Text analysis is unavailable until/)).toBeTruthy();
+    await readFeedback(/Text analysis is unavailable until/);
     expect(api.command).toHaveBeenCalledTimes(1);
   });
   it('does not observe or display an acquisition returned after an account switch', async () => {
@@ -193,10 +281,11 @@ describe('NlpDependencyControls', () => {
   it('distinguishes installed files from prepared profiles and hides exception text', async () => {
     const api = fixture({ ...status, profiles: [{ ...profile, installed: true }] }); render(view(api));
     expect(await screen.findByText(/Files installed; preparation required/)).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Use topics-and-mentions' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Use topics-and-mentions' })).toBeNull();
     api.command.mockRejectedValueOnce(new Error('untrusted server secret'));
     fireEvent.click(screen.getByRole('button', { name: 'Prepare topics-and-mentions' }));
     expect(await screen.findByRole('alert')).toBeTruthy(); expect(screen.queryByText(/untrusted server secret/)).toBeNull();
+    await readFeedback(/Text analysis settings could not be updated/);
     expect(screen.getByText(/Files installed; preparation required/)).toBeTruthy();
     expect(api.command).toHaveBeenCalledWith({ action: 'prepare', profile_sha256: profile.profile_sha256 }, expect.any(AbortSignal));
   });
@@ -212,17 +301,21 @@ describe('NlpDependencyControls', () => {
     const api = fixture(); render(view(api)); await review();
     api.command.mockRejectedValueOnce(new Error('response lost'));
     fireEvent.click(screen.getByRole('button', { name: 'Download reviewed files' }));
-    expect(await screen.findByText(/Text analysis settings could not be updated/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check status' }).hasAttribute('disabled')).toBe(false));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review download costs' })).toBeNull());
+    await readFeedback(/Text analysis settings could not be updated/);
     api.get.mockResolvedValue({ ...status, acquisitions: [observation] });
     fireEvent.click(await screen.findByRole('button', { name: 'Check status' }));
     await waitFor(() => expect(api.observe).toHaveBeenCalledWith(observation.id, expect.any(AbortSignal)));
     expect(await screen.findByRole('button', { name: 'Pause download' })).toBeTruthy();
     expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(['plan', 'acquire']);
   });
-  it('preserves the saved selection when the runtime is unavailable', async () => {
+  it('does not infer durable processing state from cached dependency selection', async () => {
     const api = fixture({ ...unavailable, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'paused', selection_epoch: 1, admission_epoch: 1 } });
     render(view(api));
-    expect(await screen.findByText(/Saved selection: topics-and-mentions/)).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy());
+    await readFeedback(/Text analysis is unavailable until/);
+    expect(screen.queryByText(/Saved selection:/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Enable processing' })).toBeNull();
     expect(api.command).not.toHaveBeenCalled();
   });
@@ -233,16 +326,24 @@ describe('NlpDependencyControls', () => {
     expect(api.observe).not.toHaveBeenCalledWith(paused.id, expect.anything());
     expect(await screen.findByRole('button', { name: 'Pause download' })).toBeTruthy();
   });
-  it('confirms account removal separately from shared profile cleanup', async () => {
+  it('delegates account processing to the durable controls', async () => {
     const api = fixture({ ...status, selected: { profile_id: profile.profile_id, revision: profile.revision, profile_sha256: profile.profile_sha256, mode: 'paused', selection_epoch: 1, admission_epoch: 1 } });
     render(view(api));
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove text analysis for this account' }));
+    await screen.findByRole('button', { name: 'Review download for topics-and-mentions' });
+    expect(TextAnalysisExecutionControls).toHaveBeenCalledWith(expect.objectContaining({ creatorAccountId: 'account-one', dependenciesApi: api }), undefined);
+    expect(screen.queryByRole('button', { name: 'Remove text analysis for this account' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use previous profile' })).toBeNull();
     expect(api.command).not.toHaveBeenCalled();
-    expect(await screen.findByText(/Text processing stops for this account/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove for this account' }));
-    await waitFor(() => expect(api.command).toHaveBeenCalledWith({ action: 'remove' }, expect.any(AbortSignal)));
   });
-  it('requires explicit preparation selection and removal confirmation', async () => {
+  it('refuses a preview Engine API in the module setup location without downloading a profile', () => {
+    const api = fixture(unavailable);
+    const engineApi = { selection: 'preview' as const, supported: vi.fn(() => true), status: vi.fn(), review: vi.fn(), start: vi.fn(), cancel: vi.fn() };
+    render(view(api, 'account-one', engineApi));
+    expect(screen.getByText(/Engine setup selection could not be verified/)).toBeTruthy();
+    expect(engineApi.status).not.toHaveBeenCalled(); expect(engineApi.review).not.toHaveBeenCalled();
+    expect(engineApi.start).not.toHaveBeenCalled(); expect(engineApi.cancel).not.toHaveBeenCalled(); expect(api.command).not.toHaveBeenCalled();
+  });
+  it('requires explicit preparation and shared file removal confirmation', async () => {
     const installed = { ...profile, installed: true };
     const prepared = { ...installed, prepared: true };
     const api = fixture({ ...status, profiles: [installed] }); render(view(api));
@@ -251,14 +352,12 @@ describe('NlpDependencyControls', () => {
     expect(api.command.mock.calls).toHaveLength(1);
     api.command.mockResolvedValueOnce({ operation: null, status: { ...status, profiles: [prepared] } });
     fireEvent.click(screen.getByRole('button', { name: 'Check available profiles' }));
-    const use = await screen.findByRole('button', { name: 'Use topics-and-mentions' });
-    await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(use);
-    await waitFor(() => expect(api.command.mock.calls.at(-1)?.[0]).toEqual({ action: 'select', profile_id: profile.profile_id, revision: profile.revision }));
+    expect(screen.queryByRole('button', { name: 'Use topics-and-mentions' })).toBeNull();
     await waitFor(() => expect((screen.getByRole('button', { name: 'Remove topics-and-mentions' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: 'Remove topics-and-mentions' }));
     expect(api.command.mock.calls.some(([input]) => input.action === 'remove')).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Remove profile' }));
     await waitFor(() => expect(api.command.mock.calls.at(-1)?.[0]).toEqual({ action: 'remove', profile_id: profile.profile_id, revision: profile.revision }));
+    expect(api.command.mock.calls.some(([input]) => ['select', 'account_enable', 'account_pause', 'rollback'].includes(input.action))).toBe(false);
   });
 });

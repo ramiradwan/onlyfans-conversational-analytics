@@ -1,0 +1,50 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "contribution_id": {
+      "title": "Contribution Id",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "prepared",
+        "pending",
+        "running",
+        "committed",
+        "failed",
+        "result_deleted"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "terminal_reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "empty",
+            "incomplete",
+            "overflow",
+            "source_retired"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Terminal Reason"
+    }
+  },
+  "required": [
+    "job_id",
+    "contribution_id",
+    "state",
+    "terminal_reason"
+  ],
+  "title": "PreviewReceipt",
+  "type": "object"
+}

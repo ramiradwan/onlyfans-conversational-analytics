@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -46,6 +47,8 @@ def test_reports_selection_outcomes_and_preserves_failure_exit(tmp_path):
     summary = (destination / "summary.md").read_text(encoding="utf-8")
     assert "actual failure" in summary and 'python -m pytest "test_sample.py::test_fail"' in summary
     assert report["source_commit"] == "a" * 40 and report["run_attempt"] == "2"
+    assert report["python"] == platform.python_version()
+    assert report["python_implementation"] == platform.python_implementation()
     skipped = [r for r in report["reports"] if r["outcome"] == "skipped"]
     assert [r["skip_reason"] for r in skipped] == ["Skipped: fixture skip"]
     assert str(tmp_path) not in skipped[0]["skip_reason"]
@@ -207,7 +210,8 @@ def test_subtests_keep_distinct_identity_and_cannot_hide_child_outcomes(tmp_path
     rendered = (destination / "summary.md").read_text(encoding="utf-8")
     assert {"passed": "1 passed · 0 failed · 0 skipped", "failed": "0 passed · 1 failed · 0 skipped",
             "skipped": "0 passed · 0 failed · 1 skipped"}[child_outcome] in rendered
-    spec = ci_gate.ReportSpec("backend-fast", report["platform"])
+    spec = ci_gate.ReportSpec("backend-fast", report["platform"],
+                              python=f"{sys.version_info.major}.{sys.version_info.minor}")
     if child_outcome == "passed":
         assert ci_gate.validate_report(report, spec) == {report["selected"][0]: "executed"}
     else:
@@ -219,3 +223,26 @@ def test_subtests_keep_distinct_identity_and_cannot_hide_child_outcomes(tmp_path
         assert "child failed" in rendered and "Subtest context:" in rendered
     if child_outcome == "skipped":
         assert children[1]["skip_reason"] == "Skipped: child unavailable"
+
+
+def test_socket_loop_test_module_imports_without_application_dependencies(tmp_path):
+    module = ROOT / "tests/test_e2e_text_analysis_fixture.py"
+    source = (
+        "import importlib.abc, importlib.util, sys\n"
+        "class NoApplication(importlib.abc.MetaPathFinder):\n"
+        " def find_spec(self, fullname, path=None, target=None):\n"
+        "  if fullname.startswith('app.') and fullname not in {'app.core', 'app.core.server_loop'}:\n"
+        "   raise AssertionError('Application dependency imported: ' + fullname)\n"
+        "def test_import():\n"
+        " sys.meta_path.insert(0, NoApplication())\n"
+        f" spec = importlib.util.spec_from_file_location('socket_loop_cases', {str(module)!r})\n"
+        " loaded = importlib.util.module_from_spec(spec)\n"
+        " spec.loader.exec_module(loaded)\n"
+        " assert 'e2e_text_analysis_fixture' not in sys.modules\n"
+        " assert 'app.core.server_loop' in sys.modules\n"
+        " assert not any(name.startswith(('app.persistence', 'app.nlp', 'app.security')) for name in sys.modules)\n"
+    )
+    result, report, _ = run_suite(tmp_path, source, "--noconftest")
+    assert result.returncode == report["exit_code"] == 0, result.stdout + result.stderr
+    assert report["selected"] == ["test_sample.py::test_import"]
+    assert [phase["outcome"] for phase in report["reports"]] == ["passed"] * 3

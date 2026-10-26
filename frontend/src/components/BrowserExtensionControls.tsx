@@ -31,7 +31,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   api: BrowserControlApi;
   browser: BrowserSurfacePayload | null;
   canManage: boolean;
-  /** The link state; its issue text already explains an unreachable extension. */
+  /** Ingestion link state, used when no browser surface is available. */
   connection: ExtensionConnection;
   onboarding?: DesktopOnboardingApi;
   /** Settings combines its control, pairing and connection-list feedback. */
@@ -41,7 +41,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   const [pending, setPending] = useState<CaptureAction | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const operation = useRef<AbortController | null>(null);
-  const connected = connection === 'connected';
+  const controlAvailable = browser !== null;
 
   useEffect(() => () => operation.current?.abort(), []);
 
@@ -65,7 +65,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
   }, [pending]);
 
   const setCapture = async (action: CaptureAction) => {
-    if (connection !== 'connected' || browser === null) return;
+    if (!canManage || browser === null || (action === 'resume' && browser.legal_review_required)) return;
     operation.current?.abort();
     const controller = new AbortController();
     operation.current = controller;
@@ -98,7 +98,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
       if (!controller.signal.aborted && result === 'unreachable') setNotice('unreachable');
     } catch { if (!controller.signal.aborted) setNotice('failed'); }
   };
-  const openInExtension = (step: BrowserDestination, label: string) => (connected && canManage ? (
+  const openInExtension = (step: BrowserDestination, label: string) => (controlAvailable && canManage ? (
     <Button onClick={() => void open(step)} size="small" variant="outlined">{label}</Button>
   ) : undefined);
 
@@ -127,7 +127,7 @@ export function BrowserExtensionControls({ api, browser, canManage, connection, 
 
   const captureButton = canManage && captureAction !== null && !resumeNeedsReview ? (
     <Button
-      disabled={pending !== null || connection !== 'connected'}
+      disabled={pending !== null}
       onClick={() => void setCapture(captureAction)}
       size="small"
       startIcon={captureAction === 'pause' ? <PauseCircleOutlinedIcon /> : <PlayCircleOutlinedIcon />}

@@ -261,7 +261,7 @@ export async function withCatchupDiagnostics(assertion, { summary, platform, con
   let result;
   try { result = await assertion(); }
   catch (error) {
-    await report(failureContext === 'capture' ? 'Capture checkpoint failed' : 'Catch-up poll timed out');
+    await report(failureContext === 'capture' ? 'Capture checkpoint failed' : 'Catch-up checkpoint failed');
     throw error;
   }
   if (checkpoint === 'initial_history') await report('Catch-up checkpoint initial_history');

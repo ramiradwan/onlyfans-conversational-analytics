@@ -436,7 +436,7 @@ jobs:
     runs-on: windows-latest
     # Leave bounded room for SDK producer contracts, dependency setup,
     # production boot and all three persistence profiles.
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       CI_PYTEST_LIVE_PROGRESS: '1'
     steps:
@@ -551,6 +551,39 @@ jobs:
             --ci-profile=windows_persistence_smoke -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml -vv
+      - name: Setup CPython 3.13 for socket-loop contracts
+        id: loop-python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.13'
+      - name: Install isolated socket-loop test dependencies
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "ofca-loop-python313"
+          if (Test-Path -LiteralPath $root) { throw "Fresh socket-loop environment required" }
+          & '${{ steps.loop-python.outputs.python-path }}' -m venv $root
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $python = Join-Path $root "Scripts/python.exe"
+          & $python -m pip install --disable-pip-version-check pytest==9.1.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "[pytest]`nmarkers =`n    ci_tier(name): explicit CI owner`n" |
+            Set-Content -LiteralPath (Join-Path $root "pytest.ini") -Encoding utf8NoBOM
+      - name: Test CPython 3.13 socket-loop contracts
+        shell: pwsh
+        env:
+          CI_TEST_LANE: windows-python313-loop-contract
+          CI_REPORT_DIR: artifacts/ci-tests/windows-python313-loop-contract
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-python313-loop-contract/junit.xml
+            -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "ofca-loop-python313"
+          $python = Join-Path $root "Scripts/python.exe"
+          & $python -m pytest --noconftest --rootdir "$env:GITHUB_WORKSPACE" -c (Join-Path $root "pytest.ini") --override-ini=addopts= `
+            tests/test_e2e_text_analysis_fixture.py::test_loop_observation_classifies_actual_callback_and_delegates_original_context `
+            tests/test_e2e_text_analysis_fixture.py::test_selected_loop_completes_owned_listener_after_peer_reset_or_queued_write `
+            tests/test_e2e_text_analysis_fixture.py::test_listener_gracefully_closes_real_attached_client_before_waiting
+          exit $LASTEXITCODE
       - name: Preserve persistence evidence filenames
         if: always()
         shell: pwsh

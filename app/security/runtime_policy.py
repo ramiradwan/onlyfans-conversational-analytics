@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.security.text_analysis_references import TextAnalysisReference
+    from app.persistence.text_analysis_authority import TextAnalysisTransitionFence
 
 from app.security.grant_types import ACCOUNT_AUTHORITY_GRANT_TYPES
 
@@ -112,6 +116,8 @@ class RuntimePolicy:
     revocations: tuple[RevocationObservation, ...] = ()
     identity_authority: IdentityAccountAuthority | None = None
     commercial_authority: CapabilityLicenseAuthority | None = None
+    text_analysis_authority: TextAnalysisReference | None = None
+    text_analysis_fence: TextAnalysisTransitionFence | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "signed_object_digests", tuple(self.signed_object_digests))

@@ -26,13 +26,10 @@ from app.analytics.graph_schema import (
     validate_edge_properties,
     validate_node_properties,
 )
+from app.models.question_evidence import AccountRef, ConversationRef, MessageRef, Sha256Digest
 
 
-Sha256Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
-AccountRef = Annotated[str, Field(pattern=r"^a1:[0-9a-f]{64}$")]
-ConversationRef = Annotated[str, Field(pattern=r"^c1:[0-9a-f]{64}$")]
 ParticipantRef = Annotated[str, Field(pattern=r"^p1:[0-9a-f]{64}$")]
-MessageRef = Annotated[str, Field(pattern=r"^m1:[0-9a-f]{64}$")]
 TopicRef = Annotated[str, Field(pattern=r"^t1:[0-9a-f]{64}$")]
 EntityRef = Annotated[str, Field(pattern=r"^x1:[0-9a-f]{64}$")]
 

@@ -16,6 +16,11 @@
     {"id":"popup-explicit-pairing","file":"tests/popup-lifecycle.spec.mjs","title_path":["companion client pairs only after an explicit command and recovers from the desktop not being ready"],"shard":"core","retry_override":null},
     {"id":"popup-pairing-ownership","file":"tests/popup-lifecycle.spec.mjs","title_path":["companion client ownership survives focus and observer closure; owner closure cancels pairing"],"shard":"core","retry_override":null},
     {"id":"popup-confirmed-readiness","file":"tests/popup-lifecycle.spec.mjs","title_path":["companion client confirmation preserves setup and readiness comes from the desktop result"],"shard":"core","retry_override":null},
-    {"id":"standalone-preview","file":"tests/standalone-preview.spec.mjs","title_path":["standalone preview survives pause, deletion, and restart without a local service"],"shard":"core","retry_override":null}
+    {"id":"standalone-preview","file":"tests/standalone-preview.spec.mjs","title_path":["standalone preview survives pause, deletion, and restart without a local service"],"shard":"core","retry_override":null},
+    {"id":"text-analysis-processing","file":"tests/text-analysis-processing.spec.mjs","title_path":["processing commands preserve durable enrollment and canonical findings"],"shard":"core","retry_override":null},
+    {"id":"text-analysis-preview-joint","file":"tests/text-analysis-preview.spec.mjs","title_path":["joint preview preserves reviewed scope and exact saved evidence"],"shard":"core","retry_override":null},
+    {"id":"text-analysis-preview-partial","file":"tests/text-analysis-preview.spec.mjs","title_path":["split preview qualifies partial coverage without inventing totals"],"shard":"core","retry_override":null},
+    {"id":"text-analysis-preview-empty","file":"tests/text-analysis-preview.spec.mjs","title_path":["empty preview retains its outcome without spending admission"],"shard":"core","retry_override":null},
+    {"id":"text-analysis-recovery","file":"tests/text-analysis-recovery.spec.mjs","title_path":["original requests recover across lost replies and Bridge reconnection"],"shard":"core","retry_override":null}
   ]
 }

@@ -78,11 +78,12 @@ export function ReservedNotice({ id, notice, essential = false }: { id: string; 
   </ReservedRegion>;
 }
 
-export function StatusLine({ id, text, tone = 'secondary', essential = false, size, summary }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size; summary?: string }) {
+export function StatusLine({ id, text, tone = 'secondary', essential = false, size, summary, detailsOnly = false }: { id: string; text: string | null; tone?: 'secondary' | 'error'; essential?: boolean; size?: Size; summary?: string; detailsOnly?: boolean }) {
   const [expandedText, setExpandedText] = useState<string | null>(null);
   const open = text !== null && expandedText === text;
   if (expandedText !== null && expandedText !== text) setExpandedText(null);
-  const { probe, overflow: details } = useContentFit(text);
+  const { probe, overflow } = useContentFit(text);
+  const details = detailsOnly || overflow;
   const minimum = size ?? { xs: sizes.essentialStatusLine.narrow, sm: sizes.essentialStatusLine.wide };
   if (essential) return <Box data-reserved-region={id} sx={{ minHeight: Object.fromEntries(Object.entries(minimum).map(([key, value]) => [key, `${value / 16}rem`])), minWidth: 0 }}>
     <Typography data-region-content variant="body2" role={tone === 'error' ? 'alert' : 'status'}
@@ -93,7 +94,7 @@ export function StatusLine({ id, text, tone = 'secondary', essential = false, si
   return <><ReservedRegion id={id} size={{ xs: sizes.statusLine.narrow, sm: sizes.statusLine.wide }}>
     <Box ref={probe} aria-hidden sx={probeStyle}><Typography variant="body2" data-fit-text={text} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere' }} /></Box>
     <Box data-region-content sx={{ display: 'flex', columnGap: 1, rowGap: 0, flexWrap: 'wrap', alignItems: 'flex-start', visibility: text ? 'visible' : 'hidden' }}>
-      <Typography variant="body2" role={tone === 'error' && !details ? 'alert' : 'status'} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>{details ? summary ?? 'Details available' : text || '\u00a0'}</Typography>
+      <Typography variant="body2" role={tone === 'error' && (!details || detailsOnly) ? 'alert' : 'status'} sx={{ lineHeight: '1.25rem', overflowWrap: 'anywhere', color: tone === 'error' ? 'error.main' : 'text.secondary' }}>{details ? summary ?? 'Details available' : text || '\u00a0'}</Typography>
       {details && <Button onClick={() => setExpandedText(text)} size="small" sx={{ p: 0, minWidth: 0, lineHeight: '1.25rem', flex: 'none' }}>Show details</Button>}
     </Box>
   </ReservedRegion><Dialog open={open} onClose={() => setExpandedText(null)}><DialogTitle>Details</DialogTitle><DialogContent sx={detailStyle}><Typography role={tone === 'error' ? 'alert' : undefined}>{text}</Typography></DialogContent><Button onClick={() => setExpandedText(null)}>Close</Button></Dialog></>;

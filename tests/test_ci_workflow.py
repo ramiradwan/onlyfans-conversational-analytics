@@ -467,7 +467,7 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
 
 def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution() -> None:
     jobs = _jobs(_workflow_document())
-    expected_limits = {"windows-platform-contract": 30, "analytics-windows-contract": 20,
+    expected_limits = {"windows-platform-contract": 50, "analytics-windows-contract": 20,
                        "windows-full-shards": 60, "analytics-scale-qualification": 45}
     execution_lanes = set()
     for name, minutes in expected_limits.items():
@@ -493,6 +493,7 @@ def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution
         "windows-platform-contract", "windows-production-boot", "windows-persistence-general",
         "windows-persistence-deletion", "windows-persistence-smoke", "analytics-windows-contract",
         "windows-full-regression-${{ matrix.shard }}", "analytics-scale-qualification",
+        "windows-python313-loop-contract",
     }
 
 
@@ -1234,3 +1235,91 @@ def test_browser_bundle_retains_independent_same_run_assembly_proof(mutation: st
         upload["continue-on-error"] = True
     with pytest.raises(AssertionError):
         _assert_browser_assembly_provenance(broken)
+
+
+def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
+    from tools.ci_gate import PYTHON313_LOOP_SELECTORS
+
+    job = _jobs(workflow)["windows-platform-contract"]
+    assert job["timeout-minutes"] == 50 and "if" not in job
+    steps = _steps(job)
+    names = ("Setup CPython 3.13 for socket-loop contracts", "Install isolated socket-loop test dependencies",
+             "Test CPython 3.13 socket-loop contracts")
+    indexes = []
+    for name in names:
+        matches = [index for index, step in enumerate(steps) if step.get("name") == name]
+        assert len(matches) == 1
+        indexes.append(matches[0])
+        assert "if" not in steps[matches[0]] and not steps[matches[0]].get("continue-on-error")
+    assert indexes == sorted(indexes)
+    setup, install, execute = (steps[index] for index in indexes)
+    assert setup["with"]["python-version"] == "3.13" and setup["id"] == "loop-python"
+    assert setup["uses"] == "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97"
+    assert "-m venv $root" in install["run"] and "pytest==9.1.1" in install["run"]
+    assert "requirements" not in install["run"] and "SQLCIPHER" not in install["run"]
+    assert "steps.loop-python.outputs.python-path" in install["run"]
+    assert 'Test-Path -LiteralPath $root' in install["run"]
+    assert 'ci_tier(name): explicit CI owner' in install["run"]
+    assert execute["env"] == {
+        "CI_TEST_LANE": "windows-python313-loop-contract",
+        "CI_REPORT_DIR": "artifacts/ci-tests/windows-python313-loop-contract",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "PYTEST_ADDOPTS": "-p tools.ci_pytest --durations=50 --durations-min=0.25 "
+            "--junitxml=artifacts/ci-tests/windows-python313-loop-contract/junit.xml "
+            "-o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false",
+    }
+    command = execute["run"]
+    assert '-m pytest --noconftest --rootdir "$env:GITHUB_WORKSPACE"' in command
+    assert '-c (Join-Path $root "pytest.ini") --override-ini=addopts=' in command
+    assert command.strip().endswith("exit $LASTEXITCODE")
+    selected = [line.strip().removesuffix("`").strip() for line in command.splitlines()
+                if line.strip().startswith("tests/")]
+    assert selected == list(PYTHON313_LOOP_SELECTORS)
+    assert "-k " not in command and " -m '" not in command
+    for name in ("Test Windows platform contract", "Test Windows production boot",
+                 "Test Windows persistent SQLCipher general profile", "Test Windows persistent SQLCipher deletion profile",
+                 "Test Windows persistent SQLCipher smoke profile"):
+        assert next(i for i, step in enumerate(steps) if step.get("name") == name) < indexes[0]
+    assert next(step for step in steps if step.get("name") == "Setup Python")["with"]["python-version"] == "3.11"
+    upload = next(i for i, step in enumerate(steps) if step.get("name") == "Retain backend timing and selection")
+    assert indexes[-1] < upload
+    assert steps[upload]["with"]["path"] == "artifacts/ci-tests/"
+
+
+@pytest.mark.parametrize("fault", ["omit", "wrong-version", "optional", "too-early", "dependencies", "no-isolation",
+                                  "no-reporter", "narrowed", "wrong-root", "lost-exit", "lost-artifact"])
+def test_python313_loop_counterpart_is_required_isolated_and_after_original_profiles(fault):
+    workflow = _workflow_document()
+    _assert_python313_loop_counterpart(workflow)
+    broken = deepcopy(workflow)
+    steps = _jobs(broken)["windows-platform-contract"]["steps"]
+    setup = next(step for step in steps if step.get("id") == "loop-python")
+    install = next(step for step in steps if step.get("name") == "Install isolated socket-loop test dependencies")
+    execute = next(step for step in steps if step.get("name") == "Test CPython 3.13 socket-loop contracts")
+    if fault == "omit":
+        steps.remove(execute)
+    elif fault == "wrong-version":
+        setup["with"]["python-version"] = "3.11"
+    elif fault == "optional":
+        execute["if"] = "false"
+    elif fault == "too-early":
+        steps.remove(setup)
+        steps.insert(0, setup)
+    elif fault == "dependencies":
+        install["run"] += "\npython -m pip install -r requirements-dev.txt"
+    elif fault == "no-isolation":
+        execute["run"] = execute["run"].replace("--noconftest", "")
+    elif fault == "no-reporter":
+        execute["env"]["PYTEST_ADDOPTS"] = ""
+    elif fault == "narrowed":
+        execute["run"] = execute["run"].replace(
+            "test_selected_loop_completes_owned_listener_after_peer_reset_or_queued_write `",
+            "test_selected_loop_completes_owned_listener_after_peer_reset_or_queued_write[reset] `")
+    elif fault == "wrong-root":
+        execute["run"] = execute["run"].replace('$env:GITHUB_WORKSPACE', '$env:RUNNER_TEMP')
+    elif fault == "lost-exit":
+        execute["run"] = execute["run"].replace("exit $LASTEXITCODE", "exit 0")
+    else:
+        next(step for step in steps if step.get("name") == "Retain backend timing and selection")["with"]["path"] = "artifacts/ci-tests/windows-platform-contract/"
+    with pytest.raises(AssertionError):
+        _assert_python313_loop_counterpart(broken)

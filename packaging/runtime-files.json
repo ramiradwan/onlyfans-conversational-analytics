@@ -85,7 +85,12 @@
         "0011_analytics_coverage_tokens.sql": "f266f5221562feacd88a55dbdde65b30f4e9c1b9362012bbfc8f9dccee98c804",
         "0012_history_record_kind.sql": "2f1bfd9ccabdc313b1848e2d8a0f5d18e7776ba92f190ac448961808ba312001",
         "0013_derived_deletion_acknowledgements.sql": "e5798eeb09600bfe8bc03fde3f79c03415c78e1c29ba0f3979fc548f0784e087",
-        "0014_knowledge_contributions.sql": "ddd3eb451317c375dba20c5ae24233a881a1b1902767d45b944e145c0238242c"
+        "0014_knowledge_contributions.sql": "ddd3eb451317c375dba20c5ae24233a881a1b1902767d45b944e145c0238242c",
+        "0015_text_analysis_jobs.sql": "e71fe0c2d8399f0f33a6ec0f6f01e52a18b15175065ba6297319cded3e4c9e73",
+        "0016_text_analysis_enrollment.sql": "500596f708ec3aa13df4d086a80175fb370bc6c94250d1f39ccdb9164cfed73b",
+        "0017_authoritative_pair.sql": "5602412494ccab06019eec8893515f94bb93fc59d46f56a3b10d7fef2bb60dec",
+        "0018_text_analysis_preview_execution.sql": "5ff39ff25d8907dd494fac7d27b3ccf8fe090fbbf426381a0eab9d77286e78a0",
+        "0019_text_analysis_client_intents.sql": "a0eab64cd283eaacaea5a8bfe46f4e8558f434910e75a2f458be126b0a205300"
       }
     },
     {
@@ -124,7 +129,9 @@
         "0031_activation_delivery_recovery.sql": "27a963a4d5fb38a83c12b89aaf8e85331643fb18b6ecd1bc3d728361b0e2d678",
         "0032_desktop_presentation_refresh.sql": "8c4b006eb8cd438c8a92eee68b58921a1257d845a4ea8d148d57be1d62d5f096",
         "0033_signing_publication_authority.sql": "ca65ce8cfc02108d0d8a249499d206c5246bb3b7fa942e4c9a6bd2381ba216bb",
-        "0034_nlp_dependencies.sql": "1337162d5f43f0b34a509ef298965807450362ae52ffc8b08a153fac95e25a67"
+        "0034_nlp_dependencies.sql": "1337162d5f43f0b34a509ef298965807450362ae52ffc8b08a153fac95e25a67",
+        "0035_text_analysis_authority.sql": "87f8846df9c7c6728edc3e205a8f5f0c36d92b769ae3e6ec9e5a5eb19b8372a7",
+        "0036_authoritative_pair.sql": "93686f6dd3a6a804b2d33fa8afec00129ea799f54d516f000eb68ebd2e5b398b"
       }
     },
     {
@@ -169,16 +176,17 @@
         "0031_nlp_source_lane_index.sql": "5e67b0bf3153098aeeef7baed204a294c66f76fcff8c86de75ddae7585a14956",
         "0032_graph_chunk_encoding.sql": "1a6f97c378237c336f4b607de0c803db9335da7fb5ddded0175cc210aa5297b9",
         "0033_nlp_literals.sql": "ff0e91c91232642b06067b0c2b8699cde1cd736d6848b788ce880e112851a4a1",
-        "0034_nlp_contribution_origins.sql": "ebc584bf752daee16d8b576fa1e34ec69c74ede467c859342f5e7055135665f4"
+        "0034_nlp_contribution_origins.sql": "ebc584bf752daee16d8b576fa1e34ec69c74ede467c859342f5e7055135665f4",
+        "0035_nlp_enrollment_reconciliation.sql": "fe8ebaf6929b7ceead3c803ff3cbde1a5d78c3e28fbd764b3ed3aa549ab4b009"
       }
     }
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "c39ab23f45305f4da7e4c057c894011a43168b3fa20c44e3c62ba2d852f1f4f3",
-    "consumer_pin_sha256": "ff42d1780379cd887f5ac1ee98bd26b6b749a14824f5301f27c79d9328e55681",
+    "manifest_sha256": "6c8eed0f70697b1fc7b3310183f0f10364c7072685b612f595956a7d5bdef748",
+    "consumer_pin_sha256": "0655500c3c9ff3839da75acbbed15bac884fdfa49635171e6a6fe81446935069",
     "root_file_sha256": {
-      "loader.py": "50c5ec517d23f0b59210d1604ec326ffd01fe49e43860ec4056ee017129aae18",
+      "loader.py": "8ea12c8af0ca0a588140543032e127d06bb49b4be785433cc3e254708ca423ec",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [

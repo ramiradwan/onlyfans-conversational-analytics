@@ -1,0 +1,64 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "text-analysis-enrollment-command.v1",
+      "default": "text-analysis-enrollment-command.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "command_key": {
+      "title": "Command Key",
+      "type": "string"
+    },
+    "expected_enrollment_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Expected Enrollment Id"
+    },
+    "expected_mode_version": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Expected Mode Version",
+      "type": "integer"
+    },
+    "action": {
+      "enum": [
+        "enable",
+        "replace",
+        "pause",
+        "resume",
+        "retire"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "expected_profile_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expected Profile Sha256"
+    }
+  },
+  "required": [
+    "command_key",
+    "expected_enrollment_id",
+    "expected_mode_version",
+    "action"
+  ],
+  "title": "EnrollmentCommand",
+  "type": "object"
+}

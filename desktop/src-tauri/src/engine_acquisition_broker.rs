@@ -46,7 +46,9 @@ impl Journal {
             "optional-engine-reconnect.v1" => !raw
                 .as_object()
                 .is_some_and(|v| v.contains_key("quote_sha256") || v.contains_key("review_digest")),
-            "optional-engine-reconnect.v2" => j.review().is_ok(),
+            "optional-engine-reconnect.v2" | "optional-engine-reconnect.v3" => {
+                j.review_fields_valid()
+            }
             _ => false,
         };
         if !review_valid
@@ -84,8 +86,21 @@ impl Journal {
         }
         Ok(j)
     }
+    fn review_fields_valid(&self) -> bool {
+        self.quote_sha256
+            .as_ref()
+            .is_some_and(|s| crate::worker_host::hex(s, 64))
+            && self
+                .review_digest
+                .as_ref()
+                .is_some_and(|s| crate::worker_host::hex(s, 64))
+    }
     pub(crate) fn review(&self) -> Result<crate::engine_acquisition_quote::Binding> {
+        if self.schema != "optional-engine-reconnect.v3" {
+            return Err("optional_quote_stale");
+        }
         let binding = crate::engine_acquisition_quote::Binding {
+            explicit_selection: self.selection,
             quote_sha256: self.quote_sha256.clone().ok_or("optional_quote_stale")?,
             review_digest: self.review_digest.clone().ok_or("optional_quote_stale")?,
         };
@@ -139,6 +154,7 @@ pub(crate) fn commit_authorized(journal: &Journal, request: &Request) -> bool {
     matches!(request.action, Action::Commit {})
         && request.nonce == journal.nonce
         && request.peer == journal.launcher
+        && journal.review().is_ok()
 }
 pub(crate) fn requested(args: &[String]) -> bool {
     args.iter().skip(1).any(|s| s == FLAG)
@@ -168,11 +184,10 @@ pub(crate) fn dispatch(owner: &Arc<Owner>, journal: &Journal, request: Request) 
     if request.nonce != journal.nonce {
         return Err("optional_broker_peer");
     }
+    let can_commit = commit_authorized(journal, &request);
     match request.action {
         Action::Status {} => Ok(owner.status()),
-        Action::Commit {} if journal.committed && request.peer == journal.launcher => {
-            Ok(owner.status())
-        }
+        Action::Commit {} if journal.committed && can_commit => Ok(owner.status()),
         Action::Commit {} => Err("optional_broker_not_started"),
         Action::Cancel { operation_id } => owner.cancel(&operation_id),
     }
@@ -345,7 +360,10 @@ mod tests {
     }
     #[test]
     fn only_original_launcher_can_commit_and_passive_routes_cannot_start() {
-        let j = journal();
+        let mut j = journal();
+        j.schema = "optional-engine-reconnect.v3".into();
+        j.quote_sha256 = Some("b".repeat(64));
+        j.review_digest = Some("c".repeat(64));
         let mut r = Request {
             nonce: j.nonce.clone(),
             peer: j.launcher.clone(),
@@ -407,10 +425,34 @@ mod tests {
         current.schema = "optional-engine-reconnect.v2".into();
         current.quote_sha256 = Some("b".repeat(64));
         current.review_digest = Some("c".repeat(64));
-        assert!(Journal::decode(&serde_json::to_vec(&current).unwrap())
+        let legacy = Journal::decode(&serde_json::to_vec(&current).unwrap()).unwrap();
+        assert!(legacy.review().is_err());
+        let request = Request {
+            nonce: current.nonce.clone(),
+            peer: current.launcher.clone(),
+            action: Action::Commit {},
+        };
+        assert!(!commit_authorized(&old, &request));
+        assert!(!commit_authorized(&legacy, &request));
+        current.schema = "optional-engine-reconnect.v3".into();
+        for selection in [Selection::Module, Selection::Preview] {
+            current.selection = selection;
+            let parsed = Journal::decode(&serde_json::to_vec(&current).unwrap()).unwrap();
+            assert!(parsed.review().unwrap().valid_for(selection));
+            assert!(commit_authorized(&parsed, &request));
+        }
+        for selection in [serde_json::Value::Null, serde_json::json!("other")] {
+            let mut value = serde_json::to_value(&current).unwrap();
+            value["selection"] = selection;
+            assert!(Journal::decode(&serde_json::to_vec(&value).unwrap()).is_err());
+        }
+        let mut value = serde_json::to_value(&current).unwrap();
+        value.as_object_mut().unwrap().remove("selection");
+        assert!(Journal::decode(&serde_json::to_vec(&value).unwrap()).is_err());
+        let duplicate = String::from_utf8(serde_json::to_vec(&current).unwrap())
             .unwrap()
-            .review()
-            .is_ok());
+            .replacen("{", "{\"selection\":\"module\",", 1);
+        assert!(Journal::decode(duplicate.as_bytes()).is_err());
         for key in ["quote_sha256", "review_digest"] {
             let mut value = serde_json::to_value(&current).unwrap();
             value.as_object_mut().unwrap().remove(key);

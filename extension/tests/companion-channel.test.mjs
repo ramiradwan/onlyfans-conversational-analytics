@@ -11,6 +11,9 @@ import { key32 } from '../transport/pairing-contract.mjs';
 import { loadGrantTrustSet } from '../transport/grant-verifier.mjs';
 import { vector, trustSet, fixtureMaterial, fixturePrivateJwk } from '../test-fixtures/pairing/vendored-vector.mjs';
 import { payload as browserPayload } from '../test-fixtures/browser-task.mjs';
+import { DurableIngestOutbox } from '../transport/durable-outbox.mjs';
+import { createIndexedDbIngestionStorage } from '../transport/indexeddb-ingestion-storage.mjs';
+import { FakeIndexedDb } from './fake-indexeddb.mjs';
 
 await initialize({ module_or_path: await readFile(new URL('../vendor/companion-snow/ofca_snow_wasm_bg.wasm', import.meta.url)) });
 const trust = await loadGrantTrustSet(trustSet, { allowNonProduction: true });
@@ -349,8 +352,8 @@ test('encrypted browser tasks admit only the closed task envelope and no platfor
   }
 });
 
-async function rotationTransport(t, Client, { localRefusal = null, rotationResult = 'success' } = {}) {
-  let time = 0, refusal = localRefusal;
+async function rotationTransport(t, Client, { localRefusal = null, rotationResult = 'success', deferPersistence = false, withOutbox = false } = {}) {
+  let time = 0, refusal = localRefusal, rotationMode = rotationResult;
   t.mock.method(performance, 'now', () => time);
   const timers = new Map();
   let timerId = 0;
@@ -360,8 +363,19 @@ async function rotationTransport(t, Client, { localRefusal = null, rotationResul
     return id;
   });
   t.mock.method(globalThis, 'clearTimeout', id => timers.delete(id));
-  const peers = [], channels = [], pending = [], errors = [], values = {};
+  const peers = [], channels = [], pending = [], errors = [], values = {}, completions = [];
   const account = vector.detected_account_id;
+  let outbox = null;
+  if (withOutbox) {
+    outbox = new DurableIngestOutbox({ creatorAccountId: account,
+      storage: createIndexedDbIngestionStorage(new FakeIndexedDb(), { creatorAccountId: account,
+        databaseName: 'rotation-recovery', encryptionKey: Buffer.alloc(32, 7).toString('base64') }) });
+    await outbox.initialize();
+    for (let index = 0; index < 11; index++) await outbox.enqueue({ type: 'chat.upsert', chat: {
+      record_kind: 'full', chat_id: `chat-${index}`, platform_user_id: 'participant',
+      display_name: 'Participant', updated_at: '2026-08-30T10:00:00Z' } });
+    await outbox.acknowledge(10);
+  }
   const area = { async get() { return { ...values }; }, async set(update) { Object.assign(values, update); } };
   const privateKey = await crypto.subtle.importKey('jwk',
     fixturePrivateJwk(vector.fixture_labels.agent_identity_key, vector.request.agent_identity_jwk),
@@ -371,23 +385,25 @@ async function rotationTransport(t, Client, { localRefusal = null, rotationResul
     storeFactory: async () => ({ identity: async () => ({ privateKey }) }), loadSnow: async () => ({ SnowSession }),
     loadTrust: async () => trust, now: () => 1_800_000_000_000 + time, random: () => 0.5,
     channelFactory: async () => {
+      const number = peers.length;
+      const ticket = `fixture-ticket-${number}`, bootstrap = `fixture-bootstrap-${number}`;
       const held = [], rotations = [];
       const peer = fixture({ reply(document) {
         if (document.method === 'agent.challenge') return { challenge_id: crypto.randomUUID(),
           challenge: Buffer.alloc(32, 9).toString('base64url'), session_id: crypto.randomUUID(), expires_at: '2026-09-30T12:00:00Z' };
         if (document.method === 'agent.authenticate') return { creator_account_id: account,
-          auth_ticket: 'fixture-ticket', storage_bootstrap: 'fixture-bootstrap' };
+          auth_ticket: ticket, storage_bootstrap: bootstrap };
         if (document.method === 'agent.storage.unseal') return { schema: 'ofca-extension-storage-unlock/v1',
-          creator_account_id: account, credential_kind: 'pairing', auth_ticket: 'fixture-ticket',
+          creator_account_id: account, credential_kind: 'pairing', auth_ticket: ticket,
           storage_key_base64: Buffer.alloc(32, 7).toString('base64') };
         if (document.method === 'agent.storage.rotate') {
           rotations.push(document);
-          if (rotationResult === 'refused') {
+          if (rotationMode === 'refused') {
             peer.application({ type: 'rpc.response', id: document.id, error: 'session_request_refused' });
             return;
           }
-          if (rotationResult === 'ambiguous') return;
-          return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: 'rotated-bootstrap' };
+          if (rotationMode === 'ambiguous') return;
+          return { schema: 'ofca-extension-storage-rotation/v1', storage_bootstrap: `rotated-bootstrap-${number}` };
         }
         held.push({ document, at: time });
       } });
@@ -409,11 +425,21 @@ async function rotationTransport(t, Client, { localRefusal = null, rotationResul
   const session = JSON.parse(await readFile(new URL('../../shared/fixtures/protocol/v2/agent.session.json', import.meta.url)));
   Object.assign(session.payload, { creator_account_id: account, agent_installation_id: installation });
   const transport = new Client({ creatorAccountId: account, authTicket: 'fixture-ticket', extensionVersion: '2.0.3',
+    outbox,
     identity: { agentInstallationId: installation, agentStreamId: session.payload.agent_stream_id,
       lastAcknowledgedSourceSeq: 10, appliedConfigRevision: 'config-8' },
     webSocketFactory: client.webSocketFactory, monotonicNow: () => time,
-    persistReconnectAuthTicket: (authTicket, configAuthTicket, controls) => client.adapter.saveReconnectAuthTicket({
-      creatorAccountId: account, agentInstallationId: installation, authTicket, configAuthTicket }, controls),
+    persistReconnectAuthTicket: (authTicket, configAuthTicket, controls) => {
+      const operation = client.adapter.saveReconnectAuthTicket({
+        creatorAccountId: account, agentInstallationId: installation, authTicket, configAuthTicket }, controls);
+      if (!deferPersistence) return operation;
+      return new Promise((resolve, reject) => {
+        const completion = { release: null };
+        completions.push(completion);
+        void operation.then(value => { completion.release = () => resolve(value); },
+          error => { completion.release = () => reject(error); });
+      });
+    },
     onValidationError: error => errors.push(error) });
   const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
   const advance = async ms => {
@@ -423,11 +449,19 @@ async function rotationTransport(t, Client, { localRefusal = null, rotationResul
   };
   const accept = async () => {
     await waitFor(() => peers.at(-1).received.some(document => document.type === 'agent.hello'));
-    peers.at(-1).application(session);
+    const accepted = structuredClone(session);
+    accepted.payload.reconnect_auth_ticket = `agent-reconnect-ticket-${peers.length}`;
+    accepted.payload.config_auth_ticket = `agent-config-ticket-${peers.length}`;
+    peers.at(-1).application(accepted);
     await settle();
   };
-  t.after(async () => { transport.stop(); client.invalidate(); await Promise.allSettled(pending); });
-  return { client, transport, peers, channels, errors, values, pending, accept, advance, settle,
+  t.after(async () => {
+    transport.stop(); client.invalidate(); await settle();
+    for (const completion of completions) completion.release?.();
+    await Promise.allSettled(pending);
+  });
+  return { client, transport, peers, channels, errors, values, pending, accept, advance, settle, outbox,
+    completions, rotationMode(value) { rotationMode = value; },
     get time() { return time; }, release() { refusal = null; },
     traffic(kind) {
       for (let i = 0; i < 8; i++) {
@@ -448,6 +482,103 @@ async function rotationTransport(t, Client, { localRefusal = null, rotationResul
 }
 
 for (const Client of [ReadOnlyAgentWebSocketClient, AgentWebSocketClient]) {
+  for (const order of ['wire-first', 'transport-first']) {
+    test(`${Client.name}: dispatched rotation ${order} closure recovers through a fresh authenticated channel`, async t => {
+      const h = await rotationTransport(t, Client, { rotationResult: 'ambiguous', withOutbox: true });
+      h.transport.start(); await h.accept();
+      await waitFor(() => h.peers[0].rotations.length === 1);
+      const socket = h.transport.socket;
+      const identity = structuredClone(h.transport.identity);
+      const entries = await h.outbox.entries(), outboxIdentity = h.outbox.identityState();
+      const closed = socket.onclose;
+      socket.onclose = () => {};
+      if (order === 'transport-first') h.transport.handleClose(socket);
+      h.peers[0].socket.close();
+      await h.settle();
+      assert.equal(h.channels[0].closeDiagnostic.cause, 'wire_closed');
+      assert.equal(h.client.credentialRotation.completed, 0);
+      assert.equal(h.transport.reconnectAllowed, true);
+      if (order === 'wire-first') closed();
+      const saved = h.values.companion_recovery_v1;
+      assert.equal(saved.attempts, 1);
+      const delay = Math.max(0, saved.next_attempt_at - (1_800_000_000_000 + h.time));
+      h.rotationMode('success');
+      for (let wake = 0; wake < 20; wake++) h.transport.ensureConnected();
+      await h.settle();
+      if (delay > 0) {
+        await h.advance(delay - 1);
+        assert.equal(h.channels.length, 1);
+      }
+      await h.advance(delay > 0 ? 1 : 0);
+      await waitFor(() => h.channels.length === 2);
+      await h.accept();
+      assert.equal(h.client.credentialRotation.completed, 1);
+      assert.equal(h.peers[0].rotations.length, 1);
+      assert.equal(h.peers[1].rotations.length, 1);
+      assert.notEqual(h.peers[0].rotations[0].id, h.peers[1].rotations[0].id);
+      assert.notEqual(h.peers[0].rotations[0].params.storage_bootstrap, h.peers[1].rotations[0].params.storage_bootstrap);
+      assert.notEqual(h.peers[0].rotations[0].params.reconnect_auth_ticket, h.peers[1].rotations[0].params.reconnect_auth_ticket);
+      assert.equal(h.peers[1].rotations[0].params.storage_bootstrap, 'fixture-bootstrap-1');
+      assert.equal(h.peers[1].received.filter(frame => frame.method === 'agent.challenge').length, 1);
+      assert.equal(h.peers[1].received.filter(frame => frame.method === 'agent.authenticate').length, 1);
+      assert.equal(h.peers[1].received.filter(frame => frame.method === 'agent.storage.unseal').length, 1);
+      assert.deepEqual(h.transport.identity, identity);
+      assert.deepEqual(await h.outbox.entries(), entries);
+      assert.deepEqual(h.outbox.identityState(), outboxIdentity);
+      assert.equal(h.channels[1].closed, false);
+    });
+  }
+
+  for (const outcome of ['refused', 'success']) {
+    test(`${Client.name}: stale rotation ${outcome} completion cannot affect a fresh authenticated socket`, async t => {
+      const h = await rotationTransport(t, Client, { rotationResult: outcome, deferPersistence: true });
+      h.transport.start(); await h.accept();
+      await waitFor(() => typeof h.completions[0]?.release === 'function');
+      const originalSocket = h.transport.socket;
+      h.peers[0].socket.close(); await h.settle();
+      const delay = Math.max(0, h.values.companion_recovery_v1.next_attempt_at - (1_800_000_000_000 + h.time));
+      h.rotationMode('success');
+      await h.advance(delay);
+      await waitFor(() => h.channels.length === 2);
+      await h.accept();
+      await waitFor(() => typeof h.completions[1]?.release === 'function');
+      const socket = h.transport.socket, replacement = h.transport.session;
+      assert.notEqual(socket, originalSocket);
+      h.completions[0].release(); await h.settle();
+      assert.equal(h.transport.socket, socket);
+      assert.equal(h.transport.session, replacement);
+      assert.equal(h.transport.reconnectAllowed, true);
+      assert.equal(h.channels[1].closed, false);
+      assert.equal(h.errors.length, 0);
+      assert.equal(h.peers[0].rotations.length, 1);
+      assert.equal(h.peers[1].rotations[0].params.storage_bootstrap, 'fixture-bootstrap-1');
+      assert.equal(h.client.credentialRotation.completed, outcome === 'success' ? 2 : 1);
+      h.completions[1].release(); await h.settle();
+    });
+  }
+
+  test(`${Client.name}: explicit protocol refusal remains final through pending rotation wire loss`, async t => {
+    const h = await rotationTransport(t, Client, { rotationResult: 'ambiguous' });
+    h.transport.start(); await h.accept();
+    await waitFor(() => h.peers[0].rotations.length === 1);
+    const socket = h.transport.socket, close = socket.close;
+    let requestedClose = false;
+    socket.close = () => { requestedClose = true; };
+    const refusal = JSON.parse(await readFile(new URL('../../shared/fixtures/protocol/v2/protocol.error.json', import.meta.url)));
+    refusal.payload.fatal = true;
+    h.transport.handleRawMessage(socket, JSON.stringify(refusal));
+    assert.equal(requestedClose, true);
+    assert.equal(h.transport.reconnectAllowed, false);
+    socket.close = close;
+    h.peers[0].socket.close(); await h.settle();
+    assert.equal(h.transport.reconnectAllowed, false);
+    for (let wake = 0; wake < 20; wake++) h.transport.ensureConnected();
+    await h.advance(300_000);
+    assert.equal(h.peers.length, 1);
+    assert.equal(h.peers[0].rotations.length, 1);
+    assert.equal(h.client.credentialRotation.completed, 0);
+  });
+
   for (const kind of ['readiness', 'surface']) {
     test(`${Client.name}: rolling ${kind} contention cannot starve rotation or disable reconnect`, async t => {
       const h = await rotationTransport(t, Client);

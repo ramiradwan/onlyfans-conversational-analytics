@@ -48,6 +48,10 @@ def act(body: DependencyAction, request: Request, policy=Depends(get_authenticat
         raise HTTPException(503, detail={'code': 'nlp_unavailable'})
     try:
         action = body.action
+        if (service.execution_owner is not None
+                and (action in ('select', 'rollback', 'account_pause', 'account_enable')
+                     or action == 'remove' and body.profile_id is None)):
+            raise ValueError('nlp_authenticated_command_required')
         if action in ('acquire', 'select', 'plan'):
             if body.profile_id is None or body.revision is None:
                 raise ValueError()

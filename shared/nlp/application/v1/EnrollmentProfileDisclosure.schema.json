@@ -1,0 +1,186 @@
+{
+  "$defs": {
+    "PolicyIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "revision",
+        "sha256"
+      ],
+      "title": "PolicyIdentity",
+      "type": "object"
+    },
+    "ScorePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "probability",
+            "logit",
+            "margin",
+            "none"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "semantics_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Semantics Id",
+          "type": "string"
+        },
+        "calibration": {
+          "default": "not_calibrated",
+          "enum": [
+            "not_calibrated",
+            "calibrated"
+          ],
+          "title": "Calibration",
+          "type": "string"
+        },
+        "calibration_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Sha256"
+        }
+      },
+      "required": [
+        "kind",
+        "semantics_id"
+      ],
+      "title": "ScorePolicy",
+      "type": "object"
+    },
+    "TaskDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "enum": [
+            "message_topics",
+            "concept_mentions"
+          ],
+          "title": "Task",
+          "type": "string"
+        },
+        "task_contract": {
+          "enum": [
+            "message_topics.v1",
+            "concept_mentions.v1"
+          ],
+          "title": "Task Contract",
+          "type": "string"
+        },
+        "taxonomy": {
+          "$ref": "#/$defs/PolicyIdentity"
+        },
+        "enabled_ids": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Enabled Ids",
+          "type": "array"
+        },
+        "score_policy": {
+          "$ref": "#/$defs/ScorePolicy"
+        }
+      },
+      "required": [
+        "task",
+        "task_contract",
+        "taxonomy",
+        "enabled_ids",
+        "score_policy"
+      ],
+      "title": "TaskDescriptor",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Profile Sha256",
+      "type": "string"
+    },
+    "profile_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "revision": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Revision",
+      "type": "string"
+    },
+    "languages": {
+      "items": {
+        "const": "en",
+        "type": "string"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Languages",
+      "type": "array"
+    },
+    "tasks": {
+      "items": {
+        "$ref": "#/$defs/TaskDescriptor"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "title": "Tasks",
+      "type": "array"
+    },
+    "presentation": {
+      "$ref": "#/$defs/PolicyIdentity"
+    }
+  },
+  "required": [
+    "profile_sha256",
+    "profile_id",
+    "revision",
+    "languages",
+    "tasks",
+    "presentation"
+  ],
+  "title": "EnrollmentProfileDisclosure",
+  "type": "object"
+}
