@@ -36,7 +36,7 @@ node tools/e2e-capture/ci/run.mjs --lane catchup --output-dir artifacts/browser-
 
 Run these commands serially on a local machine. The list command collects the full inventory without starting a journey. The checked-in registry assigns complete files to `core` or `catchup`; unknown, missing or duplicate identities fail selection. `--lane legacy` runs the complete original selection as the rollout control. CI uses the same runner, one Playwright worker, the same production builds and existing retry/deadline settings. The catch-up negative-observation window remains unchanged.
 
-The current inventory has 11 core and two catch-up cases. ADR 0050 retires the browser provisioning wizard and its registration/resume fixtures; their removed files are not browser-lane identities. Native setup admission, original-operation recovery, configured restart and enrollment are covered by the desktop backend/frontend suites, Windows host tests and source-matched installed qualification. This browser gate does not claim to replace installed native-host or Windows Hello qualification.
+The current inventory has 16 core and two catch-up cases. ADR 0050 retires the browser provisioning wizard and its registration/resume fixtures; their removed files are not browser-lane identities. Native setup admission, original-operation recovery, configured restart and enrollment are covered by the desktop backend/frontend suites, Windows host tests and source-matched installed qualification. This browser gate does not claim to replace installed native-host or Windows Hello qualification.
 
 Hosted comparison uses the existing Product CI workflow with both dispatch inputs `browser_qualification` and `browser_serial_control` set to true. The serial control gets its own Windows runner at the same source/run as core and catch-up; the aggregate validates all three before publishing the Legal bundle. Normal runs skip only the optional serial control. Qualification rejects retry passes without changing the configured retry behavior. Three distinct clean dispatches provide the planned comparison samples; a targeted local run or repeated attempt of one dispatch does not replace them.
 
@@ -47,6 +47,8 @@ npm test --prefix tools/e2e-capture -- tests/capture.spec.mjs
 ```
 
 This narrow run is useful feedback but does not produce complete lane qualification. To add a journey, update the registry with its file and stable identity and check the unfiltered collection. New tests cannot silently inherit an optional selection. Keep whole files together so their worker and process ownership assumptions remain intact.
+
+`npm run test:text-analysis --prefix tools/e2e-capture` runs the five text-analysis application cases against the built SPA and real Brain with isolated signed-grant, profile and typed worker fixtures. This targeted config omits the unrelated Agent build and cannot produce browser-lane evidence. The cases remain required in the ordinary core lane. They do not qualify model accuracy, hosted issuance or installed Engine delivery.
 
 ## Check reporting without running browser journeys
 

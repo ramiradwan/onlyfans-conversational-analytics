@@ -1,5 +1,4 @@
-import { createQuestionApi } from './questionApi';
-import type { QuestionEvidence, SourceEvidence } from '../analytics/questionContract';
+import { parseSourceEvidence, questionEvidence, type QuestionEvidence, type SourceEvidence } from '../analytics/questionContract';
 import {
   clientIntent, enrollmentCommand, parseClientIntentPage, parseClientIntentRecord, parseEnrollmentCommandResult,
   parseEnrollmentView, verifyPreviewOutcome, parseSavedPreview, parseSavedPreviewPage, previewConfirmation, previewPrepare, textAnalysisUuid,
@@ -28,7 +27,7 @@ export interface TextAnalysisApi {
   retain(intent: ClientIntent, signal?: AbortSignal): Promise<ClientIntentRecord>;
   retained(kind: ClientIntentKind, key: string, signal?: AbortSignal): Promise<ClientIntentRecord | null>;
   retainedList(after?: ClientIntentCursor, signal?: AbortSignal): Promise<ClientIntentPage>;
-  evidence(reference: QuestionEvidence, signal?: AbortSignal): Promise<SourceEvidence>;
+  evidence(contributionId: string, reference: QuestionEvidence, signal?: AbortSignal): Promise<SourceEvidence>;
 }
 async function boundedJson(response: Response): Promise<unknown> {
   if (!response.body) throw new TextAnalysisApiError('unknown');
@@ -48,7 +47,6 @@ async function boundedJson(response: Response): Promise<unknown> {
 export function createTextAnalysisApi(options: { fetcher?: typeof fetch; csrf?: () => string | null | Promise<string | null> } = {}): TextAnalysisApi {
   const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
   const csrf = options.csrf ?? (() => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? null);
-  const sources = createQuestionApi({ fetcher });
   async function request(method: 'GET' | 'POST', path: string, body: unknown, signal?: AbortSignal, absentCode?: string): Promise<unknown> {
     const controller = new AbortController(), abort = () => controller.abort();
     if (signal?.aborted) controller.abort();
@@ -80,7 +78,11 @@ export function createTextAnalysisApi(options: { fetcher?: typeof fetch; csrf?: 
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
   }
   return {
-    evidence: sources.evidence,
+    async evidence(contributionId, reference, signal) {
+      textAnalysisUuid.parse(contributionId);
+      const input = questionEvidence.parse(reference);
+      return parseSourceEvidence(await request('POST', `previews/results/${contributionId}/evidence`, input, signal), input);
+    },
     async current(signal) { return parseEnrollmentView(await request('GET', 'execution/view', undefined, signal)); },
     async command(body, signal) {
       const input = enrollmentCommand.parse(body);

@@ -13,6 +13,7 @@ a real installation.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,7 @@ E2E_HELPER_NAMES = (
     "pairing_fixture",
     "provisioning_grant_authority",
     "seed_webauthn_grants",
+    "text_analysis_fixture",
 )
 
 
@@ -37,7 +39,7 @@ def _e2e_helper_references(path: Path) -> list[str]:
 
     def record(text: str, template: str) -> None:
         for helper in E2E_HELPER_NAMES:
-            if helper in text:
+            if re.search(rf"(?<!\w){re.escape(helper)}(?!\w)", text):
                 references.add(template.format(text=text, helper=helper))
 
     for node in ast.walk(tree):
@@ -118,3 +120,27 @@ def test_guard_rejects_the_pairing_authority_in_an_app_module(tmp_path: Path) ->
     assert _e2e_helper_violations(tmp_path / "app") == [
         "security/example.py: ['imports from tools.e2e_capture.helpers.pairing_fixture']"
     ]
+
+
+@pytest.mark.parametrize("source", [
+    "import text_analysis_fixture\n",
+    "from tools.e2e_capture.helpers import text_analysis_fixture\n",
+    "module = 'tools.e2e_capture.helpers.text_analysis_fixture'\n",
+    "module = 'tools/e2e-capture/helpers/text_analysis_fixture.py'\n",
+])
+def test_guard_rejects_text_analysis_helper_references(tmp_path: Path, source: str) -> None:
+    path = tmp_path / "app" / "example.py"
+    path.parent.mkdir()
+    path.write_text(source, encoding="utf-8")
+    assert _e2e_helper_violations(path.parent)
+
+
+@pytest.mark.parametrize("source", [
+    "reason = 'text_analysis_fixture_selection_invalid'\n",
+    "text_analysis_fixture_only = 'text_analysis_fixture_only'\n",
+])
+def test_guard_accepts_distinct_identifiers(tmp_path: Path, source: str) -> None:
+    path = tmp_path / "app" / "example.py"
+    path.parent.mkdir()
+    path.write_text(source, encoding="utf-8")
+    assert _e2e_helper_violations(path.parent) == []

@@ -46,6 +46,33 @@ describe('text analysis HTTP', () => {
     controller.abort(); release('csrf');
     await expect(work).rejects.toMatchObject({ name: 'AbortError' }); expect(fetcher).not.toHaveBeenCalled();
   });
+  it('resolves the selected saved contribution through its CSRF-protected evidence port', async () => {
+    const reference = saved.output.summaries.find((item) => item.kind === 'mention_category')!.evidence[1].reference;
+    const value = { reference, location: { conversation_id: 'example-conversation', message_id: 'example-message' },
+      text: '😀 echo echo', direction: 'inbound', checked_at: '2026-10-25T00:00:00Z', browser_span: { start: 8, end: 12 } };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(value));
+    const source = await createTextAnalysisApi({ fetcher, csrf: () => 'csrf' }).evidence(saved.output.contribution_id, reference);
+    expect(source.text.slice(source.browser_span!.start, source.browser_span!.end)).toBe('echo');
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith(`/api/v1/nlp/previews/results/${saved.output.contribution_id}/evidence`, expect.objectContaining({
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+      headers: { Accept: 'application/json', 'X-CSRF-Token': 'csrf', 'Content-Type': 'application/json' }, body: JSON.stringify(reference),
+    }));
+  });
+  it.each(['reference', 'browser_span'] as const)('refuses a mismatched saved source %s', async (field) => {
+    const reference = saved.output.summaries.find((item) => item.kind === 'mention_category')!.evidence[1].reference;
+    const value = { reference: field === 'reference' ? { ...reference, message_ref: `m1:${'f'.repeat(64)}` } : reference,
+      location: { conversation_id: 'example-conversation', message_id: 'example-message' }, text: '😀 echo echo', direction: 'inbound',
+      checked_at: '2026-10-25T00:00:00Z', browser_span: field === 'browser_span' ? { start: 7, end: 11 } : { start: 8, end: 12 } };
+    const api = createTextAnalysisApi({ fetcher: vi.fn(async () => json(value)), csrf: () => 'csrf' });
+    await expect(api.evidence(saved.output.contribution_id, reference)).rejects.toThrow();
+  });
+  it('refuses invalid evidence coordinates and contribution IDs before dispatch', async () => {
+    const reference = saved.output.summaries.find((item) => item.kind === 'mention_category')!.evidence[1].reference;
+    const fetcher = vi.fn<typeof fetch>(), api = createTextAnalysisApi({ fetcher, csrf: () => 'csrf' });
+    await expect(api.evidence('not-a-contribution', reference)).rejects.toThrow();
+    await expect(api.evidence(saved.output.contribution_id, { ...reference, span: { start: 7, end: 7 } })).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it('refuses a changed displayed cutoff even when the old confirmation is otherwise intact', async () => {
     const value = structuredClone(outcome);
     value.scope.cutoff = '2026-10-25T01:00:00Z'; value.scope.lower_exclusive = '2026-07-27T01:00:00Z';

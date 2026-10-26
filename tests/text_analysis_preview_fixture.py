@@ -88,7 +88,7 @@ def install_findings(x):
     x.environment.engine.open = opened
 
 
-def accumulated_output(x, binding, *, findings=True):
+def accumulated_output(x, binding, *, findings=True, mention_spans=((0, 6),)):
     """Create source-bound typed observations without running an Engine."""
     import hashlib
     from app.analytics.nlp_preview import PreviewAccumulator, encode_preview
@@ -106,7 +106,8 @@ def accumulated_output(x, binding, *, findings=True):
                 descriptor = next(t for t in component.tasks if t.task == task_binding.task)
                 positive = findings is True or (type(findings) is tuple and member.ordinal in findings)
                 selected = ([{'topic_id': descriptor.enabled_ids[0]}] if descriptor.task == 'message_topics'
-                    else [{'concept_id': descriptor.enabled_ids[0], 'span': {'start': 0, 'end': 6}}]) if positive else []
+                    else [{'concept_id': descriptor.enabled_ids[0], 'span': {'start': start, 'end': end}}
+                          for start, end in mention_spans]) if positive else []
                 task = dict(task=descriptor.task, outcome='assessed_findings' if positive else 'assessed_no_match',
                     reason='none', findings=selected, coverage=dict(source_codepoints=len(source.text),
                         examined=[dict(start=0, end=len(source.text))], excluded=[], limits_reached=[]))

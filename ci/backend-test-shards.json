@@ -226,6 +226,7 @@
     "tests/test_desktop_shutdown.py": 1,
     "tests/test_dominant_append_reuse.py": 3,
     "tests/test_durable_ingestion.py": 2,
+    "tests/test_e2e_text_analysis_fixture.py": 1,
     "tests/test_encoded_conversation_graph.py": 4,
     "tests/test_enrichment_cache_contract.py": 1,
     "tests/test_enrichment_cache_storage.py": 1,

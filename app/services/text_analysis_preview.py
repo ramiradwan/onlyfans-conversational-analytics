@@ -3,10 +3,12 @@ from contextlib import contextmanager
 import hashlib
 import weakref
 
+from app.analytics.evidence_contracts import ResolvedEvidence
 from app.analytics.nlp_preview import SELECTION_POLICY
 from app.analytics.nlp_preview_scope import freeze_preview_scope
 from app.core.optional_execution import require_optional_execution
 from app.models.knowledge_contributions import AttemptToken, record_digest
+from app.models.question_evidence import QuestionEvidence, SourceSpan
 from app.models.text_analysis_jobs import ExecutionIntent, JobPlan, PreviewConfirmation
 from app.models.text_analysis_preview import NoPreviewOutput
 from app.models.text_analysis_preview_execution import (
@@ -274,6 +276,10 @@ class TextAnalysisPreviewService:
     def read_saved_view(self, http_policy, contribution_id):
         return self._read_saved(http_policy, contribution_id, view=True)
 
+    def read_saved_evidence(self, http_policy, contribution_id, reference):
+        reference = QuestionEvidence.model_validate_json(canonical_bytes(reference))
+        return self._read_saved(http_policy, contribution_id, view=False, reference=reference)
+
     def saved_list(self, http_policy, *, after_contribution='', limit=64):
         with self.dependencies.gate:
             _, baseline = self._http(http_policy)
@@ -285,13 +291,22 @@ class TextAnalysisPreviewService:
                     limit=limit,
                 )
 
-    def _read_saved(self, http_policy, contribution_id, *, view):
+    def _read_saved(self, http_policy, contribution_id, *, view, reference=None):
         ExecutionIntent.uuid4(contribution_id)
         with self.dependencies.gate:
             _, baseline = self._http(http_policy)
             with self._baseline_transaction(baseline, http_policy) as (auth_db, db):
                 try:
                     output = self.store.read_shown_in(db, contribution_id, policy=baseline)
+                    self._saved_reference_in(auth_db, db, output)
+                    if reference is not None:
+                        result = self._saved_evidence_in(db, baseline, output, reference)
+                    else:
+                        result = (
+                            self.store.saved_view_in(db, output, policy=baseline)
+                            if view
+                            else output
+                        )
                 except PreviewSourceUnavailable:
                     # Retire only after a genuine live-source refusal. Preserve
                     # lifetime intent and spent admission through the cascade.
@@ -302,19 +317,40 @@ class TextAnalysisPreviewService:
                     self.repository._job(db, row['job_id'], baseline)
                     db.execute('DELETE FROM knowledge_jobs WHERE job_id=?', (row['job_id'],))
                     output = None
-                result = None
-                if output is not None:
-                    self._saved_reference_in(auth_db, db, output)
-                    result = (
-                        self.store.saved_view_in(db, output, policy=baseline)
-                        if view
-                        else output
-                    )
+                    result = None
                 self._baseline_in(auth_db, baseline)
             # Refusal occurs after the authorized erasure transaction commits.
             if output is None:
                 raise ValueError('preview_output_unavailable')
             return result
+
+    def _saved_evidence_in(self, db, baseline, output, reference):
+        matches = [entry for summary in output.summaries for entry in summary.evidence
+                   if entry.reference == reference]
+        if not matches:
+            raise ValueError('preview_evidence_unavailable')
+        _, spec, profile, sources = self.store._bound_capsule_in(db, output.job_id, policy=baseline)
+        member = sources[matches[0].ordinal]
+        budget = self.repository._budget()
+        try:
+            source = self.repository._source(db, spec, member, budget)
+        except ValueError as error:
+            if str(error) not in ('knowledge_source_changed', 'knowledge_source_expired'):
+                raise
+            raise PreviewSourceUnavailable('preview_source_unavailable') from error
+        self.repository.source_guard.preview_source(output, profile, member, source)
+        # The retained revision belongs to the frozen inventory; all other source fields stay current.
+        current = source.reference(reference.span).model_copy(update={'source_revision': member.source_revision})
+        if current != reference:
+            raise ValueError('preview_evidence_unavailable')
+        span = reference.span
+        browser_span = None if span is None else SourceSpan(
+            start=len(source.text[:span.start].encode('utf-16-le')) // 2,
+            end=len(source.text[:span.end].encode('utf-16-le')) // 2,
+        )
+        budget.check()
+        return ResolvedEvidence(reference=reference, location=member.location.model_dump(), text=source.text,
+            direction=source.direction, checked_at=self.authentication._clock(), browser_span=browser_span)
 
     def _saved_reference_in(self, auth_db, db, output):
         intent = self.repository._module_intent(db, output.job_id)

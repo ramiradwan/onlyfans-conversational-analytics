@@ -68,7 +68,7 @@ function fixture(partial = false, engineApi?: EngineAcquisitionApi) {
     }),
     savedList: vi.fn<TextAnalysisApi['savedList']>().mockResolvedValue({ items: [{ contribution_id: savedExample.output.contribution_id }], next_after: null }),
     saved: vi.fn<TextAnalysisApi['saved']>(async (id) => parseSavedPreview(clone(partial ? partialExample : savedExample), id)),
-    evidence: vi.fn<TextAnalysisApi['evidence']>(async (reference) => {
+    evidence: vi.fn<TextAnalysisApi['evidence']>(async (_contributionId, reference) => {
       const text = '😀 echo echo', points = Array.from(text), span = reference.span;
       return { reference, location: { conversation_id: 'example-chat', message_id: 'example-message' }, text, direction: 'inbound',
         checked_at: '2026-10-26T00:00:00Z', browser_span: span ? { start: points.slice(0, span.start).join('').length,
@@ -276,15 +276,17 @@ describe('Text analysis preview controls', () => {
     let dialog = await screen.findByRole('dialog', { name: 'Finding source' });
     await waitFor(() => expect(dialog.querySelector('mark')?.textContent).toBe('echo'));
     expect(dialog.querySelector('mark')?.previousSibling?.textContent).toBe('😀 ');
-    expect(x.api.evidence.mock.calls[0][0].span).toEqual({ start: 2, end: 6 });
+    expect(x.api.evidence.mock.calls[0][0]).toBe(savedExample.output.contribution_id);
+    expect(x.api.evidence.mock.calls[0][1].span).toEqual({ start: 2, end: 6 });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(mention.getByRole('button', { name: /Open occurrence evidence 2/ }));
     dialog = await screen.findByRole('dialog', { name: 'Finding source' });
     await waitFor(() => expect(dialog.querySelector('mark')?.textContent).toBe('echo'));
     expect(dialog.querySelector('mark')?.previousSibling?.textContent).toBe('😀 echo ');
-    expect(x.api.evidence.mock.calls[1][0].span).toEqual({ start: 7, end: 11 });
-    expect(x.api.evidence.mock.calls[0][0].message_ref).toBe(x.api.evidence.mock.calls[1][0].message_ref);
+    expect(x.api.evidence.mock.calls[1][0]).toBe(savedExample.output.contribution_id);
+    expect(x.api.evidence.mock.calls[1][1].span).toEqual({ start: 7, end: 11 });
+    expect(x.api.evidence.mock.calls[0][1].message_ref).toBe(x.api.evidence.mock.calls[1][1].message_ref);
   });
 
   it.each(['account', 'same_account_session', 'role'] as const)('clears saved output and evidence when %s changes', async (change) => {

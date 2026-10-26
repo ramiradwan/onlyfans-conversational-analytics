@@ -98,7 +98,7 @@ test('actual inventory includes all registry cases even for a selected lane and 
   assert.deepEqual(verifyEvents(readFileSync(f.filename, 'utf8'), f), { count: 1, completed: 0, retried: 0 });
   const real = readRegistry().registry;
   const core = laneTests(real, 'core'); const catchup = laneTests(real, 'catchup');
-  assert.equal(core.length, 11); assert.equal(catchup.length, 2);
+  assert.equal(core.length, 16); assert.equal(catchup.length, 2);
   assert.equal(new Set([...core, ...catchup].map((item) => item.id)).size, real.tests.length);
   assert.deepEqual(laneTests(real, 'catchup', 'inventory'), real.tests);
   assert.equal(new Set(catchup.map((item) => item.file)).size, 1);

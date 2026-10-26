@@ -36,9 +36,10 @@ def test_markdown_discovery_skips_only_root_pytest_basetemp_directories(
     assert root_basetemp_document not in discovered
 
 
-def test_markdown_discovery_excludes_generated_ci_reports_only(tmp_path, monkeypatch):
-    generated = tmp_path / "artifacts/ci-tests/failed-lane/summary.md"
-    document = tmp_path / "docs/artifacts/ci-tests/summary.md"
+@pytest.mark.parametrize("artifact_directory", ["ci-tests", "browser-tests"])
+def test_markdown_discovery_excludes_generated_test_reports_only(tmp_path, monkeypatch, artifact_directory):
+    generated = tmp_path / "artifacts" / artifact_directory / "failed-lane/summary.md"
+    document = tmp_path / "docs/artifacts" / artifact_directory / "summary.md"
     for path in (generated, document):
         path.parent.mkdir(parents=True)
         path.write_text("# Summary\n", encoding="utf-8")

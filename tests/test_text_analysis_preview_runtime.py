@@ -24,9 +24,12 @@ async def configured_preview_runtime(x, path):
         authorized_account(x.identity.owner.rebuild(x.identity.identity), account)
     configuration = FindingsConfiguration(dependencies=x.construct_dependencies, authorize=baseline,
         execution=x.execution_configuration, preview=x.configuration, clock=lambda: x.f.clock.now, interval=.02)
-    owned = runtime.configure_default_analytics_runtime(x.source, backend='sqlite', projections_path=path,
-        canonical_database=x.repository.database, activation=x.f.repositories.projection_activation,
-        findings=configuration)
+    with runtime._RUNTIME_LOCK:
+        previous_configuration = runtime._DEFAULT_CONFIGURATION
+        owned = runtime.configure_default_analytics_runtime(x.source, backend='sqlite', projections_path=path,
+            canonical_database=x.repository.database, activation=x.f.repositories.projection_activation,
+            findings=configuration)
+        owned_configuration = runtime._DEFAULT_CONFIGURATION
     try:
         await runtime.start_default_analytics_runtime()
         await eventually(lambda: preview_service() is not None)
@@ -34,8 +37,14 @@ async def configured_preview_runtime(x, path):
         assert service.dependencies is owned.findings._service
         yield owned, service
     finally:
+        with runtime._RUNTIME_LOCK:
+            assert runtime._DEFAULT_CONFIGURATION is owned_configuration, 'Preview fixture configuration owner changed'
+            assert runtime._RUNTIMES.get(id(x.source)) is owned, 'Preview fixture runtime owner changed'
         assert await runtime.shutdown_default_analytics_runtime(timeout=15)
-        assert preview_service() is None
+        with runtime._RUNTIME_LOCK:
+            assert runtime._DEFAULT_CONFIGURATION is owned_configuration, 'Preview fixture configuration owner changed'
+            assert preview_service() is None
+            runtime._DEFAULT_CONFIGURATION = previous_configuration
 
 
 def job_state(x, job):

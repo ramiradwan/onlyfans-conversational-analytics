@@ -30,7 +30,7 @@ async function fixture() {
     confirm: vi.fn<TextAnalysisApi['confirm']>(async () => { outcome = { ...outcome!, receipt: { ...outcome!.receipt, state: 'pending' } }; return outcome; }),
     savedList: vi.fn<TextAnalysisApi['savedList']>().mockResolvedValue({ items: [{ contribution_id: saved.output.contribution_id }], next_after: null }),
     saved: vi.fn<TextAnalysisApi['saved']>().mockResolvedValue(saved),
-    evidence: vi.fn<TextAnalysisApi['evidence']>(async (reference) => ({ reference,
+    evidence: vi.fn<TextAnalysisApi['evidence']>(async (_contributionId, reference) => ({ reference,
       location: { conversation_id: 'example-conversation', message_id: 'example-message' }, text: '😀 echo echo', direction: 'inbound',
       checked_at: '2026-10-25T00:00:00Z', browser_span: reference.span ? { start: reference.span.start + 1, end: reference.span.end + 1 } : null })),
     retain: vi.fn<TextAnalysisApi['retain']>(async (intent) => {
@@ -123,6 +123,7 @@ describe('preview recovery and saved output state', () => {
     const mention = saved.output.summaries.find((item) => item.kind === 'mention_category')!.evidence[1].reference;
     await store.actions.openSource({ ...mention, message_ref: `m1:${'f'.repeat(64)}` }); expect(api.evidence).not.toHaveBeenCalled();
     await store.actions.openSource(mention);
+    expect(api.evidence).toHaveBeenCalledWith(saved.output.contribution_id, mention, expect.any(AbortSignal));
     expect(store.getState().source?.browser_span).toEqual({ start: 8, end: 12 });
     expect(store.getState().source?.text.slice(8, 12)).toBe('echo');
     api.evidence.mockRejectedValueOnce(new Error('source unavailable')); await store.actions.openSource(mention);
@@ -132,7 +133,7 @@ describe('preview recovery and saved output state', () => {
     const { api, saved } = await fixture(); await store.actions.openSaved(saved.output.contribution_id);
     const reference = saved.output.summaries[1].evidence[0].reference;
     let release!: () => void;
-    const source = await api.evidence(reference);
+    const source = await api.evidence(saved.output.contribution_id, reference);
     api.evidence.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(source); }));
     const work = store.actions.openSource(reference);
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));

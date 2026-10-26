@@ -188,7 +188,7 @@ def test_complete_disjoint_lanes_and_retained_dependency_produce_exact_proof(tmp
     chosen, proof = gate.validate_evidence(tmp_path, jobs=_jobs(catchup=2), source=SOURCE,
         run_id=42, current_attempt=2, qualification=False)
     assert chosen["catchup"] == newest
-    assert proof["selected_count"] == 13
+    assert proof["selected_count"] == 18
     assert proof["lanes"]["core"]["producer_attempt"] == 1
     assert proof["lanes"]["catchup"]["producer_attempt"] == 2
     assert proof["retries"] == 0
@@ -199,7 +199,7 @@ def test_serial_control_verifies_complete_inventory_without_claiming_a_pair(tmp_
     _artifact(tmp_path, registry, "legacy", qualification=True)
     _, proof = gate.validate_evidence(tmp_path, jobs=_jobs(), source=SOURCE, run_id=42,
         current_attempt=1, qualification=True, serial=True)
-    assert proof["serial_control"] is True and proof["selected_count"] == 13
+    assert proof["serial_control"] is True and proof["selected_count"] == 18
     assert set(proof["lanes"]) == {"legacy"}
 
 
@@ -465,7 +465,7 @@ def test_requested_control_is_independent_and_does_not_double_count_split_timing
     assert proof["control"]["source_commit"] == proof["source_commit"] == SOURCE
     assert proof["control"]["workflow_run_id"] == proof["workflow_run_id"] == 42
     assert proof["control"]["selected_ids"] == proof["selected_ids"]
-    assert proof["control"]["selected_count"] == proof["selected_count"] == 13
+    assert proof["control"]["selected_count"] == proof["selected_count"] == 18
 
 
 def test_unrequested_legacy_artifact_is_not_silently_ignored(tmp_path, registry):

@@ -151,9 +151,18 @@ def test_exact_capsule_capacity_boundary_rolls_back_job_and_lifetime_receipt(pre
         assert x.repository._storage(db) == x.repository.max_storage_bytes
 
 
-def test_session_revoked_during_real_writer_wait_refuses_before_receipt(preview, monkeypatch):
+@pytest.mark.parametrize('operation', ['outcome', 'evidence'])
+def test_session_revoked_during_real_writer_wait_refuses_before_receipt(preview, monkeypatch, operation):
     x = preview
     body = request(x)
+    if operation == 'evidence':
+        from app.analytics.nlp_preview import decode_preview
+        body, _ = prepare_preview(x)
+        binding = x.service.bind_pending(x.service.pending_locators()[0])
+        token = x.service.claim(binding)
+        frame = accumulated_output(x, binding)
+        receipt = x.service.commit(binding, token, frame, validation_wall_clock_ms=30000)
+        reference = decode_preview(frame).summaries[0].evidence[0].reference
     entered, attempted, acquired, done = Event(), Event(), Event(), Event()
     prechecked, proceed = Event(), Event()
     errors = []
@@ -176,7 +185,10 @@ def test_session_revoked_during_real_writer_wait_refuses_before_receipt(preview,
         worker_id.append(get_ident())
         entered.set()
         try:
-            x.service.read_outcome(policy, body.external_key)
+            if operation == 'evidence':
+                x.service.read_saved_evidence(policy, receipt.contribution_id, reference)
+            else:
+                x.service.read_outcome(policy, body.external_key)
         except Exception as error:
             errors.append(error)
         finally:
@@ -207,4 +219,8 @@ def test_session_revoked_during_real_writer_wait_refuses_before_receipt(preview,
     assert acquired.is_set() and done.is_set() and not thread.is_alive()
     assert len(errors) == 1 and isinstance(errors[0], RuntimeAuthorizationDenied)
     with x.repository.database.read() as db:
-        assert not db.execute('SELECT 1 FROM text_analysis_preview_requests').fetchone()
+        if operation == 'evidence':
+            assert bytes(db.execute('SELECT document FROM text_analysis_preview_outputs').fetchone()[0]) == frame
+            assert db.execute('SELECT state FROM text_analysis_preview_admissions').fetchone()[0] == 'spent'
+        else:
+            assert not db.execute('SELECT 1 FROM text_analysis_preview_requests').fetchone()

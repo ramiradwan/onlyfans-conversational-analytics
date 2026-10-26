@@ -158,7 +158,7 @@ export function createTextAnalysisPreviewStore(client: TextAnalysisClient = crea
     if (!enabled || store.getState().busy || !output?.output.summaries.some((item) => item.evidence.some((entry) => evidenceKey(entry.reference) === evidenceKey(reference)))) return;
     const lifetime = begin(); store.setState({ source: null, sourceLoading: true, sourceError: null });
     try {
-      const source = parseSourceEvidence(await client.api.evidence(reference, lifetime.signal), reference);
+      const source = parseSourceEvidence(await client.api.evidence(output.output.contribution_id, reference, lifetime.signal), reference);
       if (lifetime.active()) store.setState({ source, sourceLoading: false });
     } catch { if (lifetime.active()) store.setState({ saved: null, source: null, sourceLoading: false, sourceError: 'This source is no longer available or could not be verified.' }); }
   }

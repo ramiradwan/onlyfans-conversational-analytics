@@ -216,6 +216,68 @@ def test_published_both_tasks_counts_coverage_labels_and_exact_repeated_spans(re
     assert (resolved.browser_span.start, resolved.browser_span.end) == (8, 12)
 
 
+@pytest.mark.parametrize('change', ['publication', 'source'])
+def test_saved_currentness_rejects_a_real_publication_or_source_switch(ready, monkeypatch, change):
+    from threading import Thread
+    from app.services.insights_service import _saved_projection_is_current
+    from tests.continuous_analytics_fixture import insert_message
+
+    store = ready.fixture.stores.projections
+    original = store.question_publications
+    account = ready.fixture.source.account_read_model(ACCOUNT)
+    replacement = candidate = None
+    if change == 'publication':
+        ready.runner.findings.mode(ACCOUNT, 'paused')
+        replacement = ready.runner.frozen_pipeline(ACCOUNT)
+        candidate = replacement.build_candidate(ACCOUNT)
+    ready.fixture.source.prepare_question_identity(ACCOUNT)
+    saved_runtime = SimpleNamespace(pipeline=ready.fixture.pipeline, source=ready.fixture.source)
+    assert _saved_projection_is_current(ready.projection, saved_runtime, ACCOUNT, account, lambda: False)
+    switched = []
+
+    @contextmanager
+    def switching(*args, **kwargs):
+        with original(*args, **kwargs) as publication:
+            def read(*values):
+                return publication(*values)
+            def findings(snapshot):
+                result = publication.findings(snapshot)
+                if change == 'publication':
+                    errors = []
+                    def publish():
+                        try:
+                            replacement.publish_candidate(candidate)
+                        except BaseException as error:
+                            errors.append(error)
+                    worker = Thread(target=publish)
+                    worker.start()
+                    worker.join(10)
+                    assert not worker.is_alive()
+                    if errors:
+                        raise errors[0]
+                else:
+                    with ready.fixture.repositories.database.transaction() as db:
+                        insert_message(db, 'chat-0', 'after-saved-publication', ready.fixture.clock.now, 9)
+                        advance(db)
+                switched.append(snapshot.generation_id)
+                return result
+            read.findings = findings
+            yield read
+
+    monkeypatch.setattr(store, 'question_publications', switching)
+    try:
+        assert not _saved_projection_is_current(ready.projection,
+            saved_runtime, ACCOUNT, account, lambda: False)
+        assert len(switched) == 1
+        if change == 'publication':
+            assert store.get(ACCOUNT).projection_generation > ready.projection.projection_generation
+        else:
+            assert ready.fixture.source.account_revision(ACCOUNT) > account.view_revision
+    finally:
+        if candidate is not None and not switched:
+            replacement.discard_candidate(candidate)
+
+
 def test_read_inventory_serialized_size_is_explicit(ready):
     from app.analytics.nlp_findings_store import encoded
 

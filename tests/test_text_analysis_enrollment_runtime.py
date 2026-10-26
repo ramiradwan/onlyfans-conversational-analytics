@@ -34,51 +34,60 @@ async def configured_execution_runtime(x,path):
         authorized_account(policy,account)
     configuration=FindingsConfiguration(dependencies=x.construct_dependencies,authorize=baseline,
         execution=x.configuration,clock=lambda:x.f.clock.now,interval=.02)
-    owned=runtime.configure_default_analytics_runtime(x.source,backend='sqlite',projections_path=path,
-        canonical_database=x.repository.database,activation=x.f.repositories.projection_activation,
-        findings=configuration)
-    owned.findings.observed_failures=[]
-    original=owned.findings._turn
-    def observed():
-        try:
-            return original()
-        except Exception as error:
-            owned.findings.observed_failures.append(error)
-            raise
-    owned.findings._turn=observed
-    request=owned.scheduler.request_findings
-    async def observed_request(*args):
-        try:
-            return await request(*args)
-        except Exception as error:
-            owned.findings.observed_failures.append(error)
-            raise
-    owned.scheduler.request_findings=observed_request
-    generation=owned.scheduler.generation_pipeline
-    def observed_generation(account):
-        try:
-            return generation(account)
-        except Exception as error:
-            owned.findings.observed_failures.append(error)
-            raise
-    owned.scheduler.generation_pipeline=observed_generation
-    submit=owned.findings._executor.submit
-    def observed_submit(*args,**kwargs):
-        try:
-            return submit(*args,**kwargs)
-        except Exception as error:
-            owned.findings.observed_failures.append(error)
-            raise
-    owned.findings._executor.submit=observed_submit
+    with runtime._RUNTIME_LOCK:
+        previous_configuration=runtime._DEFAULT_CONFIGURATION
+        owned=runtime.configure_default_analytics_runtime(x.source,backend='sqlite',projections_path=path,
+            canonical_database=x.repository.database,activation=x.f.repositories.projection_activation,
+            findings=configuration)
+        owned_configuration=runtime._DEFAULT_CONFIGURATION
     try:
+        owned.findings.observed_failures=[]
+        original=owned.findings._turn
+        def observed():
+            try:
+                return original()
+            except Exception as error:
+                owned.findings.observed_failures.append(error)
+                raise
+        owned.findings._turn=observed
+        request=owned.scheduler.request_findings
+        async def observed_request(*args):
+            try:
+                return await request(*args)
+            except Exception as error:
+                owned.findings.observed_failures.append(error)
+                raise
+        owned.scheduler.request_findings=observed_request
+        generation=owned.scheduler.generation_pipeline
+        def observed_generation(account):
+            try:
+                return generation(account)
+            except Exception as error:
+                owned.findings.observed_failures.append(error)
+                raise
+        owned.scheduler.generation_pipeline=observed_generation
+        submit=owned.findings._executor.submit
+        def observed_submit(*args,**kwargs):
+            try:
+                return submit(*args,**kwargs)
+            except Exception as error:
+                owned.findings.observed_failures.append(error)
+                raise
+        owned.findings._executor.submit=observed_submit
         await runtime.start_default_analytics_runtime()
         await eventually(lambda: execution_service() is not None)
         assert runtime.analytics_runtime().findings is owned.findings
         assert execution_service().dependencies is owned.findings._service
         yield owned,execution_service()
     finally:
+        with runtime._RUNTIME_LOCK:
+            assert runtime._DEFAULT_CONFIGURATION is owned_configuration, 'Execution fixture configuration owner changed'
+            assert runtime._RUNTIMES.get(id(x.source)) is owned, 'Execution fixture runtime owner changed'
         assert await runtime.shutdown_default_analytics_runtime(timeout=15)
-        assert execution_service() is None
+        with runtime._RUNTIME_LOCK:
+            assert runtime._DEFAULT_CONFIGURATION is owned_configuration, 'Execution fixture configuration owner changed'
+            assert execution_service() is None
+            runtime._DEFAULT_CONFIGURATION=previous_configuration
 
 
 def published(owned,service):

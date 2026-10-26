@@ -17,7 +17,7 @@ export default function AnalyticsView() {
   return (
     <AnalyticsPresentation
       questions={<ConversationQuestions />}
-      findings={<><TaskFindings baseline={baseline} /><TextAnalysisPreviews creatorAccountId={account} /></>}
+      findings={<><TaskFindings baseline={baseline} onRefreshBaseline={analyticsStoreActions.refresh} /><TextAnalysisPreviews creatorAccountId={account} /></>}
       state={state}
       dateRange={dateRange}
       onDateRangeChange={(range) => void analyticsStoreActions.setDateRange(range)}

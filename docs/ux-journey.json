@@ -267,6 +267,11 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisExecutionControls.test.tsx",
           "name": "reviews cold-profile enablement and waits for a durable intent acknowledgement before the command"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-processing.spec.mjs",
+          "name": "processing commands preserve durable enrollment and canonical findings"
         }
       ]
     },
@@ -293,6 +298,11 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisExecutionControls.test.tsx",
           "name": "reviews cold-profile enablement and waits for a durable intent acknowledgement before the command"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-processing.spec.mjs",
+          "name": "processing commands preserve durable enrollment and canonical findings"
         }
       ]
     },
@@ -315,6 +325,11 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisExecutionControls.test.tsx",
           "name": "keeps an unknown original command through refresh and retries only its exact retained meaning"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-processing.spec.mjs",
+          "name": "processing commands preserve durable enrollment and canonical findings"
         }
       ]
     },
@@ -351,6 +366,21 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
           "name": "prepares an explicitly reviewed original scope before confirmation and keeps pending work read-only"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "joint preview preserves reviewed scope and exact saved evidence"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "split preview qualifies partial coverage without inventing totals"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "empty preview retains its outcome without spending admission"
         }
       ]
     },
@@ -377,6 +407,21 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
           "name": "prepares an explicitly reviewed original scope before confirmation and keeps pending work read-only"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "joint preview preserves reviewed scope and exact saved evidence"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "split preview qualifies partial coverage without inventing totals"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "empty preview retains its outcome without spending admission"
         }
       ]
     },
@@ -430,6 +475,11 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
           "name": "Text analysis preview controls"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "empty preview retains its outcome without spending admission"
         }
       ]
     },
@@ -467,6 +517,16 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
           "name": "recovers a confirmable original request without executing it until exact retry is chosen"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "empty preview retains its outcome without spending admission"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-recovery.spec.mjs",
+          "name": "original requests recover across lost replies and Bridge reconnection"
         }
       ]
     },
@@ -494,6 +554,21 @@
           "kind": "unit",
           "file": "frontend/tests/TextAnalysisPreviews.test.tsx",
           "name": "reads saved full output without models or module availability and keeps occurrence units distinct"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "joint preview preserves reviewed scope and exact saved evidence"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "split preview qualifies partial coverage without inventing totals"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-recovery.spec.mjs",
+          "name": "original requests recover across lost replies and Bridge reconnection"
         }
       ]
     },
@@ -505,11 +580,21 @@
         "text": "data-journey-state=\"findings.controls\""
       },
       "transitions": [
-        { "to": "findings.results", "by": "system" },
-        { "to": "findings.unavailable", "by": "system" }
+        {
+          "to": "findings.results",
+          "by": "system"
+        },
+        {
+          "to": "findings.unavailable",
+          "by": "system"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "shows both tasks with distinct counting units and honest label fallback" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TaskFindings.test.tsx",
+          "name": "shows both tasks with distinct counting units and honest label fallback"
+        }
       ]
     },
     {
@@ -520,10 +605,18 @@
         "text": "data-journey-state=\"findings.unavailable\""
       },
       "transitions": [
-        { "to": "findings.controls", "by": "user", "action": "Refresh saved findings or choose another analytics window" }
+        {
+          "to": "findings.controls",
+          "by": "user",
+          "action": "Refresh saved findings or choose another analytics window"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "keeps unavailable findings separate from baseline summary" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TaskFindings.test.tsx",
+          "name": "keeps unavailable findings separate from baseline summary"
+        }
       ]
     },
     {
@@ -534,12 +627,32 @@
         "text": "data-journey-state=\"findings.results\""
       },
       "transitions": [
-        { "to": "findings.source", "by": "user", "action": "Open a supporting source reference" },
-        { "to": "findings.controls", "by": "user", "action": "Change dates or message direction" },
-        { "to": "findings.unavailable", "by": "system" }
+        {
+          "to": "findings.source",
+          "by": "user",
+          "action": "Open a supporting source reference"
+        },
+        {
+          "to": "findings.controls",
+          "by": "user",
+          "action": "Change dates or message direction"
+        },
+        {
+          "to": "findings.unavailable",
+          "by": "system"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "shows both tasks with distinct counting units and honest label fallback" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TaskFindings.test.tsx",
+          "name": "shows both tasks with distinct counting units and honest label fallback"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-processing.spec.mjs",
+          "name": "processing commands preserve durable enrollment and canonical findings"
+        }
       ]
     },
     {
@@ -550,12 +663,42 @@
         "text": "data-journey-state=\"findings.source\""
       },
       "transitions": [
-        { "to": "findings.results", "by": "user", "action": "Close the source message" },
-        { "to": "textanalysis.preview_results", "by": "user", "action": "Close the preview source message" },
-        { "to": "findings.unavailable", "by": "system" }
+        {
+          "to": "findings.results",
+          "by": "user",
+          "action": "Close the source message"
+        },
+        {
+          "to": "textanalysis.preview_results",
+          "by": "user",
+          "action": "Close the preview source message"
+        },
+        {
+          "to": "findings.unavailable",
+          "by": "system"
+        }
       ],
       "evidence": [
-        { "kind": "unit", "file": "frontend/tests/TaskFindings.test.tsx", "name": "opens only the selected repeated Unicode mention occurrence" }
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TaskFindings.test.tsx",
+          "name": "opens only the selected repeated Unicode mention occurrence"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "joint preview preserves reviewed scope and exact saved evidence"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-preview.spec.mjs",
+          "name": "split preview qualifies partial coverage without inventing totals"
+        },
+        {
+          "kind": "browser",
+          "file": "tools/e2e-capture/tests/text-analysis-recovery.spec.mjs",
+          "name": "original requests recover across lost replies and Bridge reconnection"
+        }
       ]
     },
     {

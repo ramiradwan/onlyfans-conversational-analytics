@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { createStartupObservations, startupDiagnosticFromMessage, validStartupDiagnostic } from '../../lib/startup-diagnostics.mjs';
-import { brainHealthIsReady } from '../../lib/brain.mjs';
+import { brainHealthIsReady, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
 
 function fixture(owner = 'brain') {
   let time = 0;
@@ -13,6 +13,38 @@ function fixture(owner = 'brain') {
   observations.bind(child);
   return { child, observations, at(value) { time = value; } };
 }
+
+test('shutdown phases retain only the last closed canonical record', () => {
+  const phases = ['command_seen', 'control_validated', 'control_rejected', 'server_shutdown_entered',
+    'application_shutdown_entered', 'application_shutdown_returned', 'server_returned',
+    'owner_close_returned', 'fixture_coroutine_returning', 'event_loop_returned',
+    'server_tasks_wait_entered', 'server_waiting_connections', 'server_waiting_tasks',
+    'server_listener_wait_entered', 'server_listener_wait_returned', 'server_tasks_wait_returned'];
+  const line = phase => JSON.stringify({ schema: 'browser-fixture-shutdown-phase.v1', phase });
+  for (const phase of phases) assert.equal(lastFixtureShutdownPhase(line(phase)), phase);
+  assert.equal(lastFixtureShutdownPhase(`${line('command_seen')}\r\nprivate output\n${line('control_validated')}\n`), 'control_validated');
+  assert.equal(lastFixtureShutdownPhase(`${'private'.repeat(20_000)}\n${line('server_returned')}\n`), 'server_returned');
+  assert.equal(lastFixtureShutdownPhase(`${line('owner_close_returned')}\n${line('event_loop_returned').slice(0, -1)}`), 'owner_close_returned');
+  assert.equal(lastFixtureShutdownPhase(phases.slice(-6).map(line).join('\n')), 'server_tasks_wait_returned');
+});
+
+test('shutdown phase extraction refuses altered fields and unbounded records', () => {
+  const value = { schema: 'browser-fixture-shutdown-phase.v1', phase: 'command_seen' };
+  const line = JSON.stringify(value);
+  for (const output of [null, undefined, {}, [], 'private output', 'x'.repeat(100_000),
+    JSON.stringify({ ...value, private: 'content' }), JSON.stringify({ ...value, phase: 'private' }),
+    JSON.stringify({ ...value, schema: 'other' }), JSON.stringify({ ...value, phase: null }),
+    JSON.stringify([value]), JSON.stringify({ phase: value.phase, schema: value.schema }),
+    ' ' + line, line + ' ', JSON.stringify(value, null, 2), line + 'private',
+    line.replace('command_seen', 'command\\u005fseen'),
+    line.replace('"phase":', '"phase":"command_seen","phase":'),
+    line.replace('"phase":"command_seen"', '"phase":NaN'),
+    line.replace('command_seen', 'x'.repeat(300)),
+    line.replace('command_seen', 'server_waiting_tasks_private'),
+    JSON.stringify({ ...value, phase: 'server_waiting_connections', connections: 1 })]) {
+    assert.equal(lastFixtureShutdownPhase(output), null);
+  }
+});
 
 test('silent startup distinguishes spawn, exit and pipe close without claiming a join', () => {
   const f = fixture(); f.at(2); f.child.emit('spawn');

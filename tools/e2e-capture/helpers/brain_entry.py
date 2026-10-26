@@ -1,14 +1,12 @@
-"""E2E-only Brain entry that supplies a signer for the synthetic installation key.
-
-The application and every pairing/session endpoint remain production modules.
-Only the installation proof signer is replaced when the disposable E2E store
-contains the explicitly named synthetic provider used by seed_webauthn_grants.
-"""
+"""E2E entry with explicit synthetic installation and text-analysis fixtures."""
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import json
 import sys
+import threading
 from pathlib import Path
 
 
@@ -28,13 +26,30 @@ PRODUCT_ROOT = Path(__file__).resolve().parents[3]
 HELPER_ROOT = Path(__file__).resolve().parent
 sys.path[:0] = [str(PRODUCT_ROOT), str(HELPER_ROOT)]
 
+
+def _selection(arguments):
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    parser.add_argument('--text-analysis-fixture', choices=('joint', 'split-partial', 'empty', 'saved-only'))
+    if arguments and (len(arguments) != 2 or arguments[0] != '--text-analysis-fixture'):
+        parser.error('Expected one explicit fixture selection')
+    return parser.parse_args(arguments).text_analysis_fixture
+
+
+_selected_fixture = _selection(sys.argv[1:]) if __name__ == '__main__' else None
+
 import uvicorn  # noqa: E402
+from uvicorn import server as uvicorn_server  # noqa: E402
 
 _startup_phase("uvicorn_imported")
+if _selected_fixture is not None:
+    from app.core.config import settings
+    from text_analysis_fixture import prepare_paths
+    _fixture_paths, _fixture_marker = prepare_paths(settings, _selected_fixture)
 from app.api.endpoints import companion_pairing, companion_session  # noqa: E402
 _startup_phase("endpoints_imported")
 from app.core.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
+from app import main as application  # noqa: E402
 _startup_phase("main_imported")
 from app.persistence.auth import SQLiteAuthenticationStore  # noqa: E402
 from app.security.companion_pairing import CompanionPairingService  # noqa: E402
@@ -59,13 +74,136 @@ install_session_diagnostics(companion_session)
 _startup_phase("helpers_installed")
 
 
+def _shutdown_phase(phase):
+    if phase not in {"command_seen", "control_validated", "control_rejected", "server_shutdown_entered",
+                     "application_shutdown_entered", "application_shutdown_returned", "server_returned",
+                     "owner_close_returned", "fixture_coroutine_returning", "event_loop_returned",
+                     "server_tasks_wait_entered", "server_waiting_connections", "server_waiting_tasks",
+                     "server_listener_wait_entered", "server_listener_wait_returned", "server_tasks_wait_returned"}:
+        return
+    try:
+        print(json.dumps({"schema": "browser-fixture-shutdown-phase.v1", "phase": phase},
+                         separators=(",", ":")), flush=True)
+    except (OSError, ValueError):
+        pass
+
+
+class _ShutdownLogger:
+    def __init__(self, original):
+        self._original = original
+
+    def __getattr__(self, name):
+        return getattr(self._original, name)
+
+    def info(self, message, *args, **kwargs):
+        if type(message) is str:
+            if message == "Waiting for connections to close. (CTRL+C to force quit)":
+                _shutdown_phase("server_waiting_connections")
+            elif message == "Waiting for background tasks to complete. (CTRL+C to force quit)":
+                _shutdown_phase("server_waiting_tasks")
+        return self._original.info(message, *args, **kwargs)
+
+
+class _ShutdownListener:
+    def __init__(self, original):
+        self._original = original
+
+    def __getattr__(self, name):
+        return getattr(self._original, name)
+
+    async def wait_closed(self, *args, **kwargs):
+        _shutdown_phase("server_listener_wait_entered")
+        close_clients = getattr(self._original, "close_clients", None)
+        if callable(close_clients):
+            close_clients()
+        result = await self._original.wait_closed(*args, **kwargs)
+        _shutdown_phase("server_listener_wait_returned")
+        return result
+
+
+class _FixtureServer(uvicorn.Server):
+    async def shutdown(self, sockets=None):
+        _shutdown_phase("server_shutdown_entered")
+        original_logger = uvicorn_server.logger
+        original_servers = self.servers
+        original_listeners = tuple(original_servers)
+        listeners = [_ShutdownListener(listener) for listener in original_listeners]
+        try:
+            uvicorn_server.logger = _ShutdownLogger(original_logger)
+            original_servers[:] = listeners
+            return await super().shutdown(sockets=sockets)
+        finally:
+            original_servers[:] = original_listeners
+            self.servers = original_servers
+            uvicorn_server.logger = original_logger
+
+    async def _wait_tasks_to_complete(self):
+        _shutdown_phase("server_tasks_wait_entered")
+        result = await super()._wait_tasks_to_complete()
+        _shutdown_phase("server_tasks_wait_returned")
+        return result
+
+
+async def _serve_fixture(selected):
+    from text_analysis_fixture import install_fixture, read_stop
+    callbacks = app.router.on_shutdown
+    positions = [index for index, callback in enumerate(callbacks) if callback is application.shutdown_event]
+    if len(positions) != 1:
+        raise RuntimeError('text_analysis_fixture_shutdown_handler_unavailable')
+    original_shutdown = callbacks[positions[0]]
+    async def observed_shutdown(*args, **kwargs):
+        _shutdown_phase("application_shutdown_entered")
+        result = await original_shutdown(*args, **kwargs)
+        _shutdown_phase("application_shutdown_returned")
+        return result
+    callbacks[positions[0]] = observed_shutdown
+    owner = install_fixture(application, _fixture_paths, selected, _fixture_marker)
+    server = _FixtureServer(uvicorn.Config(app, host='127.0.0.1', port=17871,
+        workers=1, access_log=False, log_level='warning'))
+    command = {'valid': False}
+    def stop_reader():
+        try:
+            command['valid'] = read_stop(sys.stdin.buffer, command_seen=lambda: _shutdown_phase("command_seen"))
+        except (OSError, ValueError):
+            command['valid'] = False
+        finally:
+            _shutdown_phase("control_validated" if command['valid'] else "control_rejected")
+            server.should_exit = True
+    reader = threading.Thread(target=stop_reader, name='browser-fixture-control', daemon=True)
+    reader.start()
+    drained = False
+    try:
+        await server.serve()
+        _shutdown_phase("server_returned")
+    finally:
+        drained = await owner.close()
+        _shutdown_phase("owner_close_returned")
+        reader.join(timeout=1)
+    if (reader.is_alive() or not command['valid'] or not drained
+            or not getattr(app.state, 'runtime_shutdown_drained', False)):
+        try:
+            print(json.dumps({'schema': 'browser-fixture-shutdown-failure.v1',
+                'reader_alive': bool(reader.is_alive()), 'stop_valid': bool(command['valid']),
+                'owner_drained': bool(drained),
+                'runtime_drained': bool(getattr(app.state, 'runtime_shutdown_drained', False))},
+                separators=(",", ":")), flush=True)
+        except (OSError, ValueError):
+            pass
+        raise RuntimeError('text_analysis_fixture_shutdown_failed')
+    _shutdown_phase("fixture_coroutine_returning")
+
+
 if __name__ == "__main__":
     _startup_phase("uvicorn_entered")
-    uvicorn.run(
-        app,
-        host="127.0.0.1",
-        port=17871,
-        workers=1,
-        access_log=False,
-        log_level="warning",
-    )
+    if _selected_fixture is None:
+        uvicorn.run(
+            app,
+            host="127.0.0.1",
+            port=17871,
+            workers=1,
+            access_log=False,
+            log_level="warning",
+        )
+    else:
+        asyncio.run(_serve_fixture(_selected_fixture))
+        _shutdown_phase("event_loop_returned")
