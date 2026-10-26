@@ -1,5 +1,5 @@
 {
-  "content_digest": "e00ef6e41577beaca024970185e8b26803a7b85a3314655030a49f85678b1d18",
+  "content_digest": "eb8afe08c008390f3c62fa95d18e20d2172b6c3622774b27836ed2c3c25ec221",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -30,7 +30,9 @@
     "capability-license-delivery-recovery-v1",
     "deferred-setup-preparation-v1",
     "source-contract-manifest",
-    "text-analysis-authority-v1"
+    "text-analysis-authority-v1",
+    "complimentary-onboarding-activation-v2",
+    "text-analysis-license-reissue-v1"
   ],
   "files": [
     {
@@ -1145,8 +1147,8 @@
     },
     {
       "path": "catalog/contracts.yaml",
-      "sha256": "2cb8b3de4b36576c9b6f1d18720e2b184ee7e13c43b93c37ee4839c2b5e8ca4a",
-      "size": 58585
+      "sha256": "e1679dada0e0c0d2f5fa01e4f317d8fa4b195ef163ad28613ef50dc4cc8e686c",
+      "size": 63877
     },
     {
       "path": "catalog/deferred-setup-preparation-policy-v1.json",
@@ -1167,6 +1169,11 @@
       "path": "catalog/onboarding-admission-policy.json",
       "sha256": "1a93ab1464b3015f4de1008b51c2b1c8f62bed1499526ad120087fa13a2f4738",
       "size": 1200
+    },
+    {
+      "path": "catalog/starter-earmark-admission-policy-v1.json",
+      "sha256": "eb5a309e863e50210a051308abedf3c9325753d2e24665a419fbb53ac14f2895",
+      "size": 1999
     },
     {
       "path": "companion-pairing-profile/profile.json",
@@ -1221,6 +1228,21 @@
     {
       "path": "complimentary-onboarding-activation-v1/schema-cases.json",
       "sha256": "bda584d5103d147568e3c8645b98b7891320f070e4bf99a865e5ba36683efcc8",
+      "size": 92434
+    },
+    {
+      "path": "complimentary-onboarding-activation-v2/manifest.json",
+      "sha256": "ac40ba0edeef98847bdc63485b7df144d4b64db91abd17cc85af724df4fa85bd",
+      "size": 3991
+    },
+    {
+      "path": "complimentary-onboarding-activation-v2/policy-cases.json",
+      "sha256": "eed765fa229f6ffaa48bbce99d269d6826fd9976c7d44ebc11870b31b19d6ac2",
+      "size": 356530
+    },
+    {
+      "path": "complimentary-onboarding-activation-v2/schema-cases.json",
+      "sha256": "00b19adeb3c6803db4e5570e88a06f06660c2ea7e44df4ed16e3445a8fc13c1f",
       "size": 92434
     },
     {
@@ -3999,6 +4021,11 @@
       "size": 11910
     },
     {
+      "path": "openapi/complimentary-onboarding-activation-v2.openapi.yaml",
+      "sha256": "4eeee561e647c690f54b01368b56e85a8a5d9fc0320539e8383589b7e97bdd26",
+      "size": 11916
+    },
+    {
       "path": "openapi/desktop-decision-v1.openapi.yaml",
       "sha256": "a9ebe43d4d98596661daeb6f56bdbdb5b983511f36022bc3cbb7eea8f292ad3a",
       "size": 9115
@@ -4022,6 +4049,11 @@
       "path": "openapi/installation-setup-continuation-v2.openapi.yaml",
       "sha256": "dabd61ee39561580fad6d0eb1e6370c8fac5ce963900d960f29104416817dcf4",
       "size": 9535
+    },
+    {
+      "path": "openapi/license-reissue-text-analysis-v1.openapi.yaml",
+      "sha256": "13ac57cf4d185845bd2f390e786f9f3818cf52b32b6e214443f1094ca43ebf2a",
+      "size": 22195
     },
     {
       "path": "openapi/onboarding-continuity-v1.openapi.yaml",
@@ -4234,6 +4266,11 @@
       "size": 2553
     },
     {
+      "path": "profiles/complimentary-onboarding-activation/v2/profile.json",
+      "sha256": "f919e3fa4928a62971d8250d5f4ae1a9b3107f97edaeba68b2eb904d10fc319c",
+      "size": 2897
+    },
+    {
       "path": "profiles/desktop-decision-proof/v1/profile.json",
       "sha256": "671b594f1d9a89f0bd2772cd25e3975b4d6a6b5e38088b9de476d8042fcf30ac",
       "size": 1516
@@ -4292,6 +4329,26 @@
       "path": "profiles/installation-setup-continuation/v1/profile.json",
       "sha256": "64f27d77da2577d4ecd875fe9a700ea08ed455b944b1c6e1b5b707afe9d085a1",
       "size": 3542
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-authorization/v1/profile.json",
+      "sha256": "13bf38313f801a4eeddec3d4c005bf15e40f88984e31a219d94fc09b9fafc679",
+      "size": 1964
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-proof/v1/profile.json",
+      "sha256": "1e12c28d141d049dcd2c9bf118e52d3c3bdf8c8a77b1d3ee41eb4a1704c95d33",
+      "size": 2561
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-supported-profiles/v1/profile.json",
+      "sha256": "1e83273292abf3682bb415608640eb19346862182af76b27857b8fbe77c43923",
+      "size": 1004
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis/v1/profile.json",
+      "sha256": "b3fe9647c93383f816ac0bfd45cd9915a3f1be709ad9de4048173f27c6b480d2",
+      "size": 2843
     },
     {
       "path": "profiles/onboarding-continuation/v1/profile.json",
@@ -4879,6 +4936,51 @@
       "size": 836
     },
     {
+      "path": "schemas/complimentary-activation/v2/committed.schema.json",
+      "sha256": "5fe0ff2f672fdee52e8825474a09a2beaccfcada1bd8b9d73f8d5d215ae671f1",
+      "size": 806
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/confirm-request.schema.json",
+      "sha256": "a8dac489127ebc1d0b1d54ce30dd002c4277a3a71402e100ec5fd325cf224a05",
+      "size": 718
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/confirm-response.schema.json",
+      "sha256": "99ac7b65754940204510eab3c6fe51eada9e79e47f62ce24a68a9d1befc4e592",
+      "size": 318
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/error.schema.json",
+      "sha256": "a351d9cc7b76108cb3daf3b3fcae9cfbffbb2a163f90d861068bdbf4ee343e30",
+      "size": 746
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/prepare-request.schema.json",
+      "sha256": "b047a5832566557a3e6f12807bde33ea42ab251180973848c1c0dc88cbef238e",
+      "size": 574
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/prepare-response.schema.json",
+      "sha256": "324b263cdd41771eba4db48b7fb08ac933c9aee14eb56b9dabe1ade8b5ac960a",
+      "size": 368
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/prepared.schema.json",
+      "sha256": "4cfc23a32cf2c54c1ef8ba31d8abbe66b75fa78f9c754e0e64abad0e96b2087b",
+      "size": 1101
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/read-request.schema.json",
+      "sha256": "f95045b4e60a80bce6169d40cfaca3770127b502f6bd298ec6a5b986458434a2",
+      "size": 568
+    },
+    {
+      "path": "schemas/complimentary-activation/v2/read-response.schema.json",
+      "sha256": "5fca7d8c2fe80cf818e8037247d4fd78e25fca93bdc2c65a73aca4bc2f4fb860",
+      "size": 836
+    },
+    {
       "path": "schemas/desktop-decision/v1/decision.schema.json",
       "sha256": "939382f29a80654617e3e08efb51f7cbd4499256594f6a683c5971dbec92ee5a",
       "size": 2942
@@ -5192,6 +5294,96 @@
       "path": "schemas/installation-continuation/v2/stream-request.schema.json",
       "sha256": "1347593f5e4d263ef829d1fb098517678116d355d5cd7650c5ca7e7609cb7099",
       "size": 1317
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v1/authorize-request.schema.json",
+      "sha256": "2fea693bf6e4da38cc585c1602c549afcc24363c30687dc77b9a4667884f05f0",
+      "size": 1370
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v1/authorize-response.schema.json",
+      "sha256": "c075de5913e811cebe17e8c1d3447a64985be54e269a328dd24301d4d8901e97",
+      "size": 878
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v1/error.schema.json",
+      "sha256": "b0792fa672e4baccc6a6cb86fbfa79d6ad32969094341c4cf0481f2f0b256e9a",
+      "size": 1476
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v1/challenge-request.schema.json",
+      "sha256": "03ffdd111fd37d5d9545659d908f4828da8a0770148d5e6c69cb6e13b3731994",
+      "size": 2548
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v1/challenge-response.schema.json",
+      "sha256": "a05624f79522de94ab19716e008f175612b542530ed751441ee68dd2b93aeb07",
+      "size": 1660
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v1/definitions.schema.json",
+      "sha256": "9e7c8fca9df2bd0cd3f3f9e020632041089aa4cee985da4d8a99a06fa00c093c",
+      "size": 934
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v1/error.schema.json",
+      "sha256": "3715522592e880d477739cbf29be04cea0bdd3ae8b12804458eba1bb0b2b2c81",
+      "size": 1170
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-supported-profiles/v1/supported-profiles.schema.json",
+      "sha256": "a96044a54b9f71c1525fdae1ae03fe7c9e038c2ca8bb70c31872b4b78afc24f9",
+      "size": 1581
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/confirmation.schema.json",
+      "sha256": "5ce85f7f1b54bc2047d404afd9a0cfa9b01754ac56f2cea59c843df0b12842ed",
+      "size": 2329
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/definitions.schema.json",
+      "sha256": "a97ef0d7b105ec9a51f8c989b67575f7ea11ff325ff4e2ac471078cae6f5d96b",
+      "size": 2392
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/error.schema.json",
+      "sha256": "7cd93fa9e63ceb3c218b8466b81859d94d3d65ea7271dde5d3c14ed1a47fbe2e",
+      "size": 1366
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/finalize-request.schema.json",
+      "sha256": "ea189aca16ac77c4a708cb12357aa9d9cfb091cd7762b97aaf539e2226d51415",
+      "size": 1556
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/prepare-request.schema.json",
+      "sha256": "e27c7188ccb055a095305d025f2f63d71c294b9fc2981753ae7eac71621d09bd",
+      "size": 1583
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/prepare-response.schema.json",
+      "sha256": "a7c19ecb5f967f151aec88601fd90d8d2adb797f066fc78348d0a607f52aa779",
+      "size": 1189
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/read-request.schema.json",
+      "sha256": "db14d4fc3cd23e86301a12a82828fb559dbe8c93dec742c617361d4b005f9bdc",
+      "size": 1155
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/read-response.schema.json",
+      "sha256": "7248344ceef89d3adc541c8b1f29d0348c2b140ec757ed93012b1e20829a4c1c",
+      "size": 3395
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/recover-request.schema.json",
+      "sha256": "940fb55d30571fe510bc56d5207b3dd5dac138f6cea92f858e2f50b1f026a00a",
+      "size": 1161
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/result.schema.json",
+      "sha256": "d5750619038175fdfde3dae671b2b4ad0da8f0281fd747f66bf0fc589e1d4d8c",
+      "size": 2557
     },
     {
       "path": "schemas/local/v1/companion-pairing-confirm.schema.json",
@@ -5565,8 +5757,8 @@
     },
     {
       "path": "source-contract-manifest/contract-manifest.json",
-      "sha256": "3391ce59f60d6162df72872965e16facb22ee6230efb27bdcb618ddb6f616477",
-      "size": 65115
+      "sha256": "fdec45fabe3b657d33bbf4c6b05133eee06952be5d4669b4914fcf9135fedb39",
+      "size": 72412
     },
     {
       "path": "text-analysis-authority-v1/admission-cases.json",
@@ -5602,6 +5794,41 @@
       "path": "text-analysis-authority-v1/trust-set.json",
       "sha256": "c1020fc2fb8faf2e42d3a3e204452a420ac4c0badc37a22f9217f37f82f8ab7b",
       "size": 821
+    },
+    {
+      "path": "text-analysis-license-reissue-v1/admission-cases.json",
+      "sha256": "5854a48cfffa9fada6a3afc9b778e38bf2ed619fc9ab941a52f0b8dcd37de86f",
+      "size": 14337
+    },
+    {
+      "path": "text-analysis-license-reissue-v1/lifecycle-cases.json",
+      "sha256": "265b75c182b06496af08d668322667f4390e73cf54f645c11533063eede97c75",
+      "size": 64878
+    },
+    {
+      "path": "text-analysis-license-reissue-v1/manifest.json",
+      "sha256": "680455193f7ced9e6649da05dabfcf6941de876361cf7cac21511f36c356d50d",
+      "size": 7120
+    },
+    {
+      "path": "text-analysis-license-reissue-v1/proof-cases.json",
+      "sha256": "3b1456de71a85cb8d04d8e0ba3fe8773c261a502877653fdf4cbdbb21797380d",
+      "size": 260815
+    },
+    {
+      "path": "text-analysis-license-reissue-v1/response-cases.json",
+      "sha256": "ea242f1b299b1ee8e05358f892ecd7994b09eabb2eb33e729e19df8e859d1b26",
+      "size": 268626
+    },
+    {
+      "path": "text-analysis-license-reissue-v1/schema-cases.json",
+      "sha256": "6534abfc176bec01bb88cf9819360305ac3607a1ebe276f2b281a820cf010592",
+      "size": 1219482
+    },
+    {
+      "path": "text-analysis-license-reissue-v1/trust-set.json",
+      "sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b",
+      "size": 503
     }
   ],
   "manifest_version": 2,
@@ -5635,6 +5862,7 @@
     "urn:bridge-clean:capability-purchase-session:v1",
     "urn:bridge-clean:companion-pairing:v1",
     "urn:bridge-clean:complimentary-onboarding-activation:v1",
+    "urn:bridge-clean:complimentary-onboarding-activation:v2",
     "urn:bridge-clean:creator-association:v1",
     "urn:bridge-clean:desktop-decision-proof:v1",
     "urn:bridge-clean:desktop-decision:v1",
@@ -5662,6 +5890,10 @@
     "urn:bridge-clean:text-analysis-authority-delivery:v1",
     "urn:bridge-clean:text-analysis-authority-issuance:v1",
     "urn:bridge-clean:text-analysis-license-issuance-proof:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-authorization:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-proof:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v1",
+    "urn:bridge-clean:text-analysis-license-reissue:v1",
     "urn:bridge-clean:text-analysis-license:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition:v1",

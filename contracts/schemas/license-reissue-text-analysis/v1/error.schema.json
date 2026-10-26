@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v1/error.schema.json",
+  "title": "license-reissue-text-analysis error v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "reason"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-license-reissue:v1"
+        },
+        "reason": {
+          "enum": [
+            "invalid",
+            "temporarily_unavailable",
+            "proof_invalid",
+            "request_conflict",
+            "expired",
+            "unsupported_profile",
+            "unsupported_release",
+            "authority_unavailable",
+            "not_completed"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "reason",
+        "retry_at"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-license-reissue:v1"
+        },
+        "reason": {
+          "const": "rate_limited"
+        },
+        "retry_at": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  ]
+}

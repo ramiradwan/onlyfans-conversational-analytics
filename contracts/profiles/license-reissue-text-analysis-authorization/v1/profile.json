@@ -1,0 +1,50 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v1",
+  "governing_adr": "docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md",
+  "messages": {
+    "authorize-request": "schemas/license-reissue-text-analysis-authorization/v1/authorize-request.schema.json",
+    "authorize-response": "schemas/license-reissue-text-analysis-authorization/v1/authorize-response.schema.json",
+    "error": "schemas/license-reissue-text-analysis-authorization/v1/error.schema.json"
+  },
+  "request_max_bytes": 2048,
+  "response_max_bytes": 4096,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "classification": "commercial-confidential",
+  "retention_class": "commercial-authority-durable",
+  "error_reasons": [
+    "invalid",
+    "rate_limited",
+    "temporarily_unavailable",
+    "authentication_required",
+    "authorization_denied",
+    "request_conflict",
+    "confirmation_required",
+    "expired",
+    "authority_unavailable",
+    "unsupported_profile",
+    "unsupported_release"
+  ],
+  "error_max_bytes": 4096,
+  "audit_retention_class": "security-audit",
+  "audit_days": 400,
+  "request_response_logging": false,
+  "step_up_action": "text-analysis-license-reissue",
+  "step_up_max_seconds": 300,
+  "customer_session_max_seconds": 1800,
+  "authorization_max_seconds": 300,
+  "navigation_response_max_bytes": 16384,
+  "reasons": [
+    "replacement-installation",
+    "lost-or-destroyed-installation",
+    "inaccessible-original-hardware"
+  ],
+  "manual_reasons": [
+    "lost-or-destroyed-installation",
+    "inaccessible-original-hardware"
+  ],
+  "self_service_bound": "hosted-configured-committed-count-rolling-window-manual-decision-required",
+  "bound_recheck": "under-lineage-lock-at-finalization",
+  "step_up_digest": "RFC8785(exact-authorization-parameters-excluding-customer_step_up_ref)",
+  "retry": "same-current-actor-session-and-phase-digest-no-second-step-up-consumption-no-renewal"
+}

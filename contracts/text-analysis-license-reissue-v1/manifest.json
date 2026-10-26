@@ -1,0 +1,178 @@
+{
+  "case_count": 1022,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "5854a48cfffa9fada6a3afc9b778e38bf2ed619fc9ab941a52f0b8dcd37de86f",
+      "size": 14337
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "265b75c182b06496af08d668322667f4390e73cf54f645c11533063eede97c75",
+      "size": 64878
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "3b1456de71a85cb8d04d8e0ba3fe8773c261a502877653fdf4cbdbb21797380d",
+      "size": 260815
+    },
+    {
+      "path": "response-cases.json",
+      "sha256": "ea242f1b299b1ee8e05358f892ecd7994b09eabb2eb33e729e19df8e859d1b26",
+      "size": 268626
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "6534abfc176bec01bb88cf9819360305ac3607a1ebe276f2b281a820cf010592",
+      "size": 1219482
+    },
+    {
+      "path": "trust-set.json",
+      "sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b",
+      "size": 503
+    }
+  ],
+  "fixed_time": "2026-10-26T00:00:00.000Z",
+  "fixture_labels": [
+    "text-analysis-reissue-license-v1",
+    "text-analysis-reissue-installation-v1"
+  ],
+  "generator": "tools/generate_text_analysis_reissue_vectors.py",
+  "generator_version": "1.0.0",
+  "inputs": [
+    {
+      "path": "docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md",
+      "sha256": "5d0d0233edd7d71fc196e52357eae8079113938b368d2083514d64fe041320c4"
+    },
+    {
+      "path": "docs/text-analysis-license-reissue-v1.md",
+      "sha256": "91215526f73fbace05641e06312787c8d257d24653cc66362fbf17e5333df90b"
+    },
+    {
+      "path": "openapi/license-reissue-text-analysis-v1.openapi.yaml",
+      "sha256": "13ac57cf4d185845bd2f390e786f9f3818cf52b32b6e214443f1094ca43ebf2a"
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-authorization/v1/profile.json",
+      "sha256": "13bf38313f801a4eeddec3d4c005bf15e40f88984e31a219d94fc09b9fafc679"
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-proof/v1/profile.json",
+      "sha256": "1e12c28d141d049dcd2c9bf118e52d3c3bdf8c8a77b1d3ee41eb4a1704c95d33"
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-supported-profiles/v1/profile.json",
+      "sha256": "1e83273292abf3682bb415608640eb19346862182af76b27857b8fbe77c43923"
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis/v1/profile.json",
+      "sha256": "b3fe9647c93383f816ac0bfd45cd9915a3f1be709ad9de4048173f27c6b480d2"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v1/authorize-request.schema.json",
+      "sha256": "2fea693bf6e4da38cc585c1602c549afcc24363c30687dc77b9a4667884f05f0"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v1/authorize-response.schema.json",
+      "sha256": "c075de5913e811cebe17e8c1d3447a64985be54e269a328dd24301d4d8901e97"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v1/error.schema.json",
+      "sha256": "b0792fa672e4baccc6a6cb86fbfa79d6ad32969094341c4cf0481f2f0b256e9a"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v1/challenge-request.schema.json",
+      "sha256": "03ffdd111fd37d5d9545659d908f4828da8a0770148d5e6c69cb6e13b3731994"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v1/challenge-response.schema.json",
+      "sha256": "a05624f79522de94ab19716e008f175612b542530ed751441ee68dd2b93aeb07"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v1/definitions.schema.json",
+      "sha256": "9e7c8fca9df2bd0cd3f3f9e020632041089aa4cee985da4d8a99a06fa00c093c"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v1/error.schema.json",
+      "sha256": "3715522592e880d477739cbf29be04cea0bdd3ae8b12804458eba1bb0b2b2c81"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-supported-profiles/v1/supported-profiles.schema.json",
+      "sha256": "a96044a54b9f71c1525fdae1ae03fe7c9e038c2ca8bb70c31872b4b78afc24f9"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/confirmation.schema.json",
+      "sha256": "5ce85f7f1b54bc2047d404afd9a0cfa9b01754ac56f2cea59c843df0b12842ed"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/definitions.schema.json",
+      "sha256": "a97ef0d7b105ec9a51f8c989b67575f7ea11ff325ff4e2ac471078cae6f5d96b"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/error.schema.json",
+      "sha256": "7cd93fa9e63ceb3c218b8466b81859d94d3d65ea7271dde5d3c14ed1a47fbe2e"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/finalize-request.schema.json",
+      "sha256": "ea189aca16ac77c4a708cb12357aa9d9cfb091cd7762b97aaf539e2226d51415"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/prepare-request.schema.json",
+      "sha256": "e27c7188ccb055a095305d025f2f63d71c294b9fc2981753ae7eac71621d09bd"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/prepare-response.schema.json",
+      "sha256": "a7c19ecb5f967f151aec88601fd90d8d2adb797f066fc78348d0a607f52aa779"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/read-request.schema.json",
+      "sha256": "db14d4fc3cd23e86301a12a82828fb559dbe8c93dec742c617361d4b005f9bdc"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/read-response.schema.json",
+      "sha256": "7248344ceef89d3adc541c8b1f29d0348c2b140ec757ed93012b1e20829a4c1c"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/recover-request.schema.json",
+      "sha256": "940fb55d30571fe510bc56d5207b3dd5dac138f6cea92f858e2f50b1f026a00a"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v1/result.schema.json",
+      "sha256": "d5750619038175fdfde3dae671b2b4ad0da8f0281fd747f66bf0fc589e1d4d8c"
+    },
+    {
+      "path": "schemas/text-analysis-license/v1/payload.schema.json",
+      "sha256": "a6b40396978b0d382171e07ae7150d812b3cbb2e77a373b176d89a627c99389b"
+    },
+    {
+      "path": "schemas/text-analysis-release-identity/v1/release-identity.schema.json",
+      "sha256": "a99ef065a4dd81cc45a1e2aa6980df30f33c6bf8a249cb5431f863c704fb8a37"
+    },
+    {
+      "path": "tools/generate_text_analysis_reissue_vectors.py",
+      "sha256": "2f8edb60a56a3e5c3d7d08c74004ce5f92271acdb994d9c127a6f55116c0e9f5"
+    },
+    {
+      "path": "tools/manifestlib.py",
+      "sha256": "a7cb37d0e3e6dffa79593b6d78571b36e35f26b4baabb61bb678fe184de480ee"
+    },
+    {
+      "path": "tools/vectorlib.py",
+      "sha256": "4b3cee3f45c0d78c1ab71ac36168474c3d90ce5b2cd3a0cd6586a328d27e9e06"
+    },
+    {
+      "path": "tools/verify_text_analysis_reissue_vectors.py",
+      "sha256": "bb73940256cb0ed449bf656dd38776b76e756c20d8d3958d98600666e5142a3a"
+    },
+    {
+      "path": "tools/verify_text_analysis_vectors.py",
+      "sha256": "6be2c69528770a5c2bc03c8c85941f18a7f30726d1f9083692b5448715bb03b3"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:text-analysis-license-reissue-vectors:v1"
+}

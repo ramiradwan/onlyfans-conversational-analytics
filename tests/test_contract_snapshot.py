@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 import pytest
 
 from tools.regenerate_contract_snapshot import (
+    APPROVED_EXPORT_DIGESTS,
     APPROVED_PREVIOUS_INVENTORIES,
     APPROVED_SOURCE_COMMIT,
     APPROVED_SOURCE_MANIFEST_SHA256,
@@ -23,6 +24,7 @@ from tools.regenerate_contract_snapshot import (
     EXPORT_SOURCES,
     SOURCE_MANIFEST_TARGET,
     _copy_exact_file,
+    _tree_digest,
     build_records,
     selected_pairing_profile,
     selected_progress_profile,
@@ -50,6 +52,9 @@ SELECTED_PROFILES = [
     "urn:bridge-clean:capability-permit-consumption-policy:v1",
 ]
 EXPECTED_APPROVED_BYTES = {
+    "profiles/complimentary-onboarding-activation/v1/profile.json": "b6d27ee6a1c8fa7566f55c98a1ed7651bd020c0bb1732ca5756c211c5a3dc0a3",
+    "catalog/authentication-selection-admission-policy.json": "1de0add47fe202d1caa7d2dedc75bc4e5264572dd5a31f2980a9c3b8a3c00de5",
+    "profiles/text-analysis-supported-profiles/v1/profile.json": "cd915cc3918743b62fd3dbf87fd76416ea99f4779b32aff95da6967d1d67994b",
     "onboarding-progress/metadata-rejected.expected.json": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
     "onboarding-progress/metadata-rejected.json": "b4e6637ad87e10801094be012ba0c2e6ec382e06d6f58f900473ceb9be17358f",
     "onboarding-progress/unknown-milestone.expected.json": "2f9029dabbc408bf53239dafce563745c9f8884f1b4ad65c98ceeda805e34c81",
@@ -118,9 +123,11 @@ def test_consumer_pin_names_exact_published_contract_authority() -> None:
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "e00ef6e41577beaca024970185e8b26803a7b85a3314655030a49f85678b1d18"
-    assert pin["contract_manifest_sha256"] == "c39ab23f45305f4da7e4c057c894011a43168b3fa20c44e3c62ba2d852f1f4f3"
+    assert pin["aggregate_bundle_sha256"] == "eb8afe08c008390f3c62fa95d18e20d2172b6c3622774b27836ed2c3c25ec221"
+    assert pin["contract_manifest_sha256"] == "6c8eed0f70697b1fc7b3310183f0f10364c7072685b612f595956a7d5bdef748"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
+        "complimentary-onboarding-activation-v2": "ac40ba0edeef98847bdc63485b7df144d4b64db91abd17cc85af724df4fa85bd",
+        "text-analysis-license-reissue-v1": "680455193f7ced9e6649da05dabfcf6941de876361cf7cac21511f36c356d50d",
         "text-analysis-authority-v1": "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a",
         "deferred-setup-preparation-v1": "3e9885653c501b3c3f73221453f2a7c9d2b9aa81d4bf71ec6805d77c1b610a26",
         "capability-license-delivery-recovery-v1": "c086ca4cc75e589d4427150bf7f83dfa089a4c0aa3fa77bd9430c37dce685bde",
@@ -569,4 +576,147 @@ def test_selected_text_analysis_pins_cannot_be_omitted(tmp_path: Path) -> None:
                            if entry["export"] != "text-analysis-authority-v1"]
     pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with pytest.raises(ContractsIntegrityError, match="text-analysis authority pins are missing"):
+        verify_snapshot_integrity(snapshot)
+
+
+@pytest.mark.contract_integrity
+@pytest.mark.parametrize("export", EXPORT_SOURCES)
+def test_selected_fixture_exports_retain_exact_approved_bytes(export: str) -> None:
+    assert _tree_digest(ROOT / export) == APPROVED_EXPORT_DIGESTS[export]
+
+
+@pytest.mark.contract_integrity
+@pytest.mark.parametrize("family, expected_hash, expected_count, expected_files", [
+    ("complimentary-onboarding-activation-v2",
+     "ac40ba0edeef98847bdc63485b7df144d4b64db91abd17cc85af724df4fa85bd",
+     311, {"policy-cases.json", "schema-cases.json"}),
+    ("text-analysis-license-reissue-v1",
+     "680455193f7ced9e6649da05dabfcf6941de876361cf7cac21511f36c356d50d",
+     1022, {"admission-cases.json", "lifecycle-cases.json", "proof-cases.json",
+            "response-cases.json", "schema-cases.json", "trust-set.json"}),
+])
+def test_additive_family_inventory_has_independent_exact_pins(
+    family: str, expected_hash: str, expected_count: int, expected_files: set[str],
+) -> None:
+    pin = json.loads((ROOT / "consumer-pin.json").read_bytes())
+    root = ROOT / family
+    manifest = json.loads((root / "manifest.json").read_bytes())
+    record = {"export": family, "path": f"{family}/manifest.json", "sha256": expected_hash}
+    assert hashlib.sha256((root / "manifest.json").read_bytes()).hexdigest() == expected_hash
+    assert record in pin["vector_manifests"]
+    assert record in pin["conformance_manifests"]
+    assert {"export": family, "version": "1.0.0"} in pin["generator_versions"]
+    assert manifest["production_usable"] is False
+    assert manifest["profile"] not in pin["supported_profiles"]
+    entries = {entry["path"]: entry for entry in manifest["files"]}
+    assert set(entries) == expected_files
+    assert {path.name for path in root.iterdir()} == {*expected_files, "manifest.json"}
+    count = 0
+    for relative, entry in entries.items():
+        data = (root / relative).read_bytes()
+        assert entry == {"path": relative, "size": len(data),
+                         "sha256": hashlib.sha256(data).hexdigest()}
+        if relative.endswith("-cases.json"):
+            count += len(json.loads(data))
+    assert count == manifest["case_count"] == expected_count
+    source = json.loads((ROOT / SOURCE_MANIFEST_TARGET).read_bytes())
+    published = {entry["path"]: entry["sha256"] for entry in source["files"]}
+    for entry in manifest["inputs"]:
+        if entry["path"] in published:
+            assert entry["sha256"] == published[entry["path"]]
+
+
+@pytest.mark.contract_integrity
+def test_reissue_inventory_does_not_widen_initial_issuance_support_or_trust() -> None:
+    pin = json.loads((ROOT / "consumer-pin.json").read_bytes())
+    support = json.loads((ROOT / "profiles/license-reissue-text-analysis-supported-profiles/v1/profile.json").read_bytes())
+    profiles = support["profiles"]
+    assert profiles == sorted(profiles) == [
+        "urn:bridge-clean:text-analysis-license-reissue-authorization:v1",
+        "urn:bridge-clean:text-analysis-license-reissue-proof:v1",
+        "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v1",
+        "urn:bridge-clean:text-analysis-license-reissue:v1",
+        "urn:bridge-clean:text-analysis-license:v1",
+        "urn:bridge-clean:text-analysis-release-identity:v1",
+    ]
+    from app.security.text_analysis_contract import SUPPORTED
+    original = json.loads((ROOT / "profiles/text-analysis-supported-profiles/v1/profile.json").read_bytes())
+    assert tuple(original["profiles"]) == SUPPORTED
+    assert len(SUPPORTED) == 12
+    assert set(profiles[:4]).isdisjoint(SUPPORTED)
+    assert {"export": "text-analysis-license-reissue-v1",
+            "path": "text-analysis-license-reissue-v1/trust-set.json",
+            "sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b"} in pin["trust_sets"]
+    assert "complimentary-onboarding-activation-v2" not in {
+        entry["export"] for entry in pin["trust_sets"]}
+    relative = "text-analysis-license-reissue-v1/trust-set.json"
+    with pytest.raises(ContractsIntegrityError, match="not production usable"):
+        load_trust_set(relative)
+    trust = load_trust_set(relative, environment="development")
+    assert trust["production_usable"] is False
+    assert {key["purpose"] for key in trust["keys"]} == {"text-analysis-license"}
+    assert all(key["fixture_only"] is True for key in trust["keys"])
+
+
+@pytest.mark.contract_integrity
+@pytest.mark.parametrize("family", [
+    "complimentary-onboarding-activation-v2", "text-analysis-license-reissue-v1",
+])
+@pytest.mark.parametrize("mutation", [
+    "omit_family", "omit_conformance", "conflate_conformance", "wrong_generator",
+])
+def test_additive_family_pin_tampering_fails_closed(
+    tmp_path: Path, family: str, mutation: str,
+) -> None:
+    snapshot = tmp_path / "contracts"
+    shutil.copytree(ROOT, snapshot, ignore=shutil.ignore_patterns("__pycache__"))
+    pin_path = snapshot / "consumer-pin.json"
+    pin = json.loads(pin_path.read_bytes())
+    if mutation == "omit_family":
+        for collection in ("vector_manifests", "conformance_manifests",
+                           "trust_sets", "generator_versions"):
+            pin[collection] = [entry for entry in pin[collection]
+                               if entry["export"] != family]
+    elif mutation == "omit_conformance":
+        pin["conformance_manifests"] = [entry for entry in pin["conformance_manifests"]
+                                        if entry["export"] != family]
+    elif mutation == "conflate_conformance":
+        foreign = next(entry for entry in pin["conformance_manifests"]
+                       if entry["export"] == "text-analysis-authority-v1")
+        target = next(entry for entry in pin["conformance_manifests"]
+                      if entry["export"] == family)
+        target.update(path=foreign["path"], sha256=foreign["sha256"])
+    else:
+        target = next(entry for entry in pin["generator_versions"]
+                      if entry["export"] == family)
+        target["version"] = "1.0.1"
+    pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ContractsIntegrityError):
+        verify_snapshot_integrity(snapshot)
+
+
+@pytest.mark.contract_integrity
+@pytest.mark.parametrize("mutation", ["omit_reissue_trust", "conflate_reissue_trust", "starter_trust"])
+def test_additive_family_trust_pin_tampering_fails_closed(
+    tmp_path: Path, mutation: str,
+) -> None:
+    snapshot = tmp_path / "contracts"
+    shutil.copytree(ROOT, snapshot, ignore=shutil.ignore_patterns("__pycache__"))
+    pin_path = snapshot / "consumer-pin.json"
+    pin = json.loads(pin_path.read_bytes())
+    family = "text-analysis-license-reissue-v1"
+    if mutation == "omit_reissue_trust":
+        pin["trust_sets"] = [entry for entry in pin["trust_sets"]
+                             if entry["export"] != family]
+    else:
+        foreign = next(entry for entry in pin["trust_sets"]
+                       if entry["export"] == "text-analysis-authority-v1")
+        if mutation == "conflate_reissue_trust":
+            target = next(entry for entry in pin["trust_sets"]
+                          if entry["export"] == family)
+            target.update(path=foreign["path"], sha256=foreign["sha256"])
+        else:
+            pin["trust_sets"].append({**foreign, "export": "complimentary-onboarding-activation-v2"})
+    pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ContractsIntegrityError):
         verify_snapshot_integrity(snapshot)

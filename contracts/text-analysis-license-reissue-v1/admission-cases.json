@@ -1,0 +1,694 @@
+[
+  {
+    "case_id": "prepare-accepted",
+    "expected": "awaiting-authorization",
+    "input": {
+      "action": "prepare"
+    }
+  },
+  {
+    "case_id": "prepare-size_ok",
+    "expected": "invalid/413",
+    "input": {
+      "action": "prepare",
+      "size_ok": false
+    }
+  },
+  {
+    "case_id": "prepare-schema_valid",
+    "expected": "invalid/400",
+    "input": {
+      "action": "prepare",
+      "schema_valid": false
+    }
+  },
+  {
+    "case_id": "prepare-rate_limited",
+    "expected": "rate_limited",
+    "input": {
+      "action": "prepare",
+      "rate_limited": true
+    }
+  },
+  {
+    "case_id": "prepare-available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "prepare",
+      "available": false
+    }
+  },
+  {
+    "case_id": "prepare-profiles_supported",
+    "expected": "unsupported_profile",
+    "input": {
+      "action": "prepare",
+      "profiles_supported": false
+    }
+  },
+  {
+    "case_id": "prepare-release_supported",
+    "expected": "unsupported_release",
+    "input": {
+      "action": "prepare",
+      "release_supported": false
+    }
+  },
+  {
+    "case_id": "prepare-commit_available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "prepare",
+      "commit_available": false
+    }
+  },
+  {
+    "case_id": "prepare-fresh_proof",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "prepare",
+      "fresh_proof": false
+    }
+  },
+  {
+    "case_id": "prepare-original_key",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "prepare",
+      "original_key": false
+    }
+  },
+  {
+    "case_id": "prepare-scope_owned",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "prepare",
+      "scope_owned": false
+    }
+  },
+  {
+    "case_id": "prepare-changed",
+    "expected": "request_conflict",
+    "input": {
+      "action": "prepare",
+      "request_changed": true
+    }
+  },
+  {
+    "case_id": "authorize-accepted",
+    "expected": "authorized",
+    "input": {
+      "action": "authorize"
+    }
+  },
+  {
+    "case_id": "authorize-size_ok",
+    "expected": "invalid/413",
+    "input": {
+      "action": "authorize",
+      "size_ok": false
+    }
+  },
+  {
+    "case_id": "authorize-schema_valid",
+    "expected": "invalid/400",
+    "input": {
+      "action": "authorize",
+      "schema_valid": false
+    }
+  },
+  {
+    "case_id": "authorize-rate_limited",
+    "expected": "rate_limited",
+    "input": {
+      "action": "authorize",
+      "rate_limited": true
+    }
+  },
+  {
+    "case_id": "authorize-available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "authorize",
+      "available": false
+    }
+  },
+  {
+    "case_id": "authorize-profiles_supported",
+    "expected": "unsupported_profile",
+    "input": {
+      "action": "authorize",
+      "profiles_supported": false
+    }
+  },
+  {
+    "case_id": "authorize-release_supported",
+    "expected": "unsupported_release",
+    "input": {
+      "action": "authorize",
+      "release_supported": false
+    }
+  },
+  {
+    "case_id": "authorize-commit_available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "authorize",
+      "commit_available": false
+    }
+  },
+  {
+    "case_id": "authorize-changed",
+    "expected": "request_conflict",
+    "input": {
+      "action": "authorize",
+      "request_changed": true
+    }
+  },
+  {
+    "case_id": "finalize-accepted",
+    "expected": "completed",
+    "input": {
+      "action": "finalize"
+    }
+  },
+  {
+    "case_id": "finalize-size_ok",
+    "expected": "invalid/413",
+    "input": {
+      "action": "finalize",
+      "size_ok": false
+    }
+  },
+  {
+    "case_id": "finalize-schema_valid",
+    "expected": "invalid/400",
+    "input": {
+      "action": "finalize",
+      "schema_valid": false
+    }
+  },
+  {
+    "case_id": "finalize-rate_limited",
+    "expected": "rate_limited",
+    "input": {
+      "action": "finalize",
+      "rate_limited": true
+    }
+  },
+  {
+    "case_id": "finalize-available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "finalize",
+      "available": false
+    }
+  },
+  {
+    "case_id": "finalize-profiles_supported",
+    "expected": "unsupported_profile",
+    "input": {
+      "action": "finalize",
+      "profiles_supported": false
+    }
+  },
+  {
+    "case_id": "finalize-release_supported",
+    "expected": "unsupported_release",
+    "input": {
+      "action": "finalize",
+      "release_supported": false
+    }
+  },
+  {
+    "case_id": "finalize-commit_available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "finalize",
+      "commit_available": false
+    }
+  },
+  {
+    "case_id": "finalize-fresh_proof",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "finalize",
+      "fresh_proof": false
+    }
+  },
+  {
+    "case_id": "finalize-original_key",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "finalize",
+      "original_key": false
+    }
+  },
+  {
+    "case_id": "finalize-scope_owned",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "finalize",
+      "scope_owned": false
+    }
+  },
+  {
+    "case_id": "finalize-changed",
+    "expected": "request_conflict",
+    "input": {
+      "action": "finalize",
+      "request_changed": true
+    }
+  },
+  {
+    "case_id": "read-accepted",
+    "expected": "awaiting-authorization",
+    "input": {
+      "action": "read"
+    }
+  },
+  {
+    "case_id": "read-size_ok",
+    "expected": "invalid/413",
+    "input": {
+      "action": "read",
+      "size_ok": false
+    }
+  },
+  {
+    "case_id": "read-schema_valid",
+    "expected": "invalid/400",
+    "input": {
+      "action": "read",
+      "schema_valid": false
+    }
+  },
+  {
+    "case_id": "read-rate_limited",
+    "expected": "rate_limited",
+    "input": {
+      "action": "read",
+      "rate_limited": true
+    }
+  },
+  {
+    "case_id": "read-available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "read",
+      "available": false
+    }
+  },
+  {
+    "case_id": "read-fresh_proof",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "read",
+      "fresh_proof": false
+    }
+  },
+  {
+    "case_id": "read-original_key",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "read",
+      "original_key": false
+    }
+  },
+  {
+    "case_id": "read-scope_owned",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "read",
+      "scope_owned": false
+    }
+  },
+  {
+    "case_id": "read-changed",
+    "expected": "request_conflict",
+    "input": {
+      "action": "read",
+      "request_changed": true
+    }
+  },
+  {
+    "case_id": "recover-accepted",
+    "expected": "not_completed",
+    "input": {
+      "action": "recover"
+    }
+  },
+  {
+    "case_id": "recover-size_ok",
+    "expected": "invalid/413",
+    "input": {
+      "action": "recover",
+      "size_ok": false
+    }
+  },
+  {
+    "case_id": "recover-schema_valid",
+    "expected": "invalid/400",
+    "input": {
+      "action": "recover",
+      "schema_valid": false
+    }
+  },
+  {
+    "case_id": "recover-rate_limited",
+    "expected": "rate_limited",
+    "input": {
+      "action": "recover",
+      "rate_limited": true
+    }
+  },
+  {
+    "case_id": "recover-available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "recover",
+      "available": false
+    }
+  },
+  {
+    "case_id": "recover-fresh_proof",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "recover",
+      "fresh_proof": false
+    }
+  },
+  {
+    "case_id": "recover-original_key",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "recover",
+      "original_key": false
+    }
+  },
+  {
+    "case_id": "recover-scope_owned",
+    "expected": "proof_invalid",
+    "input": {
+      "action": "recover",
+      "scope_owned": false
+    }
+  },
+  {
+    "case_id": "recover-changed",
+    "expected": "request_conflict",
+    "input": {
+      "action": "recover",
+      "request_changed": true
+    }
+  },
+  {
+    "case_id": "challenge-accepted",
+    "expected": "challenge",
+    "input": {
+      "action": "challenge"
+    }
+  },
+  {
+    "case_id": "challenge-size_ok",
+    "expected": "invalid/413",
+    "input": {
+      "action": "challenge",
+      "size_ok": false
+    }
+  },
+  {
+    "case_id": "challenge-schema_valid",
+    "expected": "invalid/400",
+    "input": {
+      "action": "challenge",
+      "schema_valid": false
+    }
+  },
+  {
+    "case_id": "challenge-rate_limited",
+    "expected": "rate_limited",
+    "input": {
+      "action": "challenge",
+      "rate_limited": true
+    }
+  },
+  {
+    "case_id": "challenge-available",
+    "expected": "temporarily_unavailable",
+    "input": {
+      "action": "challenge",
+      "available": false
+    }
+  },
+  {
+    "case_id": "authorize-current_session",
+    "expected": "authentication_required",
+    "input": {
+      "action": "authorize",
+      "current_session": false
+    }
+  },
+  {
+    "case_id": "authorize-origin_csrf",
+    "expected": "authorization_denied",
+    "input": {
+      "action": "authorize",
+      "origin_csrf": false
+    }
+  },
+  {
+    "case_id": "authorize-current_permission",
+    "expected": "authorization_denied",
+    "input": {
+      "action": "authorize",
+      "current_permission": false
+    }
+  },
+  {
+    "case_id": "authorize-step_up_matches",
+    "expected": "confirmation_required",
+    "input": {
+      "action": "authorize",
+      "step_up_matches": false
+    }
+  },
+  {
+    "case_id": "authorize-step_up_unused",
+    "expected": "confirmation_required",
+    "input": {
+      "action": "authorize",
+      "step_up_unused": false
+    }
+  },
+  {
+    "case_id": "authorizelost-or-destroyed-installation",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "authorize",
+      "reason": "lost-or-destroyed-installation"
+    }
+  },
+  {
+    "case_id": "authorizelost-or-destroyed-installation-manual",
+    "expected": "authorized",
+    "input": {
+      "action": "authorize",
+      "manual_decision": true,
+      "reason": "lost-or-destroyed-installation"
+    }
+  },
+  {
+    "case_id": "authorizeinaccessible-original-hardware",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "authorize",
+      "reason": "inaccessible-original-hardware"
+    }
+  },
+  {
+    "case_id": "authorizeinaccessible-original-hardware-manual",
+    "expected": "authorized",
+    "input": {
+      "action": "authorize",
+      "manual_decision": true,
+      "reason": "inaccessible-original-hardware"
+    }
+  },
+  {
+    "case_id": "authorize-at-bound",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "authorize",
+      "committed_reissues": [
+        950,
+        999
+      ]
+    }
+  },
+  {
+    "case_id": "authorize-pending-not-counted",
+    "expected": "authorized",
+    "input": {
+      "action": "authorize",
+      "pending_reissues": 200
+    }
+  },
+  {
+    "case_id": "authorizeauthority_current",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "authorize",
+      "authority_current": false
+    }
+  },
+  {
+    "case_id": "authorizerights_match",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "authorize",
+      "rights_match": false
+    }
+  },
+  {
+    "case_id": "authorizelineage_known",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "authorize",
+      "lineage_known": false
+    }
+  },
+  {
+    "case_id": "authorize-preview",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "authorize",
+      "prior_profile": "urn:bridge-clean:text-analysis-preview:v1"
+    }
+  },
+  {
+    "case_id": "finalizelost-or-destroyed-installation",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "finalize",
+      "reason": "lost-or-destroyed-installation"
+    }
+  },
+  {
+    "case_id": "finalizelost-or-destroyed-installation-manual",
+    "expected": "completed",
+    "input": {
+      "action": "finalize",
+      "manual_decision": true,
+      "reason": "lost-or-destroyed-installation"
+    }
+  },
+  {
+    "case_id": "finalizeinaccessible-original-hardware",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "finalize",
+      "reason": "inaccessible-original-hardware"
+    }
+  },
+  {
+    "case_id": "finalizeinaccessible-original-hardware-manual",
+    "expected": "completed",
+    "input": {
+      "action": "finalize",
+      "manual_decision": true,
+      "reason": "inaccessible-original-hardware"
+    }
+  },
+  {
+    "case_id": "finalize-at-bound",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "finalize",
+      "committed_reissues": [
+        950,
+        999
+      ]
+    }
+  },
+  {
+    "case_id": "finalize-pending-not-counted",
+    "expected": "completed",
+    "input": {
+      "action": "finalize",
+      "pending_reissues": 200
+    }
+  },
+  {
+    "case_id": "finalizeauthority_current",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "finalize",
+      "authority_current": false
+    }
+  },
+  {
+    "case_id": "finalizerights_match",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "finalize",
+      "rights_match": false
+    }
+  },
+  {
+    "case_id": "finalizelineage_known",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "finalize",
+      "lineage_known": false
+    }
+  },
+  {
+    "case_id": "finalize-preview",
+    "expected": "authority_unavailable",
+    "input": {
+      "action": "finalize",
+      "prior_profile": "urn:bridge-clean:text-analysis-preview:v1"
+    }
+  },
+  {
+    "case_id": "read-historical",
+    "expected": "exact-result",
+    "input": {
+      "action": "read",
+      "committed": true,
+      "current_session": false,
+      "release_supported": false
+    }
+  },
+  {
+    "case_id": "recover-historical",
+    "expected": "exact-result",
+    "input": {
+      "action": "recover",
+      "committed": true,
+      "current_session": false,
+      "release_supported": false
+    }
+  },
+  {
+    "case_id": "finalize-historical",
+    "expected": "exact-result",
+    "input": {
+      "action": "finalize",
+      "committed": true,
+      "current_session": false,
+      "release_supported": false
+    }
+  },
+  {
+    "case_id": "precedence-ingress",
+    "expected": "invalid/413",
+    "input": {
+      "action": "authorize",
+      "current_session": false,
+      "schema_valid": false,
+      "size_ok": false
+    }
+  }
+]

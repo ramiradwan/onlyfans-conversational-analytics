@@ -1,0 +1,23 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v1",
+  "governing_adr": "docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md",
+  "messages": {
+    "supported-profiles": "schemas/license-reissue-text-analysis-supported-profiles/v1/supported-profiles.schema.json"
+  },
+  "request_max_bytes": 3072,
+  "response_max_bytes": 3072,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "classification": "public-release",
+  "retention_class": "immutable-public-release",
+  "profiles": [
+    "urn:bridge-clean:text-analysis-license-reissue-authorization:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-proof:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v1",
+    "urn:bridge-clean:text-analysis-license-reissue:v1",
+    "urn:bridge-clean:text-analysis-license:v1",
+    "urn:bridge-clean:text-analysis-release-identity:v1"
+  ],
+  "order": "ascending-ASCII",
+  "complete_set_required": true
+}

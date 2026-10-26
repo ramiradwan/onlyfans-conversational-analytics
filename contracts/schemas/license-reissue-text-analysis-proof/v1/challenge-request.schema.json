@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis-proof/v1/challenge-request.schema.json",
+  "title": "license-reissue-text-analysis-proof challenge-request v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-license-reissue-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-license-reissue-prepare"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v1/prepare-request.schema.json#/properties/request"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-license-reissue-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-license-reissue-read"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v1/read-request.schema.json#/properties/request"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-license-reissue-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-license-reissue-finalize"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v1/finalize-request.schema.json#/properties/request"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "purpose",
+        "request"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-license-reissue-proof:v1"
+        },
+        "purpose": {
+          "const": "text-analysis-license-reissue-recover"
+        },
+        "request": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v1/recover-request.schema.json#/properties/request"
+        }
+      }
+    }
+  ]
+}
