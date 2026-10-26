@@ -63,14 +63,15 @@ describe('NlpDependencyControls', () => {
     const api = fixture(), initial = deferred<NlpDependencyStatus>(), refreshed = deferred<NlpDependencyStatus>();
     api.get.mockReturnValueOnce(initial.promise);
     render(view(api));
-    const region = feedbackRegion(), classes = region.className;
+    const region = feedbackRegion(), wrapper = region.parentElement, classes = region.className;
     expect(within(region).getByRole('status').textContent).toBe('Checking…');
     expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeNull();
     await readFeedback('Checking text analysis availability…');
     await act(async () => initial.reject(new Error('untrusted failure')));
     expect(feedbackRegion()).toBe(region);
+    expect(feedbackRegion().parentElement).toBe(wrapper);
     expect(within(region).getByRole('alert').textContent).toBe('Needs attention');
-    expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBeTruthy();
+    expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBe(wrapper);
     await readFeedback('Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again. Text analysis is unavailable until a qualified profile and compatible installed engine are available.');
     expect(screen.queryByText('untrusted failure')).toBeNull();
     api.get.mockReturnValueOnce(refreshed.promise);
@@ -80,6 +81,7 @@ describe('NlpDependencyControls', () => {
     await act(async () => refreshed.resolve(status));
     await screen.findByRole('button', { name: 'Review download for topics-and-mentions' });
     expect(feedbackRegion()).toBe(region);
+    expect(feedbackRegion().parentElement).toBe(wrapper);
     expect(feedbackRegion().className).toBe(classes);
     expect(document.querySelectorAll('[data-reserved-region="dependency-feedback"]')).toHaveLength(1);
     expect(within(region).queryByRole('button', { name: 'Show details' })).toBeNull();

@@ -173,17 +173,18 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
     && profile.resources?.temporary_bytes === review.profile.resources?.temporary_bytes).length === 1);
   const operationState = operation?.state === 'complete' ? 'Download complete' : operation?.state === 'paused' ? 'Download paused'
     : operation?.state === 'cancelled' ? 'Download cancelled' : operation?.state === 'running' ? 'Downloading' : 'Download needs attention';
+  const feedbackLine = <StatusLine id="dependency-feedback" text={feedback || null}
+    summary={error ? 'Needs attention' : loading || busy ? 'Checking…' : unavailable ? 'Unavailable' : 'Status'}
+    detailsOnly tone={error ? 'error' : 'secondary'} />;
   return (
     <Panel component="section" aria-label="Optional text analysis">
       <SectionHeader title="Optional text analysis" />
       <Typography>Find topics and mentions in messages. Setup is optional; other analytics remain available.</Typography>
       <Typography>Language and task support are profile-specific. Review the profile before choosing it.</Typography>
       {account && <Button disabled={busy} onClick={() => { void checkStatus(); }}>Check status</Button>}
-      <Box data-journey-state={!loading && unavailable ? 'textanalysis.unavailable' : undefined}>
-        <StatusLine id="dependency-feedback" text={feedback || null}
-          summary={error ? 'Needs attention' : loading || busy ? 'Checking…' : unavailable ? 'Unavailable' : 'Status'}
-          detailsOnly tone={error ? 'error' : 'secondary'} />
-      </Box>
+      {!loading && unavailable
+        ? <Box data-journey-state="textanalysis.unavailable">{feedbackLine}</Box>
+        : <Box>{feedbackLine}</Box>}
       {!loading && !unavailable && status && (
         <Stack spacing={2} data-journey-state="textanalysis.controls">
           <Button disabled={busy} onClick={() => { void run({ action: 'refresh' }); }}>Check available profiles</Button>
