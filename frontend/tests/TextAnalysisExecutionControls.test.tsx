@@ -4,6 +4,8 @@ import { ThemeProvider } from '@mui/material/styles';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { mockFeedbackOverflow } from './feedbackGeometry';
+
 import commandExample from '../../shared/nlp/application/v1/fixtures/enrollment-command.json';
 import resultExample from '../../shared/nlp/application/v1/fixtures/enrollment-result.json';
 import viewExample from '../../shared/nlp/application/v1/fixtures/enrollment-view.json';
@@ -77,11 +79,16 @@ async function review() {
   fireEvent.click(screen.getByRole('button', { name: 'Review enablement' }));
   return within(await screen.findByRole('dialog', { name: 'Review processing change' }));
 }
+function feedbackRegion() {
+  const node = document.querySelector('[data-reserved-region="processing-feedback"]');
+  if (!(node instanceof HTMLElement)) throw new Error('Processing feedback is missing');
+  return node;
+}
 beforeEach(() => {
   vi.stubGlobal('crypto', { subtle: webcrypto.subtle, randomUUID: () => KEY });
   useUserStore.getState().actions.setUserRole('creator-ceo');
 });
-afterEach(() => { cleanup(); useUserStore.setState({ role: null, roleResolved: false }); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); useUserStore.setState({ role: null, roleResolved: false }); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('Account processing controls', () => {
   it('reviews cold-profile enablement and waits for a durable intent acknowledgement before the command', async () => {
@@ -129,28 +136,88 @@ describe('Account processing controls', () => {
     expect(x.api.command).toHaveBeenCalledOnce();
   });
 
-  it.each(['account', 'same_account_session', 'role'] as const)('clears processing review when %s changes', async (change) => {
+  it.each(['account', 'same_account_session', 'role', 'disconnect'] as const)('clears processing review when %s changes', async (change) => {
     const x = fixture(), rendered = render(x.view()); await review();
     act(() => {
       if (change === 'account') connect(x.transport, 'other-account', '2');
       if (change === 'same_account_session') connect(x.transport, ACCOUNT, '2');
       if (change === 'role') useUserStore.getState().actions.setUserRole('operator');
+      if (change === 'disconnect') x.transport.markDisconnected();
     });
     if (change === 'account') rendered.rerender(x.view('other-account'));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review processing change' })).toBeNull());
+    if (change === 'disconnect') {
+      expect(feedbackRegion().textContent).toContain('Connect with an authorized creator session');
+      expect(screen.queryByRole('combobox', { name: 'Approved processing profile' })).toBeNull();
+    }
     expect(x.api.retain).not.toHaveBeenCalled(); expect(x.api.command).not.toHaveBeenCalled();
   });
 
-  it.each(['account', 'same_account_session'] as const)('discards a late acknowledgement after %s changes', async (change) => {
+  it.each(['account', 'same_account_session', 'disconnect'] as const)('discards a late acknowledgement after %s changes', async (change) => {
     const x = fixture(), acknowledgement = deferred<ClientIntentRecord>(); x.api.retain.mockReturnValue(acknowledgement.promise);
     const rendered = render(x.view()), dialog = await review();
     fireEvent.click(dialog.getByRole('button', { name: 'Confirm processing change' }));
     await waitFor(() => expect(x.api.retain).toHaveBeenCalledOnce());
     const [intent, signal] = x.api.retain.mock.calls[0];
-    act(() => connect(x.transport, change === 'account' ? 'other-account' : ACCOUNT, '2'));
+    act(() => {
+      if (change === 'disconnect') x.transport.markDisconnected();
+      else connect(x.transport, change === 'account' ? 'other-account' : ACCOUNT, '2');
+    });
     if (change === 'account') rendered.rerender(x.view('other-account'));
     await act(async () => acknowledgement.resolve(await retained(intent)));
     expect(signal?.aborted).toBe(true); expect(x.api.command).not.toHaveBeenCalled();
+    expect(screen.queryByText('Processing: enabled.')).toBeNull();
+  });
+
+  it('retains one feedback region through busy, unavailable and ready responses', async () => {
+    const x = fixture(), first = deferred<EnrollmentView>(), next = deferred<EnrollmentView>();
+    x.api.current.mockReturnValueOnce(first.promise);
+    render(x.view());
+    await screen.findByText('Checking account processing…');
+    const region = feedbackRegion(), classes = region.className;
+    await act(async () => first.resolve(parseEnrollmentView(viewExample, ACCOUNT)));
+    await screen.findByText('Processing: enabled.');
+    expect(feedbackRegion()).toBe(region);
+    expect(feedbackRegion().className).toBe(classes);
+    x.api.current.mockRejectedValueOnce(new TextAnalysisApiError('unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: 'Check processing status' }));
+    await screen.findByText(/Processing management is unavailable for this session/);
+    expect(feedbackRegion()).toBe(region);
+    expect(feedbackRegion().className).toBe(classes);
+    x.api.current.mockReturnValueOnce(next.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Check processing status' }));
+    await screen.findByText('Checking account processing…');
+    expect(feedbackRegion()).toBe(region);
+    await act(async () => next.resolve(parseEnrollmentView(viewExample, ACCOUNT)));
+    await screen.findByText('Processing: enabled.');
+    expect(feedbackRegion()).toBe(region);
+    expect(document.querySelectorAll('[data-reserved-region="processing-feedback"]')).toHaveLength(1);
+    expect(x.api.retain).not.toHaveBeenCalled(); expect(x.api.command).not.toHaveBeenCalled();
+  });
+
+  it('keeps complete combined feedback in details and clears it on disconnect', async () => {
+    const x = fixture(); x.api.retain.mockRejectedValueOnce(new TextAnalysisApiError('unknown'));
+    render(x.view()); const dialog = await review();
+    fireEvent.click(dialog.getByRole('button', { name: 'Confirm processing change' }));
+    await screen.findByText(/The command outcome is unknown/);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review processing change' })).toBeNull());
+    const original = x.api.retain.mock.calls[0][0];
+    if (original.kind !== 'enrollment_command') throw new Error('Unexpected retained request');
+    const changed = await retained({ ...original, body: { ...original.body, expected_mode_version: 1 } });
+    x.journal.set(`${changed.kind}:${changed.key}`, changed);
+    x.api.retainedList.mockResolvedValueOnce({ items: [changed], next_after: null });
+    x.api.current.mockRejectedValueOnce(new TextAnalysisApiError('unavailable'));
+    mockFeedbackOverflow();
+    fireEvent.click(screen.getByRole('button', { name: 'Check processing status' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check processing status' }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(await screen.findByRole('button', { name: 'Show details' }));
+    const details = await screen.findByRole('dialog', { name: 'Details' });
+    expect(details.textContent).toContain('Processing management is unavailable for this session. Saved results have separate read access.');
+    expect(details.textContent).toContain('The original request meaning could not be verified. New processing changes are unavailable.');
+    expect(x.api.command).not.toHaveBeenCalled();
+    act(() => x.transport.markDisconnected());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Details' })).toBeNull());
+    expect(feedbackRegion().textContent).not.toContain('The original request meaning could not be verified');
     expect(screen.queryByText('Processing: enabled.')).toBeNull();
   });
 

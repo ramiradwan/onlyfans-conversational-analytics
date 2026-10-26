@@ -1,8 +1,9 @@
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 
 import { Panel, SectionHeader } from './ui';
+import { StatusLine } from './ui/ReservedRegion';
 import type { EnrollmentCommand } from '../analytics/textAnalysisContract';
 import { nlpDependenciesApi, type NlpDependenciesApi, type NlpDependencyProfile } from '../services/nlpDependenciesApi';
 import type { TextAnalysisClient } from '../services/textAnalysisClient';
@@ -52,16 +53,20 @@ function ExecutionSession({ creatorAccountId, client, dependenciesApi = nlpDepen
   const selected = profiles.find((entry) => entry.profile_sha256 === profile);
   const blocked = state.busy || !current || Boolean(state.message) || state.nextAfter !== null || state.recoveryOverflow || state.recoveryConflict
     || state.observations.some((item) => item.state !== 'resolved');
+  const feedback = [
+    state.busy ? 'Checking account processing…' : null,
+    state.message,
+    state.recoveryOverflow ? 'Retained request recovery reached its limit. New processing changes are unavailable.' : null,
+    state.recoveryConflict ? 'The original request meaning could not be verified. New processing changes are unavailable.' : null,
+  ].filter(Boolean).join(' ');
   function open(action: EnrollmentCommand['action']) { setReview(store.actions.buildCommand(action, selected?.profile_sha256)); }
   return <Panel component="section" aria-label="Account text processing">
     <SectionHeader title="Account text processing" />
     <Stack spacing={2} data-journey-state="textanalysis.processing_controls">
       <Typography>Enable automatic processing for this account, pause it, or retire its enrollment. Downloads and Engine installation are separate.</Typography>
       <Button disabled={state.busy} onClick={() => void store.actions.refresh()}>Check processing status</Button>
-      {state.busy && <Typography role="status">Checking account processing…</Typography>}
-      {state.message && <Alert severity={state.status === 'error' ? 'warning' : 'info'}>{state.message}</Alert>}
-      {state.recoveryOverflow && <Alert severity="warning">Retained request recovery reached its limit. New processing changes are unavailable.</Alert>}
-      {state.recoveryConflict && <Alert severity="warning">The original request meaning could not be verified. New processing changes are unavailable.</Alert>}
+      <StatusLine id="processing-feedback" text={feedback || null} summary="Processing status"
+        tone={state.status === 'error' || state.recoveryOverflow || state.recoveryConflict ? 'error' : 'secondary'} />
       {current && <>
         <Typography>Processing: {current.enrollment_id === null ? 'not enrolled' : current.state}.</Typography>
         {state.view?.profile ? <>
