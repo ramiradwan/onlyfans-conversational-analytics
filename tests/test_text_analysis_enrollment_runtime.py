@@ -1,8 +1,10 @@
 """Current canonical enrollment through the existing background runtime."""
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import sys
+import threading
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -10,6 +12,8 @@ import pytest
 from app.analytics import runtime
 from app.analytics.nlp_runtime import FindingsConfiguration
 from app.analytics.licensed_pipeline import LicensedAnalyticsPipeline
+from app.analytics.errors import ProjectionUnavailable
+from app.analytics.nlp_processing import FindingsRunner
 from app.core.config import settings
 from app.security.analysis_authorization import clear_analysis_policies
 from app.security.runtime_policy import authorized_account, RuntimeAuthorizationDenied
@@ -24,6 +28,14 @@ async def eventually(predicate,timeout=30):
     async with asyncio.timeout(timeout):
         while not predicate():
             await asyncio.sleep(.02)
+
+
+def observe_failure(findings, error):
+    if (type(error) is ProjectionUnavailable and error.availability == 'building'
+            and error.reason_code is None):
+        findings.observed_transients.append(error)
+    else:
+        findings.observed_failures.append(error)
 
 
 @asynccontextmanager
@@ -42,12 +54,13 @@ async def configured_execution_runtime(x,path):
         owned_configuration=runtime._DEFAULT_CONFIGURATION
     try:
         owned.findings.observed_failures=[]
+        owned.findings.observed_transients=[]
         original=owned.findings._turn
         def observed():
             try:
                 return original()
             except Exception as error:
-                owned.findings.observed_failures.append(error)
+                observe_failure(owned.findings,error)
                 raise
         owned.findings._turn=observed
         request=owned.scheduler.request_findings
@@ -55,7 +68,7 @@ async def configured_execution_runtime(x,path):
             try:
                 return await request(*args)
             except Exception as error:
-                owned.findings.observed_failures.append(error)
+                observe_failure(owned.findings,error)
                 raise
         owned.scheduler.request_findings=observed_request
         generation=owned.scheduler.generation_pipeline
@@ -63,7 +76,7 @@ async def configured_execution_runtime(x,path):
             try:
                 return generation(account)
             except Exception as error:
-                owned.findings.observed_failures.append(error)
+                observe_failure(owned.findings,error)
                 raise
         owned.scheduler.generation_pipeline=observed_generation
         submit=owned.findings._executor.submit
@@ -71,7 +84,7 @@ async def configured_execution_runtime(x,path):
             try:
                 return submit(*args,**kwargs)
             except Exception as error:
-                owned.findings.observed_failures.append(error)
+                observe_failure(owned.findings,error)
                 raise
         owned.findings._executor.submit=observed_submit
         await runtime.start_default_analytics_runtime()
@@ -110,6 +123,83 @@ def verified_grants(monkeypatch,x):
     monkeypatch.setattr(settings,'identity_binding_source','verified_grants')
     monkeypatch.setattr(settings,'auth_database_path',x.auth.database.path)
     clear_analysis_policies()
+
+
+@pytest.mark.parametrize('error', [
+    RuntimeError('unexpected'), ValueError('unexpected'),
+    ProjectionUnavailable(availability='unavailable'),
+    ProjectionUnavailable(availability='error'),
+    ProjectionUnavailable(availability='building',reason_code='unexpected'),
+])
+def test_runtime_observer_preserves_unexpected_failures(error):
+    findings=SimpleNamespace(observed_failures=[],observed_transients=[])
+    observe_failure(findings,error)
+    assert findings.observed_failures == [error]
+    assert not findings.observed_transients
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind',['joint','split'])
+async def test_canonical_source_invalidation_retries_before_publication(tmp_path,kind,monkeypatch):
+    x=make_execution_fixture(tmp_path,kind)
+    verified_grants(monkeypatch,x)
+    active=threading.local()
+    invalidated=[]
+    rejected=[]
+    original_reconcile=FindingsRunner.reconcile
+    original_scope=x.source.open_question_scope
+
+    def reconcile(runner,*args,**kwargs):
+        active.reconciling=True
+        try:
+            return original_reconcile(runner,*args,**kwargs)
+        finally:
+            active.reconciling=False
+
+    @contextmanager
+    def source_scope(*args,**kwargs):
+        injected=False
+        try:
+            with original_scope(*args,**kwargs) as scope:
+                yield scope
+                if getattr(active,'reconciling',False) and not invalidated:
+                    assert not canonical(x)
+                    with x.repository.database.transaction() as db:
+                        db.execute("UPDATE account_messages SET text=text || ' updated',content_hash='updated-source' "
+                                   'WHERE creator_account_id=? AND message_id=?',(ACCOUNT,'m-0-0'))
+                        db.execute('UPDATE account_heads SET canonical_revision=canonical_revision+1 '
+                                   'WHERE creator_account_id=?',(ACCOUNT,))
+                    invalidated.append(scope.identity)
+                    injected=True
+        except ProjectionUnavailable as error:
+            if injected:
+                rejected.append(error)
+            raise
+
+    monkeypatch.setattr(FindingsRunner,'reconcile',reconcile)
+    monkeypatch.setattr(x.source,'open_question_scope',source_scope)
+    try:
+        first=x.service.command(x.http_policy(),command(x))
+        reads=x.source.full_reads
+        async with configured_execution_runtime(x,tmp_path/'retry-runtime.sqlite3') as (owned,service):
+            await eventually(lambda: published(owned,service))
+            assert len(invalidated) == len(rejected) == 1
+            assert rejected[0] in owned.findings.observed_transients
+            assert not owned.findings.observed_failures
+            current=x.source.read_identity(ACCOUNT)
+            projection=owned.pipeline.projections.get(ACCOUNT)
+            assert current.revision == invalidated[0].revision+1
+            assert current.content_digest != invalidated[0].content_digest
+            assert projection.source_revision == current.revision
+            assert projection.canonical_content_digest == current.content_digest
+            assert len(canonical(x)) == 2
+            assert service.read_current(x.http_policy()).enrollment_id == first.current.enrollment_id
+            assert len(owned.findings._enrollments) == 1
+            assert service.dependencies is owned.findings._service
+            assert service.dependencies.findings.state(ACCOUNT)['mode'] == 'enabled'
+        assert x.source.full_reads == reads
+    finally:
+        close_execution_fixture(x)
 
 
 @pytest.mark.asyncio
