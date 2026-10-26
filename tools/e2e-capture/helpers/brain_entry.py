@@ -7,6 +7,7 @@ import asyncio
 import json
 import sys
 import threading
+from itertools import islice
 from pathlib import Path
 
 
@@ -111,12 +112,55 @@ class _ShutdownListener:
     def __getattr__(self, name):
         return getattr(self._original, name)
 
+    def _residual(self):
+        names = ('transports', 'closing', 'pending_write', 'buffered', 'closed_socket',
+                 'called_connection_lost')
+        counts = dict.fromkeys(names)
+        try:
+            if sys.version_info[:2] == (3, 13) and type(self._original) is asyncio.Server:
+                clients = tuple(islice(self._original._clients, 4097))
+                if len(clients) <= 4096:
+                    counts['transports'] = len(clients)
+                    readers = {
+                        'closing': lambda transport: transport._closing,
+                        'pending_write': lambda transport: transport._write_fut is not None,
+                        'buffered': lambda transport: bool(transport._buffer),
+                        'closed_socket': lambda transport: transport._sock is None or transport._sock.fileno() == -1,
+                        'called_connection_lost': lambda transport: transport._called_connection_lost,
+                    }
+                    for name, read in readers.items():
+                        values = []
+                        for transport in clients:
+                            if type(transport).__module__ != 'asyncio.proactor_events':
+                                break
+                            try:
+                                value = read(transport)
+                            except Exception:
+                                break
+                            if type(value) is not bool:
+                                break
+                            values.append(value)
+                        if len(values) == len(clients):
+                            counts[name] = sum(values)
+        except Exception:
+            counts = dict.fromkeys(names)
+        try:
+            print(json.dumps({'schema': 'browser-fixture-listener-residual.v1', **counts},
+                             separators=(',', ':')), flush=True)
+        except Exception:
+            # Diagnostic collection cannot change listener completion.
+            pass
+
     async def wait_closed(self, *args, **kwargs):
         _shutdown_phase("server_listener_wait_entered")
         close_clients = getattr(self._original, "close_clients", None)
         if callable(close_clients):
             close_clients()
-        result = await self._original.wait_closed(*args, **kwargs)
+        observation = asyncio.get_running_loop().call_later(5, self._residual)
+        try:
+            result = await self._original.wait_closed(*args, **kwargs)
+        finally:
+            observation.cancel()
         _shutdown_phase("server_listener_wait_returned")
         return result
 

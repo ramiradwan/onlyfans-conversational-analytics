@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { createStartupObservations, startupDiagnosticFromMessage, validStartupDiagnostic } from '../../lib/startup-diagnostics.mjs';
-import { brainHealthIsReady, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
+import { brainHealthIsReady, lastFixtureListenerResidual, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
 
 function fixture(owner = 'brain') {
   let time = 0;
@@ -43,6 +43,31 @@ test('shutdown phase extraction refuses altered fields and unbounded records', (
     line.replace('command_seen', 'server_waiting_tasks_private'),
     JSON.stringify({ ...value, phase: 'server_waiting_connections', connections: 1 })]) {
     assert.equal(lastFixtureShutdownPhase(output), null);
+  }
+});
+
+test('listener residual extraction retains only bounded canonical transport counts', () => {
+  const value = { schema: 'browser-fixture-listener-residual.v1', transports: 2, closing: 2,
+    pending_write: 1, buffered: 1, closed_socket: 0, called_connection_lost: 0 };
+  const line = JSON.stringify(value);
+  assert.deepEqual(lastFixtureListenerResidual(line), value);
+  assert.deepEqual(lastFixtureListenerResidual(`private output\n${line}\r\n`), value);
+  assert.deepEqual(lastFixtureListenerResidual(`${'x'.repeat(100_000)}\n${line}\n`), value);
+  assert.deepEqual(lastFixtureListenerResidual(`${line}\n${line.slice(0, -1)}`), value);
+  const unavailable = Object.fromEntries(Object.keys(value).map(key => [key, key === 'schema' ? value.schema : null]));
+  assert.deepEqual(lastFixtureListenerResidual(JSON.stringify(unavailable)), unavailable);
+  for (const output of [null, undefined, {}, [], 'private output', 'x'.repeat(100_000),
+    JSON.stringify({ ...value, private: 'content' }), JSON.stringify({ ...value, schema: 'other' }),
+    JSON.stringify([value]), JSON.stringify({ ...value, closing: 'private' }),
+    JSON.stringify({ ...value, closing: true }), JSON.stringify({ ...value, closing: -1 }),
+    JSON.stringify({ ...value, closing: 3 }), JSON.stringify({ ...value, transports: 4097 }),
+    JSON.stringify({ ...value, transports: null }), JSON.stringify({ ...value, pending_write: 0.5 }),
+    JSON.stringify({ ...value, pending_write: Number.MAX_SAFE_INTEGER + 1 }),
+    ' ' + line, line + ' ', JSON.stringify(value, null, 2), line + 'private',
+    line.replace('"closing":2', '"closing":2,"closing":2'),
+    line.replace('"closing":2', '"closing":NaN'), line.replace('closing', 'clo\\u0073ing'),
+    line.replace('"closing":2', '"closing":"' + 'x'.repeat(600) + '"')]) {
+    assert.equal(lastFixtureListenerResidual(output), null);
   }
 });
 

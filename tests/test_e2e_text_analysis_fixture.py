@@ -5,7 +5,9 @@ import hashlib
 import importlib.util
 from io import BytesIO
 import json
+from itertools import islice
 from pathlib import Path
+import socket
 import sys
 from types import SimpleNamespace
 
@@ -52,13 +54,15 @@ def shutdown_listener_type(phases):
     tree = ast.parse(entry.read_text(encoding='utf-8'), filename=str(entry))
     nodes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == '_ShutdownListener']
     assert len(nodes) == 1
-    namespace = {'_shutdown_phase': phases.append}
+    namespace = {'_shutdown_phase': phases.append, 'asyncio': asyncio, 'sys': sys,
+                 'islice': islice, 'json': json}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(entry), 'exec'), namespace)
     return namespace['_ShutdownListener']
 
 
 @pytest.mark.skipif(not hasattr(asyncio.Server, 'close_clients'), reason='Server.close_clients requires Python 3.13')
-def test_listener_gracefully_closes_real_attached_client_before_waiting():
+@pytest.mark.parametrize('queued_writes', [False, True])
+def test_listener_gracefully_closes_real_attached_client_before_waiting(queued_writes, capsys):
     phases = []
     listener_type = shutdown_listener_type(phases)
 
@@ -67,6 +71,8 @@ def test_listener_gracefully_closes_real_attached_client_before_waiting():
         accepted = loop.create_future()
         server_lost = loop.create_future()
         client_lost = loop.create_future()
+        paused = loop.create_future()
+        received = 0
 
         class ServerProtocol(asyncio.Protocol):
             def connection_made(self, transport):
@@ -75,7 +81,19 @@ def test_listener_gracefully_closes_real_attached_client_before_waiting():
             def connection_lost(self, error):
                 server_lost.set_result(error)
 
+            def pause_writing(self):
+                if not paused.done():
+                    paused.set_result(None)
+
         class ClientProtocol(asyncio.Protocol):
+            def connection_made(self, transport):
+                if queued_writes:
+                    transport.pause_reading()
+
+            def data_received(self, data):
+                nonlocal received
+                received += len(data)
+
             def connection_lost(self, error):
                 client_lost.set_result(error)
 
@@ -83,18 +101,56 @@ def test_listener_gracefully_closes_real_attached_client_before_waiting():
         client = None
         try:
             address = server.sockets[0].getsockname()
-            client, _ = await loop.create_connection(ClientProtocol, address[0], address[1])
+            if queued_writes:
+                peer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                try:
+                    peer.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65_536)
+                    peer.setblocking(False)
+                    await asyncio.wait_for(loop.sock_connect(peer, address), 2)
+                    client, _ = await loop.create_connection(ClientProtocol, sock=peer)
+                except BaseException:
+                    peer.close()
+                    raise
+            else:
+                client, _ = await loop.create_connection(ClientProtocol, address[0], address[1])
             transport = await asyncio.wait_for(accepted, 2)
+            if queued_writes:
+                transport.get_extra_info('socket').setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65_536)
+                # The second write exercises queued-buffer flow control even if the first send completes immediately.
+                transport.write(b'x' * (4 * 1024 * 1024))
+                transport.write(b'x' * (4 * 1024 * 1024))
+                await asyncio.wait_for(paused, 2)
             server.close()
             assert not server.is_serving() and not transport.is_closing()
             assert not server_lost.done()
-            result = await asyncio.wait_for(listener_type(server).wait_closed(), 2)
+            observed = listener_type(server)
+            waiting = asyncio.create_task(observed.wait_closed())
+            if queued_writes:
+                await asyncio.sleep(0)
+                assert transport.is_closing()
+                assert not waiting.done() and not server_lost.done()
+                observed._residual()
+                residual = json.loads(capsys.readouterr().out)
+                assert residual['schema'] == 'browser-fixture-listener-residual.v1'
+                if sys.version_info[:2] == (3, 13):
+                    assert residual['transports'] == 1
+                    if sys.platform == 'win32':
+                        assert residual['buffered'] in (0, 1)
+                        assert residual == {'schema': 'browser-fixture-listener-residual.v1',
+                            'transports': 1, 'closing': 1, 'pending_write': 1, 'buffered': residual['buffered'],
+                            'closed_socket': 0, 'called_connection_lost': 0}
+                else:
+                    assert all(value is None for key, value in residual.items() if key != 'schema')
+                client.resume_reading()
+            result = await asyncio.wait_for(waiting, 2)
             assert result is None and transport.is_closing()
             assert server_lost.done() and server_lost.result() is None
             assert await asyncio.wait_for(client_lost, 2) is None
+            assert received == (8 * 1024 * 1024 if queued_writes else 0)
             assert phases == ['server_listener_wait_entered', 'server_listener_wait_returned']
         finally:
             if client is not None:
+                client.resume_reading()
                 client.close()
             server.close()
             server.close_clients()
@@ -103,14 +159,34 @@ def test_listener_gracefully_closes_real_attached_client_before_waiting():
     asyncio.run(run())
 
 
+def test_listener_residual_unsupported_shape_has_only_unavailable_counts(capsys):
+    shutdown_listener_type([])(object())._residual()
+    value = json.loads(capsys.readouterr().out)
+    assert value == {'schema': 'browser-fixture-listener-residual.v1', 'transports': None,
+        'closing': None, 'pending_write': None, 'buffered': None, 'closed_socket': None,
+        'called_connection_lost': None}
+
+
 @pytest.mark.parametrize('close_available', [True, False, None])
-def test_listener_preserves_original_wait_arguments_result_and_fallback(close_available):
+def test_listener_preserves_original_wait_arguments_result_and_fallback(close_available, monkeypatch):
     phases, calls = [], []
     listener_type = shutdown_listener_type(phases)
     result, argument, keyword, attribute = object(), object(), object(), object()
 
     async def run():
         entered, release = asyncio.Event(), asyncio.Event()
+        loop = asyncio.get_running_loop()
+        original_call_later = loop.call_later
+        observations = []
+
+        def call_later(delay, callback, *args, **kwargs):
+            handle = original_call_later(delay, callback, *args, **kwargs)
+            if getattr(callback, '__name__', None) == '_residual':
+                assert delay == 5
+                observations.append(handle)
+            return handle
+
+        monkeypatch.setattr(loop, 'call_later', call_later)
 
         class Listener:
             token = attribute
@@ -132,6 +208,7 @@ def test_listener_preserves_original_wait_arguments_result_and_fallback(close_av
         try:
             await asyncio.wait_for(entered.wait(), 2)
             assert not waiting.done()
+            assert len(observations) == 1 and not observations[0].cancelled()
             assert phases == ['server_listener_wait_entered']
             expected = [('close',)] if close_available is True else []
             assert calls == expected + [('wait', (argument,), {'selected': keyword})]
@@ -139,6 +216,7 @@ def test_listener_preserves_original_wait_arguments_result_and_fallback(close_av
             release.set()
             returned = await asyncio.wait_for(waiting, 2)
         assert returned is result
+        assert observations[0].cancelled()
         assert phases == ['server_listener_wait_entered', 'server_listener_wait_returned']
 
     asyncio.run(run())

@@ -139,6 +139,37 @@ export function lastFixtureShutdownPhase(output) {
   return phase;
 }
 
+export function lastFixtureListenerResidual(output) {
+  if (typeof output !== 'string') return null;
+  let tail = output.slice(-65_536);
+  if (tail.length !== output.length) {
+    const end = tail.indexOf('\n');
+    if (end === -1) return null;
+    tail = tail.slice(end + 1);
+  }
+  const counts = ['transports', 'closing', 'pending_write', 'buffered', 'closed_socket', 'called_connection_lost'];
+  const keys = ['schema', ...counts].sort().join(',');
+  let residual = null;
+  for (const raw of tail.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (line.length > 512 || !line.startsWith('{"schema":"browser-fixture-listener-residual.v1",')) continue;
+    try {
+      const value = JSON.parse(line);
+      if (value === null || typeof value !== 'object' || Array.isArray(value)
+          || Object.keys(value).sort().join(',') !== keys
+          || value.schema !== 'browser-fixture-listener-residual.v1'
+          || !counts.every(key => value[key] === null
+            || (Number.isSafeInteger(value[key]) && value[key] >= 0 && value[key] <= 4096))
+          || counts.slice(1).some(key => value[key] !== null
+            && (value.transports === null || value[key] > value.transports))) continue;
+      const canonical = { schema: value.schema };
+      for (const key of counts) canonical[key] = value[key];
+      if (line === JSON.stringify(canonical)) residual = canonical;
+    } catch { /* Only closed counts are retained. */ }
+  }
+  return residual;
+}
+
 export class BrainProcess {
   constructor({
     authDatabasePath,
@@ -296,6 +327,7 @@ export class BrainProcess {
         control_error: controlError,
         child_failure: fixtureShutdownFailure(this.recentOutput()),
         last_phase: lastFixtureShutdownPhase(this.output.join('')),
+        listener_residual: lastFixtureListenerResidual(this.output.join('')),
       };
       throw new Error(`Text analysis fixture did not complete its owned shutdown. ${JSON.stringify(failure)}`);
     }
