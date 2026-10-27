@@ -96,3 +96,80 @@ test('checkpoint reporting preserves the original exception without labeling eve
   assert(lines[0].startsWith('Catch-up checkpoint failed '));
   assert(!lines[0].includes('timed out') && !lines[0].includes(original.message));
 });
+
+async function failedCheckpoint(brain, extra = {}) {
+  const original = new Error('private original error'), lines = [];
+  await assert.rejects(withCatchupDiagnostics(async () => { throw original; }, {
+    summary: async () => null, platform: { requestCounts: {} }, context: {},
+    readWorker: async () => null, brain, log: line => lines.push(line), ...extra,
+  }), error => error === original);
+  assert.equal(lines.length, 1);
+  assert(!lines[0].includes('private'));
+  return JSON.parse(lines[0].slice('Catch-up checkpoint failed '.length));
+}
+
+test('failed checkpoints include one bounded current child and health observation', async () => {
+  let calls = 0;
+  const expected = { child: { state: 'exit_observed', exit_code: 7, signal: null },
+    health: { outcome: 'non_2xx', status: 503 } };
+  const fields = await failedCheckpoint({ failureObservation: async timeout => {
+    assert.equal(timeout, 2_500); calls++; return expected;
+  } });
+  assert.deepEqual(fields.brain, expected);
+  assert.equal(calls, 1);
+});
+
+test('successful assertions and initial-history checkpoints do not probe health', async () => {
+  let calls = 0;
+  for (const checkpoint of [null, 'initial_history']) {
+    const lines = [];
+    assert.equal(await withCatchupDiagnostics(async () => 42, {
+      summary: async () => null, platform: { requestCounts: {} }, context: {}, checkpoint,
+      readWorker: async () => null, log: line => lines.push(line),
+      brain: { failureObservation: async () => { calls++; throw new Error('private'); } },
+    }), 42);
+    assert.equal(lines.length, checkpoint === null ? 0 : 1);
+    if (lines.length) assert(!Object.hasOwn(JSON.parse(lines[0].slice('Catch-up checkpoint initial_history '.length)), 'brain'));
+  }
+  assert.equal(calls, 0);
+});
+
+test('unavailable, rejected and timed-out diagnostics preserve the original failure', async () => {
+  const unavailable = { child: { state: 'unavailable', exit_code: null, signal: null },
+    health: { outcome: 'unavailable', status: null } };
+  for (const brain of [undefined, {},
+    { failureObservation: async () => { throw new Error('private observation'); } },
+    { failureObservation: () => new Promise(() => {}) },
+  ]) assert.deepEqual((await failedCheckpoint(brain, { timeoutMs: 5 })).brain, unavailable);
+});
+
+test('hostile diagnostic values cannot introduce text, paths or extra fields', async () => {
+  const fields = await failedCheckpoint({ failureObservation: async () => ({
+    child: { state: 'private state', exit_code: 'private code', signal: 'private signal', pid: 123, raw: 'private path' },
+    health: { outcome: 'private outcome', status: 'private status', headers: 'private headers' },
+    raw: 'private body',
+  }) });
+  assert.deepEqual(fields.brain, { child: { state: 'unavailable', exit_code: null, signal: null },
+    health: { outcome: 'unavailable', status: null } });
+  const throwing = await failedCheckpoint({ failureObservation: async () => ({
+    get child() { throw new Error('private accessor'); },
+  }) });
+  assert.deepEqual(throwing.brain, fields.brain);
+  let statusReads = 0, exitReads = 0;
+  const changing = await failedCheckpoint({ failureObservation: async () => ({
+    child: { state: 'exit_observed', signal: null,
+      get exit_code() { return ++exitReads === 1 ? 4 : 'private changing code'; } },
+    health: { outcome: 'non_2xx', get status() { return ++statusReads === 1 ? 503 : 'private changing status'; } },
+  }) });
+  assert.equal(statusReads, 1); assert.equal(exitReads, 1);
+  assert.deepEqual(changing.brain, { child: { state: 'exit_observed', exit_code: 4, signal: null },
+    health: { outcome: 'non_2xx', status: 503 } });
+});
+
+test('a reporting failure still rethrows the original assertion error', async () => {
+  const original = new Error('private assertion');
+  await assert.rejects(withCatchupDiagnostics(async () => { throw original; }, {
+    summary: async () => null, platform: { requestCounts: {} }, context: {}, readWorker: async () => null,
+    brain: { failureObservation: async () => null }, log: () => { throw new Error('private logger'); },
+  }), error => error === original);
+});
