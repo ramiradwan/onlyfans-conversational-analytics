@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { IncomingMessage } from 'node:http';
 import { PassThrough } from 'node:stream';
+import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import { createStartupObservations, startupDiagnosticFromMessage, validStartupDiagnostic } from '../../lib/startup-diagnostics.mjs';
-import { brainHealthIsReady, fixtureLoopExceptions, fixtureProactorCallbackFailure, lastFixtureListenerResidual, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
+import { BrainProcess, brainHealthIsReady, fixtureLoopExceptions, fixtureProactorCallbackFailure, lastFixtureListenerResidual, lastFixtureShutdownPhase } from '../../lib/brain.mjs';
 
 function fixture(owner = 'brain') {
   let time = 0;
@@ -232,4 +234,157 @@ test('health probe observations preserve ready and failure decisions and the exi
     const v = f.observations.snapshot();
     assert.equal(v.health_attempts, 1); assert.equal(v.health_outcome, outcome);
   }
+});
+
+function mockResponse(status) {
+  const response = new EventEmitter();
+  response.statusCode = status; response.destroy = () => {};
+  return response;
+}
+
+function mockHealth({ status = 200, error = null, unavailable = false } = {}) {
+  const request = new EventEmitter();
+  let destroyed = 0;
+  request.destroy = () => { destroyed++; };
+  request.setTimeout = (ms) => assert.equal(ms, 500);
+  const factory = (options, callback) => {
+    assert.deepEqual(options, { host: '127.0.0.1', port: 17871, path: '/health',
+      method: 'GET', headers: { Host: 'bridge.localhost:17871' } });
+    if (unavailable) throw new Error('private request detail');
+    request.end = () => queueMicrotask(() => error ? request.emit('error', error) : callback(mockResponse(status)));
+    return request;
+  };
+  return { factory, destroyed: () => destroyed };
+}
+
+test('failure observations report only the owned child exit state and one closed health result', async () => {
+  for (const [child, expected] of [
+    [{ exitCode: null, signalCode: null }, { state: 'exit_not_observed', exit_code: null, signal: null }],
+    [{ exitCode: 3, signalCode: null }, { state: 'exit_observed', exit_code: 3, signal: null }],
+    [{ exitCode: null, signalCode: 'SIGTERM' }, { state: 'exit_observed', exit_code: null, signal: 'SIGTERM' }],
+    [null, { state: 'unavailable', exit_code: null, signal: null }],
+  ]) {
+    const mock = mockHealth();
+    const value = await BrainProcess.prototype.failureObservation.call({ child }, 500, mock.factory);
+    assert.deepEqual(value, { child: expected, health: { outcome: 'ready', status: 200 } });
+    assert.equal(mock.destroyed(), 1);
+  }
+});
+
+test('health observations retain only safe HTTP status and closed failure outcomes', async () => {
+  for (const [options, health] of [
+    [{ status: 503 }, { outcome: 'non_2xx', status: 503 }],
+    [{ error: { code: 'ECONNREFUSED', message: 'private detail' } }, { outcome: 'connection_refused', status: null }],
+    [{ error: { code: 'private code' } }, { outcome: 'connection_error', status: null }],
+    [{ unavailable: true }, { outcome: 'unavailable', status: null }],
+    [{ status: 'private status' }, { outcome: 'unavailable', status: null }],
+    [{ status: 999 }, { outcome: 'unavailable', status: null }],
+  ]) {
+    const mock = mockHealth(options);
+    const value = await BrainProcess.prototype.failureObservation.call({ child: null }, 500, mock.factory);
+    assert.deepEqual(value.health, health);
+    assert(!JSON.stringify(value).includes('private'));
+  }
+});
+
+test('the absolute health deadline cancels a silent request even without an idle timeout event', async () => {
+  for (const [timeoutMs, budget] of [[500, 500], [5, 5], [2_500, 500]]) {
+    let expire, cancelled = 0, cleared = 0, result;
+    const request = new EventEmitter();
+    request.end = () => {};
+    request.setTimeout = ms => assert.equal(ms, budget);
+    request.destroy = () => { cancelled++; };
+    const pending = runInNewContext(`(${brainHealthIsReady.toString()})(observe, factory, timeoutMs)`, {
+      BRAIN_HOST: '127.0.0.1', BRAIN_PORT: 17871, BRAIN_ORIGIN: 'http://bridge.localhost:17871', URL,
+      timeoutMs,
+      observe: (outcome, status) => { result = { outcome, status }; }, factory: () => request,
+      setTimeout: (callback, ms) => { assert.equal(ms, budget); expire = callback; return 1; },
+      clearTimeout: id => { assert.equal(id, 1); cleared++; },
+    });
+    expire();
+    assert.equal(await pending, false);
+    assert.deepEqual(result, { outcome: 'timeout', status: null });
+    assert.equal(cancelled, 1); assert.equal(cleared, 1);
+    request.emit('error', { code: 'ECONNREFUSED', message: 'private late error' });
+    assert.deepEqual(result, { outcome: 'timeout', status: null });
+  }
+});
+
+test('health failure observation reads the current child state after the bounded request', async () => {
+  const child = { exitCode: null, signalCode: null };
+  const request = new EventEmitter(); request.destroy = () => {}; request.setTimeout = () => {};
+  const factory = (_options, callback) => {
+    request.end = () => queueMicrotask(() => { child.exitCode = 9; callback(mockResponse(503)); });
+    return request;
+  };
+  const result = await BrainProcess.prototype.failureObservation.call({ child }, 500, factory);
+  assert.deepEqual(result.child, { state: 'exit_observed', exit_code: 9, signal: null });
+});
+
+test('hostile health accessors remain closed observations and do not escape asynchronously', async () => {
+  for (const kind of ['status', 'error']) {
+    const request = new EventEmitter(); request.destroy = () => {}; request.setTimeout = () => {};
+    const factory = (_options, callback) => {
+      request.end = () => queueMicrotask(() => {
+        if (kind === 'status') callback(Object.defineProperty(mockResponse(null), 'statusCode', {
+          get() { throw new Error('private response'); },
+        }));
+        else request.emit('error', { get code() { throw new Error('private transport'); } });
+      });
+      return request;
+    };
+    let health;
+    assert.equal(await brainHealthIsReady((outcome, status) => { health = { outcome, status }; }, factory), false);
+    assert.deepEqual(health, { outcome: kind === 'status' ? 'unavailable' : 'connection_error', status: null });
+  }
+});
+
+test('status-only readiness handles actual IncomingMessage cancellation errors without reading a body', async () => {
+  for (const status of [200, 503]) {
+    const response = new IncomingMessage(new PassThrough());
+    response.statusCode = status;
+    const closed = new Promise(resolve => response.once('close', resolve));
+    const request = new EventEmitter(); request.setTimeout = () => {};
+    let result, stops = 0;
+    request.destroy = () => {
+      assert.equal(response.listenerCount('error'), 1, 'Response errors must be handled before cancellation');
+      stops++;
+      response.destroy(Object.assign(new Error('private cancellation'), { code: 'ECONNRESET' }));
+    };
+    const ready = await brainHealthIsReady((outcome, code) => { result = { outcome, code }; }, (_options, callback) => {
+      request.end = () => queueMicrotask(() => callback(response));
+      return request;
+    });
+    await closed;
+    assert.equal(ready, status === 200);
+    assert.deepEqual(result, { outcome: status === 200 ? 'ready' : 'non_2xx', code: status });
+    assert.equal(stops, 1);
+    assert.equal(response.destroyed, true);
+    assert.equal(response.readableFlowing, null);
+    assert.equal(response.listenerCount('data'), 0);
+  }
+});
+
+test('a late response is error-safe and closed without replacing the original timeout', async () => {
+  let expire, callback, result, stops = 0;
+  const response = new EventEmitter(); response.statusCode = 200;
+  response.destroy = () => {
+    assert.equal(response.listenerCount('error'), 1);
+    stops++;
+    response.emit('aborted');
+    response.emit('error', new Error('private late response'));
+    response.emit('close');
+  };
+  const request = new EventEmitter(); request.end = () => {}; request.setTimeout = () => {}; request.destroy = () => {};
+  const pending = runInNewContext(`(${brainHealthIsReady.toString()})(observe, factory)`, {
+    BRAIN_HOST: '127.0.0.1', BRAIN_PORT: 17871, BRAIN_ORIGIN: 'http://bridge.localhost:17871', URL,
+    observe: (outcome, status) => { result = { outcome, status }; },
+    factory: (_options, readResponse) => { callback = readResponse; return request; },
+    setTimeout: (fn, ms) => { assert.equal(ms, 500); expire = fn; return 1; }, clearTimeout: () => {},
+  });
+  expire();
+  assert.equal(await pending, false);
+  callback(response);
+  assert.equal(stops, 1);
+  assert.deepEqual(result, { outcome: 'timeout', status: null });
 });

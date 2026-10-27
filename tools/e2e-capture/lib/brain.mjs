@@ -63,28 +63,46 @@ function portAcceptsConnections(port) {
   });
 }
 
-export function brainHealthIsReady(observe, requestFactory = httpRequest) {
+export function brainHealthIsReady(observe, requestFactory = httpRequest, timeoutMs = 500) {
   return new Promise((resolve) => {
-    let finished = false; let timedOut = false;
-    const complete = (ready, outcome) => {
+    const budget = Number.isFinite(timeoutMs) ? Math.max(0, Math.min(500, timeoutMs)) : 500;
+    let finished = false, request;
+    const stop = () => { try { request?.destroy(); } catch {} };
+    const complete = (ready, outcome, status = null) => {
       if (finished) return;
-      finished = true; observe(outcome); resolve(ready);
+      finished = true; clearTimeout(deadline);
+      stop();
+      try { observe(outcome, status); } catch {}
+      resolve(ready);
     };
-    const request = requestFactory({
-      host: BRAIN_HOST,
-      port: BRAIN_PORT,
-      path: '/health',
-      method: 'GET',
-      headers: { Host: new URL(BRAIN_ORIGIN).host },
-    }, (response) => {
-      response.resume();
-      const ready = (response.statusCode ?? 0) >= 200 && (response.statusCode ?? 0) < 300;
-      complete(ready, ready ? 'ready' : 'non_2xx');
-    });
-    request.once('error', error => complete(false, timedOut ? 'timeout'
-      : error.code === 'ECONNREFUSED' ? 'connection_refused' : 'connection_error'));
-    request.setTimeout(500, () => { timedOut = true; request.destroy(); });
-    request.end();
+    // Socket activity must not extend the original request budget.
+    const deadline = setTimeout(() => complete(false, 'timeout'), budget);
+    try {
+      request = requestFactory({
+        host: BRAIN_HOST,
+        port: BRAIN_PORT,
+        path: '/health',
+        method: 'GET',
+        headers: { Host: new URL(BRAIN_ORIGIN).host },
+      }, (response) => {
+        try {
+          response.on('error', () => {});
+          if (finished) { response.destroy?.(); return; }
+          const rawStatus = response.statusCode;
+          const status = Number.isSafeInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599 ? rawStatus : null;
+          const ready = status !== null && status >= 200 && status < 300;
+          complete(ready, status === null ? 'unavailable' : ready ? 'ready' : 'non_2xx', status);
+        } catch { complete(false, 'unavailable'); }
+      });
+      request.once('error', error => {
+        let outcome = 'connection_error';
+        try { if (error?.code === 'ECONNREFUSED') outcome = 'connection_refused'; } catch {}
+        complete(false, outcome);
+      });
+      if (finished) { stop(); return; }
+      request.setTimeout(budget, () => complete(false, 'timeout'));
+      request.end();
+    } catch { complete(false, 'unavailable'); }
   });
 }
 
@@ -441,5 +459,19 @@ export class BrainProcess {
 
   sessionFailures() {
     return this.failureCollector.snapshot();
+  }
+
+  async failureObservation(timeoutMs = 500, requestFactory = httpRequest) {
+    let health = { outcome: 'unavailable', status: null };
+    await brainHealthIsReady((outcome, status) => { health = { outcome, status }; }, requestFactory, timeoutMs);
+    const child = this.child;
+    const code = child?.exitCode, signal = child?.signalCode;
+    return { child: {
+      state: child == null ? 'unavailable' : code === null && signal === null ? 'exit_not_observed'
+        : Number.isSafeInteger(code) || typeof signal === 'string' ? 'exit_observed' : 'unavailable',
+      exit_code: Number.isSafeInteger(code) && code >= -2_147_483_648 && code <= 4_294_967_295 ? code : null,
+      signal: signal == null ? null
+        : ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGBREAK', 'SIGHUP', 'SIGABRT'].includes(signal) ? signal : 'other',
+    }, health };
   }
 }

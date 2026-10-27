@@ -249,21 +249,47 @@ export async function readCatchupWorker(context, findWorker = async context => {
 export async function withCatchupDiagnostics(assertion, { summary, platform, context, brain,
   readWorker = () => readCatchupWorker(context), log = line => console.error(line), timeoutMs = 2_500,
   checkpoint = null, failureContext = 'catchup' }) {
-  const report = async prefix => {
-    let fields;
+  const report = async (prefix, failed = false) => {
+    let fields, observation = null;
     try {
-      const [lastSummary, worker] = await Promise.all([boundedRead(summary, timeoutMs), boundedRead(readWorker, timeoutMs)]);
+      const [lastSummary, worker, currentBrain] = await Promise.all([
+        boundedRead(summary, timeoutMs), boundedRead(readWorker, timeoutMs),
+        failed ? boundedRead(() => brain?.failureObservation?.(timeoutMs), timeoutMs) : null,
+      ]);
+      observation = currentBrain;
       fields = catchupDiagnosticFields(lastSummary, platform.requestCounts, worker);
       fields.brainSessionFailures = brain?.sessionFailures?.() ?? readSessionFailures(brain?.recentOutput?.() ?? '');
     } catch { fields = catchupDiagnosticFields(null, null, null); }
+    if (failed) fields.brain = safeBrainFailureObservation(observation);
     try { log(`${prefix} ${JSON.stringify(fields)}`); } catch {}
   };
   let result;
   try { result = await assertion(); }
   catch (error) {
-    await report(failureContext === 'capture' ? 'Capture checkpoint failed' : 'Catch-up checkpoint failed');
+    await report(failureContext === 'capture' ? 'Capture checkpoint failed' : 'Catch-up checkpoint failed', true);
     throw error;
   }
   if (checkpoint === 'initial_history') await report('Catch-up checkpoint initial_history');
   return result;
+}
+
+function safeBrainFailureObservation(value) {
+  const unavailable = { child: { state: 'unavailable', exit_code: null, signal: null },
+    health: { outcome: 'unavailable', status: null } };
+  try {
+    const child = value?.child, health = value?.health;
+    const rawStatus = health?.status, exitCode = child?.exit_code, signal = child?.signal;
+    const state = child?.state, outcome = health?.outcome;
+    const status = Number.isSafeInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599 ? rawStatus : null;
+    return { child: {
+      state: enumValue(state, ['exit_not_observed', 'exit_observed', 'unavailable']) ?? 'unavailable',
+      exit_code: Number.isSafeInteger(exitCode) && exitCode >= -2_147_483_648
+        && exitCode <= 4_294_967_295 ? exitCode : null,
+      signal: signal === null ? null
+        : enumValue(signal, ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGBREAK', 'SIGHUP', 'SIGABRT', 'other']),
+    }, health: {
+      outcome: enumValue(outcome, ['ready', 'non_2xx', 'connection_refused', 'connection_error', 'timeout', 'unavailable']) ?? 'unavailable',
+      status,
+    } };
+  } catch { return unavailable; }
 }

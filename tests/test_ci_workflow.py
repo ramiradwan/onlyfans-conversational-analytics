@@ -467,7 +467,7 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
 
 def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution() -> None:
     jobs = _jobs(_workflow_document())
-    expected_limits = {"windows-platform-contract": 50, "analytics-windows-contract": 20,
+    expected_limits = {"windows-platform-contract": 55, "analytics-windows-contract": 20,
                        "windows-full-shards": 60, "analytics-scale-qualification": 45}
     execution_lanes = set()
     for name, minutes in expected_limits.items():
@@ -1241,7 +1241,7 @@ def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
     from tools.ci_gate import PYTHON313_LOOP_SELECTORS
 
     job = _jobs(workflow)["windows-platform-contract"]
-    assert job["timeout-minutes"] == 50 and "if" not in job
+    assert job["timeout-minutes"] == 55 and "if" not in job
     steps = _steps(job)
     names = ("Setup CPython 3.13 for socket-loop contracts", "Install isolated socket-loop test dependencies",
              "Test CPython 3.13 socket-loop contracts")
