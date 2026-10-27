@@ -526,6 +526,7 @@ def test_catalog_rotation_does_not_hide_installed_selected_profile(env):
 async def test_optional_startup_failure_preserves_authority_and_base_startup(env, monkeypatch, caplog):
     import app.main as main
     import app.services.nlp_dependencies as module
+    from app.services import retention_maintenance
     e = env
     calls = []
     assert e.service.close()
@@ -541,19 +542,28 @@ async def test_optional_startup_failure_preserves_authority_and_base_startup(env
     async def start_transport():
         calls.append('transport')
 
+    async def disconnect_broadcast():
+        pass
+
     monkeypatch.setattr(module, '_service', e.service)
     monkeypatch.setattr(main.broadcast, 'connect', connect)
+    monkeypatch.setattr(main.broadcast, 'disconnect', disconnect_broadcast)
     monkeypatch.setattr(main.transport_manager, 'start', start_transport)
     monkeypatch.setattr(main.analytics_runtime, 'launch_default_analytics_runtime', lambda: calls.append('analytics'))
-    await main.startup_event()
-    assert calls == ['broadcast', 'transport', 'analytics']
-    with e.persistence.database.read() as db:
-        assert tuple(db.execute('SELECT * FROM nlp_dependency_authority').fetchone()) == before
-    assert e.service.status(ACCOUNT)['failure'] == 'nlp_dependency_unavailable'
-    assert not e.service.ready(e.profile)
-    with pytest.raises(ValueError):
-        e.service.refresh()
-    assert 'private diagnostic' not in caplog.text
+    try:
+        await main.startup_event()
+        assert calls == ['broadcast', 'transport', 'analytics']
+        with e.persistence.database.read() as db:
+            assert tuple(db.execute('SELECT * FROM nlp_dependency_authority').fetchone()) == before
+        assert e.service.status(ACCOUNT)['failure'] == 'nlp_dependency_unavailable'
+        assert not e.service.ready(e.profile)
+        with pytest.raises(ValueError):
+            e.service.refresh()
+        assert 'private diagnostic' not in caplog.text
+    finally:
+        await main.shutdown_event()
+    assert retention_maintenance._DEFAULT_TASK is None
+    assert not retention_maintenance._DEFAULT_INFLIGHT
 
 
 @pytest.mark.asyncio
