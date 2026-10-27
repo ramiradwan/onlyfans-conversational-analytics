@@ -468,7 +468,7 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
 def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution() -> None:
     jobs = _jobs(_workflow_document())
     expected_limits = {"windows-platform-contract": 55, "analytics-windows-contract": 20,
-                       "windows-full-shards": 60, "analytics-scale-qualification": 45}
+                       "windows-full-shards": 90, "analytics-scale-qualification": 45}
     execution_lanes = set()
     for name, minutes in expected_limits.items():
         job = jobs[name]
@@ -498,7 +498,7 @@ def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution
 
 
 def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v4-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v5-pr-cutover"
     triggers = workflow["on"]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
     assert triggers["push"] == {"branches": ["main"]}
