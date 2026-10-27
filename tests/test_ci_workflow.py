@@ -467,7 +467,7 @@ def test_windows_ci_qualifies_the_fixed_runtime_and_every_tier_b_profile() -> No
 
 def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution() -> None:
     jobs = _jobs(_workflow_document())
-    expected_limits = {"windows-platform-contract": 50, "analytics-windows-contract": 20,
+    expected_limits = {"windows-platform-contract": 55, "analytics-windows-contract": 20,
                        "windows-full-shards": 60, "analytics-scale-qualification": 45}
     execution_lanes = set()
     for name, minutes in expected_limits.items():
