@@ -560,6 +560,8 @@ def _assert_packaged_runtime_serves_provisioning_surface(
             ("/onboarding/entry", "text/html"),
             ("/onboarding/entry.css", "text/css"),
             ("/onboarding/entry.js", "text/javascript"),
+            ("/text-analysis-reissue/entry", "text/html"),
+            ("/text-analysis-reissue/entry.js", "text/javascript"),
         ):
             status, headers, content = _raw_request("GET", path, headers=browser_headers)
             assert status == 200 and content, (

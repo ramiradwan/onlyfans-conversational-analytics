@@ -29,6 +29,7 @@
     "allow-desktop-engine-acquisition-cancel",
     "allow-desktop-refresh-presentation",
     "allow-desktop-browser-task",
-    "allow-desktop-setup-code"
+    "allow-desktop-setup-code",
+    "allow-desktop-text-analysis-reissue"
   ]
 }

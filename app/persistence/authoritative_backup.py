@@ -46,7 +46,8 @@ SECURITY_TABLES = (
     'auth_revocation_bindings','authorized_account_bindings','authorized_account_binding_grants',
     'capability_license_references','capability_license_pending_deliveries',
     'capability_license_redemption_journal','capability_license_activation_deliveries',
-    'text_analysis_authority_references','nlp_dependency_authority','signing_publication_authority',
+    'text_analysis_authority_references','text_analysis_reissue_operations',
+    'nlp_dependency_authority','signing_publication_authority',
     'desktop_authentication_commands','desktop_authentication_closures','desktop_browser_ceremonies',
     'desktop_pairing_operations','desktop_activation_sources','desktop_admission_entries',
     'desktop_admission_sessions','desktop_authentication_projections','desktop_browser_observations',
@@ -107,6 +108,11 @@ def security_projection(db):
     tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT GLOB 'sqlite_*'")}
     if tables - _NON_SECURITY_COLUMNS.keys() != set(SECURITY_TABLES):
         raise SQLiteBackupError('authoritative_security_inventory_invalid')
+    from app.persistence.text_analysis_reissue import validate_reissue_security_in, ReissueJournalError
+    try:
+        validate_reissue_security_in(db)
+    except ReissueJournalError:
+        raise SQLiteBackupError('authoritative_reissue_journal_invalid') from None
     for table in tables & _NON_SECURITY_COLUMNS.keys():
         if tuple(r[1] for r in db.execute('PRAGMA table_info('+table+')')) != _NON_SECURITY_COLUMNS[table]:
             raise SQLiteBackupError('authoritative_security_inventory_invalid')

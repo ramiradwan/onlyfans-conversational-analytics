@@ -22,6 +22,13 @@ SUPPORTED = tuple(PREFIX + name + ":v1" for name in (
     "preview", "release-identity", "supported-profiles"))
 REQUIRED_LICENSE = frozenset(SUPPORTED[i] for i in (0, 1, 2, 3, 4, 10, 11))
 REQUIRED_PREVIEW = frozenset(SUPPORTED[i] for i in (0, 1, 2, 5, 6, 7, 8, 9, 10, 11))
+REISSUE_SUPPORTED = tuple(PREFIX + name for name in (
+    "license-reissue-authorization:v2", "license-reissue-proof:v2",
+    "license-reissue-supported-profiles:v2", "license-reissue:v2",
+    "license:v1", "release-identity:v1"))
+_REISSUE_SCHEMA_ROOTS = tuple(
+    "schemas/license-reissue-text-analysis" + suffix + "/v2/"
+    for suffix in ("", "-proof", "-authorization", "-supported-profiles"))
 
 
 class TextAnalysisContractError(ValueError):
@@ -100,7 +107,7 @@ class TextAnalysisSchemas:
         self._validators = {
             name: Draft202012Validator(document, registry=registry)
             for name, document in documents.items()
-            if name.startswith("schemas/text-analysis-")
+            if name.startswith(("schemas/text-analysis-", *_REISSUE_SCHEMA_ROOTS))
         }
 
     def valid(self, schema: str, value: object) -> bool:
@@ -171,4 +178,34 @@ def release_identity(raw: bytes, *, schemas: TextAnalysisSchemas, expected: dict
     schemas.require(schema, expected)
     if value != expected:
         raise TextAnalysisContractError("unsupported_release")
+    return value
+
+
+def reissue_supported_profiles(raw: bytes, *, schemas: TextAnalysisSchemas) -> tuple[str, ...]:
+    value = _object(raw, 3072)
+    schemas.require(
+        "schemas/license-reissue-text-analysis-supported-profiles/v2/supported-profiles.schema.json",
+        value)
+    if value["profiles"] != list(REISSUE_SUPPORTED):
+        raise TextAnalysisContractError("unsupported_profile")
+    return REISSUE_SUPPORTED
+
+
+def reissue_object(raw: bytes, *, maximum: int) -> dict:
+    value = _object(raw, maximum)
+    limits = {"binding": 512, "scope": 2048, "proof": 256,
+              "supported_profiles": 3072, "release_identity": 1024,
+              "confirmation": 8192, "signed_authority": 16384}
+    def bounded(item):
+        if type(item) is dict:
+            for name, child in item.items():
+                if name in limits:
+                    encoded = child.encode("utf-8") if name == "signed_authority" and type(child) is str else canonical(child)
+                    if len(encoded) > limits[name]:
+                        raise TextAnalysisContractError("json_size")
+                bounded(child)
+        elif type(item) is list:
+            for child in item:
+                bounded(child)
+    bounded(value)
     return value

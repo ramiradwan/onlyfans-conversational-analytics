@@ -345,6 +345,7 @@ fn main() {
             browser::desktop_refresh_presentation,
             browser::desktop_browser_task,
             browser::desktop_setup_code,
+            browser::desktop_text_analysis_reissue,
             frame::desktop_window
         ])
         .setup(move |app| {

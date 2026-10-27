@@ -102,7 +102,7 @@ def _stage_runtime_tree(tmp_path: Path) -> Path:
     shutil.copy2(ROOT / "app/provisioning/creator-platform-data-risk-disclosure.html", provisioning / "creator-platform-data-risk-disclosure.html")
     onboarding = internal / "app" / "onboarding"
     onboarding.mkdir()
-    for name in ("entry.html", "entry.css", "entry.js"):
+    for name in ("entry.html", "entry.css", "entry.js", "reissue_entry.html", "reissue_entry.js"):
         shutil.copy2(ROOT / "app" / "onboarding" / name, onboarding / name)
     shared = stage / "_internal" / "shared" / "onboarding"
     shared.mkdir(parents=True)
@@ -367,6 +367,32 @@ def test_per_user_material_in_a_staged_payload_produces_a_named_finding(
         and finding.detail == f"matches forbidden material declaration: {material}"
         for finding in findings
     ), f"the {material} payload must produce its named per-user-material finding"
+
+
+@pytest.mark.parametrize(("payload", "blocked"), [
+    ("Authorization: Bearer opaque-token-value-123", True),
+    ("Authorization:Bearer opaque-token-value-123", True),
+    ("Authorization: Bearer\n opaque-token-value-123", True),
+    ("Bearer\topaque-token-value-123", True),
+    ("session_token=session-token-value-123", True),
+    ("exact-single-host-cookie-no-alias-or-bearer\n x-step-up-reference: transient", False),
+    ("no-alias-or-bearer\nAuthorization: Bearer opaque-token-value-123", True),
+])
+def test_bearer_scan_distinguishes_credentials_from_hyphenated_prose(
+    tmp_path: Path, payload: str, blocked: bool,
+) -> None:
+    (tmp_path / "document.txt").write_text(payload, encoding="utf-8")
+    policy = load_runtime_policy(POLICY_PATH)
+    policy["forbidden_material"] = [
+        declaration for declaration in policy["forbidden_material"]
+        if declaration["name"] == "bearer_or_session_token"
+    ]
+    findings: list[PackagingFinding] = []
+
+    packaging_policy._check_forbidden_material(tmp_path, policy, findings)
+
+    assert bool(findings) is blocked
+    assert all(finding.code == "forbidden_material_present" for finding in findings)
 
 
 def test_text_payload_with_windows_profile_path_is_rejected_after_binary_narrowing(

@@ -6,6 +6,15 @@ fn task_url(code: &str) -> Result<String, &'static str> {
 }
 
 fn entry_url(code: &str, receiving: bool) -> Result<String, &'static str> {
+    require_entry_code(code)?;
+    Ok(format!(
+        "{}/{}/entry#code={code}",
+        policy::ORIGIN,
+        if receiving { "setup-code" } else { "browser-tasks" }
+    ))
+}
+
+fn require_entry_code(code: &str) -> Result<(), &'static str> {
     if code.len() != 43
         || !code
             .bytes()
@@ -13,15 +22,12 @@ fn entry_url(code: &str, receiving: bool) -> Result<String, &'static str> {
     {
         return Err("browser_entry_invalid");
     }
-    Ok(format!(
-        "{}/{}/entry#code={code}",
-        policy::ORIGIN,
-        if receiving {
-            "setup-code"
-        } else {
-            "browser-tasks"
-        }
-    ))
+    Ok(())
+}
+
+fn reissue_url(code: &str) -> Result<String, &'static str> {
+    require_entry_code(code)?;
+    Ok(format!("{}/text-analysis-reissue/entry#code={code}", policy::ORIGIN))
 }
 
 /// Only the installed Chrome executable; renderer inputs never select a profile,
@@ -109,6 +115,15 @@ fn open_entry(
     Ok(())
 }
 
+#[tauri::command]
+pub fn desktop_text_analysis_reissue(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, std::sync::Arc<host::Host>>,
+    entry_code: String,
+) -> Result<(), &'static str> {
+    open_entry(window, state, reissue_url(&entry_code)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,6 +145,10 @@ mod tests {
                 "A".repeat(43)
             )
         );
+        assert_eq!(
+            reissue_url(&"A".repeat(43)).unwrap(),
+            format!("{}/text-analysis-reissue/entry#code={}", policy::ORIGIN, "A".repeat(43))
+        );
         for value in [
             "https://example.com",
             "--profile-directory=Default",
@@ -139,7 +158,9 @@ mod tests {
         ] {
             assert!(task_url(value).is_err());
             assert!(entry_url(value, true).is_err());
+            assert!(reissue_url(value).is_err());
         }
         assert!(task_url(&"A".repeat(44)).is_err());
+        assert!(reissue_url(&"A".repeat(44)).is_err());
     }
 }

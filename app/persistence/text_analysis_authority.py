@@ -180,26 +180,34 @@ class TextAnalysisAuthorityStore:
 
     def import_verified_reference(self, token: str, *, kind: str, context: dict,
                                   trust: TextAnalysisTrust, schemas: TextAnalysisSchemas) -> TextAnalysisReference:
+        with self.database.transaction() as db:
+            return self.import_verified_reference_in(db, token, kind=kind, context=context,
+                                                     trust=trust, schemas=schemas)
+
+    def import_verified_reference_in(self, db, token: str, *, kind: str, context: dict,
+                                     trust: TextAnalysisTrust, schemas: TextAnalysisSchemas) -> TextAnalysisReference:
+        """Stage verified bytes in the caller's owned atomic auth transaction."""
+        if not self.database.owns_connection(db) or not db.in_transaction:
+            raise RuntimeAuthorizationDenied('text_analysis_auth_owner_mismatch')
         decision = verify_authority(token, kind=kind, context=context, trust=trust, schemas=schemas)
         if not decision.accepted:
             raise RuntimeAuthorizationDenied(decision.reason)
         reference = reference_from_verified(decision.authority)
-        with self.database.transaction() as db:
-            prior = db.execute('SELECT * FROM text_analysis_authority_references WHERE reference_id=?',
+        prior = db.execute('SELECT * FROM text_analysis_authority_references WHERE reference_id=?',
                                (reference.reference_id,)).fetchone()
-            if prior is not None:
-                self._compare_row(prior, reference)
-                return reference
-            collision = db.execute('SELECT 1 FROM text_analysis_authority_references WHERE kind=? AND (object_id=? OR issuance_id=?)',
+        if prior is not None:
+            self._compare_row(prior, reference)
+            return reference
+        collision = db.execute('SELECT 1 FROM text_analysis_authority_references WHERE kind=? AND (object_id=? OR issuance_id=?)',
                 (kind, reference.object_id, reference.issuance_id)).fetchone()
-            if collision is not None:
-                raise RuntimeAuthorizationDenied('text_analysis_object_collision')
-            db.execute('INSERT INTO text_analysis_authority_references '
+        if collision is not None:
+            raise RuntimeAuthorizationDenied('text_analysis_object_collision')
+        db.execute('INSERT INTO text_analysis_authority_references '
                 '(reference_id,kind,object_id,issuance_id,compact_jws,compact_jws_sha256,payload_sha256,signer_kid,fixture_only) '
                 'VALUES(?,?,?,?,?,?,?,?,?)', (reference.reference_id, kind, reference.object_id,
                 reference.issuance_id, token, reference.compact_jws_sha256, reference.payload_sha256,
                 reference.signer_kid, int(reference.fixture_only)))
-            self.authentication._increment_authorization_epoch(db)
+        self.authentication._increment_authorization_epoch(db)
         return reference
 
     @staticmethod

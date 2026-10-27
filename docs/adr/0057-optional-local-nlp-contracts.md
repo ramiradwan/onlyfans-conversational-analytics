@@ -4,7 +4,7 @@
 
 - Status: Accepted; runtime activation requires separate qualification.
 - Date: 2026-10-19
-- Amended: 2026-10-26
+- Amended: 2026-10-27
 - Extends: ADRs 0009, 0027 and 0056. ADR 0012 remains proposed.
 
 ## Decision
@@ -42,6 +42,16 @@ Canonical contribution storage follows ADR 0014. Its dormant repository separate
 Explicit current-view recovery may create a paused read selection from exact canonical contributions, including after projection loss. It reconstructs the complete current source population and preserves result bytes and provenance. Final visibility shares the dependency authority gate and retains source, withdrawal, account and origin checks without requiring installed dependencies. Removal invalidates existing recovery tickets; a fresh read intent may select paused mode again without enabling processing. Reconstructed views receive new derived identities. Missing original labels or unsupported normalization remain explicitly unavailable, and retained saved metadata is unchanged.
 
 One inference job runs across all profiles. The default resource policy permits at most two inference CPU threads including tokenizer pools. Components execute serially and unload between executions. Cancellation, exit and servicing drain or terminate the owned worker tree. Independent limits bound frames, batches, source text, windows, candidates and outputs. A qualified component may impose stricter limits than the protocol ceilings.
+
+### Replacement-installation licence recovery
+
+Replacement-installation recovery uses the exact unsigned reissue v2 operation, authorization, proof and supported-profile contracts with unchanged signed licence v1 and release identity v1. Its six-profile support set remains separate from initial text-analysis issuance support. The current installation key must already be independently registered and durably retained before preparation. Recovery requires neither the lost installation's key nor a local copy of its licence. Hosted customer authorization selects the prior authority and retained rights; the first protected authorized read binds that selection to the original preparation, replacement key, support set and release identity.
+
+Retain canonical inner requests, original deadlines, protected confirmation and exact result bytes in encrypted authentication storage. Every native attempt obtains a fresh operation-specific proof; proof envelopes are not replay records. Native transport uses credentialless HTTPS with bounded raw bodies and no redirects, cookies or decompression. Validate the result against the retained confirmation and independently expected licence scope. Signing time and commitment time remain distinct: commitment cannot precede signing. Completed original-result recovery does not renew or depend on an expired creation deadline.
+
+One authentication transaction atomically adopts the exact verified result, staged signed licence, authority reference and journal winner. Concurrent or stale callbacks cannot replace the original meaning; exact replay is idempotent. No transaction spans a network request or browser wait. Reserve 128 KiB of logical capacity per operation within an 8 MiB installation budget, including bounded retained bodies, metadata and the additional signed licence. Capacity exhaustion refuses new work without evicting retained operations. Physical database, journal and backup costs remain separate. Matched backup security checks include this journal; missing original key or recovery evidence never manufactures authority.
+
+Authenticated status reads remain local and noncreating. Explicit begin or resume actions own hosted requests. Browser navigation uses a short-lived, single-use local entry code and a purpose-specific native command that opens a fixed local landing. That landing clears the fragment and opens only the retained configured-origin opaque hosted entry. Navigation grants no authority; customer session, step-up and permission checks remain hosted. The renderer receives no protected confirmation, scope or signed licence. Default production composition remains unavailable pending consumer and installed-release qualification.
 
 ### Execution identity and preview
 

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { EngineDependencyControls } from './EngineDependencyControls';
 import { TextAnalysisExecutionControls } from './TextAnalysisExecutionControls';
+import { TextAnalysisReissueControls } from './TextAnalysisReissueControls';
 import { Panel, SectionHeader, useRevealHold } from './ui';
 import { StatusLine } from './ui/ReservedRegion';
 import type { EngineAcquisitionApi } from '../api/engineAcquisition';
@@ -13,9 +14,10 @@ import {
   type NlpDependencyPlan, type NlpDependencyProfile, type NlpDependencyStatus,
 } from '../services/nlpDependenciesApi';
 import type { TextAnalysisClient } from '../services/textAnalysisClient';
+import type { TextAnalysisReissueApi } from '../services/textAnalysisReissueApi';
 import { bridgeTransportStore } from '../store/transportStore';
 
-interface Props { api?: NlpDependenciesApi; engineApi?: EngineAcquisitionApi; client?: TextAnalysisClient; creatorAccountId: string | null }
+interface Props { api?: NlpDependenciesApi; engineApi?: EngineAcquisitionApi; client?: TextAnalysisClient; reissueApi?: TextAnalysisReissueApi; creatorAccountId: string | null }
 const number = new Intl.NumberFormat();
 const formatBytes = (value: number) => `${number.format(value)} bytes`;
 const taskNames: Record<string, string> = { message_topics: 'Message topics', concept_mentions: 'Exact mentions' };
@@ -59,12 +61,13 @@ function pendingAcquisition(status: NlpDependencyStatus) {
 }
 
 /** Account-bound presentation. Changing accounts discards the prior account's view immediately. */
-export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, client, creatorAccountId }: Props) {
+export function NlpDependencyControls({ api = nlpDependenciesApi, engineApi, client, reissueApi, creatorAccountId }: Props) {
   const { isCreator } = usePermissions();
   const transport = useSyncExternalStore(bridgeTransportStore.subscribe, bridgeTransportStore.getState, bridgeTransportStore.getState);
   const account = isCreator ? creatorAccountId : null;
   const binding = `${creatorAccountId}:${isCreator}:${transport.session?.connection_id ?? ''}:${transport.session?.bridge_session_id ?? ''}`;
   return <Stack spacing={2}>
+    <TextAnalysisReissueControls creatorAccountId={account} api={reissueApi} />
     <EngineDependencyControls key={`engine:${binding}`} account={account} api={engineApi} />
     <DependencySession key={binding} api={api} account={account} />
     <TextAnalysisExecutionControls creatorAccountId={account} client={client} dependenciesApi={api} />

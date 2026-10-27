@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-desktop-text-analysis-reissue"
+description = "Open the fixed licence recovery entry from the admitted application window."
+commands.allow = ["desktop_text_analysis_reissue"]
