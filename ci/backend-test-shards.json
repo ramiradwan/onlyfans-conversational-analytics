@@ -379,6 +379,7 @@
     "tests/test_text_analysis_preview_reader.py": 3,
     "tests/test_text_analysis_preview_runtime.py": 2,
     "tests/test_text_analysis_preview_service.py": 2,
+    "tests/test_text_analysis_retention_lifecycle.py": 4,
     "tests/test_text_analysis_views.py": 4,
     "tests/test_tied_insertion_admission.py": 3,
     "tests/test_tied_insertion_metric_reuse.py": 2,
@@ -717,6 +718,10 @@
       }
     ],
     "analytics": [
+      {
+        "selector": "tests/test_text_analysis_retention_lifecycle.py",
+        "reason": "Composed findings retirement, retained client receipts and matched encrypted restore require Windows lifecycle coverage."
+      },
       {
         "selector": "tests/test_question_connections.py",
         "reason": "Runtime-owned encrypted read handles require native Windows file identity, fresh private-file ACL checks, cursor revocation and truthful shutdown ownership."
