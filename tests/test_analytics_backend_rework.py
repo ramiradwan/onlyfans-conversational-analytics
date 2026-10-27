@@ -895,7 +895,11 @@ async def test_app_readiness_does_not_wait_for_projection_recovery(
         recovery_task = asyncio.create_task(blocked_recovery())
         return recovery_task
 
+    async def disconnect_broadcast() -> None:
+        pass
+
     monkeypatch.setattr(main_module.broadcast, "connect", connect_broadcast)
+    monkeypatch.setattr(main_module.broadcast, "disconnect", disconnect_broadcast)
     monkeypatch.setattr(main_module.transport_manager, "start", start_transport)
     monkeypatch.setattr(
         main_module.analytics_runtime,
@@ -903,11 +907,17 @@ async def test_app_readiness_does_not_wait_for_projection_recovery(
         launch_recovery,
     )
 
-    await asyncio.wait_for(main_module.startup_event(), timeout=0.5)
-    assert calls == ["broadcast", "transport", "projection-background"]
-    assert recovery_task is not None and not recovery_task.done()
-    recovery_release.set()
-    await recovery_task
+    try:
+        await asyncio.wait_for(main_module.startup_event(), timeout=0.5)
+        assert calls == ["broadcast", "transport", "projection-background"]
+        assert recovery_task is not None and not recovery_task.done()
+    finally:
+        recovery_release.set()
+        if recovery_task is not None:
+            await recovery_task
+        await main_module.shutdown_event()
+    assert retention_maintenance._DEFAULT_TASK is None
+    assert not retention_maintenance._DEFAULT_INFLIGHT
 
 
 def test_non_sqlite_projection_startup_preserves_ingest_and_agent_heartbeat(
