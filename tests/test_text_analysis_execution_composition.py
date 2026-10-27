@@ -15,7 +15,7 @@ from app.models.insights import FindingsRequest
 from app.security.analysis_authorization import clear_analysis_policies, require_cached_analysis_run
 from app.security.runtime_policy import RuntimeAuthorizationDenied
 from app.services import insights_service
-from tests.continuous_analytics_fixture import ACCOUNT, NOW
+from tests.continuous_analytics_fixture import ACCOUNT, NOW, advance, insert_message
 from tests.test_text_analysis_enrollment_runtime import configured_execution_runtime, eventually, published
 from tests.text_analysis_execution_fixture import (
     close_execution_fixture, command, execution_http_client, make_execution_fixture,
@@ -179,6 +179,173 @@ async def test_http_enrollment_seals_replays_and_publishes_both_tasks(tmp_path, 
                                "FROM projection_generations WHERE status='active')")
             assert not await asyncio.to_thread(insights_service._saved_projection_is_current,
                 retained, owned, ACCOUNT, account, lambda: False)
+    finally:
+        clear_analysis_policies()
+        close_execution_fixture(x)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind', ['joint', 'split'])
+async def test_runnable_enrollment_and_fresh_resume_refuse_unavailable_local_authority(
+    tmp_path, monkeypatch, kind
+):
+    x = make_execution_fixture(tmp_path, kind)
+    monkeypatch.setattr(settings, 'identity_binding_source', 'verified_grants')
+    monkeypatch.setattr(settings, 'auth_database_path', x.auth.database.path)
+    clear_analysis_policies()
+    original_open = x.environment.engine.open
+    opened, analyzed, denied = [], [], []
+
+    @contextmanager
+    def recorded_engine(*args, **kwargs):
+        opened.append(True)
+        with original_open(*args, **kwargs) as session:
+            analyze = session.analyze
+
+            def nonempty(worker_request, cancelled, **bounds):
+                analyzed.append(worker_request.request_id)
+                value = json.loads(analyze(worker_request, cancelled, **bounds))
+                component = x.profile.component(worker_request.component_id)
+                for item, source in zip(value['items'], worker_request.items):
+                    item['request_item_id'] = source.request_item_id
+                    for task, descriptor in zip(item['tasks'], component.tasks):
+                        finding = (dict(topic_id=descriptor.enabled_ids[0])
+                                   if descriptor.task == 'message_topics' else
+                                   dict(concept_id=descriptor.enabled_ids[0], span=dict(start=0, end=6)))
+                        task['payload'].update(outcome='assessed_findings', findings=[finding])
+                return json.dumps(value).encode()
+
+            session.analyze = nonempty
+            yield session
+
+    monkeypatch.setattr(x.environment.engine, 'open', recorded_engine)
+
+    def retained_documents():
+        with x.repository.database.read() as db:
+            return tuple(tuple(row) for row in db.execute(
+                'SELECT job_id,ordinal,document FROM knowledge_members ORDER BY job_id,ordinal'))
+
+    async def saved_pending(client, mode):
+        async with asyncio.timeout(30):
+            while True:
+                projection = await asyncio.to_thread(client.get, '/api/v1/insights/projection')
+                assert projection.status_code in (200, 503), projection.text
+                if projection.status_code == 503:
+                    assert projection.json()['detail']['availability'] == 'building'
+                if projection.status_code == 200:
+                    identity = projection.json()
+                    if identity['source_revision'] == x.source.read_identity(ACCOUNT).revision:
+                        response = await asyncio.to_thread(client.get, '/api/v1/insights/findings', params={
+                            'expected_generation': identity['projection_generation'],
+                            'expected_projection_digest': identity['projection_digest'],
+                            'start_date': (NOW - timedelta(days=9)).isoformat(),
+                            'end_date': x.f.clock.now.isoformat(),
+                        })
+                        assert response.status_code in (200, 503), response.text
+                        if response.status_code == 503:
+                            assert response.json()['detail']['availability'] == 'building'
+                        if response.status_code == 200:
+                            result = response.json()
+                            if (result['processing_mode'] == mode and len(result['tasks']) == 2
+                                    and all(task['rows'] and task['eligible_messages'] == 3
+                                            and task['complete_messages'] == 2 and task['pending_messages'] == 1
+                                            for task in result['tasks'])):
+                                return result
+                await asyncio.sleep(.02)
+
+    path = tmp_path / 'authority-runtime.sqlite3'
+    try:
+        async with configured_execution_runtime(x, path) as (owned, service):
+            with execution_http_client(x, service=service) as client:
+                enable = command(x, current=service.read_current(x.http_policy()))
+                response = await asyncio.to_thread(client.post, PATH, json=enable.model_dump(mode='json'))
+                assert response.status_code == 200, response.text
+                enabled = response.json()
+                await eventually(lambda: published(owned, service))
+                originals = retained_documents()
+                assert len(originals) == 2 and analyzed
+                # The fresh resume path succeeds while current local authority is available.
+                for action in ('pause', 'resume'):
+                    body = command(x, action, current=service.read_current(x.http_policy()))
+                    response = await asyncio.to_thread(client.post, PATH, json=body.model_dump(mode='json'))
+                    assert response.status_code == 200, response.text
+                running = service.read_current(x.http_policy())
+                assert running.state == 'enabled'
+                assert running.enrollment_id == enabled['current']['enrollment_id']
+        with x.repository.database.transaction() as db:
+            insert_message(db, 'chat-0', 'pending-after-stop', x.f.clock.now - timedelta(seconds=1), 8)
+            advance(db)
+        # Preserve the signed object and installed profile; the fixture-local reference becomes unavailable.
+        x.authority.revoke(x.reference.reference_id)
+        assert x.environment.engine.present
+        assert [(profile.identity_digest(), state) for profile, _, state in x.environment.persistence.profiles()] == [
+            (x.profile.identity_digest(), 'available')
+        ]
+        original_fence = x.authority.transition_fence
+
+        @contextmanager
+        def observed_fence(policy, context, **binding):
+            try:
+                with original_fence(policy, context, **binding) as held:
+                    yield held
+            except RuntimeAuthorizationDenied as error:
+                denied.append((binding['phase'], str(error)))
+                raise
+
+        monkeypatch.setattr(x.authority, 'transition_fence', observed_fence)
+        before = (len(opened), len(analyzed), x.environment.engine.prepares, tuple(x.environment.requests))
+        async with configured_execution_runtime(x, path) as (owned, service):
+            await eventually(lambda: ('prepare', 'text_analysis_reference_unavailable') in denied
+                             and owned.findings.failure == 'findings_execution_unavailable')
+            assert service.read_current(x.http_policy()) == running
+            assert x.environment.engine.current(x.profile.components[0].engine)
+            assert service.dependencies.artifacts.reopen(x.profile).profile_sha256 == x.profile.identity_digest()
+            app = FastAPI()
+            app.include_router(insights.router)
+            app.include_router(text_analysis_execution.router)
+            with execution_http_client(x, service=service, app=app) as client:
+                result = await saved_pending(client, 'enabled')
+                assert {task['task'] for task in result['tasks']} == {'message_topics', 'concept_mentions'}
+                with service.dependencies.findings.database.read() as db:
+                    pending = db.execute("SELECT j.state FROM nlp_jobs j JOIN nlp_sources s USING(account_ref,source_ref) "
+                                         'WHERE s.message_id=?', ('pending-after-stop',)).fetchone()
+                    assert pending is not None and pending[0] in ('pending', 'running')
+                    assert sorted(bytes(row[0]) for row in db.execute('SELECT document FROM nlp_records')) == sorted(
+                        bytes(row[2]) for row in originals)
+                pause = command(x, 'pause', current=service.read_current(x.http_policy()))
+                response = await asyncio.to_thread(client.post, PATH, json=pause.model_dump(mode='json'))
+                assert response.status_code == 200, response.text
+                paused = service.read_current(x.http_policy())
+                assert paused.state == 'paused'
+                resume = command(x, 'resume', current=paused)
+                response = await asyncio.to_thread(client.post, PATH, json=resume.model_dump(mode='json'))
+                assert response.status_code == 409 and response.json()['detail']['code'] == 'text_analysis_refused'
+                assert ('start', 'text_analysis_reference_unavailable') in denied
+                assert service.read_current(x.http_policy()) == paused
+                response = await asyncio.to_thread(client.get, PATH + '/commands/' + resume.command_key)
+                assert response.status_code == 404
+                replay = await asyncio.to_thread(client.post, PATH, json=enable.model_dump(mode='json'))
+                assert replay.status_code == 200 and replay.json()['receipt'] == enabled['receipt']
+                assert replay.json()['current'] == paused.model_dump(mode='json')
+                await saved_pending(client, 'paused')
+            with x.repository.database.read() as db:
+                assert db.execute('SELECT count(*) FROM knowledge_jobs').fetchone()[0] == 2
+                assert {row[0] for row in db.execute('SELECT state FROM knowledge_jobs')} == {'committed'}
+                assert not db.execute('SELECT 1 FROM text_analysis_enrollment_commands WHERE command_key=?',
+                                      (resume.command_key,)).fetchone()
+            assert retained_documents() == originals
+            assert (len(opened), len(analyzed), x.environment.engine.prepares, tuple(x.environment.requests)) == before
+            failures = []
+            for error in owned.findings.observed_failures:
+                frames = []
+                trace = error.__traceback__
+                while trace is not None:
+                    frames.append((trace.tb_frame.f_code.co_name, trace.tb_lineno))
+                    trace = trace.tb_next
+                failures.append(dict(type=type(error).__name__, frames=frames,
+                    code='text_analysis_locator_stale' if type(error) is ValueError
+                    and error.args == ('text_analysis_locator_stale',) else 'unexpected_failure'))
+            assert not owned.findings.observed_failures, failures
     finally:
         clear_analysis_policies()
         close_execution_fixture(x)

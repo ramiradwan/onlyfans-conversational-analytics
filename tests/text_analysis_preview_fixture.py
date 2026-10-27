@@ -21,8 +21,8 @@ from tests.text_analysis_execution_fixture import (
 )
 
 
-def make_preview_fixture(path, kind='joint', *, findings=False):
-    x = make_execution_fixture(path, kind)
+def make_preview_fixture(path, kind='joint', *, findings=False, profile_factory=None):
+    x = make_execution_fixture(path, kind, profile_factory=profile_factory)
     try:
         x.license_service, x.execution_configuration = x.service, x.configuration
         case = next(c for c in CASES if c['case_id'] == 'preview-accepted')

@@ -6,7 +6,9 @@ import weakref
 
 from app.analytics.nlp_canonical_execution import CanonicalFindingsExecution
 from app.core.optional_execution import require_optional_execution
-from app.models.text_analysis_enrollment import EnrollmentCapsule, EnrollmentCommand, EnrollmentLocator, CurrentEnrollment
+from app.models.text_analysis_enrollment import (
+    EnrollmentCapsule, EnrollmentCommand, EnrollmentLocator, CurrentEnrollment, EnrollmentBindingSuperseded,
+)
 from app.models.text_analysis_jobs import EnrollmentIntent
 from app.nlp.execution_parameters import require_original_parameters
 from app.nlp.profiles import AnalysisProfile, canonical_bytes, read_profile
@@ -195,7 +197,7 @@ class TextAnalysisExecutionService:
         if (current.installation_id, current.creator_account_id, current.principal_id,
                 current.enrollment_id, current.mode_version) != (locator.installation_id, locator.creator_account_id,
                 locator.principal_id, locator.enrollment_id, locator.mode_version):
-            raise ValueError('text_analysis_locator_stale')
+            raise EnrollmentBindingSuperseded()
 
     def authorize_binding(self, binding, account):
         if type(binding) is not LicensedFindingsBinding or account != binding.locator.creator_account_id:
@@ -231,7 +233,7 @@ class TextAnalysisExecutionService:
                     (locator.installation_id, locator.creator_account_id)).fetchone()
             if row is None or (row['principal_id'], row['enrollment_id'], row['mode_version']) != (
                     locator.principal_id, locator.enrollment_id, locator.mode_version):
-                raise ValueError('text_analysis_locator_stale')
+                raise EnrollmentBindingSuperseded()
             if ((row['installation_id'], row['creator_account_id'], row['enrollment_principal'], row['state']) !=
                     (locator.installation_id, locator.creator_account_id, locator.principal_id, binding.current.state)
                     or row['state'] not in ('enabled', 'paused')

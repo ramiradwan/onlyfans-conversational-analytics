@@ -1,5 +1,6 @@
 """Current canonical enrollment through the existing background runtime."""
 import asyncio
+from collections import OrderedDict, deque
 from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import sys
@@ -10,11 +11,12 @@ from uuid import uuid4
 import pytest
 
 from app.analytics import runtime
-from app.analytics.nlp_runtime import FindingsConfiguration
+from app.analytics.nlp_runtime import FindingsConfiguration, FindingsRuntime, _AcknowledgedPipeline
 from app.analytics.licensed_pipeline import LicensedAnalyticsPipeline
-from app.analytics.errors import ProjectionUnavailable
+from app.analytics.errors import ProjectionBuildCancelled, ProjectionUnavailable
 from app.analytics.nlp_processing import FindingsRunner
 from app.core.config import settings
+from app.models.text_analysis_enrollment import EnrollmentBindingSuperseded
 from app.security.analysis_authorization import clear_analysis_policies
 from app.security.runtime_policy import authorized_account, RuntimeAuthorizationDenied
 from app.services.text_analysis_execution import execution_service
@@ -136,6 +138,89 @@ def test_runtime_observer_preserves_unexpected_failures(error):
     observe_failure(findings,error)
     assert findings.observed_failures == [error]
     assert not findings.observed_transients
+
+
+def queued_enrollment_runtime(error):
+    owned = object.__new__(FindingsRuntime)
+    old, current = SimpleNamespace(creator_account_id=ACCOUNT), SimpleNamespace(creator_account_id=ACCOUNT)
+    polled, bound = [], []
+    def locators(**kwargs):
+        polled.append(kwargs)
+        return [old if len(polled) == 1 else current]
+    def bind(locator):
+        bound.append(locator)
+        if locator is old:
+            raise error
+        return SimpleNamespace()
+    owned._execution_service = SimpleNamespace(current_locators=locators, bind_current=bind)
+    owned._locator_page, owned._after_account = deque(), ''
+    owned._enrollments = OrderedDict()
+    owned.source = SimpleNamespace(account_exists=lambda account: False)
+    return owned, old, current, polled, bound
+
+
+def test_superseded_queued_locator_does_not_block_current_poll():
+    owned, old, current, polled, bound = queued_enrollment_runtime(EnrollmentBindingSuperseded())
+    assert owned._enrollment_turn() is None
+    assert not owned._locator_page
+    assert owned._enrollment_turn() is None
+    assert len(bound) == 2 and bound[0] is old and bound[1] is current
+    assert polled == [dict(after_account='', limit=64)] * 2
+
+
+@pytest.mark.parametrize('error', [
+    ValueError('unexpected'), ValueError('text_analysis_locator_stale'),
+    RuntimeAuthorizationDenied('text_analysis_identity_unavailable'),
+])
+def test_enrollment_poll_preserves_unrelated_failures(error):
+    owned, _, _, _, _ = queued_enrollment_runtime(error)
+    with pytest.raises(type(error)) as caught:
+        owned._enrollment_turn()
+    assert caught.value is error
+
+
+@pytest.mark.parametrize('error', [
+    EnrollmentBindingSuperseded(), ValueError('unexpected'), ValueError('text_analysis_locator_stale'),
+    RuntimeAuthorizationDenied('text_analysis_identity_unavailable'),
+])
+def test_superseded_binding_cancels_held_pipeline_without_hiding_other_failures(error):
+    owned = object.__new__(FindingsRuntime)
+    gate, calls, leases = threading.RLock(), [], []
+    @contextmanager
+    def lease():
+        leases.append(True)
+        yield
+    def authorize(binding, account):
+        assert binding is entry.binding and account == ACCOUNT
+        raise error
+    runner = SimpleNamespace(dependencies=SimpleNamespace(gate=gate),
+        projections=SimpleNamespace(database=SimpleNamespace(lease=lease)),
+        findings=SimpleNamespace(state=lambda account: {}))
+    entry = SimpleNamespace(binding=object(), runner=runner)
+    runner.authorize = lambda account: owned._authorize_enrollment(entry, account)
+    owned._stop, owned._gate, owned._service = threading.Event(), gate, None
+    owned._runner, owned._failed = None, False
+    owned._execution_service = SimpleNamespace(authorize_binding=authorize)
+    owned._enrollments = {ACCOUNT: entry}
+    def forbidden(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError('obsolete_pipeline_called')
+    base = SimpleNamespace(prepare_questions=forbidden, build_candidate=forbidden, publish_candidate=forbidden)
+    held = _AcknowledgedPipeline(base, runner, ACCOUNT, (), {}, lambda: ())
+    stale = isinstance(error, EnrollmentBindingSuperseded)
+    for call in (lambda: held.prepare_questions(ACCOUNT), lambda: held.build_candidate(ACCOUNT),
+                 lambda: held.publish_candidate(object())):
+        with pytest.raises(ProjectionBuildCancelled if stale else type(error)) as caught:
+            call()
+        if not stale:
+            assert caught.value is error
+    with pytest.raises(ProjectionUnavailable if stale else type(error)) as caught:
+        owned.generation_pipeline(ACCOUNT)
+    if stale:
+        assert caught.value.availability == 'building' and caught.value.reason_code is None
+    else:
+        assert caught.value is error
+    assert not calls and not leases
 
 
 @pytest.mark.asyncio

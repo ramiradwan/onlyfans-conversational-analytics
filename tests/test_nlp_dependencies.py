@@ -92,10 +92,10 @@ class Engine:
 
 
 class Environment:
-    def __init__(self, tmp_path, kind='joint'):
+    def __init__(self, tmp_path, kind='joint', *, profile_factory=None):
         self.root = tmp_path
         self.fixture = make_fixture(tmp_path, conversations=1, messages=2)
-        self.profile, payloads = example(kind)
+        self.profile, payloads = (example if profile_factory is None else profile_factory)(kind)
         self.approved = {self.profile.identity_digest()}
         self.engine, self.owners = Engine(), Owners()
         self.clock = SimpleNamespace(now=1000)

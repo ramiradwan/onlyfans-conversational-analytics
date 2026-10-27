@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from app.models.text_analysis_enrollment import (
     CurrentEnrollment, EnrollmentCapsule, EnrollmentCommand, EnrollmentCommandReceipt,
-    EnrollmentCommandResult, EnrollmentIdentity, EnrollmentLocator,
+    EnrollmentCommandResult, EnrollmentIdentity, EnrollmentLocator, EnrollmentBindingSuperseded,
 )
 from app.models.text_analysis_jobs import EnrollmentIntent
 from app.nlp.profiles import artifact_closure_digest, canonical_bytes, read_profile
@@ -95,7 +95,7 @@ class TextAnalysisEnrollmentStore:
                          (locator.installation_id, locator.creator_account_id)).fetchone()
         if (row is None or row['principal_id'] != locator.principal_id
                 or row['enrollment_id'] != locator.enrollment_id or row['mode_version'] != locator.mode_version):
-            raise ValueError('text_analysis_locator_stale')
+            raise EnrollmentBindingSuperseded()
         enrollment = db.execute('SELECT * FROM text_analysis_enrollments WHERE enrollment_id=?',
                                 (locator.enrollment_id,)).fetchone()
         if (enrollment is None or enrollment['state'] not in ('enabled', 'paused')
