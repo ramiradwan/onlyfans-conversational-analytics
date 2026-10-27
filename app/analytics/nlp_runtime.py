@@ -18,13 +18,16 @@ if TYPE_CHECKING:
     from app.services.text_analysis_execution import LicensedFindingsBinding
     from app.services.text_analysis_preview_selection import FixtureTextAnalysisPreviewConfiguration
 
-from app.analytics.errors import ProjectionBuildCancelled, ProjectionCoordinatorClosed, ProjectionStorageUnavailable
+from app.analytics.errors import (
+    ProjectionBuildCancelled, ProjectionCoordinatorClosed, ProjectionStorageUnavailable, ProjectionUnavailable,
+)
 from app.analytics.nlp_findings_store import FindingsStore, MAX_ACCOUNTS
 from app.analytics.nlp_processing import FindingsRunner
 from app.analytics.nlp_execution import require_findings_execution
 from app.analytics.opaque_refs import account_ref
 from app.analytics.query_execution import QuestionCancelled
 from app.analytics.scheduling import _OwnedBoundedExecutor
+from app.models.text_analysis_enrollment import EnrollmentBindingSuperseded
 from app.nlp.profiles import read_profile
 from app.services.nlp_dependencies import dependency_service, configure_dependency_service
 
@@ -340,7 +343,10 @@ class FindingsRuntime:
     def generation_pipeline(self, account):
         gate=self._gate or (self._service.gate if self._service is not None else nullcontext())
         with gate:
-            return self._generation_pipeline(account)
+            try:
+                return self._generation_pipeline(account)
+            except ProjectionBuildCancelled:
+                raise ProjectionUnavailable(availability='building') from None
 
     def _generation_pipeline(self, account):
         if self._stop.is_set():
@@ -459,11 +465,20 @@ class FindingsRuntime:
     def _authorize_enrollment(self, entry, account):
         if self._stop.is_set():
             raise QuestionCancelled()
-        self._execution_service.authorize_binding(entry.binding, account)
+        try:
+            self._execution_service.authorize_binding(entry.binding, account)
+        except EnrollmentBindingSuperseded:
+            raise ProjectionBuildCancelled() from None
         with entry.runner.projections.database.lease():
             pass
 
     def _enrollment_turn(self):
+        try:
+            return self._current_enrollment_turn()
+        except (EnrollmentBindingSuperseded, ProjectionBuildCancelled):
+            return None
+
+    def _current_enrollment_turn(self):
         service = self._execution_service
         if not self._locator_page:
             page = service.current_locators(after_account=self._after_account, limit=64)

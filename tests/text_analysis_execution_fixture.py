@@ -26,8 +26,8 @@ from tests.test_text_analysis_execution_authority import CASES
 from tests.test_text_analysis_identity import make_identity_fixture
 
 
-def make_execution_fixture(path, kind='joint'):
-    environment = Environment(path, kind)
+def make_execution_fixture(path, kind='joint', *, profile_factory=None):
+    environment = Environment(path, kind, profile_factory=profile_factory)
     try:
         return _bind_execution_fixture(environment, path)
     except BaseException:

@@ -11,6 +11,11 @@ from app.nlp.profiles import canonical_bytes, TaskDescriptor, PolicyIdentity
 Version = Annotated[int, Field(ge=0, le=9_007_199_254_740_991)]
 
 
+class EnrollmentBindingSuperseded(ValueError):
+    def __init__(self):
+        super().__init__('text_analysis_locator_stale')
+
+
 class EnrollmentIdentity(Contract):
     principal_id: Name
     creator_account_id: Name

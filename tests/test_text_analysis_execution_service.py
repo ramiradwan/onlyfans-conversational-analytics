@@ -326,9 +326,11 @@ def test_binding_currentness_rechecks_exact_current_pointer_and_version(executio
     binding = _enabled_binding(x)
     changed = x.service.command(x.http_policy(), command(x, action))
     assert changed.current.mode_version > binding.current.mode_version
-    with pytest.raises(ValueError, match='locator_stale'):
+    with pytest.raises(execution_module.EnrollmentBindingSuperseded, match='locator_stale'):
         x.service.authorize_binding(binding, ACCOUNT)
     if action != 'retire':
+        with pytest.raises(execution_module.EnrollmentBindingSuperseded, match='locator_stale'):
+            x.service.bind_current(binding.locator)
         fresh = x.service.bind_current(x.service.current_locators()[0])
         x.service.authorize_binding(fresh, ACCOUNT)
 
