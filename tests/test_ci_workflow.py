@@ -1241,7 +1241,7 @@ def _assert_python313_loop_counterpart(workflow: dict[str, Any]) -> None:
     from tools.ci_gate import PYTHON313_LOOP_SELECTORS
 
     job = _jobs(workflow)["windows-platform-contract"]
-    assert job["timeout-minutes"] == 50 and "if" not in job
+    assert job["timeout-minutes"] == 55 and "if" not in job
     steps = _steps(job)
     names = ("Setup CPython 3.13 for socket-loop contracts", "Install isolated socket-loop test dependencies",
              "Test CPython 3.13 socket-loop contracts")
