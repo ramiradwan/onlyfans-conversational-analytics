@@ -19,7 +19,7 @@ from app.security.text_analysis_contract import parse_json
 from app.services.text_analysis_reissue import reissue_service
 from app.services.text_analysis_reissue_navigation import ReissueNavigationEntries
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_activated_runtime)])
 controls = APIRouter(prefix='/api/v1/nlp/license-reissue', dependencies=[Depends(require_activated_runtime)])
 _entries = ReissueNavigationEntries()
 _assets = Path(__file__).parents[2] / 'onboarding'

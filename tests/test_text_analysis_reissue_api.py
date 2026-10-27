@@ -10,7 +10,7 @@ from app.api.endpoints import text_analysis_reissue
 from app.api.security import webauthn_session_token
 from app.core.config import settings
 from app.persistence.auth import RevocationKey, RevocationScopeType
-from app.security.activation_gate import reset_activation
+from app.security.activation_gate import ActivationDecision, record_activation, reset_activation
 from app.services.text_analysis_reissue import configure_reissue_service, reissue_service
 from app.services.text_analysis_reissue_navigation import ReissueNavigationEntries
 from tests.test_text_analysis_authority import local_signer  # noqa: F401
@@ -81,6 +81,28 @@ def test_inert_status_and_explicit_actual_client_adoption_without_module_authori
     assert all(used for _, used in x.challenges.values())
     assert 'signed_authority' not in finished.text and 'seat_id' not in finished.text
     assert finished.headers['cache-control'] == 'no-store'
+
+
+def test_browser_entry_requires_activation_without_consuming_its_ticket(http, monkeypatch):
+    x, client = http
+    monkeypatch.setattr(text_analysis_reissue, '_entries', ReissueNavigationEntries(clock=lambda: 1.0))
+    flow = client.post(PATH, json={}).json()['current']['flow_id']
+    code = client.post(PATH + '/' + flow + '/browser-entry', json={}).json()['entry_code']
+    before = len(x.requests)
+    record_activation(ActivationDecision(activated=False, production=True))
+
+    with TestClient(client.app, base_url=ORIGIN) as browser:
+        for path in ('/text-analysis-reissue/entry', '/text-analysis-reissue/entry.js'):
+            assert browser.get(path).status_code == 503
+        refused = browser.post(PATH + '/browser-entry/consume', json={'code': code}, headers={'Origin': ORIGIN})
+        assert refused.status_code == 503
+        assert len(x.requests) == before and _count(x) == 1
+
+        record_activation(ActivationDecision(activated=True, production=True))
+        accepted = browser.post(PATH + '/browser-entry/consume', json={'code': code}, headers={'Origin': ORIGIN})
+        assert accepted.status_code == 200
+        assert accepted.json() == {'url': 'https://example.test/v2/onboarding/text-analysis-license-reissues/' + 'A'*43}
+        assert not accepted.cookies and len(x.requests) == before
 
 
 def test_one_use_browser_entry_has_no_authority_or_hidden_coordinates(http):
