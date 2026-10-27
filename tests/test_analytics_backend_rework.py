@@ -912,10 +912,12 @@ async def test_app_readiness_does_not_wait_for_projection_recovery(
         assert calls == ["broadcast", "transport", "projection-background"]
         assert recovery_task is not None and not recovery_task.done()
     finally:
-        recovery_release.set()
-        if recovery_task is not None:
-            await recovery_task
-        await main_module.shutdown_event()
+        try:
+            recovery_release.set()
+            if recovery_task is not None:
+                await recovery_task
+        finally:
+            await main_module.shutdown_event()
     assert retention_maintenance._DEFAULT_TASK is None
     assert not retention_maintenance._DEFAULT_INFLIGHT
 
