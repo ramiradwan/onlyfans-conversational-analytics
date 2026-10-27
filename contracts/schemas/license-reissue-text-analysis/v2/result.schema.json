@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v2/result.schema.json",
+  "title": "license-reissue-text-analysis result v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "binding",
+    "state",
+    "reissue_authorization_id",
+    "prior_license_id",
+    "prior_issuance_id",
+    "finalization_request_digest",
+    "seat_id",
+    "seat_scope",
+    "authority_profile",
+    "license_id",
+    "issuance_id",
+    "signed_authority",
+    "committed_at"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-license-reissue:v2"
+    },
+    "operation_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "binding": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v2/definitions.schema.json#/$defs/binding"
+    },
+    "state": {
+      "const": "completed"
+    },
+    "reissue_authorization_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "prior_license_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "prior_issuance_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "finalization_request_digest": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+    },
+    "seat_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    },
+    "seat_scope": {
+      "const": "organization-installation-seat"
+    },
+    "authority_profile": {
+      "const": "urn:bridge-clean:text-analysis-license:v1"
+    },
+    "license_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "issuance_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "signed_authority": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/compactJws"
+    },
+    "committed_at": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/timestamp"
+    }
+  }
+}

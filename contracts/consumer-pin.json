@@ -1,5 +1,5 @@
 {
-  "aggregate_bundle_sha256": "eb8afe08c008390f3c62fa95d18e20d2172b6c3622774b27836ed2c3c25ec221",
+  "aggregate_bundle_sha256": "d50639dae201aaa3298f7b2b312f39f5e4b08dbaec3f8f5e68f5240d3f937cf9",
   "conformance_manifests": [
     {
       "export": "installation-setup-continuation-v1",
@@ -90,11 +90,21 @@
       "export": "text-analysis-license-reissue-v1",
       "path": "text-analysis-license-reissue-v1/manifest.json",
       "sha256": "680455193f7ced9e6649da05dabfcf6941de876361cf7cac21511f36c356d50d"
+    },
+    {
+      "export": "text-analysis-license-reissue-v2",
+      "path": "text-analysis-license-reissue-v2/manifest.json",
+      "sha256": "b8d059dcdfedebad1da79eb649970b4cb28abd474b80eb3b731cf586032d0e80"
+    },
+    {
+      "export": "text-analysis-license-reissue-response-conformance-v1",
+      "path": "text-analysis-license-reissue-response-conformance-v1/manifest.json",
+      "sha256": "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5"
     }
   ],
-  "consumer_pin_version": 3,
+  "consumer_pin_version": 4,
   "contract_manifest_path": "manifest.json",
-  "contract_manifest_sha256": "6c8eed0f70697b1fc7b3310183f0f10364c7072685b612f595956a7d5bdef748",
+  "contract_manifest_sha256": "77dfd0719e5160f22b5104adad4372f7edd42232731a6cad236b85624e7978ff",
   "export_set": [
     "grant-profile-v1",
     "capability-permit-v1",
@@ -127,7 +137,9 @@
     "source-contract-manifest",
     "text-analysis-authority-v1",
     "complimentary-onboarding-activation-v2",
-    "text-analysis-license-reissue-v1"
+    "text-analysis-license-reissue-v1",
+    "text-analysis-license-reissue-v2",
+    "text-analysis-license-reissue-response-conformance-v1"
   ],
   "generator_versions": [
     {
@@ -153,13 +165,28 @@
     {
       "export": "text-analysis-license-reissue-v1",
       "version": "1.0.0"
+    },
+    {
+      "export": "text-analysis-license-reissue-v2",
+      "version": "1.0.0"
+    },
+    {
+      "export": "text-analysis-license-reissue-response-conformance-v1",
+      "version": "1.0.0"
     }
   ],
-  "source_commit": "5c1d9b58f56258c905ccfc803806cb271f4e721a",
+  "qualification_policies": [
+    {
+      "export": "text-analysis-license-reissue-v2",
+      "path": "catalog/text-analysis-license-reissue-response-qualification-policy-v1.json",
+      "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504"
+    }
+  ],
+  "source_commit": "e40cc5d8d196e060dfee66c3ae73258e66e80708",
   "source_contract_manifest_path": "source-contract-manifest/contract-manifest.json",
-  "source_contract_manifest_sha256": "fdec45fabe3b657d33bbf4c6b05133eee06952be5d4669b4914fcf9135fedb39",
+  "source_contract_manifest_sha256": "c7c7dd49ae22d54431916e3d713241e6141d670a254c1f8d0b3a186cdaf54cf9",
   "source_repository": "ramiradwan/creator-platform-contracts",
-  "source_tree": "f1348abf33d3d217717a6bffc16093cc9dfb240e",
+  "source_tree": "f3647b5530e89f2f213e6a15d42e4effd45c0f9b",
   "supported_profiles": [
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -219,9 +246,13 @@
     "urn:bridge-clean:text-analysis-authority-issuance:v1",
     "urn:bridge-clean:text-analysis-license-issuance-proof:v1",
     "urn:bridge-clean:text-analysis-license-reissue-authorization:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
     "urn:bridge-clean:text-analysis-license-reissue-proof:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
     "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
     "urn:bridge-clean:text-analysis-license-reissue:v1",
+    "urn:bridge-clean:text-analysis-license-reissue:v2",
     "urn:bridge-clean:text-analysis-license:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition:v1",
@@ -258,6 +289,11 @@
       "export": "text-analysis-license-reissue-v1",
       "path": "text-analysis-license-reissue-v1/trust-set.json",
       "sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b"
+    },
+    {
+      "export": "text-analysis-license-reissue-v2",
+      "path": "text-analysis-license-reissue-v2/trust-set.json",
+      "sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b"
     }
   ],
   "vector_manifests": [
@@ -290,6 +326,16 @@
       "export": "text-analysis-license-reissue-v1",
       "path": "text-analysis-license-reissue-v1/manifest.json",
       "sha256": "680455193f7ced9e6649da05dabfcf6941de876361cf7cac21511f36c356d50d"
+    },
+    {
+      "export": "text-analysis-license-reissue-v2",
+      "path": "text-analysis-license-reissue-v2/manifest.json",
+      "sha256": "b8d059dcdfedebad1da79eb649970b4cb28abd474b80eb3b731cf586032d0e80"
+    },
+    {
+      "export": "text-analysis-license-reissue-response-conformance-v1",
+      "path": "text-analysis-license-reissue-response-conformance-v1/manifest.json",
+      "sha256": "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5"
     }
   ]
 }

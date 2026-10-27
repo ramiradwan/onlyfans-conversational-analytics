@@ -1,0 +1,698 @@
+[
+  {
+    "case_id": "retained-reason-lost-or-destroyed-installation-before-finalization",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "authority_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 0
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize",
+        "manual_decision": true,
+        "reason": "lost-or-destroyed-installation"
+      },
+      {
+        "action": "finalize",
+        "manual_decision": false
+      }
+    ]
+  },
+  {
+    "case_id": "retained-reason-lost-or-destroyed-installation-after-signing",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "authority_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize",
+        "manual_decision": true,
+        "reason": "lost-or-destroyed-installation"
+      },
+      {
+        "action": "finalize",
+        "after_signing": {
+          "manual_decision": false,
+          "reason": "replacement-installation"
+        },
+        "manual_decision": true
+      }
+    ]
+  },
+  {
+    "case_id": "retained-reason-inaccessible-original-hardware-before-finalization",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "authority_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 0
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize",
+        "manual_decision": true,
+        "reason": "inaccessible-original-hardware"
+      },
+      {
+        "action": "finalize",
+        "manual_decision": false
+      }
+    ]
+  },
+  {
+    "case_id": "retained-reason-inaccessible-original-hardware-after-signing",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "authority_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize",
+        "manual_decision": true,
+        "reason": "inaccessible-original-hardware"
+      },
+      {
+        "action": "finalize",
+        "after_signing": {
+          "manual_decision": false,
+          "reason": "replacement-installation"
+        },
+        "manual_decision": true
+      }
+    ]
+  },
+  {
+    "case_id": "one-current",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 1,
+      "current": "replacement",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "completed",
+        "exact-result"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize"
+      },
+      {
+        "action": "finalize"
+      }
+    ]
+  },
+  {
+    "case_id": "lost-reply",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 1,
+      "current": "replacement",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "reply-lost",
+        "exact-result"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize",
+        "reply_lost": true
+      },
+      {
+        "action": "recover"
+      }
+    ]
+  },
+  {
+    "case_id": "expired-recovery",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 1,
+      "current": "replacement",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "completed",
+        "exact-result"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize"
+      },
+      {
+        "action": "recover",
+        "current_session": false,
+        "now": 99999,
+        "release_supported": false
+      }
+    ]
+  },
+  {
+    "case_id": "signing_failure",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "temporarily_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize",
+        "signing_failure": true
+      }
+    ]
+  },
+  {
+    "case_id": "rollback",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "temporarily_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize",
+        "rollback": true
+      }
+    ]
+  },
+  {
+    "case_id": "after-signing-current_permission",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "authority_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize",
+        "after_signing": {
+          "current_permission": false
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "after-signing-profiles_supported",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "unsupported_profile"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize",
+        "after_signing": {
+          "profiles_supported": false
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "after-signing-release_supported",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "unsupported_release"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize",
+        "after_signing": {
+          "release_supported": false
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "bound-after-lock",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "authority_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 0
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize",
+        "after_lock": {
+          "committed_reissues": [
+            950,
+            999
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "consumed-proof",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 1,
+      "current": "replacement",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "completed",
+        "proof_invalid"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize"
+      },
+      {
+        "action": "recover",
+        "fresh_proof": false
+      }
+    ]
+  },
+  {
+    "case_id": "read-noncreating",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "proof_invalid"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 0
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "read"
+      }
+    ]
+  },
+  {
+    "case_id": "authorization-needs-entry",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "authorization_denied"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 0
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "authorize"
+      }
+    ]
+  },
+  {
+    "case_id": "post-signing-expiry",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "authority_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize",
+        "after_signing": {
+          "now": 1300
+        }
+      }
+    ]
+  },
+  {
+    "case_id": "original-phase-reconciliation",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 1,
+      "current": "replacement",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "completed",
+        "awaiting-authorization",
+        "authorized"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize"
+      },
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize",
+        "now": 1400,
+        "step_up_unused": false
+      }
+    ]
+  },
+  {
+    "case_id": "parallel-authorizations-one-current",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 1,
+      "current": "replacement",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "awaiting-authorization",
+        "authorized",
+        "authorized",
+        "completed",
+        "authority_unavailable"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "prepare",
+        "operation": "other"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "authorize",
+        "operation": "other"
+      },
+      {
+        "action": "finalize"
+      },
+      {
+        "action": "finalize",
+        "operation": "other"
+      }
+    ]
+  },
+  {
+    "case_id": "deadline-not-renewed",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 0,
+      "current": "prior",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "awaiting-authorization",
+        "expired"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 0
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "prepare",
+        "now": 2000
+      },
+      {
+        "action": "authorize",
+        "now": 2800,
+        "step_up_expires": 3000,
+        "step_up_issued": 2790
+      }
+    ]
+  },
+  {
+    "case_id": "cleanup-restore",
+    "expected": {
+      "accounting_movements": 0,
+      "commits": 1,
+      "current": "replacement",
+      "recovery_bytes_equal": true,
+      "results": [
+        "awaiting-authorization",
+        "authorized",
+        "completed",
+        "cleaned",
+        "restored",
+        "exact-result"
+      ],
+      "rights_unchanged": true,
+      "seat_id": "original-seat",
+      "signer_calls": 1
+    },
+    "result_bytes": "{\"authority_profile\":\"urn:bridge-clean:text-analysis-license:v1\",\"binding\":{\"installation_id\":\"fixture-replacement\",\"installation_key_id\":\"ik1.8fDVCA9W0PgOHzDOtW6d7g\",\"installation_key_jkt\":\"8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo\",\"organization_id\":\"fixture-organization\"},\"committed_at\":\"2026-10-26T00:00:00.000Z\",\"finalization_request_digest\":\"23281708b867bc1c39c17216d412d273dbd620c481d00eac85af3ce23a711aaf\",\"issuance_id\":\"019a1957-0000-7000-8000-000000000044\",\"license_id\":\"019a1957-0000-7000-8000-000000000043\",\"operation_id\":\"019a1957-0000-7000-8000-000000000043\",\"prior_issuance_id\":\"019a1957-0000-7000-8000-000000000042\",\"prior_license_id\":\"019a1957-0000-7000-8000-000000000041\",\"profile\":\"urn:bridge-clean:text-analysis-license-reissue:v2\",\"reissue_authorization_id\":\"019a1957-0000-7000-8000-000000000044\",\"seat_id\":\"original-seat\",\"seat_scope\":\"organization-installation-seat\",\"signed_authority\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImJjMS50bC5OT1hxVXZ3bTNPV3N1cUI2UE55VVZnIiwidHlwIjoidXJuOmJyaWRnZS1jbGVhbjp0ZXh0LWFuYWx5c2lzLWxpY2Vuc2U6djEifQ.eyJhdWQiOiJ1cm46YnJpZGdlLWNsZWFuOmxvY2FsLWJyYWluOnRleHQtYW5hbHlzaXMtbGljZW5zZSIsImNhcGFiaWxpdHkiOiJ0ZXh0LWFuYWx5c2lzIiwiY29tcGF0aWJsZV9hcnRpZmFjdF9mYW1pbHkiOiJ0ZXh0LWFuYWx5c2lzLWFydGlmYWN0IiwiZmFsbGJhY2tfbWFqb3JfdmVyc2lvbnMiOltdLCJpYXQiOjE3OTI5NzI4MDAsImluc3RhbGxhdGlvbl9pZCI6ImZpeHR1cmUtcmVwbGFjZW1lbnQiLCJpbnN0YWxsYXRpb25fa2V5X2lkIjoiaWsxLjhmRFZDQTlXMFBnT0h6RE90VzZkN2ciLCJpbnN0YWxsYXRpb25fa2V5X2prdCI6IjhmRFZDQTlXMFBnT0h6RE90VzZkN2g5NWdrOGZETjhMaG1SM1dZY0w4cW8iLCJpc3MiOiJ1cm46YnJpZGdlLWNsZWFuOmNvbW1lcmNpYWwtY29udHJvbC1wbGFuZSIsImlzc3VhbmNlX2lkIjoiMDE5YTE5NTctMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDQ0IiwibGljZW5zZV9pZCI6IjAxOWExOTU3LTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDA0MyIsImxpY2Vuc2VfdHlwZSI6InRleHRfYW5hbHlzaXNfbGljZW5zZSIsImxpY2Vuc2VkX21ham9yX3ZlcnNpb24iOjEsIm9yZ2FuaXphdGlvbl9pZCI6ImZpeHR1cmUtb3JnYW5pemF0aW9uIiwicHJvZmlsZSI6InVybjpicmlkZ2UtY2xlYW46dGV4dC1hbmFseXNpcy1saWNlbnNlOnYxIiwic2VhdF9pZCI6Im9yaWdpbmFsLXNlYXQiLCJzZWF0X3Njb3BlIjoib3JnYW5pemF0aW9uLWluc3RhbGxhdGlvbi1zZWF0Iiwic3ViIjoib3JnYW5pemF0aW9uOmZpeHR1cmUtb3JnYW5pemF0aW9uOmluc3RhbGxhdGlvbjpmaXh0dXJlLXJlcGxhY2VtZW50OnNlYXQ6b3JpZ2luYWwtc2VhdDpjYXBhYmlsaXR5OnRleHQtYW5hbHlzaXMiLCJ1cGRhdGVfcmlnaHRzIjp0cnVlfQ.Kd9SO4esoy49BuQeF2joFRat3E3yISXaj62VSI-mFsA1lA_9MFJluwu8i9I5BvBf95iOrehvsL01RFPpElc8lg\",\"state\":\"completed\"}",
+    "steps": [
+      {
+        "action": "prepare"
+      },
+      {
+        "action": "authorize"
+      },
+      {
+        "action": "finalize"
+      },
+      {
+        "action": "cleanup",
+        "now": 99999
+      },
+      {
+        "action": "restore"
+      },
+      {
+        "action": "recover"
+      }
+    ]
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis-authorization/v2/authorize-request.schema.json",
+  "title": "license-reissue-text-analysis-authorization authorize-request v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "operation_id",
+    "prior_license_id",
+    "prior_issuance_id",
+    "reissue_reason",
+    "customer_step_up_ref"
+  ],
+  "properties": {
+    "profile": {
+      "const": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2"
+    },
+    "operation_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "prior_license_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "prior_issuance_id": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+    },
+    "reissue_reason": {
+      "enum": [
+        "replacement-installation",
+        "lost-or-destroyed-installation",
+        "inaccessible-original-hardware"
+      ]
+    },
+    "customer_step_up_ref": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+    }
+  }
+}

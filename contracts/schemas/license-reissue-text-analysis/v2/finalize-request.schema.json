@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v2/finalize-request.schema.json",
+  "title": "license-reissue-text-analysis finalize-request v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request",
+    "proof"
+  ],
+  "properties": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation_id",
+        "binding",
+        "reissue_authorization_id",
+        "confirmation_digest"
+      ],
+      "properties": {
+        "profile": {
+          "const": "urn:bridge-clean:text-analysis-license-reissue:v2"
+        },
+        "operation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "binding": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v2/definitions.schema.json#/$defs/binding"
+        },
+        "reissue_authorization_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/uuidV7"
+        },
+        "confirmation_digest": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/sha256Hex"
+        }
+      }
+    },
+    "proof": {
+      "$ref": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis-proof/v2/definitions.schema.json#/$defs/proof"
+    }
+  }
+}

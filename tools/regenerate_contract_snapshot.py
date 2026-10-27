@@ -14,9 +14,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS_ROOT = REPOSITORY_ROOT / "contracts"
 APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-APPROVED_SOURCE_COMMIT = "5c1d9b58f56258c905ccfc803806cb271f4e721a"
-APPROVED_SOURCE_TREE = "f1348abf33d3d217717a6bffc16093cc9dfb240e"
-APPROVED_SOURCE_MANIFEST_SHA256 = "fdec45fabe3b657d33bbf4c6b05133eee06952be5d4669b4914fcf9135fedb39"
+APPROVED_SOURCE_COMMIT = "e40cc5d8d196e060dfee66c3ae73258e66e80708"
+APPROVED_SOURCE_TREE = "f3647b5530e89f2f213e6a15d42e4effd45c0f9b"
+APPROVED_SOURCE_MANIFEST_SHA256 = "c7c7dd49ae22d54431916e3d713241e6141d670a254c1f8d0b3a186cdaf54cf9"
 SOURCE_MANIFEST = "contract-manifest.json"
 SOURCE_MANIFEST_EXPORT = "source-contract-manifest"
 SOURCE_MANIFEST_TARGET = f"{SOURCE_MANIFEST_EXPORT}/contract-manifest.json"
@@ -25,8 +25,8 @@ PUBLISHED_ROOTS = ("catalog", "openapi", "profiles", "schemas")
 # Only these additive inventories may replace reviewed previous bytes during
 # this pin migration. All released schemas, profiles and fixtures remain immutable.
 APPROVED_PREVIOUS_INVENTORIES = {
-    "catalog/contracts.yaml": "2cb8b3de4b36576c9b6f1d18720e2b184ee7e13c43b93c37ee4839c2b5e8ca4a",
-    "contract-manifest.json": "3391ce59f60d6162df72872965e16facb22ee6230efb27bdcb618ddb6f616477"
+    "catalog/contracts.yaml": "e1679dada0e0c0d2f5fa01e4f317d8fa4b195ef163ad28613ef50dc4cc8e686c",
+    "contract-manifest.json": "fdec45fabe3b657d33bbf4c6b05133eee06952be5d4669b4914fcf9135fedb39"
 }
 
 EXPORT_SET = [
@@ -62,6 +62,8 @@ EXPORT_SET = [
     "text-analysis-authority-v1",
     "complimentary-onboarding-activation-v2",
     "text-analysis-license-reissue-v1",
+    "text-analysis-license-reissue-v2",
+    "text-analysis-license-reissue-response-conformance-v1",
 ]
 
 EXPORT_SOURCES = {
@@ -91,6 +93,8 @@ EXPORT_SOURCES = {
     "text-analysis-authority-v1": "test-vectors/text-analysis-authority-v1",
     "complimentary-onboarding-activation-v2": "test-vectors/complimentary-onboarding-activation-v2",
     "text-analysis-license-reissue-v1": "test-vectors/text-analysis-license-reissue-v1",
+    "text-analysis-license-reissue-v2": "test-vectors/text-analysis-license-reissue-v2",
+    "text-analysis-license-reissue-response-conformance-v1": "test-vectors/text-analysis-license-reissue-response-conformance-v1",
 }
 
 APPROVED_EXPORT_DIGESTS = {
@@ -120,6 +124,8 @@ APPROVED_EXPORT_DIGESTS = {
     "text-analysis-authority-v1": "985d40ba015958bdafcb18ffa13db66596782dc69849923b1fc79fdc6a18b365",
     "complimentary-onboarding-activation-v2": "2d29456e4d6da30eddf55577968f09ddde8ff80caabf600560236557ebc5b4ad",
     "text-analysis-license-reissue-v1": "4734e2f6c892c9c9a398c813c74e58925bc728898360b8a10164cc87a521d63c",
+    "text-analysis-license-reissue-v2": "4f69867018ab43db8fcf6e846b82539767fc7a82ffdcb99289f6641aa78ae44e",
+    "text-analysis-license-reissue-response-conformance-v1": "32cfe1225a02dfcac8c6da4d42884ee9eab5dcf88341a37eecf6130ab0c20610",
 }
 
 EXPECTED_PROGRESS_VECTOR_FILES = frozenset(
@@ -146,8 +152,8 @@ EXPECTED_PAIRING_VECTOR_FILES = frozenset(
         "vector.json",
     }
 )
-EXPECTED_FILE_COUNT = 1159
-EXPECTED_PUBLISHED_FILE_COUNT = 349
+EXPECTED_FILE_COUNT = 1194
+EXPECTED_PUBLISHED_FILE_COUNT = 373
 EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:bootstrap-recovery:v1",
     "urn:bridge-clean:bootstrap-recovery:v2",
@@ -207,9 +213,13 @@ EXPECTED_PUBLISHED_PROFILES = (
     "urn:bridge-clean:text-analysis-authority-issuance:v1",
     "urn:bridge-clean:text-analysis-license-issuance-proof:v1",
     "urn:bridge-clean:text-analysis-license-reissue-authorization:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
     "urn:bridge-clean:text-analysis-license-reissue-proof:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
     "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v1",
+    "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
     "urn:bridge-clean:text-analysis-license-reissue:v1",
+    "urn:bridge-clean:text-analysis-license-reissue:v2",
     "urn:bridge-clean:text-analysis-license:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition-proof:v1",
     "urn:bridge-clean:text-analysis-preview-acquisition:v1",
@@ -228,6 +238,8 @@ VECTOR_MANIFESTS = {
     "text-analysis-authority-v1": "text-analysis-authority-v1/manifest.json",
     "complimentary-onboarding-activation-v2": "complimentary-onboarding-activation-v2/manifest.json",
     "text-analysis-license-reissue-v1": "text-analysis-license-reissue-v1/manifest.json",
+    "text-analysis-license-reissue-v2": "text-analysis-license-reissue-v2/manifest.json",
+    "text-analysis-license-reissue-response-conformance-v1": "text-analysis-license-reissue-response-conformance-v1/manifest.json",
 }
 TRUST_SETS = {
     "grant-profile-v1": "grant-profile-v1/keys/trust-set.json",
@@ -235,6 +247,7 @@ TRUST_SETS = {
     "companion-pairing-v1": "companion-pairing-v1/trust-set.json",
     "text-analysis-authority-v1": "text-analysis-authority-v1/trust-set.json",
     "text-analysis-license-reissue-v1": "text-analysis-license-reissue-v1/trust-set.json",
+    "text-analysis-license-reissue-v2": "text-analysis-license-reissue-v2/trust-set.json",
 }
 CONFORMANCE_MANIFESTS = {
     "installation-setup-continuation-v1": "installation-setup-continuation-v1/manifest.json",
@@ -255,8 +268,14 @@ CONFORMANCE_MANIFESTS = {
     "text-analysis-authority-v1": "text-analysis-authority-v1/manifest.json",
     "complimentary-onboarding-activation-v2": "complimentary-onboarding-activation-v2/manifest.json",
     "text-analysis-license-reissue-v1": "text-analysis-license-reissue-v1/manifest.json",
+    "text-analysis-license-reissue-v2": "text-analysis-license-reissue-v2/manifest.json",
+    "text-analysis-license-reissue-response-conformance-v1": "text-analysis-license-reissue-response-conformance-v1/manifest.json",
 }
 PAIRING_PROFILE_RECORD = "companion-pairing-profile/profile.json"
+QUALIFICATION_POLICIES = {
+    "text-analysis-license-reissue-v2":
+        "catalog/text-analysis-license-reissue-response-qualification-policy-v1.json",
+}
 
 
 def sha256(path: Path) -> str:
@@ -505,6 +524,10 @@ def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
         {"export": export, "path": path, "sha256": sha256(CONTRACTS_ROOT / path)}
         for export, path in CONFORMANCE_MANIFESTS.items()
     ]
+    qualification_policies = [
+        {"export": export, "path": path, "sha256": sha256(CONTRACTS_ROOT / path)}
+        for export, path in QUALIFICATION_POLICIES.items()
+    ]
     profiles = _published_profiles()
     if selected_progress_profile() not in profiles:
         raise SystemExit("selected onboarding-progress profile is absent from published profiles")
@@ -521,7 +544,7 @@ def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
     manifest_bytes = encode(manifest)
     pin = {
         "aggregate_bundle_sha256": manifest["content_digest"],
-        "consumer_pin_version": 3,
+        "consumer_pin_version": 4,
         "contract_manifest_path": "manifest.json",
         "contract_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "export_set": EXPORT_SET,
@@ -530,6 +553,7 @@ def build_records() -> tuple[dict[str, Any], dict[str, Any]]:
         "trust_sets": trust_sets,
         "vector_manifests": vector_manifests,
         "conformance_manifests": conformance_manifests,
+        "qualification_policies": qualification_policies,
         "source_repository": APPROVED_SOURCE_REPOSITORY,
         "source_commit": APPROVED_SOURCE_COMMIT,
         "source_tree": APPROVED_SOURCE_TREE,

@@ -1,0 +1,196 @@
+{
+  "case_count": 1125,
+  "files": [
+    {
+      "path": "admission-cases.json",
+      "sha256": "54c2ec28057834e9e85410579efeee953a989b2dabd3c8ff768e8258b9932f44",
+      "size": 18835
+    },
+    {
+      "path": "identity-cases.json",
+      "sha256": "879876ee37e4e7e3d0daa7331dc69a2bd21f203edbaf35da2a683d7b22b77a16",
+      "size": 57131
+    },
+    {
+      "path": "lifecycle-cases.json",
+      "sha256": "002999e14dea0ff18f47d50e255dde52cf81000af9f25aebd705225b2a2c8d1b",
+      "size": 64878
+    },
+    {
+      "path": "proof-cases.json",
+      "sha256": "1f29f6c228fceb3a0da194b8d849d164451753f1b89a994f8dabc2e01276d9ce",
+      "size": 345242
+    },
+    {
+      "path": "response-cases.json",
+      "sha256": "7b562ebdc83007f735eefe9b0f8fa449237eb23b7e575330badb1e43c4555ce7",
+      "size": 268626
+    },
+    {
+      "path": "schema-cases.json",
+      "sha256": "9ebf61d13bfed7a5553c5386197356dbf43515cf5870e4a4edcee5c92a6be72e",
+      "size": 1248309
+    },
+    {
+      "path": "transport-cases.json",
+      "sha256": "8344bac7bc95c4c98220e71183bb883ffdf11648718043a1cf83d1d581425f53",
+      "size": 12175
+    },
+    {
+      "path": "trust-set.json",
+      "sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b",
+      "size": 503
+    }
+  ],
+  "fixed_time": "2026-10-26T00:00:00.000Z",
+  "fixture_labels": [
+    "text-analysis-reissue-license-v1",
+    "text-analysis-reissue-installation-v1"
+  ],
+  "generator": "tools/generate_text_analysis_reissue_v2_vectors.py",
+  "generator_version": "1.0.0",
+  "inputs": [
+    {
+      "path": "docs/adr/0044-amendments/2026-10-26-hosted-cookie-compatible-reissue-successor.md",
+      "sha256": "6f4739294b5006412687d98e0011b9e6cdfad4f9365368b36d491eed141e3cf5"
+    },
+    {
+      "path": "docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md",
+      "sha256": "5d0d0233edd7d71fc196e52357eae8079113938b368d2083514d64fe041320c4"
+    },
+    {
+      "path": "docs/text-analysis-license-reissue-v2.md",
+      "sha256": "09e2d6f22da57b994b7b7ddc32133c101fd0293805353e788191993c61b9806f"
+    },
+    {
+      "path": "openapi/license-reissue-text-analysis-v2.openapi.yaml",
+      "sha256": "42cfaf06f8c709429350e7f9dd0c15770df2c986c5e1bc39ea6cffd59e438fe3"
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-authorization/v2/profile.json",
+      "sha256": "5031881d0ef78bea491544b9290e2a603eaf0f2736b290ded78475650c5c78db"
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-proof/v2/profile.json",
+      "sha256": "500bcc2daabca91bb75363011f3c654550b8dc349ac77a78f56f18a89f837c17"
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis-supported-profiles/v2/profile.json",
+      "sha256": "11ec5fb9066c10757c5c7f0d54ba0fa465cd7a8deab29e843dc29081be18bc9d"
+    },
+    {
+      "path": "profiles/license-reissue-text-analysis/v2/profile.json",
+      "sha256": "0f4150337ea8de8e3d0020f33bce4f4969def197a82426955ba9e3ca2e3cef22"
+    },
+    {
+      "path": "schemas/common/v1/definitions.schema.json",
+      "sha256": "c81c62d1a05a295b7aaa701a9866df707c8069f8e9910b5cbbc5e879cd8f15fa"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v2/authorize-request.schema.json",
+      "sha256": "c9291afd1336fa3e439359504a1231f41beedf2ed6286e45876fbe03e8eb2e79"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v2/authorize-response.schema.json",
+      "sha256": "982ff368a86e828bee7057d39c813ae12941a692d3d35b982ab843db249def66"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-authorization/v2/error.schema.json",
+      "sha256": "b2750df57cf228342e90bc2ab9ed0824b0ed7519ea640609c195ea18edac65c0"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v2/challenge-request.schema.json",
+      "sha256": "5d9fe6f34e4d03fe5564488b934e591f558ae74b88f8523e3333a14ba84948f0"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v2/challenge-response.schema.json",
+      "sha256": "3570008b2effa31718c3b7b61c4a86b34cd4cde084e53aada4c1969687e1b4c1"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v2/definitions.schema.json",
+      "sha256": "67fc4eee33a1c23ea77659020d377f0eb845f0a1c54eff8c9251e49987cf2e6f"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-proof/v2/error.schema.json",
+      "sha256": "1da7f8a0f3b2dd5b2919e2bc9e8bcdc0293c73e10874bd70ec4d5a014708b84c"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis-supported-profiles/v2/supported-profiles.schema.json",
+      "sha256": "2b6c399fc58d8f5c9d7116ee6d4040ecbf3bde600cccbef58c0947e20c02d33e"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/confirmation.schema.json",
+      "sha256": "1bcf4c82735567b72148181b94c666b9f605c80d0c2042bb3563c2e841b22370"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/definitions.schema.json",
+      "sha256": "d70dd5cd5d22a7ef855e90e0c92a61dcfd7fb2881f8150df77fa5091463944cc"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/error.schema.json",
+      "sha256": "10d3c6fd458c0e655822e08c1d65f138b2ef5c0ddd9c18e7b2113820f594ead9"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/finalize-request.schema.json",
+      "sha256": "1838f06973b0c9d35f3c1febae59ed3f235205d02ee0303931ae75b5278fe233"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/prepare-request.schema.json",
+      "sha256": "ccca7da2a4b1a730837a581c8e3b802a923b28e68be343e2b2860d82327f07c7"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/prepare-response.schema.json",
+      "sha256": "962e28c3cbba87911e7184bbb8f8eb45cf0331d3e38c564c772a734977de26e6"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/read-request.schema.json",
+      "sha256": "7e2c51d49b5c610c427fefff33b68b81a14ebc2405976ec9431a379d2e43b252"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/read-response.schema.json",
+      "sha256": "bc96b417e74d1b22c6d6ea8b918d71ee8d142c1b579d03b2e2e20158f9c4dc42"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/recover-request.schema.json",
+      "sha256": "e8e09d383c1d4a6c9f179084fbadaa34291acbde0ae09f8dd58321076ad1b04a"
+    },
+    {
+      "path": "schemas/license-reissue-text-analysis/v2/result.schema.json",
+      "sha256": "b63a4a670eefa7d01fcf3cd7f1dda34257949512cf6a1e46eaad33b5869517f4"
+    },
+    {
+      "path": "schemas/text-analysis-license/v1/payload.schema.json",
+      "sha256": "a6b40396978b0d382171e07ae7150d812b3cbb2e77a373b176d89a627c99389b"
+    },
+    {
+      "path": "schemas/text-analysis-release-identity/v1/release-identity.schema.json",
+      "sha256": "a99ef065a4dd81cc45a1e2aa6980df30f33c6bf8a249cb5431f863c704fb8a37"
+    },
+    {
+      "path": "tests/text-analysis-reissue-v2-interop.test.mjs",
+      "sha256": "3c573cf58524ffee919a7608fd1596de2417ae181bfc7a6273dafed099a5d94d"
+    },
+    {
+      "path": "tools/generate_text_analysis_reissue_v2_vectors.py",
+      "sha256": "e913d3eb6af80631ff55b71ccba440619e012e5314624ddddd3cc44bf52d7133"
+    },
+    {
+      "path": "tools/manifestlib.py",
+      "sha256": "a7cb37d0e3e6dffa79593b6d78571b36e35f26b4baabb61bb678fe184de480ee"
+    },
+    {
+      "path": "tools/vectorlib.py",
+      "sha256": "4b3cee3f45c0d78c1ab71ac36168474c3d90ce5b2cd3a0cd6586a328d27e9e06"
+    },
+    {
+      "path": "tools/verify_text_analysis_reissue_v2_vectors.py",
+      "sha256": "4ed9744293bd13d13222d845e6682a2649794f48c917ac2208fa01c98fdeb838"
+    },
+    {
+      "path": "tools/verify_text_analysis_vectors.py",
+      "sha256": "6be2c69528770a5c2bc03c8c85941f18a7f30726d1f9083692b5448715bb03b3"
+    }
+  ],
+  "production_usable": false,
+  "profile": "urn:bridge-clean:text-analysis-license-reissue-vectors:v2"
+}
