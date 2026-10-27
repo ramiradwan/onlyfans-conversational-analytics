@@ -467,3 +467,166 @@ def test_explicit_new_begin_after_expired_resume_retains_old_operation(basis):
     assert owner.store.get(first.flow_id).metadata['operation_id'] == b.original.operation_id
     assert owner.store.get(first.flow_id).state == 'expired'
     assert owner.store.get(second.flow_id).metadata['operation_id'] == fresh.operation_id
+
+
+def _wire_fixture(path, local_signer):
+    from tests.text_analysis_reissue_fixture import make_reissue_fixture
+    return make_reissue_fixture(path, local_signer)
+
+
+def _no_selection(*args):
+    pytest.fail('recovery selected a new context or key')
+
+
+def _reopen_wire_owner(x):
+    authentication = SQLiteAuthenticationStore(x.auth.database.path, clock=lambda: x.clock[0])
+    x.client.key_authority.ensure_ready = _no_selection
+    return x.reopen(authentication, context_factory=_no_selection)
+
+
+def _authority_count(authentication):
+    with authentication.database.read() as db:
+        return db.execute('SELECT count(*) FROM text_analysis_authority_references').fetchone()[0]
+
+
+@pytest.mark.parametrize('case_id', ['one-current'])
+def test_native_exact_winner_is_inert_after_adoption(tmp_path, local_signer, case_id):
+    x = _wire_fixture(tmp_path, local_signer)
+    first = x.service.begin(x.http_policy())
+    epoch = x.auth.read_epoch().value
+    assert x.service.resume(x.http_policy(), first.flow_id).state == 'adopted'
+    adopted = x.service.store.get(first.flow_id)
+    assert adopted.bodies['result'] == x.mode['result_raw']
+    assert _authority_count(x.auth) == 1 and x.auth.read_epoch().value == epoch + 1
+    requests, challenges = list(x.requests), dict(x.challenges)
+    reopened = _reopen_wire_owner(x)
+    assert reopened.resume(x.http_policy(), first.flow_id).state == 'adopted'
+    assert reopened.store.get(first.flow_id) == adopted
+    assert x.requests == requests and x.challenges == challenges
+    assert _authority_count(x.auth) == 1 and x.auth.read_epoch().value == epoch + 1
+
+
+@pytest.mark.parametrize('case_id', ['lost-reply', 'expired-recovery'])
+def test_native_lost_reply_reopens_original_journal(tmp_path, local_signer, case_id):
+    from app.persistence.auth import BridgeSessionIssue
+    from app.security.text_analysis_reissue import PATH_PREFIX, CHALLENGE_PATH
+    x = _wire_fixture(tmp_path, local_signer)
+    first = x.service.begin(x.http_policy())
+    epoch = x.auth.read_epoch()
+    x.mode['lose_finalize_reply'] = True
+    with pytest.raises(TextAnalysisReissueError) as refused:
+        x.service.resume(x.http_policy(), first.flow_id)
+    assert refused.value.code == 'transport_unavailable'
+    retained = x.service.store.get(first.flow_id)
+    assert retained.state == 'authorized' and retained.bodies['finalize_request'] is not None
+    assert retained.bodies['result'] is None and x.mode['result_raw'] is not None
+    assert x.auth.read_epoch() == epoch and _authority_count(x.auth) == 0
+    if case_id == 'expired-recovery':
+        x.clock[0] += timedelta(minutes=31)
+        assert x.auth.read_bridge_session(x.identity.session.session_value) is None
+        with pytest.raises(RuntimeAuthorizationDenied):
+            x.service.resume(x.identity.policy, first.flow_id)
+        x.identity.session = x.auth.issue_bridge_session(BridgeSessionIssue('identity-credential-person',
+            'person', 'account', 'creator', x.clock[0] + timedelta(minutes=10),
+            tuple(grant.reference_id for grant in x.identity.grants)))
+        assert x.auth.read_epoch().value == epoch.value + 1
+    adoption_epoch = x.auth.read_epoch()
+    reopened = _reopen_wire_owner(x)
+    before = len(x.requests)
+    assert reopened.resume(x.http_policy(), first.flow_id).state == 'adopted'
+    adopted = reopened.store.get(first.flow_id)
+    assert adopted.bodies['result'] == x.mode['result_raw']
+    for name in ('prepare_request', 'read_request', 'recover_request', 'confirmation', 'finalize_request'):
+        assert adopted.bodies[name] == retained.bodies[name]
+    for name in ('operation_id', 'binding', 'operation_expires_at', 'confirmation_expires_at'):
+        assert adopted.metadata[name] == retained.metadata[name]
+    assert [path for path, _ in x.requests[before:]] == [CHALLENGE_PATH, PATH_PREFIX + 'recover']
+    assert sum(path == PATH_PREFIX + 'finalize' for path, _ in x.requests) == 1
+    assert len(x.challenges) == 4 and all(used for _, used in x.challenges.values())
+    assert _authority_count(x.auth) == 1 and x.auth.read_epoch().value == adoption_epoch.value + 1
+
+
+@pytest.mark.parametrize('case_id', ['consumed-proof'])
+def test_native_recovery_refusal_preserves_intent_until_explicit_retry(tmp_path, local_signer, case_id):
+    from app.security.text_analysis_reissue import PATH_PREFIX, CHALLENGE_PATH
+    x = _wire_fixture(tmp_path, local_signer)
+    first = x.service.begin(x.http_policy())
+    x.mode['lose_finalize_reply'] = True
+    with pytest.raises(TextAnalysisReissueError):
+        x.service.resume(x.http_policy(), first.flow_id)
+    retained, epoch = x.service.store.get(first.flow_id), x.auth.read_epoch()
+    x.mode['replies']['recover'] = [(401, {'profile': PROFILE, 'reason': 'proof_invalid'})]
+    reopened = _reopen_wire_owner(x)
+    before = len(x.requests)
+    with pytest.raises(TextAnalysisReissueError) as refused:
+        reopened.resume(x.http_policy(), first.flow_id)
+    assert refused.value.code == 'proof_invalid'
+    assert [path for path, _ in x.requests[before:]] == [CHALLENGE_PATH, PATH_PREFIX + 'recover']
+    rejected_challenge = x.requests[-1][1]['proof']['challenge_id']
+    assert reopened.store.get(first.flow_id) == retained
+    assert x.auth.read_epoch() == epoch and _authority_count(x.auth) == 0
+    assert reopened.resume(x.http_policy(), first.flow_id).state == 'adopted'
+    assert x.requests[-1][1]['proof']['challenge_id'] != rejected_challenge
+    assert reopened.store.get(first.flow_id).bodies['result'] == x.mode['result_raw']
+
+
+@pytest.mark.parametrize('case_id', ['read-noncreating'])
+def test_native_unknown_read_and_local_lookup_do_not_create_intents(tmp_path, local_signer, case_id):
+    from app.security.text_analysis_reissue import PATH_PREFIX, CHALLENGE_PATH
+    x = _wire_fixture(tmp_path, local_signer)
+    epoch = x.auth.read_epoch()
+    x.mode['replies']['read'] = [(401, {'profile': PROFILE, 'reason': 'proof_invalid'})]
+    with pytest.raises(TextAnalysisReissueError) as refused:
+        x.client.read(x.context)
+    assert refused.value.code == 'proof_invalid'
+    assert [path for path, _ in x.requests] == [CHALLENGE_PATH, PATH_PREFIX + 'read']
+    before = list(x.requests)
+    assert x.service.status(x.http_policy()) is None
+    with pytest.raises(ReissueJournalError):
+        x.service.resume(x.http_policy(), '00000000-0000-4000-8000-000000000001')
+    with x.auth.database.read() as db:
+        assert db.execute('SELECT count(*) FROM text_analysis_reissue_operations').fetchone()[0] == 0
+    assert x.requests == before and _authority_count(x.auth) == 0 and x.auth.read_epoch() == epoch
+
+
+@pytest.mark.parametrize('case_id', ['cleanup-restore'])
+def test_native_recovery_after_matched_local_restore(tmp_path, local_signer, case_id):
+    from app.persistence.authoritative_pair import AuthoritativePairOwner, FixtureAuthoritativeRootLease
+    from app.persistence.authoritative_backup import create_authoritative_backup, restore_authoritative_backup
+    from app.persistence.database import CanonicalSQLite
+    from app.persistence.migrations import MigrationRunner
+    from app.security.text_analysis_reissue import PATH_PREFIX, CHALLENGE_PATH
+    from tests.test_authoritative_backup import offline
+    root = tmp_path / 'live'
+    root.mkdir()
+    x = _wire_fixture(root, local_signer)
+    canonical_db = CanonicalSQLite(root / 'canonical.sqlite3')
+    MigrationRunner(canonical_db).run()
+    pair = AuthoritativePairOwner(x.auth, canonical_db, installation_id=x.context.binding['installation_id'],
+        root_lease=FixtureAuthoritativeRootLease(root))
+    pair.establish()
+    first = x.service.begin(x.http_policy())
+    x.mode['lose_finalize_reply'] = True
+    with pytest.raises(TextAnalysisReissueError):
+        x.service.resume(x.http_policy(), first.flow_id)
+    retained = x.service.store.get(first.flow_id)
+    with x.auth.database.read() as db:
+        retained_security = security_projection(db)
+    manifest = create_authoritative_backup(pair, tmp_path / 'snapshot')
+    restore_authoritative_backup(offline(pair), tmp_path / 'snapshot')
+    reopened = _reopen_wire_owner(x)
+    assert reopened.store.get(first.flow_id) == retained
+    assert manifest.security == retained_security
+    x.mode['replies']['recover'] = [(503, {'profile': PROFILE, 'reason': 'temporarily_unavailable'})]
+    with pytest.raises(TextAnalysisReissueError) as refused:
+        reopened.resume(x.http_policy(), first.flow_id)
+    assert refused.value.code == 'temporarily_unavailable'
+    assert reopened.store.get(first.flow_id) == retained and _authority_count(x.auth) == 0
+    before = len(x.requests)
+    assert reopened.resume(x.http_policy(), first.flow_id).state == 'adopted'
+    assert [path for path, _ in x.requests[before:]] == [CHALLENGE_PATH, PATH_PREFIX + 'recover']
+    adopted = reopened.store.get(first.flow_id)
+    assert adopted.bodies['result'] == x.mode['result_raw']
+    assert adopted.bodies['confirmation'] == retained.bodies['confirmation']
+    assert adopted.bodies['finalize_request'] == retained.bodies['finalize_request']
+    assert _authority_count(x.auth) == 1

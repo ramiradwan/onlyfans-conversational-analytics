@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import timedelta
 import hashlib
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -202,7 +203,7 @@ def test_late_explicit_close_prevents_response_acceptance(monkeypatch):
     assert raised.value.code == "transport_deadline" and stream.closed
 
 
-def make_reissue_client(schemas, local_signer, *, origin="https://example.test", now=NOW):
+def make_reissue_client(schemas, local_signer, *, origin="https://example.test", now=NOW, reason=None):
     from app.persistence.auth import InstallationKeyReference
     kid, trust, sign = local_signer
     private = ec.generate_private_key(ec.SECP256R1())
@@ -229,6 +230,8 @@ def make_reissue_client(schemas, local_signer, *, origin="https://example.test",
             return self.reopen_existing()
     key = Key(private, proof_context)
     confirmation = copy.deepcopy(RESPONSES[0]["confirmation"])
+    if reason is not None:
+        confirmation["reissue_reason"] = reason
     confirmation["binding"] = basis.binding
     confirmation["expires_at"] = (now + timedelta(seconds=300)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     authority_context = dict(RESPONSES[0]["context"], expected_installation_key_id=key_id, expected_installation_key_jkt=jkt)
@@ -240,13 +243,23 @@ def make_reissue_client(schemas, local_signer, *, origin="https://example.test",
     result_raw = None
     requests, challenges = [], {}
     clock = [now]
-    mode = {"state": "authorized", "late": False, "error": None}
+    mode = {"state": "authorized", "late": False, "error": None, "replies": {},
+            "lose_finalize_reply": False, "result_raw": None}
+    def supplied(action):
+        replies = mode["replies"].get(action, [])
+        if not replies:
+            return None
+        status, body = replies.pop(0)
+        return response(canonical(body), status=status)
     def handle(request):
         nonlocal result_raw
         assert not any(name in request.headers for name in ("cookie", "authorization", "idempotency-key"))
         value = json.loads(request.content)
         requests.append((request.url.path, value))
         if request.url.path == CHALLENGE_PATH:
+            overridden = supplied("challenge")
+            if overridden is not None:
+                return overridden
             action = value["purpose"].rsplit("-", 1)[1]
             prepared = prepare_request(canonical(value["request"]), context=replace(proof_context,
                 operation="reissue-v2-" + action, expected_request=canonical(value["request"])), schemas=schemas)
@@ -264,6 +277,9 @@ def make_reissue_client(schemas, local_signer, *, origin="https://example.test",
             challenge_id=value["proof"]["challenge_id"], challenge=value["proof"]["challenge"],
             context=replace(proof_context, operation="reissue-v2-" + action, expected_request=canonical(value["request"])), schemas=schemas)
         challenges[value["proof"]["challenge_id"]] = (prepared, True)
+        overridden = supplied(action)
+        if overridden is not None:
+            return overridden
         if mode["error"] is not None:
             status, body = mode["error"]
             return response(canonical(body), status=status)
@@ -275,16 +291,25 @@ def make_reissue_client(schemas, local_signer, *, origin="https://example.test",
             return response(canonical(dict(common, state="awaiting-authorization",
                 expires_at=(now + timedelta(seconds=1800)).strftime("%Y-%m-%dT%H:%M:%S.000Z"), entry_reference="A" * 43)))
         common["operation_id"] = confirmation["operation_id"]
+        if action == "read" and mode["state"] == "awaiting-authorization":
+            return response(canonical(dict(common, state="awaiting-authorization",
+                expires_at=(now + timedelta(seconds=1800)).strftime("%Y-%m-%dT%H:%M:%S.000Z"))))
         if action == "read" and mode["state"] == "authorized":
             return response(canonical(dict(common, state="authorized", expires_at=confirmation["expires_at"],
                 confirmation=confirmation, confirmation_digest=hashlib.sha256(canonical(confirmation)).hexdigest())))
         if action == "finalize":
             result["finalization_request_digest"] = hashlib.sha256(canonical(value["request"])).hexdigest()
             result_raw = b" " + canonical(result) + b"\n"
+            mode["result_raw"] = result_raw
             mode["state"] = "completed"
+            if mode["lose_finalize_reply"]:
+                mode["lose_finalize_reply"] = False
+                raise httpx.ReadError("response unavailable", request=request)
             if mode["late"]:
                 clock[0] += timedelta(minutes=31)
             return response(result_raw, status=201)
+        if action == "recover" and result_raw is None:
+            return response(canonical({"profile": PROFILE, "reason": "not_completed"}), status=409)
         assert result_raw is not None
         return response(result_raw)
     transport = TextAnalysisReissueHTTPTransport(origin, transport=httpx.MockTransport(handle))
@@ -390,3 +415,114 @@ def test_final_key_reopen_refuses_changed_binding(scenario):
     with pytest.raises(ValueError):
         client.prepare(basis)
     assert len(requests) == 1
+
+
+NATIVE_ADMISSION = [case for case in json.loads((Path(__file__).resolve().parents[1] /
+    "contracts/text-analysis-license-reissue-v2/admission-cases.json").read_bytes())
+    if case["input"].get("action") in {"challenge", "prepare", "read", "finalize", "recover"}]
+
+
+@pytest.mark.parametrize("case", NATIVE_ADMISSION, ids=lambda case: case["case_id"])
+def test_native_admission_response_observation(case, tmp_path, local_signer):
+    """Observe native requests and supplied outcomes, not provider decisions."""
+    from app.security.text_analysis_reissue import build_read_request, build_recover_request, build_finalize_request
+    from tests.text_analysis_reissue_fixture import make_reissue_fixture
+    action, expected = case["input"]["action"], case["expected"]
+    x = make_reissue_fixture(tmp_path, local_signer, reason=case["input"].get("reason"))
+    client, basis, authority_context = x.client, x.context, x.authority_context
+    requests, challenges, mode, clock = x.requests, x.challenges, x.mode, x.clock
+    store, schemas = x.service.store, client.schemas
+    original = replace(basis, operation_expires_at=None)
+    record = store.begin(origin=x.service.origin, context=original,
+        provider_name=x.key.provider_name, provider_key_name=x.key.provider_key_name,
+        read_request=build_read_request(original, schemas=schemas),
+        recover_request=build_recover_request(original, schemas=schemas))
+    def adopt(result):
+        return store.adopt(record, result, authority_store=x.service.authorities,
+            authority_context=authority_context, trust=client.trust, schemas=schemas)
+    prepared = authorized = previous = None
+    if action not in {"prepare", "challenge"}:
+        prepared = client.prepare(basis)
+        record = store.prepared(record, prepared)
+    if action in {"finalize", "recover"} or expected == "exact-result":
+        authorized = client.read(prepared.context)
+        record = store.authorized(record, authorized)
+        record = store.finalization(record, build_finalize_request(authorized.confirmation,
+            schemas=schemas, now=clock[0]))
+    if expected == "exact-result":
+        previous = client.finalize(authorized.confirmation, authority_context=authority_context)
+        record = adopt(previous)
+        clock[0] += timedelta(minutes=31)
+    if action == "read" and expected == "awaiting-authorization":
+        mode["state"] = "awaiting-authorization"
+    successes = {"awaiting-authorization", "challenge", "completed", "exact-result"}
+    if expected not in successes:
+        status = {"invalid/400": 400, "invalid/413": 413, "rate_limited": 429,
+            "temporarily_unavailable": 503, "unsupported_profile": 409,
+            "unsupported_release": 409, "proof_invalid": 401, "request_conflict": 409,
+            "authority_unavailable": 403, "not_completed": 409}[expected]
+        reason = expected.split("/", 1)[0]
+        body = {"profile": PROOF_PROFILE if action == "challenge" else PROFILE, "reason": reason}
+        if reason == "rate_limited":
+            body["retry_at"] = (clock[0] + timedelta(seconds=10)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        mode["replies"][action] = [(status, body)]
+    before, signed = len(requests), len(client.key_authority.messages)
+    epoch, ensure_calls = x.auth.read_epoch(), client.key_authority.ensure_calls
+    with x.auth.database.read() as db:
+        authorities_before = db.execute('SELECT count(*) FROM text_analysis_authority_references').fetchone()[0]
+    def invoke():
+        if action in {"prepare", "challenge"}:
+            return client.prepare(basis)
+        options = dict(confirmation=None if authorized is None else authorized.confirmation,
+            authority_context=authority_context,
+            original_finalization_request=None if previous is None else previous.original_finalization_request,
+            previous_response=None if previous is None else previous.response_bytes)
+        if action == "finalize":
+            return client.finalize(options.pop("confirmation"), **options)
+        return getattr(client, action)(prepared.context, **options)
+    if expected not in successes:
+        with pytest.raises(TextAnalysisReissueError) as raised:
+            invoke()
+        assert raised.value.code == reason
+        assert raised.value.retry_at == body.get("retry_at")
+        assert mode["replies"][action] == []
+        assert store.get(record.flow_id) == record and x.auth.read_epoch() == epoch
+    else:
+        result = invoke()
+        if expected in {"awaiting-authorization", "challenge"}:
+            assert result.state == "awaiting-authorization"
+            assert result.context.original_prepare == basis.original_prepare
+            if action in {"prepare", "challenge"}:
+                record = store.prepared(record, result)
+            assert store.get(record.flow_id) == record and x.auth.read_epoch() == epoch
+        else:
+            assert isinstance(result, ValidatedReissueResult)
+            assert result.response_bytes == mode["result_raw"]
+            if previous is not None:
+                assert result == previous
+            assert json.loads(result.confirmation.confirmation_bytes)["reissue_reason"] == (
+                case["input"].get("reason") or RESPONSES[0]["confirmation"]["reissue_reason"])
+            retained = adopt(result)
+            assert retained.bodies["result"] == result.response_bytes and retained.state == "adopted"
+            assert x.auth.read_epoch().value == epoch.value + (previous is None)
+    count = 1 if action == "challenge" and expected != "challenge" else 2
+    assert len(requests) - before == count
+    assert len(client.key_authority.messages) - signed == (count - 1)
+    assert requests[before][0] == CHALLENGE_PATH
+    if count == 2:
+        sent = requests[-1][1]
+        assert requests[-1][0] == PATH_PREFIX + ("prepare" if action == "challenge" else action)
+        assert sent["request"]["operation_id"] == basis.operation_id
+        assert sent["request"]["binding"] == basis.binding
+        if action in {"prepare", "challenge"}:
+            assert sent["request"] == json.loads(basis.original_prepare)
+        elif action == "finalize":
+            assert sent["request"]["confirmation_digest"] == authorized.confirmation.confirmation_digest
+        else:
+            assert set(sent["request"]) == {"profile", "operation_id", "binding"}
+    assert len({value["proof"]["challenge_id"] for path, value in requests if path != CHALLENGE_PATH}) == sum(
+        path != CHALLENGE_PATH for path, _ in requests)
+    assert client.key_authority.ensure_calls == ensure_calls
+    with x.auth.database.read() as db:
+        expected_authorities = 1 if expected in {"completed", "exact-result"} else authorities_before
+        assert db.execute('SELECT count(*) FROM text_analysis_authority_references').fetchone()[0] == expected_authorities
