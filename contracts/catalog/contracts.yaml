@@ -1283,3 +1283,80 @@ contracts:
     - schemas/license-reissue-text-analysis-supported-profiles/v1/supported-profiles.schema.json
     openapi_operations: []
     governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md
+  - id: text-analysis-license-reissue-v2
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Exact text-analysis licence replacement operation.
+    profile: urn:bridge-clean:text-analysis-license-reissue:v2
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 8192
+    max_response_bytes: 24576
+    schema_paths:
+    - schemas/license-reissue-text-analysis/v2/definitions.schema.json
+    - schemas/license-reissue-text-analysis/v2/prepare-request.schema.json
+    - schemas/license-reissue-text-analysis/v2/read-request.schema.json
+    - schemas/license-reissue-text-analysis/v2/finalize-request.schema.json
+    - schemas/license-reissue-text-analysis/v2/recover-request.schema.json
+    - schemas/license-reissue-text-analysis/v2/prepare-response.schema.json
+    - schemas/license-reissue-text-analysis/v2/confirmation.schema.json
+    - schemas/license-reissue-text-analysis/v2/result.schema.json
+    - schemas/license-reissue-text-analysis/v2/read-response.schema.json
+    - schemas/license-reissue-text-analysis/v2/error.schema.json
+    openapi_operations:
+    - prepareTextAnalysisLicenseReissueV2
+    - readTextAnalysisLicenseReissueV2
+    - finalizeTextAnalysisLicenseReissueV2
+    - recoverTextAnalysisLicenseReissueV2
+    governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md
+  - id: text-analysis-license-reissue-authorization-v2
+    owner: commercial
+    producer: customer-browser
+    consumer: commercial-control-plane
+    purpose: Exact text-analysis licence replacement customer authorization.
+    profile: urn:bridge-clean:text-analysis-license-reissue-authorization:v2
+    classification: commercial-confidential
+    retention_class: commercial-authority-durable
+    max_request_bytes: 2048
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/license-reissue-text-analysis-authorization/v2/authorize-request.schema.json
+    - schemas/license-reissue-text-analysis-authorization/v2/authorize-response.schema.json
+    - schemas/license-reissue-text-analysis-authorization/v2/error.schema.json
+    openapi_operations:
+    - openTextAnalysisLicenseReissueV2
+    - authorizeTextAnalysisLicenseReissueV2
+    governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md
+  - id: text-analysis-license-reissue-proof-v2
+    owner: commercial
+    producer: local-product
+    consumer: commercial-control-plane
+    purpose: Exact text-analysis licence replacement installation proof.
+    profile: urn:bridge-clean:text-analysis-license-reissue-proof:v2
+    classification: cross-plane-security
+    retention_class: onboarding-working-state
+    max_request_bytes: 12288
+    max_response_bytes: 4096
+    schema_paths:
+    - schemas/license-reissue-text-analysis-proof/v2/definitions.schema.json
+    - schemas/license-reissue-text-analysis-proof/v2/challenge-request.schema.json
+    - schemas/license-reissue-text-analysis-proof/v2/challenge-response.schema.json
+    - schemas/license-reissue-text-analysis-proof/v2/error.schema.json
+    openapi_operations:
+    - issueTextAnalysisLicenseReissueProofChallengeV2
+    governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md
+  - id: text-analysis-license-reissue-supported-profiles-v2
+    owner: contracts
+    producer: contracts
+    consumer: local-product
+    purpose: Exact text-analysis licence replacement supported profile set.
+    profile: urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2
+    classification: public-release
+    retention_class: immutable-public-release
+    max_request_bytes: 3072
+    max_response_bytes: 3072
+    schema_paths:
+    - schemas/license-reissue-text-analysis-supported-profiles/v2/supported-profiles.schema.json
+    openapi_operations: []
+    governing_adr: docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md

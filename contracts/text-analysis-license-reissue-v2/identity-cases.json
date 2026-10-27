@@ -1,0 +1,1170 @@
+[
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "exact-action-and-phase",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": true
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-operation_id",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "substitution",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-prior_license_id",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "substitution",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-prior_issuance_id",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "substitution",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-binding",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": "substitution",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-reissue_reason",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "substitution",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-scope",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": "substitution",
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-supported_profiles",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": "substitution"
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-release_identity",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": "substitution",
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-profile",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "substitution",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "action-substitution-organization_id",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "substitution",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "substitution",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "phase-substitution-profile",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "substitution",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "phase-substitution-operation_id",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "substitution",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "phase-substitution-prior_license_id",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "substitution",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "phase-substitution-prior_issuance_id",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "substitution"
+    },
+    "case_id": "phase-substitution-reissue_reason",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "substitution",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "phase-substitution-customer_step_up_ref",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "ordinary-action-receipt",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "ordinary-action-receipt",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue-v2",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "text-analysis-license-reissue-v2",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  },
+  {
+    "action": "text-analysis-license-reissue",
+    "authorize_request": {
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation"
+    },
+    "case_id": "reference-excluded-from-action-parameters",
+    "parameter_digest": "5b1fdc8491d5db95c75e999300aa1834a618a0639eb3e6710f99be459f28a10c",
+    "parameters": {
+      "binding": {
+        "installation_id": "fixture-replacement",
+        "installation_key_id": "ik1.8fDVCA9W0PgOHzDOtW6d7g",
+        "installation_key_jkt": "8fDVCA9W0PgOHzDOtW6d7h95gk8fDN8LhmR3WYcL8qo",
+        "organization_id": "fixture-organization"
+      },
+      "customer_step_up_ref": "fixture-exact-action-reference",
+      "operation_id": "019a1957-0000-7000-8000-000000000043",
+      "organization_id": "fixture-organization",
+      "prior_issuance_id": "019a1957-0000-7000-8000-000000000042",
+      "prior_license_id": "019a1957-0000-7000-8000-000000000041",
+      "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+      "reissue_reason": "replacement-installation",
+      "release_identity": {
+        "architecture": "x86_64",
+        "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "contract_manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "platform": "windows",
+        "product_id": "bridge-clean",
+        "profile": "urn:bridge-clean:text-analysis-release-identity:v1",
+        "release_version": "1.0.0",
+        "trust_set_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "vector_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "scope": {
+        "capability": "text-analysis",
+        "compatible_artifact_family": "text-analysis-artifact",
+        "fallback_major_versions": [],
+        "licensed_major_version": 1,
+        "seat_id": "original-seat",
+        "seat_scope": "organization-installation-seat",
+        "update_rights": true
+      },
+      "supported_profiles": {
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+        "profiles": [
+          "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-proof:v2",
+          "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v2",
+          "urn:bridge-clean:text-analysis-license-reissue:v2",
+          "urn:bridge-clean:text-analysis-license:v1",
+          "urn:bridge-clean:text-analysis-release-identity:v1"
+        ]
+      }
+    },
+    "phase_digest": "d17855c556b73f4a8f994ad59b44e7a367b9fc98abb1959b9e6c13b0f10659fd",
+    "valid": false
+  }
+]

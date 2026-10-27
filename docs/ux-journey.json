@@ -35,7 +35,8 @@
         "frontend/src/components/ui/FreshnessStatus.tsx",
         "frontend/src/services/desktopWindow.ts",
         "desktop/src-tauri/src/frame.rs",
-        "desktop/src-tauri/src/windows.rs"
+        "desktop/src-tauri/src/windows.rs",
+        "frontend/src/components/TextAnalysisReissueControls.tsx"
       ]
     },
     "extension.setup": {
@@ -197,6 +198,11 @@
       "id": "desktop-retained-data-recovery",
       "entry_state": "desktop.retained_data_recovery",
       "success_state": "desktop.passkey_sign_in"
+    },
+    {
+      "id": "text-analysis-licence-recovery",
+      "entry_state": "textanalysis.licence_recovery",
+      "success_state": "textanalysis.processing_controls"
     }
   ],
   "states": [
@@ -3281,6 +3287,33 @@
           "kind": "unit",
           "file": "desktop/src-tauri/src/policy.rs",
           "name": "recovery_guidance_is_a_fixed_unadmitted_shell_document"
+        }
+      ]
+    },
+    {
+      "id": "textanalysis.licence_recovery",
+      "surface": "desktop.app",
+      "anchor": {
+        "file": "frontend/src/components/TextAnalysisReissueControls.tsx",
+        "text": "data-journey-state=\"textanalysis.licence_recovery\""
+      },
+      "transitions": [
+        {
+          "to": "textanalysis.processing_controls",
+          "by": "user",
+          "action": "Check processing availability after recovery"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisReissueControls.test.tsx",
+          "name": "recovers an existing licence through explicit browser and original-request actions"
+        },
+        {
+          "kind": "unit",
+          "file": "frontend/tests/TextAnalysisReissueControls.test.tsx",
+          "name": "discovers the original request after remount without starting a replacement"
         }
       ]
     }

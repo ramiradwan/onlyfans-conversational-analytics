@@ -117,15 +117,17 @@ def test_snapshot_preserves_independent_claim_and_license_authorities() -> None:
 def test_consumer_pin_names_exact_published_contract_authority() -> None:
     pin = json.loads((ROOT / "consumer-pin.json").read_text("utf-8"))
 
-    assert pin["consumer_pin_version"] == 3
+    assert pin["consumer_pin_version"] == 4
     assert pin["source_repository"] == APPROVED_SOURCE_REPOSITORY
     assert pin["source_commit"] == APPROVED_SOURCE_COMMIT
     assert pin["source_tree"] == APPROVED_SOURCE_TREE
     assert pin["source_contract_manifest_path"] == SOURCE_MANIFEST_TARGET
     assert pin["source_contract_manifest_sha256"] == APPROVED_SOURCE_MANIFEST_SHA256
-    assert pin["aggregate_bundle_sha256"] == "eb8afe08c008390f3c62fa95d18e20d2172b6c3622774b27836ed2c3c25ec221"
-    assert pin["contract_manifest_sha256"] == "6c8eed0f70697b1fc7b3310183f0f10364c7072685b612f595956a7d5bdef748"
+    assert pin["aggregate_bundle_sha256"] == "d50639dae201aaa3298f7b2b312f39f5e4b08dbaec3f8f5e68f5240d3f937cf9"
+    assert pin["contract_manifest_sha256"] == "77dfd0719e5160f22b5104adad4372f7edd42232731a6cad236b85624e7978ff"
     assert {record["export"]: record["sha256"] for record in pin["conformance_manifests"]} == {
+        "text-analysis-license-reissue-v2": "b8d059dcdfedebad1da79eb649970b4cb28abd474b80eb3b731cf586032d0e80",
+        "text-analysis-license-reissue-response-conformance-v1": "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5",
         "complimentary-onboarding-activation-v2": "ac40ba0edeef98847bdc63485b7df144d4b64db91abd17cc85af724df4fa85bd",
         "text-analysis-license-reissue-v1": "680455193f7ced9e6649da05dabfcf6941de876361cf7cac21511f36c356d50d",
         "text-analysis-authority-v1": "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a",
@@ -594,6 +596,14 @@ def test_selected_fixture_exports_retain_exact_approved_bytes(export: str) -> No
      "680455193f7ced9e6649da05dabfcf6941de876361cf7cac21511f36c356d50d",
      1022, {"admission-cases.json", "lifecycle-cases.json", "proof-cases.json",
             "response-cases.json", "schema-cases.json", "trust-set.json"}),
+    ("text-analysis-license-reissue-v2",
+     "b8d059dcdfedebad1da79eb649970b4cb28abd474b80eb3b731cf586032d0e80",
+     1125, {"admission-cases.json", "identity-cases.json", "lifecycle-cases.json",
+            "proof-cases.json", "response-cases.json", "schema-cases.json",
+            "transport-cases.json", "trust-set.json"}),
+    ("text-analysis-license-reissue-response-conformance-v1",
+     "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5",
+     46, {"response-cases.json"}),
 ])
 def test_additive_family_inventory_has_independent_exact_pins(
     family: str, expected_hash: str, expected_count: int, expected_files: set[str],
@@ -627,15 +637,16 @@ def test_additive_family_inventory_has_independent_exact_pins(
 
 
 @pytest.mark.contract_integrity
-def test_reissue_inventory_does_not_widen_initial_issuance_support_or_trust() -> None:
+@pytest.mark.parametrize("version", [1, 2])
+def test_reissue_inventory_does_not_widen_initial_issuance_support_or_trust(version: int) -> None:
     pin = json.loads((ROOT / "consumer-pin.json").read_bytes())
-    support = json.loads((ROOT / "profiles/license-reissue-text-analysis-supported-profiles/v1/profile.json").read_bytes())
+    support = json.loads((ROOT / f"profiles/license-reissue-text-analysis-supported-profiles/v{version}/profile.json").read_bytes())
     profiles = support["profiles"]
     assert profiles == sorted(profiles) == [
-        "urn:bridge-clean:text-analysis-license-reissue-authorization:v1",
-        "urn:bridge-clean:text-analysis-license-reissue-proof:v1",
-        "urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v1",
-        "urn:bridge-clean:text-analysis-license-reissue:v1",
+        f"urn:bridge-clean:text-analysis-license-reissue-authorization:v{version}",
+        f"urn:bridge-clean:text-analysis-license-reissue-proof:v{version}",
+        f"urn:bridge-clean:text-analysis-license-reissue-supported-profiles:v{version}",
+        f"urn:bridge-clean:text-analysis-license-reissue:v{version}",
         "urn:bridge-clean:text-analysis-license:v1",
         "urn:bridge-clean:text-analysis-release-identity:v1",
     ]
@@ -644,12 +655,12 @@ def test_reissue_inventory_does_not_widen_initial_issuance_support_or_trust() ->
     assert tuple(original["profiles"]) == SUPPORTED
     assert len(SUPPORTED) == 12
     assert set(profiles[:4]).isdisjoint(SUPPORTED)
-    assert {"export": "text-analysis-license-reissue-v1",
-            "path": "text-analysis-license-reissue-v1/trust-set.json",
+    assert {"export": f"text-analysis-license-reissue-v{version}",
+            "path": f"text-analysis-license-reissue-v{version}/trust-set.json",
             "sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b"} in pin["trust_sets"]
     assert "complimentary-onboarding-activation-v2" not in {
         entry["export"] for entry in pin["trust_sets"]}
-    relative = "text-analysis-license-reissue-v1/trust-set.json"
+    relative = f"text-analysis-license-reissue-v{version}/trust-set.json"
     with pytest.raises(ContractsIntegrityError, match="not production usable"):
         load_trust_set(relative)
     trust = load_trust_set(relative, environment="development")
@@ -661,6 +672,8 @@ def test_reissue_inventory_does_not_widen_initial_issuance_support_or_trust() ->
 @pytest.mark.contract_integrity
 @pytest.mark.parametrize("family", [
     "complimentary-onboarding-activation-v2", "text-analysis-license-reissue-v1",
+    "text-analysis-license-reissue-v2",
+    "text-analysis-license-reissue-response-conformance-v1",
 ])
 @pytest.mark.parametrize("mutation", [
     "omit_family", "omit_conformance", "conflate_conformance", "wrong_generator",
@@ -691,6 +704,89 @@ def test_additive_family_pin_tampering_fails_closed(
                       if entry["export"] == family)
         target["version"] = "1.0.1"
     pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ContractsIntegrityError):
+        verify_snapshot_integrity(snapshot)
+
+
+@pytest.mark.contract_integrity
+def test_response_qualification_policy_selects_current_components() -> None:
+    pin = json.loads((ROOT / "consumer-pin.json").read_bytes())
+    relative = "catalog/text-analysis-license-reissue-response-qualification-policy-v1.json"
+    assert pin["qualification_policies"] == [{
+        "export": "text-analysis-license-reissue-v2", "path": relative,
+        "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504",
+    }]
+    policy = json.loads((ROOT / relative).read_bytes())
+    selected = {entry["component"]: entry for entry in policy["current_components"]}
+    assert set(selected) == {"admission", "identity", "lifecycle", "proof",
+                             "response", "schema", "transport"}
+    assert sum(entry["case_count"] for key, entry in selected.items() if key != "response") == 1082
+    assert selected["response"]["case_count"] == 46
+    assert sum(entry["case_count"] for entry in selected.values()) == 1128
+    assert policy["superseded_response"]["case_count"] == 43
+    assert policy["superseded_response"]["classification"] == "historical-response-oracle"
+    assert policy["superseded_response"]["path"] not in {entry["path"] for entry in selected.values()}
+    for entry in [*selected.values(), policy["superseded_response"]]:
+        path = ROOT / entry["path"].removeprefix("test-vectors/")
+        assert path.stat().st_size == entry["size"]
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"]
+        assert len(json.loads(path.read_bytes())) == entry["case_count"]
+    assert policy["response_semantics"] == {
+        "commit_clock": "original-final-owner-transition-snapshot",
+        "deadline_check": "unchanged-original-owner-deadlines-on-actual-clock",
+        "ordering": "wire-epoch-seconds-greater-than-or-equal-to-signed-iat",
+        "signed_iat": "unchanged-integer-issuance-seconds",
+        "wire_precision": "UTC-three-decimal-milliseconds-from-retained-commit",
+    }
+    historical = json.loads((ROOT / "text-analysis-license-reissue-v2/response-cases.json").read_bytes())
+    current = json.loads((ROOT / "text-analysis-license-reissue-response-conformance-v1/response-cases.json").read_bytes())
+    for case in historical:
+        projected = next(row for row in current if row["source_case_id"] == case["case_id"])
+        assert all(projected[key] == case[key] for key in
+                   ("confirmation", "context", "finalization_request"))
+
+
+@pytest.mark.contract_integrity
+@pytest.mark.parametrize("mutation", ["missing_collection", "empty", "duplicate", "wrong_family", "wrong_path", "wrong_hash"])
+def test_response_qualification_policy_pin_tampering_fails_closed(tmp_path: Path, mutation: str) -> None:
+    snapshot = tmp_path / "contracts"
+    shutil.copytree(ROOT, snapshot, ignore=shutil.ignore_patterns("__pycache__"))
+    pin_path = snapshot / "consumer-pin.json"
+    pin = json.loads(pin_path.read_bytes())
+    if mutation == "missing_collection":
+        del pin["qualification_policies"]
+    elif mutation == "empty":
+        pin["qualification_policies"] = []
+    elif mutation == "duplicate":
+        pin["qualification_policies"] *= 2
+    else:
+        record = pin["qualification_policies"][0]
+        key, value = {
+            "wrong_family": ("export", "text-analysis-license-reissue-v1"),
+            "wrong_path": ("path", "catalog/deferred-setup-preparation-policy.json"),
+            "wrong_hash": ("sha256", "0" * 64),
+        }[mutation]
+        record[key] = value
+    pin_path.write_text(json.dumps(pin, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    with pytest.raises(ContractsIntegrityError):
+        verify_snapshot_integrity(snapshot)
+
+
+@pytest.mark.contract_integrity
+@pytest.mark.parametrize("relative", [
+    "catalog/text-analysis-license-reissue-response-qualification-policy-v1.json",
+    "text-analysis-license-reissue-v2/admission-cases.json",
+    "text-analysis-license-reissue-response-conformance-v1/response-cases.json",
+])
+@pytest.mark.parametrize("mutation", ["omit", "tamper"])
+def test_response_qualification_bytes_are_required(tmp_path: Path, relative: str, mutation: str) -> None:
+    snapshot = tmp_path / "contracts"
+    shutil.copytree(ROOT, snapshot, ignore=shutil.ignore_patterns("__pycache__"))
+    path = snapshot / relative
+    if mutation == "omit":
+        path.unlink()
+    else:
+        path.write_bytes(path.read_bytes() + b" ")
     with pytest.raises(ContractsIntegrityError):
         verify_snapshot_integrity(snapshot)
 

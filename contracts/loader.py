@@ -16,17 +16,20 @@ class ContractsIntegrityError(RuntimeError):
 _MANIFEST = "manifest.json"
 _PIN = "consumer-pin.json"
 _APPROVED_SOURCE_REPOSITORY = "ramiradwan/creator-platform-contracts"
-_APPROVED_SOURCE_COMMIT = "5c1d9b58f56258c905ccfc803806cb271f4e721a"
-_APPROVED_SOURCE_TREE = "f1348abf33d3d217717a6bffc16093cc9dfb240e"
-_APPROVED_SOURCE_MANIFEST_SHA256 = "fdec45fabe3b657d33bbf4c6b05133eee06952be5d4669b4914fcf9135fedb39"
+_APPROVED_SOURCE_COMMIT = "e40cc5d8d196e060dfee66c3ae73258e66e80708"
+_APPROVED_SOURCE_TREE = "f3647b5530e89f2f213e6a15d42e4effd45c0f9b"
+_APPROVED_SOURCE_MANIFEST_SHA256 = "c7c7dd49ae22d54431916e3d713241e6141d670a254c1f8d0b3a186cdaf54cf9"
 _TEXT_ANALYSIS_EXPORT = "text-analysis-authority-v1"
 _TEXT_ANALYSIS_VECTOR_SHA256 = "ac16c215514ed99d6c85a9189494b377a945c7a7a765896a4acbc7417d9ee50a"
 _TEXT_ANALYSIS_TRUST_SHA256 = "c1020fc2fb8faf2e42d3a3e204452a420ac4c0badc37a22f9217f37f82f8ab7b"
 _TEXT_ANALYSIS_VECTOR_PROFILE = "urn:bridge-clean:text-analysis-authority-vectors:v1"
 _TEXT_ANALYSIS_GENERATOR_VERSION = "1.0.1"
-_UNSIGNED_VECTOR_EXPORT = "complimentary-onboarding-activation-v2"
+_UNSIGNED_VECTOR_EXPORTS = {
+    "complimentary-onboarding-activation-v2",
+    "text-analysis-license-reissue-response-conformance-v1",
+}
 _ADDITIONAL_VECTOR_PINS = {
-    _UNSIGNED_VECTOR_EXPORT: {
+    "complimentary-onboarding-activation-v2": {
         "sha256": "ac40ba0edeef98847bdc63485b7df144d4b64db91abd17cc85af724df4fa85bd",
         "profile": "urn:bridge-clean:complimentary-onboarding-activation-vectors:v2",
         "trust_sha256": None,
@@ -36,6 +39,21 @@ _ADDITIONAL_VECTOR_PINS = {
         "profile": "urn:bridge-clean:text-analysis-license-reissue-vectors:v1",
         "trust_sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b",
     },
+    "text-analysis-license-reissue-v2": {
+        "sha256": "b8d059dcdfedebad1da79eb649970b4cb28abd474b80eb3b731cf586032d0e80",
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-vectors:v2",
+        "trust_sha256": "689235cbef993628fe8e8921533f264f199c72020eb11603b1ec71199b58397b",
+    },
+    "text-analysis-license-reissue-response-conformance-v1": {
+        "sha256": "caefdad92b2ef29058b2bb9876b28df16756280658e5010ca9725af55a1b08c5",
+        "profile": "urn:bridge-clean:text-analysis-license-reissue-response-conformance:v1",
+        "trust_sha256": None,
+    },
+}
+_REISSUE_POLICY = {
+    "export": "text-analysis-license-reissue-v2",
+    "path": "catalog/text-analysis-license-reissue-response-qualification-policy-v1.json",
+    "sha256": "58d266fcee4f987091b67ee3adf6e517531606a226d35b75c5870b748908e504",
 }
 _MANIFEST_KEYS = {
     "content_digest",
@@ -55,6 +73,7 @@ _PIN_KEYS = {
     "trust_sets",
     "vector_manifests",
     "conformance_manifests",
+    "qualification_policies",
     "source_repository",
     "source_commit",
     "source_tree",
@@ -190,7 +209,7 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
     contract_root = _contracts_root(root)
     manifest = verify_manifest(contract_root)
     pin = _read_json(contract_root / _PIN)
-    if set(pin) != _PIN_KEYS or pin.get("consumer_pin_version") != 3:
+    if set(pin) != _PIN_KEYS or pin.get("consumer_pin_version") != 4:
         raise ContractsIntegrityError("consumer pin has an invalid envelope")
     manifest_path = contract_root / _MANIFEST
     if pin["contract_manifest_path"] != _MANIFEST or pin["contract_manifest_sha256"] != _sha256(manifest_path):
@@ -271,8 +290,8 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
     )
     if not _ADDITIONAL_VECTOR_PINS.keys() <= vector_manifests.keys():
         raise ContractsIntegrityError("additional fixture vector pins are missing")
-    if (_UNSIGNED_VECTOR_EXPORT in trust_sets
-            or set(vector_manifests) - {_UNSIGNED_VECTOR_EXPORT} != set(trust_sets)):
+    if (_UNSIGNED_VECTOR_EXPORTS & trust_sets.keys()
+            or set(vector_manifests) - _UNSIGNED_VECTOR_EXPORTS != set(trust_sets)):
         raise ContractsIntegrityError("consumer pin artifact exports do not match")
     for export, item in conformance_manifests.items():
         vector_manifest = _read_json(contract_root / item["path"])
@@ -295,6 +314,29 @@ def verify_snapshot_integrity(root: Path | None = None) -> dict[str, Any]:
                 "size": entry.get("size"),
             }:
                 raise ContractsIntegrityError("conformance manifest does not match bundled vectors")
+    if pin.get("qualification_policies") != [_REISSUE_POLICY]:
+        raise ContractsIntegrityError("response qualification policy pin is missing or drifted")
+    policy_path = _REISSUE_POLICY["path"]
+    if (listed.get(policy_path, {}).get("sha256") != _REISSUE_POLICY["sha256"]
+            or _sha256(contract_root / policy_path) != _REISSUE_POLICY["sha256"]):
+        raise ContractsIntegrityError("response qualification policy bytes drifted")
+    policy = _read_json(contract_root / policy_path)
+    components = policy["current_components"]
+    for component in [*components, policy["superseded_response"]]:
+        relative = component["path"].removeprefix("test-vectors/")
+        family_relative = component["family_manifest_path"].removeprefix("test-vectors/")
+        family = family_relative.split("/", 1)[0]
+        family_pin = conformance_manifests.get(family)
+        if (family_pin is None or family_pin["path"] != family_relative
+                or family_pin["sha256"] != component["family_manifest_sha256"]
+                or listed.get(relative) != {
+                    "path": relative, "sha256": component["sha256"],
+                    "size": component["size"],
+                }):
+            raise ContractsIntegrityError("response qualification component binding drifted")
+        cases = json.loads((contract_root / relative).read_text(encoding="utf-8"))
+        if not isinstance(cases, list) or len(cases) != component["case_count"]:
+            raise ContractsIntegrityError("response qualification component count drifted")
     generator_versions = pin.get("generator_versions")
     if not isinstance(generator_versions, list):
         raise ContractsIntegrityError("consumer pin has invalid generator versions")

@@ -23,7 +23,7 @@ HOSTED_API_VECTORS = (
     / "capability-license-hosted-api-v1"
     / "provisioning-quote-exchange.json"
 )
-SHARED_CONTRACT_COMMIT = "5c1d9b58f56258c905ccfc803806cb271f4e721a"
+IMPORTED_SNAPSHOT_COMMIT = "e40cc5d8d196e060dfee66c3ae73258e66e80708"
 HOSTED_ISSUE_CASE = "claim-v2-issue-positive"
 
 
@@ -35,14 +35,14 @@ def _issue_case() -> dict[str, Any]:
     return next(case for case in vectors if case.get("case_id") == HOSTED_ISSUE_CASE)
 
 
-def test_product_snapshot_matches_shared_hosted_v2_contract_pin() -> None:
+def test_product_snapshot_matches_imported_contract_source() -> None:
     pin = cast(
         dict[str, Any],
         json.loads(CONTRACT_PIN.read_text(encoding="utf-8")),
     )
 
     assert pin["source_repository"] == "ramiradwan/creator-platform-contracts"
-    assert pin["source_commit"] == SHARED_CONTRACT_COMMIT
+    assert pin["source_commit"] == IMPORTED_SNAPSHOT_COMMIT
 
 
 def test_brain_production_decoder_accepts_exact_shared_hosted_v2_handoff_bytes() -> None:

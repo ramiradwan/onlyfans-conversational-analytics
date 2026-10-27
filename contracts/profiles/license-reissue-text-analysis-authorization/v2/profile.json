@@ -1,0 +1,90 @@
+{
+  "profile": "urn:bridge-clean:text-analysis-license-reissue-authorization:v2",
+  "governing_adr": "docs/adr/0044-reissue-text-analysis-licences-to-replacement-installations.md",
+  "messages": {
+    "authorize-request": "schemas/license-reissue-text-analysis-authorization/v2/authorize-request.schema.json",
+    "authorize-response": "schemas/license-reissue-text-analysis-authorization/v2/authorize-response.schema.json",
+    "error": "schemas/license-reissue-text-analysis-authorization/v2/error.schema.json"
+  },
+  "request_max_bytes": 2048,
+  "response_max_bytes": 4096,
+  "unknown_json_members": "reject",
+  "duplicate_json_members": "reject",
+  "classification": "commercial-confidential",
+  "retention_class": "commercial-authority-durable",
+  "error_reasons": [
+    "invalid",
+    "rate_limited",
+    "temporarily_unavailable",
+    "authentication_required",
+    "authorization_denied",
+    "request_conflict",
+    "confirmation_required",
+    "expired",
+    "authority_unavailable",
+    "unsupported_profile",
+    "unsupported_release"
+  ],
+  "error_max_bytes": 4096,
+  "audit_retention_class": "security-audit",
+  "audit_days": 400,
+  "request_response_logging": false,
+  "step_up_action": "text-analysis-license-reissue",
+  "step_up_max_seconds": 300,
+  "customer_session_max_seconds": 1800,
+  "authorization_max_seconds": 300,
+  "navigation_response_max_bytes": 16384,
+  "reasons": [
+    "replacement-installation",
+    "lost-or-destroyed-installation",
+    "inaccessible-original-hardware"
+  ],
+  "manual_reasons": [
+    "lost-or-destroyed-installation",
+    "inaccessible-original-hardware"
+  ],
+  "self_service_bound": "hosted-configured-committed-count-rolling-window-manual-decision-required",
+  "bound_recheck": "under-lineage-lock-at-finalization",
+  "step_up_digest": "SHA-256(RFC8785(exact-A2-authorization-parameters-excluding-customer_step_up_ref))",
+  "retry": "same-current-actor-session-and-phase-digest-no-second-step-up-consumption-no-renewal",
+  "customer_cookie": {
+    "name": "__Host-cccp-customer",
+    "secure": true,
+    "http_only": true,
+    "same_site": "Lax",
+    "path": "/",
+    "domain_allowed": false,
+    "duplicates": "reject",
+    "aliases": "reject",
+    "bearer_fallback": false
+  },
+  "step_up_parameters": [
+    "profile",
+    "organization_id",
+    "operation_id",
+    "prior_license_id",
+    "prior_issuance_id",
+    "binding",
+    "reissue_reason",
+    "scope",
+    "supported_profiles",
+    "release_identity"
+  ],
+  "authorization_phase_digest": "SHA-256(RFC8785(complete-six-field-A2-authorize-request))",
+  "identity_action": "text-analysis-license-reissue",
+  "identity_completion": "same-origin-CSRF-protected-noncreating-POST-exact-pending-context-same-live-session",
+  "identity_callback": "verified-provider-auth_time-at-most-300-seconds-original-actor-session-generation-and-deadlines",
+  "step_up_reference": "non-bearer-one-use-exact-action-only-transient-caller-memory",
+  "step_up_reference_prohibited_destinations": [
+    "navigation-html",
+    "url",
+    "redirect-parameters",
+    "browser-storage",
+    "clipboard",
+    "referrer",
+    "native-wire",
+    "audit-log-body",
+    "A2-response"
+  ],
+  "governing_amendment": "docs/adr/0044-amendments/2026-10-26-hosted-cookie-compatible-reissue-successor.md"
+}

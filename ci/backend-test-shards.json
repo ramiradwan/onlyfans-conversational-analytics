@@ -379,6 +379,7 @@
     "tests/test_text_analysis_preview_reader.py": 3,
     "tests/test_text_analysis_preview_runtime.py": 2,
     "tests/test_text_analysis_preview_service.py": 2,
+    "tests/test_text_analysis_reissue_api.py": 3,
     "tests/test_text_analysis_retention_lifecycle.py": 4,
     "tests/test_text_analysis_views.py": 4,
     "tests/test_tied_insertion_admission.py": 3,

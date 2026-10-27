@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge-clean.invalid/schemas/license-reissue-text-analysis/v2/definitions.schema.json",
+  "title": "license-reissue-text-analysis definitions v2",
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_id",
+        "installation_id",
+        "installation_key_id",
+        "installation_key_jkt"
+      ],
+      "properties": {
+        "organization_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "installation_key_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/installationKeyId"
+        },
+        "installation_key_jkt": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/base64url32"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seat_id",
+        "seat_scope",
+        "capability",
+        "licensed_major_version",
+        "compatible_artifact_family",
+        "update_rights",
+        "fallback_major_versions"
+      ],
+      "properties": {
+        "seat_id": {
+          "$ref": "https://contracts.bridge-clean.invalid/schemas/common/v1/definitions.schema.json#/$defs/crossPlaneId"
+        },
+        "seat_scope": {
+          "const": "organization-installation-seat"
+        },
+        "capability": {
+          "const": "text-analysis"
+        },
+        "licensed_major_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "compatible_artifact_family": {
+          "const": "text-analysis-artifact"
+        },
+        "update_rights": {
+          "type": "boolean"
+        },
+        "fallback_major_versions": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        }
+      }
+    }
+  }
+}

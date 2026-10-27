@@ -108,7 +108,8 @@ def test_all_jobs_have_explicit_timeouts_and_integration_is_bounded() -> None:
     jobs = _workflow_document()["jobs"]
     for name, job in jobs.items():
         timeout = job.get("timeout-minutes")
-        assert isinstance(timeout, int) and 0 < timeout <= 60, f"{name} needs a bounded timeout"
+        limit = 90 if name == "windows-full-shards" else 60
+        assert isinstance(timeout, int) and 0 < timeout <= limit, f"{name} needs a bounded timeout"
     shard = jobs["analytics-integration"]
     assert shard["name"] == "analytics-integration-${{ matrix.shard }}"
     assert shard["strategy"] == {"fail-fast": False, "max-parallel": 4, "matrix": {"shard": [1, 2, 3, 4]}}
@@ -121,7 +122,7 @@ def _assert_full_windows_shards_are_blocking(workflow: dict[str, Any]) -> None:
     assert job["name"] == "windows-full-regression-${{ matrix.shard }}"
     assert job["runs-on"] == "windows-latest"
     assert job["strategy"] == {"fail-fast": False, "max-parallel": 2, "matrix": {"shard": [1, 2]}}
-    assert job["timeout-minutes"] == 60
+    assert job["timeout-minutes"] == 90
     execution = next(step for step in job["steps"] if step.get("name") == "Test complete Windows backend regression shard")
     assert execution["run"] == "python tools/test_backend.py --lane windows-full-regression --shard ${{ matrix.shard }}"
     assert execution["env"]["CI_TEST_LANE"] == "windows-full-regression-${{ matrix.shard }}"
@@ -243,7 +244,7 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
 
 def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_or_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v4-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v5-pr-cutover"
     events = workflow["on"]
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]

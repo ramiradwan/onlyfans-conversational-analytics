@@ -34,6 +34,8 @@
     "_internal/app/onboarding/entry.html",
     "_internal/app/onboarding/entry.css",
     "_internal/app/onboarding/entry.js",
+    "_internal/app/onboarding/reissue_entry.html",
+    "_internal/app/onboarding/reissue_entry.js",
     "_internal/shared/desktop-onboarding/schema-v2.json",
     "_internal/shared/browser-tasks/schema.json",
     "_internal/app/static/dist/setup-code/index.html",
@@ -131,7 +133,8 @@
         "0033_signing_publication_authority.sql": "ca65ce8cfc02108d0d8a249499d206c5246bb3b7fa942e4c9a6bd2381ba216bb",
         "0034_nlp_dependencies.sql": "1337162d5f43f0b34a509ef298965807450362ae52ffc8b08a153fac95e25a67",
         "0035_text_analysis_authority.sql": "87f8846df9c7c6728edc3e205a8f5f0c36d92b769ae3e6ec9e5a5eb19b8372a7",
-        "0036_authoritative_pair.sql": "93686f6dd3a6a804b2d33fa8afec00129ea799f54d516f000eb68ebd2e5b398b"
+        "0036_authoritative_pair.sql": "93686f6dd3a6a804b2d33fa8afec00129ea799f54d516f000eb68ebd2e5b398b",
+        "0037_text_analysis_reissue.sql": "b786935312c86ac75d0a8cdab3a7e7817b69f914309e2360f6f1a191073968be"
       }
     },
     {
@@ -183,10 +186,10 @@
   ],
   "contracts": {
     "path": "_internal/contracts",
-    "manifest_sha256": "6c8eed0f70697b1fc7b3310183f0f10364c7072685b612f595956a7d5bdef748",
-    "consumer_pin_sha256": "0655500c3c9ff3839da75acbbed15bac884fdfa49635171e6a6fe81446935069",
+    "manifest_sha256": "77dfd0719e5160f22b5104adad4372f7edd42232731a6cad236b85624e7978ff",
+    "consumer_pin_sha256": "24b6e8ca08f422674b3bc18ef2e0a2a17068e8c494a583d15786028bd4490151",
     "root_file_sha256": {
-      "loader.py": "8ea12c8af0ca0a588140543032e127d06bb49b4be785433cc3e254708ca423ec",
+      "loader.py": "0ce5cd0577be77e24e34d7a34cd235762572e05f028c8dfdec38758441d2d434",
       "verify.py": "e954e65aba92ffb85619ada60fafbc0e68a7c0e80947da84f4a6b1d6580b708e"
     },
     "root_files": [
@@ -271,7 +274,7 @@
     },
     {
       "name": "bearer_or_session_token",
-      "pattern": "(?i)(?:\\bbearer\\s+[A-Za-z0-9._~-]{16,}|\\b(?:bearer|session)[_-]?token[\\\"']?\\s*[:=]\\s*(?:[\\\"'][^\\\"']{16,}[\\\"']|[A-Za-z0-9._~-]{16,}))"
+      "pattern": "(?i)(?:(?<![\\w-])bearer\\s+[A-Za-z0-9._~-]{16,}|\\b(?:bearer|session)[_-]?token[\\\"']?\\s*[:=]\\s*(?:[\\\"'][^\\\"']{16,}[\\\"']|[A-Za-z0-9._~-]{16,}))"
     },
     {
       "name": "generated_runtime_secret",

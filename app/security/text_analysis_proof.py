@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 from app.security.signed_objects import decode, encode, public_key
 from app.security.text_analysis_contract import (
     PREFIX, TextAnalysisSchemas, canonical, parse_json, supported_profiles,
+    reissue_supported_profiles, reissue_object,
 )
 
 _ORDER = int("FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16)
@@ -34,32 +35,45 @@ class _Operation:
     authority: str | None
     request_limit: int = 8192
     challenge_limit: int = 12288
+    reissue_v2: bool = False
 
     @property
     def profile(self):
+        if self.reissue_v2:
+            return PREFIX + "license-reissue-proof:v2"
         return PREFIX + self.family + "-proof:v1"
 
     @property
     def purpose(self):
+        if self.reissue_v2:
+            return "text-analysis-license-reissue-v2-" + self.action
         family = {"license-issuance": "license", "preview-issuance": "preview",
                   "authority-delivery": "authority"}.get(self.family, self.family)
         return "text-analysis-" + family + "-" + self.action
 
     @property
     def path(self):
+        if self.reissue_v2:
+            return "/v2/text-analysis-license-reissues:" + self.action
         plural = "authority-deliveries" if self.family == "authority-delivery" else self.family + "s"
         return "/v1/text-analysis-" + plural + ":" + self.action
 
     @property
     def audience(self):
+        if self.reissue_v2:
+            return "urn:bridge-clean:commercial-control-plane:text-analysis-license-reissue:v2"
         return "urn:bridge-clean:commercial-control-plane:text-analysis-" + self.family
 
     @property
     def domain(self):
+        if self.reissue_v2:
+            return b"BRIDGE-CLEAN-TEXT-ANALYSIS-LICENSE-REISSUE-PROOF-V2\0"
         return ("BRIDGE-CLEAN-TEXT-ANALYSIS-" + self.family.upper() + "-PROOF-V1\0").encode("ascii")
 
     @property
     def schema_root(self):
+        if self.reissue_v2:
+            return "schemas/license-reissue-text-analysis-proof/v2/"
         family = self.family if self.family == "preview-acquisition" else self.family + "-proof"
         return "schemas/text-analysis-" + family + "/v1/"
 
@@ -77,6 +91,10 @@ _OPERATIONS = {
     "preview-prepare": _Operation("preview-acquisition", "prepare", "preview"),
     "preview-read": _Operation("preview-acquisition", "read", "preview"),
     "preview-submit": _Operation("preview-acquisition", "submit", "preview"),
+    "reissue-v2-prepare": _Operation("license-reissue", "prepare", "license", reissue_v2=True),
+    "reissue-v2-read": _Operation("license-reissue", "read", "license", reissue_v2=True),
+    "reissue-v2-finalize": _Operation("license-reissue", "finalize", "license", reissue_v2=True),
+    "reissue-v2-recover": _Operation("license-reissue", "recover", "license", reissue_v2=True),
 }
 
 
@@ -134,6 +152,8 @@ def _key(context):
 
 
 def _validate_request(value, context, operation, schemas):
+    if operation.reissue_v2:
+        reissue_object(canonical(value), maximum=operation.request_limit)
     prefix = "proof-" if operation.family == "preview-acquisition" else ""
     envelope = {"profile": operation.profile, "purpose": operation.purpose, "request": value}
     schemas.require(operation.schema_root + prefix + "challenge-request.schema.json", envelope)
@@ -141,9 +161,12 @@ def _validate_request(value, context, operation, schemas):
                ("organization_id", "installation_id", "installation_key_id", "installation_key_jkt")}
     _need(value["binding"] == binding, "request_binding_mismatch")
     if "supported_profiles" in value:
-        profiles = value["supported_profiles"]["profiles"]
-        supported_profiles(canonical(value["supported_profiles"]), schemas=schemas,
-                           authority=operation.authority, expected_profiles=tuple(profiles))
+        if operation.reissue_v2:
+            reissue_supported_profiles(canonical(value["supported_profiles"]), schemas=schemas)
+        else:
+            profiles = value["supported_profiles"]["profiles"]
+            supported_profiles(canonical(value["supported_profiles"]), schemas=schemas,
+                               authority=operation.authority, expected_profiles=tuple(profiles))
     return envelope
 
 
@@ -209,7 +232,9 @@ def validate_challenge(raw: bytes, *, prepared: PreparedProofRequest, schemas: T
     except ValueError:
         raise TextAnalysisProofError("invalid_challenge") from None
     issued, expires = _timestamp(value["issued_at"]), _timestamp(value["expires_at"])
-    _need(expires - issued == timedelta(seconds=60), "challenge_lifetime")
+    lifetime = expires - issued
+    _need((timedelta(0) < lifetime <= timedelta(seconds=60)) if operation.reissue_v2
+          else lifetime == timedelta(seconds=60), "challenge_lifetime")
     _need(issued <= _now(now) < expires, "challenge_expired")
     return value
 
