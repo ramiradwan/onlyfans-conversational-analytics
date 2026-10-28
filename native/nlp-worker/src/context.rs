@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
+    io::Read,
     path::PathBuf,
 };
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -561,6 +562,18 @@ impl Context {
         );
         Ok(c)
     }
+    pub fn presentation_catalog(&self, name: &str, control: &crate::entity::Control) -> Result<()> {
+        control.check()?;
+        let file = self.files.get(name).ok_or_else(|| anyhow::anyhow!("artifact_mismatch"))?;
+        ensure!(file.artifact.artifact_id == name && file.artifact.role == "configuration"
+            && file.artifact.format_id == "nlp-presentation.v1"
+            && file.artifact.size_bytes <= 65536
+            && self.profile["presentation"]["sha256"] == file.artifact.sha256, "artifact_mismatch");
+        let mut bytes = Vec::new();
+        File::open(&file.path)?.take(65537).read_to_end(&mut bytes)?;
+        control.check()?;
+        validate_presentation_catalog(name, &file.artifact, &self.profile["presentation"], &bytes)
+    }
     pub fn artifact_path(&self, name: &str, role: &str) -> Result<PathBuf> {
         let f = self
             .files
@@ -571,9 +584,96 @@ impl Context {
     }
 }
 
+pub fn complete_artifact_ids(ids: &[Value], expected: &BTreeSet<&str>, count: usize) -> Result<()> {
+    let actual = ids.iter().filter_map(Value::as_str).collect::<BTreeSet<_>>();
+    ensure!(expected.len() == count && ids.len() == count && actual == *expected,
+            "artifact_mismatch");
+    Ok(())
+}
+
+fn validate_presentation_catalog(name: &str, artifact: &Artifact, presentation: &Value, bytes: &[u8]) -> Result<()> {
+    artifact.validate()?;
+    ensure!(artifact.artifact_id == name && artifact.role == "configuration"
+        && artifact.format_id == "nlp-presentation.v1"
+        && artifact.size_bytes <= 65536 && bytes.len() <= 65536
+        && bytes.len() as u64 == artifact.size_bytes
+        && presentation["sha256"] == artifact.sha256
+        && hash(bytes) == artifact.sha256, "artifact_mismatch");
+    Ok(())
+}
+
+pub fn presentation_reference(value: &Value, legacy: &str) -> Result<Option<String>> {
+    if value["schema"] == legacy {
+        ensure!(value.get("presentation_catalog").is_none(), "invalid_payload");
+        return Ok(None);
+    }
+    let current = format!("{}.v2", legacy.strip_suffix(".v1").unwrap_or(""));
+    ensure!(value["schema"] == current, "incompatible");
+    id(&value["presentation_catalog"])?;
+    Ok(Some(value["presentation_catalog"].as_str().unwrap().to_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn presentation_component_membership_is_complete_and_shared() {
+        for members in [vec!["config", "model", "system", "grammar", "catalogue"],
+                        vec!["config", "encoder", "marginals", "scorer", "tokenizer", "catalogue"]] {
+            let expected = members.iter().copied().collect::<BTreeSet<_>>();
+            let ids = members.iter().map(|id| json!(id)).collect::<Vec<_>>();
+            assert!(complete_artifact_ids(&ids, &expected, members.len()).is_ok());
+            let mut missing = ids.clone(); missing.pop();
+            assert!(complete_artifact_ids(&missing, &expected, members.len()).is_err());
+            let mut extra = ids.clone(); extra.push(json!("extra"));
+            assert!(complete_artifact_ids(&extra, &expected, members.len()).is_err());
+            let mut duplicate = ids.clone(); duplicate[0] = duplicate[1].clone();
+            assert!(complete_artifact_ids(&duplicate, &expected, members.len()).is_err());
+        }
+    }
+    #[test]
+    fn presentation_versions_require_explicit_nonnull_reference() {
+        for legacy in ["boundary-entity-config.v1", "instruction-topic-config.v1"] {
+            let mut value = json!({"schema": legacy});
+            assert_eq!(presentation_reference(&value, legacy).unwrap(), None);
+            value["presentation_catalog"] = Value::Null;
+            assert!(presentation_reference(&value, legacy).is_err());
+            value["presentation_catalog"] = json!("catalogue");
+            assert!(presentation_reference(&value, legacy).is_err());
+            value["schema"] = json!(legacy.replace(".v1", ".v2"));
+            assert_eq!(presentation_reference(&value, legacy).unwrap(), Some("catalogue".into()));
+            for invalid in [Value::Null, json!(""), json!(3), json!([])] {
+                value["presentation_catalog"] = invalid;
+                assert!(presentation_reference(&value, legacy).is_err());
+            }
+            value.as_object_mut().unwrap().remove("presentation_catalog");
+            assert!(presentation_reference(&value, legacy).is_err());
+        }
+    }
+    #[test]
+    fn presentation_catalogue_metadata_and_bytes_are_bound_without_inference() {
+        let raw = b"invented display data";
+        let artifact = Artifact { artifact_id: "catalogue".into(), sha256: hash(raw),
+            size_bytes: raw.len() as u64, role: "configuration".into(),
+            format_id: "nlp-presentation.v1".into() };
+        let presentation = json!({"sha256":artifact.sha256});
+        assert!(validate_presentation_catalog("catalogue", &artifact, &presentation, raw).is_ok());
+        for case in 0..7 {
+            let mut changed = artifact.clone();
+            match case {
+                0 => changed.artifact_id = "other".into(),
+                1 => changed.role = "weights".into(),
+                2 => changed.format_id = "other.v1".into(),
+                3 => changed.sha256 = "0".repeat(64),
+                4 => changed.size_bytes += 1,
+                5 => changed.size_bytes = 65537,
+                _ => changed.size_bytes = 0,
+            }
+            assert!(validate_presentation_catalog("catalogue", &changed, &presentation, raw).is_err());
+        }
+        assert!(validate_presentation_catalog("catalogue", &artifact, &json!({"sha256":"0".repeat(64)}), raw).is_err());
+        assert!(validate_presentation_catalog("catalogue", &artifact, &presentation, b"changed").is_err());
+    }
     #[test]
     fn exact_adapter_capabilities_do_not_allow_task_or_format_substitution() {
         for topics in [false, true] {

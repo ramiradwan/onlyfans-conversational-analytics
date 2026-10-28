@@ -296,6 +296,7 @@
     "tests/test_nlp_observation_api.py": 1,
     "tests/test_nlp_observation_read.py": 4,
     "tests/test_nlp_observation_runtime.py": 1,
+    "tests/test_nlp_presentation.py": 4,
     "tests/test_nlp_preview_execution.py": 4,
     "tests/test_nlp_process_owners.py": 1,
     "tests/test_nlp_processing_publication.py": 4,

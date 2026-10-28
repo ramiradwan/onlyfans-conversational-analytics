@@ -20,6 +20,8 @@ struct Label {
 #[serde(deny_unknown_fields)]
 struct Config {
     schema: String,
+    #[serde(default)]
+    presentation_catalog: Option<String>,
     model: String,
     system_prompt: String,
     grammar: String,
@@ -33,10 +35,11 @@ struct Config {
 
 fn config(component: &Value, bytes: &[u8]) -> Result<Config> {
     ensure!(bytes.len() <= 65536, "resource_limit");
-    let cfg: Config = serde_json::from_value(wire::parse(bytes)?)?;
+    let value = wire::parse(bytes)?;
+    crate::context::presentation_reference(&value, CONFIG)?;
+    let cfg: Config = serde_json::from_value(value)?;
     ensure!(
-        cfg.schema == CONFIG
-            && cfg.context_tokens == 8192
+        cfg.context_tokens == 8192
             && cfg.output_tokens == 192
             && [2, 8].contains(&cfg.inference_threads)
             && component["inference_threads"] == cfg.inference_threads,
@@ -215,33 +218,32 @@ impl InstructionTopicAdapter {
         let configs: Vec<_> = ids
             .iter()
             .filter_map(|id| context.files.get(id.as_str()?))
-            .filter(|f| f.artifact.role == "configuration" && f.artifact.format_id == CONFIG)
+            .filter(|f| f.artifact.role == "configuration" && [CONFIG, "instruction-topic-config.v2"].contains(&f.artifact.format_id.as_str()))
             .collect();
         ensure!(
             configs.len() == 1 && configs[0].artifact.size_bytes <= 65536,
             "artifact_mismatch"
         );
         let cfg = config(&component, &std::fs::read(&configs[0].path)?)?;
+        ensure!(cfg.schema == configs[0].artifact.format_id, "artifact_mismatch");
         ensure!(
             component["max_candidates"].as_u64().unwrap_or(0) >= cfg.labels.len() as u64,
             "resource_limit"
         );
-        let expected: BTreeSet<_> = [
-            &cfg.model,
-            &cfg.system_prompt,
-            &cfg.grammar,
-            &configs[0].artifact.artifact_id,
+        let mut expected: BTreeSet<_> = [
+            cfg.model.as_str(),
+            cfg.system_prompt.as_str(),
+            cfg.grammar.as_str(),
+            configs[0].artifact.artifact_id.as_str(),
         ]
         .into_iter()
         .collect();
-        ensure!(
-            ids.len() == 4
-                && expected.len() == 4
-                && ids.iter().all(|id| id
-                    .as_str()
-                    .is_some_and(|id| expected.contains(&id.to_owned()))),
-            "artifact_mismatch"
-        );
+        let expected_count = 4 + usize::from(cfg.presentation_catalog.is_some());
+        if let Some(name) = &cfg.presentation_catalog {
+            context.presentation_catalog(name, control)?;
+            expected.insert(name.as_str());
+        }
+        crate::context::complete_artifact_ids(ids, &expected, expected_count)?;
         for (id, role, format, limit) in [
             (&cfg.model, "weights", "gguf-model.v1", u64::MAX),
             (
@@ -305,6 +307,41 @@ impl InstructionTopicAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn presentation_config_v2_preserves_instruction_labels_and_limits() {
+        let mut component = json!({"inference_threads":2,"tasks":[{"task":"message_topics",
+            "task_contract":"message_topics.v1","enabled_ids":["topic.one"],
+            "score_policy":{"kind":"none","calibration":"not_calibrated","calibration_sha256":null}}],
+            "executed_labels":[{"task":"message_topics","label_id":"topic.one"}]});
+        let mut policies = serde_json::Map::new();
+        for (field, policy) in [
+            ("runtime_requirements", "runtime"), ("preprocessing", "qwen-json-message.v1"),
+            ("windowing", "single-message-no-truncation.v1"), ("decoding", "grammar-greedy-eog.v1"),
+            ("output_mapping", "ordered-instruction-topics.v1"), ("decision", "closed-assessment.v1"),
+        ] {
+            let value = json!({"policy_id":policy,"revision":"1","sha256":"a".repeat(64)});
+            policies.insert(field.into(), value.clone());
+            component[field] = value;
+        }
+        let mut value = json!({"schema":CONFIG,"model":"model","system_prompt":"system",
+            "grammar":"grammar","runtime":{},"labels":[{"wire_id":"T01","topic_id":"topic.one"}],
+            "policies":policies,"context_tokens":8192,"output_tokens":192,"inference_threads":2});
+        let before = config(&component, &serde_json::to_vec(&value).unwrap()).unwrap();
+        value["presentation_catalog"] = Value::Null;
+        assert!(config(&component, &serde_json::to_vec(&value).unwrap()).is_err());
+        value["schema"] = json!("instruction-topic-config.v2");
+        assert!(config(&component, &serde_json::to_vec(&value).unwrap()).is_err());
+        value["presentation_catalog"] = json!("catalogue");
+        let after = config(&component, &serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(before.labels[0].wire_id, after.labels[0].wire_id);
+        assert_eq!(before.labels[0].topic_id, after.labels[0].topic_id);
+        assert_eq!(before.context_tokens, after.context_tokens);
+        assert_eq!(before.output_tokens, after.output_tokens);
+        assert_eq!(before.inference_threads, after.inference_threads);
+        assert_eq!(after.presentation_catalog.as_deref(), Some("catalogue"));
+        value["display_label"] = json!("untrusted");
+        assert!(config(&component, &serde_json::to_vec(&value).unwrap()).is_err());
+    }
     fn example() -> (Value, Config) {
         let labels: Vec<_> = (1..=18)
             .map(|i| Label {
@@ -317,6 +354,7 @@ mod tests {
             component,
             Config {
                 schema: CONFIG.into(),
+                presentation_catalog: None,
                 model: "model".into(),
                 system_prompt: "system".into(),
                 grammar: "grammar".into(),

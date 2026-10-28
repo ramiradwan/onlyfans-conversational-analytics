@@ -288,6 +288,28 @@ class ArtifactStore:
             member.unlink()
         stage.rmdir()  # Unknown entries are preserved and prevent removal.
 
+    def read_configuration(self, profile: AnalysisProfile, artifact_id: str, *, cancellation_check=lambda: None) -> bytes:
+        """Read one bounded profile member through verified, retained handles."""
+        from app.nlp.retained_artifacts import _directory as hold_directory, _file as hold_file
+        profile, members, encoded, size = _expected(profile)
+        if size > self.limits.maximum_closure_bytes:
+            raise ArtifactStoreError("artifact_store_closure_quota")
+        matches = [asset for asset in members if asset.artifact_id == artifact_id]
+        if len(matches) != 1 or matches[0].role != 'configuration' or matches[0].size_bytes > 65_536:
+            raise ArtifactStoreError('artifact_store_configuration')
+        asset = matches[0]
+        with self._operation(cancellation_check) as root_id:
+            directory = self.root / artifact_closure_digest(members)
+            with hold_directory(self.root), hold_directory(directory):
+                self._read_file(directory/'artifacts.json', len(encoded), hashlib.sha256(encoded).hexdigest(),
+                                cancellation_check, root_id)
+                with hold_file(directory/_filename(asset), asset, cancellation_check) as (stream, _):
+                    raw = stream.read(asset.size_bytes + 1)
+                    if len(raw) != asset.size_bytes or hashlib.sha256(raw).hexdigest() != asset.sha256:
+                        raise ArtifactStoreError('artifact_store_hash')
+                    self._poll(cancellation_check, root_id)
+                    return raw
+
     def reopen(self, profile: AnalysisProfile, *, cancellation_check: Callable[[], None] = lambda: None) -> AvailableData:
         """Rehash a complete closure; never infer availability from its directory name."""
         profile, members, encoded, size = _expected(profile)

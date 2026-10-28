@@ -226,3 +226,118 @@ def test_split_adapter_exception_without_callback_discards_the_whole_unfinished_
     assert preview_rows(x) == ('running', 'reserved', 0, 0)
     with x.repository.database.read() as db:
         assert db.execute('SELECT terminal_reason FROM text_analysis_intents').fetchone()[0] is None
+
+
+@pytest.fixture
+def catalogue_preview_execution(tmp_path, request):
+    from app.analytics.nlp_preview_execution import PreviewComputeOwner
+    from tests.test_nlp_presentation import presentation_example
+    from tests.text_analysis_preview_fixture import make_preview_fixture, close_preview_fixture, prepare_preview
+    x = make_preview_fixture(tmp_path, 'split', findings=getattr(request, 'param', True),
+        profile_factory=presentation_example)
+    try:
+        prepare_preview(x)
+        x.binding = x.service.bind_pending(x.service.pending_locators()[0])
+        x.compute = PreviewComputeOwner(x.service, x.dependencies, x.source, clock=lambda: x.f.clock.now)
+        yield x
+    finally:
+        close_preview_fixture(x)
+
+
+def test_actual_preview_freezes_verified_catalogue_names_after_preparation(catalogue_preview_execution, monkeypatch):
+    from contextlib import contextmanager
+    from app.analytics.nlp_read_projection import frozen_labels
+    x = catalogue_preview_execution
+    events = []
+    ready = x.dependencies.ready
+    prepare = x.dependencies.prepare_installed
+    resolve = x.dependencies.presentation_resolver
+    retain = x.dependencies.retain
+    first = [True]
+    def cold(profile):
+        if first[0]:
+            first[0] = False
+            return False
+        return ready(profile)
+    def prepared(*args, **kwargs):
+        events.append('prepare')
+        return prepare(*args, **kwargs)
+    def resolved(profile):
+        events.append('labels')
+        return resolve(profile)
+    @contextmanager
+    def retained(profile):
+        events.append('retain')
+        with retain(profile) as execute:
+            yield execute
+    expected = {(row['task_contract'], row['category_id']): {**row,
+        'label_identity_sha256': row['label_identity_sha256'].removeprefix('sha256:')}
+        for row in frozen_labels(x.profile, resolve(x.profile))}
+    monkeypatch.setattr(x.dependencies, 'ready', cold)
+    monkeypatch.setattr(x.dependencies, 'prepare_installed', prepared)
+    monkeypatch.setattr(x.dependencies, 'presentation_resolver', resolved)
+    monkeypatch.setattr(x.dependencies, 'retain', retained)
+    result = x.compute.run(x.binding)
+    assert result.state == 'committed'
+    assert events == ['prepare', 'labels', 'retain']
+    shown = x.service.read_shown(x.http_policy(), result.contribution_id)
+    assert len(shown.summaries) == 2
+    for summary in shown.summaries:
+        label = summary.label
+        assert label.model_dump(mode='json') == expected[(label.task_contract, label.category_id)]
+        assert label.label_status == 'resolved' and label.display_label == 'Example caf\u00e9 \U0001f600'
+    assert shown.profile_sha256 == x.binding.profile.identity_digest()
+    assert shown.input_inventory_sha256 == x.binding.spec.input.inventory_sha256
+    assert preview_rows(x) == ('committed', 'spent', 1, 0)
+    available = x.environment.artifacts.reopen(x.profile)
+    available.directory.rename(available.directory.with_name('held-preview-catalogue'))
+    x.environment.objects.clear()
+    x.environment.engine.present = False
+    monkeypatch.setattr(x.dependencies, 'presentation_resolver',
+        lambda _: pytest.fail('saved preview labels must not reload optional data'))
+    assert x.service.read_shown(x.http_policy(), result.contribution_id) == shown
+
+
+@pytest.mark.parametrize('missing', [False, True])
+def test_actual_preview_refuses_corrupt_catalogue_without_spend(catalogue_preview_execution, missing):
+    from app.persistence.private_files import PrivateFileSecurityError
+    x = catalogue_preview_execution
+    available = x.environment.artifacts.reopen(x.profile)
+    member = next(a for a in available.artifacts if a.artifact.artifact_id == 'presentation')
+    if missing:
+        member.path.rename(member.path.with_name('held-preview-catalogue.data'))
+    else:
+        member.path.write_bytes(b'x' * member.artifact.size_bytes)
+    with pytest.raises((ValueError, OSError, PrivateFileSecurityError)):
+        x.compute.run(x.binding)
+    assert not x.analyzed
+    assert preview_rows(x) == ('running', 'reserved', 0, 0)
+    with x.repository.database.read() as db:
+        assert db.execute('SELECT terminal_reason FROM text_analysis_intents').fetchone()[0] is None
+    with execution_slot() as acquired:
+        assert acquired
+
+
+def test_actual_legacy_preview_keeps_id_only_labels(preview_execution):
+    from app.analytics.nlp_read_projection import frozen_labels
+    x = preview_execution
+    result = x.compute.run(x.binding)
+    shown = x.service.read_shown(x.http_policy(), result.contribution_id)
+    expected = {(row['task_contract'], row['category_id']): row['label_identity_sha256'].removeprefix('sha256:')
+        for row in frozen_labels(x.profile)}
+    assert shown.summaries
+    for summary in shown.summaries:
+        label = summary.label
+        assert label.label_status == 'id_only' and label.display_label == label.category_id
+        assert label.label_identity_sha256 == expected[(label.task_contract, label.category_id)]
+    assert preview_rows(x) == ('committed', 'spent', 1, 0)
+
+
+@pytest.mark.parametrize('catalogue_preview_execution', [False], indirect=True)
+def test_actual_catalogue_preview_without_findings_releases_admission(catalogue_preview_execution):
+    x = catalogue_preview_execution
+    result = x.compute.run(x.binding)
+    assert result.state == 'failed'
+    assert preview_rows(x) == ('failed', 'available', 0, 0)
+    with x.repository.database.read() as db:
+        assert db.execute('SELECT terminal_reason FROM text_analysis_intents').fetchone()[0] == 'empty'
