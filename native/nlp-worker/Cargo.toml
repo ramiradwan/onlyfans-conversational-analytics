@@ -5,6 +5,14 @@ edition = "2024"
 publish = false
 license = "MIT"
 
+[features]
+default = []
+instruction-topics = []
+
+[build-dependencies]
+cc = "=1.8.0"
+sha2 = "0.11"
+
 [dependencies]
 anyhow = "1"
 gliner2-rs = { path = "upstream" }

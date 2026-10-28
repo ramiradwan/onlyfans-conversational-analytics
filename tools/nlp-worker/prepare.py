@@ -45,7 +45,8 @@ def prepare(source: Path, target: Path):
     new = '        builder = builder.with_execution_providers([ort::ep::CPU::default().with_arena_allocator(false).build().error_on_failure()]).map_err(|error| anyhow!(error.to_string()))?;\n        // Explicit CPU registration has no fallback provider.'
     runtime.write_text(replace_once(code, old, new), encoding="utf-8", newline="\n")
     shutil.copytree(SOURCE / "src", target / "src")
-    for name in ("Cargo.toml", "Cargo.lock"):
+    shutil.copytree(SOURCE / "tests", target / "tests")
+    for name in ("Cargo.toml", "Cargo.lock", "build.rs"):
         shutil.copyfile(SOURCE / name, target / name)
     def pin(path):
         data = path.read_bytes()

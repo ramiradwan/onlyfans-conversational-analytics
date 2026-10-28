@@ -150,6 +150,13 @@ class ComponentDescriptor(Descriptor):
         for task in self.tasks:
             if not set(task.enabled_ids) <= {label for name, label in labels if name == task.task}:
                 raise ValueError("enabled category absent from executed schema")
+        if self.adapter.adapter_id == "instruction_topics":
+            if (self.adapter.architecture != "llama-b11669-cpu-v1" or
+                    self.adapter.artifact_format != "gguf-model.v1" or
+                    self.adapter.tokenizer_format != "gguf-embedded.v1" or
+                    names != ["message_topics"] or self.tasks[0].score_policy.kind != "none" or
+                    self.inference_threads not in (2, 8)):
+                raise ValueError("instruction topic adapter mismatch")
         return self
 
 
@@ -246,14 +253,21 @@ class AnalysisProfile(Descriptor):
             if "weights" not in {asset.role for asset in data}:
                 raise ValueError("missing component data")
             tokenizers = tuple(asset for asset in data if asset.role == "tokenizer")
-            if (component.adapter.tokenizer_format == "none") != (not tokenizers):
+            embedded = component.adapter.tokenizer_format == "gguf-embedded.v1"
+            if embedded:
+                if (component.adapter.adapter_id != "instruction_topics" or tokenizers or
+                        len([asset for asset in data if asset.role == "weights"]) != 1 or
+                        any(asset.format_id != "gguf-model.v1" for asset in data if asset.role == "weights")):
+                    raise ValueError("embedded tokenizer format mismatch")
+                tokenizers = tuple(asset for asset in data if asset.role == "weights")
+            elif (component.adapter.tokenizer_format == "none") != (not tokenizers):
                 raise ValueError("tokenizer format mismatch")
             if component.tokenizer_sha256 != artifact_closure_digest(tokenizers):
                 raise ValueError("tokenizer closure mismatch")
             if self.schema_version == "nlp-profile.v2" and any(
                     asset.format_id != component.adapter.artifact_format for asset in data if asset.role == "weights"):
                 raise ValueError("unsupported artifact format")
-            if any(asset.format_id != component.adapter.tokenizer_format for asset in data if asset.role == "tokenizer"):
+            if not embedded and any(asset.format_id != component.adapter.tokenizer_format for asset in data if asset.role == "tokenizer"):
                 raise ValueError("unsupported tokenizer format")
         # Shared files use one artifact identity rather than optimistic hash deduplication.
         installed = sum(asset.size_bytes for asset in self.artifacts)
