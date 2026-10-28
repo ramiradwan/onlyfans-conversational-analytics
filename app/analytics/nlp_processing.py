@@ -594,8 +594,15 @@ class FindingsRunner(FindingsReadContext):
         self.reconcile(account_id)
         canonical, due = self._admit_inventory(account_id)
         revision=self.findings.state(account_id)['notification_revision']
-        frozen=self.findings.freeze(account_id,canonical,label_resolver=self.label_resolver)
         profile=read_profile(self.findings.state(account_id)['profile_json'])
+        resolver = self.label_resolver
+        if resolver is None:
+            if self.dependencies is not None:
+                resolver = self.dependencies.presentation_resolver(profile)
+            else:
+                from app.nlp.presentation import load_resolver
+                resolver = load_resolver(profile)
+        frozen=self.findings.freeze(account_id,canonical,label_resolver=resolver)
         retained_anchor = (self.canonical_execution.retained_anchor(self.findings, frozen)
                            if self.execution_service is not None else False)
         def published():

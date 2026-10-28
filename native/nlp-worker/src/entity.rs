@@ -71,12 +71,21 @@ struct Decoding {
 #[serde(deny_unknown_fields)]
 struct Config {
     schema: String,
+    #[serde(default)]
+    presentation_catalog: Option<String>,
     graphs: Graphs,
     tokenizer: String,
     labels: Vec<Mapping>,
     policies: BTreeMap<String, Value>,
     decoding: Decoding,
 }
+fn config(bytes: &[u8]) -> Result<Config> {
+    ensure!(bytes.len() <= 65536, "resource_limit");
+    let value = wire::parse(bytes)?;
+    crate::context::presentation_reference(&value, "boundary-entity-config.v1")?;
+    Ok(serde_json::from_value(value)?)
+}
+
 pub struct EntityAdapter {
     tokenizer: RuntimeTokenizer,
     encoder: Encoder,
@@ -292,16 +301,16 @@ impl EntityAdapter {
             .filter_map(|id| context.files.get(id.as_str()?))
             .filter(|f| {
                 f.artifact.role == "configuration"
-                    && f.artifact.format_id == "boundary-entity-config.v1"
+                    && ["boundary-entity-config.v1", "boundary-entity-config.v2"].contains(&f.artifact.format_id.as_str())
             })
             .collect::<Vec<_>>();
         ensure!(configs.len() == 1, "artifact_mismatch");
         ensure!(configs[0].artifact.size_bytes <= 65536, "resource_limit");
         let bytes = std::fs::read(&configs[0].path)?;
         ensure!(bytes.len() <= 65536, "resource_limit");
-        let cfg: Config = serde_json::from_value(wire::parse(&bytes)?)?;
+        let cfg = config(&bytes)?;
         ensure!(
-            cfg.schema == "boundary-entity-config.v1"
+            cfg.schema == configs[0].artifact.format_id
                 && cfg.decoding.overlap == "flat"
                 && (0.0..=1.).contains(&cfg.decoding.threshold)
                 && (0.0..=1.).contains(&cfg.decoding.abstention_threshold)
@@ -338,7 +347,7 @@ impl EntityAdapter {
                 && score["calibration_sha256"].is_null(),
             "incompatible"
         );
-        let expected = [
+        let mut expected = [
             cfg.graphs.encoder.as_str(),
             cfg.graphs.marginals.as_str(),
             cfg.graphs.scorer.as_str(),
@@ -347,14 +356,12 @@ impl EntityAdapter {
         ]
         .into_iter()
         .collect::<std::collections::BTreeSet<_>>();
-        ensure!(
-            expected.len() == 5
-                && ids.len() == 5
-                && ids
-                    .iter()
-                    .all(|id| id.as_str().is_some_and(|id| expected.contains(id))),
-            "artifact_mismatch"
-        );
+        let expected_count = 5 + usize::from(cfg.presentation_catalog.is_some());
+        if let Some(name) = &cfg.presentation_catalog {
+            context.presentation_catalog(name, control)?;
+            expected.insert(name.as_str());
+        }
+        crate::context::complete_artifact_ids(ids, &expected, expected_count)?;
         let graph = |name: &str| -> Result<std::path::PathBuf> {
             let path = context.artifact_path(name, "weights")?;
             ensure!(
@@ -516,6 +523,31 @@ fn enabled_concept(component: &Value, concept: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn presentation_config_v2_preserves_entity_conditioning_and_decoding() {
+        let mut value = json!({"schema":"boundary-entity-config.v1",
+            "graphs":{"encoder":"encoder","marginals":"marginals","scorer":"scorer"},
+            "tokenizer":"tokenizer","labels":[
+                {"label_id":"opaque.7","concept_id":"opaque.7","model_label":"one"},
+                {"label_id":"opaque.9","concept_id":"opaque.9","model_label":"two"}],
+            "policies":{},"decoding":{"threshold":0.5,"pair_temperature":1.0,
+                "abstention_threshold":0.4,"max_encoded_tokens":512,"max_words":512,"overlap":"flat"}});
+        let before = config(&serde_json::to_vec(&value).unwrap()).unwrap();
+        value["presentation_catalog"] = Value::Null;
+        assert!(config(&serde_json::to_vec(&value).unwrap()).is_err());
+        value["schema"] = json!("boundary-entity-config.v2");
+        assert!(config(&serde_json::to_vec(&value).unwrap()).is_err());
+        value["presentation_catalog"] = json!("catalogue");
+        let after = config(&serde_json::to_vec(&value).unwrap()).unwrap();
+        let (component, _) = fixture();
+        assert_eq!(bind_labels(&component, &before.labels).unwrap(), bind_labels(&component, &after.labels).unwrap());
+        assert_eq!(before.decoding.threshold, after.decoding.threshold);
+        assert_eq!(before.decoding.abstention_threshold, after.decoding.abstention_threshold);
+        assert_eq!(before.decoding.pair_temperature, after.decoding.pair_temperature);
+        assert_eq!(after.presentation_catalog.as_deref(), Some("catalogue"));
+        value["display_label"] = json!("untrusted");
+        assert!(config(&serde_json::to_vec(&value).unwrap()).is_err());
+    }
     fn fixture() -> (Value, Vec<Mapping>) {
         let component = json!({"executed_labels":[
             {"task":"concept_mentions","label_id":"opaque.7","description":"First"},

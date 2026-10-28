@@ -17,8 +17,9 @@ from app.analytics.historical_derivation import PARTICIPANT_ANALYTICS_MAX_DAYS
 from app.analytics.nlp_findings_store import source_binding
 from app.analytics.nlp_preview import PreviewAccumulator, encode_preview
 from app.analytics.nlp_processing import execution_slot, infer_source
+from app.analytics.nlp_read_projection import frozen_labels
 from app.analytics.query_execution import QuestionBudget, QuestionLimits, QuestionCancelled
-from app.models.text_analysis_preview import NoPreviewOutput
+from app.models.text_analysis_preview import NoPreviewOutput, PreviewLabel
 from app.nlp import v2
 
 
@@ -104,6 +105,13 @@ class PreviewComputeOwner:
                 if binding.sources and self.monotonic() < compute_end and not self.dependencies.ready(binding.profile):
                     self.dependencies.prepare_installed(binding.profile.identity_digest(), cancellation_check=check)
                 if binding.sources and self.monotonic() < compute_end:
+                    check()
+                    resolver = self.dependencies.presentation_resolver(binding.profile)
+                    labels = tuple(PreviewLabel.model_validate({**row,
+                        'label_identity_sha256': row['label_identity_sha256'].removeprefix('sha256:')})
+                        for row in frozen_labels(binding.profile, resolver))
+                    accumulator = PreviewAccumulator(binding.spec, binding.profile, binding.sources, labels=labels)
+                    check()
                     with self.dependencies.retain(binding.profile) as execute:
                         for member in binding.sources:
                             if check() or remaining_compute() < 1:

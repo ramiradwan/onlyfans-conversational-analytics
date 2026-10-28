@@ -232,6 +232,12 @@ class DependencyService:
             except (ValueError, OSError, TypeError):
                 return False
 
+    def presentation_resolver(self, profile):
+        """Freeze display data without requiring an engine or executing pack code."""
+        from app.nlp.presentation import load_resolver
+        return load_resolver(profile, lambda artifact_id: self.artifacts.read_configuration(
+            profile, artifact_id, cancellation_check=self._running))
+
     @contextmanager
     def publication(self, profile):
         # Short authority gate spans the actual analytics commit. No model job holds it.
