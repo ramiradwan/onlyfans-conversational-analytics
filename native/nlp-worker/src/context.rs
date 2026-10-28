@@ -77,18 +77,33 @@ pub fn supported_adapter(v: &Value) -> Result<()> {
         ],
     )?;
     let topics = v["adapter_id"] == crate::topic::ADAPTER;
+    let instruction = v["adapter_id"] == crate::instruction_topics::ADAPTER;
     ensure!(
-        (v["adapter_id"] == ADAPTER || topics)
+        (v["adapter_id"] == ADAPTER
+            || topics
+            || (instruction && cfg!(feature = "instruction-topics")))
             && v["adapter_version"] == "1"
             && v["abi"] == "nlp-adapter.v1"
-            && v["architecture"] == "boundary-shared-v1"
+            && v["architecture"]
+                == if instruction {
+                    crate::instruction_topics::ARCHITECTURE
+                } else {
+                    "boundary-shared-v1"
+                }
             && v["artifact_format"]
-                == if topics {
+                == if instruction {
+                    "gguf-model.v1"
+                } else if topics {
                     "onnx-boundary-classification.v1"
                 } else {
                     "onnx-boundary-entity.v1"
                 }
-            && v["tokenizer_format"] == "huggingface-tokenizer-json.v1"
+            && v["tokenizer_format"]
+                == if instruction {
+                    "gguf-embedded.v1"
+                } else {
+                    "huggingface-tokenizer-json.v1"
+                }
             && v["adapter_build_sha256"]
                 .as_str()
                 .is_some_and(|s| wire::hex(s, 64)),
@@ -133,7 +148,8 @@ pub fn capability(v: &Value) -> Result<()> {
         ],
     )?;
     supported_adapter(&v["adapter"])?;
-    let topics = v["adapter"]["adapter_id"] == crate::topic::ADAPTER;
+    let instruction = v["adapter"]["adapter_id"] == crate::instruction_topics::ADAPTER;
+    let topics = v["adapter"]["adapter_id"] == crate::topic::ADAPTER || instruction;
     ensure!(
         v["task_contracts"]
             == if topics {
@@ -143,6 +159,9 @@ pub fn capability(v: &Value) -> Result<()> {
             },
         "incompatible"
     );
+    if instruction {
+        ensure!(v["score_kinds"] == json!(["none"]), "incompatible");
+    }
     let scores = array(&v["score_kinds"])?;
     ensure!(
         !scores.is_empty()
@@ -240,7 +259,12 @@ pub fn validate_profile(v: &Value) -> Result<()> {
             9_007_199_254_740_991,
         )?;
     }
-    ensure!(v["resources"]["inference_threads"] == 2, "resource_limit");
+    ensure!(
+        [2, 8]
+            .iter()
+            .any(|n| v["resources"]["inference_threads"] == *n),
+        "resource_limit"
+    );
     let components = array(&v["components"])?;
     ensure!(
         !components.is_empty() && components.len() <= 2,
@@ -284,7 +308,8 @@ pub fn validate_profile(v: &Value) -> Result<()> {
         ensure!(
             c["canonicalization"] == "nlp-canonical.v1"
                 && c["language"] == "en"
-                && c["inference_threads"] == 2,
+                && (c["inference_threads"] == 2 || (c["adapter"]["adapter_id"] == crate::instruction_topics::ADAPTER && c["inference_threads"] == 8))
+                && c["inference_threads"].as_u64().is_some_and(|n| n <= v["resources"]["inference_threads"].as_u64().unwrap_or(0)),
             "incompatible"
         );
         ensure!(names.insert(id(&c["component_id"])?), "invalid_payload");
@@ -473,7 +498,11 @@ impl Context {
             );
             let tokenizers = closure
                 .iter()
-                .filter(|a| a.role == "tokenizer")
+                .filter(|a| {
+                    a.role == "tokenizer"
+                        || (c["adapter"]["tokenizer_format"] == "gguf-embedded.v1"
+                            && a.role == "weights")
+                })
                 .collect::<Vec<_>>();
             ensure!(
                 c["tokenizer_sha256"]
@@ -752,5 +781,37 @@ mod tests {
             validate_profile(&historical).unwrap_err().to_string(),
             "artifact_mismatch"
         );
+    }
+    #[cfg(feature = "instruction-topics")]
+    #[test]
+    fn instruction_capability_is_closed_and_never_advertises_scores() {
+        let mut cap = json!({"adapter":{"adapter_id":"instruction_topics","adapter_version":"1",
+            "adapter_build_sha256":"a".repeat(64),"abi":"nlp-adapter.v1","architecture":"llama-b11669-cpu-v1",
+            "artifact_format":"gguf-model.v1","tokenizer_format":"gguf-embedded.v1"},
+            "task_contracts":["message_topics.v1"],"score_kinds":["none"],"max_source_codepoints":4096,
+            "max_batch_items":1,"max_windows":1,"max_candidates":18,"max_output_findings":18,
+            "runtime_requirements_sha256":"b".repeat(64)});
+        assert!(capability(&cap).is_ok());
+        cap["score_kinds"] = json!(["probability"]);
+        assert!(capability(&cap).is_err());
+        cap["score_kinds"] = json!(["none"]);
+        cap["task_contracts"] = json!(["concept_mentions.v1"]);
+        assert!(capability(&cap).is_err());
+        cap["task_contracts"] = json!(["message_topics.v1"]);
+        cap["adapter"]["tokenizer_format"] = json!("none");
+        assert!(capability(&cap).is_err());
+    }
+    #[test]
+    fn eight_threads_are_component_specific_and_profile_bounded() {
+        let (mut profile, _, _) = serial_profile();
+        profile["components"][1]["inference_threads"] = json!(8);
+        assert!(validate_profile(&profile).is_err());
+        profile["resources"]["inference_threads"] = json!(8);
+        assert!(validate_profile(&profile).is_err());
+        profile["components"][1]["adapter"]["adapter_id"] =
+            json!(crate::instruction_topics::ADAPTER);
+        assert!(validate_profile(&profile).is_ok());
+        profile["resources"]["inference_threads"] = json!(4);
+        assert!(validate_profile(&profile).is_err());
     }
 }

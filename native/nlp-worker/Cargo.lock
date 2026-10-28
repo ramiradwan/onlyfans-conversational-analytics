@@ -507,6 +507,7 @@ name = "nlp-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cc",
  "gliner2-rs",
  "ndarray 0.16.1",
  "ort",

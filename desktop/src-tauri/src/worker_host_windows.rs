@@ -485,7 +485,7 @@ fn metadata(
     }
     let mut files = Vec::new();
     for entry in &meta.artifacts {
-        if entry.file != WORKER && !RUNTIME_FILES.contains(&entry.file.as_str()) {
+        if entry.file != WORKER && !runtime_file(&entry.file) {
             return Err("artifact_mismatch");
         }
         if entry.artifact.size_bytes > 128 * 1024 * 1024 {

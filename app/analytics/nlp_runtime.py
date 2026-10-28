@@ -537,7 +537,7 @@ class FindingsRuntime:
                             pass
                         return self._stop.is_set()
                     self._service.prepare_installed(digest, cancellation_check=cancelled)
-                runner.process_one(account)
+                runner.process_batch(account)
             except ValueError:
                 runner.authorize(account)
                 with service.retained_visibility(binding):

@@ -19,6 +19,7 @@ use std::{
 enum Resident {
     Entities(EntityAdapter),
     Topics(TopicAdapter),
+    InstructionTopics(crate::instruction_topics::InstructionTopicAdapter),
 }
 impl Resident {
     fn load(context: &Context, component: Value, control: &Control) -> Result<Self> {
@@ -29,6 +30,11 @@ impl Resident {
             Some(crate::topic::ADAPTER) => Ok(Self::Topics(TopicAdapter::load(
                 context, component, control,
             )?)),
+            Some(crate::instruction_topics::ADAPTER) => Ok(Self::InstructionTopics(
+                crate::instruction_topics::InstructionTopicAdapter::load(
+                    context, component, control,
+                )?,
+            )),
             _ => bail!("incompatible"),
         }
     }
@@ -36,13 +42,14 @@ impl Resident {
         match self {
             Self::Entities(adapter) => adapter.extract(text, control),
             Self::Topics(adapter) => adapter.extract(text, control),
+            Self::InstructionTopics(adapter) => adapter.extract(text, control),
         }
     }
 }
 fn task(component: &Value) -> Result<&'static str> {
     let name = match component["adapter"]["adapter_id"].as_str() {
         Some(crate::context::ADAPTER) => "concept_mentions",
-        Some(crate::topic::ADAPTER) => "message_topics",
+        Some(crate::topic::ADAPTER) | Some(crate::instruction_topics::ADAPTER) => "message_topics",
         _ => bail!("incompatible"),
     };
     let tasks = component["tasks"]
@@ -157,6 +164,20 @@ fn analyze(
 ) -> Result<Value> {
     analyze_with(context, p, c, |text| adapter.extract(text, control))
 }
+fn extraction_payload(component: &Value, text: &str, result: Result<Vec<Value>>) -> Value {
+    match result {
+        Ok(findings) => assessed_payload(text, findings),
+        Err(error) if error.to_string() == "semantic_uncertainty" => {
+            let mut payload = assessed_payload(text, Vec::new());
+            payload["outcome"] = json!("uncertain");
+            payload
+        }
+        Err(error) => {
+            let (reason, limit) = terminal_error(&error);
+            error_payload(component, text, reason, limit)
+        }
+    }
+}
 fn analyze_with(
     context: &Context,
     p: &Value,
@@ -169,16 +190,7 @@ fn analyze_with(
     for item in items {
         let text = item["text"].as_str().unwrap();
         let result = extract(text);
-        let payload = identify_payload(
-            match result {
-                Ok(findings) => assessed_payload(text, findings),
-                Err(error) => {
-                    let (reason, limit) = terminal_error(&error);
-                    error_payload(c, text, reason, limit)
-                }
-            },
-            task(c)?,
-        );
+        let payload = identify_payload(extraction_payload(c, text, result), task(c)?);
         results.push(json!({"request_item_id":item["request_item_id"],"tasks":[{"component_id":p["component_id"],"component_sha256":p["component_sha256"],"text_sha256":item["text_sha256"],"payload":payload}]}));
     }
     Ok(
@@ -292,7 +304,8 @@ impl Service {
                 ensure!(
                     p["max_memory_bytes"]
                         == self.context.profile["resources"]["transition_peak_memory_bytes"]
-                        && p["inference_threads"] == 2,
+                        && p["inference_threads"]
+                            == self.context.profile["resources"]["inference_threads"],
                     "resource_limit"
                 );
                 ensure!(
@@ -330,6 +343,17 @@ impl Service {
                         Ok(a) => (Some(a), "ready", "none"),
                         Err(error) => {
                             let s = error.to_string();
+                            let stage = match s.as_str() {
+                                "binding_mismatch" => 1,
+                                "artifact_mismatch" => 2,
+                                "incompatible" => 3,
+                                "resource_limit" => 4,
+                                "runtime_unavailable" => 5,
+                                "cancelled" => 6,
+                                "deadline" => 7,
+                                _ => 8,
+                            };
+                            eprintln!("worker_prepare_stage={stage}");
                             (
                                 None,
                                 if s == "cancelled" {
@@ -905,5 +929,29 @@ mod tests {
         let sha = hash(canonical(&c).unwrap().as_bytes());
         let p = json!({"protocol":"nlp-worker.v2","request_id":"analyze.one","profile_sha256":s.context.profile_sha,"component_id":"one","component_sha256":sha,"tasks":["concept_mentions"],"deadline_ms":100,"items":[{"request_item_id":"first","text":"echo","text_sha256":hash(b"echo")},{"request_item_id":"second","text":"echo","text_sha256":"a".repeat(64)}]});
         assert!(validate_analyze(&s.context, &p, &c).is_err());
+    }
+}
+
+#[cfg(test)]
+mod instruction_outcome_tests {
+    use super::*;
+    #[test]
+    fn uncertainty_has_no_findings_and_complete_original_coverage() {
+        let payload = extraction_payload(
+            &json!({}),
+            "caf\u{e9} \u{1f600}",
+            Err(anyhow::anyhow!("semantic_uncertainty")),
+        );
+        let payload = identify_payload(payload, "message_topics");
+        assert_eq!(payload["task"], "message_topics");
+        assert_eq!(payload["outcome"], "uncertain");
+        assert_eq!(payload["reason"], "none");
+        assert_eq!(payload["findings"], json!([]));
+        assert_eq!(payload["coverage"]["source_codepoints"], 6);
+        assert_eq!(
+            payload["coverage"]["examined"],
+            json!([{"start":0,"end":6}])
+        );
+        assert_eq!(payload["coverage"]["excluded"], json!([]));
     }
 }

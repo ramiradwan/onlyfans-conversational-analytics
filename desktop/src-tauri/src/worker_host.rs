@@ -16,6 +16,17 @@ pub const RUNTIME_FILES: [&str; 6] = [
     "vcruntime140.dll",
     "vcruntime140_1.dll",
 ];
+pub const INSTRUCTION_RUNTIME_FILES: [&str; 6] = [
+    "libomp.dll",
+    "ggml-base.dll",
+    "ggml.dll",
+    "llama.dll",
+    "ggml-cpu-x64.dll",
+    "ggml-cpu-alderlake.dll",
+];
+pub fn runtime_file(name: &str) -> bool {
+    RUNTIME_FILES.contains(&name) || INSTRUCTION_RUNTIME_FILES.contains(&name)
+}
 pub type Result<T> = std::result::Result<T, &'static str>;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -303,7 +314,7 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
     if meta.schema != "nlp-engine-release.v1"
         || meta.adapters.is_empty()
         || meta.adapters.len() > 16
-        || !(2..=7).contains(&meta.artifacts.len())
+        || !(2..=12).contains(&meta.artifacts.len())
     {
         return Err("artifact_mismatch");
     }
@@ -315,8 +326,10 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
             || !matches!(member.artifact.role.as_str(), "engine" | "runtime")
             || !names.insert(member.file.as_str())
             || !ids.insert(&member.artifact.artifact_id)
-            || !(member.file == WORKER || RUNTIME_FILES.contains(&member.file.as_str()))
+            || !(member.file == WORKER || runtime_file(&member.file))
             || (member.file != WORKER && member.artifact.role != "runtime")
+            || (INSTRUCTION_RUNTIME_FILES.contains(&member.file.as_str())
+                && member.artifact.format_id != "llama-b11669-cpu.dll.v1")
             || !expected
                 .contains(&serde_json::to_value(&member.artifact).map_err(|_| "artifact_mismatch")?)
         {
@@ -419,14 +432,26 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
             (Some("boundary_topics"), Some("onnx-boundary-classification.v1")) => {
                 "message_topics.v1"
             }
+            (Some("instruction_topics"), Some("gguf-model.v1")) => "message_topics.v1",
             _ => return Err("artifact_mismatch"),
         };
+        let instruction = a["adapter_id"] == "instruction_topics";
         let topics = task_contract == "message_topics.v1";
         if a["adapter_build_sha256"] != executable.artifact.sha256
             || a["adapter_version"] != "1"
             || a["abi"] != "nlp-adapter.v1"
-            || a["architecture"] != "boundary-shared-v1"
-            || a["tokenizer_format"] != "huggingface-tokenizer-json.v1"
+            || a["architecture"]
+                != if instruction {
+                    "llama-b11669-cpu-v1"
+                } else {
+                    "boundary-shared-v1"
+                }
+            || a["tokenizer_format"]
+                != if instruction {
+                    "gguf-embedded.v1"
+                } else {
+                    "huggingface-tokenizer-json.v1"
+                }
             || cap["task_contracts"] != serde_json::json!([task_contract])
         {
             return Err("artifact_mismatch");
@@ -448,7 +473,9 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
         {
             return Err("artifact_mismatch");
         }
-        let allowed = if topics {
+        let allowed = if instruction {
+            vec!["none"]
+        } else if topics {
             vec!["probability", "none"]
         } else {
             vec!["probability", "logit", "margin", "none"]
@@ -463,6 +490,29 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
         {
             return Err("artifact_mismatch");
         }
+    }
+    let instruction = meta
+        .adapters
+        .iter()
+        .any(|cap| cap["adapter"]["adapter_id"] == "instruction_topics");
+    if instruction {
+        if !RUNTIME_FILES.iter().all(|name| names.contains(name))
+            || !["libomp.dll", "ggml-base.dll", "ggml.dll", "llama.dll"]
+                .iter()
+                .all(|name| names.contains(name))
+            || ["ggml-cpu-x64.dll", "ggml-cpu-alderlake.dll"]
+                .iter()
+                .filter(|name| names.contains(**name))
+                .count()
+                != 1
+        {
+            return Err("artifact_mismatch");
+        }
+    } else if INSTRUCTION_RUNTIME_FILES
+        .iter()
+        .any(|name| names.contains(name))
+    {
+        return Err("artifact_mismatch");
     }
     for c in profile["components"]
         .as_array()
@@ -933,5 +983,89 @@ mod tests {
         assert!(profile(&launch, "n", &[4, 8]).is_err());
         launch.artifacts.clear();
         assert!(profile(&launch, "n", &[4, 8]).is_err());
+    }
+    fn instruction_fixture() -> (Metadata, Value) {
+        let (mut meta, mut profile) = topic_fixture();
+        let cap = &mut meta.adapters[0];
+        cap["adapter"]["adapter_id"] = "instruction_topics".into();
+        cap["adapter"]["architecture"] = "llama-b11669-cpu-v1".into();
+        cap["adapter"]["artifact_format"] = "gguf-model.v1".into();
+        cap["adapter"]["tokenizer_format"] = "gguf-embedded.v1".into();
+        cap["score_kinds"] = serde_json::json!(["none"]);
+        profile["components"][0]["adapter"] = cap["adapter"].clone();
+        for name in RUNTIME_FILES.into_iter().chain([
+            "libomp.dll",
+            "ggml-base.dll",
+            "ggml.dll",
+            "llama.dll",
+            "ggml-cpu-alderlake.dll",
+        ]) {
+            if meta.artifacts.iter().any(|a| a.file == name) {
+                continue;
+            }
+            let a = PackageArtifact {
+                artifact: Artifact {
+                    artifact_id: format!("runtime.{name}"),
+                    sha256: "b".repeat(64),
+                    size_bytes: 16,
+                    role: "runtime".into(),
+                    format_id: if INSTRUCTION_RUNTIME_FILES.contains(&name) {
+                        "llama-b11669-cpu.dll.v1"
+                    } else {
+                        "native.v1"
+                    }
+                    .into(),
+                },
+                file: name.into(),
+            };
+            profile["artifacts"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::to_value(&a.artifact).unwrap());
+            meta.artifacts.push(a);
+        }
+        (meta, profile)
+    }
+    #[test]
+    fn instruction_metadata_requires_the_complete_closed_cpu_runtime() {
+        let (meta, profile) = instruction_fixture();
+        assert_eq!(meta.artifacts.len(), 12);
+        assert!(validate_metadata(&meta, &profile).is_ok());
+        for name in RUNTIME_FILES.into_iter().chain([
+            "libomp.dll",
+            "ggml-base.dll",
+            "ggml.dll",
+            "llama.dll",
+            "ggml-cpu-alderlake.dll",
+        ]) {
+            let (mut meta, mut profile) = instruction_fixture();
+            let omitted = meta.artifacts.iter().position(|a| a.file == name).unwrap();
+            let id = meta.artifacts.remove(omitted).artifact.artifact_id;
+            profile["artifacts"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|a| a["artifact_id"] != id);
+            assert!(validate_metadata(&meta, &profile).is_err(), "{name}");
+        }
+        let (mut meta, mut profile) = instruction_fixture();
+        let last = meta.artifacts.last().unwrap();
+        let mut extra = PackageArtifact {
+            artifact: last.artifact.clone(),
+            file: last.file.clone(),
+        };
+        extra.file = "ggml-cpu-x64.dll".into();
+        extra.artifact.artifact_id = "runtime.othercpu".into();
+        profile["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(&extra.artifact).unwrap());
+        meta.artifacts.push(extra);
+        assert!(validate_metadata(&meta, &profile).is_err());
+        let (mut meta, profile) = instruction_fixture();
+        meta.artifacts.last_mut().unwrap().file = "../ggml-cpu-alderlake.dll".into();
+        assert!(validate_metadata(&meta, &profile).is_err());
+        let (mut meta, profile) = instruction_fixture();
+        meta.adapters[0]["score_kinds"] = serde_json::json!(["probability"]);
+        assert!(validate_metadata(&meta, &profile).is_err());
     }
 }

@@ -290,6 +290,13 @@ async def test_canonical_source_invalidation_retries_before_publication(tmp_path
 @pytest.mark.asyncio
 @pytest.mark.parametrize('kind',['joint','split'])
 async def test_before_first_child_projection_loss_discovers_canonical_enrollment_and_publishes(tmp_path,kind,monkeypatch):
+    turns=[]
+    original_batch=FindingsRunner.process_batch
+    def batch(runner,account,**kwargs):
+        turns.append(account)
+        assert runner.canonical_execution is not None and runner.adapter is None
+        return original_batch(runner,account,**kwargs)
+    monkeypatch.setattr(FindingsRunner,'process_batch',batch)
     x=make_execution_fixture(tmp_path,kind)
     verified_grants(monkeypatch,x)
     try:
@@ -313,6 +320,7 @@ async def test_before_first_child_projection_loss_discovers_canonical_enrollment
                 state=service.dependencies.findings.state(ACCOUNT)
                 raise AssertionError(dict(state={key:state[key] for key in ('mode','completion_revision','notification_revision','acknowledged_revision')},
                     failure=owned.findings.failure,children=canonical(x),cached=len(owned.findings._enrollments),stacks=stacks)) from None
+            assert turns and set(turns)=={ACCOUNT}
             assert len(canonical(x)) == 2
             assert service.read_current(x.http_policy()).enrollment_id == first.current.enrollment_id
             assert len(owned.findings._enrollments) <= 16

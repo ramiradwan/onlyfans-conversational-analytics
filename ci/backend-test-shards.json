@@ -304,6 +304,7 @@
     "tests/test_nlp_reclamation.py": 2,
     "tests/test_nlp_recovery.py": 4,
     "tests/test_nlp_runtime.py": 1,
+    "tests/test_nlp_shared_residence.py": 4,
     "tests/test_nlp_source_validation.py": 1,
     "tests/test_nlp_task_subsets.py": 4,
     "tests/test_onboarding_enrollment_runtime.py": 2,
