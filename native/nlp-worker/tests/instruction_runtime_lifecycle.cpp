@@ -5,20 +5,29 @@
 #include <psapi.h>
 #include <cstdio>
 namespace {
+int position=0,saved_position=0,restores=0;
+bool cancel_restore=false;
+bool long_prompt=false,mismatch=false,short_state=false,oversized_state=false,cancel_state=false;
 int contexts=0, samplers=0, models=0, decodes=0, samples=0;
+bool throw_synchronize=false;
+bool context_live=false;
 bool stopped=false, fail_decode=false, throw_decode=false, never_eog=false, cancel_after_prefill=false;
 llama_vocab * vocab=reinterpret_cast<llama_vocab *>(1);
 llama_context * ctx=reinterpret_cast<llama_context *>(2);
 llama_sampler * sampler=reinterpret_cast<llama_sampler *>(3);
 bool allowed(const void *) { return !stopped; }
 const llama_vocab * get_vocab(const llama_model *) { return vocab; }
-int32_t tokenize(const llama_vocab *,const char *,int32_t,llama_token * out,int32_t capacity,bool,bool) {
-    if(!out || capacity<2)return -2;out[0]=1;out[1]=2;return 2;
+int32_t tokenize(const llama_vocab *,const char * text,int32_t length,llama_token * out,int32_t capacity,bool,bool) {
+    int32_t n=long_prompt?(length==6?514:600):2;
+    if(!out||capacity<n)return -n;
+    for(int32_t i=0;i<n;++i)out[i]=i+1;
+    if(mismatch&&length!=6)out[0]=999;
+    return n;
 }
 llama_context_params context_params() {return {};}
 llama_context * make_context(llama_model *,llama_context_params p) {
     assert(p.n_threads==8 && p.n_threads_batch==8 && p.n_ctx==8192);
-    assert(!p.offload_kqv && !p.op_offload);return ctx;
+    assert(!p.offload_kqv && !p.op_offload);context_live=true;position=0;return ctx;
 }
 uint32_t n_context(const llama_context *) {return 8192;}
 llama_sampler_chain_params sampler_params() {return {};}
@@ -26,18 +35,31 @@ llama_sampler * make_chain(llama_sampler_chain_params) {return sampler;}
 llama_sampler * make_grammar(const llama_vocab *,const char *,const char *) {return sampler;}
 llama_sampler * make_greedy() {return sampler;}
 void add_sampler(llama_sampler *,llama_sampler *) {}
-void free_context(llama_context *) {++contexts;}
+void free_context(llama_context *) {assert(context_live);context_live=false;++contexts;}
 void free_sampler(llama_sampler *) {++samplers;}
 void free_model(llama_model *) {++models;}
 llama_batch batch(llama_token *,int32_t n) {llama_batch b{};b.n_tokens=n;return b;}
-int32_t decode(llama_context *,llama_batch) {
+int32_t decode(llama_context *,llama_batch b) {
+    position+=b.n_tokens;
     ++decodes;
     if(cancel_after_prefill)stopped=true;
     if(throw_decode)throw std::runtime_error("decode");
     if(fail_decode)return -1;
     return 0;
 }
+size_t state_size(llama_context *) {return oversized_state?checkpoint_limit+1:sizeof(int);}
+size_t state_get(llama_context *,uint8_t * bytes,size_t size) {
+    assert(size==sizeof(int));assert(position==512);saved_position=position;
+    std::memcpy(bytes,&position,sizeof(int));if(cancel_state)stopped=true;
+    return short_state?size-1:size;
+}
+size_t state_set(llama_context *,const uint8_t * bytes,size_t size) {
+    assert(size==sizeof(int));std::memcpy(&position,bytes,sizeof(int));assert(position==512);++restores;if(cancel_restore)stopped=true;
+    return short_state?size-1:size;
+}
+void synchronize(llama_context *) {assert(context_live);if(throw_synchronize)throw std::runtime_error("synchronize");}
 llama_token sample(llama_sampler *,llama_context *,int32_t) {
+    if(long_prompt)assert(position==600 || position==601);
     ++samples;
     if(samples==1)return 10;
     return never_eog?10:11;
@@ -53,7 +75,8 @@ State * state() {
     a.llama_sampler_chain_init=make_chain;a.llama_sampler_init_grammar=make_grammar;
     a.llama_sampler_init_greedy=make_greedy;a.llama_sampler_chain_add=add_sampler;
     a.llama_free=free_context;a.llama_sampler_free=free_sampler;a.llama_model_free=free_model;
-    a.llama_batch_get_one=batch;a.llama_decode=decode;a.llama_sampler_sample=sample;
+    a.llama_state_get_size=state_size;a.llama_state_get_data=state_get;a.llama_state_set_data=state_set;
+    a.llama_synchronize=synchronize;a.llama_batch_get_one=batch;a.llama_decode=decode;a.llama_sampler_sample=sample;
     a.llama_vocab_is_eog=eog;a.llama_token_to_piece=piece;
     return s;
 }
@@ -62,7 +85,7 @@ int run(State * s,size_t capacity=65536) {
     return instruction_generate(s,reinterpret_cast<const unsigned char *>("p"),1,"root ::= \"x\"",8192,192,
         out,capacity,&written,allowed,nullptr);
 }
-void reset() {contexts=samplers=models=decodes=samples=0;stopped=fail_decode=throw_decode=never_eog=cancel_after_prefill=false;}
+void reset() {cancel_restore=false;long_prompt=mismatch=short_state=oversized_state=cancel_state=false;position=saved_position=restores=0;throw_synchronize=false;contexts=samplers=models=decodes=samples=0;stopped=fail_decode=throw_decode=never_eog=cancel_after_prefill=false;}
 }
 std::string utf8(const wchar_t * value) {
     int count=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,value,-1,nullptr,0,nullptr,nullptr);
@@ -110,6 +133,26 @@ int wmain(int argc,wchar_t ** argv) {
     instruction_close(s);assert(models==1);
     reset();s=state();cancel_after_prefill=true;assert(run(s)==4);assert(contexts==1 && samplers==1);
     instruction_close(s);assert(models==1);
+    reset();s=state();throw_synchronize=true;assert(run(s)==1);assert(contexts==1 && samplers==1);
+    instruction_close(s);assert(models==1);
+    reset();s=state();throw_decode=true;throw_synchronize=true;assert(run(s)==1);assert(contexts==1 && samplers==1);
+    instruction_close(s);assert(models==1);
+    reset();s=state();long_prompt=true;
+    assert(instruction_configure_prefix(s,reinterpret_cast<const unsigned char *>("static"),6,allowed,nullptr)==0);
+    assert(s->prefix.size()==512 && s->checkpoint.empty());
+    assert(run(s)==0 && saved_position==512 && restores==0 && position==601);
+    assert(s->checkpoint.size()==sizeof(int));
+    samples=0;assert(run(s)==0 && restores==1 && position==601);
+    samples=0;cancel_restore=true;assert(run(s)==4 && s->checkpoint.empty());
+    stopped=false;cancel_restore=false;samples=0;assert(run(s)==0 && !s->checkpoint.empty());
+    // Restored prefix has no logits; the nonempty suffix is decoded before sampling.
+    samples=0;mismatch=true;assert(run(s)==1 && s->checkpoint.empty());
+    mismatch=false;samples=0;assert(run(s)==0 && !s->checkpoint.empty());
+    short_state=true;samples=0;assert(run(s)==1 && s->checkpoint.empty());
+    short_state=false;oversized_state=true;samples=0;assert(run(s)==1 && s->checkpoint.empty());
+    oversized_state=false;cancel_state=true;samples=0;assert(run(s)==4 && s->checkpoint.empty());
+    stopped=false;cancel_state=false;short_state=true;samples=0;assert(run(s)==1 && s->checkpoint.empty());
+    instruction_close(s);
     instruction_close(nullptr);
     assert(instruction_open(nullptr,nullptr,nullptr,8,allowed,nullptr,nullptr)==nullptr);
     return 0;

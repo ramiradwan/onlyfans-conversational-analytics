@@ -7,13 +7,17 @@
 #include <string>
 #include <cstring>
 #include <climits>
+#include <chrono>
+#include <cstdio>
+#include <algorithm>
 
 using check_fn = bool (*)(const void *);
 #define FUNCTIONS(X) \
  X(llama_model_default_params) X(llama_context_default_params) \
  X(llama_backend_init) X(llama_backend_free) X(llama_model_load_from_splits) \
  X(llama_model_free) X(llama_init_from_model) X(llama_free) X(llama_model_get_vocab) \
- X(llama_n_ctx) X(llama_tokenize) X(llama_batch_get_one) X(llama_decode) \
+ X(llama_n_ctx) X(llama_tokenize) X(llama_batch_get_one) X(llama_decode) X(llama_synchronize) \
+ X(llama_state_get_size) X(llama_state_get_data) X(llama_state_set_data) \
  X(llama_vocab_is_eog) X(llama_token_to_piece) X(llama_sampler_chain_default_params) \
  X(llama_sampler_chain_init) X(llama_sampler_chain_add) X(llama_sampler_init_greedy) \
  X(llama_sampler_init_grammar) X(llama_sampler_sample) X(llama_sampler_free) X(llama_log_set)
@@ -38,6 +42,9 @@ struct State {
     llama_model * model = nullptr;
     uint32_t threads = 2;
     bool initialized = false;
+    std::vector<llama_token> prefix;
+    std::vector<unsigned char> checkpoint;
+    void clear_checkpoint() {std::vector<unsigned char>().swap(checkpoint);}
     ~State() {
         if (model) api.llama_model_free(model);
         if (initialized) api.llama_backend_free();
@@ -125,20 +132,71 @@ extern "C" void * instruction_open(const wchar_t * const * paths, const char * b
     return owner.release();
     } catch (...) { *stage=900; return nullptr; }
 }
+static constexpr size_t checkpoint_limit=256ULL*1024*1024;
+extern "C" int instruction_configure_prefix(void * raw, const unsigned char * prefix, size_t length,
+    check_fn check, const void * user) {
+    auto * s=static_cast<State *>(raw);
+    try {
+        if(!s||!prefix||!check||length>131072)return 1;
+        s->clear_checkpoint();s->prefix.clear();
+        if(!check(user))return 4;
+        auto * vocab=s->api.llama_model_get_vocab(s->model);if(!vocab)return 1;
+        int32_t count=s->api.llama_tokenize(vocab,reinterpret_cast<const char *>(prefix),static_cast<int32_t>(length),nullptr,0,true,true);
+        if(count==INT32_MIN||count>=0)return 1;
+        count=-count;if(count<=0||count>8192)return 1;
+        std::vector<llama_token> tokens(count);
+        if(s->api.llama_tokenize(vocab,reinterpret_cast<const char *>(prefix),static_cast<int32_t>(length),tokens.data(),count,true,true)!=count)return 1;
+        // Exclude the boundary token and preserve the original prefill batch partition.
+        tokens.resize((static_cast<size_t>(count)-1)/256*256);
+        if(!check(user))return 4;
+        s->prefix.swap(tokens);return 0;
+    } catch (...) {if(s){s->clear_checkpoint();s->prefix.clear();}return 1;}
+}
+struct CacheGuard {
+    State * state;
+    bool complete=false;
+    ~CacheGuard() {if(state&&!complete)state->clear_checkpoint();}
+};
 struct Session {
     State * s;
     llama_context * context = nullptr;
     llama_sampler * sampler = nullptr;
     ~Session() {if(sampler)s->api.llama_sampler_free(sampler);if(context)s->api.llama_free(context);}
 };
+struct PhaseTimings {
+    unsigned long long tokenization=0, context_creation=0, prefill=0, generation=0;
+    bool cache_reused=false;
+    ~PhaseTimings() {
+        std::fprintf(stderr,"instruction_phase_us tokenization=%llu context_creation=%llu prefill=%llu generation=%llu cache_reused=%u\n",
+            tokenization,context_creation,prefill,generation,cache_reused?1:0);
+    }
+};
+struct PhaseScope {
+    unsigned long long & elapsed;
+    std::chrono::steady_clock::time_point start=std::chrono::steady_clock::now();
+    State * state=nullptr;
+    llama_context * context=nullptr;
+    bool active=true;
+    void finish() {
+        if(!active)return;
+        active=false;
+        if(context)state->api.llama_synchronize(context);
+        auto duration=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-start).count();
+        elapsed=duration>0?static_cast<unsigned long long>(duration):0;
+    }
+    ~PhaseScope() noexcept {try {finish();} catch (...) {}}
+};
 // 0: complete EOG, 1: failure, 2: input bound, 3: output bound, 4: stopped.
 extern "C" int instruction_generate(void * raw, const unsigned char * prompt, size_t length,
     const char * grammar, uint32_t context, uint32_t output, unsigned char * buffer,
     size_t capacity, size_t * written, check_fn check, const void * user) {
+    PhaseTimings timings;
     try {
     auto * s=static_cast<State *>(raw);
+    CacheGuard cache{s};
     if(!s||!prompt||!grammar||!buffer||!written||!check||context!=8192||output!=192||length>1048576)return 1;
     *written=0;if(!check(user))return 4;
+    PhaseScope tokenization{timings.tokenization};
     auto * vocab=s->api.llama_model_get_vocab(s->model);if(!vocab)return 1;
     int32_t count=s->api.llama_tokenize(vocab,reinterpret_cast<const char *>(prompt),static_cast<int32_t>(length),nullptr,0,true,true);
     if(count==INT32_MIN||count>=0)return 1;
@@ -146,13 +204,17 @@ extern "C" int instruction_generate(void * raw, const unsigned char * prompt, si
     std::vector<llama_token> tokens(count);
     if(s->api.llama_tokenize(vocab,reinterpret_cast<const char *>(prompt),static_cast<int32_t>(length),tokens.data(),count,true,true)!=count)return 1;
     if(!check(user))return 4;
+    if(s->prefix.size()>=tokens.size()||!std::equal(s->prefix.begin(),s->prefix.end(),tokens.begin()))return 1;
+    tokenization.finish();
     Check control{check,user};Session session{s};
+    PhaseScope context_creation{timings.context_creation};
     auto cp=s->api.llama_context_default_params();
     cp.n_ctx=context;cp.n_batch=256;cp.n_ubatch=256;cp.n_seq_max=1;
     cp.n_threads=s->threads;cp.n_threads_batch=s->threads;
     cp.offload_kqv=false;cp.op_offload=false;
     cp.abort_callback=abort_decode;cp.abort_callback_data=&control;
     session.context=s->api.llama_init_from_model(s->model,cp);
+    context_creation.finish();
     if(!session.context||!check(user))return 1;
     if(s->api.llama_n_ctx(session.context)<context)return 2;
     auto sp=s->api.llama_sampler_chain_default_params();sp.no_perf=true;
@@ -161,18 +223,41 @@ extern "C" int instruction_generate(void * raw, const unsigned char * prompt, si
     s->api.llama_sampler_chain_add(session.sampler,constrained);
     auto * greedy=s->api.llama_sampler_init_greedy();if(!greedy)return 1;
     s->api.llama_sampler_chain_add(session.sampler,greedy);
-    for(int32_t at=0;at<count;) {
+    PhaseScope prefill{timings.prefill,std::chrono::steady_clock::now(),s,session.context};
+    int32_t begin=0;
+    if(!s->checkpoint.empty()) {
+        if(!check(user))return 4;
+        size_t restored=s->api.llama_state_set_data(session.context,s->checkpoint.data(),s->checkpoint.size());
+        if(!check(user))return 4;
+        if(restored!=s->checkpoint.size())return 1;
+        begin=static_cast<int32_t>(s->prefix.size());timings.cache_reused=true;
+    }
+    for(int32_t at=begin;at<count;) {
         if(!check(user))return 4;
         int32_t n=(count-at)>256?256:count-at;
         auto batch=s->api.llama_batch_get_one(tokens.data()+at,n);
         if(s->api.llama_decode(session.context,batch)!=0)return 1;
         at+=n;
+        if(s->checkpoint.empty()&&!s->prefix.empty()&&static_cast<size_t>(at)==s->prefix.size()) {
+            s->api.llama_synchronize(session.context);
+            if(!check(user))return 4;
+            size_t size=s->api.llama_state_get_size(session.context);
+            if(!size||size>checkpoint_limit)return 1;
+            std::vector<unsigned char> snapshot(size);
+            if(!check(user))return 4;
+            size_t saved=s->api.llama_state_get_data(session.context,snapshot.data(),snapshot.size());
+            if(!check(user))return 4;
+            if(saved!=snapshot.size())return 1;
+            s->checkpoint.swap(snapshot);
+        }
     }
+    prefill.finish();
+    PhaseScope generation{timings.generation,std::chrono::steady_clock::now(),s,session.context};
     for(uint32_t generated=0;generated<output;++generated) {
         if(!check(user))return 4;
         auto token=s->api.llama_sampler_sample(session.sampler,session.context,-1);
         if(token<0)return 1;
-        if(s->api.llama_vocab_is_eog(vocab,token))return generated+1<output?0:3;
+        if(s->api.llama_vocab_is_eog(vocab,token)){generation.finish();cache.complete=generated+1<output;return cache.complete?0:3;}
         char piece[65536];
         int32_t size=s->api.llama_token_to_piece(vocab,token,piece,sizeof(piece),0,false);
         if(size<0||static_cast<size_t>(size)>capacity-*written)return 3;

@@ -24,6 +24,13 @@ unsafe extern "C" {
         stage: *mut u32,
     ) -> *mut c_void;
     fn instruction_close(handle: *mut c_void);
+    fn instruction_configure_prefix(
+        handle: *mut c_void,
+        prefix: *const u8,
+        length: usize,
+        check: extern "C" fn(*const c_void) -> bool,
+        user: *const c_void,
+    ) -> i32;
     fn instruction_generate(
         handle: *mut c_void,
         prompt: *const u8,
@@ -180,6 +187,30 @@ impl Runtime {
         #[cfg(not(all(windows, feature = "instruction-topics")))]
         {
             let _ = (paths, model, backend);
+            bail!("runtime_unavailable")
+        }
+    }
+    pub fn configure_prefix(&self, prefix: &[u8], control: &Control) -> Result<()> {
+        control.check()?;
+        ensure!(prefix.len() <= 131072, "resource_limit");
+        #[cfg(all(windows, feature = "instruction-topics"))]
+        {
+            let status = unsafe {
+                instruction_configure_prefix(
+                    self.handle.as_ptr(),
+                    prefix.as_ptr(),
+                    prefix.len(),
+                    check,
+                    (control as *const Control).cast(),
+                )
+            };
+            control.check()?;
+            ensure!(status == 0, "worker_failure");
+            Ok(())
+        }
+        #[cfg(not(all(windows, feature = "instruction-topics")))]
+        {
+            let _ = prefix;
             bail!("runtime_unavailable")
         }
     }

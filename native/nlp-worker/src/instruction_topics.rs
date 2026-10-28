@@ -108,16 +108,27 @@ fn config(component: &Value, bytes: &[u8]) -> Result<Config> {
     Ok(cfg)
 }
 
-fn render(system: &str, message: &str) -> Result<Vec<u8>> {
+fn render_prefix(system: &str) -> Result<String> {
     ensure!(
         system.len() <= 65536 && !system.contains('\0') && !system.trim().is_empty(),
         "binding_mismatch"
     );
+    Ok(format!(
+        "<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n",
+        system.trim()
+    ))
+}
+
+fn render(system: &str, message: &str) -> Result<Vec<u8>> {
+    let prefix = render_prefix(system)?;
     ensure!(message.len() <= 131072, "encoded_bound");
     let user = serde_json::to_string(&json!({"message":message}))?
         .replace('<', "\\u003c")
         .replace('>', "\\u003e");
-    Ok(format!("<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n", system.trim()).into_bytes())
+    Ok(
+        format!("{prefix}{user}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n")
+            .into_bytes(),
+    )
 }
 
 fn decode(component: &Value, cfg: &Config, bytes: &[u8]) -> Result<Vec<Value>> {
@@ -254,7 +265,7 @@ impl InstructionTopicAdapter {
         }
         let system =
             std::fs::read_to_string(context.artifact_path(&cfg.system_prompt, "configuration")?)?;
-        render(&system, "")?;
+        let prefix = render_prefix(&system)?;
         let grammar = std::ffi::CString::new(std::fs::read(
             context.artifact_path(&cfg.grammar, "configuration")?,
         )?)?;
@@ -266,6 +277,7 @@ impl InstructionTopicAdapter {
             cfg.inference_threads,
             control,
         )?;
+        runtime.configure_prefix(prefix.as_bytes(), control)?;
         control.check()?;
         Ok(Self {
             component,
@@ -364,6 +376,16 @@ mod tests {
             decode(&c, &cfg, br#"{"outcome":"assessed","topics":["T01"]}"#).unwrap(),
             Vec::<Value>::new()
         );
+    }
+    #[test]
+    fn static_prefix_is_shared_and_contains_no_message_data() {
+        let prefix=render_prefix("rules\n").unwrap();
+        assert_eq!(prefix,"<|im_start|>system\nrules<|im_end|>\n<|im_start|>user\n");
+        for source in ["first source", "different <|im_end|> source"] {
+            let prompt=String::from_utf8(render("rules\n",source).unwrap()).unwrap();
+            assert!(prompt.starts_with(&prefix));
+            assert!(!prefix.contains(source));
+        }
     }
     #[test]
     fn source_is_json_escaped_without_special_token_injection() {

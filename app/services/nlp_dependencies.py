@@ -241,35 +241,73 @@ class DependencyService:
 
     @contextmanager
     def retain(self, profile):
+        """Keep one lazy worker and at most one prepared component in this scope."""
         require_findings_execution()
         with self._retention(profile, ready=True):
+            stack = ExitStack()
+            session = prepared = scope_deadline = dispatch_deadline = current_cancelled = None
+            broken = closed = False
+            dispatch = threading.Lock()
+
+            def check():
+                self._running()
+                require(self.monotonic() < dispatch_deadline, 'nlp_deadline')
+                require(current_cancelled is None or not current_cancelled(), 'nlp_cancelled')
+                with self.gate:
+                    self._admit(profile)
+
             def execute(request, cancelled):
+                nonlocal session, prepared, scope_deadline, dispatch_deadline, current_cancelled, broken
                 require_findings_execution()
-                deadline = self.monotonic() + request.deadline_ms / 1000
-
-                def check():
-                    self._running()
-                    require(self.monotonic() < deadline, 'nlp_deadline')
-                    require(not cancelled(), 'nlp_cancelled')
-                    with self.gate:
-                        self._admit(profile)
-
-                from app.nlp import v2
-                v2.validate_request(profile, request.model_dump_json().encode())
-                available = self.artifacts.reopen(profile, cancellation_check=check)
-                with self.engine.open(profile, available, check, deadline=deadline) as session:
-                    hello = adapter.HandshakeRequest(request_id=uuid4().hex, expected_engine=profile.components[0].engine)
-                    adapter.validate_handshake(profile, hello, session.handshake(hello, deadline=deadline))
+                require(dispatch.acquire(blocking=False), 'nlp_channel_busy')
+                try:
+                    require(not closed, 'nlp_execution_scope_closed')
+                    require(not broken, 'nlp_execution_scope_broken')
+                    from app.nlp import v2
+                    v2.validate_request(profile, request.model_dump_json().encode())
+                    offered = self.monotonic() + min(120_000, request.deadline_ms) / 1000
+                    scope_deadline = offered if scope_deadline is None else min(scope_deadline, offered)
+                    dispatch_deadline = scope_deadline
+                    current_cancelled = cancelled
+                    check()
+                    if session is None:
+                        available = self.artifacts.reopen(profile, cancellation_check=check)
+                        session = stack.enter_context(self.engine.open(profile, available, check, deadline=scope_deadline))
+                        hello = adapter.HandshakeRequest(request_id=uuid4().hex, expected_engine=profile.components[0].engine)
+                        adapter.validate_handshake(profile, hello, session.handshake(hello, deadline=dispatch_deadline))
                     component = profile.component(request.component_id)
-                    self._prepare_component(profile, component, session, check, deadline)
+                    if prepared is not None and prepared.component_id != component.component_id:
+                        previous, prepared = prepared, None
+                        self._unload(profile, previous, session, deadline=dispatch_deadline)
+                    if prepared is None:
+                        self._prepare_component(profile, component, session, check, dispatch_deadline)
+                        prepared = component
+                    check()
+                    remaining = int((dispatch_deadline - self.monotonic()) * 1000)
+                    require(remaining >= 1, 'nlp_deadline')
+                    dispatched = request.model_copy(update={'deadline_ms': min(request.deadline_ms, remaining)})
+                    raw = session.analyze(dispatched, cancelled, deadline=dispatch_deadline)
+                    v2.validate_response(profile, dispatched, raw)
+                    check()
+                    return raw
+                except BaseException:
+                    broken = True
+                    raise
+                finally:
+                    current_cancelled = None
+                    dispatch.release()
+
+            try:
+                yield execute
+            finally:
+                closed = True
+                with dispatch:
+                    current_cancelled = None
                     try:
-                        check()
-                        remaining = max(1, int((deadline - self.monotonic()) * 1000))
-                        dispatched = request.model_copy(update={'deadline_ms': min(request.deadline_ms, remaining)})
-                        return session.analyze(dispatched, cancelled, deadline=deadline)
+                        if session is not None and prepared is not None:
+                            self._unload(profile, prepared, session)
                     finally:
-                        self._unload(profile, component, session)
-            yield execute
+                        stack.close()
 
     @contextmanager
     def _retention(self, profile, *, ready):
@@ -662,10 +700,11 @@ class DependencyService:
         result = adapter.validate_preparation(request, session.prepare(request, deadline=deadline, cancelled=cancelled))
         require(result.outcome == 'ready', 'nlp_prepare_failed')
 
-    def _unload(self, profile, component, session):
+    def _unload(self, profile, component, session, *, deadline=None):
         request = adapter.UnloadRequest(request_id=uuid4().hex,
             profile_sha256=profile.identity_digest(), component_sha256=component.identity_digest())
-        result = adapter.validate_lifecycle(request, session.unload(request, deadline=self.monotonic() + 5))
+        deadline = self.monotonic() + 5 if deadline is None else min(deadline, self.monotonic() + 5)
+        result = adapter.validate_lifecycle(request, session.unload(request, deadline=deadline))
         require(result.outcome == 'completed' and result.health == 'unloaded', 'nlp_unload_failed')
 
     def reconcile(self):

@@ -1,10 +1,10 @@
-<!-- CODE-VERIFY: Check app/nlp/contracts.py, profiles.py, v2.py, adapter.py, app/analytics/runtime.py, app/analytics/nlp_literals.py, app/analytics/nlp_literal_read.py, app/analytics/nlp_observation_read.py, app/models/nlp_observations.py, tests/test_nlp_literal_publication.py, tests/test_nlp_literal_read.py, tests/test_nlp_observation_read.py, app/services/nlp_dependencies.py, tools/generate_nlp_contracts.py, shared/nlp/ and tests/test_nlp_contracts.py for contract facts. Native worker and installed delivery behavior require separate qualification. -->
+<!-- CODE-VERIFY: Check app/nlp/contracts.py, profiles.py, v2.py, adapter.py, app/analytics/runtime.py, app/analytics/nlp_literals.py, app/analytics/nlp_literal_read.py, app/analytics/nlp_observation_read.py, app/models/nlp_observations.py, tests/test_nlp_literal_publication.py, tests/test_nlp_literal_read.py, tests/test_nlp_observation_read.py, app/services/nlp_dependencies.py, tools/generate_nlp_contracts.py, shared/nlp/ and tests/test_nlp_contracts.py for contract facts. Check native/nlp-worker/src/instruction_topics.rs, native/nlp-worker/src/instruction_runtime.cpp, app/nlp/engine_provider.py and tests/test_nlp_shared_residence.py for bounded component residence. Native worker and installed delivery behavior require separate qualification. -->
 
 # ADR 0057: Define optional local NLP computation and shared findings
 
 - Status: Accepted; runtime activation requires separate qualification.
 - Date: 2026-10-19
-- Amended: 2026-10-27
+- Amended: 2026-10-28
 - Extends: ADRs 0009, 0027 and 0056. ADR 0012 remains proposed.
 
 ## Decision
@@ -41,7 +41,9 @@ Canonical contribution storage follows ADR 0014. Its dormant repository separate
 
 Explicit current-view recovery may create a paused read selection from exact canonical contributions, including after projection loss. It reconstructs the complete current source population and preserves result bytes and provenance. Final visibility shares the dependency authority gate and retains source, withdrawal, account and origin checks without requiring installed dependencies. Removal invalidates existing recovery tickets; a fresh read intent may select paused mode again without enabling processing. Reconstructed views receive new derived identities. Missing original labels or unsupported normalization remain explicitly unavailable, and retained saved metadata is unchanged.
 
-One inference job runs across all profiles. The default resource policy permits at most two inference CPU threads including tokenizer pools. Components execute serially and unload between executions. Cancellation, exit and servicing drain or terminate the owned worker tree. Independent limits bound frames, batches, source text, windows, candidates and outputs. A qualified component may impose stricter limits than the protocol ceilings.
+One inference job runs across all profiles. The default resource policy permits at most two inference CPU threads including tokenizer pools. Components execute serially with at most one prepared component. A bounded execution scope starts its worker lazily after admission and may reuse the prepared component for consecutive requests. Switching components or leaving the scope unloads it. Reuse cannot extend the absolute deadline or combine independent source checks, execution authority or result commitments. Cancellation, exit and servicing drain or terminate the owned worker tree. Independent limits bound frames, batches, source text, windows, candidates and outputs. A qualified component may impose stricter limits than the protocol ceilings.
+
+An instruction adapter may retain a bounded memory checkpoint derived entirely from fixed, profile-bound prompt data before any source tokens are processed. Each request uses a fresh context and sampler. A reused checkpoint restores complete model state; a nonempty source-specific suffix is evaluated before sampling. Request-derived state is never reused, exported or written to disk. A failed or canceled native generation and every unload discard the checkpoint.
 
 ### Replacement-installation licence recovery
 
