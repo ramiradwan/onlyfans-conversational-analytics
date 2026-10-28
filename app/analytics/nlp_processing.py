@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
 import hashlib
 import json
@@ -37,42 +37,55 @@ def execution_slot():
             _EXECUTION.release()
 
 
+def infer_component(profile, component, original, execute, *, cancelled, remaining_ms,
+                    failure_policy: Literal["licensed_failed_tasks", "propagate"] = "propagate"):
+    """Validate one component; only dispatch failures permit licensed fallback."""
+    if failure_policy not in ('licensed_failed_tasks', 'propagate'):
+        raise ValueError('nlp_failure_policy_invalid')
+    if cancelled():
+        return False
+    remaining = min(120_000, remaining_ms())
+    if remaining < 1:
+        return False
+    request = v2.WorkerRequest(request_id=uuid4().hex, profile_sha256=profile.identity_digest(),
+        component_id=component.component_id, component_sha256=component.identity_digest(),
+        tasks=tuple(task.task for task in component.tasks), deadline_ms=remaining,
+        items=(v2.WorkerInput(request_item_id='message', text=original.text,
+            text_sha256=hashlib.sha256(original.text.encode()).hexdigest()),))
+    v2.validate_request(profile, request.model_dump_json().encode())
+    failed = False
+    try:
+        response = v2.validate_response(profile, request, execute(request, cancelled))
+        results = list(response.items[0].tasks)
+    except Exception:
+        if failure_policy == 'propagate':
+            raise
+        failed, results = True, []
+    if cancelled():
+        return False
+    if failed:
+        for task in component.tasks:
+            payload = {'task': task.task, 'outcome': 'failed', 'reason': 'worker_failure',
+                'coverage': {'source_codepoints': len(original.text), 'examined': [],
+                    'excluded': ([{'start': 0, 'end': len(original.text)}] if original.text else []),
+                    'limits_reached': []}, 'findings': []}
+            results.append(v2.BoundTaskResult.model_validate_json(encoded(dict(
+                component_id=component.component_id, component_sha256=component.identity_digest(),
+                text_sha256=request.items[0].text_sha256, payload=payload))))
+    return results
+
+
 def infer_source(profile, original, execute, *, cancelled, remaining_ms, failure_policy: Literal["licensed_failed_tasks", "propagate"] = "licensed_failed_tasks"):
     """Validate sequential component results for one original source."""
     if failure_policy not in ('licensed_failed_tasks', 'propagate'):
         raise ValueError('nlp_failure_policy_invalid')
     results = []
     for component in profile.components:
-        if cancelled():
+        found = infer_component(profile,component,original,execute,cancelled=cancelled,
+                                remaining_ms=remaining_ms,failure_policy=failure_policy)
+        if found is False:
             return False
-        remaining = min(120_000, remaining_ms())
-        if remaining < 1:
-            return False
-        request = v2.WorkerRequest(request_id=uuid4().hex, profile_sha256=profile.identity_digest(),
-            component_id=component.component_id, component_sha256=component.identity_digest(),
-            tasks=tuple(task.task for task in component.tasks), deadline_ms=remaining,
-            items=(v2.WorkerInput(request_item_id='message', text=original.text,
-                text_sha256=hashlib.sha256(original.text.encode()).hexdigest()),))
-        v2.validate_request(profile, request.model_dump_json().encode())
-        failed = False
-        try:
-            response = v2.validate_response(profile, request, execute(request, cancelled))
-            results.extend(response.items[0].tasks)
-        except Exception:
-            if failure_policy == 'propagate':
-                raise
-            failed = True
-        if cancelled():
-            return False
-        if failed:
-            for task in component.tasks:
-                payload = {'task': task.task, 'outcome': 'failed', 'reason': 'worker_failure',
-                    'coverage': {'source_codepoints': len(original.text), 'examined': [],
-                        'excluded': ([{'start': 0, 'end': len(original.text)}] if original.text else []),
-                        'limits_reached': []}, 'findings': []}
-                results.append(v2.BoundTaskResult.model_validate_json(encoded(dict(
-                    component_id=component.component_id, component_sha256=component.identity_digest(),
-                    text_sha256=request.items[0].text_sha256, payload=payload))))
+        results.extend(found)
     return results
 
 
@@ -80,6 +93,16 @@ def infer_source(profile, original, execute, *, cancelled, remaining_ms, failure
 class _CancellationState:
     error: Exception | None = None
     observed: bool = False
+
+
+@dataclass(slots=True)
+class _PendingSource:
+    claim: object
+    location: EvidenceLocation
+    original: object
+    work: object
+    cancellation: _CancellationState
+    results: list
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,108 +345,220 @@ class FindingsRunner(FindingsReadContext):
             return self._process_one(account_id, bound_adapter=execute if self.adapter is None else self.adapter,
                                      expected_profile=profile.identity_digest())
 
+    def _prepare_source(self, account_id, state, profile, claim, *, turn_deadline=None):
+        """Return independently admitted source work, or an already handled outcome."""
+        if claim.selection_epoch != state['selection_epoch'] or claim.admission_epoch != state['admission_epoch']:
+            return None, False
+        location = EvidenceLocation(conversation_id=claim.conversation_id,message_id=claim.message_id)
+        original = self._read(account_id,location,self._budget())
+        if original is None or source_binding(original).source_version != claim.source_version:
+            self.findings.invalidate_source(account_id,claim.source_ref)
+            return None, False
+        work = None
+        if self.canonical_execution is not None:
+            lease_seconds = min(120, int(claim.expires_at-self.findings.clock()))
+            if turn_deadline is not None:
+                lease_seconds = min(lease_seconds, int(turn_deadline-time.monotonic()))
+            if lease_seconds < 1:
+                return None, False
+            work = self.canonical_execution.begin(self.source, profile, original, lease_seconds=lease_seconds)
+            if work is None:
+                return None, False
+            self._budget().check()
+            self.authorize(account_id)
+            if work.terminal_reason is not None:
+                self.findings.abandon(claim, work.terminal_reason)
+                return None, True
+            if work.sealed or work.staged_record is not None:
+                if not work.sealed:
+                    self.canonical_execution.seal(work)
+                self._replay_canonical(work, claim)
+                return None, True
+        if any(len(original.text)>component.max_source_codepoints for component in profile.components):
+            if work is not None:
+                self.canonical_execution.finish_without_output(work, 'unsupported_input')
+            self.findings.abandon(claim,'unsupported_input')
+            return None, True
+        return _PendingSource(claim, location, original, work, _CancellationState(), []), False
+
+    def _source_cancelled(self, account_id, profile, pending):
+        self.authorize(account_id)
+        cancellation = pending.cancellation
+        if cancellation.observed:
+            return True
+        try:
+            if self.cancellation_check is not None and self.cancellation_check():
+                cancellation.observed = True
+                return True
+        except Exception as error:
+            cancellation.error = error
+            raise
+        stopped = (not self.findings.valid_claim(pending.claim) or not self.execution_ready(profile)
+                or (self.dependencies is not None and not self.dependencies.ready(profile)))
+        if not stopped and pending.work is not None:
+            self.canonical_execution.check(pending.work)
+        return stopped
+
+    def _remaining_ms(self, pending, *, turn_deadline=None):
+        value = min(120_000, int((pending.claim.expires_at-self.findings.clock())*1000))
+        if pending.work is not None:
+            value = min(value, int((pending.work.attempt.lease_expires_at-self.canonical_execution.repository.clock())*1000))
+        if turn_deadline is not None:
+            value = min(value, int((turn_deadline-time.monotonic())*1000))
+        return value
+
+    def _finish_source(self, account_id, profile, pending, cancelled):
+        if pending.cancellation.error is not None:
+            self.authorize(account_id)
+            raise pending.cancellation.error
+        if cancelled():
+            return False
+        latest = self._read(account_id,pending.location,self._budget())
+        if latest is None or source_binding(latest) != source_binding(pending.original):
+            self.findings.invalidate_source(account_id,pending.claim.source_ref)
+            return False
+        # Dispatch order may differ; saved task order remains the exact profile order.
+        order = {binding.task:index for index,binding in enumerate(profile.bindings)}
+        results = sorted(pending.results, key=lambda result:order[result.payload.task])
+        record_model = v2.SubsetEnrichmentRecord if profile.schema_version == 'nlp-profile.v3' else v2.EnrichmentRecord
+        record = record_model(source=source_binding(latest),profile=profile,
+            analyzed_at=self.clock().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            tasks=tuple(v2.StoredTask(source=source_binding(latest),profile_sha256=profile.identity_digest(),result=r) for r in results))
+        try:
+            frame = v2.encode_record(record)
+        except ValueError:
+            if pending.work is not None:
+                self.canonical_execution.finish_without_output(pending.work, 'record_limit')
+            self.findings.abandon(pending.claim,'record_limit')
+            return True
+        if pending.work is not None:
+            if cancelled():
+                return False
+            self.canonical_execution.seal(pending.work, frame)
+            self._replay_canonical(pending.work, pending.claim)
+            return True
+        return self.findings.complete(pending.claim,profile,latest,frame)
+
     def _process_one(self, account_id, *, bound_adapter=None, expected_profile=None):
         """Perform one bounded job; projection reads never call this method."""
         require_findings_execution()
         if not _EXECUTION.acquire(blocking=False):
             return False
-        claim=None
-        work=None
+        claim = None
         try:
             self.authorize(account_id)
             self.reconcile(account_id)
-            state=self.findings.state(account_id)
-            profile=read_profile(state['profile_json'])
+            state = self.findings.state(account_id)
+            profile = read_profile(state['profile_json'])
             if expected_profile is not None and profile.identity_digest() != expected_profile:
                 return False
-            if state['mode']!='enabled' or (self.canonical_execution is None and not self.execution_ready(profile)):
+            if state['mode'] != 'enabled' or (self.canonical_execution is None and not self.execution_ready(profile)):
                 return False
-            claim=self.findings.claim(account_id)
+            claim = self.findings.claim(account_id)
             if claim is None:
                 return False
-            if claim.selection_epoch != state['selection_epoch'] or claim.admission_epoch != state['admission_epoch']:
+            pending, handled = self._prepare_source(account_id,state,profile,claim)
+            if pending is None:
+                return handled
+            if pending.work is not None and not self.execution_ready(profile):
                 return False
-            location=EvidenceLocation(conversation_id=claim.conversation_id,message_id=claim.message_id)
-            original=self._read(account_id,location,self._budget())
-            if original is None or source_binding(original).source_version!=claim.source_version:
-                self.findings.invalidate_source(account_id,claim.source_ref)
-                return False
-            if self.canonical_execution is not None:
-                lease_seconds = min(120, int(claim.expires_at-self.findings.clock()))
-                if lease_seconds < 1:
-                    return False
-                work = self.canonical_execution.begin(self.source, profile, original, lease_seconds=lease_seconds)
-                if work is None:
-                    return False
-                self._budget().check()
-                self.authorize(account_id)
-                if work.terminal_reason is not None:
-                    self.findings.abandon(claim, work.terminal_reason)
-                    return True
-                if work.sealed or work.staged_record is not None:
-                    if not work.sealed:
-                        self.canonical_execution.seal(work)
-                    self._replay_canonical(work, claim)
-                    return True
-            if any(len(original.text)>component.max_source_codepoints for component in profile.components):
-                if work is not None:
-                    self.canonical_execution.finish_without_output(work, 'unsupported_input')
-                self.findings.abandon(claim,'unsupported_input')
-                return True
-            if work is not None and not self.execution_ready(profile):
-                return False
-            cancellation = _CancellationState()
-            def cancelled():
-                self.authorize(account_id)
-                if cancellation.observed:
-                    return True
-                try:
-                    if self.cancellation_check is not None and self.cancellation_check():
-                        cancellation.observed=True
-                        return True
-                except Exception as error:
-                    cancellation.error=error
-                    raise
-                stopped = (not self.findings.valid_claim(claim) or not self.execution_ready(profile)
-                        or (self.dependencies is not None and not self.dependencies.ready(profile)))
-                if not stopped and work is not None:
-                    self.canonical_execution.check(work)
-                return stopped
-            if work is not None and self.dependencies is not None:
+            cancelled = lambda:self._source_cancelled(account_id,profile,pending)
+            if pending.work is not None and self.dependencies is not None:
                 if not self.dependencies.ready(profile):
                     return False
                 with self.dependencies.retain(profile) as retained_adapter:
-                    results = self._infer_components(profile, original, claim, cancelled,
-                        self.adapter if self.adapter is not None else retained_adapter, cancellation, work=work)
+                    results = self._infer_components(profile,pending.original,claim,cancelled,
+                        self.adapter if self.adapter is not None else retained_adapter,pending.cancellation,work=pending.work)
             else:
-                results = self._infer_components(profile, original, claim, cancelled, bound_adapter, cancellation, work=work)
-            if cancellation.error is not None:
+                results = self._infer_components(profile,pending.original,claim,cancelled,bound_adapter,
+                                                 pending.cancellation,work=pending.work)
+            if pending.cancellation.error is not None:
                 self.authorize(account_id)
-                raise cancellation.error
-            if results is False or cancelled():
+                raise pending.cancellation.error
+            if results is False:
                 return False
-            latest=self._read(account_id,location,self._budget())
-            if latest is None or source_binding(latest)!=source_binding(original):
-                self.findings.invalidate_source(account_id,claim.source_ref)
-                return False
-            record_model = v2.SubsetEnrichmentRecord if profile.schema_version == 'nlp-profile.v3' else v2.EnrichmentRecord
-            record=record_model(source=source_binding(latest),profile=profile,
-                analyzed_at=self.clock().strftime('%Y-%m-%dT%H:%M:%SZ'),
-                tasks=tuple(v2.StoredTask(source=source_binding(latest),profile_sha256=profile.identity_digest(),result=r) for r in results))
+            pending.results.extend(results)
+            return self._finish_source(account_id,profile,pending,cancelled)
+        finally:
             try:
-                frame=v2.encode_record(record)
-            except ValueError:
-                if work is not None:
-                    self.canonical_execution.finish_without_output(work, 'record_limit')
-                self.findings.abandon(claim,'record_limit')
-                return True
-            if work is not None:
-                if cancelled():
-                    return False
-                self.canonical_execution.seal(work, frame)
-                self._replay_canonical(work, claim)
-                return True
-            return self.findings.complete(claim,profile,latest,frame)
+                if claim is not None:
+                    self.findings.release(claim)
+            finally:
+                _EXECUTION.release()
+
+    def process_batch(self, account_id, *, maximum=2):
+        """Execute consecutive licensed sources under one bounded worker residence."""
+        require_findings_execution()
+        if type(maximum) is not int or not 1 <= maximum <= 2:
+            raise ValueError('nlp_turn_limit')
+        if self.canonical_execution is None or self.dependencies is None:
+            raise ValueError('nlp_canonical_owner_missing')
+        if not _EXECUTION.acquire(blocking=False):
+            return False
+        completed, last_component, execute, claim = False, None, None, None
+        try:
+            self.authorize(account_id)
+            self.reconcile(account_id)
+            selected = self.findings.state(account_id)
+            profile = read_profile(selected['profile_json'])
+            turn_deadline = time.monotonic() + 120
+            with ExitStack() as residence:
+                for index in range(maximum):
+                    self.authorize(account_id)
+                    state = self.findings.state(account_id)
+                    if (state['mode'] != 'enabled'
+                            or state['selection_epoch'] != selected['selection_epoch']
+                            or state['admission_epoch'] != selected['admission_epoch']
+                            or read_profile(state['profile_json']).identity_digest() != profile.identity_digest()):
+                        return completed
+                    remaining = int(turn_deadline-time.monotonic())
+                    if remaining < 1:
+                        return completed
+                    claim = self.findings.claim(account_id, deadline_seconds=120 if index==0 else min(120,remaining))
+                    if claim is None:
+                        return completed
+                    settled = False
+                    try:
+                        pending, handled = self._prepare_source(account_id,state,profile,claim,
+                                                               turn_deadline=turn_deadline)
+                        if pending is None:
+                            completed = completed or handled
+                            if handled:
+                                settled = True
+                                continue
+                            return completed
+                        if not self.execution_ready(profile) or not self.dependencies.ready(profile):
+                            return completed
+                        if execute is None:
+                            retained = residence.enter_context(self.dependencies.retain(profile))
+                            execute = self.adapter if self.adapter is not None else retained
+                        # Preserve an already prepared component across the source boundary.
+                        components = sorted(profile.components,
+                            key=lambda component:(component.component_id != last_component,
+                                any(task.task=='message_topics' for task in component.tasks)))
+                        cancelled = lambda:(self._source_cancelled(account_id,profile,pending)
+                                              or time.monotonic() >= turn_deadline)
+                        for component in components:
+                            if time.monotonic() >= turn_deadline or cancelled():
+                                return completed
+                            latest = self._read(account_id,pending.location,self._budget())
+                            if latest is None or source_binding(latest) != source_binding(pending.original):
+                                self.findings.invalidate_source(account_id,claim.source_ref)
+                                return completed
+                            results = infer_component(profile,component,pending.original,execute,cancelled=cancelled,
+                                remaining_ms=lambda:self._remaining_ms(pending,turn_deadline=turn_deadline))
+                            if results is False:
+                                return completed
+                            pending.results.extend(results)
+                            last_component = component.component_id
+                        if not self._finish_source(account_id,profile,pending,cancelled):
+                            return completed
+                        completed = settled = True
+                    finally:
+                        if settled:
+                            self.findings.release(claim)
+                            claim = None
+            return completed
         finally:
             try:
                 if claim is not None:

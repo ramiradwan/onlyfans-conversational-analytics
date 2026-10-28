@@ -56,11 +56,28 @@ class ObservedEngine(Engine):
 
 
 @pytest.fixture
-def retained(tmp_path):
-    e = Environment(tmp_path/'dependencies', 'split')
+def retained(tmp_path,request):
+    kind = getattr(request,'param','split')
+    e = Environment(tmp_path/'dependencies', 'joint' if kind=='mentions' else kind)
     e.engine = ObservedEngine()
     e.service.engine = e.engine
     e.selected()
+    if kind=='mentions':
+        import json
+        from app.nlp.profiles import canonical_bytes,read_profile
+        from app.nlp.profile_authentication import SUBSET_PROFILE_JWS_TYPE
+        from tests.test_nlp_profile_authentication import sign
+        document = e.profile.model_dump(mode='json')
+        document.update(schema_version='nlp-profile.v3',revision='mentions')
+        document['bindings'] = [b for b in document['bindings'] if b['task']=='concept_mentions']
+        component = document['components'][0]
+        component['tasks'] = [task for task in component['tasks'] if task['task']=='concept_mentions']
+        component['executed_labels'] = [label for label in component['executed_labels'] if label['task']=='concept_mentions']
+        e.profile = read_profile(json.dumps(document))
+        e.approved.add(e.profile.identity_digest())
+        e.objects['profiles/'+e.profile.identity_digest()] = sign(canonical_bytes(e.profile),typ=SUBSET_PROFILE_JWS_TYPE)
+        e.service.learn(e.catalog(sequence=2))
+        e.selected()
     e.engine.trace.clear()
     e.engine.events.clear()
     try:
@@ -305,3 +322,315 @@ def test_scope_exit_waits_for_admitted_dispatch_and_preserves_source_check(retai
     assert not e.service.pins
     with pytest.raises(ValueError, match='nlp_execution_scope_closed'):
         execute(request(e), cancelled)
+
+
+@pytest.mark.parametrize('phase',['cancelled','remaining','request'])
+def test_licensed_fallback_does_not_catch_preflight_errors(retained,monkeypatch,phase):
+    from app.analytics import nlp_processing
+    e = retained
+    calls,checks = [],[]
+    def preflight():
+        checks.append(True)
+        if len(checks)==1:
+            raise ValueError('synthetic_preflight_refusal')
+        return False
+    cancelled = preflight if phase=='cancelled' else lambda:False
+    remaining = preflight if phase=='remaining' else lambda:120000
+    if phase=='request':
+        monkeypatch.setattr(v2,'validate_request',lambda *args:preflight())
+    with pytest.raises(ValueError,match='synthetic_preflight_refusal'):
+        nlp_processing.infer_source(e.profile,SimpleNamespace(text='Original invented message'),
+            lambda *args:calls.append(args),cancelled=cancelled,remaining_ms=remaining)
+    assert not calls and len(checks)==1
+
+
+
+
+@pytest.fixture
+def turn_sources(retained,execution):
+    from tests.continuous_analytics_fixture import insert_message,advance
+    e = retained
+    x = execution('joint' if len(e.profile.components)==1 else 'split',modify=lambda _:e.profile)
+    with x.f.repositories.database.transaction() as db:
+        insert_message(db,'chat-0','second',x.f.clock.now-timedelta(days=2),1,text='Second invented photo')
+        advance(db)
+    e.service.source,e.service.findings = x.f.source,x.runner.findings
+    x.runner.adapter,x.runner.dependencies,x.runner.execution_ready = None,e.service,e.service.ready
+    x.runner.reconcile(ACCOUNT)
+    return e,x
+
+
+def saved_records(x):
+    with x.f.stores.database.read() as db:
+        return [v2.read_record(bytes(row[0])) for row in db.execute('SELECT document FROM nlp_records')]
+
+
+def observe_claims(x,monkeypatch):
+    claims = []
+    original = x.runner.findings.claim
+    def claim(*args,**kwargs):
+        if claims:
+            assert len(saved_records(x))==1
+        value = original(*args,**kwargs)
+        if value is not None:
+            claims.append(value)
+        return value
+    monkeypatch.setattr(x.runner.findings,'claim',claim)
+    return claims
+
+
+def test_turn_reuses_boundary_component_and_commits_before_second_claim(turn_sources,monkeypatch):
+    e,x = turn_sources
+    claims = observe_claims(x,monkeypatch)
+    calls = []
+    e.engine.hook = lambda name,request,*_:calls.append(request) if name=='analyze' else None
+    assert x.runner.process_batch(ACCOUNT)
+    mention = next(c.component_id for c in x.profile.components if c.tasks[0].task=='concept_mentions')
+    topic = next(c.component_id for c in x.profile.components if c.tasks[0].task=='message_topics')
+    assert [r.component_id for r in calls]==[mention,topic,topic,mention]
+    assert names(e).count('open')==1 and names(e).count('prepare')==3
+    assert len(claims)==2 and claims[0].owner != claims[1].owner
+    assert claims[1].expires_at <= claims[0].expires_at
+    records = saved_records(x)
+    assert len(records)==2 and len({record.source.source_ref for record in records})==2
+    assert {record.tasks[0].result.text_sha256 for record in records}=={call.items[0].text_sha256 for call in calls}
+    assert all(len({task.result.text_sha256 for task in record.tasks})==1 for record in records)
+    assert all([task.result.payload.task for task in record.tasks]==[b.task for b in x.profile.bindings] for record in records)
+    assert all(row['state']=='committed' for row in rows(x,'knowledge_jobs'))
+    assert all(row['ordinal']==0 for row in rows(x,'knowledge_sources'))
+    with x.f.stores.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_record_origins').fetchone()[0]==2
+
+
+@pytest.mark.parametrize('failure_at',[2,3,4])
+def test_turn_transport_failure_preserves_only_complete_source(turn_sources,monkeypatch,failure_at):
+    e,x = turn_sources
+    claims = observe_claims(x,monkeypatch)
+    calls = []
+    def fail(name,request,*_):
+        if name=='analyze':
+            calls.append(request)
+            if len(calls)==failure_at:
+                raise ValueError('nlp_transport_failure')
+        elif name=='unload' and len(calls)==failure_at:
+            assert x.runner.findings.valid_claim(claims[-1])
+    e.engine.hook = fail
+    with pytest.raises(ValueError,match='nlp_transport_failure'):
+        x.runner.process_batch(ACCOUNT)
+    records = saved_records(x)
+    assert len(records)==(0 if failure_at==2 else 1)
+    assert len(claims)==(1 if failure_at==2 else 2)
+    assert len(calls)==failure_at and names(e).count('open')==1 and names(e)[-1]=='close'
+    assert sum(row['state']=='committed' for row in rows(x,'knowledge_jobs'))==len(records)
+    with x.f.stores.database.read() as db:
+        assert not db.execute("SELECT 1 FROM nlp_jobs WHERE state='running'").fetchone()
+    if records:
+        assert records[0].source.source_ref==claims[0].source_ref
+        assert all(task.result.payload.outcome=='assessed_no_match' for task in records[0].tasks)
+
+
+def test_turn_failed_later_prepare_never_reopens_or_loses_first_record(turn_sources,monkeypatch):
+    e,x = turn_sources
+    claims = observe_claims(x,monkeypatch)
+    prepares = []
+    def fail(name,request,*_):
+        if name=='prepare':
+            prepares.append(request)
+            if len(prepares)==3:
+                raise ValueError('synthetic_prepare_failure')
+    e.engine.hook = fail
+    with pytest.raises(ValueError,match='synthetic_prepare_failure'):
+        x.runner.process_batch(ACCOUNT)
+    assert len(claims)==2 and len(saved_records(x))==1
+    assert names(e).count('open')==1 and names(e)[-1]=='close'
+
+
+def test_turn_source_reread_refusal_stops_without_reclaim_or_worker(turn_sources,monkeypatch):
+    e,x = turn_sources
+    claims = observe_claims(x,monkeypatch)
+    read,calls = x.runner._read,[]
+    def changed(*args):
+        calls.append(True)
+        return None if len(calls)==2 else read(*args)
+    monkeypatch.setattr(x.runner,'_read',changed)
+    assert x.runner.process_batch(ACCOUNT) is False
+    assert len(claims)==1 and not saved_records(x) and not e.engine.trace
+
+
+@pytest.mark.parametrize('refusal',['authority','cancel','expiry'])
+def test_turn_refusal_during_first_source_never_seals_partial_or_claims_second(turn_sources,monkeypatch,refusal):
+    e,x = turn_sources
+    claims = observe_claims(x,monkeypatch)
+    calls,stop = [],[False]
+    def authorize(_):
+        if stop[0] and refusal=='authority':
+            raise ValueError('synthetic_authority_refusal')
+    x.runner.authorize = authorize
+    x.runner.cancellation_check = lambda:stop[0] and refusal=='cancel'
+    def stop_first(name,request,*_):
+        if name=='analyze':
+            calls.append(request)
+            if len(calls)==1:
+                if refusal=='expiry':
+                    x.f.clock.now += timedelta(seconds=121)
+                else:
+                    stop[0] = True
+    e.engine.hook = stop_first
+    expected = ValueError if refusal=='authority' else AssertionError
+    with pytest.raises(expected):
+        x.runner.process_batch(ACCOUNT)
+    assert not saved_records(x) and len(calls)==1 and len(claims)==1
+    assert names(e)[-1]=='close'
+
+
+def test_turn_common_deadline_and_global_contention(turn_sources,monkeypatch):
+    from app.analytics import nlp_processing
+    e,x = turn_sources
+    clock = SimpleNamespace(now=100.0)
+    monkeypatch.setattr(nlp_processing,'time',SimpleNamespace(monotonic=lambda:clock.now))
+    claims = observe_claims(x,monkeypatch)
+    calls = []
+    def advance(name,request,*_):
+        if name=='analyze':
+            calls.append(request)
+            clock.now += 20
+    e.engine.hook = advance
+    with execution_slot() as acquired:
+        assert acquired and x.runner.process_batch(ACCOUNT) is False
+    assert not e.engine.trace and not claims
+    assert x.runner.process_batch(ACCOUNT)
+    assert len(claims)==2 and len(calls)==4
+    assert calls[2].deadline_ms <= 80_000 and calls[3].deadline_ms <= 60_000
+    assert claims[1].expires_at-claims[0].expires_at <= -40
+
+
+def test_turn_first_source_expiry_does_not_claim_it_again(turn_sources,monkeypatch):
+    from app.analytics import nlp_processing
+    e,x = turn_sources
+    clock = SimpleNamespace(now=100.0)
+    monkeypatch.setattr(nlp_processing,'time',SimpleNamespace(monotonic=lambda:clock.now))
+    claims = observe_claims(x,monkeypatch)
+    e.engine.hook = lambda name,*_:setattr(clock,'now',221.0) if name=='analyze' else None
+    with pytest.raises(AssertionError):
+        x.runner.process_batch(ACCOUNT)
+    assert len(claims)==1 and not saved_records(x)
+
+
+@pytest.mark.parametrize('retained',['joint','mentions'],indirect=True)
+def test_turn_single_component_profiles_keep_one_preparation(turn_sources,monkeypatch):
+    e,x = turn_sources
+    claims = observe_claims(x,monkeypatch)
+    assert x.runner.process_batch(ACCOUNT)
+    assert len(saved_records(x))==2 and len(claims)==2
+    assert names(e).count('prepare')==1 and names(e).count('open')==1
+    assert all(len(record.tasks)==len(x.profile.bindings) for record in saved_records(x))
+
+
+@pytest.mark.parametrize('replay',['first','all'])
+def test_turn_replay_first_does_not_imply_prepared_component(turn_sources,monkeypatch,replay):
+    e,x = turn_sources
+    assert x.runner.process_batch(ACCOUNT,maximum=1 if replay=='first' else 2)
+    records = saved_records(x)
+    for record in records:
+        x.runner.findings.retry(ACCOUNT,record.source.source_ref)
+    e.engine.trace.clear()
+    calls = []
+    e.engine.hook = lambda name,request,*_:calls.append(request) if name=='analyze' else None
+    if replay=='all':
+        x.runner.execution_ready = lambda _:False
+    assert x.runner.process_batch(ACCOUNT)
+    assert len(saved_records(x))==2
+    if replay=='all':
+        assert not e.engine.trace
+    else:
+        assert [x.profile.component(r.component_id).tasks[0].task for r in calls]==['concept_mentions','message_topics']
+        assert names(e).count('open')==1
+
+
+def test_turn_staged_replay_needs_no_worker(turn_sources,monkeypatch):
+    e,x = turn_sources
+    seal = x.owner.seal
+    def stage(work,frame=None):
+        with x.owner._fence('commit') as policy,x.repository.database.transaction() as db:
+            x.repository.stage_member_in(db,work.attempt,0,frame,policy=policy)
+        raise RuntimeError('after stage')
+    monkeypatch.setattr(x.owner,'seal',stage)
+    with pytest.raises(RuntimeError,match='after stage'):
+        x.runner.process_batch(ACCOUNT)
+    monkeypatch.setattr(x.owner,'seal',seal)
+    x.f.clock.now += timedelta(seconds=121)
+    e.engine.trace.clear()
+    x.runner.execution_ready = lambda _:False
+    assert x.runner.process_batch(ACCOUNT)
+    assert not e.engine.trace and len(saved_records(x))==1
+
+
+
+def test_turn_uses_existing_per_claim_fairness_and_database_barrier(turn_sources,monkeypatch):
+    e,x = turn_sources
+    store = x.runner.findings
+    with x.f.stores.database.transaction() as db:
+        refs = [row[0] for row in db.execute('SELECT source_ref FROM nlp_jobs ORDER BY source_ref')]
+        db.execute("UPDATE nlp_jobs SET lane='live' WHERE source_ref=?",(refs[0],))
+        db.execute("UPDATE nlp_jobs SET lane='backfill' WHERE source_ref=?",(refs[1],))
+        db.execute('UPDATE nlp_accounts SET live_claims=2')
+    original,lanes = store.claim,[]
+    def claim(*args,**kwargs):
+        value = original(*args,**kwargs)
+        if value:
+            with x.f.stores.database.read() as db:
+                assert db.execute("SELECT count(*) FROM nlp_jobs WHERE state='running'").fetchone()[0]==1
+                lanes.append(db.execute('SELECT lane FROM nlp_jobs WHERE source_ref=?',(value.source_ref,)).fetchone()[0])
+        return value
+    monkeypatch.setattr(store,'claim',claim)
+    assert x.runner.process_batch(ACCOUNT)
+    assert lanes==['live','backfill']
+
+
+def test_turn_competing_claim_between_sources_keeps_first_commit(turn_sources,monkeypatch):
+    e,x = turn_sources
+    original,calls,foreign = x.runner.findings.claim,[],[]
+    def claim(*args,**kwargs):
+        calls.append(True)
+        if len(calls)==2:
+            assert len(saved_records(x))==1
+            foreign.append(original(*args,**kwargs))
+        return original(*args,**kwargs)
+    monkeypatch.setattr(x.runner.findings,'claim',claim)
+    try:
+        assert x.runner.process_batch(ACCOUNT)
+        assert foreign[0] is not None and len(saved_records(x))==1
+        assert names(e).count('analyze')==2
+    finally:
+        for owned in foreign:
+            x.runner.findings.release(owned)
+
+
+def test_turn_rechecks_authority_before_claiming_second_source(turn_sources,monkeypatch):
+    e,x = turn_sources
+    claims = observe_claims(x,monkeypatch)
+    def authorize(_):
+        if saved_records(x):
+            raise ValueError('synthetic_authority_refusal')
+    x.runner.authorize = authorize
+    with pytest.raises(ValueError,match='synthetic_authority_refusal'):
+        x.runner.process_batch(ACCOUNT)
+    assert len(saved_records(x))==1 and len(claims)==1
+
+
+def test_turn_retains_typed_failures_without_breaking_scope(turn_sources,monkeypatch):
+    import json
+    from tests.test_nlp_processing_publication import ConformanceAdapter
+    e,x = turn_sources
+    original = ConformanceAdapter.__call__
+    def typed_failure(self,request,cancelled):
+        document = json.loads(original(self,request,cancelled))
+        for result in document['items'][0]['tasks']:
+            result['payload'].update(outcome='failed',reason='worker_failure',coverage={
+                'source_codepoints':len(request.items[0].text),'examined':[],
+                'excluded':[{'start':0,'end':len(request.items[0].text)}],'limits_reached':[]})
+        return json.dumps(document).encode()
+    monkeypatch.setattr(ConformanceAdapter,'__call__',typed_failure)
+    assert x.runner.process_batch(ACCOUNT)
+    assert len(saved_records(x))==2 and names(e).count('open')==1
+    assert all(task.result.payload.outcome=='failed' for record in saved_records(x) for task in record.tasks)
