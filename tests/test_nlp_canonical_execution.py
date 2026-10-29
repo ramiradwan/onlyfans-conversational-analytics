@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.analytics.nlp_canonical_execution import CanonicalFindingsExecution
+from app.analytics.nlp_contribution_replay import replay_contribution
 from app.analytics.nlp_contribution_sources import ContributionSourceGuard
 from app.analytics.nlp_processing import FindingsRunner
 from app.analytics.factory import create_analytics_stores
@@ -77,6 +78,161 @@ def execution(tmp_path,authority_basis):
 def rows(x,table):
     with x.repository.database.read() as db:
         return [dict(row) for row in db.execute(f'SELECT * FROM {table}')]
+
+
+def test_canonical_literals_publish_exact_unicode_and_paused_reads_do_not_execute(execution):
+    from app.analytics.query_runtime import QuestionResources
+    from app.models.nlp_literals import LiteralFindingsRequest
+    from tests.test_nlp_literal_publication import LiteralAdapter, TEXT
+
+    x = execution()
+    with x.repository.database.transaction() as db:
+        db.execute('UPDATE account_messages SET text=?', (TEXT,))
+        advance(db)
+    adapter = LiteralAdapter(x.profile)
+    x.runner.adapter = adapter
+    assert x.runner.process_one(ACCOUNT)
+    originals = rows(x, 'knowledge_members')
+    with x.repository.database.transaction() as db:
+        x.jobs.set_enrollment_mode_in(db, x.enrollment.enrollment_id, 'paused', policy=x.policy)
+    x.runner.findings.mode(ACCOUNT, 'paused')
+    run = x.runner.publish_pending(ACCOUNT)
+    resources = QuestionResources(x.f.source, x.f.pipeline, clock=lambda:x.f.clock.now)
+    request = LiteralFindingsRequest(expected_generation=run.artifact.projection.projection_generation,
+        expected_projection_digest=run.artifact.projection.projection_digest)
+    x.runner.execution_ready = lambda profile:pytest.fail('Saved read checked execution readiness')
+    x.runner.adapter = lambda *args, **kwargs:pytest.fail('Saved read requested inference')
+    first = resources.literal_findings(x.policy, request)
+    assert first.availability == 'available'
+    assert first.evidence_page.total == 3
+    assert {row.literal_key for row in first.row_page.items} == {'caf\u00e9', 'Caf\u00e9'}
+    assert next(row for row in first.row_page.items if row.literal_key == 'caf\u00e9').occurrences == 2
+    spans = set()
+    for item in first.evidence_page.items:
+        resolved = resources.resolve(x.policy, item.reference)
+        span = item.reference.span
+        spans.add((span.start, span.end))
+        assert resolved.text == TEXT
+        assert TEXT[span.start:span.end] in ('cafe\u0301', 'caf\u00e9', 'Caf\u00e9')
+        assert (resolved.browser_span.start, resolved.browser_span.end) == (span.start+1, span.end+1)
+    assert len(spans) == 3
+    assert resources.literal_findings(x.policy, request) == first
+    assert len(adapter.requests) == 1
+    assert rows(x, 'knowledge_members') == originals
+
+
+def test_idempotent_canonical_replay_repairs_missing_literals_and_notifies(execution):
+    x = execution()
+    assert x.runner.process_one(ACCOUNT)
+    x.runner.publish_pending(ACCOUNT)
+    before = x.runner.findings.state(ACCOUNT)
+    originals = rows(x, 'knowledge_members')
+    with x.runner.findings.database.transaction() as db:
+        db.execute('DELETE FROM nlp_literal_derivations')
+    result = replay_contribution(x.repository, x.runner.findings,
+        rows(x, 'knowledge_contributions')[0]['contribution_id'], policy=x.policy, limit=1)
+    after = x.runner.findings.state(ACCOUNT)
+    assert result['imported'] == 0 and result['complete']
+    assert after['completion_revision'] == before['completion_revision']
+    assert after['notification_revision'] == before['notification_revision']+1
+    assert x.runner.publish_pending(ACCOUNT).changed
+    with x.runner.findings.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_literal_derivations').fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM nlp_literal_publications WHERE state='sealed'").fetchone()[0] >= 1
+    assert rows(x, 'knowledge_members') == originals
+    assert len(x.adapter.requests) == 1
+
+
+def test_interrupted_literal_capture_rolls_back_replay_and_resumes_without_inference(execution, monkeypatch):
+    from app.analytics import nlp_contribution_replay as replay
+    from app.analytics.query_execution import QuestionCancelled
+
+    x = execution()
+    original = replay.capture_record
+    def interrupted(*args, **kwargs):
+        original(*args, **kwargs)
+        raise QuestionCancelled()
+    monkeypatch.setattr(replay, 'capture_record', interrupted)
+    with pytest.raises(QuestionCancelled):
+        x.runner.process_one(ACCOUNT)
+    assert rows(x, 'knowledge_jobs')[0]['state'] == 'committed'
+    with x.runner.findings.database.read() as db:
+        for table in ('nlp_records', 'nlp_record_origins', 'nlp_literal_derivations'):
+            assert db.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 0
+    monkeypatch.setattr(replay, 'capture_record', original)
+    x.runner.execution_ready = lambda profile:False
+    assert x.runner.process_one(ACCOUNT)
+    assert len(x.adapter.requests) == 1
+    with x.runner.findings.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_literal_derivations').fetchone()[0] == 1
+
+
+def test_literal_capacity_preserves_canonical_import_and_ordinary_publication(execution, monkeypatch):
+    from app.analytics import nlp_literals as literals
+    from app.analytics.nlp_findings_store import FrozenFindings
+    from app.analytics.opaque_refs import account_ref
+
+    x = execution()
+    monkeypatch.setattr(literals, 'MAX_BYTES', 0)
+    assert x.runner.process_one(ACCOUNT)
+    run = x.runner.publish_pending(ACCOUNT)
+    assert run.changed
+    before = x.runner.findings.state(ACCOUNT)
+    with x.runner.findings.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_records').fetchone()[0] == 1
+        assert db.execute('SELECT count(*) FROM nlp_record_origins').fetchone()[0] == 1
+        snapshot = db.execute('SELECT snapshot_id FROM nlp_generation_refs WHERE generation_id=?',
+            (x.runner.findings.database.active_generation(ACCOUNT).generation_id,)).fetchone()[0]
+        with pytest.raises(literals.LiteralUnavailable):
+            literals.checked_publication(db, FrozenFindings(account_ref(ACCOUNT), snapshot))
+    result = replay_contribution(x.repository, x.runner.findings,
+        rows(x, 'knowledge_contributions')[0]['contribution_id'], policy=x.policy, limit=1)
+    assert result['imported'] == 0 and result['complete']
+    after = x.runner.findings.state(ACCOUNT)
+    assert after['notification_revision'] == before['notification_revision']
+    assert x.runner.publish_pending(ACCOUNT) is None
+    assert len(x.adapter.requests) == 1
+
+
+def test_topics_only_replay_skips_literal_source_and_capture_work(execution, monkeypatch):
+    from app.analytics import nlp_contribution_replay as replay
+    from app.nlp.profiles import SubsetAnalysisProfile
+
+    def topics(profile):
+        return SubsetAnalysisProfile(**dict(profile.model_dump(), schema_version='nlp-profile.v3',
+            bindings=tuple(binding for binding in profile.bindings if binding.task == 'message_topics'),
+            components=tuple(component.model_copy(update={
+                'tasks':tuple(task for task in component.tasks if task.task == 'message_topics'),
+                'executed_labels':tuple(label for label in component.executed_labels if label.task == 'message_topics')})
+                for component in profile.components)))
+    x = execution(modify=topics)
+    monkeypatch.setattr(replay, 'capture_record', lambda *a, **k:pytest.fail('Undeclared literal task'))
+    monkeypatch.setattr(replay, 'validate_source_bound_record', lambda *a, **k:pytest.fail('Extra source validation'))
+    assert x.runner.process_one(ACCOUNT)
+    with x.runner.findings.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_records').fetchone()[0] == 1
+        assert db.execute('SELECT count(*) FROM nlp_literal_derivations').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('change', ['delete', 'change'])
+def test_canonical_literal_repair_refuses_erased_or_changed_source(execution, change):
+    from app.persistence.retention import CreatorVaultRetention
+
+    x = execution()
+    assert x.runner.process_one(ACCOUNT)
+    contribution = rows(x, 'knowledge_contributions')[0]['contribution_id']
+    with x.runner.findings.database.transaction() as db:
+        db.execute('DELETE FROM nlp_literal_derivations')
+    if change == 'delete':
+        CreatorVaultRetention(x.repository.database, clock=lambda:x.f.clock.now).delete_message(ACCOUNT, 'm-0-0')
+    else:
+        with x.repository.database.transaction() as db:
+            db.execute("UPDATE account_messages SET text='changed',content_hash='changed' WHERE creator_account_id=?", (ACCOUNT,))
+    with pytest.raises(ValueError, match='knowledge_(contribution_unavailable|source_changed)'):
+        replay_contribution(x.repository, x.runner.findings, contribution, policy=x.policy, limit=1)
+    with x.runner.findings.database.read() as db:
+        assert db.execute('SELECT count(*) FROM nlp_literal_derivations').fetchone()[0] == 0
+    assert len(x.adapter.requests) == 1
 
 
 def test_new_child_preparation_composes_module_from_baseline_identity(execution):
