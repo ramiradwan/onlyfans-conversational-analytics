@@ -15,7 +15,7 @@ export function MentionEvidenceDialog({ state, actions }: {
       {state.sourceLoading && <Typography role="status">Verifying the saved source message...</Typography>}
       {state.sourceError && <Alert severity="warning">{state.sourceError}</Alert>}
       {source && <Stack spacing={2}>
-        <Typography>{source.direction === 'inbound' ? 'Received' : 'Sent'}  / {new Date(source.reference.sent_at).toLocaleString()}</Typography>
+        <Typography>{source.direction === 'inbound' ? 'Received' : 'Sent'}{' \u00b7 '}{new Date(source.reference.sent_at).toLocaleString()}</Typography>
         {!state.sourceContext && <Box component="blockquote" sx={{ m: 0, p: 2, borderLeft: 3, borderColor: 'divider', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
           {span ? <>{source.text.slice(0, span.start)}<mark>{source.text.slice(span.start, span.end)}</mark>{source.text.slice(span.end)}</> : source.text || 'This message has no text.'}
         </Box>}
