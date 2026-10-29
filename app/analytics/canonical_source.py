@@ -17,6 +17,28 @@ from app.canonical.read_models import AccountReadModel
 from app.persistence.history import HistoryRepository
 
 
+_LIVE_EVIDENCE = """
+    AND m.is_deleted=0 AND c.is_deleted=0
+    AND NOT EXISTS (
+        SELECT 1 FROM entity_tombstones AS t
+        WHERE t.creator_account_id=m.creator_account_id
+          AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
+            OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
+    AND NOT EXISTS (
+        SELECT 1 FROM deletion_barriers AS b
+        WHERE b.creator_account_id=m.creator_account_id
+          AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR b.deleted_at>=m.lifecycle_started_at)
+          AND ((b.scope_kind='account' AND b.scope_key='*')
+            OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
+            OR (b.scope_kind='message' AND b.scope_key=m.message_id)
+            OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
+    AND NOT EXISTS (
+        SELECT 1 FROM participant_deletion_chat_scopes AS p
+        WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id
+          AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR p.deleted_at>=m.lifecycle_started_at))
+"""
+
+
 class HistoryAnalyticsSource:
     """Expose signer canonical history through the analytics read-source contract."""
 
@@ -326,6 +348,96 @@ class HistoryAnalyticsSource:
             source_state_token=source_state_token,
         )
 
+    def evidence_context_locations(self, account_id, location, before, after, budget, *, cutoff, now):
+        """Seek UTC time buckets, then order bounded candidates at full precision."""
+        from app.analytics.evidence import EvidenceUnavailable
+        from app.analytics.query_contracts import utc_instant
+
+        if any(type(n) is not int or not 0 <= n <= 5 for n in (before, after)):
+            raise ValueError('evidence_context_limit_invalid')
+        db = getattr(self._question_scope_local, 'connection', None)
+        if db is None or self.connection is not None:
+            raise EvidenceUnavailable()
+        location = EvidenceLocation.model_validate(location)
+        budget.consume(2)
+        anchor = db.execute("""SELECT julianday(sent_at),sent_at,winning_stream_epoch,
+            winning_source_seq,message_id FROM account_messages
+            WHERE creator_account_id=? AND chat_id=? AND message_id=? AND is_deleted=0""",
+            (account_id, location.conversation_id, location.message_id)).fetchone()
+        if anchor is None or anchor[0] is None:
+            raise EvidenceUnavailable()
+        limits = db.execute('SELECT julianday(?),julianday(?)',
+            (cutoff.isoformat(), now.isoformat())).fetchone()
+        budget.consume()
+        if db.execute("""SELECT 1 FROM account_messages INDEXED BY account_messages_context
+                WHERE creator_account_id=? AND chat_id=? AND is_deleted=0
+                AND julianday(sent_at) IS NULL LIMIT 1""",
+                (account_id, location.conversation_id)).fetchone() is not None:
+            raise EvidenceUnavailable()
+
+        def exact_key(row):
+            return (utc_instant(row[0]), int(row[1]), int(row[2]), str(row[3]))
+
+        buckets = {}
+        def load_bucket(at):
+            if at in buckets:
+                return buckets[at]
+            budget.consume()
+            remaining = (budget.limits.max_records - budget.records_examined) // 2
+            rows = db.execute("""SELECT sent_at,winning_stream_epoch,winning_source_seq,message_id
+                FROM account_messages INDEXED BY account_messages_context
+                WHERE creator_account_id=? AND chat_id=? AND is_deleted=0
+                  AND julianday(sent_at)=?
+                ORDER BY winning_stream_epoch,winning_source_seq,message_id LIMIT ?""",
+                (account_id, location.conversation_id, at, max(1, remaining + 1))).fetchall()
+            budget.consume(len(rows) * 2)
+            found = []
+            for row in rows:
+                budget.check()
+                live = db.execute(f"""SELECT 1 FROM account_messages AS m JOIN account_chats AS c
+                    ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
+                    WHERE m.creator_account_id=? AND m.chat_id=? AND m.message_id=?
+                    {_LIVE_EVIDENCE} LIMIT 1""",
+                    (account_id, location.conversation_id, row[3])).fetchone()
+                if live is not None:
+                    key = exact_key(row)
+                    if cutoff < key[0] <= now:
+                        found.append(key)
+            buckets[at] = found
+            return found
+
+        anchor_key = exact_key(anchor[1:])
+        initial = load_bucket(anchor[0])
+        if anchor_key not in initial:
+            raise EvidenceUnavailable()
+
+        def side(count, older):
+            found = [key for key in initial if (key < anchor_key if older else key > anchor_key)]
+            at = anchor[0]
+            relation, order = ('<', 'DESC') if older else ('>', 'ASC')
+            while len(found) <= count:
+                budget.consume()
+                next_row = db.execute(f"""SELECT julianday(sent_at) FROM account_messages
+                    INDEXED BY account_messages_context
+                    WHERE creator_account_id=? AND chat_id=? AND is_deleted=0
+                      AND julianday(sent_at)>=? AND julianday(sent_at)<=?
+                      AND julianday(sent_at) {relation} ?
+                    ORDER BY julianday(sent_at) {order} LIMIT 1""",
+                    (account_id, location.conversation_id, limits[0], limits[1], at)).fetchone()
+                if next_row is None:
+                    break
+                at = next_row[0]
+                found.extend(load_bucket(at))
+            found.sort(reverse=older)
+            return found[:count], len(found) > count
+
+        earlier, has_earlier = side(before, True)
+        later, has_later = side(after, False)
+        keys = list(reversed(earlier)) + [anchor_key] + later
+        budget.check()
+        return tuple(EvidenceLocation(conversation_id=location.conversation_id, message_id=key[3])
+                     for key in keys), len(earlier), has_earlier, has_later
+
     def nlp_location_page(self, account_id, after=None, *, limit=64):
         """Page locators only; live evidence admission remains a separate read."""
         if type(limit) is not int or not 1 <= limit <= 64:
@@ -503,7 +615,7 @@ def read_transaction_evidence(connection, account_id, location, budget):
 
 def _read_evidence_row(connection, account_id, location):
     return connection.execute(
-        """SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
+        f"""SELECT h.canonical_revision,m.text,m.sent_at,m.direction,
                   m.sender_platform_user_id,m.upstream_updated_at,
                   m.content_hash,m.winning_stream_epoch,m.winning_source_seq
              FROM account_messages AS m
@@ -512,25 +624,9 @@ def _read_evidence_row(connection, account_id, location):
              JOIN account_chats AS c
                ON c.creator_account_id=m.creator_account_id AND c.chat_id=m.chat_id
             WHERE m.creator_account_id=? AND m.message_id=? AND m.chat_id=?
-              AND m.is_deleted=0 AND c.is_deleted=0 AND length(m.text)<=?
-              AND length(CAST(m.text AS BLOB))<=?
-              AND NOT EXISTS (
-                  SELECT 1 FROM entity_tombstones AS t
-                   WHERE t.creator_account_id=m.creator_account_id
-                     AND ((t.entity_kind='message' AND t.entity_id=m.message_id)
-                       OR (t.entity_kind='chat' AND t.entity_id=m.chat_id)))
-              AND NOT EXISTS (
-                  SELECT 1 FROM deletion_barriers AS b
-                   WHERE b.creator_account_id=m.creator_account_id
-                     AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR b.deleted_at>=m.lifecycle_started_at)
-                     AND ((b.scope_kind='account' AND b.scope_key='*')
-                       OR (b.scope_kind='conversation' AND b.scope_key=m.chat_id)
-                       OR (b.scope_kind='message' AND b.scope_key=m.message_id)
-                       OR (b.scope_kind='participant' AND b.scope_key=c.platform_user_id)))
-              AND NOT EXISTS (
-                  SELECT 1 FROM participant_deletion_chat_scopes AS p
-                   WHERE p.creator_account_id=m.creator_account_id AND p.chat_id=m.chat_id
-                     AND (m.lifecycle_origin!='creator_import' OR m.lifecycle_started_at IS NULL OR p.deleted_at>=m.lifecycle_started_at))
+               AND length(m.text)<=?
+               AND length(CAST(m.text AS BLOB))<=?
+               {_LIVE_EVIDENCE}
             LIMIT 1""",
         (
             account_id,

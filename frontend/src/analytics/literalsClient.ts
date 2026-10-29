@@ -1,11 +1,12 @@
 import { FindingsClientError } from './findingsClient';
 import { LiteralsContractError, parseLiterals, type LiteralFindings, type LiteralsRequest } from './literalsContract';
-import type { QuestionEvidence, SourceEvidence } from './questionContract';
+import type { EvidenceContextRequest, EvidenceContext, QuestionEvidence, SourceEvidence } from './questionContract';
 import { LITERAL_FINDINGS } from '../config/endpoints';
 import { createQuestionApi } from '../services/questionApi';
 
 export interface LiteralsClient {
   read(request: LiteralsRequest, signal?: AbortSignal): Promise<LiteralFindings>;
+  context(request: EvidenceContextRequest, source: SourceEvidence, signal?: AbortSignal): Promise<EvidenceContext>;
   evidence(reference: QuestionEvidence, signal?: AbortSignal): Promise<SourceEvidence>;
 }
 export function buildLiteralsUrl(r: LiteralsRequest): string {
@@ -36,7 +37,7 @@ async function boundedJson(r: Response): Promise<unknown> {
 }
 export function createLiteralsClient(options: { fetcher?: typeof fetch; csrf?: () => string | null } = {}): LiteralsClient {
   const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis); const sources = createQuestionApi(options);
-  return { evidence: sources.evidence, async read(request, signal) {
+  return { evidence: sources.evidence, context: sources.context, async read(request, signal) {
     const controller = new AbortController(); const abort = () => controller.abort();
     if (signal?.aborted) abort(); signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(abort, 12_000);

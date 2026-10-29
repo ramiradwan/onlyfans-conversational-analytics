@@ -22,10 +22,21 @@ const readFailure = async (operation) => {
 };
 function timers() {
   const active = new Map();
-  let next = 0;
+  let next = 0, elapsed = 0;
   return {
     active,
-    schedule(callback, delay) { const id = ++next; active.set(id, { callback, delay }); return id; },
+    now: () => elapsed,
+    schedule(callback, delay) { const id = ++next; active.set(id, { callback, delay, due: elapsed + delay }); return id; },
+    advance(milliseconds) {
+      const target = elapsed + milliseconds;
+      let entry;
+      while ((entry = [...active].filter(([, value]) => value.due <= target)
+        .sort((a, b) => a[1].due - b[1].due || a[0] - b[0])[0])) {
+        elapsed = entry[1].due;
+        active.delete(entry[0]); entry[1].callback();
+      }
+      elapsed = target;
+    },
     cancel(id) { active.delete(id); },
     fire(delay) {
       const entry = [...active].find(([, value]) => value.delay === delay);
@@ -341,3 +352,59 @@ Write-NativePermissionStage 'started'
       assert.equal(closed, true);
     });
   });
+
+
+test('startup allowance accepts only safe integers within zero to fifteen seconds', async () => {
+  for (const startupAllowanceMs of [-1, 15_001, 0.5, NaN, Infinity, '15000', null, true]) {
+    let ran = false;
+    await assert.rejects(runNativePermissionInteraction({ startupAllowanceMs,
+      run: async () => { ran = true; } }), /native_permission_startup_allowance_invalid/u);
+    assert.equal(ran, false);
+  }
+});
+
+test('thirteen-second cold startup leaves the full interaction budget within thirty seconds', async () => {
+  const timer = timers(); let resolve, signal, settled = false;
+  const child = new EventEmitter(); child.stdout = new PassThrough();
+  const command = Object.assign(new Promise(done => { resolve = done; }), { child });
+  const pending = runNativePermissionInteraction({ ...timer, startupAllowanceMs: 15_000,
+    run(value) { signal = value; return command; } }).then(value => { settled = true; return value; });
+  child.emit('spawn');
+  assert.equal([...timer.active.values()][0].delay, 30_000);
+  timer.advance(13_000);
+  child.stdout.write(JSON.stringify(trace({ stage: 'started' })) + '\n');
+  timer.advance(3_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(timer.now(), 16_000); assert.equal(signal.aborted, false); assert.equal(settled, false);
+  timer.advance(12_000);
+  assert.equal(timer.now(), 28_000); assert.equal(signal.aborted, false);
+  child.stdout.write(JSON.stringify(trace({ stage: 'prompt_dismissed', invoke_attempted: true,
+    allow_invoked: true, prompt_dismissed: true })) + '\n');
+  resolve('done'); child.stdout.end(); child.emit('close', 0, null);
+  assert.equal(await pending, 'done'); assert.equal(timer.active.size, 0);
+});
+
+test('startup allowance aborts at thirty seconds and still waits for physical close', async () => {
+  const timer = timers(); let reject, settled = false, reads = 0;
+  const child = new EventEmitter(); child.stdout = new PassThrough();
+  const command = Object.assign(new Promise((resolve, fail) => { reject = fail; }), { child });
+  const pending = readFailure(runNativePermissionInteraction({ ...timer, startupAllowanceMs: 15_000,
+    run(signal) {
+      signal.addEventListener('abort', () => {
+        const error = Object.assign(new Error('private abort'), { code: 'ABORT_ERR' });
+        child.emit('error', error); reject(error);
+      }, { once: true });
+      return command;
+    }, readPermission: async () => { reads += 1; return false; },
+  })).then(value => { settled = true; return value; });
+  child.emit('spawn'); timer.advance(29_999);
+  assert.equal(settled, false);
+  timer.advance(1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false); assert.equal(reads, 0);
+  child.stdout.end(); child.emit('close', null, 'SIGTERM');
+  const result = await pending;
+  assert.equal(result.timeout_fired, true); assert.equal(result.startup.elapsed_ms, 30_000);
+  assert.equal(result.child.close_observed, true); assert.equal(result.child.close_signal, 'SIGTERM');
+  assert.equal(reads, 1); assert.equal(timer.active.size, 0);
+});

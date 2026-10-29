@@ -4,7 +4,7 @@ import type { BridgeTransportState } from './transportStore';
 import type { FindingsBaseline } from '../analytics/analyticsReadModel';
 import { createFindingsClient, FindingsClientError, type FindingsClient } from '../analytics/findingsClient';
 import { findingsSnapshot, type FindingsCategoryFilter, type FindingsDirection, type FindingsRequest, type FindingsResponse } from '../analytics/findingsContract';
-import { evidenceKey, expectedAccountRef, parseSourceEvidence, type QuestionEvidence, type SourceEvidence } from '../analytics/questionContract';
+import { evidenceKey, expectedAccountRef, parseEvidenceContext, parseSourceEvidence, type EvidenceContext, type QuestionEvidence, type SourceEvidence } from '../analytics/questionContract';
 
 type Context = Pick<BridgeTransportState, 'creatorAccountId' | 'session' | 'connection' | 'projection' | 'readModelState'>;
 export interface FindingsState {
@@ -12,13 +12,14 @@ export interface FindingsState {
   binding: string;
   result: FindingsResponse | null;
   message: string | null;
+  sourceContext: EvidenceContext | null; contextLoading: boolean; contextError: string | null;
   source: SourceEvidence | null;
   sourceLoading: boolean;
   sourceError: string | null;
 }
 const initial: FindingsState = { status: 'unavailable', binding: '', result: null,
   message: 'Text analysis is unavailable until a matching saved analysis is ready.',
-  source: null, sourceLoading: false, sourceError: null };
+  sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null };
 export const findingsBinding = (baseline: FindingsBaseline | null, direction: FindingsDirection, conversation: string | null = null,
   category: FindingsCategoryFilter | null = null, view: 'grouped' | null = null) => JSON.stringify([baseline, direction, conversation, category?.task ?? null, category?.category_id ?? null, view]);
 
@@ -37,7 +38,7 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
   const abort = () => { sequence += 1; controller?.abort(); controller = null; };
   const begin = () => { abort(); controller = new AbortController(); return { id: sequence, signal: controller.signal }; };
   const current = (id: number) => Boolean(selected && id === sequence);
-  function invalidate() { abort(); store.setState({ result: null, source: null, sourceLoading: false, sourceError: null }); }
+  function invalidate() { abort(); store.setState({ result: null, sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null }); }
   async function read(offset = 0, conversationOffset = 0) {
     if (!selected || !account) return;
     if (selected.view === 'grouped' && navigationPin === null && (offset > 0 || conversationOffset > 0)) return;
@@ -45,7 +46,7 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
       ...(selected.view === 'grouped' ? { expected_navigation_sha256: navigationPin } : {}) };
     const accountId = account;
     const run = begin();
-    store.setState({ status: 'loading', result: null, source: null, sourceLoading: false, sourceError: null, message: null });
+    store.setState({ status: 'loading', result: null, sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null, message: null });
     try {
       const expected = await expectedAccountRef(accountId);
       if (!current(run.id)) return;
@@ -70,7 +71,7 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
   function setContext(baseline: FindingsBaseline | null, next: Context, direction: FindingsDirection, conversation: string | null = null,
     category: FindingsCategoryFilter | null = null, selectedView = view) {
     const binding = findingsBinding(baseline, direction, conversation, category, selectedView);
-    const key = JSON.stringify([binding, next.creatorAccountId, next.session?.connection_id,
+    const key = JSON.stringify([binding, next.creatorAccountId, next.session,
       next.connection, next.readModelState, next.projection]);
     if (key === contextKey) return;
     const nextBaseline = JSON.stringify([baseline, next.creatorAccountId, next.session, selectedView]);
@@ -91,19 +92,34 @@ export function createFindingsStore(api?: FindingsClient, options: { view?: 'gro
     const result = store.getState().result;
     if (!result?.evidence_page.items.some((item) => evidenceKey(item.reference) === evidenceKey(reference))) return;
     const run = begin();
-    store.setState({ source: null, sourceLoading: true, sourceError: null });
+    store.setState({ sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: true, sourceError: null });
     try {
       const source = parseSourceEvidence(await client.evidence(reference, run.signal), reference);
       if (selected?.direction !== 'all' && selected?.direction !== source.direction) throw new Error('Direction changed');
       if (current(run.id)) store.setState({ source, sourceLoading: false });
     } catch {
-      if (current(run.id)) store.setState({ source: null, sourceLoading: false,
+      if (current(run.id)) store.setState({ sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false,
         sourceError: 'This source message could not be verified. It may have changed or been removed. Refresh the results before trying again.' });
     }
   }
-  function closeSource() { abort(); store.setState({ source: null, sourceLoading: false, sourceError: null }); }
+  async function showContext() {
+    const source = store.getState().source;
+    if (!source || !selected || store.getState().contextLoading) return;
+    const request = { reference: source.reference, expected_generation: selected.baseline.projection_generation,
+      expected_projection_digest: selected.baseline.projection_digest, before: 5, after: 5 };
+    abort(); controller = new AbortController(); const signal = controller.signal; const id = sequence;
+    store.setState({ sourceContext: null, contextLoading: true, contextError: null });
+    try {
+      const result = parseEvidenceContext(await client.context(request, source, signal), request, source);
+      if (current(id) && store.getState().source === source) store.setState({ sourceContext: result, contextLoading: false });
+    } catch {
+      if (current(id) && store.getState().source === source) store.setState({ contextLoading: false,
+        contextError: 'Surrounding saved messages could not be verified. Refresh the results before trying again.' });
+    }
+  }
+  function closeSource() { abort(); store.setState({ sourceContext: null, contextLoading: false, contextError: null, source: null, sourceLoading: false, sourceError: null }); }
   function reload() { navigationPin = null; snapshot = null; return read(); }
   function dispose() { invalidate(); contextKey = ''; baselineKey = ''; navigationPin = null; selected = null; account = null; store.setState({ ...initial }); }
-  return { ...store, view, actions: { setContext, read, reload, invalidate, openSource, closeSource, dispose } };
+  return { ...store, view, actions: { setContext, read, reload, invalidate, openSource, showContext, closeSource, dispose } };
 }
 export type FindingsStore = ReturnType<typeof createFindingsStore>;

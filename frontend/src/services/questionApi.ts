@@ -1,4 +1,5 @@
 import {
+  evidenceContextRequest, parseEvidenceContext, type EvidenceContextRequest, type EvidenceContext,
   parseQuestionResult, parseSourceEvidence, questionCatalog, questionEvidence, questionPlan,
   QuestionContractError, type QuestionCatalog, type QuestionEvidence, type QuestionPlan,
   type QuestionResult, type SourceEvidence,
@@ -13,6 +14,7 @@ export interface QuestionApi {
   catalog(signal?: AbortSignal): Promise<QuestionCatalog>;
   answer(plan: QuestionPlan, signal?: AbortSignal): Promise<QuestionResult>;
   evidence(reference: QuestionEvidence, signal?: AbortSignal): Promise<SourceEvidence>;
+  context(request: EvidenceContextRequest, source: SourceEvidence, signal?: AbortSignal): Promise<EvidenceContext>;
   clear(signal?: AbortSignal): Promise<void>;
 }
 interface Options {
@@ -100,6 +102,11 @@ export function createQuestionApi(options: Options = {}): QuestionApi {
       const checked = questionEvidence.safeParse(reference);
       if (!checked.success) throw new QuestionContractError();
       return parseSourceEvidence(await request('POST', '/evidence', checked.data, signal), checked.data);
+    },
+    async context(input, source, signal) {
+      const checked = evidenceContextRequest.safeParse(input);
+      if (!checked.success) throw new QuestionContractError();
+      return parseEvidenceContext(await request('POST', '/evidence/context', checked.data, signal), checked.data, source);
     },
     async clear(signal) { await request('DELETE', '/evidence', undefined, signal); },
   };

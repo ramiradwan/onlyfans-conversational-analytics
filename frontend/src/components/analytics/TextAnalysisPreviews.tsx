@@ -137,7 +137,7 @@ function PreviewSession({ creatorAccountId, client, dependenciesApi = nlpDepende
         <Typography>Topics and literal mentions do not establish requests, preferences, intent or performed acts.</Typography>
       </Stack>}
     </Stack>
-    <MentionEvidenceDialog state={state} actions={{ closeSource: store.actions.closeSource }} />
+    <MentionEvidenceDialog state={state} actions={store.actions} />
     </Panel>
   </Stack>;
 }

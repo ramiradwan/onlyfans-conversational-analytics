@@ -137,6 +137,19 @@ class QuestionResources:
         finally:
             self._slots.release()
 
+    def evidence_context(self, policy, request, *, cancellation_check=None):
+        """Read a registered source neighborhood within the saved-read limits."""
+        from app.analytics.errors import ProjectionBackpressure
+        from app.analytics.evidence_context import read_context
+
+        if not self._slots.acquire(blocking=False):
+            raise ProjectionBackpressure()
+        try:
+            with self._work.foreground():
+                return read_context(self, policy, request, cancellation_check=cancellation_check)
+        finally:
+            self._slots.release()
+
     def literal_findings(self, policy, request, *, cancellation_check=None):
         """Read saved literal values under the same work and connection limits."""
         from app.analytics.errors import ProjectionBackpressure

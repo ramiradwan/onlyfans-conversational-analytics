@@ -31,6 +31,7 @@ export function FindingsFixture({ kind = 'synthetic' }: { kind?: 'synthetic' | '
     read: async (request) => request.view === 'grouped'
       ? parseGroupedFindings(await groupedFindingsResponse(request), request)
       : parseFindings(kind === 'synthetic' ? (request.category_filter ? findingsFilteredResponse(request) : findingsResponse(request)) : wire, request),
+    context: async () => { throw new Error('Surrounding messages are unavailable in this fixture.'); },
     evidence: async (reference) => kind === 'synthetic' ? findingsSource(reference) : parseSourceEvidence(publishedEvidence.resolved_evidence, reference),
   }, { view: kind === 'synthetic' ? 'grouped' : null }), [kind, wire]);
   const literalsController = useMemo(() => createLiteralsStore({
@@ -38,6 +39,7 @@ export function FindingsFixture({ kind = 'synthetic' }: { kind?: 'synthetic' | '
       if (kind !== 'synthetic') throw new Error('Only recorded findings are available in this fixture.');
       return parseLiterals(literalsResponse(request), request);
     },
+    context: async () => { throw new Error('Surrounding messages are unavailable in this fixture.'); },
     evidence: async (reference) => findingsSource(reference),
   }), [kind]);
   const transport = useMemo(() => {
