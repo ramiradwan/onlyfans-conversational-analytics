@@ -297,6 +297,15 @@ describe('NlpDependencyControls', () => {
     expect(api.command).not.toHaveBeenCalled();
     expect(screen.getByText(/interrupted file restarts/)).toBeTruthy();
   });
+  it('discloses range recovery and full-restart fallback without starting a download', async () => {
+    const paused: NlpDependencyObservation = { ...observation, state: 'interrupted', in_flight: false, resume_granularity: 'verified_files_and_rehashed_prefix' };
+    const api = fixture({ ...status, acquisitions: [paused], resume_granularity: 'verified_files_and_rehashed_prefix' });
+    api.observe.mockResolvedValue(paused);
+    render(view(api));
+    expect(await screen.findByText(/Resume rechecks saved bytes/)).toBeTruthy();
+    expect(screen.getByText(/Otherwise the interrupted file restarts/)).toBeTruthy();
+    expect(api.command).not.toHaveBeenCalled();
+  });
   it('recovers an accepted download after a lost command response through cached status', async () => {
     const api = fixture(); render(view(api)); await review();
     api.command.mockRejectedValueOnce(new Error('response lost'));

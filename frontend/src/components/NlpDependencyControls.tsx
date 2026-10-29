@@ -211,7 +211,9 @@ function DependencySession({ api, account }: { api: NlpDependenciesApi; account:
         <Typography>Download: {operation.profile_id ?? 'selected profile'} · {operation.revision ?? 'unknown revision'}</Typography>
         <Typography>Downloads are shared on this device. Download controls do not change this account’s processing settings.</Typography>
         <Typography>{operationState}. {number.format(operation.verified_files)} verified files retained.</Typography>
-        <Typography>Resume reuses verified files. The interrupted file restarts; this is not byte-level resume. Cancelling may discard staged files.</Typography>
+        <Typography>{operation.resume_granularity === 'verified_files_and_rehashed_prefix'
+          ? 'Resume rechecks saved bytes and downloads the remainder when the server supports ranges. Otherwise the interrupted file restarts. Cancelling may discard staged files.'
+          : 'Resume reuses verified files. The interrupted file restarts; this is not byte-level resume. Cancelling may discard staged files.'}</Typography>
         <Stack direction="row" spacing={1}>
           <Button disabled={busy || unavailable || operation.state !== 'running'} onClick={() => { void run({ action: 'pause', operation_id: operation.id }); }}>Pause download</Button>
           <Button disabled={busy || unavailable || !['paused', 'interrupted'].includes(operation.state) || operation.in_flight} onClick={() => { void run({ action: 'resume', operation_id: operation.id }); }}>Resume download</Button>

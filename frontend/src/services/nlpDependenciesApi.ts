@@ -3,7 +3,7 @@ import { z } from 'zod';
 const bytes = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const operationId = z.string().regex(/^[a-f0-9]{32}$/);
-const resume = z.literal('verified_files_current_file_restarts');
+const resume = z.enum(['verified_files_current_file_restarts', 'verified_files_and_rehashed_prefix']);
 const profile = z.object({
   profile_id: z.string().min(1), revision: z.string().min(1), profile_sha256: digest,
   catalogued: z.boolean(), installed: z.boolean(), prepared: z.boolean(), withdrawn: z.boolean(),
