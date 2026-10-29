@@ -357,7 +357,9 @@ def test_scope_uses_indexed_account_and_conversation_access(ready):
         rows = db.execute("EXPLAIN QUERY PLAN SELECT message_id FROM account_messages WHERE creator_account_id=? AND chat_id=? AND is_deleted=0",
                           (ACCOUNT, LOCATION.conversation_id)).fetchall()
     details = " ".join(str(row[3]) for row in rows)
-    assert "SEARCH" in details and "account_messages_page" in details
+    assert "SEARCH account_messages USING" in details
+    assert any(f"INDEX {name} (" in details for name in ("account_messages_page", "account_messages_context"))
+    assert "(creator_account_id=? AND chat_id=?)" in details
 
 
 def test_pricing_handler_reads_published_topics_without_inference(ready, monkeypatch):

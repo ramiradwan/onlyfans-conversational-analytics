@@ -92,7 +92,8 @@
         "0016_text_analysis_enrollment.sql": "500596f708ec3aa13df4d086a80175fb370bc6c94250d1f39ccdb9164cfed73b",
         "0017_authoritative_pair.sql": "5602412494ccab06019eec8893515f94bb93fc59d46f56a3b10d7fef2bb60dec",
         "0018_text_analysis_preview_execution.sql": "5ff39ff25d8907dd494fac7d27b3ccf8fe090fbbf426381a0eab9d77286e78a0",
-        "0019_text_analysis_client_intents.sql": "a0eab64cd283eaacaea5a8bfe46f4e8558f434910e75a2f458be126b0a205300"
+        "0019_text_analysis_client_intents.sql": "a0eab64cd283eaacaea5a8bfe46f4e8558f434910e75a2f458be126b0a205300",
+        "0020_evidence_context.sql": "0001340325636b429dee94888c3ea4b943a0f0f3034149754700502ff8c817c9"
       }
     },
     {
