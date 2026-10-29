@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 
 from app.analytics.evidence import EvidenceUnavailable
-from app.analytics.evidence_contracts import ResolvedEvidence
+from app.analytics.evidence_contracts import EvidenceContextRequest, ResolvedEvidence, ResolvedEvidenceContext
 from app.analytics.query_contracts import QuestionEvidence, QuestionPlan, QuestionResult
 from app.api.security import verify_csrf_token, verify_same_origin
 
@@ -500,6 +500,25 @@ async def resolve_evidence(request: Request, response: Response,
         return await insights_service.resolve_question_evidence(policy, await _question_body(request))
     except (AnalyticsError, HTTPException) as error:
         raise _question_failure(error) from None
+
+
+@router.post("/questions/evidence/context", response_model=ResolvedEvidenceContext,
+             operation_id="resolveAnalyticsEvidenceContext", responses=PROTECTED_ERROR_RESPONSES,
+             openapi_extra=_question_schema(EvidenceContextRequest))
+async def resolve_evidence_context(request: Request, response: Response,
+                                   policy: RuntimePolicy = Depends(get_authenticated_account_session)):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        verify_same_origin(request)
+        verify_csrf_token(policy, request.headers.get("x-csrf-token"))
+        _question_parameters(request)
+        value = EvidenceContextRequest.model_validate(await _question_body(request))
+        return await insights_service.resolve_evidence_context(policy, value)
+    except (AnalyticsError, HTTPException) as error:
+        raise _question_failure(error) from None
+    except (ValueError, TypeError):
+        raise _question_failure(InvalidAnalyticsRequest(
+            "analytics_findings_request_invalid", "The findings request is invalid.")) from None
 
 
 @router.delete("/questions/evidence", status_code=204, operation_id="clearAnalyticsEvidence",

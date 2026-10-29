@@ -1,5 +1,5 @@
 import { parseFindings, parseGroupedFindings, FindingsContractError, type FindingsRequest, type FindingsResponse } from './findingsContract';
-import type { QuestionEvidence, SourceEvidence } from './questionContract';
+import type { EvidenceContextRequest, EvidenceContext, QuestionEvidence, SourceEvidence } from './questionContract';
 import { FINDINGS } from '../config/endpoints';
 import { createQuestionApi } from '../services/questionApi';
 
@@ -8,6 +8,7 @@ export class FindingsClientError extends Error {
 }
 export interface FindingsClient {
   read(request: FindingsRequest, signal?: AbortSignal): Promise<FindingsResponse>;
+  context(request: EvidenceContextRequest, source: SourceEvidence, signal?: AbortSignal): Promise<EvidenceContext>;
   evidence(reference: QuestionEvidence, signal?: AbortSignal): Promise<SourceEvidence>;
 }
 export function buildFindingsUrl(request: FindingsRequest): string {
@@ -45,7 +46,7 @@ export function createFindingsClient(options: { fetcher?: typeof fetch; csrf?: (
   const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
   const sources = createQuestionApi(options);
   return {
-    evidence: sources.evidence,
+    evidence: sources.evidence, context: sources.context,
     async read(request, signal) {
       const controller = new AbortController(); const abort = () => controller.abort();
       if (signal?.aborted) controller.abort();

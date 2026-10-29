@@ -13,7 +13,8 @@ from typing import Callable
 from app.analytics.cancellation import CancellationCheck
 from app.analytics.errors import AnalyticsError
 from app.analytics.evidence_contracts import (
-    EvidenceLocation, EvidenceMessage, EvidenceSource, ResolvedEvidence,
+    EvidenceContextItem, EvidenceLocation, EvidenceMessage, EvidenceSource,
+    ResolvedEvidence, ResolvedEvidenceContext,
 )
 from app.analytics.historical_derivation import (
     PARTICIPANT_ANALYTICS_MAX_DAYS, historical_retention_cutoff,
@@ -203,6 +204,97 @@ class EvidenceResolver:
             return ResolvedEvidence(reference=ref, location=entry.location,
                                     text=message.text, direction=message.direction,
                                     checked_at=checked_at, browser_span=browser_span)
+
+    def resolve_context(self, policy, request, budget):
+        """Read neighboring retained messages without extending the anchor lease."""
+        account = authorized_account(policy, None)
+        with _safe_errors():
+            ref = self._reference(account, request.reference)
+            key = digest(ref.model_dump(mode="json"))
+            now = utc_instant(self._clock())
+            with self._lock:
+                self._prune(now)
+                entry = self._entries.get(key)
+            if entry is None or entry.account != account_ref(account) or entry.source_state_token is None:
+                raise EvidenceUnavailable()
+            try:
+                anchor = self._read_exact(account, ref, entry.location, budget)
+                if anchor.source_state_token != entry.source_state_token:
+                    raise EvidenceUnavailable()
+                locations, anchor_index, earlier, later = self._source.evidence_context_locations(
+                    account, entry.location, request.before, request.after, budget,
+                    cutoff=historical_retention_cutoff(now), now=now)
+                if (not 1 <= len(locations) <= request.before + request.after + 1
+                        or not 0 <= anchor_index < len(locations)
+                        or locations[anchor_index] != entry.location):
+                    raise EvidenceUnavailable()
+                messages = []
+                for index, location in enumerate(locations):
+                    budget.check()
+                    message = anchor if index == anchor_index else EvidenceMessage.model_validate(
+                        self._source.read_evidence_message(account, location, budget))
+                    reference = ref if index == anchor_index else message.reference()
+                    self._matches_location(account, reference, location)
+                    if (reference.account_ref != ref.account_ref
+                            or reference.conversation_ref != ref.conversation_ref
+                            or reference.source_revision != ref.source_revision
+                            or message.source_state_token != entry.source_state_token):
+                        raise EvidenceUnavailable()
+                    messages.append((message, reference, location))
+                items = []
+                for message, reference, location in messages:
+                    current = self._read_exact(account, reference, location, budget)
+                    if current.source_state_token != entry.source_state_token:
+                        raise EvidenceUnavailable()
+                    span = reference.span
+                    browser_span = None if span is None else SourceSpan(
+                        start=len(message.text[:span.start].encode("utf-16-le")) // 2,
+                        end=len(message.text[:span.end].encode("utf-16-le")) // 2)
+                    items.append(EvidenceContextItem(reference=reference, text=message.text,
+                        direction=message.direction, browser_span=browser_span))
+            except EvidenceUnavailable:
+                self._invalidate(account)
+                raise
+            checked_at = utc_instant(self._clock())
+            with self._lock:
+                self._prune(checked_at)
+                if self._entries.get(key) is not entry:
+                    raise EvidenceUnavailable()
+            budget.check()
+            response = ResolvedEvidenceContext(reference=ref,
+                projection_generation=request.expected_generation,
+                projection_digest=request.expected_projection_digest, checked_at=checked_at,
+                anchor_index=anchor_index, items=tuple(items),
+                has_earlier_stored_items=earlier, has_later_stored_items=later)
+            return response, entry
+
+    def check_context(self, policy, response, budget, entry):
+        """Fence the original anchor lease and all neighbor retention after selection."""
+        account = authorized_account(policy, None)
+        with _safe_errors():
+            ref = self._reference(account, response.reference)
+            key = digest(ref.model_dump(mode="json"))
+            now = utc_instant(self._clock())
+            with self._lock:
+                self._prune(now)
+                if self._entries.get(key) is not entry or entry.account != account_ref(account):
+                    raise EvidenceUnavailable()
+            try:
+                for item in response.items:
+                    budget.check()
+                    if not historical_retention_cutoff(now) < item.reference.sent_at <= now:
+                        raise EvidenceUnavailable()
+                message = self._read_exact(account, ref, entry.location, budget)
+                if message.source_state_token != entry.source_state_token:
+                    raise EvidenceUnavailable()
+            except EvidenceUnavailable:
+                self._invalidate(account)
+                raise
+            with self._lock:
+                self._prune(utc_instant(self._clock()))
+                if self._entries.get(key) is not entry:
+                    raise EvidenceUnavailable()
+            budget.check()
 
     def clear_account(self, policy: RuntimePolicy) -> None:
         """Discard source locators on account switch or deletion, without analysis."""

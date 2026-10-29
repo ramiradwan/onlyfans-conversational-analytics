@@ -943,7 +943,7 @@ async def get_full_snapshot(
 
 
 async def _run_question_read(policy, value, *, evidence=False, findings=False, literals=False, grouped=False,
-                             observations=False):
+                             observations=False, context=False):
     """Run bounded reads off the event loop and schedule only permitted recovery."""
 
     from functools import partial
@@ -958,7 +958,7 @@ async def _run_question_read(policy, value, *, evidence=False, findings=False, l
     if resources is None or resources.closed:
         raise ProjectionUnavailable()
     cancelled = Event()
-    operation = (resources.observation_links if observations else resources.grouped_findings if grouped else
+    operation = (resources.evidence_context if context else resources.observation_links if observations else resources.grouped_findings if grouped else
                  resources.literal_findings if literals else resources.findings if findings
                  else resources.resolve if evidence else resources.execute)
     try:
@@ -966,7 +966,7 @@ async def _run_question_read(policy, value, *, evidence=False, findings=False, l
             partial(operation, policy, value, cancellation_check=cancelled.is_set),
             abandon_on_cancel=True)
     except (ProjectionUnavailable, ProjectionStorageUnavailable, EvidenceUnavailable) as error:
-        if findings or literals or grouped or observations:
+        if findings or literals or grouped or observations or context:
             # This separate view never schedules analysis or a projection rebuild.
             resources.discard(account)
             raise
@@ -1033,6 +1033,10 @@ async def rebuild_projection(policy):
 
 async def resolve_question_evidence(policy, reference):
     return await _run_question_read(policy, reference, evidence=True)
+
+
+async def resolve_evidence_context(policy, request):
+    return await _run_question_read(policy, request, context=True)
 
 
 def clear_question_evidence(policy):

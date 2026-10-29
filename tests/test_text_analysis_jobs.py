@@ -623,9 +623,9 @@ def test_populated_v14_upgrade_preserves_exact_rows_and_rolls_back_failure(contr
                           'text_analysis_enrollment_capsules', 'text_analysis_account_current',
                           'text_analysis_enrollment_commands'):
                 assert db.execute('SELECT 1 FROM sqlite_master WHERE type=\'table\' AND name=?', (table,)).fetchone() is None
-    assert MigrationRunner(database).run() == [15, 16, 17, 18, 19]
+    assert MigrationRunner(database).run() == [15, 16, 17, 18, 19, 20]
     with database.read() as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0] == 19
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 20
         for table in ('text_analysis_enrollment_capsules', 'text_analysis_account_current', 'text_analysis_enrollment_commands'):
             assert db.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 0
         assert snapshot(db) == before

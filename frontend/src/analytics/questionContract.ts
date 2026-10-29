@@ -156,3 +156,43 @@ export async function expectedAccountRef(accountId: string): Promise<string> {
   const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   return `a1:${Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
+
+
+export const evidenceContextRequest = z.object({
+  reference: questionEvidence, expected_generation: count.min(1), expected_projection_digest: digest,
+  before: count.max(5).default(5), after: count.max(5).default(5),
+}).strict();
+export type EvidenceContextRequest = z.infer<typeof evidenceContextRequest>;
+const contextItem = evidenceResponse.omit({ location: true, checked_at: true });
+const evidenceContextResponse = z.object({
+  schema_version: z.literal('analytics-evidence-context.v1'), reference: questionEvidence,
+  projection_generation: count.min(1), projection_digest: digest, checked_at: instant,
+  anchor_index: count.max(10), items: z.array(contextItem).min(1).max(11),
+  has_earlier_stored_items: z.boolean(), has_later_stored_items: z.boolean(),
+}).strict();
+export type EvidenceContext = z.infer<typeof evidenceContextResponse>;
+export function parseEvidenceContext(value: unknown, request: EvidenceContextRequest, source: SourceEvidence): EvidenceContext {
+  const checked = evidenceContextRequest.safeParse(request);
+  const parsed = evidenceContextResponse.safeParse(value);
+  if (!checked.success || !parsed.success) throw new QuestionContractError();
+  const r = parsed.data;
+  const anchor = r.items[r.anchor_index];
+  if (evidenceKey(r.reference) !== evidenceKey(request.reference)
+    || evidenceKey(source.reference) !== evidenceKey(request.reference)
+    || r.projection_generation !== request.expected_generation || r.projection_digest !== request.expected_projection_digest
+    || !anchor || r.anchor_index > request.before || r.items.length - r.anchor_index - 1 > request.after
+    || new Set(r.items.map((item) => item.reference.message_ref)).size !== r.items.length
+    || evidenceKey(anchor.reference) !== evidenceKey(source.reference) || anchor.text !== source.text
+    || anchor.direction !== source.direction || JSON.stringify(anchor.browser_span) !== JSON.stringify(source.browser_span)) throw new QuestionContractError();
+  let previous = -Infinity;
+  for (const [index, item] of r.items.entries()) {
+    const at = Date.parse(item.reference.sent_at);
+    if (item.reference.account_ref !== request.reference.account_ref
+      || item.reference.conversation_ref !== request.reference.conversation_ref
+      || item.reference.source_revision !== request.reference.source_revision || at < previous
+      || (index !== r.anchor_index && (item.reference.span != null || item.browser_span !== null))) throw new QuestionContractError();
+    previous = at;
+    parseSourceEvidence({ ...item, location: source.location, checked_at: r.checked_at }, item.reference);
+  }
+  return r;
+}
