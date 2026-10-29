@@ -4,6 +4,11 @@ import { createNlpDependenciesApi } from '../src/services/nlpDependenciesApi';
 
 const unavailable = { configured: false, profiles: [], acquisitions: [], available_profiles: [], selected: null, failure: 'nlp_unavailable', resume_granularity: 'verified_files_current_file_restarts' };
 describe('nlpDependenciesApi', () => {
+  it('accepts rehashed-prefix recovery without exposing partial-file metadata', async () => {
+    const current = { ...unavailable, resume_granularity: 'verified_files_and_rehashed_prefix' };
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify(current)));
+    expect(await createNlpDependenciesApi({ fetch: request }).get()).toEqual(current);
+  });
   it('reads cached status without CSRF or a mutation', async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify(unavailable)));
     const csrf = vi.fn(); const api = createNlpDependenciesApi({ fetch: request, getCsrfToken: csrf });

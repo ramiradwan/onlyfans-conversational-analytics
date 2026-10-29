@@ -22,7 +22,9 @@ from app.nlp.release_catalog import (verify_catalog, canonical, require, Depende
                                     CATALOG_ENVELOPE_BYTES, MAX_WITHDRAWALS)
 from app.persistence.private_files import (reject_path_aliases, apply_private_directory_security,
     apply_private_file_security, private_file_identity, sync_directory)
-from app.services.nlp_distribution import ACQUISITION_SECONDS
+from app.services.nlp_distribution import ACQUISITION_SECONDS, BLOCK_BYTES
+
+PARTIAL_CHECKPOINT_BYTES = 8 * 1024 * 1024
 
 
 class ProcessOwners:
@@ -99,6 +101,8 @@ class DependencyService:
         self.active = threading.Condition(self.gate)
         self.pins = {}
         self.execution_owner = None
+        self.resume_granularity = ('verified_files_and_rehashed_prefix'
+            if callable(getattr(distribution, 'stream_artifact', None)) else 'verified_files_current_file_restarts')
 
     def disable(self):
         """Isolate optional startup failure without modifying durable authority."""
@@ -148,7 +152,7 @@ class DependencyService:
                     directory = self.spool / operation['id']
                     if directory.exists():
                         self._clean_spool(directory, operation)
-                    operation.update(state='cancelled', files={}, verified={})
+                    operation.update(state='cancelled', files={}, verified={}, partials={})
                 else:
                     operation['state'] = 'paused'
                 operation['in_flight'] = False
@@ -350,7 +354,7 @@ class DependencyService:
                 return {'configured': self.approvals is not None and self.engine is not None,
                     'available_profiles': [], 'failure': 'nlp_dependency_unavailable',
                     'profiles': [], 'selected': None, 'acquisitions': [],
-                    'resume_granularity': 'verified_files_current_file_restarts'}
+                    'resume_granularity': self.resume_granularity}
             known = {p.identity_digest(): (p, state) for p, _, state in self.cached_profiles}
             entries = list(self.catalog.profiles) if self.catalog is not None else []
             summaries = []
@@ -384,7 +388,7 @@ class DependencyService:
                     'profiles': summaries, 'selected': selected,
                     'acquisitions': [self._observation(op) for op in self.persistence.operations()
                                      if op['kind'] == 'acquire'],
-                    'resume_granularity': 'verified_files_current_file_restarts'}
+                    'resume_granularity': self.resume_granularity}
 
     def _operation(self, operation_id):
         matches = [op for op in self.persistence.operations() if op['id'] == operation_id]
@@ -395,15 +399,14 @@ class DependencyService:
         with self.gate:
             return self._observation(self._operation(operation_id))
 
-    @staticmethod
-    def _observation(op):
+    def _observation(self, op):
         return {'id': op['id'], 'kind': op['kind'], 'state': op['state'],
                 'profile_sha256': op.get('profile'),
                 'profile_id': op.get('entry', {}).get('profile_id'),
                 'revision': op.get('entry', {}).get('revision'),
                 'verified_files': len(op.get('verified', {})),
                 'in_flight': op.get('in_flight', False),
-                'resume_granularity': 'verified_files_current_file_restarts'}
+                'resume_granularity': self.resume_granularity}
 
     def plan(self, profile_id, revision):
         """Explicit metadata preflight; no data download or engine preparation."""
@@ -473,7 +476,7 @@ class DependencyService:
                     directory = self.spool / op['id']
                     if directory.exists():
                         self._clean_spool(directory, op)
-                    op.update(files={}, verified={})
+                    op.update(files={}, verified={}, partials={})
                     self.persistence.operation(op)
 
     def resume(self, operation_id):
@@ -537,11 +540,13 @@ class DependencyService:
             profile = next(p for p, _, state in self.persistence.profiles()
                            if p.identity_digest() == digest and state in ('planned','available'))
             require((profile.profile_id, profile.revision) == (op['entry']['profile_id'], op['entry']['revision']))
+            require(profile.identity_digest() == op['profile'] == digest, 'nlp_operation_stale')
             from app.nlp.release_catalog import ReleaseEntry
             adapter.validate_compatibility(profile, ReleaseEntry.model_validate_json(canonical(op['entry'])).compatibility)
             with self.gate:
                 self._admit(profile, fresh=True)
             members = [a for a in profile.artifacts if a.role in DATA_ROLES]
+            require(set(op.get('partials', {})) <= {a.artifact_id for a in members}, 'nlp_spool_changed')
             from app.nlp.profiles import artifact_closure_digest
             with self.gate:
                 op['closure'] = artifact_closure_digest(tuple(members))
@@ -566,29 +571,9 @@ class DependencyService:
                     if asset.artifact_id in op['verified']:
                         require(self._verified(path, asset, op['files'][name]), 'nlp_spool_changed')
                         continue
-                    if name in op['files']:
-                        require(list(private_file_identity(path, repair_permissions=False)) == op['files'][name], 'nlp_spool_changed')
-                        path.unlink()
-                    self._check_spool(directory, op, missing=name)
-                    with path.open('xb') as output:
-                        apply_private_file_security(path)
-                        op['files'][name] = list(private_file_identity(path))
-                        save()
-                        count, sha = 0, hashlib.sha256()
-                        with self.distribution.stream('data/' + asset.sha256, check=check, deadline=deadline) as blocks:
-                            for block in blocks:
-                                check()
-                                count += len(block)
-                                require(count <= asset.size_bytes, 'nlp_artifact_size')
-                                require(self._spool_used() + len(block) + spool_bytes + receipt_bytes <= self.policy.temporary_bytes,
-                                        'nlp_temporary_limit')
-                                require(shutil.disk_usage(self.spool).free >= self.artifacts.limits.minimum_free_bytes + len(block), 'nlp_disk_reserve')
-                                output.write(block)
-                                sha.update(block)
-                        require(count == asset.size_bytes and sha.hexdigest() == asset.sha256, 'nlp_artifact_hash')
-                        output.flush()
-                        os.fsync(output.fileno())
+                    self._download_artifact(path, asset, op, check, deadline, save, spool_bytes, receipt_bytes)
                     op['verified'][asset.artifact_id] = name
+                    op['partials'].pop(asset.artifact_id, None)
                     save()
 
                 def ownership(event):
@@ -621,7 +606,7 @@ class DependencyService:
                 if op['state'] == 'cancelled' and directory.exists():
                     try:
                         self._clean_spool(directory, op)
-                        op.update(files={}, verified={})
+                        op.update(files={}, verified={}, partials={})
                     except (ValueError, OSError):
                         op['state'] = 'cleanup_required'
                 self.persistence.operation(op)
@@ -631,6 +616,110 @@ class DependencyService:
                 current = self._operation(op['id'])
                 current['in_flight'] = False
                 self.persistence.operation(current)
+
+    @contextmanager
+    def _artifact_stream(self, asset, offset, check, deadline):
+        stream = getattr(self.distribution, 'stream_artifact', None)
+        if callable(stream):
+            with stream('data/' + asset.sha256, offset=offset, size=asset.size_bytes,
+                        check=check, deadline=deadline) as result:
+                yield result
+        else:
+            with self.distribution.stream('data/' + asset.sha256, check=check, deadline=deadline) as blocks:
+                yield 0, blocks
+
+    def _download_artifact(self, path, asset, op, check, deadline, save, spool_bytes, receipt_bytes):
+        partials = op.setdefault('partials', {})
+        partial = partials.get(asset.artifact_id)
+        name = path.name
+        if name in op['files'] and partial is None:
+            require(list(private_file_identity(path, repair_permissions=False)) == op['files'][name], 'nlp_spool_changed')
+            path.unlink()
+        if partial is None:
+            self._check_spool(path.parent, op, missing=name)
+            with path.open('xb') as output:
+                apply_private_file_security(path)
+                output.flush()
+                os.fsync(output.fileno())
+            op['files'][name] = list(private_file_identity(path, repair_permissions=False))
+            partial = {'bytes': 0, 'sha256': hashlib.sha256().hexdigest(),
+                       'artifact_sha256': asset.sha256, 'size_bytes': asset.size_bytes}
+            partials[asset.artifact_id] = partial
+            sync_directory(path.parent)
+            save()
+        require(type(partial) is dict and set(partial) == {'bytes', 'sha256', 'artifact_sha256', 'size_bytes'}
+                and type(partial['bytes']) is int and 0 <= partial['bytes'] <= asset.size_bytes
+                and partial['artifact_sha256'] == asset.sha256 and partial['size_bytes'] == asset.size_bytes
+                and type(partial['sha256']) is str and re.fullmatch(r'[a-f0-9]{64}', partial['sha256']),
+                'nlp_spool_changed')
+        require(list(private_file_identity(path, repair_permissions=False)) == op['files'][name], 'nlp_spool_changed')
+        with path.open('r+b', buffering=0) as output:
+            opened = os.fstat(output.fileno())
+            def unchanged():
+                current = path.stat()
+                require((current.st_dev, current.st_ino) == (opened.st_dev, opened.st_ino)
+                        and os.fstat(output.fileno()).st_nlink == current.st_nlink == 1
+                        and list(private_file_identity(path, repair_permissions=False)) == op['files'][name],
+                        'nlp_spool_changed')
+            unchanged()
+            committed = partial['bytes']
+            require(committed <= opened.st_size <= asset.size_bytes, 'nlp_spool_changed')
+            count, sha = 0, hashlib.sha256()
+            while count < committed:
+                check()
+                block = output.read(min(BLOCK_BYTES, committed - count))
+                require(bool(block), 'nlp_spool_changed')
+                count += len(block)
+                sha.update(block)
+            require(sha.hexdigest() == partial['sha256'], 'nlp_spool_changed')
+            unchanged()
+            # A process may have written beyond the last durable journal checkpoint.
+            output.truncate(committed)
+
+            def checkpoint():
+                nonlocal committed
+                unchanged()
+                output.flush()
+                os.fsync(output.fileno())
+                partial.update(bytes=count, sha256=sha.hexdigest())
+                save()
+                committed = count
+
+            try:
+                if count < asset.size_bytes:
+                    with self._artifact_stream(asset, count, check, deadline) as (start, blocks):
+                        require(start in (0, count), 'nlp_distribution_range')
+                        if start != count:
+                            count, sha = 0, hashlib.sha256()
+                            checkpoint()
+                            output.seek(0)
+                            output.truncate(0)
+                        for block in blocks:
+                            check()
+                            require(type(block) is bytes and 0 < len(block) <= BLOCK_BYTES, 'nlp_distribution_block')
+                            require(count + len(block) <= asset.size_bytes, 'nlp_artifact_size')
+                            require(self._spool_used() + len(block) + spool_bytes + receipt_bytes <= self.policy.temporary_bytes,
+                                    'nlp_temporary_limit')
+                            require(shutil.disk_usage(self.spool).free >= self.artifacts.limits.minimum_free_bytes + len(block),
+                                    'nlp_disk_reserve')
+                            require(output.write(block) == len(block), 'nlp_spool_write')
+                            count += len(block)
+                            sha.update(block)
+                            if committed == 0 or count - committed >= PARTIAL_CHECKPOINT_BYTES:
+                                checkpoint()
+                require(count == asset.size_bytes, 'nlp_artifact_size')
+                if sha.hexdigest() != asset.sha256:
+                    count, sha = 0, hashlib.sha256()
+                    checkpoint()
+                    output.seek(0)
+                    output.truncate(0)
+                    output.flush()
+                    os.fsync(output.fileno())
+                    raise DependencyRejected('nlp_artifact_hash')
+                checkpoint()
+            finally:
+                if count != committed:
+                    checkpoint()
 
     @staticmethod
     def _verified(path, asset, identity):

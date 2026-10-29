@@ -286,6 +286,7 @@
     "tests/test_nlp_dependencies.py": 2,
     "tests/test_nlp_dependencies_api.py": 2,
     "tests/test_nlp_dependency_publication.py": 4,
+    "tests/test_nlp_download_resume.py": 3,
     "tests/test_nlp_enrollment_reconciliation.py": 3,
     "tests/test_nlp_execution_gate.py": 2,
     "tests/test_nlp_first_download_recovery.py": 3,

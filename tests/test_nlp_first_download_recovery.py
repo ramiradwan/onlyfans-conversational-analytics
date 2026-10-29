@@ -48,6 +48,7 @@ class DownloadEnvironment:
         self.root, self.online, self.interrupt = root, online, interrupt
         self.profile, self.payloads, self.completed, self.partial = _profile()
         self.requests = []
+        self.ranges = []
         # Acquisition requires an available Engine. This protocol fixture does not
         # install or load an executable; the test covers model-data recovery only.
         self.engine = Engine()
@@ -76,11 +77,17 @@ class DownloadEnvironment:
 
     def respond(self, request):
         assert request.url.host == 'example.invalid'
-        assert 'range' not in request.headers and 'if-range' not in request.headers
+        assert 'if-range' not in request.headers
         relative = request.url.path.removeprefix('/nlp/')
         self.requests.append(relative)
         assert self.online, 'offline reconstruction attempted a request'
         raw = self.objects[relative]
+        if 'range' in request.headers:
+            offset = int(request.headers['range'].removeprefix('bytes=').removesuffix('-'))
+            assert relative.startswith('data/') and 0 < offset < len(raw)
+            self.ranges.append((relative, offset))
+            return httpx.Response(206, headers={'Content-Range': f'bytes {offset}-{len(raw)-1}/{len(raw)}'},
+                                  stream=httpx.ByteStream(raw[offset:]))
         partial_path = 'data/' + hashlib.sha256(self.payloads[self.partial]).hexdigest()
         if self.interrupt and relative == partial_path:
             owner = self
@@ -94,6 +101,8 @@ class DownloadEnvironment:
                     name = hashlib.sha256(owner.partial.encode()).hexdigest() + '.part'
                     path = owner.service.spool / operation['id'] / name
                     assert path.read_bytes() == raw[:65536]
+                    assert operation['partials'][owner.partial]['bytes'] == 65536
+                    assert operation['partials'][owner.partial]['sha256'] == hashlib.sha256(raw[:65536]).hexdigest()
                     with path.open('r+b') as stream:
                         os.fsync(stream.fileno())
                     marker = owner.root / 'interrupted.json'
@@ -202,6 +211,7 @@ def test_first_download_recovers_after_owned_process_death_without_automatic_req
         partial = 'data/' + hashlib.sha256(environment.payloads[environment.partial]).hexdigest()
         assert saved['requests'].count(completed) == 1 and completed not in environment.requests
         assert saved['requests'].count(partial) == 1 and environment.requests.count(partial) == 1
+        assert environment.ranges == [(partial, 65536)]
         assert all(path.startswith('data/') for path in environment.requests)
         available = environment.artifacts.reopen(profile)
         for member in available.artifacts:
