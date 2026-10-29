@@ -160,7 +160,7 @@ do {
 throw 'Chrome optional host permission prompt was not found'
 `;
   await runNativePermissionInteraction({
-    requestKind, readPermission,
+    requestKind, readPermission, startupAllowanceMs: 15_000,
     run: (signal) => execFileAsync('powershell.exe', [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script,
     ], { signal, windowsHide: true, maxBuffer: 16 * 1024 }),

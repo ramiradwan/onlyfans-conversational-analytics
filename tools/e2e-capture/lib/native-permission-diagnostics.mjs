@@ -101,8 +101,11 @@ async function readPermissionOnce(read, schedule, cancel) {
 /** Preserve a failed native interaction while recording only closed metadata. */
 export async function runNativePermissionInteraction({
   run, readPermission, requestKind = 'unspecified', schedule = setTimeout, cancel = clearTimeout,
-  now = () => performance.now(),
+  now = () => performance.now(), startupAllowanceMs = 0,
 }) {
+  if (!Number.isSafeInteger(startupAllowanceMs) || startupAllowanceMs < 0 || startupAllowanceMs > 15_000) {
+    throw new RangeError('native_permission_startup_allowance_invalid');
+  }
   const startup = createStartupObservations('native_permission', { now });
   const controller = new AbortController();
   let timeoutFired = false;
@@ -113,7 +116,7 @@ export async function runNativePermissionInteraction({
   const onData = chunk => collector.write(chunk);
   const childState = { present: false, pid: null, spawn_observed: false, error_kind: null,
     close_observed: false, close_exit_code: null, close_signal: null };
-  const timer = schedule(() => { timeoutFired = true; controller.abort(); }, 15_000);
+  const timer = schedule(() => { timeoutFired = true; controller.abort(); }, 15_000 + startupAllowanceMs);
   try {
     command = run(controller.signal);
     child = command?.child;
