@@ -111,7 +111,8 @@ function observe(page) {
   page.on('request', (request) => {
     const url = new URL(request.url());
     if (url.origin === BRAIN_ORIGIN && request.method() === 'POST'
-      && url.pathname.startsWith('/api/v1/insights/questions')) errors.push('question_warmup');
+      && url.pathname.startsWith('/api/v1/insights/questions')
+      && !['/api/v1/insights/questions/evidence', '/api/v1/insights/questions/evidence/context'].includes(url.pathname)) errors.push('question_warmup');
     if (url.origin !== BRAIN_ORIGIN || request.method() !== 'POST' || !url.pathname.startsWith('/api/v1/nlp/')) return;
     try { requests.push({ sequence: sequence++, path: url.pathname, body: request.postDataJSON(), csrf: Boolean(request.headers()['x-csrf-token']) }); }
     catch { errors.push('request_body'); }
@@ -132,14 +133,14 @@ function observe(page) {
   });
   return { requests, acknowledgements, sessions, projections, closedConnections, errors, async settle() { await Promise.all([...pending]); } };
 }
-async function bridgeCurrent(log, bound) {
+async function bridgeCurrent(log, bound, conversationCount = fixture.messages.length) {
   await expect.poll(() => {
     const current = log.projections.filter((item) => item.connection_id === bound.connection_id).at(-1);
     return Boolean(current && log.sessions.at(-1)?.connection_id === bound.connection_id && !log.closedConnections.has(bound.connection_id)
       && current.bridge_session_id === bound.bridge_session_id && current.creator_account_id === fixture.account_id
       && current.status === 'current' && current.reason === null && current.canonical_revision === 1
       && current.projected_revision === current.canonical_revision && current.view_revision > 0
-      && current.conversation_count === fixture.messages.length);
+      && current.conversation_count === conversationCount);
   }, { message: 'The authenticated Bridge conversation projection must be current.' }).toBe(true);
 }
 export function assertJournalOrder(log) {
@@ -185,7 +186,7 @@ export async function dropNextReply(page, pathname) {
   await page.route(BRAIN_ORIGIN + pathname, handler);
   return { received, async close() { clearTimeout(timer); page.off('close', closed); await page.unroute(BRAIN_ORIGIN + pathname, handler); } };
 }
-export async function ready(page, log, route = '/settings') {
+export async function ready(page, log, route = '/settings', conversationCount = fixture.messages.length) {
   const sessions = log.sessions.length;
   await page.goto(BRAIN_ORIGIN + route, { waitUntil: 'domcontentloaded' });
   await expect.poll(() => log.sessions.length > sessions, { message: 'A new authenticated Bridge connection is required.' }).toBe(true);
@@ -198,11 +199,11 @@ export async function ready(page, log, route = '/settings') {
       && !('__TAURI__' in globalThis);
   }, fixture.account_id), 'bootstrap_binding');
   await stats(page);
-  await bridgeCurrent(log, bound);
+  await bridgeCurrent(log, bound, conversationCount);
   if (route === '/analytics') await page.getByRole('tab', { name: 'Text analysis', exact: true }).click();
 }
 export async function prepareProfile(x) {
-  await ready(x.page, x.log);
+  await ready(x.page, x.log, '/settings', x.conversationCount);
   const before = await stats(x.page);
   check(before.engine.prepare_count === 0 && before.engine.analyze_count === 0, 'startup_analysis');
   const button = x.page.getByRole('button', { name: `Prepare ${before.profile_id}`, exact: true });
@@ -323,16 +324,19 @@ export async function assertOccurrences(page, envelope) {
   }
   check(seen.size === fixture.messages.reduce((total, message) => total + message.mentions.length, 0), 'occurrence_inventory');
 }
-export async function withTextAnalysis(scenario, run) {
+export async function withTextAnalysis(scenario, run, { sharedConversation = false } = {}) {
   check(['joint', 'split-partial', 'empty'].includes(scenario), 'scenario_invalid'); assertBuiltSpa();
   check(fixture.schema === 'e2e-text-analysis-source.v1', 'fixture_invalid');
+  const conversationCount = new Set(fixture.messages.map((message) => sharedConversation
+    ? fixture.messages[0].conversation_id : message.conversation_id)).size;
   const parent = await realpath(tmpdir()), root = await mkdtemp(path.join(parent, prefix));
   await validateRoot(root, parent);
   let browser, context, brain, failure;
   const errors = [];
   try {
     const paths = { authDatabasePath: path.join(root, 'auth.sqlite3'), canonicalDatabasePath: path.join(root, 'canonical.sqlite3'),
-      projectionDatabasePath: path.join(root, 'projections.sqlite3'), extensionId: 'a'.repeat(32) };
+      projectionDatabasePath: path.join(root, 'projections.sqlite3'), extensionId: 'a'.repeat(32),
+      environmentOverrides: { OFCA_E2E_TEXT_ANALYSIS_SHARED_CONVERSATION: sharedConversation ? '1' : '0' } };
     brain = new BrainProcess({ ...paths, textAnalysisFixture: scenario }); await brain.start();
     browser = await chromium.launch({ headless: true, ...(process.env.OFCA_E2E_BROWSER_EXECUTABLE ? { executablePath: process.env.OFCA_E2E_BROWSER_EXECUTABLE } : {}),
       args: ['--host-resolver-rules=MAP bridge.localhost 127.0.0.1', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--no-first-run'] });
@@ -340,12 +344,12 @@ export async function withTextAnalysis(scenario, run) {
     await context.route('**/*', (route) => new URL(route.request().url()).origin === BRAIN_ORIGIN ? route.continue() : route.abort('blockedbyclient'));
     const page = await context.newPage(), log = observe(page);
     await completeBrowserWebAuthnCeremony(page);
-    await ready(page, log);
+    await ready(page, log, '/settings', conversationCount);
     const initial = await stats(page);
     check(initial.scenario === scenario && initial.source_count === fixture.messages.length
       && initial.engine.prepare_count === 0 && initial.engine.analyze_count === 0
       && Object.values(initial.canonical).every((value) => value === 0), 'initial_state');
-    const x = { page, log, scenario, root, async restart(next = scenario) {
+    const x = { page, log, scenario, root, conversationCount, async restart(next = scenario) {
       check(kinds.includes(next), 'scenario_invalid');
       const prior = log.sessions.at(-1), sessionCount = log.sessions.length;
       await brain.stop();
@@ -354,7 +358,7 @@ export async function withTextAnalysis(scenario, run) {
       const current = log.sessions.at(-1);
       check(current.creator_account_id === prior.creator_account_id && current.bridge_session_id === prior.bridge_session_id
         && current.connection_id !== prior.connection_id, 'reconnection_binding');
-      await bridgeCurrent(log, current);
+      await bridgeCurrent(log, current, conversationCount);
       check((await stats(page)).scenario === next, 'restart_scenario');
     } };
     await run(x);

@@ -52,6 +52,8 @@ def source_fixture():
         if 'secondary_mention' in message:
             span = message['secondary_mention']
             _require(message['text'][span['start']:span['end']] == span['text'] == 'tea')
+    if os.environ.get('OFCA_E2E_TEXT_ANALYSIS_SHARED_CONVERSATION') == '1':
+        value['messages'][1]['conversation_id'] = value['messages'][0]['conversation_id']
     return value
 
 
@@ -338,7 +340,8 @@ class FixtureOwner:
                 sent = now - timedelta(hours=2, minutes=ordinal)
                 db.execute("""INSERT INTO account_chats(creator_account_id,chat_id,record_kind,
                     platform_user_id,display_name,content_hash,winning_stream_epoch,winning_source_seq,
-                    is_deleted,updated_at) VALUES(?,?,'full','synthetic-fan',NULL,?,1,1,0,?)""",
+                    is_deleted,updated_at) VALUES(?,?,'full','synthetic-fan',NULL,?,1,1,0,?)
+                    ON CONFLICT(creator_account_id,chat_id) DO NOTHING""",
                     (self.account, message['conversation_id'], hashlib.sha256(message['conversation_id'].encode()).hexdigest(), now.isoformat()))
                 db.execute("""INSERT INTO account_messages(creator_account_id,message_id,chat_id,
                     sender_platform_user_id,text,sent_at,direction,content_hash,winning_stream_epoch,
