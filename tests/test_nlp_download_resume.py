@@ -1,4 +1,5 @@
 """Durable partial data remains a cache beneath signed artifact verification."""
+from contextlib import contextmanager
 import hashlib
 from types import SimpleNamespace
 
@@ -6,6 +7,7 @@ import httpx
 import pytest
 
 from app.services.nlp_distribution import BLOCK_BYTES, ProfileDistribution
+from app.nlp.release_catalog import DependencyRejected
 from tests.continuous_analytics_fixture import cleanup
 from tests.test_nlp_artifact_store import example, profile_from
 from tests.test_nlp_dependencies import Environment
@@ -173,3 +175,148 @@ def test_stream_only_transport_can_restart_without_appending(interrupted):
     assert env.service.resume_granularity == 'verified_files_current_file_restarts'
     assert resume(env, operation_id)['state'] == 'complete'
     assert state.requests == [None, None]
+
+
+def test_spool_accounting_reuses_snapshot_but_rechecks_files(interrupted, monkeypatch):
+    env, _, _, path, _ = interrupted
+    _, operations = env.persistence.acquisition_snapshot()
+    expected = sum(p.stat().st_size for p in path.parent.iterdir())
+
+    def reread():
+        pytest.fail('spool accounting opened another journal read')
+
+    monkeypatch.setattr(env.persistence, 'operations', reread)
+    assert env.service._spool_used(operations) == expected
+    with path.open('ab') as stream:
+        stream.write(b'tail')
+    assert env.service._spool_used(operations) == expected + 4
+    foreign = path.parent / ('f' * 64 + '.part')
+    foreign.write_bytes(b'foreign')
+    try:
+        with pytest.raises(DependencyRejected, match='nlp_spool_changed'):
+            env.service._spool_used(operations)
+    finally:
+        foreign.unlink()
+
+
+def test_spool_snapshot_cannot_hide_a_new_directory_or_changed_identity(interrupted, monkeypatch):
+    from app.services import nlp_dependencies as dependencies
+    env, _, _, path, _ = interrupted
+    _, operations = env.persistence.acquisition_snapshot()
+    foreign = env.service.spool / ('e' * 32)
+    foreign.mkdir()
+    try:
+        with pytest.raises(DependencyRejected, match='nlp_spool_foreign'):
+            env.service._spool_used(operations)
+    finally:
+        foreign.rmdir()
+    original = dependencies.private_file_identity
+
+    def changed(candidate, **kwargs):
+        identity = original(candidate, **kwargs)
+        return (identity[0], identity[1] + 1) if candidate == path else identity
+
+    monkeypatch.setattr(dependencies, 'private_file_identity', changed)
+    with pytest.raises(DependencyRejected, match='nlp_spool_changed'):
+        env.service._spool_used(operations)
+
+
+@pytest.mark.parametrize('change', ['pause', 'cancel', 'withdraw', 'expire', 'stop'])
+@pytest.mark.parametrize('transport_checks', [True, False])
+def test_state_change_during_body_read_prevents_another_spool_write(interrupted, change, transport_checks):
+    env, _, operation_id, path, raw = interrupted
+    asset = next(a for a in env.profile.artifacts if a.role == 'weights')
+    relative = 'data/' + asset.sha256
+    mutated = False
+
+    class Changed(httpx.SyncByteStream):
+        def __iter__(self):
+            nonlocal mutated
+            mutated = True
+            if change in ('pause', 'cancel'):
+                env.service.pause(operation_id, cancel=change == 'cancel')
+            elif change == 'withdraw':
+                env.service.learn(env.catalog(sequence=2, withdrawals=[env.profile.identity_digest()]))
+            elif change == 'expire':
+                env.clock.now = 2000
+            else:
+                env.service.stopping.set()
+            yield raw[BLOCK_BYTES:]
+
+    def respond(request):
+        name = request.url.path.removeprefix('/nlp/')
+        if name != relative:
+            return httpx.Response(200, stream=httpx.ByteStream(env.objects[name]))
+        assert request.headers['range'] == f'bytes={BLOCK_BYTES}-'
+        return httpx.Response(206, headers={
+            'Content-Range': f'bytes {BLOCK_BYTES}-{len(raw)-1}/{len(raw)}'}, stream=Changed())
+
+    if transport_checks:
+        env.service.distribution = ProfileDistribution('https://example.invalid/nlp/',
+            transport=httpx.MockTransport(respond))
+    else:
+        @contextmanager
+        def unchecked_stream(*args, **kwargs):
+            yield BLOCK_BYTES, iter(Changed())
+        env.service.distribution = SimpleNamespace(stream_artifact=unchecked_stream)
+    op = resume(env, operation_id)
+    assert mutated and op['state'] != 'complete'
+    assert not env.service.ready(env.profile)
+    if change == 'cancel':
+        assert op['state'] == 'cancelled' and not path.exists()
+    else:
+        assert path.read_bytes() == raw[:BLOCK_BYTES]
+        assert op['partials'][asset.artifact_id]['bytes'] == BLOCK_BYTES
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('change', ['pause', 'cancel', 'withdraw', 'expire', 'stop'])
+def test_state_change_at_eof_prevents_verification_and_staging(interrupted, monkeypatch, legacy, change):
+    env, _, operation_id, path, raw = interrupted
+    asset = next(a for a in env.profile.artifacts if a.role == 'weights')
+    relative = 'data/' + asset.sha256
+    mutated = False
+    stages = []
+
+    def stage(*args, **kwargs):
+        stages.append(True)
+        pytest.fail('changed authority reached artifact staging')
+
+    monkeypatch.setattr(env.artifacts, 'stage', stage)
+
+    class Changed(httpx.SyncByteStream):
+        def __iter__(self):
+            nonlocal mutated
+            yield raw if legacy else raw[BLOCK_BYTES:]
+            mutated = True
+            if change in ('pause', 'cancel'):
+                env.service.pause(operation_id, cancel=change == 'cancel')
+            elif change == 'withdraw':
+                env.service.learn(env.catalog(sequence=2, withdrawals=[env.profile.identity_digest()]))
+            elif change == 'expire':
+                env.clock.now = 2000
+            else:
+                env.service.stopping.set()
+
+    def respond(request):
+        name = request.url.path.removeprefix('/nlp/')
+        if name != relative:
+            return httpx.Response(200, stream=httpx.ByteStream(env.objects[name]))
+        if legacy:
+            assert 'range' not in request.headers
+            return httpx.Response(200, stream=Changed())
+        assert request.headers['range'] == f'bytes={BLOCK_BYTES}-'
+        return httpx.Response(206, headers={
+            'Content-Range': f'bytes {BLOCK_BYTES}-{len(raw)-1}/{len(raw)}'}, stream=Changed())
+
+    distribution = ProfileDistribution('https://example.invalid/nlp/', transport=httpx.MockTransport(respond))
+    env.service.distribution = SimpleNamespace(stream=distribution.stream) if legacy else distribution
+    op = resume(env, operation_id)
+    assert mutated and op['state'] != 'complete' and not stages
+    assert asset.artifact_id not in op['verified']
+    assert env.engine.prepares == 0 and not env.service.ready(env.profile)
+    if change == 'cancel':
+        assert op['state'] == 'cancelled' and not path.exists()
+    else:
+        assert path.read_bytes() == raw
+        assert op['partials'][asset.artifact_id]['bytes'] == len(raw)
