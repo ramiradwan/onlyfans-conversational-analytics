@@ -80,6 +80,18 @@ class DependencyPersistence:
         with self.database.read() as db:
             return [json.loads(r[0]) for r in db.execute('SELECT document FROM nlp_dependency_operations ORDER BY operation_id')]
 
+    def acquisition_snapshot(self):
+        """Read authority and operation journals from one short SQLite snapshot."""
+        with self.gate, self.database.read() as db:
+            db.execute('BEGIN')
+            try:
+                state = self._authority(db)
+                operations = [json.loads(r[0]) for r in db.execute(
+                    'SELECT document FROM nlp_dependency_operations ORDER BY operation_id')]
+                return state, operations
+            finally:
+                db.rollback()
+
     def operation(self, value):
         raw = canonical(value)
         require(len(raw) <= 1024 * 1024)

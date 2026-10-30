@@ -168,7 +168,10 @@ class DependencyService:
 
     def _authority(self, *, fresh=False):
         require(not self.blocked, 'nlp_dependency_unavailable')
-        state = self.persistence.authority()
+        return self._validate_authority(self.persistence.authority(), fresh=fresh)
+
+    def _validate_authority(self, state, *, fresh=False):
+        require(not self.blocked, 'nlp_dependency_unavailable')
         now = self._now(state)
         if fresh:
             require(self.catalog is not None and self.catalog.issued_at <= now < self.catalog.expires_at,
@@ -511,10 +514,16 @@ class DependencyService:
         def check():
             self._running()
             with self.gate:
-                require(self._operation(op['id'])['state'] == 'running', 'nlp_cancelled')
-                state, _ = self._authority(fresh=True)
+                self._running()
+                state, operations = self.persistence.acquisition_snapshot()
+                matches = [current for current in operations if current['id'] == op['id']]
+                require(len(matches) == 1 and matches[0]['kind'] == 'acquire'
+                        and matches[0]['state'] == 'running', 'nlp_cancelled')
+                state, _ = self._validate_authority(state, fresh=True)
                 require(digest not in state['withdrawals'], 'nlp_profile_withdrawn')
+            self._running()
             require(self.monotonic() < deadline, 'nlp_acquisition_deadline')
+            return operations
 
         def save():
             with self.gate:
@@ -619,14 +628,16 @@ class DependencyService:
 
     @contextmanager
     def _artifact_stream(self, asset, offset, check, deadline):
+        check()
         stream = getattr(self.distribution, 'stream_artifact', None)
         if callable(stream):
             with stream('data/' + asset.sha256, offset=offset, size=asset.size_bytes,
-                        check=check, deadline=deadline) as result:
+                        check=self._running, deadline=deadline) as result:
                 yield result
         else:
-            with self.distribution.stream('data/' + asset.sha256, check=check, deadline=deadline) as blocks:
+            with self.distribution.stream('data/' + asset.sha256, check=self._running, deadline=deadline) as blocks:
                 yield 0, blocks
+        check()
 
     def _download_artifact(self, path, asset, op, check, deadline, save, spool_bytes, receipt_bytes):
         partials = op.setdefault('partials', {})
@@ -695,10 +706,10 @@ class DependencyService:
                             output.seek(0)
                             output.truncate(0)
                         for block in blocks:
-                            check()
+                            operations = check()
                             require(type(block) is bytes and 0 < len(block) <= BLOCK_BYTES, 'nlp_distribution_block')
                             require(count + len(block) <= asset.size_bytes, 'nlp_artifact_size')
-                            require(self._spool_used() + len(block) + spool_bytes + receipt_bytes <= self.policy.temporary_bytes,
+                            require(self._spool_used(operations) + len(block) + spool_bytes + receipt_bytes <= self.policy.temporary_bytes,
                                     'nlp_temporary_limit')
                             require(shutil.disk_usage(self.spool).free >= self.artifacts.limits.minimum_free_bytes + len(block),
                                     'nlp_disk_reserve')
@@ -758,8 +769,10 @@ class DependencyService:
         require(names <= expected if cleanup else names == expected, 'nlp_spool_foreign')
         return names
 
-    def _spool_used(self):
-        operations = {op['id']: op for op in self.persistence.operations() if op['kind'] == 'acquire'}
+    def _spool_used(self, operations=None):
+        if operations is None:
+            operations = self.persistence.operations()
+        operations = {op['id']: op for op in operations if op['kind'] == 'acquire'}
         total, count = 0, 0
         for directory in self.spool.iterdir():
             count += 1

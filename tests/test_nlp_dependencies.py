@@ -252,6 +252,56 @@ def test_signed_acquisition_storage_selection_and_both_task_publication(tmp_path
         cleanup(e.fixture)
 
 
+def test_acquisition_snapshot_keeps_operation_and_authority_at_one_revision(env, monkeypatch):
+    e = env
+    operation = {'id': 'a' * 32, 'kind': 'acquire', 'state': 'running'}
+    e.persistence.operation(operation)
+    original = e.persistence._authority
+    changed = False
+
+    def authority(db):
+        nonlocal changed
+        state = original(db)
+        if not changed:
+            changed = True
+            updated = {**state, 'epoch': state['epoch'] + 1,
+                       'withdrawals': [e.profile.identity_digest()]}
+            # A second connection commits between the two reads of the first.
+            with e.persistence.database.transaction() as writer:
+                e.persistence._save(writer, updated)
+                writer.execute('UPDATE nlp_dependency_operations SET document=? WHERE operation_id=?',
+                               (canonical({**operation, 'state': 'paused'}).decode(), operation['id']))
+        return state
+
+    monkeypatch.setattr(e.persistence, '_authority', authority)
+    state, operations = e.persistence.acquisition_snapshot()
+    assert state['withdrawals'] == []
+    assert next(o for o in operations if o['id'] == operation['id'])['state'] == 'running'
+    state, operations = e.persistence.acquisition_snapshot()
+    assert state['withdrawals'] == [e.profile.identity_digest()]
+    assert next(o for o in operations if o['id'] == operation['id'])['state'] == 'paused'
+
+
+def test_acquisition_snapshot_closes_one_connection_and_checks_authority_hash(env, monkeypatch):
+    e = env
+    original = e.persistence.database.connect
+    opened = []
+
+    def connect():
+        db = original()
+        opened.append(db)
+        return db
+
+    monkeypatch.setattr(e.persistence.database, 'connect', connect)
+    e.persistence.acquisition_snapshot()
+    assert len(opened) == 1 and opened[0]._tracking_closed
+    with e.persistence.database.transaction() as db:
+        db.execute("UPDATE nlp_dependency_authority SET state_sha256=?", ('0' * 64,))
+    with pytest.raises(DependencyRejected):
+        e.persistence.acquisition_snapshot()
+    assert opened[-1]._tracking_closed
+
+
 def test_catalog_replay_equivocation_withdrawal_and_unknown_fields(env):
     e = env
     e.selected()
