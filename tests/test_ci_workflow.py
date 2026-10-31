@@ -498,7 +498,7 @@ def test_windows_hang_diagnostics_preserve_bounded_job_limits_and_test_execution
 
 
 def _assert_windows_pr_cutover(workflow: dict[str, Any]) -> None:
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v5-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v6-pr-cutover"
     triggers = workflow["on"]
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}, "Product CI must not schedule duplicate exhaustive runs"
     assert triggers["push"] == {"branches": ["main"]}

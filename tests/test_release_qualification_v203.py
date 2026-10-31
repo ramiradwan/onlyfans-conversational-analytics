@@ -31,7 +31,7 @@ SOURCE_COMMIT = "b" * 40
 BASELINE_COMMIT = "a" * 40
 RELEASE_TAG = "v2.0.3"
 RELEASE_VERSION = "2.0.3"
-BROWSER_CI_POLICIES = ["sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover"]
+BROWSER_CI_POLICIES = ["sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover"]
 PRODUCT_CI_POLICIES = [None, "sharded-v1", "sharded-v2", "sharded-v2-pr-cutover", *BROWSER_CI_POLICIES]
 
 
@@ -171,6 +171,7 @@ class QualificationApi:
             "sharded-v3-pr-cutover": producer.REQUIRED_SHARDED_V3_PRODUCT_CI_JOB_NAMES,
             "sharded-v4-pr-cutover": producer.REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES,
             "sharded-v5-pr-cutover": producer.REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES,
+            "sharded-v6-pr-cutover": producer.REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES,
         }
         self.product_ci_jobs = [
             {
@@ -186,9 +187,9 @@ class QualificationApi:
         ]
         if ci_policy in BROWSER_CI_POLICIES:
             next(job for job in self.product_ci_jobs if job["name"] == "browser-e2e-serial-control")["conclusion"] = "skipped"
-        if ci_policy in {"sharded-v2", "sharded-v2-pr-cutover", "sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover"}:
+        if ci_policy in {"sharded-v2", "sharded-v2-pr-cutover", "sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover"}:
             self.product_ci_source = (ROOT / f"tests/fixtures/product-ci-{ci_policy}.yml").read_bytes()
-        elif ci_policy == "sharded-v5-pr-cutover":
+        elif ci_policy == "sharded-v6-pr-cutover":
             self.product_ci_source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
         else:
             source_jobs = (producer.SHARDED_PRODUCT_CI_JOB_IDS if ci_policy
@@ -203,7 +204,7 @@ class QualificationApi:
         # Mutation cases must target the same literal source on Windows/Linux.
         self.product_ci_source = self.product_ci_source.replace(b"\r\n", b"\n")
         self.product_ci_policy = (ROOT / (
-            f"tests/fixtures/product-ci-{ci_policy}-policy.json" if ci_policy in {"sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover"}
+            f"tests/fixtures/product-ci-{ci_policy}-policy.json" if ci_policy in {"sharded-v3", "sharded-v3-pr-cutover", "sharded-v4-pr-cutover", "sharded-v5-pr-cutover"}
             else producer.PRODUCT_CI_POLICY_PATH
         )).read_bytes()
         self.artifacts = [
@@ -294,7 +295,7 @@ def test_v3_full_release_qualification_requires_every_browser_boundary(name, fai
 
 
 @pytest.mark.parametrize("failure", ["missing", "failure", "skipped", "cancelled"])
-@pytest.mark.parametrize("ci_policy", ["sharded-v4-pr-cutover", "sharded-v5-pr-cutover"])
+@pytest.mark.parametrize("ci_policy", ["sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover"])
 def test_v4_release_requires_successful_native_desktop_execution(failure, ci_policy):
     api = QualificationApi(ci_policy=ci_policy)
     assert _qualify_source(api).product_ci_run_id == 43
@@ -315,7 +316,7 @@ def test_v4_release_requires_successful_native_desktop_execution(failure, ci_pol
     ("    timeout-minutes: 20\n", "    timeout-minutes: 60\n"),
     ("      - desktop-native-contracts\n", ""),
 ])
-@pytest.mark.parametrize("ci_policy", ["sharded-v4-pr-cutover", "sharded-v5-pr-cutover"])
+@pytest.mark.parametrize("ci_policy", ["sharded-v4-pr-cutover", "sharded-v5-pr-cutover", "sharded-v6-pr-cutover"])
 def test_v4_release_refuses_optional_or_unbounded_native_contracts(old, new, ci_policy):
     api = QualificationApi(ci_policy=ci_policy)
     assert old.encode() in api.product_ci_source
@@ -324,7 +325,7 @@ def test_v4_release_refuses_optional_or_unbounded_native_contracts(old, new, ci_
         _qualify_source(api)
 
 
-@pytest.mark.parametrize("ci_policy,minutes", [("sharded-v4-pr-cutover", "60"), ("sharded-v5-pr-cutover", "90")])
+@pytest.mark.parametrize("ci_policy,minutes", [("sharded-v4-pr-cutover", "60"), ("sharded-v5-pr-cutover", "90"), ("sharded-v6-pr-cutover", "90")])
 @pytest.mark.parametrize("replacement", ["59", "60", "89", "90", "91", "120", "${{ inputs.timeout }}", None])
 def test_full_windows_timeout_is_exact_for_each_source_policy(ci_policy, minutes, replacement):
     api = QualificationApi(ci_policy=ci_policy)
@@ -347,6 +348,8 @@ def test_full_windows_timeout_is_exact_for_each_source_policy(ci_policy, minutes
 @pytest.mark.parametrize("ci_policy,other_policy", [
     ("sharded-v4-pr-cutover", "sharded-v5-pr-cutover"),
     ("sharded-v5-pr-cutover", "sharded-v4-pr-cutover"),
+    ("sharded-v5-pr-cutover", "sharded-v6-pr-cutover"),
+    ("sharded-v6-pr-cutover", "sharded-v5-pr-cutover"),
 ])
 def test_full_windows_budget_policy_never_accepts_another_versions_document(ci_policy, other_policy):
     api = QualificationApi(ci_policy=ci_policy)
@@ -1051,3 +1054,47 @@ def test_protected_sparse_policy_uses_only_declared_public_configuration(tmp_pat
     assert observation["outcome"] == ("accepted" if configuration == "present" else "refused")
     if configuration == "present":
         assert observation["result"] == {"version": RELEASE_VERSION}
+
+
+@pytest.mark.parametrize("ci_policy,minutes", [
+    ("sharded-v2", "20"), ("sharded-v2-pr-cutover", "20"),
+    ("sharded-v3", "20"), ("sharded-v3-pr-cutover", "20"),
+    ("sharded-v4-pr-cutover", "20"), ("sharded-v5-pr-cutover", "20"),
+    ("sharded-v6-pr-cutover", "30"),
+])
+@pytest.mark.parametrize("replacement", ["19", "20", "29", "30", "31", "${{ inputs.timeout }}", None])
+def test_analytics_timeout_is_exact_for_each_source_policy(ci_policy, minutes, replacement):
+    api = QualificationApi(ci_policy=ci_policy)
+    assert _qualify_source(api).source_commit == SOURCE_COMMIT
+    before, body = api.product_ci_source.decode().split("  analytics-integration:\n", 1)
+    matrix, after = body.split("  windows-full-shards:\n", 1)
+    declaration = f"    timeout-minutes: {minutes}\n"
+    assert declaration in matrix
+    changed = "" if replacement is None else f"    timeout-minutes: {replacement}\n"
+    api.product_ci_source = (before + "  analytics-integration:\n"
+                             + matrix.replace(declaration, changed, 1)
+                             + "  windows-full-shards:\n" + after).encode()
+    if replacement == minutes:
+        assert _qualify_source(api).source_commit == SOURCE_COMMIT
+    else:
+        with pytest.raises(producer.ContractError, match="matrix execution declaration"):
+            _qualify_source(api)
+
+
+@pytest.mark.parametrize("ci_policy,other_policy", [
+    ("sharded-v5-pr-cutover", "sharded-v6-pr-cutover"),
+    ("sharded-v6-pr-cutover", "sharded-v5-pr-cutover"),
+])
+def test_analytics_budget_source_never_accepts_another_versions_marker(ci_policy, other_policy):
+    api = QualificationApi(ci_policy=ci_policy)
+    api.product_ci_source = api.product_ci_source.replace(ci_policy.encode(), other_policy.encode())
+    with pytest.raises(producer.ContractError, match="source policy"):
+        _qualify_source(api)
+
+
+def test_v5_source_policy_is_frozen_independently_of_current_workflow():
+    api = QualificationApi(ci_policy="sharded-v5-pr-cutover")
+    assert hashlib.sha256(api.product_ci_source).hexdigest() == "f6512935244ed31457412bcdcaf0bf92048f7130c894b73346c7a2a6059aea62"
+    assert hashlib.sha256(api.product_ci_policy.replace(b"\r\n", b"\n")).hexdigest() == "edc170ec6cc828bce29fa2c68b822fef5266ed5d7ead7fca533849cc56fd1af9"
+    assert api.product_ci_source != (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes()
+    assert _qualify_source(api).source_commit == SOURCE_COMMIT

@@ -244,7 +244,7 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
 
 def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_or_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v5-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v6-pr-cutover"
     events = workflow["on"]
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]
