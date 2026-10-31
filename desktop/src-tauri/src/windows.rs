@@ -77,6 +77,17 @@ pub fn observe_servicing(window: windows_sys::Win32::Foundation::HWND, code: &'s
     }
 }
 
+/// Observe a compiler-owned rejection without changing the command outcome.
+pub fn observe_servicing_result<T>(
+    window: windows_sys::Win32::Foundation::HWND,
+    result: Result<T>,
+) -> Result<T> {
+    if let Err(reason) = &result {
+        observe_servicing(window, reason);
+    }
+    result
+}
+
 pub(crate) fn process_sid(process: HANDLE) -> Result<Vec<u8>> {
     unsafe {
         let mut raw = null_mut();
@@ -1054,6 +1065,18 @@ mod tests {
         observe_servicing(window, "windows_stage_failed");
         let marker = servicing_marker("windows_stage_failed").unwrap();
         assert!(!unsafe { GetPropW(window, marker.as_ptr()) }.is_null());
+        let rejected: Result<()> = Err("optional_broker_launch");
+        assert_eq!(observe_servicing_result(window, rejected), rejected);
+        let rejection = servicing_marker("optional_broker_launch").unwrap();
+        assert!(!unsafe { GetPropW(window, rejection.as_ptr()) }.is_null());
+        assert_eq!(observe_servicing_result(window, Ok(17)), Ok(17));
+        let spawn_failure: Result<()> = Err("optional_owner_unavailable");
+        assert_eq!(
+            observe_servicing_result(window, spawn_failure),
+            spawn_failure
+        );
+        let spawn_marker = servicing_marker("optional_owner_unavailable").unwrap();
+        assert!(!unsafe { GetPropW(window, spawn_marker.as_ptr()) }.is_null());
         observe_servicing(window, "private value");
         let invalid = wide(std::ffi::OsStr::new("OFCA.Servicing.private value"));
         assert!(unsafe { GetPropW(window, invalid.as_ptr()) }.is_null());
