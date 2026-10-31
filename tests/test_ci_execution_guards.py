@@ -110,10 +110,11 @@ def test_all_jobs_have_explicit_timeouts_and_integration_is_bounded() -> None:
         timeout = job.get("timeout-minutes")
         limit = 90 if name == "windows-full-shards" else 60
         assert isinstance(timeout, int) and 0 < timeout <= limit, f"{name} needs a bounded timeout"
+    assert jobs["backend-fast"]["timeout-minutes"] == 30
     shard = jobs["analytics-integration"]
     assert shard["name"] == "analytics-integration-${{ matrix.shard }}"
     assert shard["strategy"] == {"fail-fast": False, "max-parallel": 4, "matrix": {"shard": [1, 2, 3, 4]}}
-    assert shard["timeout-minutes"] == 20
+    assert shard["timeout-minutes"] == 30
 
 
 def _assert_full_windows_shards_are_blocking(workflow: dict[str, Any]) -> None:
@@ -244,7 +245,7 @@ def test_gate_keeps_attempt_artifacts_separate_and_compatibility_checks_block() 
 
 def test_main_and_manual_qualification_are_explicit_without_duplicate_schedule_or_path_filters() -> None:
     workflow = _workflow_document()
-    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v5-pr-cutover"
+    assert workflow["env"]["CI_POLICY_VERSION"] == "sharded-v6-pr-cutover"
     events = workflow["on"]
     assert set(events) == {"push", "pull_request", "workflow_dispatch"}
     dispatch = events["workflow_dispatch"]
