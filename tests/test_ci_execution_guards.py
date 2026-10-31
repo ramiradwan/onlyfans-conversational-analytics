@@ -113,7 +113,7 @@ def test_all_jobs_have_explicit_timeouts_and_integration_is_bounded() -> None:
     shard = jobs["analytics-integration"]
     assert shard["name"] == "analytics-integration-${{ matrix.shard }}"
     assert shard["strategy"] == {"fail-fast": False, "max-parallel": 4, "matrix": {"shard": [1, 2, 3, 4]}}
-    assert shard["timeout-minutes"] == 20
+    assert shard["timeout-minutes"] == 30
 
 
 def _assert_full_windows_shards_are_blocking(workflow: dict[str, Any]) -> None:

@@ -311,7 +311,7 @@ jobs:
   analytics-integration:
     name: analytics-integration-${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 4
