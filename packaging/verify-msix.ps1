@@ -257,6 +257,21 @@ function Test-MsixPayload {
             $record.size -isnot [long] -or $record.size -lt 0 -or $record.size -gt 4294967295 -or -not $aliases.Add($record.path)) { throw 'Invalid inventory record or path alias' }
         $expected.Add($record.path, $record)
     }
+    $installerFiles = @{
+        'MSIX.AppInstaller.Data/MSIXAppInstallerData.xml' = '1c2b7e284d851ff36f66b65fe9904475ef59511953bc462625efcd63f248c3f3'
+        'MSIX.AppInstaller.Data/Assets/InstallerLogo.png' = '1c0bfd69df22eceed592239c9235cc1eeb82845cc764973b3d0db7f07cbd6b11'
+        'Assets/InstallerLogo.png' = '1c0bfd69df22eceed592239c9235cc1eeb82845cc764973b3d0db7f07cbd6b11'
+    }
+    foreach ($name in $installerFiles.Keys) {
+        if (-not $expected.ContainsKey($name) -or $expected[$name].sha256 -cne $installerFiles[$name]) {
+            throw 'App Installer presentation differs from the approved assets'
+        }
+    }
+    foreach ($name in $expected.Keys) {
+        if ($name.StartsWith('MSIX.AppInstaller.Data/', [StringComparison]::OrdinalIgnoreCase) -and -not $installerFiles.ContainsKey($name)) {
+            throw 'App Installer presentation has extra or missing files'
+        }
+    }
     if (-not ('Ofca.Msix.IdentityReader' -as [type])) { Add-Type -Path (Join-Path $msixConfiguration 'ReadPackageIdentity.cs') }
     $signatureArchive = $null
     $archive = [IO.Compression.ZipFile]::OpenRead([IO.Path]::GetFullPath($Package))

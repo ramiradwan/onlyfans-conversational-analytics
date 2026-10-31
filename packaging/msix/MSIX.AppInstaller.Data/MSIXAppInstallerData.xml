@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AppInstallerUX xmlns="http://schemas.microsoft.com/msix/appinstallerux"
+  xmlns:ux="http://schemas.microsoft.com/msix/appinstallerux"
+  xmlns:ux2="http://schemas.microsoft.com/msix/appinstallerux/2"
+  IgnorableNamespaces="ux ux2" Version="1.0.0">
+  <UX AccentColor="#0F7A72" FontFamily="Segoe UI" AllowUserInteraction="true" AppNameInTitle="false">
+    <Icon HorizontalAlignment="center" Size="medium" Logo="Assets\InstallerLogo.png" TopMargin="16" />
+    <Buttons HorizontalAlignment="center" PrimaryButtonMode="normal" SecondaryButtonMode="normal" IsSecondaryButtonAccent="false" Orientation="horizontal" />
+    <LaunchWhenReady HorizontalAlignment="center" />
+    <AppInformation Mode="flyout" />
+  </UX>
+</AppInstallerUX>

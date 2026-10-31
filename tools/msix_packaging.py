@@ -37,7 +37,12 @@ NAMESPACES = {
     "virtualization": "http://schemas.microsoft.com/appx/manifest/virtualization/windows10",
     "win32dependencies": "http://schemas.microsoft.com/appx/manifest/externaldependencies",
 }
-ASSETS = {"StoreLogo.png": 50, "Square44x44Logo.png": 44, "Square150x150Logo.png": 150}
+ASSETS = {"StoreLogo.png": 50, "Square44x44Logo.png": 44, "Square150x150Logo.png": 150, "InstallerLogo.png": 150}
+INSTALLER_FILES = {
+    "MSIX.AppInstaller.Data/MSIXAppInstallerData.xml": "1c2b7e284d851ff36f66b65fe9904475ef59511953bc462625efcd63f248c3f3",
+    "MSIX.AppInstaller.Data/Assets/InstallerLogo.png": "1c0bfd69df22eceed592239c9235cc1eeb82845cc764973b3d0db7f07cbd6b11",
+    "Assets/InstallerLogo.png": "1c0bfd69df22eceed592239c9235cc1eeb82845cc764973b3d0db7f07cbd6b11",
+}
 FOOTPRINT_FILES = {"AppxBlockMap.xml", "[Content_Types].xml", "AppxSignature.p7x", "AppxMetadata/CodeIntegrity.cat"}
 QUALIFICATION_NAME_PREFIX = "OFCA.Qualification."
 QUALIFICATION_PUBLISHER_PREFIX = "CN=OFCA MSIX Qualification"
@@ -226,7 +231,18 @@ def validate_installed_path_budget(paths: list[str] | tuple[str, ...], profile: 
     return maximum
 
 
+def _validate_installer_files(directory: Path) -> None:
+    for name, digest in INSTALLER_FILES.items():
+        if not (directory / name).is_file() or sha256(directory / name) != digest:
+            raise ValueError("App Installer presentation differs from the approved assets")
+    nested = directory / "MSIX.AppInstaller.Data"
+    if {path.relative_to(directory).as_posix() for path in nested.rglob("*") if path.is_file()} != {
+            name for name in INSTALLER_FILES if name.startswith("MSIX.AppInstaller.Data/")}:
+        raise ValueError("App Installer presentation has extra or missing files")
+
+
 def _validate_assets() -> None:
+    _validate_installer_files(CONFIG_ROOT)
     if {path.name for path in (CONFIG_ROOT / "Assets").iterdir()} != set(ASSETS):
         raise ValueError("MSIX assets differ from the reviewed asset closure")
     for name, dimension in ASSETS.items():
@@ -283,6 +299,7 @@ def prepare_payload(stage: Path, working: Path, profile_path: Path, *,
         shutil.copyfile(stage / path, destination)
     (payload / "AppxManifest.xml").write_bytes(render_manifest(profile))
     shutil.copytree(CONFIG_ROOT / "Assets", payload / "Assets")
+    shutil.copytree(CONFIG_ROOT / "MSIX.AppInstaller.Data", payload / "MSIX.AppInstaller.Data")
     (app / "desktop-release.json").write_bytes(descriptor_bytes)
     if quote_bytes is not None:
         (app / "engine-acquisition-quote.json").write_bytes(quote_bytes)
@@ -328,6 +345,8 @@ def seal_payload(working: Path, profile_path: Path, makeappx: Path) -> dict:
                 or quote_bytes != canonical_json(current)):
             raise ValueError("Engine quote changed after preparation")
         expected.add(optional.QUOTE_PATH)
+    expected.update(INSTALLER_FILES)
+    _validate_installer_files(payload)
     expected.update("Assets/" + name for name in ASSETS)
     actual = {path.relative_to(payload).as_posix() for path in payload.rglob("*") if path.is_file()}
     if expected != actual:
@@ -438,6 +457,11 @@ def verify_archive(package: Path, inventory_path: Path, profile_path: Path, *, p
                     hasher.update(block)
             if hasher.hexdigest() != record["sha256"]:
                 raise ValueError("package payload digest mismatch")
+        for name, digest in INSTALLER_FILES.items():
+            if name not in expected or expected[name]["sha256"] != digest:
+                raise ValueError("App Installer presentation differs from the approved assets")
+        if any(name.casefold().startswith("msix.appinstaller.data/") and name not in INSTALLER_FILES for name in expected):
+            raise ValueError("App Installer presentation has extra or missing files")
         if archive.read("AppxManifest.xml") != render_manifest(profile):
             raise ValueError("package manifest differs from the expected identity and policy")
         if archive.read("app/desktop-release.json") != canonical_json(desktop_descriptor(profile, sha256(profile_path))):

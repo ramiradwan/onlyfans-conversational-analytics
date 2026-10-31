@@ -1016,3 +1016,44 @@ def test_verified_direct_family_is_derived_by_windows(tmp_path):
     for phase in ("script-entry", "add-type-complete", "windows-read-start", "exit"):
         assert f"ofca-msix-identity-probe:{phase}:" in diagnostic
     assert "ofca-msix-identity-probe:windows-read-complete:" not in diagnostic
+
+
+@pytest.mark.parametrize("path", list(msix.INSTALLER_FILES))
+@pytest.mark.parametrize("mutation", ["change", "remove", "extra"])
+def test_installer_presentation_is_sealed_and_independently_verified(stage, tmp_path, path, mutation):
+    working = tmp_path / "msix-output"
+    msix.prepare_payload(stage, working, PROFILE_PATH)
+    _write_inert_digests(working / "payload/app")
+    msix.seal_payload(working, PROFILE_PATH, Path(sys.executable))
+    payload = working / "payload"
+    for name, digest in msix.INSTALLER_FILES.items():
+        assert msix.sha256(payload / name) == digest
+    target = payload / path
+    if mutation == "change":
+        target.write_bytes(b"changed presentation")
+    elif mutation == "remove":
+        target.unlink()
+    else:
+        (payload / "MSIX.AppInstaller.Data/extra.xml").write_bytes(b"extra")
+    with pytest.raises(ValueError, match="App Installer presentation"):
+        msix.seal_payload(working, PROFILE_PATH, Path(sys.executable))
+    inventory_path = working / "inventory.json"
+    inventory = json.loads(inventory_path.read_text())
+    inventory["files"] = [msix.file_record(item, item.relative_to(payload).as_posix())
+                          for item in payload.rglob("*") if item.is_file()]
+    inventory_path.write_bytes(msix.canonical_json(inventory))
+    package = tmp_path / "changed-presentation.msix"
+    with zipfile.ZipFile(package, "w") as archive:
+        for item in payload.rglob("*"):
+            if item.is_file():
+                archive.write(item, item.relative_to(payload).as_posix())
+        archive.writestr("AppxBlockMap.xml", b"negative-test-footprint")
+        archive.writestr("[Content_Types].xml", b"negative-test-footprint")
+    with pytest.raises(ValueError, match="App Installer presentation"):
+        msix.verify_archive(package, inventory_path, PROFILE_PATH)
+    result = subprocess.run([
+        "pwsh", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "packaging/verify-msix.ps1"),
+        "-Package", str(package), "-Inventory", str(inventory_path), "-PackageProfile", str(PROFILE_PATH),
+        "-AllowQualification", "-VerificationMode", "DirectSigned",
+    ], capture_output=True, text=True, check=False, timeout=120)
+    assert result.returncode == 2 and "App Installer presentation" in result.stdout, result.stdout + result.stderr
