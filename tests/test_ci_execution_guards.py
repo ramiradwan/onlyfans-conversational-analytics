@@ -110,6 +110,7 @@ def test_all_jobs_have_explicit_timeouts_and_integration_is_bounded() -> None:
         timeout = job.get("timeout-minutes")
         limit = 90 if name == "windows-full-shards" else 60
         assert isinstance(timeout, int) and 0 < timeout <= limit, f"{name} needs a bounded timeout"
+    assert jobs["backend-fast"]["timeout-minutes"] == 30
     shard = jobs["analytics-integration"]
     assert shard["name"] == "analytics-integration-${{ matrix.shard }}"
     assert shard["strategy"] == {"fail-fast": False, "max-parallel": 4, "matrix": {"shard": [1, 2, 3, 4]}}

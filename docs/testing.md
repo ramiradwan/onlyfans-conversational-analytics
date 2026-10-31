@@ -24,7 +24,7 @@ Install the dependencies described in [Contributing](../CONTRIBUTING.md). Build 
 | Windows analytics contract | `python tools/test_backend.py windows-analytics` |
 | One scale qualification file | `python tools/test_backend.py scale -- tests/test_question_identity_scale.py` |
 
-Arguments after `--` pass through to pytest. For example, `python tools/test_backend.py integration --shard 2 -- -k publication -vv` runs a filtered subset. The runner prints the command and writes reports under `artifacts/ci-tests/`. Profile variables apply only to the child process. `fast` runs the fast tier; CI also runs the named stateful profiles as separate steps in its backend-fast job.
+Arguments after `--` pass through to pytest. For example, `python tools/test_backend.py integration --shard 2 -- -k publication -vv` runs a filtered subset. The runner prints the command and writes reports under `artifacts/ci-tests/`. Profile variables apply only to the child process. `fast` runs the fast tier; CI also runs the named stateful profiles as separate steps in its backend-fast job. That job has a 30-minute limit covering the fast selection and all follow-up checks.
 
 Windows contract execution requires Windows and the fixed SQLCipher runtime. A Linux collection that skips a Windows-native test does not reproduce that test. Required hosted and packaged-runtime evidence still comes from their respective workflows.
 
