@@ -276,21 +276,22 @@ fn request(
     }
     Ok(answer.status)
 }
+fn observe_installed(ctx: Context) -> Result<bool> {
+    std::thread::spawn(move || {
+        let _a = servicing::Apartment::new().map_err(|_| "optional_not_registered")?;
+        let expected = crate::engine_acquisition::platform::declared(Some(&ctx.release))
+            .map_err(|_| "optional_not_registered")?;
+        crate::engine_acquisition::platform::installed(&ctx.release, expected)
+            .map_err(|_| "optional_not_registered")
+    })
+    .join()
+    .map_err(|_| "optional_not_registered")?
+}
 fn installed_status(ctx: Context, mut status: Status) -> Status {
-    if status.installed {
-        let verified = std::thread::spawn(move || {
-            let _a = servicing::Apartment::new().map_err(|_| "optional_not_registered")?;
-            let expected = crate::engine_acquisition::platform::declared(Some(&ctx.release))
-                .map_err(|_| "optional_not_registered")?;
-            crate::engine_acquisition::platform::installed(&ctx.release, expected)
-                .map_err(|_| "optional_not_registered")
-        })
-        .join();
-        if !matches!(verified, Ok(Ok(true))) {
-            status.installed = false;
-            status.state = Phase::RecoveryPending;
-            status.reason = Some("optional_not_registered".into());
-        }
+    if status.installed && !matches!(observe_installed(ctx), Ok(true)) {
+        status.installed = false;
+        status.state = Phase::RecoveryPending;
+        status.reason = Some("optional_not_registered".into());
     }
     status
 }
@@ -309,7 +310,10 @@ pub(super) fn status(data: &Path) -> Result<Status> {
         return Err("optional_broker_root");
     }
     let Some(j) = load(&ctx)? else {
-        return Ok(Owner::new_local(data.to_owned()).status());
+        return Ok(observe_unrequested_installation(
+            Owner::new_local(data.to_owned()).status(),
+            || observe_installed(ctx),
+        ));
     };
     if j.terminal {
         return Ok(installed_status(ctx, j.status));
