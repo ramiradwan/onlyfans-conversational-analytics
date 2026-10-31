@@ -320,6 +320,117 @@ pub(super) fn cancel(data: &Path, id: &str) -> Result<Status> {
         None,
     )
 }
+const MAX_JOB_PROCESSES: usize = 1024;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LauncherJob {
+    in_job: bool,
+    limits: u32,
+}
+impl LauncherJob {
+    fn capture() -> Result<Self> {
+        let mut member = 0;
+        if unsafe { IsProcessInJob(GetCurrentProcess(), null_mut(), &mut member) } == 0 {
+            return Err("optional_broker_parent_job_query");
+        }
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
+        if member != 0 {
+            if unsafe {
+                QueryInformationJobObject(
+                    null_mut(),
+                    JobObjectExtendedLimitInformation,
+                    (&mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                    size_of_val(&limits) as u32,
+                    null_mut(),
+                )
+            } == 0
+            {
+                return Err("optional_broker_parent_job_query");
+            }
+            if limits.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_BREAKAWAY_OK == 0 {
+                return Err("optional_broker_parent_job_breakaway");
+            }
+        }
+        Ok(Self {
+            in_job: member != 0,
+            limits: limits.BasicLimitInformation.LimitFlags,
+        })
+    }
+    fn prove(&self, child: HANDLE, child_pid: u32) -> Result<()> {
+        if Self::capture()? != *self {
+            return Err("optional_broker_parent_job_changed");
+        }
+        if self.in_job {
+            // NULL addresses this process's immediate Job. Its complete list
+            // includes descendants, but does not describe ancestor Jobs.
+            let mut storage = vec![0usize; 1 + MAX_JOB_PROCESSES];
+            let mut returned = 0;
+            if unsafe {
+                QueryInformationJobObject(
+                    null_mut(),
+                    JobObjectBasicProcessIdList,
+                    storage.as_mut_ptr().cast(),
+                    (storage.len() * size_of::<usize>()) as u32,
+                    &mut returned,
+                )
+            } == 0
+            {
+                return Err("optional_broker_parent_job_list");
+            }
+            let raw = unsafe {
+                std::slice::from_raw_parts(
+                    storage.as_ptr().cast::<u8>(),
+                    storage.len() * size_of::<usize>(),
+                )
+            };
+            detached_job_list(
+                raw,
+                returned as usize,
+                unsafe { GetCurrentProcessId() },
+                child_pid,
+            )?;
+        }
+        if child_pid == 0
+            || unsafe { GetProcessId(child) } != child_pid
+            || unsafe { WaitForSingleObject(child, 0) } != WAIT_TIMEOUT
+        {
+            return Err("optional_broker_child_exited");
+        }
+        if Self::capture()? != *self {
+            return Err("optional_broker_parent_job_changed");
+        }
+        Ok(())
+    }
+}
+fn detached_job_list(raw: &[u8], returned: usize, launcher: u32, child: u32) -> Result<()> {
+    let invalid = "optional_broker_parent_job_list";
+    if returned < 8 || returned > raw.len() || launcher == 0 || child == 0 || launcher == child {
+        return Err(invalid);
+    }
+    let assigned = u32::from_ne_bytes(raw[0..4].try_into().unwrap()) as usize;
+    let count = u32::from_ne_bytes(raw[4..8].try_into().unwrap()) as usize;
+    if count == 0
+        || count > MAX_JOB_PROCESSES
+        || assigned != count
+        || 8 + count * size_of::<usize>() > returned
+    {
+        return Err(invalid);
+    }
+    let mut seen = std::collections::HashSet::new();
+    for bytes in raw[8..8 + count * size_of::<usize>()].chunks_exact(size_of::<usize>()) {
+        let pid = usize::from_ne_bytes(bytes.try_into().unwrap());
+        if pid == 0 || pid > u32::MAX as usize || !seen.insert(pid) {
+            return Err(invalid);
+        }
+    }
+    if !seen.contains(&(launcher as usize)) {
+        return Err(invalid);
+    }
+    if seen.contains(&(child as usize)) {
+        return Err("optional_broker_child_in_parent_job");
+    }
+    Ok(())
+}
+
 struct BootstrapChild {
     process: Handle,
     _thread: Handle,
@@ -403,13 +514,10 @@ pub(super) fn start(
     {
         return Err("optional_broker_handle_attribute");
     }
-    let mut in_job = 0;
-    if unsafe { IsProcessInJob(GetCurrentProcess(), null_mut(), &mut in_job) } == 0 {
-        return Err("optional_broker_parent_job_query");
-    }
+    let launcher_job = LauncherJob::capture()?;
     let flags = CREATE_NO_WINDOW
         | EXTENDED_STARTUPINFO_PRESENT
-        | if in_job != 0 {
+        | if launcher_job.in_job {
             CREATE_BREAKAWAY_FROM_JOB
         } else {
             0
@@ -453,13 +561,6 @@ pub(super) fn start(
         commit_may_have_been_sent: false,
     };
     let peer = observe_peer(child.process.0, process.dwProcessId)?;
-    let mut member = 0;
-    if unsafe { IsProcessInJob(child.process.0, null_mut(), &mut member) } == 0 {
-        return Err("optional_broker_child_job_query");
-    }
-    if member != 0 {
-        return Err("optional_broker_child_in_job");
-    }
     if peer.image != ctx.peer.image {
         return Err("optional_broker_child_image");
     }
@@ -469,6 +570,7 @@ pub(super) fn start(
     if peer.logon != ctx.peer.logon {
         return Err("optional_broker_child_logon");
     }
+    launcher_job.prove(child.process.0, peer.pid)?;
     let j = Journal {
         schema: "optional-engine-reconnect.v3".into(),
         quote_sha256: Some(reviewed.binding.quote_sha256.clone()),
@@ -510,6 +612,17 @@ pub(super) fn start(
             lease.mark(false, &ctx.binding)?;
             return Err("optional_cancelled");
         }
+        if !child.commit_may_have_been_sent {
+            if let Err(reason) = launcher_job.prove(child.process.0, j.broker.pid) {
+                drop(child);
+                j.status = unknown(Some(j.nonce.clone()), reason);
+                j.status.state = Phase::Failed;
+                j.terminal = true;
+                j.save(data)?;
+                lease.mark(false, &ctx.binding)?;
+                return Err(reason);
+            }
+        }
         // After granting Commit, never terminate the broker on a lost response.
         child.commit_may_have_been_sent = true;
         if let Ok(s) = request(&ctx, &j, Action::Commit {}, Some(&|| !cancelled())) {
@@ -530,10 +643,9 @@ pub(super) fn run(args: &[String]) -> Result<()> {
     let bootstrap_end = Instant::now() + Duration::from_secs(5);
     let (nonce, raw) = arguments(args)?;
     let ctx = context()?;
-    let mut in_job = 0;
-    if unsafe { IsProcessInJob(GetCurrentProcess(), null_mut(), &mut in_job) } == 0 || in_job != 0 {
-        return Err("optional_broker_launch");
-    }
+    // The original authenticated launcher proves immediate-Job detachment
+    // before publishing this bootstrap and before its first Commit. An outer
+    // environment Job does not itself authorize or reject acquisition.
     let lease = Lease {
         handle: Handle::new(raw as HANDLE)?,
     };
@@ -763,4 +875,163 @@ pub(super) fn admitted_servicing() -> Result<bool> {
     };
     lease.mark_servicing(false, &receipt.binding)?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn list(assigned: u32, pids: &[usize]) -> Vec<u8> {
+        let mut raw = assigned.to_ne_bytes().to_vec();
+        raw.extend_from_slice(&(pids.len() as u32).to_ne_bytes());
+        for pid in pids {
+            raw.extend_from_slice(&pid.to_ne_bytes());
+        }
+        raw
+    }
+    #[test]
+    fn immediate_job_list_requires_complete_unaliased_detachment() {
+        let good = list(2, &[11, 33]);
+        assert!(detached_job_list(&good, good.len(), 11, 22).is_ok());
+        for bad in [
+            list(3, &[11, 33]),
+            list(0, &[]),
+            list(2, &[11, 11]),
+            list(2, &[11, 0]),
+            list(1, &[33]),
+            list(2, &[11, 22]),
+            list(
+                (MAX_JOB_PROCESSES + 1) as u32,
+                &vec![11; MAX_JOB_PROCESSES + 1],
+            ),
+        ] {
+            assert!(detached_job_list(&bad, bad.len(), 11, 22).is_err());
+        }
+        for returned in [0, 7, good.len() - 1, good.len() + 1] {
+            assert!(detached_job_list(&good, returned, 11, 22).is_err());
+        }
+        assert!(detached_job_list(&good, good.len(), 0, 22).is_err());
+        assert!(detached_job_list(&good, good.len(), 11, 11).is_err());
+    }
+    fn inert_child(flags: u32) -> BootstrapChild {
+        let exe = std::env::current_exe().unwrap();
+        let mut command = exclusion::wide(OsStr::new(&format!(
+            "\"{}\" --ignored --exact engine_acquisition_broker::windows::tests::inert_job_child",
+            exe.display()
+        )));
+        let mut startup: STARTUPINFOW = unsafe { zeroed() };
+        startup.cb = size_of_val(&startup) as u32;
+        let mut process: PROCESS_INFORMATION = unsafe { zeroed() };
+        assert_ne!(
+            unsafe {
+                CreateProcessW(
+                    exclusion::wide(exe.as_os_str()).as_ptr(),
+                    command.as_mut_ptr(),
+                    null(),
+                    null(),
+                    0,
+                    flags | CREATE_NO_WINDOW,
+                    null(),
+                    null(),
+                    &startup,
+                    &mut process,
+                )
+            },
+            0
+        );
+        BootstrapChild {
+            process: Handle::new(process.hProcess).unwrap(),
+            _thread: Handle::new(process.hThread).unwrap(),
+            commit_may_have_been_sent: false,
+        }
+    }
+    #[test]
+    #[ignore = "bounded child fixture, invoked only by the native Job test"]
+    fn inert_job_child() {
+        std::thread::sleep(Duration::from_secs(20));
+    }
+    #[test]
+    fn native_immediate_job_proof_checks_membership_and_liveness() {
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "engine_acquisition_broker::windows::tests::native_job_fixture",
+            ])
+            .status()
+            .unwrap();
+        assert!(result.success());
+    }
+    #[test]
+    #[ignore = "isolated process owns the test Job"]
+    fn native_job_fixture() {
+        let before = LauncherJob::capture();
+        if matches!(before, Ok(job) if !job.in_job) {
+            let before = before.unwrap();
+            let child = inert_child(0);
+            let pid = unsafe { GetProcessId(child.process.0) };
+            before.prove(child.process.0, pid).unwrap();
+        }
+        let job = Handle::new(unsafe { CreateJobObjectW(null(), null()) }).unwrap();
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        assert_ne!(
+            unsafe {
+                SetInformationJobObject(
+                    job.0,
+                    JobObjectExtendedLimitInformation,
+                    (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                    size_of_val(&limits) as u32,
+                )
+            },
+            0
+        );
+        assert_ne!(
+            unsafe { AssignProcessToJobObject(job.0, GetCurrentProcess()) },
+            0
+        );
+        let captured = LauncherJob::capture().unwrap();
+        assert!(captured.in_job);
+        let attached = inert_child(0);
+        let pid = unsafe { GetProcessId(attached.process.0) };
+        assert_eq!(
+            captured.prove(attached.process.0, pid),
+            Err("optional_broker_child_in_parent_job")
+        );
+        if let Ok(before) = before {
+            if before != captured {
+                assert_eq!(
+                    before.prove(attached.process.0, pid),
+                    Err("optional_broker_parent_job_changed")
+                );
+            }
+        }
+        let detached = inert_child(CREATE_BREAKAWAY_FROM_JOB);
+        let pid = unsafe { GetProcessId(detached.process.0) };
+        captured.prove(detached.process.0, pid).unwrap();
+        assert_ne!(unsafe { TerminateProcess(detached.process.0, 1) }, 0);
+        assert_eq!(
+            unsafe { WaitForSingleObject(detached.process.0, 5000) },
+            WAIT_OBJECT_0
+        );
+        assert_eq!(
+            captured.prove(detached.process.0, pid),
+            Err("optional_broker_child_exited")
+        );
+        limits.BasicLimitInformation.LimitFlags = 0;
+        assert_ne!(
+            unsafe {
+                SetInformationJobObject(
+                    job.0,
+                    JobObjectExtendedLimitInformation,
+                    (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                    size_of_val(&limits) as u32,
+                )
+            },
+            0
+        );
+        assert_eq!(
+            LauncherJob::capture(),
+            Err("optional_broker_parent_job_breakaway")
+        );
+    }
 }

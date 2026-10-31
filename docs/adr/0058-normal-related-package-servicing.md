@@ -1,10 +1,10 @@
-<!-- CODE-VERIFY: app/core/desktop_release.py, desktop/src-tauri/src/deployment.rs, servicing_feed.rs, servicing.rs, tools/msix_packaging.py, optional_msix.py, packaging/msix/release-artifacts.psm1, packaging/verify-msix.ps1 and shared/desktop-release/related-servicing-cases.json. -->
+<!-- CODE-VERIFY: app/core/desktop_release.py, desktop/src-tauri/src/deployment.rs, servicing_feed.rs, servicing.rs, engine_acquisition_broker_windows.rs, tools/msix_packaging.py, optional_msix.py, packaging/msix/release-artifacts.psm1, packaging/verify-msix.ps1 and shared/desktop-release/related-servicing-cases.json. -->
 
 # ADR 0058: Service an optional package through the normal desktop update
 
 - Status: Accepted contract; installed delivery and rollout require separate qualification.
 - Date: 2026-10-22
-- Amended: 2026-10-26
+- Amended: 2026-10-31
 - Extends: ADRs 0056 and 0057.
 
 ## Decision
@@ -29,13 +29,13 @@ The optional [acquisition quote](../../packaging/msix/schemas/engine-acquisition
 
 One native owner serializes acquisition with servicing and retains the Windows operation and apartment until actual terminal observation. It persists private intent before mutation. Cancellation and deadlines request cancellation without claiming settlement. An interrupted intent cannot admit a new owner from package or process absence; unresolved restart state remains unavailable. Complete signed installed identity, relationship and worker/runtime closure checks precede installed status. Installed delivery and restart recovery remain separate qualification requirements.
 
-The installed Core image also supplies a closed headless acquisition role. Its inert bootstrap requires a bounded authenticated Commit from the original admitted launcher; passive startup and reconnect cannot start work. Both peers bind exact installed identity, process birth, logon and nonce. Supported launch outside the parent's Job is required before Commit. The broker retains the original operation across Core disconnection; explicit cancellation and actual terminal settlement keep their existing semantics. Broker death and operating-system restart do not admit a replacement owner.
+The installed Core image also supplies a closed headless acquisition role. Its inert bootstrap requires a bounded authenticated Commit from the original admitted launcher; passive startup and reconnect cannot start work. Both peers bind exact installed identity, process birth, logon and nonce. The launcher must prove that the live broker is outside its immediate Job subtree before publishing the bootstrap and immediately before its first Commit. It captures Job membership and breakaway permission before creation, requires unchanged membership and limit flags, and admits only a complete bounded Job process list containing itself and excluding the retained live broker. A launcher without a Job must remain without one through those checks. Outer environment Jobs may remain; this proof does not establish independence from every ancestor Job or its termination policy. The broker retains the original operation across Core disconnection; explicit cancellation and actual terminal settlement keep their existing semantics. Broker death and operating-system restart do not admit a replacement owner.
 
 A private exclusive family file object spans acquisition, deferred registration and authenticated activation handoff. Its durable marker distinguishes acquisition from servicing. An observed terminal deferred registration records its exact source, target descriptor, relation and Engine choice before returning a prepared result. Dropping that result preserves known pending servicing. Only the exact target's normal full admission and matching installed closure may clear that servicing marker; an older release, activation observation alone or an acquisition marker cannot clear it.
 
 ## Qualification boundaries
 
-Shared fixtures and invented byte tests establish parsing, layout admission, independent coordinates and closed producer bindings. They do not establish Windows trust, HTTPS source association, cold transfer, installed Engine-present/absent servicing, deferred registration, real application activation, or inference compatibility. Those require their own installed evidence before rollout. Local debug-context package tests are API evidence only and do not qualify normal application activation or the production updater.
+Shared fixtures and invented byte tests establish parsing, layout admission, independent coordinates and closed producer bindings. They do not establish Windows trust, HTTPS source association, cold transfer, installed Engine-present/absent servicing, deferred registration, real application activation, or inference compatibility. Those require their own installed evidence before rollout. Local debug-context package tests are API evidence only and do not qualify normal application activation or the production updater. Broker lifetime qualification must cover normal Quit, abrupt launcher termination, authenticated reconnect and actual settlement. External Job termination and broker death must preserve unresolved ownership without admitting a replacement owner.
 
 ## References
 
@@ -43,3 +43,7 @@ Shared fixtures and invented byte tests establish parsing, layout admission, ind
 - [Create an AppInstaller file](https://learn.microsoft.com/en-us/windows/msix/app-installer/how-to-create-appinstaller-file).
 - [StagePackageOptions](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.stagepackageoptions).
 - [RegisterPackageOptions](https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.registerpackageoptions).
+
+- [QueryInformationJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject).
+- [Job process lists](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_process_id_list).
+- [Nested Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs).
