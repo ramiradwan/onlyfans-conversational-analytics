@@ -358,3 +358,97 @@ async def test_terminal_initial_read_stops_only_the_idle_original_wait(setup):
     assert result.reason == "operation_expired" and task.cancelled()
     assert not coordinator.owner._work()
     await initial.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("elapsed", [11, 31, 61])
+@pytest.mark.parametrize("browser_outcome", ["waiting", "completed", "refused"])
+async def test_restart_after_initial_sign_in_expiry_offers_browser_retry(setup, elapsed, browser_outcome):
+    coordinator, _, _, operation, scope, clock, _ = await initial_ceremony_case(setup)
+    key = coordinator.store.installation_key_reference()
+    before = coordinator.owner.sources.resolve(scope["source_journey_id"])
+    clock[0] += timedelta(minutes=elapsed)
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    coordinator.start()
+    await coordinator.drain()
+    snapshot = coordinator.read(native)
+    try:
+        assert snapshot["reason"] == "none"
+        assert snapshot["continuation_available"]
+        assert snapshot["next_task"] == "browser-access"
+        assert snapshot["allowed_actions"] == ["browser.access"]
+        retry = command(snapshot, "browser.access")
+        await coordinator.command(native, retry)
+        await coordinator.drain()
+        assert coordinator.read(native)["reason"] == "none"
+        assert coordinator.read(native)["continuation_available"]
+        if elapsed >= 30:
+            with coordinator.store.database.read() as connection:
+                assert connection.execute("SELECT 1 FROM desktop_setup_operations WHERE operation_id=?",
+                    (operation["operation_id"],)).fetchone() is None
+        if browser_outcome == "refused":
+            clock[0] += timedelta(minutes=31)
+            native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+            await coordinator.reconcile(native, retry["operation_id"])
+            await coordinator.drain()
+            assert coordinator.receipt(native, retry["operation_id"])["reason"] == "operation_expired"
+            assert coordinator.read(native)["reason"] == "none"
+            assert coordinator.read(native)["continuation_available"]
+            retry = command(coordinator.read(native), "browser.access")
+            await coordinator.command(native, retry)
+            await coordinator.drain()
+        task = coordinator.owner.browser_tasks.current_native(native)[0]
+        code = coordinator.admissions.reissue_task_entry(native.identifier, generation=native.generation, task_id=task["task_id"])
+        browser = coordinator.admissions.consume(code, role="browser_task")
+        coordinator.owner.browser_tasks.observe(browser, observation(browser))
+        if browser_outcome != "waiting":
+            await coordinator.reconcile(native, retry["operation_id"])
+            await coordinator.drain()
+        ready = coordinator.read(native)
+        assert ready["next_task"] == "account-connection"
+        assert "account.connect" in ready["allowed_actions"]
+        accepted, _ = coordinator._accept(native, command(ready, "account.connect"))
+        selected = json.loads(accepted["owner_scope_json"])
+        assert selected["source_journey_id"] != scope["source_journey_id"]
+        assert selected["creator_account_id"] == scope["creator_account_id"]
+        retained = coordinator.owner.sources.resolve(scope["source_journey_id"])
+        assert retained.state == "expired" and retained.operation_id == before.operation_id
+        assert retained.installation_id == before.installation_id
+        assert coordinator.store.installation_key_reference() == key
+    finally:
+        await coordinator.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["missing", "malformed", "incomplete", "foreign-source", "mismatched-creator", "conflicting-creator"])
+async def test_browser_retry_recovery_refuses_unproven_or_ambiguous_scopes(setup, change):
+    coordinator, _, _, operation, _, clock, _ = await initial_ceremony_case(setup)
+    clock[0] += timedelta(minutes=31)
+    native = coordinator.admissions.consume(coordinator.admissions.prepare_desktop(), role="desktop")
+    result = await coordinator.owner.execute(operation, reconcile=True)
+    coordinator._settle(operation, result)
+    retry, _ = coordinator._accept(native, command(coordinator.read(native), "browser.access"))
+    scope = json.loads(retry["owner_scope_json"])
+    if change == "missing":
+        scope.pop("source_recovery")
+    elif change == "malformed":
+        scope["source_recovery"] = "unavailable"
+    elif change == "incomplete":
+        scope["source_recovery"].pop("classification_generation")
+    elif change == "foreign-source":
+        scope["source_journey_id"] = scope["source_recovery"]["source_journey_id"] = str(uuid4())
+    elif change == "mismatched-creator":
+        scope["source_recovery"]["creator_account_id"] = "another-creator"
+    else:
+        scope["creator_account_id"] = scope["source_recovery"]["creator_account_id"] = "another-creator"
+    # Synthetic historical journal evidence exercises recovery selection without
+    # relaxing production command admission or updating an immutable receipt.
+    with coordinator.store.database.transaction() as connection:
+        connection.execute("INSERT INTO desktop_setup_operations SELECT ?,journey_id,action,request_digest,generation,"
+            "scope_digest,source_revision,?,'completed','none',created_at,expires_at FROM desktop_setup_operations WHERE operation_id=?",
+            (str(uuid4()), json.dumps(scope), retry["operation_id"]))
+        if change != "conflicting-creator":
+            connection.execute("DELETE FROM desktop_setup_operations WHERE operation_id=?", (retry["operation_id"],))
+    view = coordinator.owner.read(retry["journey_id"])
+    assert view.scope["source_recovery"] is None
+    assert view.reason == "authority_unavailable"
