@@ -204,6 +204,26 @@ fn write_frame(h: HANDLE, raw: &[u8]) -> Result<()> {
     }
     Ok(())
 }
+fn await_reply_close(h: HANDLE, end: Instant) -> Result<()> {
+    // DisconnectNamedPipe discards unread replies. The authenticated client
+    // closes its handle after reading the reply; never flush or wait unboundedly.
+    loop {
+        if Instant::now() >= end {
+            return Err("optional_broker_timeout");
+        }
+        let mut available = 0;
+        if unsafe { PeekNamedPipe(h, null_mut(), 0, null_mut(), &mut available, null_mut()) } == 0 {
+            return match unsafe { GetLastError() } {
+                ERROR_BROKEN_PIPE | ERROR_PIPE_NOT_CONNECTED => Ok(()),
+                _ => Err("optional_broker_pipe"),
+            };
+        }
+        if available != 0 {
+            return Err("optional_broker_frame");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
 fn request(
     ctx: &Context,
     j: &Journal,
@@ -782,7 +802,9 @@ pub(super) fn run(args: &[String]) -> Result<()> {
                     &serde_json::to_vec(&j).map_err(|_| "optional_broker_frame")?,
                 )
             };
-            let _ = serve();
+            if serve().is_ok() {
+                let _ = await_reply_close(pipe.0, Instant::now() + Duration::from_secs(3));
+            }
             unsafe {
                 DisconnectNamedPipe(pipe.0);
             }
@@ -880,6 +902,85 @@ pub(super) fn admitted_servicing() -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn pipe_pair() -> (Handle, Handle) {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let name = exclusion::wide(OsStr::new(&format!(
+            r"\\.\pipe\OFCA.BrokerReply.Test.{}.{}",
+            unsafe { GetCurrentProcessId() },
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        )));
+        let server = Handle::new(unsafe {
+            CreateNamedPipeW(
+                name.as_ptr(),
+                PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                1,
+                8192,
+                8192,
+                0,
+                null(),
+            )
+        })
+        .unwrap();
+        let client = Handle::new(unsafe {
+            CreateFileW(
+                name.as_ptr(),
+                GENERIC_READ | GENERIC_WRITE,
+                0,
+                null(),
+                OPEN_EXISTING,
+                0,
+                null_mut(),
+            )
+        })
+        .unwrap();
+        assert!(
+            unsafe { ConnectNamedPipe(server.0, null_mut()) } != 0
+                || unsafe { GetLastError() } == ERROR_PIPE_CONNECTED
+        );
+        (server, client)
+    }
+    #[test]
+    fn disconnect_before_delayed_read_discards_broker_reply() {
+        let (server, client) = pipe_pair();
+        write_frame(server.0, b"bounded-reply").unwrap();
+        assert_ne!(unsafe { DisconnectNamedPipe(server.0) }, 0);
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(read_frame(client.0, Instant::now() + Duration::from_millis(100)).is_err());
+    }
+    #[test]
+    fn bounded_reply_close_preserves_delayed_read_without_new_frames() {
+        let (server, client) = pipe_pair();
+        write_frame(server.0, b"bounded-reply").unwrap();
+        let waiting = std::thread::spawn(move || {
+            let server = server;
+            await_reply_close(server.0, Instant::now() + Duration::from_secs(1)).unwrap();
+            assert_ne!(unsafe { DisconnectNamedPipe(server.0) }, 0);
+        });
+        std::thread::sleep(Duration::from_millis(30));
+        assert_eq!(
+            read_frame(client.0, Instant::now() + Duration::from_secs(1)).unwrap(),
+            b"bounded-reply"
+        );
+        drop(client);
+        waiting.join().unwrap();
+    }
+    #[test]
+    fn reply_wait_is_bounded_for_unresponsive_or_extra_input_client() {
+        let (server, client) = pipe_pair();
+        write_frame(server.0, b"bounded-reply").unwrap();
+        let started = Instant::now();
+        assert_eq!(
+            await_reply_close(server.0, started + Duration::from_millis(30)),
+            Err("optional_broker_timeout")
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
+        write_frame(client.0, b"unexpected-second-request").unwrap();
+        assert_eq!(
+            await_reply_close(server.0, Instant::now() + Duration::from_secs(1)),
+            Err("optional_broker_frame")
+        );
+    }
     fn list(assigned: u32, pids: &[usize]) -> Vec<u8> {
         let mut raw = assigned.to_ne_bytes().to_vec();
         raw.extend_from_slice(&(pids.len() as u32).to_ne_bytes());
