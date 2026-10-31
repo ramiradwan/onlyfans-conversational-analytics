@@ -373,12 +373,12 @@ pub(super) fn start(
         InitializeProcThreadAttributeList(null_mut(), 1, 0, &mut bytes);
     }
     if bytes == 0 || bytes > 65536 {
-        return Err("optional_broker_launch");
+        return Err("optional_broker_attribute_size");
     }
     let mut storage = vec![0usize; bytes.div_ceil(size_of::<usize>())];
     let attrs = storage.as_mut_ptr().cast();
     if unsafe { InitializeProcThreadAttributeList(attrs, 1, 0, &mut bytes) } == 0 {
-        return Err("optional_broker_launch");
+        return Err("optional_broker_attribute_init");
     }
     struct Attr(*mut std::ffi::c_void);
     impl Drop for Attr {
@@ -401,11 +401,11 @@ pub(super) fn start(
         )
     } == 0
     {
-        return Err("optional_broker_launch");
+        return Err("optional_broker_handle_attribute");
     }
     let mut in_job = 0;
     if unsafe { IsProcessInJob(GetCurrentProcess(), null_mut(), &mut in_job) } == 0 {
-        return Err("optional_broker_launch");
+        return Err("optional_broker_parent_job_query");
     }
     let flags = CREATE_NO_WINDOW
         | EXTENDED_STARTUPINFO_PRESENT
@@ -438,7 +438,14 @@ pub(super) fn start(
         )
     } == 0
     {
-        return Err("optional_broker_launch");
+        let error = unsafe { GetLastError() };
+        return Err(match error {
+            ERROR_ACCESS_DENIED => "optional_broker_create_access_denied",
+            ERROR_INVALID_PARAMETER => "optional_broker_create_invalid_parameter",
+            ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND => "optional_broker_create_not_found",
+            ERROR_ELEVATION_REQUIRED => "optional_broker_create_elevation_required",
+            _ => "optional_broker_create_failed",
+        });
     }
     let mut child = BootstrapChild {
         process: Handle::new(process.hProcess)?,
@@ -447,13 +454,20 @@ pub(super) fn start(
     };
     let peer = observe_peer(child.process.0, process.dwProcessId)?;
     let mut member = 0;
-    if unsafe { IsProcessInJob(child.process.0, null_mut(), &mut member) } == 0
-        || member != 0
-        || peer.image != ctx.peer.image
-        || peer.package != ctx.peer.package
-        || peer.logon != ctx.peer.logon
-    {
-        return Err("optional_broker_launch");
+    if unsafe { IsProcessInJob(child.process.0, null_mut(), &mut member) } == 0 {
+        return Err("optional_broker_child_job_query");
+    }
+    if member != 0 {
+        return Err("optional_broker_child_in_job");
+    }
+    if peer.image != ctx.peer.image {
+        return Err("optional_broker_child_image");
+    }
+    if peer.package != ctx.peer.package {
+        return Err("optional_broker_child_package");
+    }
+    if peer.logon != ctx.peer.logon {
+        return Err("optional_broker_child_logon");
     }
     let j = Journal {
         schema: "optional-engine-reconnect.v3".into(),
