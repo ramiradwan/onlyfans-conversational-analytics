@@ -64,7 +64,10 @@ def bundles(tmp_path, selected, *, engine_namespace="http://schemas.microsoft.co
                 FileName=optional.engine_application_filename(relation.package_version))
         return ET.tostring(root)
     manifest = optional.optional_manifest(SimpleNamespace(**vars(relation)),minimum_os="10.0.26100.0",tested_os="10.0.26340.0")
-    engine_app = zipped({"AppxManifest.xml":manifest,optional.WORKER_PATH:b"invented worker bytes"})
+    worker_metadata = dict(schema="nlp-engine-release.v1", artifacts=[], adapters=[], engine=dict(
+        vars(relation), related_set_id=selected["servicing"]["installed_artifact"]["related_set_id"]))
+    engine_app = zipped({"AppxManifest.xml":manifest, optional.WORKER_PATH:b"invented worker bytes",
+                         "worker/worker-release.json":msix.canonical_json(worker_metadata)})
     core, engine = tmp_path/"core.msixbundle",tmp_path/"engine.msixbundle"
     core.write_bytes(zipped({"AppxMetadata/AppxBundleManifest.xml":metadata(False),
         optional.artifact_filename("main_package",relation.core_package_version):b"invented core application"}))
@@ -393,3 +396,48 @@ Write-Output ('PASS '+$v.cases.Count)
         str(ROOT/"packaging/verify-msix.ps1"),str(evidence)],capture_output=True,text=True,timeout=30)
     assert result.returncode==0,result.stdout+result.stderr
     assert f"PASS {len(cases)}" in result.stdout
+
+
+@pytest.mark.parametrize("mutation", ["core_package_version", "core_package_name", "package_name", "package_family",
+    "publisher", "package_version", "related_set_id", "schema", "missing", "duplicate_entry", "alias",
+    "duplicate_json", "malformed", "oversized"])
+def test_engine_bundle_refuses_stale_or_ambiguous_worker_metadata(tmp_path, mutation):
+    selected = profile()
+    _, engine = bundles(tmp_path, selected)
+    with zipfile.ZipFile(engine) as outer:
+        entries = {name:outer.read(name) for name in outer.namelist()}
+    application = optional.engine_application_filename(selected["servicing"]["installed_artifact"]["engine"]["package_version"])
+    with zipfile.ZipFile(io.BytesIO(entries[application])) as inner:
+        payload = {name:inner.read(name) for name in inner.namelist()}
+    name = "worker/worker-release.json"
+    document = json.loads(payload[name])
+    if mutation in document["engine"]:
+        document["engine"][mutation] = "1.0.3.0" if mutation == "core_package_version" else "Different"
+        payload[name] = msix.canonical_json(document)
+    elif mutation == "schema":
+        document["schema"] = "nlp-engine-release.v2"
+        payload[name] = msix.canonical_json(document)
+    elif mutation == "missing": del payload[name]
+    elif mutation == "alias": payload["worker/Worker-Release.json"] = payload[name]
+    elif mutation == "duplicate_json": payload[name] = b'{"schema":"nlp-engine-release.v1","engine":{},"engine":{}}'
+    elif mutation == "malformed": payload[name] = b'{'
+    elif mutation == "oversized": payload[name] = b' ' * (1_048_576 + 1)
+    entries[application] = zipped(payload)
+    if mutation == "duplicate_entry":
+        result = io.BytesIO(entries[application])
+        with pytest.warns(UserWarning, match="Duplicate name"):
+            with zipfile.ZipFile(result, "a") as archive: archive.writestr(name, payload[name])
+        entries[application] = result.getvalue()
+    engine.write_bytes(zipped(entries))
+    with pytest.raises(ValueError, match="Engine worker metadata"):
+        optional.verify_engine_bundle(engine, selected)
+
+
+def test_engine_bundle_worker_metadata_matches_selected_core_and_engine(tmp_path):
+    selected = profile()
+    _, engine = bundles(tmp_path, selected)
+    optional.verify_engine_bundle(engine, selected)
+    advanced = copy.deepcopy(selected)
+    advanced["release_sequence"] += 1
+    with pytest.raises(ValueError, match="Engine worker metadata differs"):
+        optional.verify_engine_bundle(engine, advanced)

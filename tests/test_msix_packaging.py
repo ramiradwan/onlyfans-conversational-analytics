@@ -837,6 +837,9 @@ def test_real_sdk_wrapper_preserves_related_bundle_release_version(stage, tmp_pa
     engine_stage = tmp_path / "engine-payload"
     (engine_stage / "worker").mkdir(parents=True)
     shutil.copyfile(executable, engine_stage / optional.WORKER_PATH)
+    (engine_stage / "worker/worker-release.json").write_bytes(msix.canonical_json(dict(
+        schema="nlp-engine-release.v1", artifacts=[], adapters=[], engine=dict(vars(relation),
+            related_set_id=selected["servicing"]["installed_artifact"]["related_set_id"]))))
     shutil.copytree(msix.CONFIG_ROOT / "Assets", engine_stage / "Assets")
     (engine_stage / "AppxManifest.xml").write_bytes(optional.optional_manifest(
         relation, minimum_os="10.0.26100.0", tested_os="10.0.26340.0"))
