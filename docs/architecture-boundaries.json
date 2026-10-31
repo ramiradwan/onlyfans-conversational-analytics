@@ -63,7 +63,8 @@
         "tools/packaged-signing-rule/**",
         "tools/legal-release-bindings/**",
         "tools/packaging_policy.py",
-        "tools/msix_packaging.py"
+        "tools/msix_packaging.py",
+        "tools/optional_engine_packaging.py"
       ],
       "role": "Windows packaging scripts, installer definitions, PyInstaller spec, runtime file closure manifests, and release signing verification tools.",
       "authority": "authoritative",
