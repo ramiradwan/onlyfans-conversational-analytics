@@ -861,10 +861,12 @@
     {
       "id": "nlp-dependency-lifecycle",
       "path_patterns": [
+        "app/nlp/preparation.py",
         "app/services/nlp_dependencies.py",
-        "app/services/nlp_distribution.py"
+        "app/services/nlp_distribution.py",
+        "app/services/nlp_setup.py"
       ],
-      "role": "Explicit authenticated profile acquisition, durable withdrawal and account selection coordination; availability grants no release approval.",
+      "role": "Release-bound preparation, explicit authenticated profile acquisition, durable withdrawal and account selection coordination; availability grants no analysis authority.",
       "authority": "authoritative",
       "zone": "red",
       "protected_invariants": [

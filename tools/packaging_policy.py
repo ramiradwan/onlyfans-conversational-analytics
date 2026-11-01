@@ -99,6 +99,9 @@ def verify_runtime_files(
         return tuple(findings)
 
     _check_required_paths(root, effective_policy, findings)
+    if target != "msix" and any(path.name.casefold() == "nlp-preparation-release.json" for path in root.iterdir()):
+        findings.append(PackagingFinding("nlp_preparation_forbidden", "nlp-preparation-release.json",
+            "preparation inputs require explicit qualification MSIX generation"))
     _check_forbidden_paths(root, effective_policy, findings)
     _check_forbidden_material(root, effective_policy, findings)
     _check_sql_catalogs(root, effective_policy, findings)

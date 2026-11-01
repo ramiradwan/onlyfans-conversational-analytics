@@ -46,6 +46,8 @@ INSTALLER_FILES = {
 FOOTPRINT_FILES = {"AppxBlockMap.xml", "[Content_Types].xml", "AppxSignature.p7x", "AppxMetadata/CodeIntegrity.cat"}
 QUALIFICATION_NAME_PREFIX = "OFCA.Qualification."
 QUALIFICATION_PUBLISHER_PREFIX = "CN=OFCA MSIX Qualification"
+NLP_PREPARATION_PATH = "app/nlp-preparation-release.json"
+NLP_PREPARATION_MAXIMUM = 65536
 
 
 def canonical_json(document: object) -> bytes:
@@ -251,8 +253,34 @@ def _validate_assets() -> None:
             raise ValueError("MSIX logo is missing or has the wrong dimensions")
 
 
+def validate_nlp_preparation(raw: bytes, desktop_raw: bytes, profile: dict) -> None:
+    """Validate optional preparation inputs against the final package descriptor."""
+    from app.core.desktop_release import PackageIdentity, parse_desktop_release
+    from app.nlp.preparation import parse_preparation_release
+
+    if (profile["purpose"] != "qualification" or profile["distribution"] != "direct-appinstaller"
+            or profile["schema"] != "ofca-msix-package-profile/v2"
+            or profile["servicing"]["installed_artifact"]["kind"] != "related_bundle"):
+        raise ValueError("NLP preparation requires a qualification related package")
+    engine = profile["servicing"]["installed_artifact"]["engine"]["identity"]
+    identity = PackageIdentity(profile["identity"]["name"], profile["identity"]["publisher"],
+        package_version(profile["release_sequence"]), "x64",
+        profile["identity"]["name"] + "_" + engine["family"].rsplit("_", 1)[1])
+    release = parse_desktop_release(desktop_raw, identity)
+    parse_preparation_release(raw, desktop_raw, release)
+
+
+def _read_nlp_preparation(path: Path) -> bytes:
+    with path.open('rb') as stream:
+        raw = stream.read(NLP_PREPARATION_MAXIMUM + 1)
+    if not 0 < len(raw) <= NLP_PREPARATION_MAXIMUM:
+        raise ValueError("NLP preparation input exceeds its bound")
+    return raw
+
+
 def prepare_payload(stage: Path, working: Path, profile_path: Path, *,
-                    engine_quote_inputs: Path | None = None, engine_bundle: Path | None = None) -> dict:
+                    engine_quote_inputs: Path | None = None, engine_bundle: Path | None = None,
+                    nlp_preparation_release: Path | None = None) -> dict:
     profile = load_profile(profile_path)
     # Qualification is first: adapters cannot turn a deficient stage into a pass.
     paths = installed_runtime_files(stage, "msix")
@@ -262,6 +290,10 @@ def prepare_payload(stage: Path, working: Path, profile_path: Path, *,
         raise ValueError("desktop profile disagrees with the qualified runtime version or architecture")
     _validate_assets()
     descriptor_bytes = canonical_json(desktop_descriptor(profile, sha256(profile_path)))
+    preparation_bytes = None
+    if nlp_preparation_release is not None:
+        preparation_bytes = _read_nlp_preparation(nlp_preparation_release)
+        validate_nlp_preparation(preparation_bytes, descriptor_bytes, profile)
     quote_bytes = None
     if engine_quote_inputs is not None:
         from tools import optional_msix as optional
@@ -301,6 +333,8 @@ def prepare_payload(stage: Path, working: Path, profile_path: Path, *,
     shutil.copytree(CONFIG_ROOT / "Assets", payload / "Assets")
     shutil.copytree(CONFIG_ROOT / "MSIX.AppInstaller.Data", payload / "MSIX.AppInstaller.Data")
     (app / "desktop-release.json").write_bytes(descriptor_bytes)
+    if preparation_bytes is not None:
+        (payload / NLP_PREPARATION_PATH).write_bytes(preparation_bytes)
     if quote_bytes is not None:
         (app / "engine-acquisition-quote.json").write_bytes(quote_bytes)
     agent = read_json(stage / "Agent/build-meta.json")
@@ -313,6 +347,9 @@ def prepare_payload(stage: Path, working: Path, profile_path: Path, *,
         receipt["engine_acquisition_quote"] = dict(inputs=str(engine_quote_inputs.resolve()),
             inputs_sha256=sha256(engine_quote_inputs), engine_bundle=str(engine_bundle.resolve()),
             quote_sha256=hashlib.sha256(quote_bytes).hexdigest())
+    if preparation_bytes is not None:
+        receipt["nlp_preparation"] = dict(inputs=str(nlp_preparation_release.resolve()),
+            sha256=hashlib.sha256(preparation_bytes).hexdigest())
     (working / "preparation.json").write_bytes(canonical_json(receipt))
     return {"payload": str(payload), "package_version": package_version(profile["release_sequence"]),
             "package_name": profile["identity"]["name"]}
@@ -333,6 +370,15 @@ def seal_payload(working: Path, profile_path: Path, makeappx: Path) -> dict:
             raise ValueError("runtime changed after stage qualification")
     expected = {"app/" + record["path"] for record in receipt["source_runtime_files"]}
     expected.update({"app/desktop-release.json", "app/sha256sums.txt", "AppxManifest.xml"})
+    preparation = receipt.get("nlp_preparation")
+    if preparation is not None:
+        path = payload / NLP_PREPARATION_PATH
+        raw = _read_nlp_preparation(path)
+        if (hashlib.sha256(raw).hexdigest() != preparation["sha256"]
+                or _read_nlp_preparation(Path(preparation["inputs"])) != raw):
+            raise ValueError("NLP preparation input changed after preparation")
+        validate_nlp_preparation(raw, (app / "desktop-release.json").read_bytes(), profile)
+        expected.add(NLP_PREPARATION_PATH)
     quote_preparation = receipt.get("engine_acquisition_quote")
     if quote_preparation is not None:
         from tools import optional_msix as optional
@@ -442,6 +488,9 @@ def verify_archive(package: Path, inventory_path: Path, profile_path: Path, *, p
         if (len(members) > 50004 or len(set(name.casefold() for name in names)) != len(names)
                 or any(not _safe_archive_path(name) for name in names)):
             raise ValueError("package archive contains aliases, unsafe paths or excessive entries")
+        if any(name.casefold() == NLP_PREPARATION_PATH and member.filename != NLP_PREPARATION_PATH
+               for name, member in zip(names, members)):
+            raise ValueError("NLP preparation path differs from its fixed location")
         if set(names) - FOOTPRINT_FILES != set(expected):
             raise ValueError("package has extra or missing installed files")
         if not {"AppxBlockMap.xml", "[Content_Types].xml"} <= set(names):
@@ -466,6 +515,14 @@ def verify_archive(package: Path, inventory_path: Path, profile_path: Path, *, p
             raise ValueError("package manifest differs from the expected identity and policy")
         if archive.read("app/desktop-release.json") != canonical_json(desktop_descriptor(profile, sha256(profile_path))):
             raise ValueError("package desktop descriptor disagrees with its profile")
+        preparation_members = [name for name in expected if name.casefold() == NLP_PREPARATION_PATH]
+        if preparation_members:
+            if preparation_members != [NLP_PREPARATION_PATH]:
+                raise ValueError("NLP preparation path differs from its fixed location")
+            member = by_installed_path[NLP_PREPARATION_PATH]
+            if not 0 < member.file_size <= NLP_PREPARATION_MAXIMUM:
+                raise ValueError("NLP preparation input exceeds its bound")
+            validate_nlp_preparation(archive.read(member), archive.read("app/desktop-release.json"), profile)
         if expected_schema.endswith("/v2") and (
                 inventory.get("installed_artifact") != profile["servicing"]["installed_artifact"]
                 or inventory.get("desktop_descriptor_sha256") != hashlib.sha256(archive.read("app/desktop-release.json")).hexdigest()):
@@ -538,6 +595,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--engine-bundle", type=Path)
     parser.add_argument("--engine-acquisition-quote-inputs", type=Path)
+    parser.add_argument("--nlp-preparation-release", type=Path)
     parser.add_argument("--artifact-set", type=Path)
     options = parser.parse_args()
     try:
@@ -579,7 +637,8 @@ def main() -> int:
             if options.stage is None or options.working is None:
                 raise ValueError("prepare requires stage and working directories")
             result = prepare_payload(options.stage, options.working, options.profile,
-                engine_quote_inputs=options.engine_acquisition_quote_inputs, engine_bundle=options.engine_bundle)
+                engine_quote_inputs=options.engine_acquisition_quote_inputs, engine_bundle=options.engine_bundle,
+                nlp_preparation_release=options.nlp_preparation_release)
         elif options.operation == "seal":
             if options.working is None or options.makeappx is None:
                 raise ValueError("seal requires working directory and MakeAppx")

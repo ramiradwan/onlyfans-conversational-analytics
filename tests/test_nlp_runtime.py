@@ -370,7 +370,7 @@ def test_preparation_cancellation_never_publishes_readiness(tmp_path, monkeypatc
     if kind == 'before_access':
         monkeypatch.setattr(e.artifacts, 'reopen', lambda *a, **k: pytest.fail('artifact access after cancellation'))
     else:
-        def prepared(profile, available, check):
+        def prepared(profile, available, check, *, deadline):
             trigger[0] = True
             if kind == 'once':
                 with pytest.raises(ValueError, match='nlp_cancelled'):
@@ -462,7 +462,7 @@ async def test_inventory_and_preparation_final_check_use_consistent_lock_order(t
                     assert resume.wait(3)
             return original_ready(profile)
         monkeypatch.setattr(e.service, 'ready', ready)
-        def prepared(profile, available, check):
+        def prepared(profile, available, check, *, deadline):
             preparing.set()
             assert inventory.wait(3)
             final.set()

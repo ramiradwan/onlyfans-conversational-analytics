@@ -42,25 +42,50 @@ class NativeHostLauncher:
         with self._lock:
             return not self._stopping and self._observed == identity
 
-    def observe(self, identity, *, timeout=20, check=lambda: None):
+    def observe(self, identity, *, timeout=20, deadline=None, check=lambda: None):
         """Inspect signed installed code without creating an inference worker."""
+        deadline = self.monotonic() + timeout if deadline is None else min(deadline, self.monotonic() + timeout)
+
+        def admitted():
+            check()
+            if self.monotonic() >= deadline:
+                raise NlpBoundaryError('nlp_deadline')
+            with self._lock:
+                if self._stopping:
+                    raise NlpBoundaryError('nlp_host_unavailable')
+
+        with self._lock:
+            self._observed = None
         nonce = uuid4().hex
-        owner = self._spawn(nonce, (), check)
-        deadline = self.monotonic() + timeout
+        owner = None
         try:
-            owner.send(HostObservation(channel_nonce=nonce, engine=identity), deadline, check)
-            owner.wait_for('ready', deadline, check)
+            admitted()
+            owner = self._spawn(nonce, (), admitted)
+            admitted()
+            owner.send(HostObservation(channel_nonce=nonce, engine=identity), deadline, admitted)
+            owner.wait_for('ready', deadline, admitted)
+            admitted()
             if not owner.close(max(0, deadline - self.monotonic())) or not owner.graceful:
                 raise NlpBoundaryError('nlp_host_unavailable')
+            admitted()
             with self._lock:
                 if self._stopping:
                     raise NlpBoundaryError('nlp_host_unavailable')
                 self._observed = identity
         except BaseException:
-            owner.abort(max(0, deadline - self.monotonic()))
             with self._lock:
                 self._observed = None
+            if owner is None:
+                raise
+            self._abort(owner, max(0, deadline - self.monotonic()))
             raise OwnedLaunchError(owner) from None
+
+    @staticmethod
+    def _abort(owner, timeout):
+        try:
+            return owner.abort(timeout) is True
+        except BaseException:
+            return False
 
     def open(self, profile, files, nonce, check, *, deadline):
         if not self.current(profile.components[0].engine):
@@ -160,7 +185,7 @@ class NativeHostLauncher:
                     self._finished(owner)
                     owned.close()
                 else:
-                    if not owner.abort(5):
+                    if not self._abort(owner, 5):
                         raise OwnedLaunchError(owner) from None
                 raise
             children.close()
@@ -182,10 +207,11 @@ class NativeHostLauncher:
             self._stopping = True
             self._observed = None
             owners = tuple(self._owners)
+        drained = True
         for owner in owners:
-            owner.abort(max(0, deadline - self.monotonic()))
+            drained = self._abort(owner, max(0, deadline - self.monotonic())) and drained
         with self._lock:
-            return not self._owners
+            return drained and not self._owners
 
 
 class _HostOwner:

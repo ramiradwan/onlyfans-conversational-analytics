@@ -4,6 +4,9 @@ from __future__ import annotations
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import threading
+import asyncio
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from app.analytics.errors import ProjectionStorageUnavailable
 from app.analytics.nlp_findings_store import FindingsStore
@@ -86,6 +89,11 @@ class _BoundGraph:
 
 
 @dataclass(frozen=True)
+class DependencyConfiguration:
+    factory: object
+
+
+@dataclass(frozen=True)
 class DependencyBinding:
     store: object
     projections: object
@@ -100,6 +108,71 @@ class DependencyRuntime:
         self._lock = threading.RLock()
         self._store = self._service = self._binding = None
         self._failed = False
+        self._task = None
+        self._executor = self._future = self._closing_future = None
+        self._stopping = False
+        self.failure = None
+        self._drained = False
+
+    def start(self):
+        if self._task is None and not self._stopping:
+            self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='nlp-dependency-binding')
+            self._task = asyncio.create_task(self._run(), name='nlp-dependency-binding')
+
+    async def _run(self):
+        while not self._stopping:
+            try:
+                self._future = self._executor.submit(self.bind)
+                await asyncio.shield(asyncio.wrap_future(self._future))
+            except Exception:
+                self.failure = 'nlp_dependency_unavailable'
+            if not self._stopping:
+                await asyncio.sleep(.25)
+
+    def abort(self):
+        if self._drained:
+            return True
+        self._stopping = True
+        if self._task is not None and not self._task.done():
+            return False
+        if self._future is not None and not self._future.done():
+            return False
+        if self._closing_future is not None and not self._closing_future.done():
+            return False
+        drained = self.close(0)
+        if drained:
+            if self._executor is not None:
+                self._executor.shutdown(wait=True)
+            self._drained = True
+        return drained
+
+    async def shutdown(self, timeout):
+        if self._drained:
+            return True
+        self._stopping = True
+        deadline = time.monotonic() + max(0, timeout)
+        try:
+            if self._task is not None:
+                try:
+                    await asyncio.wait_for(asyncio.shield(self._task), max(0, deadline-time.monotonic()))
+                except asyncio.CancelledError:
+                    if not self._task.cancelled() or asyncio.current_task().cancelling():
+                        raise
+            if self._future is not None and not self._future.done():
+                await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(self._future)),
+                                       max(0, deadline-time.monotonic()))
+            if self._executor is None:
+                return self.close(0)
+            if self._closing_future is None or self._closing_future.done():
+                self._closing_future = self._executor.submit(self.close, max(0, deadline-time.monotonic()))
+            drained = await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(self._closing_future)),
+                                            max(0, deadline-time.monotonic()))
+            if drained:
+                self._executor.shutdown(wait=True)
+                self._drained = True
+            return drained
+        except TimeoutError:
+            return False
 
     @property
     def store(self):
@@ -115,12 +188,21 @@ class DependencyRuntime:
 
     def bind(self, *, before_start=None, before_clear=None):
         with self._lock:
-            with self.projections.lifecycle_store() as store:
-                if store is None:
-                    return None
+            if self._stopping:
+                return None
+            try:
+                with self.projections.lifecycle_store() as current:
+                    store = current
+            except ProjectionStorageUnavailable:
+                store = None
+            if store is None:
+                self.close(0, before_clear=before_clear)
+                return None
             if store is self._store:
                 return None if self._failed else self._binding
             if not self.close(0, before_clear=before_clear):
+                return None
+            if self._stopping:
                 return None
             if dependency_service() is not None:
                 raise ValueError('findings_dependency_owner_conflict')
@@ -130,6 +212,8 @@ class DependencyRuntime:
             service = self.factory(self.source, findings)
             self._service = service
             self._binding = DependencyBinding(store, bound, findings, service)
+            if self._stopping:
+                return None
             if service.source is not self.source or service.findings is not findings:
                 raise ValueError('findings_dependency_binding_invalid')
             bound.database.gate = service.gate

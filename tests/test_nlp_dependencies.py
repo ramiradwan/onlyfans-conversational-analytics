@@ -43,9 +43,20 @@ class Engine:
     def __init__(self):
         self.present, self.prepares, self.before_prepare = True, 0, None
         self.events = []
+        self.observations = []
+        self.before_observe = None
 
     def current(self, engine):
         return self.present
+
+    def observe(self, profile, check, *, deadline):
+        check()
+        self.observations.append(profile.identity_digest())
+        if self.before_observe:
+            self.before_observe()
+        check()
+        if not self.present:
+            raise ValueError('nlp_engine_unavailable')
 
     @contextmanager
     def open(self, profile, available, check, *, deadline=None):
@@ -359,6 +370,166 @@ def test_unapproved_profile_never_loads_or_downloads_data(env):
     with pytest.raises(ValueError):
         e.acquire()
     assert e.engine.prepares == 0 and not any(p.startswith('data/') for p in e.requests)
+
+
+def test_observation_is_explicit_and_precedes_data_with_no_authority_lock(env):
+    e = env
+    assert e.engine.observations == []
+    e.service.status()
+    plan = e.service.plan(e.profile.profile_id, e.profile.revision)
+    assert e.engine.observations == []
+    def inspect():
+        assert not e.service.spool.exists() and not any(path.startswith('data/') for path in e.requests)
+        entered = threading.Event()
+        def authority():
+            with e.service.gate:
+                entered.set()
+        thread = threading.Thread(target=authority)
+        thread.start()
+        assert entered.wait(1), 'Observation holds the authority gate'
+        thread.join(1)
+    e.engine.before_observe = inspect
+    op = e.service.acquire(e.profile.profile_id, e.profile.revision, plan_id=plan['operation_id'])
+    e.service.thread.join(10)
+    assert e.service._operation(op)['state'] == 'complete'
+    assert e.engine.observations == [e.profile.identity_digest()]
+    e.engine.before_observe = None
+    original = e.artifacts.reopen
+    def reopen(*args, **kwargs):
+        assert len(e.engine.observations) == 2
+        return original(*args, **kwargs)
+    e.artifacts.reopen = reopen
+    e.service.prepare_installed(e.profile.identity_digest())
+    assert e.service.ready(e.profile)
+
+
+@pytest.mark.parametrize('change', ['approval', 'withdrawal', 'identity'])
+def test_observation_rechecks_admission_before_model_or_spool_access(env, change):
+    e = env
+    def changed():
+        if change == 'approval': e.approved.clear()
+        elif change == 'withdrawal': e.service.learn(e.catalog(sequence=2, withdrawals=[e.profile.identity_digest()]))
+        else: e.engine.present = False
+    e.engine.before_observe = changed
+    op = e.acquire()
+    assert e.service._operation(op)['state'] == 'interrupted'
+    assert len(e.engine.observations) == 1 and not e.service.spool.exists()
+    assert not any(path.startswith('data/') for path in e.requests) and not e.engine.prepares
+
+
+def test_default_frozen_setup_refuses_before_observation_and_data(env, monkeypatch):
+    import sys
+    e = env
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    op = e.acquire()
+    assert e.service._operation(op)['state'] == 'interrupted'
+    assert not e.engine.observations and not e.service.spool.exists()
+    assert not any(path.startswith('data/') for path in e.requests)
+
+
+def test_offline_installed_prepare_keeps_expired_catalogue_but_new_acquisition_refuses(env):
+    e = env
+    e.acquire()
+    e.clock.now = 2001
+    before = list(e.requests)
+    def no_http(*args, **kwargs):
+        pytest.fail('Offline preparation requested HTTP')
+    e.distribution.read = no_http
+    e.distribution.stream_artifact = no_http
+    e.service.prepare_installed(e.profile.identity_digest())
+    assert len(e.engine.observations) == 2 and e.service.ready(e.profile)
+    with pytest.raises(ValueError, match='nlp_metadata_expired'):
+        e.service.acquire(e.profile.profile_id, e.profile.revision, plan_id=e.last_plan)
+    assert len(e.engine.observations) == 2 and e.requests == before
+
+
+@pytest.mark.parametrize('overrun', ['last_unload', 'drain', 'final_admission'])
+def test_installed_preparation_cannot_succeed_after_final_unload_or_drain_deadline(env, overrun):
+    e = env
+    e.acquire()
+    clock = SimpleNamespace(now=0)
+    e.service.monotonic = lambda: clock.now
+    original = e.engine.open
+    deadlines = []
+    admit = e.service._admit
+    def final_admission(*args, **kwargs):
+        result = admit(*args, **kwargs)
+        if deadlines and overrun == 'final_admission': clock.now = 121
+        return result
+    e.service._admit = final_admission
+    @contextmanager
+    def open_session(profile, available, check, *, deadline=None):
+        with original(profile, available, check, deadline=deadline) as session:
+            unload = session.unload
+            def final_unload(request, *, deadline=None):
+                deadlines.append(deadline)
+                if overrun == 'last_unload': clock.now = 121
+                return unload(request, deadline=deadline)
+            session.unload = final_unload
+            yield session
+        if overrun == 'drain': clock.now = 121
+    e.engine.open = open_session
+    with pytest.raises(ValueError, match='nlp_deadline'):
+        e.service.prepare_installed(e.profile.identity_digest())
+    assert deadlines == [5] and not e.service.ready(e.profile)
+    assert e.profile.identity_digest() not in e.service.available
+
+
+def preparation_service(e):
+    from app.nlp.engine_provider import ProcessEngineProvider
+    from app.nlp.preparation import PreparationAdmission
+    from tests.test_nlp_child_transport import Launcher
+    assert e.service.close()
+    admission = PreparationAdmission(engine=e.profile.components[0].engine,
+        profiles=(e.profile.identity_digest(),), distribution_base_url='https://example.invalid/nlp/',
+        minimum_free_bytes=512*1024*1024, _keys_json=canonical(keys()), _policy_json=canonical(e.policy))
+    launcher = Launcher(e.profile)
+    e.engine = ProcessEngineProvider(launcher, resource_policy=e.policy, preparation_only=True)
+    e.service = DependencyService(e.persistence, e.artifacts, e.findings, e.fixture.source,
+        e.distribution, keys=keys(), approvals=admission.approves, engine_provider=e.engine,
+        resource_policy=e.policy, spool_root=e.root/'spool', clock=lambda:e.clock.now,
+        owners=e.owners, preparation_admission=admission)
+    e.service.start()
+    return launcher
+
+
+def test_preparation_only_frozen_setup_prepares_without_analysis_or_selection(tmp_path, monkeypatch):
+    import sys
+    e = Environment(tmp_path, 'split')
+    launcher = preparation_service(e)
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    try:
+        op = e.acquire()
+        assert e.service._operation(op)['state'] == 'complete' and e.service.ready(e.profile)
+        assert launcher.owners and all('analyze' not in owner.operations for owner in launcher.owners)
+        assert launcher.owners[0].operations.count('prepare') == 2
+        assert launcher.owners[0].operations.count('unload') == 2
+    finally:
+        assert e.service.close()
+        for owner in launcher.owners: owner.stdout.close()
+        cleanup(e.fixture)
+
+
+@pytest.mark.parametrize('operation', ['select', 'rollback', 'enable', 'publication', 'retain', 'replay'])
+def test_preparation_only_service_cannot_publish_or_select_execution(env, operation):
+    e = env
+    launcher = preparation_service(e)
+    try:
+        if operation == 'replay':
+            op = {'id':'f'*32, 'kind':'select', 'state':'pending'}
+            e.service._finish_selection(op)
+            assert op['state'] == 'refused'
+        else:
+            with pytest.raises(ValueError, match='nlp_preparation_only'):
+                if operation in ('select', 'rollback'):
+                    e.service.select(ACCOUNT, e.profile.profile_id, e.profile.revision, rollback=operation=='rollback')
+                elif operation == 'enable': e.service.account_mode(ACCOUNT, 'enabled')
+                else:
+                    with getattr(e.service, operation)(e.profile):
+                        pytest.fail('Execution scope admitted')
+        assert not launcher.owners
+    finally:
+        assert e.service.close()
 
 
 def test_withdrawal_during_prepare_retains_no_ready_profile(env):

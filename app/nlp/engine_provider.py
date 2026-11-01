@@ -17,12 +17,14 @@ from app.nlp.retained_artifacts import retain_data
 class ProcessEngineProvider:
     """Launchers supply observed installed identity and exact child-tree joins."""
 
-    def __init__(self, launcher, *, resource_policy, monotonic=time.monotonic):
-        if type(resource_policy) is not ResourcePolicy:
+    def __init__(self, launcher, *, resource_policy, preparation_only=False, monotonic=time.monotonic):
+        if type(resource_policy) is not ResourcePolicy or type(preparation_only) is not bool:
             raise NlpBoundaryError('nlp_resource_limit')
         self.launcher = launcher
         self.policy = ResourcePolicy.model_validate_json(resource_policy.model_dump_json())
         self.monotonic = monotonic
+        self._preparation_only = preparation_only
+        self._observation_failed = False
         self._condition = threading.Condition()
         self._stopping = threading.Event()
         self._sessions = {}
@@ -31,7 +33,66 @@ class ProcessEngineProvider:
         self._residency = threading.Lock()
 
     def current(self, identity):
-        return not self._stopping.is_set() and self.launcher.current(identity) is True
+        return not self._stopping.is_set() and not self._observation_failed and self.launcher.current(identity) is True
+
+    @property
+    def preparation_only(self):
+        return self._preparation_only
+
+    def observe(self, profile, check, *, deadline):
+        """Observe installed code under the same serial owner as model sessions."""
+        digest = profile.identity_digest()
+
+        def admitted():
+            if self._stopping.is_set():
+                raise NlpBoundaryError('nlp_service_stopping')
+            if self.monotonic() >= deadline:
+                raise NlpBoundaryError('nlp_deadline')
+            check()
+
+        admitted()
+        validate_resource_policy(profile, self.policy)
+        with self._condition:
+            if self._stopping.is_set() or self.monotonic() >= deadline:
+                raise NlpBoundaryError('nlp_service_stopping')
+            self._opening[digest] = self._opening.get(digest, 0) + 1
+        stack = ExitStack()
+        try:
+            while not self._residency.acquire(timeout=min(.02, max(0, deadline - self.monotonic()))):
+                admitted()
+            stack.callback(self._residency.release)
+            self._observation_failed = True
+            admitted()
+            try:
+                self.launcher.observe(profile.components[0].engine, check=admitted, deadline=deadline)
+            except OwnedLaunchError as error:
+                drained = self._abort(error.owner, max(0, min(5, deadline - self.monotonic())))
+                if not drained:
+                    with self._condition:
+                        self._failed_owners[error.owner] = (digest, stack)
+                    stack = None
+                raise
+            admitted()
+            if self.launcher.current(profile.components[0].engine) is not True:
+                raise NlpBoundaryError('nlp_engine_unavailable')
+            self._observation_failed = False
+        finally:
+            try:
+                if stack is not None:
+                    stack.close()
+            finally:
+                with self._condition:
+                    self._opening[digest] -= 1
+                    if not self._opening[digest]:
+                        self._opening.pop(digest)
+                    self._condition.notify_all()
+
+    @staticmethod
+    def _abort(owner, timeout):
+        try:
+            return owner.abort(timeout) is True
+        except BaseException:
+            return False
 
     def drained(self, profile):
         digest = profile.identity_digest()
@@ -70,7 +131,7 @@ class ProcessEngineProvider:
             try:
                 owner = self.launcher.open(profile, files, nonce, admitted, deadline=deadline)
             except OwnedLaunchError as error:
-                if not error.owner.abort(5):
+                if not self._abort(error.owner, 5):
                     with self._condition:
                         self._failed_owners[error.owner] = (digest, stack)
                     stack = None
@@ -79,12 +140,12 @@ class ProcessEngineProvider:
                 client = ChildClient(profile, owner, nonce, bind=False, monotonic=self.monotonic)
             except BaseException:
                 # The launcher retains failures that have not physically joined.
-                if not owner.abort(5):
+                if not self._abort(owner, 5):
                     with self._condition:
                         self._failed_owners[owner] = (digest, stack)
                     stack = None
                 raise
-            session = _Session(profile, client, self.policy)
+            session = _Session(profile, client, self.policy, preparation_only=self.preparation_only)
             with self._condition:
                 self._sessions[session] = stack
                 stack = None
@@ -93,17 +154,19 @@ class ProcessEngineProvider:
             yield session
             completed = True
         finally:
-            with self._condition:
-                self._opening[digest] -= 1
-                if not self._opening[digest]:
-                    self._opening.pop(digest)
-                self._condition.notify_all()
-            if session is not None:
-                drained = self._release(session, 5)
-                if not drained or (completed and not session.client.graceful):
-                    raise NlpBoundaryError('nlp_worker_not_drained')
-            if stack is not None:
-                stack.close()
+            try:
+                if session is not None:
+                    drained = self._release(session, 5)
+                    if not drained or (completed and not session.client.graceful):
+                        raise NlpBoundaryError('nlp_worker_not_drained')
+                if stack is not None:
+                    stack.close()
+            finally:
+                with self._condition:
+                    self._opening[digest] -= 1
+                    if not self._opening[digest]:
+                        self._opening.pop(digest)
+                    self._condition.notify_all()
 
     def _release(self, session, timeout):
         if not session.close(timeout):
@@ -126,7 +189,7 @@ class ProcessEngineProvider:
         for session in sessions:
             self._release(session, max(0, deadline - self.monotonic()))
         for owner in failed:
-            if owner.abort(max(0, deadline - self.monotonic())):
+            if self._abort(owner, max(0, deadline - self.monotonic())):
                 with self._condition:
                     _, stack = self._failed_owners.pop(owner)
                     stack.close()
@@ -138,8 +201,9 @@ class ProcessEngineProvider:
 
 
 class _Session:
-    def __init__(self, profile, client, policy):
+    def __init__(self, profile, client, policy, *, preparation_only=False):
         self.profile, self.client, self.policy = profile, client, policy
+        self._preparation_only = preparation_only
         self._gate = threading.Lock()
 
     def request_stop(self):
@@ -165,6 +229,8 @@ class _Session:
             return self.client.prepare(request, deadline=deadline, cancelled=cancelled)
 
     def analyze(self, request, cancelled, *, deadline=None):
+        if self._preparation_only:
+            raise NlpBoundaryError('nlp_preparation_only')
         v2.validate_request(self.profile, request.model_dump_json().encode())
         with self._operation(deadline, request.deadline_ms / 1000) as deadline:
             return self.client.analyze(request, cancelled, deadline=deadline)

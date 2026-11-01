@@ -27,7 +27,7 @@ pytestmark = pytest.mark.ci_tier('fast')
 NONCE = 'a' * 32
 
 
-@pytest.mark.parametrize('failure', ['status', 'cancelled', 'deadline'])
+@pytest.mark.parametrize('failure', ['status', 'cancelled'])
 def test_failed_observation_retains_exact_drained_owner_after_launcher_removal(monkeypatch, failure):
     profile, _ = example()
     identity = profile.components[0].engine
@@ -58,12 +58,12 @@ def test_failed_observation_retains_exact_drained_owner_after_launcher_removal(m
     calls = []
     def check():
         calls.append(True)
-        if len(calls) > 1 and failure == 'cancelled':
+        if owners and failure == 'cancelled':
             raise RuntimeError('invented cancellation detail')
 
     monkeypatch.setattr(launcher, '_spawn', spawn)
     with pytest.raises(OwnedLaunchError) as raised:
-        launcher.observe(identity, timeout=0 if failure == 'deadline' else 1, check=check)
+        launcher.observe(identity, timeout=1, check=check)
     owner = raised.value.owner
     assert owner is owners[0] and owner._closed and closed == [True]
     assert owner._terminal.state == 'failed' and owner._terminal.reason == 'identity_mismatch'
@@ -356,6 +356,10 @@ class Launcher:
     def current(self, identity):
         return identity == self.profile.components[0].engine
 
+    def observe(self, identity, *, check, deadline):
+        check()
+        assert self.current(identity)
+
     def open(self, profile, files, nonce, check, *, deadline):
         check()
         owner = ChannelOwner(profile, bad_bootstrap=self.bad)
@@ -409,3 +413,149 @@ def test_provider_serializes_session_residency_and_releases_after_close(tmp_path
     assert provider.drained(profile) and provider.close(2)
     for owner in launcher.owners:
         owner.stdout.close()
+
+
+def test_provider_observes_without_data_and_rejects_preparation_only_analysis(monkeypatch):
+    from app.nlp import engine_provider
+    profile, _ = example()
+    launcher = Launcher(profile)
+    provider = ProcessEngineProvider(launcher, resource_policy=BASELINE_RESOURCE_POLICY, preparation_only=True)
+    monkeypatch.setattr(engine_provider, 'retain_data', lambda *args: pytest.fail('data opened'))
+    provider.observe(profile, lambda: None, deadline=time.monotonic() + 1)
+    assert provider.current(profile.components[0].engine) and provider.drained(profile)
+    with pytest.raises(AttributeError):
+        provider.preparation_only = False
+    client = SimpleNamespace(analyze=lambda *a, **k: pytest.fail('analysis transport used'))
+    session = engine_provider._Session(profile, client, BASELINE_RESOURCE_POLICY, preparation_only=True)
+    with pytest.raises(ValueError, match='nlp_preparation_only'):
+        session.analyze(None, lambda: False)
+    assert provider.close(1)
+
+
+@pytest.mark.parametrize('failure', ['cancelled', 'deadline', 'resource'])
+def test_provider_observation_admission_refuses_before_native_or_data_access(monkeypatch, failure):
+    from app.nlp import engine_provider
+    profile, _ = example()
+    launcher = Launcher(profile)
+    launcher.observe = lambda *a, **k: pytest.fail('Native observation started')
+    monkeypatch.setattr(engine_provider, 'retain_data', lambda *a: pytest.fail('Data opened'))
+    provider = ProcessEngineProvider(launcher, resource_policy=BASELINE_RESOURCE_POLICY)
+    if failure == 'resource':
+        profile = profile.model_copy(update={'resources':profile.resources.model_copy(update={
+            'transition_peak_memory_bytes':BASELINE_RESOURCE_POLICY.transition_peak_memory_bytes+1})})
+    def check():
+        if failure == 'cancelled': raise ValueError('nlp_cancelled')
+    with pytest.raises(ValueError):
+        provider.observe(profile, check, deadline=time.monotonic()+(-1 if failure=='deadline' else 1))
+    assert provider.drained(profile) and provider.close(1)
+
+
+def test_provider_observation_serializes_with_open_and_counts_until_drain(tmp_path):
+    profile, payloads = example()
+    available = store(tmp_path).stage(profile, streams(payloads))
+    launcher = Launcher(profile)
+    entered, errors = threading.Event(), []
+    original = launcher.observe
+    def observe(*args, **kwargs):
+        entered.set()
+        return original(*args, **kwargs)
+    launcher.observe = observe
+    provider = ProcessEngineProvider(launcher, resource_policy=BASELINE_RESOURCE_POLICY)
+    def run():
+        try:
+            provider.observe(profile, lambda: None, deadline=time.monotonic() + 2)
+        except BaseException as error:
+            errors.append(error)
+    with provider.open(profile, available, lambda: None):
+        thread = threading.Thread(target=run)
+        thread.start()
+        time.sleep(.04)
+        assert not entered.is_set() and not provider.drained(profile)
+    thread.join(2)
+    assert entered.is_set() and not thread.is_alive() and not errors
+    assert provider.drained(profile) and provider.close(1)
+    for owner in launcher.owners:
+        owner.stdout.close()
+
+
+@pytest.mark.parametrize('abort_raises', [False, True])
+def test_provider_retains_failed_observation_owner_until_physical_join(abort_raises):
+    profile, _ = example()
+    launcher = Launcher(profile)
+    class Owner:
+        joined = False
+        def abort(self, timeout):
+            if abort_raises and not self.joined:
+                raise RuntimeError('synthetic abort failure')
+            return self.joined
+    owner = Owner()
+    def observe(*args, **kwargs):
+        raise OwnedLaunchError(owner)
+    launcher.observe = observe
+    provider = ProcessEngineProvider(launcher, resource_policy=BASELINE_RESOURCE_POLICY)
+    with pytest.raises(OwnedLaunchError):
+        provider.observe(profile, lambda: None, deadline=time.monotonic() + 1)
+    assert not provider.current(profile.components[0].engine) and not provider.drained(profile)
+    assert not provider.close(0)
+    assert not provider.drained(profile)
+    owner.joined = True
+    assert provider.close(1) and provider.drained(profile)
+
+
+def test_provider_shutdown_cancels_active_observation_without_stale_success():
+    profile, _ = example()
+    launcher = Launcher(profile)
+    entered, errors = threading.Event(), []
+    def observe(identity, *, check, deadline):
+        entered.set()
+        while True:
+            check()
+            time.sleep(.001)
+    launcher.observe = observe
+    provider = ProcessEngineProvider(launcher, resource_policy=BASELINE_RESOURCE_POLICY)
+    def run():
+        try:
+            provider.observe(profile, lambda: None, deadline=time.monotonic() + 1)
+        except BaseException as error:
+            errors.append(error)
+    thread = threading.Thread(target=run)
+    thread.start()
+    assert entered.wait(1) and not provider.drained(profile)
+    assert provider.close(1)
+    thread.join(1)
+    assert errors and not thread.is_alive() and not provider.current(profile.components[0].engine)
+
+
+@pytest.mark.parametrize('failure', ['spawn_deadline', 'drain_deadline', 'stopping'])
+def test_native_observation_uses_one_deadline_and_never_caches_late_success(monkeypatch, failure):
+    profile, _ = example()
+    identity = profile.components[0].engine
+    launcher = windows_host.NativeHostLauncher.__new__(windows_host.NativeHostLauncher)
+    launcher._lock, launcher._owners = threading.Lock(), set()
+    launcher._observed, launcher._stopping = identity, False
+    clock = SimpleNamespace(now=0)
+    launcher.monotonic = lambda: clock.now
+    class Owner:
+        graceful = True
+        sent = []
+        def send(self, request, deadline, check):
+            check(); self.sent.append(deadline)
+        def wait_for(self, state, deadline, check):
+            check(); assert deadline == 1
+        def close(self, timeout):
+            assert timeout == 1
+            if failure == 'drain_deadline': clock.now = 2
+            if failure == 'stopping': launcher._stopping = True
+            return True
+        def abort(self, timeout):
+            return True
+    owner = Owner()
+    def spawn(nonce, artifacts, check):
+        assert artifacts == ()
+        if failure == 'spawn_deadline': clock.now = 2
+        return owner
+    monkeypatch.setattr(launcher, '_spawn', spawn)
+    with pytest.raises(OwnedLaunchError):
+        launcher.observe(identity, deadline=1)
+    assert launcher._observed is None and not launcher.current(identity)
+    if failure == 'spawn_deadline': assert owner.sent == []
