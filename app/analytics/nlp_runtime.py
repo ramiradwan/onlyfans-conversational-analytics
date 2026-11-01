@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict, deque
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
@@ -21,7 +21,8 @@ if TYPE_CHECKING:
 from app.analytics.errors import (
     ProjectionBuildCancelled, ProjectionCoordinatorClosed, ProjectionStorageUnavailable, ProjectionUnavailable,
 )
-from app.analytics.nlp_findings_store import FindingsStore, MAX_ACCOUNTS
+from app.analytics.nlp_findings_store import MAX_ACCOUNTS
+from app.analytics.nlp_dependency_runtime import DependencyRuntime
 from app.analytics.nlp_processing import FindingsRunner
 from app.analytics.nlp_execution import require_findings_execution
 from app.analytics.opaque_refs import account_ref
@@ -29,7 +30,6 @@ from app.analytics.query_execution import QuestionCancelled
 from app.analytics.scheduling import _OwnedBoundedExecutor
 from app.models.text_analysis_enrollment import EnrollmentBindingSuperseded
 from app.nlp.profiles import read_profile
-from app.services.nlp_dependencies import dependency_service, configure_dependency_service
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,87 +62,12 @@ class FindingsConfiguration:
                 raise ValueError('findings_authority_owner_mismatch')
 
 
-class _BoundDatabase:
-    def __init__(self, owner, store):
-        self.owner, self.store = owner, store
-        self.gate = None
-
-    @contextmanager
-    def lease(self):
-        with (self.gate if self.gate is not None else nullcontext()), self.owner.lifecycle_store() as current:
-            if current is not self.store:
-                raise ProjectionStorageUnavailable()
-            yield current
-
-    @contextmanager
-    def read(self):
-        with self.lease() as current, current.database.read() as connection:
-            yield connection
-
-    @contextmanager
-    def transaction(self, **kwargs):
-        with self.lease() as current, current.database.transaction(**kwargs) as connection:
-            yield connection
-
-    def bind_contribution_origins(self, *args):
-        with self.lease() as current:
-            current.database.bind_contribution_origins(*args)
-
-
 @dataclass
 class _EnrollmentRunner:
     key: tuple
     binding: LicensedFindingsBinding
     runner: FindingsRunner
     after_job: str = ''
-
-
-class _BoundProjections:
-    def __init__(self, owner, store):
-        self.database = _BoundDatabase(owner, store)
-        self._graph = _BoundGraph(self.database)
-
-    def __getattr__(self, name):
-        with self.database.lease() as store:
-            value = getattr(store, name)
-        if not callable(value):
-            return value
-
-        def call(*args, **kwargs):
-            with self.database.lease() as store:
-                return getattr(store, name)(*args, **kwargs)
-        return call
-
-    @property
-    def graph(self):
-        return self._graph
-
-    def _call(self, name, *args, **kwargs):
-        return self.__getattr__(name)(*args, **kwargs)
-
-    def get(self, *a, **k): return self._call('get', *a, **k)
-    def replace(self, *a, **k): return self._call('replace', *a, **k)
-    def clear(self, *a, **k): return self._call('clear', *a, **k)
-    def get_artifact(self, *a, **k): return self._call('get_artifact', *a, **k)
-    def replace_artifact(self, *a, **k): return self._call('replace_artifact', *a, **k)
-    def stage_artifact(self, *a, **k): return self._call('stage_artifact', *a, **k)
-    def publish_generation(self, *a, **k): return self._call('publish_generation', *a, **k)
-    def discard_generation(self, *a, **k): return self._call('discard_generation', *a, **k)
-    def next_projection_generation(self, *a, **k): return self._call('next_projection_generation', *a, **k)
-    def open_publication_epoch(self, *a, **k): return self._call('open_publication_epoch', *a, **k)
-    def revoke_publication_epoch(self, *a, **k): return self._call('revoke_publication_epoch', *a, **k)
-    def fence_publication_epoch(self, *a, **k): return self._call('fence_publication_epoch', *a, **k)
-
-
-class _BoundGraph:
-    def __init__(self, database):
-        self.database = database
-
-    def __getattr__(self, name):
-        def call(*args, **kwargs):
-            with self.database.lease() as store:
-                return getattr(store.graph, name)(*args, **kwargs)
-        return call
 
 
 class _GatedPipeline:
@@ -214,11 +139,10 @@ class FindingsRuntime:
         self._task = None
         self._future = None
         self._closing = None
-        self._service = None
-        self._store = None
         self._runner = None
         authority = configuration.execution or configuration.preview
         self._gate = (authority.authentication.database.dependency_authority_gate if authority is not None else None)
+        self._dependencies = DependencyRuntime(source, pipeline.projections, configuration.dependencies, gate=self._gate)
         self._baseline = _GatedPipeline(pipeline, self._gate) if self._gate is not None else pipeline
         self._execution_service = None
         self._enrollments = OrderedDict()
@@ -236,6 +160,14 @@ class FindingsRuntime:
         self._failed = False
         self._joined = False
         self.failure = None
+
+    @property
+    def _service(self):
+        return self._dependencies.service
+
+    @property
+    def _store(self):
+        return self._dependencies.store
 
     def start(self, scheduler):
         if self._task is None and not self._stop.is_set():
@@ -256,11 +188,7 @@ class FindingsRuntime:
             pass
 
     def _retire(self):
-        if self._service is not None:
-            if not self._service.close(0):
-                return False
-        self._clear_binding()
-        return True
+        return self._dependencies.close(0, before_clear=self._clear_binding)
 
     def _clear_binding(self):
         from app.services.text_analysis_execution import execution_service, configure_execution_service
@@ -269,8 +197,6 @@ class FindingsRuntime:
                 configure_execution_service(None)
             if getattr(self._service, 'execution_owner', None) is self._execution_service:
                 self._service.execution_owner = None
-        if self._service is not None and dependency_service() is self._service:
-            configure_dependency_service(None)
         if self._preview_service is not None:
             from app.services.text_analysis_preview import preview_service, configure_preview_service
             if preview_service() is self._preview_service:
@@ -278,7 +204,7 @@ class FindingsRuntime:
         self._preview_service = self._preview_owner = None
         self._preview_page.clear()
         self._after_preview = ''
-        self._service, self._runner, self._store = None, None, None
+        self._runner = None
         self._accounts.clear()
         self._published.clear()
         self._preparation_attempts.clear()
@@ -296,34 +222,11 @@ class FindingsRuntime:
             return not self._failed
         if not self._retire() or self._stop.is_set():
             return False
-        if dependency_service() is not None:
-            raise ValueError('findings_dependency_owner_conflict')
-        bound = _BoundProjections(self.pipeline.projections, store)
-        findings = FindingsStore(bound.database)
-        self._store = store
         self._failed = True
-        service = self.configuration.dependencies(self.source, findings)
-        self._service = service
-        if service.source is not self.source or service.findings is not findings:
-            raise ValueError('findings_dependency_binding_invalid')
-        bound.database.gate = service.gate
-        if self._gate is not None and service.gate is not self._gate:
-            raise ValueError('findings_execution_gate_mismatch')
-        if self.configuration.execution is not None:
-            from app.services.text_analysis_execution import execution_service
-            if execution_service() is not None:
-                raise ValueError('findings_execution_owner_conflict')
-            self._execution_service = self.configuration.execution.bind(self.source, service)
-        if self.configuration.preview is not None:
-            from app.services.text_analysis_preview import preview_service
-            from app.analytics.nlp_preview_execution import PreviewComputeOwner
-            if preview_service() is not None:
-                raise ValueError('findings_preview_owner_conflict')
-            self._preview_service = self.configuration.preview.bind(self.source, service)
-            self._preview_owner = PreviewComputeOwner(self._preview_service, service, self.source,
-                clock=self.configuration.clock, cancellation_check=self._stop.is_set)
-        service.start()
-        configure_dependency_service(service)
+        binding = self._dependencies.bind(before_start=self._bind_consumers)
+        if binding is None:
+            return False
+        service, bound = binding.service, binding.projections
         self._runner = FindingsRunner(self.source, bound,
             authorize=lambda account: self._authorize(account, bound),
             execution_ready=service.ready, adapter=None, dependencies=service,
@@ -339,6 +242,22 @@ class FindingsRuntime:
         self._failed = False
         self.failure = None
         return True
+
+    def _bind_consumers(self, binding):
+        service = binding.service
+        if self.configuration.execution is not None:
+            from app.services.text_analysis_execution import execution_service
+            if execution_service() is not None:
+                raise ValueError('findings_execution_owner_conflict')
+            self._execution_service = self.configuration.execution.bind(self.source, service)
+        if self.configuration.preview is not None:
+            from app.services.text_analysis_preview import preview_service
+            from app.analytics.nlp_preview_execution import PreviewComputeOwner
+            if preview_service() is not None:
+                raise ValueError('findings_preview_owner_conflict')
+            self._preview_service = self.configuration.preview.bind(self.source, service)
+            self._preview_owner = PreviewComputeOwner(self._preview_service, service, self.source,
+                clock=self.configuration.clock, cancellation_check=self._stop.is_set)
 
     def generation_pipeline(self, account):
         gate=self._gate or (self._service.gate if self._service is not None else nullcontext())
@@ -581,7 +500,7 @@ class FindingsRuntime:
             return True
         if self._future is not None and not self._future.done():
             return False
-        if self._service is None and self._closing is None:
+        if self._service is None and self._store is None and self._closing is None:
             self._executor.begin_shutdown()
             self._executor.join()
             self._joined = True
@@ -603,10 +522,7 @@ class FindingsRuntime:
         return True
 
     def _retire_with_timeout(self, timeout):
-        if self._service is not None and not self._service.close(timeout):
-            return False
-        self._clear_binding()
-        return True
+        return self._dependencies.close(timeout, before_clear=self._clear_binding)
 
     async def close(self, timeout):
         self.begin_stop()

@@ -637,6 +637,7 @@
         "app/analytics/nlp_processing.py",
         "app/analytics/nlp_execution.py",
         "app/analytics/nlp_runtime.py",
+        "app/analytics/nlp_dependency_runtime.py",
         "app/analytics/pipeline.py",
         "app/analytics/licensed_pipeline.py",
         "app/analytics/graph_*.py",

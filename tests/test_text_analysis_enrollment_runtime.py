@@ -198,7 +198,8 @@ def test_superseded_binding_cancels_held_pipeline_without_hiding_other_failures(
         findings=SimpleNamespace(state=lambda account: {}))
     entry = SimpleNamespace(binding=object(), runner=runner)
     runner.authorize = lambda account: owned._authorize_enrollment(entry, account)
-    owned._stop, owned._gate, owned._service = threading.Event(), gate, None
+    owned._stop, owned._gate = threading.Event(), gate
+    owned._dependencies = SimpleNamespace(service=None, store=None)
     owned._runner, owned._failed = None, False
     owned._execution_service = SimpleNamespace(authorize_binding=authorize)
     owned._enrollments = {ACCOUNT: entry}
