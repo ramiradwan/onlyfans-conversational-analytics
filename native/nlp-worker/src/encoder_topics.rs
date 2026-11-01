@@ -579,7 +579,7 @@ mod tests {
             tensor_type(
                 &ValueType::Tensor {
                     ty: TensorElementType::Float32,
-                    shape: vec![2, 4].into(),
+                    shape: vec![2_i64, 4].into(),
                     dimension_symbols: ort::value::SymbolicDimensions::empty(2)
                 },
                 TensorElementType::Float32,
