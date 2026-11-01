@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createNlpDependenciesApi } from '../src/services/nlpDependenciesApi';
+import { createNlpDependenciesApi, NlpDependenciesHttpError } from '../src/services/nlpDependenciesApi';
 
 const unavailable = { configured: false, profiles: [], acquisitions: [], available_profiles: [], selected: null, failure: 'nlp_unavailable', resume_granularity: 'verified_files_current_file_restarts' };
 describe('nlpDependenciesApi', () => {
+  it.each([401, 403, 503])('retains HTTP status %s without exposing response details', async (status) => {
+    const api = createNlpDependenciesApi({ fetch: vi.fn().mockResolvedValue(new Response('private response', { status })) });
+    const error = await api.observe('a'.repeat(32)).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(NlpDependenciesHttpError);
+    expect(error).toMatchObject({ status, message: 'Text analysis settings could not be updated.' });
+  });
   it('accepts rehashed-prefix recovery without exposing partial-file metadata', async () => {
     const current = { ...unavailable, resume_granularity: 'verified_files_and_rehashed_prefix' };
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify(current)));

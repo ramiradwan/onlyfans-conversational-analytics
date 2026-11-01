@@ -6,6 +6,7 @@ import { NlpDependencyControls } from '../src/components/NlpDependencyControls';
 import { TextAnalysisExecutionControls } from '../src/components/TextAnalysisExecutionControls';
 import type { EngineAcquisitionApi } from '../src/api/engineAcquisition';
 import type { NlpDependenciesApi, NlpDependencyCommand, NlpDependencyObservation, NlpDependencyPlan, NlpDependencyResult, NlpDependencyStatus } from '../src/services/nlpDependenciesApi';
+import { NlpDependenciesHttpError } from '../src/services/nlpDependenciesApi';
 import { bridgeTransportStore } from '../src/store/transportStore';
 import { useUserStore } from '../src/store/userStore';
 import { theme } from '../src/theme';
@@ -20,7 +21,7 @@ const observation: NlpDependencyObservation = { id: 'b'.repeat(32), kind: 'acqui
 function fixture(initial = status) {
   let current = observation;
   return {
-    get: vi.fn().mockResolvedValue(initial), observe: vi.fn(async () => current),
+    get: vi.fn().mockResolvedValue(initial), observe: vi.fn(async (_id: string, _signal?: AbortSignal) => current),
     command: vi.fn(async (input: NlpDependencyCommand, _signal?: AbortSignal): Promise<NlpDependencyResult> => {
       if (input.action === 'pause') current = { ...current, state: 'paused', in_flight: false };
       if (input.action === 'resume') current = { ...current, state: 'running', in_flight: true };
@@ -59,6 +60,150 @@ function connect(suffix = '1') {
     negotiated_protocol_version: '2', server_version: 'example' });
 }
 describe('NlpDependencyControls', () => {
+  it.each([
+    [new NlpDependenciesHttpError(401), /Your sign-in could not be verified/],
+    [new NlpDependenciesHttpError(403), /Access to text analysis settings was denied/],
+    [new Error('untrusted failure'), /Current download progress and readiness are unavailable/],
+  ] as const)('marks failed progress reads stale and recovers only by reading status (%s)', async (failure, guidance) => {
+    const prepared = { ...status, profiles: [{ ...profile, installed: true, prepared: true }], acquisitions: [observation] };
+    const api = fixture(prepared), pending = deferred<NlpDependencyObservation>();
+    api.observe.mockReturnValueOnce(pending.promise);
+    render(view(api));
+    await screen.findByText('Downloading. 2 verified files retained.');
+    await act(async () => pending.reject(failure));
+    expect(screen.queryByText('Downloading. 2 verified files retained.')).toBeNull();
+    expect(screen.getByText('Last confirmed progress: 2 verified files. Current state is unknown.')).toBeTruthy();
+    expect(screen.queryByText('Prepared for this session; available offline while the engine is ready')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Pause download' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Cancel download' })).toHaveProperty('disabled', true);
+    if (failure instanceof NlpDependenciesHttpError && failure.status === 401) {
+      const signIn = screen.getByRole('link', { name: 'Sign in again' });
+      expect(signIn).toBeInstanceOf(HTMLAnchorElement);
+      expect(signIn.getAttribute('href')).toBe('/');
+      expect(signIn.getAttribute('target')).toBeNull();
+    } else expect(screen.queryByRole('link', { name: 'Sign in again' })).toBeNull();
+    await readFeedback(guidance);
+    expect(api.observe).toHaveBeenCalledTimes(1);
+    api.get.mockResolvedValueOnce({ ...prepared, acquisitions: [{ ...observation, verified_files: 9 }] });
+    api.observe.mockResolvedValue({ ...observation, verified_files: 9 });
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+    await screen.findByText('Downloading. 9 verified files retained.');
+    expect(screen.queryByText(/Last confirmed progress:/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Sign in again' })).toBeNull();
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it.each(['success', 'failure'] as const)('discards an initial read that returns after a newer status check (%s)', async (result) => {
+    const api = fixture(), initial = deferred<NlpDependencyStatus>();
+    api.get.mockReturnValueOnce(initial.promise);
+    render(view(api));
+    api.get.mockResolvedValueOnce({ ...status, profiles: [{ ...profile, installed: true, prepared: true }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+    await screen.findByText('Prepared for this session; available offline while the engine is ready');
+    await act(async () => { if (result === 'success') initial.resolve(unavailable); else initial.reject(new NlpDependenciesHttpError(401)); });
+    expect(screen.getByText('Prepared for this session; available offline while the engine is ready')).toBeTruthy();
+    expect(within(feedbackRegion()).queryByRole('alert')).toBeNull();
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it.each(['success', 'failure'] as const)('supersedes a pending progress read when checking status (%s)', async (result) => {
+    const api = fixture({ ...status, acquisitions: [observation] });
+    const pending = deferred<NlpDependencyObservation>(), refreshed = deferred<NlpDependencyStatus>();
+    api.observe.mockReturnValueOnce(pending.promise);
+    render(view(api));
+    await screen.findByText('Downloading. 2 verified files retained.');
+    const signal = api.observe.mock.calls[0][1];
+    api.get.mockReturnValueOnce(refreshed.promise);
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { if (result === 'success') pending.resolve({ ...observation, verified_files: 3 }); else pending.reject(new NlpDependenciesHttpError(401)); });
+    await act(async () => refreshed.resolve({ ...status, profiles: [{ ...profile, installed: true, prepared: true }] }));
+    expect(screen.getByText('Prepared for this session; available offline while the engine is ready')).toBeTruthy();
+    expect(screen.queryByText(/verified files/)).toBeNull();
+    expect(within(feedbackRegion()).queryByRole('alert')).toBeNull();
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it('stops polling after a failed status check and ignores the canceled progress response', async () => {
+    const api = fixture({ ...status, acquisitions: [observation] }), pending = deferred<NlpDependencyObservation>();
+    api.observe.mockReturnValueOnce(pending.promise);
+    render(view(api));
+    await screen.findByText('Downloading. 2 verified files retained.');
+    const signal = api.observe.mock.calls[0][1];
+    api.get.mockRejectedValueOnce(new NlpDependenciesHttpError(403));
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+    await screen.findByText('Last confirmed progress: 2 verified files. Current state is unknown.');
+    expect(signal?.aborted).toBe(true);
+    await act(async () => pending.resolve({ ...observation, verified_files: 9 }));
+    expect(screen.getByText('Last confirmed progress: 2 verified files. Current state is unknown.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel download' })).toHaveProperty('disabled', true);
+    expect(api.observe).toHaveBeenCalledTimes(1);
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it('marks completion and readiness unknown when the terminal status refresh fails', async () => {
+    const prepared = { ...status, profiles: [{ ...profile, installed: true, prepared: true }], acquisitions: [observation] };
+    const api = fixture(prepared);
+    api.observe.mockResolvedValue({ ...observation, state: 'complete', in_flight: false, verified_files: 9 });
+    api.get.mockResolvedValueOnce(prepared).mockRejectedValueOnce(new Error('status unavailable'));
+    render(view(api));
+    await screen.findByText('Last confirmed progress: 9 verified files. Current state is unknown.');
+    expect(screen.queryByText(/Download complete/)).toBeNull();
+    expect(screen.queryByText('Prepared for this session; available offline while the engine is ready')).toBeNull();
+    api.get.mockResolvedValueOnce({ ...prepared, acquisitions: [{ ...observation, state: 'complete', in_flight: false, verified_files: 9 }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+    await screen.findByText('Prepared for this session; available offline while the engine is ready');
+    expect(screen.queryByText(/Last confirmed progress:/)).toBeNull();
+    expect(api.observe).toHaveBeenCalledTimes(1);
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it.each(['review', 'removal'] as const)('closes an open %s dialog when progress can no longer be verified', async (dialog) => {
+    const api = fixture({ ...status, profiles: [{ ...profile, installed: true }], acquisitions: [observation] });
+    const pending = deferred<NlpDependencyObservation>();
+    api.observe.mockReturnValue(pending.promise);
+    render(view(api));
+    await screen.findByText('Downloading. 2 verified files retained.');
+    if (dialog === 'review') await review();
+    else fireEvent.click(screen.getByRole('button', { name: 'Remove topics-and-mentions' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    await act(async () => pending.reject(new NlpDependenciesHttpError(401)));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Cancel download' })).toHaveProperty('disabled', true);
+    expect(api.command.mock.calls.map(([input]) => input.action)).toEqual(dialog === 'review' ? ['plan'] : []);
+  });
+  it.each(['account', 'session'] as const)('discards a canceled progress failure after a %s change', async (change) => {
+    connect();
+    const api = fixture({ ...status, acquisitions: [observation] }), pending = deferred<NlpDependencyObservation>();
+    api.observe.mockReturnValueOnce(pending.promise);
+    const rendered = render(view(api));
+    await screen.findByText('Downloading. 2 verified files retained.');
+    const signal = api.observe.mock.calls[0][1];
+    api.get.mockResolvedValue({ ...status, profiles: [{ ...profile, installed: true, prepared: true }] });
+    act(() => { if (change === 'account') bridgeTransportStore.bindAccount('account-two'); else connect('2'); });
+    if (change === 'account') rendered.rerender(view(api, 'account-two'));
+    await screen.findByText('Prepared for this session; available offline while the engine is ready');
+    await act(async () => pending.reject(new NlpDependenciesHttpError(401)));
+    expect(signal?.aborted).toBe(true);
+    expect(screen.getByText('Prepared for this session; available offline while the engine is ready')).toBeTruthy();
+    expect(within(feedbackRegion()).queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/Last confirmed progress:/)).toBeNull();
+    expect(api.command).not.toHaveBeenCalled();
+  });
+  it.each(['command', 'status'] as const)('resets pending %s state when the API client changes', async (request) => {
+    const api = fixture(), command = deferred<NlpDependencyResult>(), read = deferred<NlpDependencyStatus>();
+    if (request === 'command') api.command.mockReturnValueOnce(command.promise);
+    else api.get.mockResolvedValueOnce(status).mockReturnValueOnce(read.promise);
+    const rendered = render(view(api));
+    await screen.findByRole('button', { name: 'Review download for topics-and-mentions' });
+    fireEvent.click(screen.getByRole('button', { name: request === 'command' ? 'Review download for topics-and-mentions' : 'Check status' }));
+    const signal = request === 'command' ? api.command.mock.calls[0][1] : api.get.mock.calls[1][0];
+    const replacement = fixture({ ...status, profiles: [{ ...profile, installed: true, prepared: true }] });
+    rendered.rerender(view(replacement));
+    await screen.findByText('Prepared for this session; available offline while the engine is ready');
+    expect(signal?.aborted).toBe(true);
+    expect(screen.getByRole('button', { name: 'Check status' })).toHaveProperty('disabled', false);
+    await act(async () => { if (request === 'command') command.resolve({ operation: quote, status }); else read.reject(new NlpDependenciesHttpError(401)); });
+    expect(screen.getByText('Prepared for this session; available offline while the engine is ready')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(feedbackRegion()).queryByRole('alert')).toBeNull();
+    expect(replacement.command).not.toHaveBeenCalled();
+  });
   it('reserves compact feedback from loading through combined failure and recovery', async () => {
     const api = fixture(), initial = deferred<NlpDependencyStatus>(), refreshed = deferred<NlpDependencyStatus>();
     api.get.mockReturnValueOnce(initial.promise);
@@ -72,7 +217,7 @@ describe('NlpDependencyControls', () => {
     expect(feedbackRegion().parentElement).toBe(wrapper);
     expect(within(region).getByRole('alert').textContent).toBe('Needs attention');
     expect(document.querySelector('[data-journey-state="textanalysis.unavailable"]')).toBe(wrapper);
-    await readFeedback('Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again. Text analysis is unavailable until a qualified profile and compatible installed engine are available.');
+    await readFeedback('Text analysis settings could not be updated. Your existing selection may still be active. Check status before trying again.');
     expect(screen.queryByText('untrusted failure')).toBeNull();
     api.get.mockReturnValueOnce(refreshed.promise);
     fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
@@ -286,7 +431,7 @@ describe('NlpDependencyControls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Prepare topics-and-mentions' }));
     expect(await screen.findByRole('alert')).toBeTruthy(); expect(screen.queryByText(/untrusted server secret/)).toBeNull();
     await readFeedback(/Text analysis settings could not be updated/);
-    expect(screen.getByText(/Files installed; preparation required/)).toBeTruthy();
+    expect(screen.queryByText(/Files installed; preparation required/)).toBeNull();
     expect(api.command).toHaveBeenCalledWith({ action: 'prepare', profile_sha256: profile.profile_sha256 }, expect.any(AbortSignal));
   });
   it('rediscovers interrupted downloads without automatically resuming them', async () => {
