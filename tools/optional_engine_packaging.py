@@ -182,9 +182,11 @@ def validate_capabilities(release: WorkerRelease, names: set[str]) -> None:
             raise ValueError("duplicate worker adapter")
         identities.add(key)
         is_instruction = adapter.adapter_id == "instruction_topics"
+        is_encoder = adapter.adapter_id == "encoder_topics"
         instruction |= is_instruction
         formats = {"boundary_entities": ("onnx-boundary-entity.v1", "concept_mentions.v1"),
                    "boundary_topics": ("onnx-boundary-classification.v1", "message_topics.v1"),
+                   "encoder_topics": ("onnx-encoder-classification.v1", "message_topics.v1"),
                    "instruction_topics": ("gguf-model.v1", "message_topics.v1")}
         declaration = formats.get(adapter.adapter_id)
         if declaration is None:
@@ -193,7 +195,8 @@ def validate_capabilities(release: WorkerRelease, names: set[str]) -> None:
         topics = task == "message_topics.v1"
         if (adapter.adapter_version != "1" or adapter.adapter_build_sha256 != release.engine.engine_build_sha256
                 or adapter.artifact_format != format_id or cap.task_contracts != (task,)
-                or adapter.architecture != ("llama-b11669-cpu-v1" if is_instruction else "boundary-shared-v1")
+                or adapter.architecture != ("llama-b11669-cpu-v1" if is_instruction else
+                                             "encoder-cls-v1" if is_encoder else "boundary-shared-v1")
                 or adapter.tokenizer_format != ("gguf-embedded.v1" if is_instruction else "huggingface-tokenizer-json.v1")):
             raise ValueError("compiled adapter declaration differs from installed policy")
         allowed = {"none"} if is_instruction else {"probability", "none"} if topics else {"probability", "logit", "margin", "none"}

@@ -33,7 +33,7 @@ def pe(body):
     return bytes(header) + body.encode()
 
 
-def fixture(tmp_path, *, instruction=False):
+def fixture(tmp_path, *, instruction=False, encoder=False):
     source = tmp_path / "inputs"
     source.mkdir()
     worker = source / "worker"
@@ -64,6 +64,13 @@ def fixture(tmp_path, *, instruction=False):
         max_batch_items=16, max_windows=1, max_candidates=192, max_output_findings=512,
         runtime_requirements_sha256="b" * 64)
     adapters = [capability]
+    if encoder:
+        cap = copy.deepcopy(capability)
+        cap["adapter"].update(adapter_id="encoder_topics", architecture="encoder-cls-v1",
+            artifact_format="onnx-encoder-classification.v1")
+        cap.update(task_contracts=["message_topics.v1"], score_kinds=["probability", "none"],
+                   max_candidates=64, max_output_findings=64)
+        adapters.append(cap)
     if instruction:
         cap = copy.deepcopy(capability)
         cap["adapter"].update(adapter_id="instruction_topics", architecture="llama-b11669-cpu-v1",
@@ -136,9 +143,9 @@ def sdk_runner(commands, *, corrupt=None):
     return run
 
 
-@pytest.mark.parametrize("instruction,expected", [(False, 2), (True, 12)])
-def test_optional_engine_producer_packs_exact_variable_closure_and_provenance(tmp_path, instruction, expected):
-    path, inputs, release_path, output = fixture(tmp_path, instruction=instruction)
+@pytest.mark.parametrize("instruction,encoder,expected", [(False, False, 2), (True, False, 12), (False, True, 2)])
+def test_optional_engine_producer_packs_exact_variable_closure_and_provenance(tmp_path, instruction, encoder, expected):
+    path, inputs, release_path, output = fixture(tmp_path, instruction=instruction, encoder=encoder)
     original = {item: item.read_bytes() for item in release_path.parent.iterdir()}
     commands = []
     result = producer.build(path, msix.sha256(path), output, runner=sdk_runner(commands))
@@ -152,6 +159,45 @@ def test_optional_engine_producer_packs_exact_variable_closure_and_provenance(tm
         assert pin(output / "payload" / row["file"]) == dict(path=str(output / "payload" / row["file"]), **{k: row[k] for k in ("sha256", "size_bytes")})
     for row in result["outputs"]:
         assert msix.sha256(output / row["file"]) == row["sha256"]
+
+
+@pytest.mark.parametrize("entities", [False, True])
+@pytest.mark.parametrize("scores", [["probability"], ["none"], ["probability", "none"]])
+def test_encoder_topic_metadata_accepts_exact_declaration_without_additional_runtimes(tmp_path, entities, scores):
+    path, inputs, release_path, output = fixture(tmp_path, encoder=True)
+    release = json.loads(release_path.read_bytes())
+    release["adapters"][-1].update(score_kinds=scores, max_source_codepoints=131072, max_batch_items=16)
+    if not entities:
+        release["adapters"].pop(0)
+    rewrite(path, inputs, release_path, release)
+    assert producer.build(path, msix.sha256(path), output, validate_only=True)["status"] == "inputs-validated"
+    assert {entry["file"] for entry in release["artifacts"]} == {"TextAnalysisWorker.exe", "onnxruntime.dll"}
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("field,value", [
+    ("adapter_id", "boundary_topics"), ("adapter_id", "boundary_entities"),
+    ("adapter_version", "2"), ("adapter_build_sha256", "c" * 64), ("abi", "nlp-adapter.v2"),
+    ("architecture", "boundary-shared-v1"), ("architecture", "llama-b11669-cpu-v1"),
+    ("artifact_format", "onnx-boundary-classification.v1"), ("artifact_format", "onnx-boundary-entity.v1"),
+    ("artifact_format", "gguf-model.v1"), ("tokenizer_format", "gguf-embedded.v1"),
+    ("task_contracts", ["concept_mentions.v1"]), ("task_contracts", ["message_topics.v1", "concept_mentions.v1"]),
+    ("task_contracts", ["message_topics.v1", "message_topics.v1"]), ("task_contracts", []),
+    ("score_kinds", ["logit"]), ("score_kinds", ["margin"]),
+    ("score_kinds", ["probability", "probability"]), ("score_kinds", []),
+    ("max_source_codepoints", 131073), ("max_batch_items", 17), ("max_windows", 2),
+    ("max_candidates", 65), ("max_output_findings", 65), ("max_candidates", 0),
+])
+def test_encoder_topic_metadata_refuses_substitutions_before_packing(tmp_path, field, value):
+    path, inputs, release_path, output = fixture(tmp_path, encoder=True)
+    release = json.loads(release_path.read_bytes())
+    cap = release["adapters"][-1]
+    (cap["adapter"] if field in cap["adapter"] else cap)[field] = value
+    rewrite(path, inputs, release_path, release)
+    called = []
+    with pytest.raises(ValueError):
+        producer.build(path, msix.sha256(path), output, runner=sdk_runner(called))
+    assert not called and not output.exists()
 
 
 def test_optional_engine_validation_creates_nothing(tmp_path):

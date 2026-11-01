@@ -432,10 +432,12 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
             (Some("boundary_topics"), Some("onnx-boundary-classification.v1")) => {
                 "message_topics.v1"
             }
+            (Some("encoder_topics"), Some("onnx-encoder-classification.v1")) => "message_topics.v1",
             (Some("instruction_topics"), Some("gguf-model.v1")) => "message_topics.v1",
             _ => return Err("artifact_mismatch"),
         };
         let instruction = a["adapter_id"] == "instruction_topics";
+        let encoder = a["adapter_id"] == "encoder_topics";
         let topics = task_contract == "message_topics.v1";
         if a["adapter_build_sha256"] != executable.artifact.sha256
             || a["adapter_version"] != "1"
@@ -443,6 +445,8 @@ pub fn validate_metadata(meta: &Metadata, profile: &Value) -> Result<()> {
             || a["architecture"]
                 != if instruction {
                     "llama-b11669-cpu-v1"
+                } else if encoder {
+                    "encoder-cls-v1"
                 } else {
                     "boundary-shared-v1"
                 }
@@ -820,6 +824,130 @@ mod tests {
         cap["max_output_findings"] = 64.into();
         profile["components"][0]["adapter"] = cap["adapter"].clone();
         (meta, profile)
+    }
+    fn encoder_fixture() -> (Metadata, Value) {
+        let (mut meta, mut profile) = topic_fixture();
+        let cap = &mut meta.adapters[0];
+        cap["adapter"]["adapter_id"] = "encoder_topics".into();
+        cap["adapter"]["architecture"] = "encoder-cls-v1".into();
+        cap["adapter"]["artifact_format"] = "onnx-encoder-classification.v1".into();
+        profile["components"][0]["adapter"] = cap["adapter"].clone();
+        (meta, profile)
+    }
+    #[test]
+    fn encoder_metadata_and_serial_entity_profile_bind_exact_capabilities() {
+        let (mut meta, topic_profile) = encoder_fixture();
+        assert_eq!(meta.artifacts.len(), 2);
+        assert!(validate_metadata(&meta, &topic_profile).is_ok());
+        let (entities, mut serial) = fixture();
+        serial["execution_mode"] = "serial_unload".into();
+        serial["components"]
+            .as_array_mut()
+            .unwrap()
+            .push(topic_profile["components"][0].clone());
+        meta.adapters.insert(0, entities.adapters[0].clone());
+        assert!(validate_metadata(&meta, &serial).is_ok());
+        meta.adapters.pop();
+        assert_eq!(validate_metadata(&meta, &serial), Err("identity_mismatch"));
+    }
+    #[test]
+    fn encoder_metadata_refuses_substituted_adapter_and_task_declarations() {
+        for (key, value) in [
+            ("adapter_id", "boundary_topics"),
+            ("adapter_id", "boundary_entities"),
+            ("adapter_version", "2"),
+            ("abi", "nlp-adapter.v2"),
+            ("architecture", "boundary-shared-v1"),
+            ("architecture", "llama-b11669-cpu-v1"),
+            ("artifact_format", "onnx-boundary-classification.v1"),
+            ("artifact_format", "onnx-boundary-entity.v1"),
+            ("artifact_format", "gguf-model.v1"),
+            ("tokenizer_format", "gguf-embedded.v1"),
+        ] {
+            let (mut meta, mut profile) = encoder_fixture();
+            meta.adapters[0]["adapter"][key] = value.into();
+            profile["components"][0]["adapter"] = meta.adapters[0]["adapter"].clone();
+            assert_eq!(
+                validate_metadata(&meta, &profile),
+                Err("artifact_mismatch"),
+                "{key} {value}"
+            );
+        }
+        let (mut meta, mut profile) = encoder_fixture();
+        meta.adapters[0]["adapter"]["adapter_build_sha256"] = "d".repeat(64).into();
+        profile["components"][0]["adapter"] = meta.adapters[0]["adapter"].clone();
+        assert_eq!(validate_metadata(&meta, &profile), Err("artifact_mismatch"));
+        for tasks in [
+            serde_json::json!([]),
+            serde_json::json!(["concept_mentions.v1"]),
+            serde_json::json!(["message_topics.v1", "concept_mentions.v1"]),
+            serde_json::json!(["message_topics.v1", "message_topics.v1"]),
+        ] {
+            let (mut meta, profile) = encoder_fixture();
+            meta.adapters[0]["task_contracts"] = tasks;
+            assert_eq!(validate_metadata(&meta, &profile), Err("artifact_mismatch"));
+        }
+    }
+    #[test]
+    fn encoder_metadata_scores_and_limits_match_compiled_topic_bounds() {
+        for scores in [
+            serde_json::json!(["probability"]),
+            serde_json::json!(["none"]),
+            serde_json::json!(["probability", "none"]),
+        ] {
+            let (mut meta, profile) = encoder_fixture();
+            meta.adapters[0]["score_kinds"] = scores;
+            meta.adapters[0]["max_source_codepoints"] = 131072.into();
+            meta.adapters[0]["max_batch_items"] = 16.into();
+            assert!(validate_metadata(&meta, &profile).is_ok());
+        }
+        for scores in [
+            serde_json::json!([]),
+            serde_json::json!(["logit"]),
+            serde_json::json!(["margin"]),
+            serde_json::json!(["probability", "probability"]),
+            serde_json::json!(["unknown"]),
+        ] {
+            let (mut meta, profile) = encoder_fixture();
+            meta.adapters[0]["score_kinds"] = scores;
+            assert_eq!(validate_metadata(&meta, &profile), Err("artifact_mismatch"));
+        }
+        for (key, value) in [
+            ("max_source_codepoints", 131073),
+            ("max_batch_items", 17),
+            ("max_windows", 2),
+            ("max_candidates", 65),
+            ("max_output_findings", 65),
+            ("max_candidates", 0),
+        ] {
+            let (mut meta, profile) = encoder_fixture();
+            meta.adapters[0][key] = value.into();
+            assert_eq!(
+                validate_metadata(&meta, &profile),
+                Err("artifact_mismatch"),
+                "{key}"
+            );
+        }
+    }
+    #[test]
+    fn encoder_metadata_does_not_admit_undeclared_instruction_runtimes() {
+        let (mut meta, mut profile) = encoder_fixture();
+        let extra = PackageArtifact {
+            artifact: Artifact {
+                artifact_id: "runtime.llama".into(),
+                sha256: "b".repeat(64),
+                size_bytes: 16,
+                role: "runtime".into(),
+                format_id: "llama-b11669-cpu.dll.v1".into(),
+            },
+            file: "llama.dll".into(),
+        };
+        profile["artifacts"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(&extra.artifact).unwrap());
+        meta.artifacts.push(extra);
+        assert_eq!(validate_metadata(&meta, &profile), Err("artifact_mismatch"));
     }
     #[test]
     fn topic_metadata_and_serial_split_profile_bind_exact_capabilities() {
