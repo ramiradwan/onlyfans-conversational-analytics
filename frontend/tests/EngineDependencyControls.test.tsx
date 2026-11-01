@@ -9,6 +9,8 @@ import { theme } from '../src/theme';
 const idle: EngineStatus = { operation_id: null, state: 'not_requested', installed: false, in_flight: false,
   cancel_requested: false, deadline_reached: false, progress_percent: null, reason: null, hresult: null };
 const live: EngineStatus = { ...idle, operation_id: 'b'.repeat(32), state: 'acquiring', in_flight: true };
+const recovering: EngineStatus = { ...idle, operation_id: live.operation_id, state: 'recovery_pending', reason: 'optional_recovery_pending' };
+const installed: EngineStatus = { ...idle, operation_id: live.operation_id, state: 'installed', installed: true };
 const quote = { availability: 'available' as const, explicit_selection: 'module' as const, review_digest: 'a'.repeat(64), engine_package_version: '1.0.42.0',
   expected_complete_package_bytes: 12345, declared_disk: { installed_space_budget_bytes: 4096,
     temporary_space_budget_bytes: 2048, rollback_space_budget_bytes: 0, required_free_space_bytes: 6144 } };
@@ -26,6 +28,11 @@ async function review() {
 const amount = (value: number) => `${new Intl.NumberFormat().format(value).replace(/\s+/gu, ' ')} bytes`;
 async function reviewClosed() {
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Review Engine installation' })).toBeNull());
+}
+async function checkStatus(api: ReturnType<typeof fixture>, status: EngineStatus) {
+  api.status.mockResolvedValue(status);
+  fireEvent.click(screen.getByRole('button', { name: 'Check Engine status' }));
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Check Engine status' }) as HTMLButtonElement).disabled).toBe(false));
 }
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe('shared-device Engine controls', () => {
@@ -100,6 +107,115 @@ describe('shared-device Engine controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check Engine status' })); await waitFor(() => expect(blocked.status).toHaveBeenCalledTimes(2));
     expect((screen.getByRole('button', { name: 'Review Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
     expect(blocked.start).toHaveBeenCalledOnce();
+  });
+  it.each(['module', 'preview'] as const)('clears a %s status ownership warning only after the same operation is verified installed', async (selection) => {
+    const api = fixture(recovering, selection); render(view(api, 'account-one', selection));
+    await screen.findByText(/Engine installation needs attention/);
+    expect(screen.getByText(/Another installation request is unavailable/)).toBeTruthy();
+    await checkStatus(api, installed);
+    expect(screen.getByText('Engine installation verified.')).toBeTruthy();
+    expect(screen.queryByText(/Another installation request is unavailable/)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Review Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.review).not.toHaveBeenCalled(); expect(api.start).not.toHaveBeenCalled(); expect(api.cancel).not.toHaveBeenCalled();
+  });
+  it('settles a reviewed request after transient recovery without another Start or Cancel', async () => {
+    const api = fixture(); api.start.mockResolvedValue(recovering);
+    render(view(api)); await screen.findByText('Engine installation has not been requested.');
+    const dialog = await review(); fireEvent.click(dialog.getByRole('button', { name: 'Install reviewed Engine' }));
+    await screen.findByText(/Engine installation needs attention/); await reviewClosed();
+    await checkStatus(api, installed);
+    expect(screen.queryByText(/Another installation request is unavailable/)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Review Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.review).toHaveBeenCalledOnce(); expect(api.start).toHaveBeenCalledOnce(); expect(api.cancel).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['another operation', { ...installed, operation_id: 'd'.repeat(32) }],
+    ['no operation', { ...installed, operation_id: null }],
+    ['failed operation', { ...idle, operation_id: live.operation_id, state: 'failed' as const }],
+    ['unverified installation', { ...installed, installed: false }],
+    ['unfinished operation', { ...installed, in_flight: true }],
+    ['unresolved reason', { ...installed, reason: 'optional_not_registered' }],
+    ['HRESULT', { ...installed, hresult: -1 }],
+  ] as const)('preserves a status ownership fence for %s', async (_, next) => {
+    const api = fixture(recovering); render(view(api)); await screen.findByText(/Engine installation needs attention/);
+    await checkStatus(api, next);
+    expect(screen.getByText(/Another installation request is unavailable/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Review Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.start).not.toHaveBeenCalled(); expect(api.cancel).not.toHaveBeenCalled();
+  });
+  it.each([null, 'd'.repeat(32)])('does not rebind unresolved ownership from operation %s', async (operationId) => {
+    const api = fixture({ ...recovering, operation_id: operationId }); render(view(api));
+    await screen.findByText(/Engine installation needs attention/);
+    await checkStatus(api, recovering);
+    await checkStatus(api, installed);
+    expect(screen.getByText(/Another installation request is unavailable/)).toBeTruthy();
+    expect(api.review).not.toHaveBeenCalled(); expect(api.start).not.toHaveBeenCalled(); expect(api.cancel).not.toHaveBeenCalled();
+  });
+  it('does not reuse a failed operation to clear a recovery ownership fence', async () => {
+    const api = fixture(recovering); render(view(api)); await screen.findByText(/Engine installation needs attention/);
+    await checkStatus(api, { ...idle, operation_id: live.operation_id, state: 'failed' });
+    await checkStatus(api, installed);
+    expect(screen.getByText(/Another installation request is unavailable/)).toBeTruthy();
+    expect(api.review).not.toHaveBeenCalled(); expect(api.start).not.toHaveBeenCalled(); expect(api.cancel).not.toHaveBeenCalled();
+  });
+  it.each(['review', 'start', 'cancel'] as const)('keeps an unbound %s ownership error fenced after installed status', async (command) => {
+    const api = fixture(command === 'cancel' ? live : idle);
+    api[command].mockRejectedValue(new EngineAcquisitionError('ownership'));
+    render(view(api));
+    if (command === 'cancel') {
+      fireEvent.click(await screen.findByRole('button', { name: 'Cancel Engine installation' }));
+    } else if (command === 'review') {
+      await screen.findByText('Engine installation has not been requested.');
+      fireEvent.click(screen.getByRole('button', { name: 'Review Engine installation' }));
+    } else {
+      await screen.findByText('Engine installation has not been requested.');
+      const dialog = await review(); fireEvent.click(dialog.getByRole('button', { name: 'Install reviewed Engine' }));
+    }
+    await screen.findByText(/Another installation request is unavailable/); await reviewClosed();
+    await checkStatus(api, recovering);
+    await checkStatus(api, installed);
+    expect(screen.getByText(/Another installation request is unavailable/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Review Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api[command]).toHaveBeenCalledOnce();
+    if (command !== 'start') expect(api.start).not.toHaveBeenCalled();
+    if (command !== 'cancel') expect(api.cancel).not.toHaveBeenCalled();
+  });
+  it.each(['account', 'api', 'purpose'] as const)('does not settle status ownership across a changed %s', async (change) => {
+    const api = fixture(recovering); const rendered = render(view(api));
+    await screen.findByText(/Engine installation needs attention/);
+    const replacement = change === 'api' ? fixture(installed) : api;
+    const selection = change === 'purpose' ? 'preview' : 'module';
+    replacement.selection = selection;
+    replacement.status.mockResolvedValue(installed);
+    rendered.rerender(view(replacement, change === 'account' ? 'account-two' : 'account-one', selection));
+    await screen.findByText('Engine installation verified.');
+    await checkStatus(replacement, recovering);
+    await checkStatus(replacement, installed);
+    expect(screen.getByText(/Another installation request is unavailable/)).toBeTruthy();
+    expect(replacement.start).not.toHaveBeenCalled(); expect(replacement.cancel).not.toHaveBeenCalled();
+  });
+  it.each([null, 'c'.repeat(32)])('does not clear an uncertain request with an old or unowned Installed status %s', async (operationId) => {
+    const old = { ...idle, state: 'failed' as const, operation_id: 'c'.repeat(32) };
+    const api = fixture(old); api.start.mockRejectedValue(new Error('lost response'));
+    render(view(api)); await screen.findByText('Engine installation did not complete.');
+    const dialog = await review(); fireEvent.click(dialog.getByRole('button', { name: 'Install reviewed Engine' }));
+    await screen.findByText(/Another installation request is unavailable/); await reviewClosed();
+    await checkStatus(api, { ...installed, operation_id: operationId });
+    expect(screen.getByText(/Another installation request is unavailable/)).toBeTruthy();
+    expect(api.start).toHaveBeenCalledOnce(); expect(api.cancel).not.toHaveBeenCalled();
+  });
+  it('does not promote the previous failed ticket through recovery to settle an uncertain request', async () => {
+    const operationId = 'c'.repeat(32);
+    const api = fixture({ ...idle, state: 'failed', operation_id: operationId });
+    api.start.mockRejectedValue(new Error('lost response'));
+    render(view(api)); await screen.findByText('Engine installation did not complete.');
+    const dialog = await review(); fireEvent.click(dialog.getByRole('button', { name: 'Install reviewed Engine' }));
+    await screen.findByText(/Another installation request is unavailable/); await reviewClosed();
+    await checkStatus(api, { ...recovering, operation_id: operationId });
+    await checkStatus(api, { ...installed, operation_id: operationId });
+    expect(screen.getByText(/Another installation request is unavailable/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Review Engine installation' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.start).toHaveBeenCalledOnce(); expect(api.cancel).not.toHaveBeenCalled();
   });
   it('a stale review requires a fresh explicit review, with no automatic retry', async () => {
     const api = fixture(); api.start.mockRejectedValue(new EngineAcquisitionError('stale_review'));
