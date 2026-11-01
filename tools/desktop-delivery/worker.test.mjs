@@ -31,6 +31,14 @@ test('actual workerd/R2 request and storage boundaries', async t => {
  try {
   const releases=await mf.getR2Bucket('RELEASES'),qual=await mf.getR2Bucket('QUALIFICATION');
   await releases.put(packageKey,bytes); await releases.put(feed,'<AppInstaller/>');await qual.put(probeKey,bytes);
+  const nlpPrefix=`qualification/${'c'.repeat(32)}/nlp/`;
+  const nlpObjects=[['catalog.jws','application/jose',new TextEncoder().encode('catalogue.payload.signature')],
+    ['profiles/'+'d'.repeat(64),'application/jose',new TextEncoder().encode('profile.payload.signature')],
+    ['data/'+'e'.repeat(64),'application/octet-stream',bytes]];
+  for(const [suffix,,payload] of nlpObjects) {
+   await qual.put(nlpPrefix+suffix,payload,{httpMetadata:{contentType:'text/html',contentEncoding:'gzip'}});
+   await releases.put(nlpPrefix+suffix,'wrong bucket');
+  }
   const request=(key,options={})=>mf.dispatchFetch(base+key,options);
   let etag;
   await t.test('GET streams exact immutable package bytes and MIME',async()=>{
@@ -67,6 +75,49 @@ test('actual workerd/R2 request and storage boundaries', async t => {
   await t.test('qualification bytes use only the separate bucket',async()=>{
    assert.equal((await request(probeKey)).status,200);await qual.delete(probeKey);await releases.put(probeKey,bytes);
    assert.equal((await request(probeKey)).status,404);
+  });
+  for(const [suffix,type,payload] of nlpObjects) await t.test('NLP qualification object '+suffix,async()=>{
+   const key=nlpPrefix+suffix;
+   const get=await request(key,{headers:{'Accept-Encoding':'gzip, br'}});
+   assert.equal(get.status,200);assert.equal(get.headers.get('Content-Type'),type);
+   assert.equal(get.headers.get('Content-Length'),String(payload.length));
+   assert.ok([null,'identity'].includes(get.headers.get('Content-Encoding')));
+   assert.equal(get.headers.get('Cache-Control'),'no-store, no-transform');
+   assert.equal(get.headers.get('X-Content-Type-Options'),'nosniff');
+   assert.equal(get.headers.get('Accept-Ranges'),'bytes');
+   assert.deepEqual(new Uint8Array(await get.arrayBuffer()),payload);
+   const objectEtag=get.headers.get('ETag');assert.ok(objectEtag);
+   const head=await request(key,{method:'HEAD',headers:{Range:'bytes=0-3'}});
+   assert.equal(head.status,200);assert.equal(head.headers.get('Content-Type'),type);
+   assert.equal(head.headers.get('Content-Length'),String(payload.length));
+   assert.equal(head.headers.get('Content-Range'),null);assert.equal((await head.arrayBuffer()).byteLength,0);
+   const range=await request(key,{headers:{Range:'bytes=3-','If-Range':objectEtag}});
+   assert.equal(range.status,206);assert.equal(range.headers.get('Content-Type'),type);
+   assert.equal(range.headers.get('Content-Range'),`bytes 3-${payload.length-1}/${payload.length}`);
+   assert.equal(range.headers.get('Content-Length'),String(payload.length-3));
+   assert.ok([null,'identity'].includes(range.headers.get('Content-Encoding')));
+   assert.equal(range.headers.get('Cache-Control'),'no-store, no-transform');
+   assert.deepEqual(new Uint8Array(await range.arrayBuffer()),payload.slice(3));
+   const restart=await request(key,{headers:{Range:'bytes=3-','If-Range':'"other"'}});
+   assert.equal(restart.status,200);assert.deepEqual(new Uint8Array(await restart.arrayBuffer()),payload);
+   const unchanged=await request(key,{headers:{'If-None-Match':objectEtag}});
+   assert.equal(unchanged.status,304);assert.equal((await unchanged.arrayBuffer()).byteLength,0);
+   assert.equal(unchanged.headers.get('Cache-Control'),'no-store, no-transform');
+   assert.equal((await request(key,{headers:{'If-Match':'"other"'}})).status,412);
+   const invalid=await request(key,{headers:{Range:`bytes=${payload.length}-`}});
+   assert.equal(invalid.status,416);assert.equal(invalid.headers.get('Content-Range'),`bytes */${payload.length}`);
+   await qual.delete(key);
+   const missing=await request(key);assert.equal(missing.status,404);
+   assert.equal(missing.headers.get('Cache-Control'),'no-store, no-transform');
+  });
+  await t.test('NLP unsafe paths and methods remain unavailable in the actual runtime',async()=>{
+   for(const key of ['nlp/catalog.jws',nlpPrefix+'profiles/'+'D'.repeat(64),nlpPrefix+'data/'+'e'.repeat(63),
+    nlpPrefix+'catalog.jws?x=1',nlpPrefix+'profiles%2f'+'d'.repeat(64),nlpPrefix+'data/'+'e'.repeat(64)+'/extra']) {
+    const r=await request(key);assert.ok([400,404].includes(r.status));
+   }
+   for(const method of ['PUT','POST','DELETE','PATCH','OPTIONS']) {
+    assert.equal((await request(nlpPrefix+'catalog.jws',{method})).status,405);
+   }
   });
   for(const method of ['PUT','POST','DELETE','PATCH','OPTIONS']) await t.test(method+' cannot mutate storage',async()=>{
    const r=await request(packageKey,{method});assert.equal(r.status,405);assert.equal(r.headers.get('allow'),'GET, HEAD');

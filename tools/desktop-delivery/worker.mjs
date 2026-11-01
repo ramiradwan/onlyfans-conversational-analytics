@@ -5,6 +5,7 @@ const FEED = 'windows/x64/stable/ConversationAnalytics.appinstaller';
 const ARTIFACT = '(?:ConversationAnalytics_[1-9][0-9]*(?:\\.[0-9]+){3}_x64\\.msix|(?:ConversationAnalytics|TextAnalysisEngine)_[1-9][0-9]*(?:\\.(?:0|[1-9][0-9]*)){3}_x64\\.msixbundle)';
 const PACKAGE = new RegExp('^packages/[a-f0-9]{64}/' + ARTIFACT + '$');
 const PROBE = new RegExp('^qualification/[a-f0-9]{32}/(?:bytes\\.bin|probe\\.msix|probe\\.appinstaller|packages/[a-f0-9]{64}/' + ARTIFACT + ')$');
+const NLP_PROBE = /^qualification\/[a-f0-9]{32}\/nlp\/(catalog\.jws|(?:profiles|data)\/[a-f0-9]{64})$/;
 const TYPES = {msix: 'application/msix', msixbundle: 'application/msixbundle', appinstaller: 'application/appinstaller', bin: 'application/octet-stream'};
 
 function reply(request, status, text, extra = {}) {
@@ -37,18 +38,20 @@ export async function serve(request, env) {
   if (!['GET', 'HEAD'].includes(request.method)) return reply(request, 405, 'Method not allowed.', {Allow: 'GET, HEAD'});
   if (url.search || url.username || url.password || /[%\\\u0000-\u0020]/.test(url.pathname)) return reply(request, 400, 'Invalid path.');
   const key = url.pathname.slice(PREFIX.length);
-  const probe = PROBE.test(key), immutable = PACKAGE.test(key);
+  const nlp = NLP_PROBE.exec(key);
+  const probe = PROBE.test(key) || nlp !== null, immutable = PACKAGE.test(key);
   if (key !== FEED && !immutable && !probe) return reply(request, 404, 'Not found.');
   const bucket = probe ? env.QUALIFICATION : env.RELEASES;
   if (!bucket) return reply(request, 503, 'Temporarily unavailable.');
   const extension = key.slice(key.lastIndexOf('.') + 1);
+  const type = nlp ? (nlp[1].startsWith('data/') ? 'application/octet-stream' : 'application/jose') : TYPES[extension];
   for (let attempt = 0; attempt < 2; attempt++) {
     const meta = await bucket.head(key);
     if (!meta) return reply(request, 404, 'Not found.');
     if (!Number.isSafeInteger(meta.size) || meta.size < 0) return reply(request, 503, 'Temporarily unavailable.');
     const etag = meta.httpEtag;
     const headers = new Headers({
-      'Content-Type': TYPES[extension], 'Content-Length': String(meta.size), 'Content-Encoding': 'identity',
+      'Content-Type': type, 'Content-Length': String(meta.size), 'Content-Encoding': 'identity',
       'ETag': etag, 'Last-Modified': meta.uploaded.toUTCString(), 'Accept-Ranges': 'bytes',
       'Cache-Control': immutable ? 'public, max-age=31536000, immutable, no-transform' : 'no-store, no-transform',
       'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer',
