@@ -89,6 +89,81 @@ def test_factory_has_no_side_effects_until_projection_binding(monkeypatch, tmp_p
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.parametrize('existing_root', [False, True])
+def test_factory_acquires_into_private_nlp_root(monkeypatch, tmp_path, existing_root):
+    from app.nlp import windows_host
+    from app.nlp.preparation import PreparationAdmission
+    from app.nlp.release_catalog import canonical
+    from app.persistence.private_files import apply_private_directory_security
+    from app.services import nlp_distribution, nlp_setup
+    from tests.continuous_analytics_fixture import cleanup
+    from tests.test_nlp_child_transport import Launcher
+    from tests.test_nlp_dependencies import Environment
+    from tests.test_nlp_profile_authentication import keys
+
+    e = Environment(tmp_path)
+    launcher = Launcher(e.profile)
+    root = tmp_path / 'nlp'
+    if existing_root:
+        root.mkdir()
+        apply_private_directory_security(root)
+    security_calls = []
+    def secure_root(path, *, repair_permissions=True):
+        assert path == root
+        security_calls.append(repair_permissions)
+        apply_private_directory_security(path, repair_permissions=repair_permissions)
+    monkeypatch.setattr(nlp_setup, 'apply_private_directory_security', secure_root)
+    admission = PreparationAdmission(engine=e.profile.components[0].engine,
+        profiles=(e.profile.identity_digest(),), distribution_base_url='https://example.invalid/nlp/',
+        minimum_free_bytes=0, _keys_json=canonical(keys()), _policy_json=canonical(e.policy))
+    monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: admission)
+    monkeypatch.setattr(windows_host, 'NativeHostLauncher', lambda: launcher)
+    monkeypatch.setattr(nlp_distribution, 'ProfileDistribution', lambda _: e.distribution)
+    configuration = nlp_setup.preparation_configuration(lambda: e.persistence.authentication, tmp_path)
+    assert root.exists() is existing_root
+    try:
+        assert e.service.close()
+        e.service = configuration.factory(e.fixture.source, e.findings)
+        assert security_calls == [not existing_root]
+        e.service.clock = lambda: e.clock.now
+        e.service.owners = e.owners
+        e.service.start()
+        operation = e.acquire()
+        observed = e.service.observation(operation)
+        assert observed['state'] == 'complete', e.service.status()['failure']
+        assert observed['verified_files'] > 0 and not observed['in_flight']
+        assert e.service.ready(e.profile)
+        assert (root / 'artifacts').is_dir() and (root / 'spool').is_dir()
+        assert launcher.owners and all('analyze' not in owner.operations for owner in launcher.owners)
+        apply_private_directory_security(root, repair_permissions=False)
+    finally:
+        assert e.service.close()
+        for owner in launcher.owners:
+            owner.stdout.close()
+        cleanup(e.fixture)
+
+
+def test_factory_refuses_unverified_existing_root_without_repair(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from app.persistence.private_files import PrivateFileSecurityError
+    from app.services import nlp_setup
+
+    root = tmp_path / 'nlp'
+    root.mkdir()
+    retained = root / 'retained'
+    retained.write_bytes(b'existing material')
+    monkeypatch.setattr(nlp_setup, 'load_preparation_release', lambda: SimpleNamespace())
+    def refuse(path, *, repair_permissions=True):
+        assert path == root and not repair_permissions
+        raise PrivateFileSecurityError('private directory security failed')
+    monkeypatch.setattr(nlp_setup, 'apply_private_directory_security', refuse)
+    configuration = nlp_setup.preparation_configuration(lambda: pytest.fail('database opened'), tmp_path)
+    with pytest.raises(PrivateFileSecurityError):
+        configuration.factory(object(), object())
+    assert list(root.iterdir()) == [retained]
+    assert retained.read_bytes() == b'existing material'
+
+
 @pytest.mark.asyncio
 async def test_analytics_composes_independent_owner_and_shutdown_without_findings(monkeypatch):
     from types import SimpleNamespace

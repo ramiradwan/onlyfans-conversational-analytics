@@ -10,12 +10,12 @@ import stat
 from app.core.desktop_release import current_desktop_release
 from app.nlp.contracts import NlpBoundaryError
 from app.nlp.preparation import parse_preparation_release
+from app.persistence.private_files import apply_private_directory_security, reject_path_aliases
 
 
 def load_preparation_release():
     if os.name != 'nt' or not getattr(sys, 'frozen', False) or Path(sys.executable).name.lower() != 'brain.exe':
         return None
-    from app.persistence.private_files import reject_path_aliases
     root = reject_path_aliases(Path(sys.executable).parent)
     path = root / 'nlp-preparation-release.json'
     if not path.exists():
@@ -57,9 +57,16 @@ def preparation_configuration(authentication_factory, data_root):
     from app.persistence.nlp_dependencies import DependencyPersistence
     from app.services.nlp_dependencies import DependencyService
     from app.services.nlp_distribution import ProfileDistribution
-    root = Path(data_root) / 'nlp'
+    root = reject_path_aliases(Path(data_root) / 'nlp')
 
     def factory(source, findings):
+        try:
+            root.mkdir(mode=0o700)
+            created = True
+        except FileExistsError:
+            created = False
+        # Initialize only a newly owned root; existing descendants keep their access.
+        apply_private_directory_security(root, repair_permissions=created)
         policy = admission.resource_policy
         persistence = DependencyPersistence(authentication_factory())
         artifacts = ArtifactStore(root / 'artifacts', StoreLimits(policy.installed_bytes, policy.installed_bytes, admission.minimum_free_bytes))
