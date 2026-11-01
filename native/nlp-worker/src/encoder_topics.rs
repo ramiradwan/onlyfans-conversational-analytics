@@ -371,9 +371,12 @@ impl EncoderTopicAdapter {
         crate::runtime::options(context)?;
         control.check()?;
         let session = Session::builder()?
-            .with_no_environment_execution_providers()?
-            .with_parallel_execution(false)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_no_environment_execution_providers()
+            .map_err(|_| anyhow::anyhow!("runtime_unavailable"))?
+            .with_parallel_execution(false)
+            .map_err(|_| anyhow::anyhow!("runtime_unavailable"))?
+            .with_optimization_level(GraphOptimizationLevel::Level3)
+            .map_err(|_| anyhow::anyhow!("runtime_unavailable"))?
             .commit_from_file(graph)?;
         control.check()?;
         signature(&session, &cfg)?;
@@ -577,7 +580,7 @@ mod tests {
                 &ValueType::Tensor {
                     ty: TensorElementType::Float32,
                     shape: vec![2, 4].into(),
-                    dimension_symbols: Default::default()
+                    dimension_symbols: ort::value::SymbolicDimensions::empty(2)
                 },
                 TensorElementType::Float32,
                 &[1, 4]
@@ -663,8 +666,8 @@ mod tests {
         let cfg = parsed(&c, &v).unwrap();
         let tensor = |ty, shape: Vec<i64>| ValueType::Tensor {
             ty,
+            dimension_symbols: ort::value::SymbolicDimensions::empty(shape.len()),
             shape: shape.into(),
-            dimension_symbols: Default::default(),
         };
         let input = tensor(TensorElementType::Int64, vec![1, -1]);
         let raw = tensor(TensorElementType::Float32, vec![1, 4]);
