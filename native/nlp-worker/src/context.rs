@@ -78,16 +78,20 @@ pub fn supported_adapter(v: &Value) -> Result<()> {
         ],
     )?;
     let topics = v["adapter_id"] == crate::topic::ADAPTER;
+    let encoder = v["adapter_id"] == crate::encoder_topics::ADAPTER;
     let instruction = v["adapter_id"] == crate::instruction_topics::ADAPTER;
     ensure!(
         (v["adapter_id"] == ADAPTER
             || topics
+            || encoder
             || (instruction && cfg!(feature = "instruction-topics")))
             && v["adapter_version"] == "1"
             && v["abi"] == "nlp-adapter.v1"
             && v["architecture"]
                 == if instruction {
                     crate::instruction_topics::ARCHITECTURE
+                } else if encoder {
+                    crate::encoder_topics::ARCHITECTURE
                 } else {
                     "boundary-shared-v1"
                 }
@@ -96,6 +100,8 @@ pub fn supported_adapter(v: &Value) -> Result<()> {
                     "gguf-model.v1"
                 } else if topics {
                     "onnx-boundary-classification.v1"
+                } else if encoder {
+                    crate::encoder_topics::FORMAT
                 } else {
                     "onnx-boundary-entity.v1"
                 }
@@ -150,7 +156,9 @@ pub fn capability(v: &Value) -> Result<()> {
     )?;
     supported_adapter(&v["adapter"])?;
     let instruction = v["adapter"]["adapter_id"] == crate::instruction_topics::ADAPTER;
-    let topics = v["adapter"]["adapter_id"] == crate::topic::ADAPTER || instruction;
+    let topics = v["adapter"]["adapter_id"] == crate::topic::ADAPTER
+        || v["adapter"]["adapter_id"] == crate::encoder_topics::ADAPTER
+        || instruction;
     ensure!(
         v["task_contracts"]
             == if topics {

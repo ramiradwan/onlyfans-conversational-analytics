@@ -514,6 +514,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tokenizers",
  "windows-sys 0.61.2",
 ]
 

@@ -17,6 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 enum Resident {
+    EncoderTopics(crate::encoder_topics::EncoderTopicAdapter),
     Entities(EntityAdapter),
     Topics(TopicAdapter),
     InstructionTopics(crate::instruction_topics::InstructionTopicAdapter),
@@ -24,6 +25,9 @@ enum Resident {
 impl Resident {
     fn load(context: &Context, component: Value, control: &Control) -> Result<Self> {
         match component["adapter"]["adapter_id"].as_str() {
+            Some(crate::encoder_topics::ADAPTER) => Ok(Self::EncoderTopics(
+                crate::encoder_topics::EncoderTopicAdapter::load(context, component, control)?,
+            )),
             Some(crate::context::ADAPTER) => Ok(Self::Entities(EntityAdapter::load(
                 context, component, control,
             )?)),
@@ -40,6 +44,7 @@ impl Resident {
     }
     fn extract(&self, text: &str, control: &Control) -> Result<Vec<Value>> {
         match self {
+            Self::EncoderTopics(adapter) => adapter.extract(text, control),
             Self::Entities(adapter) => adapter.extract(text, control),
             Self::Topics(adapter) => adapter.extract(text, control),
             Self::InstructionTopics(adapter) => adapter.extract(text, control),
@@ -49,7 +54,9 @@ impl Resident {
 fn task(component: &Value) -> Result<&'static str> {
     let name = match component["adapter"]["adapter_id"].as_str() {
         Some(crate::context::ADAPTER) => "concept_mentions",
-        Some(crate::topic::ADAPTER) | Some(crate::instruction_topics::ADAPTER) => "message_topics",
+        Some(crate::topic::ADAPTER)
+        | Some(crate::instruction_topics::ADAPTER)
+        | Some(crate::encoder_topics::ADAPTER) => "message_topics",
         _ => bail!("incompatible"),
     };
     let tasks = component["tasks"]
