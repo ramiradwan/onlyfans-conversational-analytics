@@ -45,6 +45,48 @@ def inputs(tmp_path):
     return selected, path, desktop, value, config
 
 
+@pytest.mark.skipif(os.name != 'nt', reason='PowerShell MSIX build wrapper')
+@pytest.mark.parametrize(('configured', 'quoted_engine'), [(False, False), (True, False), (True, True)])
+def test_build_wrapper_forwards_optional_preparation_without_starting_packaging(stage, tmp_path, monkeypatch,
+                                                                             configured, quoted_engine):
+    _, profile, _, _, config = inputs(tmp_path)
+    config = config.rename(tmp_path / 'model preparation [fixture].json')
+    captured = tmp_path / 'prepare-arguments.json'
+    monkeypatch.setenv('OFCA_TEST_MSIX_ARGUMENTS', str(captured))
+    # Stop at the real wrapper's producer boundary, before sealing or MakeAppx.
+    producer = tmp_path / 'capture-producer.ps1'
+    producer.write_text(r'''if ($args[1] -eq 'validate-profile') {
+    $global:LASTEXITCODE = 0
+    Write-Output '{}'
+    return
+}
+if ($args[1] -ne 'prepare') { throw 'Unexpected producer operation' }
+ConvertTo-Json -InputObject @($args) -Compress | Set-Content -LiteralPath $env:OFCA_TEST_MSIX_ARGUMENTS
+throw 'captured-prepare-boundary'
+''', encoding='utf-8')
+    output = tmp_path / 'package-output'
+    command = ['pwsh', '-NoProfile', '-NonInteractive', '-File',
+        str(msix.ROOT / 'packaging/build-msix.ps1'), '-BuildPython', str(producer),
+        '-StagingRoot', str(stage), '-PackageProfile', str(profile), '-OutputRoot', str(output)]
+    if configured:
+        command += ['-NlpPreparationRelease', str(config)]
+    if quoted_engine:
+        command += ['-EngineBundle', str(tmp_path / 'engine.msixbundle'),
+            '-EngineAcquisitionQuoteInputs', str(tmp_path / 'quote-inputs.json')]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0 and 'captured-prepare-boundary' in result.stderr, result.stdout + result.stderr
+    arguments = json.loads(captured.read_text(encoding='utf-8-sig'))
+    expected = [str(msix.ROOT / 'tools/msix_packaging.py'), 'prepare', '--stage', str(stage),
+        '--working', str(output / 'working'), '--profile', str(profile)]
+    if quoted_engine:
+        expected += ['--engine-acquisition-quote-inputs', str(tmp_path / 'quote-inputs.json'),
+            '--engine-bundle', str(tmp_path / 'engine.msixbundle')]
+    if configured:
+        expected += ['--nlp-preparation-release', str(config)]
+    assert arguments == expected
+    assert not output.exists()
+
+
 def archive_payload(working, path, *, preparation_path=msix.NLP_PREPARATION_PATH):
     with zipfile.ZipFile(path, 'w') as archive:
         for leaf in (working / 'payload').rglob('*'):

@@ -8,7 +8,8 @@ param(
     [string] $MakeAppx = '',
     [string] $PackageUri = '',
     [string] $EngineBundle = '',
-    [string] $EngineAcquisitionQuoteInputs = ''
+    [string] $EngineAcquisitionQuoteInputs = '',
+    [string] $NlpPreparationRelease = ''
 )
 
 Set-StrictMode -Version Latest
@@ -63,6 +64,9 @@ $prepareArguments = @('prepare', '--stage', $StagingRoot, '--working', $working,
 if ($EngineAcquisitionQuoteInputs) {
     if (-not $EngineBundle) { throw 'Engine quote requires its independently admitted final signed bundle' }
     $prepareArguments += @('--engine-acquisition-quote-inputs', $EngineAcquisitionQuoteInputs, '--engine-bundle', $EngineBundle)
+}
+if ($NlpPreparationRelease) {
+    $prepareArguments += @('--nlp-preparation-release', $NlpPreparationRelease)
 }
 $prepared = Invoke-MsixPython -Arguments $prepareArguments
 & (Join-Path $projectRoot 'packaging/write-digests.ps1') -Directory (Join-Path $prepared.payload 'app')
