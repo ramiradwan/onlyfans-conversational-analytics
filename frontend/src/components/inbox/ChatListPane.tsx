@@ -28,7 +28,7 @@ const Pane = styled(Paper)(({ theme }) => ({
   flexDirection: 'column',
   height: '100%',
   minHeight: 0,
-  minWidth: componentTokens.inbox.conversationPaneMinWidth,
+  minWidth: `min(100%, ${componentTokens.inbox.conversationPaneMinWidth})`,
   overflow: 'hidden',
 }));
 
@@ -176,11 +176,19 @@ export function ChatListPane({
                   </ListItemAvatar>
                   <ListItemText
                     disableTypography
+                    sx={{ containerType: 'inline-size', minWidth: 0 }}
                     primary={
-                      <Stack direction="row" spacing={1} sx={{
-                        justifyContent: 'space-between'
+                      <Box sx={{
+                        columnGap: 1,
+                        display: 'grid',
+                        gridTemplateAreas: '"name time"',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        [`@container (max-width: ${componentTokens.inbox.conversationPaneMinWidth})`]: {
+                          gridTemplateAreas: '"name" "time"',
+                          gridTemplateColumns: 'minmax(0, 1fr)',
+                        },
                       }}>
-                        <Typography variant="body1" sx={{ minWidth: 0, flex: 1, height: '1.5rem', whiteSpace: 'nowrap',
+                        <Typography variant="body1" sx={{ gridArea: 'name', minWidth: 0, height: '1.5rem', whiteSpace: 'nowrap',
                           fontWeight: selected ? 700 : 600
                         }}>
                           <BoundedSummary text={title} maximum={componentTokens.reserved.name.maxGraphemes} />
@@ -192,12 +200,16 @@ export function ChatListPane({
                             variant="caption"
                             sx={{
                               color: 'text.secondary',
-                              flexShrink: 0
+                              gridArea: 'time',
+                              minWidth: 0,
+                              overflowWrap: 'anywhere',
+                              textAlign: 'end',
+                              [`@container (max-width: ${componentTokens.inbox.conversationPaneMinWidth})`]: { textAlign: 'start' },
                             }}>
                             {formatTimestamp(lastActivity)}
                           </Typography>
                         )}
-                      </Stack>
+                      </Box>
                     }
                     secondary={
                       <PreviewRow>
