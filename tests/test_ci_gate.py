@@ -25,13 +25,21 @@ WINDOWS_FILES = {
     "tests/test_boot.py": 2,
     gate.LOOP_TEST_FILE: 2,
 }
+PLATFORM_FILES = {
+    "tests/test_platform.py": 1,
+    "tests/test_boot.py": 2,
+    gate.LOOP_TEST_FILE: 3,
+    "tests/test_packaged_runtime.py": 1,
+    "tests/test_packaging_smoke.py": 1,
+}
 
 
 @pytest.fixture(autouse=True)
 def windows_manifest(monkeypatch):
     manifest = {"schema_version": 1, "files": copy.deepcopy(WINDOWS_FILES)}
+    platform_files = copy.deepcopy(PLATFORM_FILES)
     monkeypatch.setattr(gate, "load_windows_full_manifest", lambda root: manifest)
-    monkeypatch.setattr(gate, "load_backend_manifest", lambda root: {"windows_contracts": {
+    monkeypatch.setattr(gate, "load_backend_manifest", lambda root: {"windows_platform_shards": platform_files, "windows_contracts": {
         "platform": [{"selector": node} for node in (
             "tests/test_platform.py::test_fs", "tests/test_boot.py::test_boot",
             "tests/test_packaged_runtime.py", "tests/test_packaging_smoke.py",
@@ -55,7 +63,8 @@ def _reports():
 
     def row(node, markers=(), windows=False, contract=None):
         rows[node] = {"nodeid": node, "path": node.split("::", 1)[0], "markers": list(markers),
-                      "windows_compat": windows, "windows_contract": contract}
+                      "windows_compat": windows, "windows_contract": contract,
+                      "windows_platform_shard": PLATFORM_FILES.get(node.split("::", 1)[0]) if contract == "platform" else None}
         return node
 
     fast = {row("tests/test_unit.py::test_fast"),
@@ -83,8 +92,9 @@ def _reports():
             selected = fast
         elif lane.startswith("analytics-integration-"):
             selected = {integrations[int(lane[-1])]} | (loop_nodes if lane.endswith("1") else set())
-        elif lane == "windows-platform-contract":
-            selected = {"tests/test_platform.py::test_fs", boot} | loop_nodes
+        elif lane in gate.WINDOWS_PLATFORM_LANES:
+            selected = {node for node in ({"tests/test_platform.py::test_fs", boot} | loop_nodes)
+                        if PLATFORM_FILES[node.split("::", 1)[0]] == int(lane[-1])}
         elif lane == gate.PYTHON313_LOOP_LANE:
             selected = loop_nodes
         elif lane == "analytics-windows-contract":
@@ -113,6 +123,8 @@ def _reports():
             "collection_errors": [], "complete": True, "collect_only": spec.reference,
             "exit_code": 0, "wall_seconds": 0.1,
         }
+        if lane in gate.WINDOWS_PLATFORM_LANES:
+            result[lane]["shard"] = int(lane[-1])
         if lane == gate.PYTHON313_LOOP_LANE:
             result[lane].update(python="3.13.6", python_implementation="CPython", partial=False,
                 collected=[copy.deepcopy(rows[node]) for node in sorted(loop_nodes)], deselected=[],
@@ -169,7 +181,7 @@ def test_complete_required_graph_and_independent_coverage_pass(tmp_path):
     gate.validate_needs(_needs(), jobs)
     selected = gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs)
     assert gate.validate_coverage(selected) == {
-        "legacy_linux": 18, "legacy_windows": 19, "required_windows": 14, "scale": 4, "reports": 26,
+        "legacy_linux": 18, "legacy_windows": 19, "required_windows": 14, "scale": 4, "reports": 28,
     }
 
 
@@ -203,6 +215,46 @@ def test_a_missing_or_duplicated_integration_owner_fails():
     _replace_selection(reports["analytics-integration-2"], [])
     with pytest.raises(gate.GateError, match="exactly one owner"):
         gate.validate_coverage(reports)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "wrong-file-owner", "split-file"])
+def test_windows_platform_partition_rejects_missing_duplicate_or_misplaced_cases(mutation):
+    reports = _reports()
+    source, target = reports[gate.WINDOWS_PLATFORM_LANES[2]], reports[gate.WINDOWS_PLATFORM_LANES[1]]
+    nodes = list(source["selected"])
+    moved = nodes if mutation == "wrong-file-owner" else nodes[:1]
+    if mutation != "duplicate":
+        _replace_selection(source, set(nodes) - set(moved))
+    if mutation != "missing":
+        _replace_selection(target, set(target["selected"]) | set(moved))
+    with pytest.raises(gate.GateError, match="Windows platform contract.*owner|Windows platform contract selection parity"):
+        gate.validate_coverage(reports)
+
+
+@pytest.mark.parametrize("lane", gate.WINDOWS_PLATFORM_LANES)
+@pytest.mark.parametrize("shard", [None, True, "1", 0, 4])
+def test_windows_platform_report_requires_exact_integer_shard_identity(lane, shard):
+    reports = _reports()
+    reports[lane]["shard"] = shard
+    with pytest.raises(gate.GateError, match="platform shard identity"):
+        gate.validate_coverage(reports)
+
+
+@pytest.mark.parametrize("lane", [*gate.WINDOWS_PLATFORM_LANES, "analytics-windows-contract"])
+@pytest.mark.parametrize("shard", [None, True, "1", 2])
+def test_platform_classifier_cannot_override_independent_whole_file_assignment(lane, shard):
+    reports = _reports()
+    gate.inventory(reports[lane])["tests/test_platform.py::test_fs"]["windows_platform_shard"] = shard
+    with pytest.raises(gate.GateError, match="platform shard classification"):
+        gate.validate_coverage(reports)
+
+
+@pytest.mark.parametrize("lane", gate.WINDOWS_PLATFORM_LANES)
+def test_missing_platform_actual_execution_cannot_hide_behind_matrix_success(lane):
+    jobs = _jobs()
+    del jobs[lane]
+    with pytest.raises(gate.GateError, match="latest mandatory job"):
+        gate.validate_needs(_needs(), jobs)
 
 
 def test_changing_reference_selection_cannot_hide_lost_legacy_coverage():
@@ -522,7 +574,8 @@ def test_explicit_profile_selection_and_skip_are_mandatory():
         gate.validate_coverage(reports)
 
 
-@pytest.mark.parametrize("lane", ["analytics-integration-2", "windows-full-regression-2"])
+@pytest.mark.parametrize("lane", ["analytics-integration-2", "windows-full-regression-2",
+                                  "windows-platform-contract-2", "windows-platform-contract-3"])
 def test_retained_successful_dependencies_are_valid_on_failed_jobs_rerun(tmp_path, lane):
     jobs, old = _jobs(), _reports()
     _write_reports(tmp_path, old)
@@ -537,7 +590,7 @@ def test_retained_successful_dependencies_are_valid_on_failed_jobs_rerun(tmp_pat
     gate.validate_coverage(reports)
 
 
-@pytest.mark.parametrize("lane", ["analytics-integration-2", *gate.WINDOWS_FULL_LANES])
+@pytest.mark.parametrize("lane", ["analytics-integration-2", *gate.WINDOWS_FULL_LANES, *gate.WINDOWS_PLATFORM_LANES])
 def test_older_success_cannot_supply_missing_latest_execution_artifact(tmp_path, lane):
     jobs = _jobs()
     _write_reports(tmp_path, _reports())
@@ -546,9 +599,38 @@ def test_older_success_cannot_supply_missing_latest_execution_artifact(tmp_path,
         gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs)
 
 
+@pytest.mark.parametrize("lane", [lane for lane, spec in gate.SPECS.items()
+                                  if spec.job == gate.WINDOWS_PLATFORM_LANES[0]
+                                  and lane != gate.WINDOWS_PLATFORM_LANES[0]])
+@pytest.mark.parametrize("wrong_owner", gate.WINDOWS_PLATFORM_LANES[1:])
+def test_platform_auxiliary_evidence_cannot_come_from_a_sibling_producer(tmp_path, lane, wrong_owner):
+    _write_reports(tmp_path, _reports())
+    source = next(tmp_path.rglob(f"{lane}.json"))
+    destination = tmp_path / f"ci-tests-{wrong_owner}-{SHA}-{RUN}-1" / source.name
+    source.replace(destination)
+    with pytest.raises(gate.GateError, match="artifact and report"):
+        gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=_jobs())
+
+
+@pytest.mark.parametrize("missing", [lane for lane, spec in gate.SPECS.items()
+                                     if spec.job == gate.WINDOWS_PLATFORM_LANES[0]
+                                     and lane != gate.WINDOWS_PLATFORM_LANES[0]])
+def test_platform_group_one_rerun_requires_all_its_current_auxiliary_reports(tmp_path, missing):
+    reports, jobs = _reports(), _jobs()
+    _write_reports(tmp_path, reports)
+    current = {lane: copy.deepcopy(report) for lane, report in reports.items()
+               if gate.SPECS[lane].job == gate.WINDOWS_PLATFORM_LANES[0] and lane != missing}
+    for report in current.values():
+        report["run_attempt"] = "2"
+    jobs[gate.WINDOWS_PLATFORM_LANES[0]].update(run_attempt=2, id=2000)
+    _write_reports(tmp_path, current)
+    with pytest.raises(gate.GateError, match="missing evidence for latest"):
+        gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs)
+
+
 @pytest.mark.parametrize("field,value", [("source_commit", "b" * 40), ("workflow_run_id", "82"),
                                          ("job_id", "backend-fast")])
-@pytest.mark.parametrize("lane", ["analytics-integration-1", *gate.WINDOWS_FULL_LANES])
+@pytest.mark.parametrize("lane", ["analytics-integration-1", *gate.WINDOWS_FULL_LANES, *gate.WINDOWS_PLATFORM_LANES])
 def test_evidence_identity_mismatch_is_rejected(tmp_path, field, value, lane):
     reports = _reports()
     reports[lane][field] = value
@@ -557,7 +639,7 @@ def test_evidence_identity_mismatch_is_rejected(tmp_path, field, value, lane):
         gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=_jobs())
 
 
-@pytest.mark.parametrize("lane", ["backend-fast", *gate.WINDOWS_FULL_LANES])
+@pytest.mark.parametrize("lane", ["backend-fast", *gate.WINDOWS_FULL_LANES, *gate.WINDOWS_PLATFORM_LANES])
 def test_artifact_attempt_disagreement_and_duplicate_reports_fail(tmp_path, lane):
     reports = _reports()
     _write_reports(tmp_path, reports)
@@ -655,7 +737,7 @@ def test_pr_requires_expected_producer_skips_and_no_exhaustive_or_scale_artifact
     gate.validate_needs(needs, jobs, event="pull_request")
     selected = gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs, event="pull_request")
     assert gate.validate_coverage(selected, event="pull_request")["scale"] == 0
-    assert len(selected) == 23
+    assert len(selected) == 25
     _write_reports(tmp_path, {unexpected_lane: _reports()[unexpected_lane]})
     with pytest.raises(gate.GateError, match="unexpected report lane"):
         gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs, event="pull_request")
@@ -693,9 +775,9 @@ def test_pr_cannot_accept_an_unexpected_exhaustive_matrix_result(result):
         gate.validate_needs(needs, jobs, event="pull_request")
 
 
-@pytest.mark.parametrize("job", ["desktop-native-contracts", "windows-platform-contract", "analytics-windows-contract", "windows-browser-e2e",
+@pytest.mark.parametrize("job", ["desktop-native-contracts", *gate.WINDOWS_PLATFORM_LANES, "analytics-windows-contract", "windows-browser-e2e",
                                  "windows-full-regression"])
-@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", None])
+@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", "timed_out", None])
 def test_pr_cutover_keeps_focused_contracts_browser_and_stable_aggregate_blocking(job, result):
     jobs, needs, _ = _pr_inputs()
     jobs[job]["conclusion"] = result
@@ -713,6 +795,10 @@ def test_pr_refuses_any_unexpected_actual_exhaustive_execution(name, result):
 
 
 def _rename_node(reports, original, renamed):
+    platform_files = gate.load_backend_manifest(Path())["windows_platform_shards"]
+    original_path, renamed_path = original.split("::", 1)[0], renamed.split("::", 1)[0]
+    if original_path in platform_files:
+        platform_files[renamed_path] = platform_files.pop(original_path)
     for report in reports.values():
         for row in report["collected"]:
             if row["nodeid"] == original:
@@ -777,7 +863,7 @@ def test_reviewed_platform_skip_cannot_authorize_skipped_windows_production_boot
     # exception must not permit the newly required bootstrap invocation to skip.
     reason = gate.PR_SKIP_BASELINE[(node, "Windows")]
     if skip_platform:
-        _skip(reports["windows-platform-contract"], node, reason)
+        _skip(reports["windows-platform-contract-2"], node, reason)
     _skip(reports["windows-production-boot"], node, reason)
     if event != "pull_request":
         for lane in gate.WINDOWS_FULL_LANES:
@@ -794,7 +880,7 @@ def test_pr_new_default_skip_is_rejected_without_same_run_exhaustive_evidence():
         gate.validate_coverage(reports, event="pull_request")
 
 
-@pytest.mark.parametrize("lane", ["backend-fast", "analytics-integration-4", "windows-platform-contract", "analytics-windows-contract"])
+@pytest.mark.parametrize("lane", ["backend-fast", "analytics-integration-4", *gate.WINDOWS_PLATFORM_LANES, "analytics-windows-contract"])
 @pytest.mark.parametrize("fault", ["missing-excluded-node", "markers", "path"])
 def test_pr_focused_reports_retain_exact_independent_raw_inventory(lane, fault):
     _, _, reports = _pr_inputs()
@@ -815,7 +901,7 @@ def test_linux_platform_skip_requires_actual_windows_contract_execution():
     node = "tests/test_platform.py::test_fs"
     _skip(reports["backend-fast"], node, "Skipped: Windows-only")
     gate.validate_coverage(reports, event="pull_request")
-    _skip(reports["windows-platform-contract"], node, "Skipped: Windows-only")
+    _skip(reports["windows-platform-contract-1"], node, "Skipped: Windows-only")
     with pytest.raises(gate.GateError, match="unreviewed pull-request skip"):
         gate.validate_coverage(reports, event="pull_request")
 
@@ -839,7 +925,7 @@ def test_retained_windows_process_requires_contract_execution(event, monkeypatch
         owner = _windows_owner(reports, node)
         assert gate.validate_report(reports[owner], gate.SPECS[owner])[node] == "executed"
 
-    contract = reports["windows-platform-contract"]
+    contract = reports["windows-platform-contract-1"]
     selected = contract["selected"]
     _replace_selection(contract, [selected_node for selected_node in selected if selected_node != node])
     with pytest.raises(gate.GateError, match="selection parity"):
@@ -859,8 +945,8 @@ def test_raw_windows_marker_cannot_be_hidden_by_classifier_fields():
             continue
         row = next(row for row in report["collected"] if row["nodeid"] == node)
         row.update(markers=["windows_compat"], windows_compat=False, windows_contract=None)
-    _replace_selection(reports["windows-platform-contract"],
-                       [selected for selected in reports["windows-platform-contract"]["selected"] if selected != node])
+    _replace_selection(reports["windows-platform-contract-1"],
+                       [selected for selected in reports["windows-platform-contract-1"]["selected"] if selected != node])
     with pytest.raises(gate.GateError, match="Windows contract classification differs|raw native Windows marker"):
         gate.validate_coverage(reports, event="pull_request")
 
@@ -1052,9 +1138,9 @@ def test_python313_counterpart_artifact_obeys_existing_source_run_and_attempt_gu
 def test_latest_platform_attempt_requires_its_own_python313_counterpart(tmp_path):
     reports, jobs = _reports(), _jobs()
     _write_reports(tmp_path, reports)
-    jobs["windows-platform-contract"].update(run_attempt=2, id=2000)
+    jobs["windows-platform-contract-1"].update(run_attempt=2, id=2000)
     latest = {lane: dict(report, run_attempt="2") for lane, report in reports.items()
-              if gate.SPECS[lane].job == "windows-platform-contract" and lane != gate.PYTHON313_LOOP_LANE}
+              if gate.SPECS[lane].job == "windows-platform-contract-1" and lane != gate.PYTHON313_LOOP_LANE}
     _write_reports(tmp_path, latest)
     with pytest.raises(gate.GateError, match="missing evidence for latest"):
         gate.load_reports(tmp_path, source_commit=SHA, run_id=RUN, jobs=jobs)
@@ -1063,7 +1149,7 @@ def test_latest_platform_attempt_requires_its_own_python313_counterpart(tmp_path
     gate.validate_coverage(chosen)
 
 
-@pytest.mark.parametrize("lane", ["analytics-integration-1", "windows-platform-contract", "windows-full-regression-2"])
+@pytest.mark.parametrize("lane", ["analytics-integration-1", "windows-platform-contract-3", "windows-full-regression-2"])
 def test_python313_execution_only_admits_exact_existing_version_skip_reasons(lane):
     reports = _reports()
     report = reports[lane]

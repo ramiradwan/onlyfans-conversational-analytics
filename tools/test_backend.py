@@ -5,6 +5,7 @@ Examples:
   python tools/test_backend.py integration --shard 2 -- -x
   python tools/test_backend.py stateful --profile analytics_convergence_fast
   python tools/test_backend.py list windows-analytics
+  python tools/test_backend.py windows-platform-contract --shard 2
   python tools/test_backend.py list all --validate
   python tools/test_backend.py list windows-full-regression --shard 1 --validate
   python tools/test_backend.py windows-full-regression --shard 2
@@ -127,8 +128,10 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
         raise SelectionError("Choose a lane, for example: python tools/test_backend.py fast")
     if args.list_lane and not listing:
         raise SelectionError("Pytest arguments must follow --")
-    if args.shard is not None and lane not in {"integration", "legacy-windows"}:
-        raise SelectionError("--shard is only valid for integration or windows-full-regression")
+    if args.shard is not None and lane not in {"integration", "windows-platform", "legacy-windows"}:
+        raise SelectionError("--shard is only valid for integration, windows-platform or windows-full-regression")
+    if lane == "windows-platform" and args.shard not in (None, 1, 2, 3):
+        raise SelectionError("Windows platform contract has exactly three shards: --shard 1, 2 or 3")
     if lane == "legacy-windows" and args.shard not in (None, 1, 2):
         raise SelectionError("Full Windows regression has exactly two shards: --shard 1 or 2")
     if args.profile is not None and lane != "stateful":
@@ -151,6 +154,8 @@ def build_command(args: argparse.Namespace, extra: list[str], manifest: dict[str
                 "windows-analytics": "analytics-windows-contract"}.get(lane, lane)
     if lane == "integration" and args.shard:
         identity = f"analytics-integration-{args.shard}"
+    elif lane == "windows-platform" and args.shard:
+        identity = f"windows-platform-contract-{args.shard}"
     elif lane == "stateful":
         identity = args.profile
     elif lane == "legacy-windows":
@@ -237,6 +242,12 @@ def read_timings(path: Path) -> dict[str, float]:
         # when a producer's generic partial flag did not record them.
         expected_by_file: dict[str, set[str]] = {}
         for row in payload.get("collected", []):
+            # Integration lanes intentionally omit fast cases in mixed-tier
+            # modules. Require the whole integration population of that file,
+            # not its separately executed fast population.
+            if (payload.get("lane", "").startswith("analytics-integration-")
+                    and "tier" in row and row["tier"] != "integration"):
+                continue
             if not set(row["markers"]) & (LEGACY_EXCLUDED | {"windows_production"}):
                 expected_by_file.setdefault(row["nodeid"].split("::", 1)[0], set()).add(row["nodeid"])
         selected_by_file: dict[str, set[str]] = {}
@@ -244,6 +255,8 @@ def read_timings(path: Path) -> dict[str, float]:
             selected_by_file.setdefault(nodeid.split("::", 1)[0], set()).add(nodeid)
         totals: dict[str, float] = {}
         for phase in payload.get("reports", []):
+            if "subtest" in phase:
+                continue  # The parent call already includes child execution.
             file = phase["nodeid"].split("::", 1)[0]
             if not expected_by_file.get(file) or selected_by_file.get(file) != expected_by_file[file]:
                 continue
