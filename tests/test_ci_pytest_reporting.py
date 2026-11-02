@@ -17,17 +17,69 @@ pytestmark = pytest.mark.ci_tier("fast")
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_suite(tmp_path, source, *arguments):
-    (tmp_path / "pytest.ini").write_text("[pytest]\nmarkers = omitted: selection fixture\n", encoding="utf-8")
-    (tmp_path / "test_sample.py").write_text(source, encoding="utf-8")
+def run_suite(tmp_path, source, *arguments, environment=None):
+    (tmp_path / "pytest.ini").write_text(
+        "[pytest]\nmarkers =\n omitted: selection fixture\n ci_tier(name): explicit CI owner\n", encoding="utf-8")
+    sources = source if isinstance(source, dict) else {"test_sample.py": source}
+    for name, content in sources.items():
+        (tmp_path / name).write_text(content, encoding="utf-8")
     destination = tmp_path / "evidence"
     env = dict(os.environ, PYTHONPATH=str(ROOT), PYTEST_ADDOPTS="", CI_TEST_LANE="report-fixture", CI_REPORT_DIR=str(destination),
                PRODUCT_SHA="a" * 40, GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="2", GITHUB_JOB="backend-fast",
                GITHUB_STEP_SUMMARY=str(tmp_path / "github-summary.md"))
+    env.update(environment or {})
     result = subprocess.run([sys.executable, "-m", "pytest", "-p", "tools.ci_pytest", "--junitxml=" + str(tmp_path / "original.xml"),
                              *arguments], cwd=tmp_path, env=env, text=True, capture_output=True, timeout=30)
     report = json.loads((destination / "report.json").read_text(encoding="utf-8"))
     return result, report, destination
+
+
+def test_real_reporter_partitions_windows_platform_without_a_top_level_shard(tmp_path):
+    from copy import deepcopy
+    from tools import ci_gate
+
+    assignments = {f"test_platform_{number}.py": number for number in (1, 2, 3)}
+    sources = {name: "import pytest\npytestmark = pytest.mark.ci_tier('integration')\n"
+                     "def test_first(): pass\ndef test_second(): pass\n"
+               for name in assignments}
+    manifest = {
+        "schema_version": 1,
+        "integration_shards": assignments,
+        "windows_platform_shards": assignments,
+        "windows_contracts": {"platform": [
+            {"selector": name, "reason": "Synthetic Windows platform contract"} for name in assignments
+        ], "analytics": []},
+        "stateful_profiles": {},
+    }
+    expected = {f"{name}::{case}" for name in assignments for case in ("test_first", "test_second")}
+    reports = {}
+    for number, lane in enumerate(ci_gate.WINDOWS_PLATFORM_LANES, start=1):
+        suite = tmp_path / str(number)
+        suite.mkdir()
+        manifest_path = suite / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        result, report, _ = run_suite(
+            suite, sources, "--ci-lane", "windows-platform", "--ci-shard", str(number),
+            "--ci-manifest", str(manifest_path), "--ci-validate",
+            environment={"CI_TEST_LANE": lane, "GITHUB_JOB": "windows-platform-contract"},
+        )
+        assert result.returncode == report["exit_code"] == 0, result.stdout + result.stderr
+        assert report["schema"] == "ci-test-report/v1" and "shard" not in report
+        assert report["lane"] == lane and report["job_id"] == "windows-platform-contract"
+        assert {row["nodeid"] for row in report["collected"]} == expected
+        assert all(row["windows_platform_shard"] == assignments[row["path"]] for row in report["collected"])
+        assert set(report["selected"]) == {node for node in expected if assignments[node.split("::", 1)[0]] == number}
+        spec = ci_gate.ReportSpec(lane, report["platform"], python=f"{sys.version_info.major}.{sys.version_info.minor}")
+        assert set(ci_gate.validate_report(report, spec).values()) == {"executed"}
+        reports[lane] = report
+
+    owners = ci_gate._windows_platform_owners(reports, expected, assignments)
+    assert owners == {node: f"windows-platform-contract-{assignments[node.split('::', 1)[0]]}" for node in expected}
+    misplaced = deepcopy(reports)
+    first, second = (misplaced[lane] for lane in ci_gate.WINDOWS_PLATFORM_LANES[:2])
+    first["selected"], second["selected"] = second["selected"], first["selected"]
+    with pytest.raises(ci_gate.GateError, match="owner differs from the checked-in manifest"):
+        ci_gate._windows_platform_owners(misplaced, expected, assignments)
 
 
 def test_reports_selection_outcomes_and_preserves_failure_exit(tmp_path):

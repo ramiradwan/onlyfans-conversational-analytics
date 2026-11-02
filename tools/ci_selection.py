@@ -45,6 +45,12 @@ def load_manifest(rootpath: str | Path, path: str | Path | None = None) -> dict[
         for entry in document.get("windows_contracts", {}).get(name, []):
             if not entry.get("selector") or not entry.get("reason"):
                 raise SelectionError("Windows contract entries require a selector and review reason")
+    if "windows_platform_shards" in document:
+        owners = document["windows_platform_shards"]
+        files = {entry["selector"].split("::", 1)[0] for entry in document["windows_contracts"]["platform"]}
+        if (not isinstance(owners, dict) or set(owners) != files
+                or any(type(value) is not int or value not in (1, 2, 3) for value in owners.values())):
+            raise SelectionError("Every Windows platform contract file must belong to shard 1, 2 or 3")
     return document
 
 
@@ -92,6 +98,8 @@ def describe_item(item: Any, manifest: dict[str, Any]) -> dict[str, Any]:
             "serial": "serial" in markers, "shard": shard if tier == "integration" else None,
             "legacy_default": legacy_default, "legacy_windows": legacy_default,
             "legacy_linux": legacy_default and "windows_production" not in markers,
+            "windows_platform_shard": manifest.get("windows_platform_shards", {}).get(path)
+                if contracts == ["platform"] and legacy_default else None,
             "windows_contract": contracts[0] if contracts else None, "stateful_profiles": profiles}
 
 
@@ -99,14 +107,18 @@ def select_item(metadata: dict[str, Any], lane: str, shard: int | None = None,
                 profile: str | None = None) -> bool:
     if lane not in LANES:
         raise SelectionError(f"Unknown CI lane: {lane}")
-    if shard is not None and (lane != "integration" or shard not in (1, 2, 3, 4)):
-        raise SelectionError("--shard must be 1..4 and is only valid for integration")
+    if shard is not None and (type(shard) is not int or shard not in {
+            "integration": (1, 2, 3, 4), "windows-platform": (1, 2, 3)}.get(lane, ())):
+        raise SelectionError("--shard must be 1..4 for integration or 1..3 for windows-platform")
     if lane == "all":
         return True
     if lane.startswith("legacy-"):
         return bool(metadata[lane.replace("-", "_")])
     if lane.startswith("windows-"):
-        return metadata["legacy_windows"] and metadata["windows_contract"] == lane.removeprefix("windows-")
+        selected = metadata["legacy_windows"] and metadata["windows_contract"] == lane.removeprefix("windows-")
+        if selected and shard is not None and metadata.get("windows_platform_shard") not in (1, 2, 3):
+            raise SelectionError("Windows platform file is missing its shard assignment")
+        return selected and (shard is None or metadata["windows_platform_shard"] == shard)
     if lane == "stateful":
         if not profile:
             raise SelectionError("The stateful lane requires --profile")
@@ -130,6 +142,11 @@ def validate_inventory(inventory: Iterable[dict[str, Any]], manifest: dict[str, 
     integration_files = {row["path"] for row in rows if row["tier"] == "integration"}
     if integration_files != set(manifest["integration_shards"]):
         raise SelectionError("Stale or missing integration files; run python tools/test_backend.py update-manifest")
+    if "windows_platform_shards" in manifest:
+        platform_files = {row["path"] for row in rows
+                          if row["legacy_windows"] and row["windows_contract"] == "platform"}
+        if platform_files != set(manifest["windows_platform_shards"]):
+            raise SelectionError("Stale or missing Windows platform shard files")
     for entries in manifest["windows_contracts"].values():
         for entry in entries:
             if not any(matches(nodeid, entry["selector"]) for nodeid in nodeids):

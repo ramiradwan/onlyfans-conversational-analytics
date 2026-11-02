@@ -29,7 +29,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PRODUCT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-  CI_POLICY_VERSION: sharded-v6-pr-cutover
+  CI_POLICY_VERSION: sharded-v7-pr-cutover
   BROWSER_QUALIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_qualification }}
   BROWSER_SERIAL_CONTROL: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_serial_control }}
 jobs:
@@ -207,7 +207,7 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
       - name: Build frontend
-        run: npm run build --prefix frontend
+        run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
       - name: Collect independent legacy Linux selection
@@ -355,7 +355,7 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
       - name: Build frontend
-        run: npm run build --prefix frontend
+        run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
       - name: Test required analytics integration shard
@@ -432,6 +432,12 @@ jobs:
           if-no-files-found: error
           overwrite: true
   windows-platform-contract:
+    name: windows-platform-contract-${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: [1, 2, 3]
     needs: fixed-sqlcipher-wheel
     runs-on: windows-latest
     # Leave bounded room for SDK producer contracts, dependency setup,
@@ -498,10 +504,11 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
       - name: Build frontend
-        run: npm run build --prefix frontend
+        run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
       - name: Collect independent legacy Windows selection
+        if: matrix.shard == 1
         env:
           CI_TEST_LANE: legacy-windows-reference
           CI_REPORT_DIR: artifacts/ci-tests/legacy-windows-reference
@@ -509,15 +516,17 @@ jobs:
         run: python -m pytest --collect-only --override-ini=addopts= -m "not slow and not stateful_tier_a and not
           stateful_tier_b and not stateful_agent_tier_a"
       - name: Validate exhaustive Windows shard inventory
+        if: matrix.shard == 1
         run: python tools/test_backend.py validate-windows-manifest --inventory artifacts/ci-tests/legacy-windows-reference/report.json
       - name: Test Windows platform contract
         env:
-          CI_TEST_LANE: windows-platform-contract
-          CI_REPORT_DIR: artifacts/ci-tests/windows-platform-contract
-          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-platform-contract/junit.xml
+          CI_TEST_LANE: windows-platform-contract-${{ matrix.shard }}
+          CI_REPORT_DIR: artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}
+          PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
-        run: python tools/test_backend.py --lane windows-platform-contract
+        run: python tools/test_backend.py --lane windows-platform-contract --shard ${{ matrix.shard }}
       - name: Test Windows production boot
+        if: matrix.shard == 1
         run: python -m pytest -m "not slow and windows_production and not stateful_tier_b"
         env:
           CI_TEST_LANE: windows-production-boot
@@ -525,6 +534,7 @@ jobs:
           PYTEST_ADDOPTS: -p tools.ci_pytest --durations=50 --durations-min=0.25 --junitxml=artifacts/ci-tests/windows-production-boot/junit.xml
             -o faulthandler_timeout=120 -o faulthandler_exit_on_timeout=false
       - name: Test Windows persistent SQLCipher general profile
+        if: matrix.shard == 1
         env:
           HYPOTHESIS_PROFILE: tier_b_general
           CI_TEST_LANE: windows-persistence-general
@@ -534,6 +544,7 @@ jobs:
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral --junitxml=artifacts/ci-tests/windows-persistence-general/junit.xml -vv
       - name: Test Windows persistent SQLCipher deletion profile
+        if: matrix.shard == 1
         env:
           HYPOTHESIS_PROFILE: tier_b_deletion
           CI_TEST_LANE: windows-persistence-deletion
@@ -543,6 +554,7 @@ jobs:
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion --junitxml=artifacts/ci-tests/windows-persistence-deletion/junit.xml -vv
       - name: Test Windows persistent SQLCipher smoke profile
+        if: matrix.shard == 1
         env:
           HYPOTHESIS_PROFILE: windows_persistence_smoke
           CI_TEST_LANE: windows-persistence-smoke
@@ -552,11 +564,13 @@ jobs:
         run: |
           python -m pytest --override-ini=addopts= tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke --junitxml=artifacts/ci-tests/windows-persistence-smoke/junit.xml -vv
       - name: Setup CPython 3.13 for socket-loop contracts
+        if: matrix.shard == 1
         id: loop-python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.13'
       - name: Install isolated socket-loop test dependencies
+        if: matrix.shard == 1
         shell: pwsh
         run: |
           $root = Join-Path $env:RUNNER_TEMP "ofca-loop-python313"
@@ -569,6 +583,7 @@ jobs:
           "[pytest]`nmarkers =`n    ci_tier(name): explicit CI owner`n" |
             Set-Content -LiteralPath (Join-Path $root "pytest.ini") -Encoding utf8NoBOM
       - name: Test CPython 3.13 socket-loop contracts
+        if: matrix.shard == 1
         shell: pwsh
         env:
           CI_TEST_LANE: windows-python313-loop-contract
@@ -585,7 +600,7 @@ jobs:
             tests/test_e2e_text_analysis_fixture.py::test_listener_gracefully_closes_real_attached_client_before_waiting
           exit $LASTEXITCODE
       - name: Preserve persistence evidence filenames
-        if: always()
+        if: always() && matrix.shard == 1
         shell: pwsh
         run: |-
           foreach ($profile in @("general", "deletion", "smoke")) {
@@ -597,7 +612,7 @@ jobs:
             }
           }
       - name: Record Windows persistence CI source
-        if: always()
+        if: always() && matrix.shard == 1
         shell: pwsh
         run: |
           $payload = [ordered]@{
@@ -620,12 +635,12 @@ jobs:
           retention-days: 30
           if-no-files-found: error
           overwrite: true
-        if: always()
+        if: always() && matrix.shard == 1
       - name: Retain backend timing and selection
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: ci-tests-windows-platform-contract-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
+          name: ci-tests-windows-platform-contract-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt
             }}
           path: artifacts/ci-tests/
           retention-days: 14
@@ -695,7 +710,7 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
       - name: Build frontend
-        run: npm run build --prefix frontend
+        run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
       - name: Test Windows analytics contract
@@ -788,7 +803,7 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
       - name: Build frontend
-        run: npm run build --prefix frontend
+        run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
       - name: Test complete Windows backend regression shard
@@ -886,7 +901,7 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extension
       - name: Build frontend
-        run: npm run build --prefix frontend
+        run: npm run build:assets --prefix frontend
       - name: Build extension
         run: npm run build --prefix extension
       - name: Qualify analytics scale on Windows
@@ -1050,7 +1065,7 @@ jobs:
           npm run build --prefix extension
           npm run audit --prefix extension
       - name: Build production Bridge
-        run: npm run build --prefix frontend
+        run: npm run build:assets --prefix frontend
       - name: Install pinned E2E dependencies
         run: npm ci --prefix tools/e2e-capture
       - name: Install Playwright Chromium
@@ -1187,7 +1202,7 @@ jobs:
           npm run build --prefix extension
           npm run audit --prefix extension
       - name: Build production Bridge
-        run: npm run build --prefix frontend
+        run: npm run build:assets --prefix frontend
       - name: Install pinned E2E dependencies
         run: npm ci --prefix tools/e2e-capture
       - name: Install Playwright Chromium

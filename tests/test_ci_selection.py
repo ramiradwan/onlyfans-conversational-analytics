@@ -185,6 +185,57 @@ def test_runner_list_is_collection_only_and_workflow_alias_uses_same_selector():
     assert aliased == listed
 
 
+@pytest.mark.parametrize("shard", [1, 2, 3])
+def test_windows_platform_shard_cli_preserves_full_collection_and_report_identity(shard, monkeypatch):
+    monkeypatch.delenv("CI_TEST_LANE", raising=False)
+    args = runner.parser().parse_args(["--lane", "windows-platform-contract", "--shard", str(shard)])
+    command, environment = runner.build_command(args, [], manifest())
+    assert command[command.index("--ci-lane") + 1] == "windows-platform"
+    assert command[command.index("--ci-shard") + 1] == str(shard)
+    assert "--ci-validate" in command
+    assert environment["CI_TEST_LANE"] == f"windows-platform-contract-{shard}"
+    args = runner.parser().parse_args(["list", "windows-platform", "--shard", str(shard)])
+    listed, _ = runner.build_command(args, [], manifest())
+    assert listed == command + ["--collect-only", "-q"]
+
+
+def test_windows_platform_partition_keeps_whole_files_and_linux_owners():
+    value = manifest()
+    value["windows_contracts"]["platform"] = [{"selector": "tests/test_other.py", "reason": "native file lifecycle"}]
+    value["windows_platform_shards"] = {"tests/test_other.py": 3}
+    items = [Item(f"tests/test_other.py::test_work[{n}]", [mark("ci_tier", "integration")]) for n in range(2)]
+    rows = [selection.describe_item(item, value) for item in items]
+    assert all(row["shard"] == 2 and row["windows_platform_shard"] == 3 for row in rows)
+    assert all(selection.select_item(row, "integration", shard=2) for row in rows)
+    assert all(selection.select_item(row, "windows-platform", shard=3) for row in rows)
+    assert not any(selection.select_item(row, "windows-platform", shard=n) for row in rows for n in (1, 2))
+    assert all(selection.select_item(row, "windows-platform") for row in rows)
+    rows[0]["windows_platform_shard"] = None
+    with pytest.raises(selection.SelectionError, match="missing its shard"):
+        selection.select_item(rows[0], "windows-platform", shard=1)
+
+
+@pytest.mark.parametrize("owners", [{}, {"tests/test_other.py": 4}, {"tests/test_other.py": True},
+                                   {"tests/test_other.py": 1, "tests/test_stale.py": 2}])
+def test_windows_platform_manifest_rejects_incomplete_or_invalid_file_owners(tmp_path, owners):
+    value = manifest()
+    value["windows_contracts"]["platform"] = [{"selector": "tests/test_other.py", "reason": "native lifecycle"}]
+    value["windows_platform_shards"] = owners
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(selection.SelectionError, match="Every Windows platform contract file"):
+        selection.load_manifest(tmp_path, path)
+
+
+@pytest.mark.parametrize("lane,shard", [("windows-platform", 4), ("windows-analytics", 1), ("fast", 1)])
+def test_windows_shards_reject_invalid_lane_and_shard_combinations(lane, shard):
+    args = runner.parser().parse_args([lane, "--shard", str(shard)])
+    with pytest.raises(selection.SelectionError):
+        runner.build_command(args, [], manifest())
+    with pytest.raises(selection.SelectionError):
+        selection.select_item({}, lane, shard=shard)
+
+
 def test_runner_targeted_profile_reproduction_does_not_union_all_profile_targets():
     args = runner.parser().parse_args(["stateful", "--profile", "tier_b_general"])
     target = "tests/test_generated.py::TestPersistentGeneral::runTest"
@@ -233,6 +284,25 @@ def test_report_timings_include_setup_teardown_and_ignore_other_platforms(tmp_pa
             "reports": [{"nodeid": "tests/test_storage.py::test_restart", "when": phase, "duration": duration}
                         for phase, duration in zip(("setup", "call", "teardown"), durations)]}), encoding="utf-8")
     assert runner.read_timings(tmp_path) == {"tests/test_storage.py": 9}
+
+
+def test_integration_timings_use_complete_integration_cases_in_mixed_tier_file(tmp_path):
+    first, second, fast = [f"tests/test_mixed.py::test_{name}" for name in ("one", "two", "fast")]
+    report = {"schema": "ci-test-report/v1", "platform": "Linux", "lane": "analytics-integration-1",
+              "collect_only": False, "exit_code": 0, "complete": True, "profile": "",
+              "collection_errors": [], "partial": False, "selection": {"targets": ["tests"]},
+              "collected": [{"nodeid": nodeid, "markers": [], "tier": tier}
+                            for nodeid, tier in [(first, "integration"), (second, "integration"), (fast, "fast")]],
+              "selected": [first, second], "reports": [
+                  {"nodeid": nodeid, "when": "call", "duration": 3} for nodeid in (first, second)]}
+    report["reports"].append({"nodeid": first, "when": "call", "duration": 2, "subtest": {"index": 1}})
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    assert runner.read_timings(path) == {"tests/test_mixed.py": 6}
+    report["selected"].remove(second)
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(selection.SelectionError, match="No successful Linux"):
+        runner.read_timings(path)
 
 
 def test_streamed_log_keeps_failure_output_and_exit_code(tmp_path, capsys):

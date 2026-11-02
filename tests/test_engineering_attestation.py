@@ -958,6 +958,42 @@ def test_source_policy_accepts_normal_git_line_endings(line_ending, version) -> 
     assert producer.product_ci_job_policy(source) == expected
 
 
+@pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"])
+def test_v7_source_policy_requires_three_actual_platform_results(line_ending) -> None:
+    source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_bytes().replace(b"\r\n", b"\n").replace(b"\n", line_ending)
+    policy = (ROOT / producer.PRODUCT_CI_POLICY_PATH).read_bytes()
+    expected = (producer.REQUIRED_SHARDED_V4_PRODUCT_CI_JOB_NAMES - {"windows-platform-contract"}
+                | {"windows-platform-contract-1", "windows-platform-contract-2", "windows-platform-contract-3"})
+    assert producer.product_ci_job_policy(source, policy) == expected
+
+
+@pytest.mark.parametrize("old,new", [
+    ("name: windows-platform-contract-${{ matrix.shard }}", "name: windows-platform-contract"),
+    ("runs-on: windows-latest", "runs-on: ubuntu-latest"),
+    ("timeout-minutes: 60", "timeout-minutes: 120"),
+    ("    timeout-minutes: 60\n", ""),
+    ("needs: fixed-sqlcipher-wheel", "needs: backend-fast"),
+    ("fail-fast: false", "fail-fast: true"),
+    ("max-parallel: 3", "max-parallel: 2"),
+    ("shard: [1, 2, 3]", "shard: [1, 2]"),
+    ("shard: [1, 2, 3]", "shard: [1, 2, 3, 4]"),
+    ("shard: [1, 2, 3]", "shard: [1, 2, 2]"),
+    ("shard: [1, 2, 3]", "shard: [1, 2, 3]\n        exclude: [3]"),
+    ("    strategy:\n", "    if: false\n    strategy:\n"),
+    ("    strategy:\n", "    continue-on-error: true\n    strategy:\n"),
+])
+def test_v7_source_policy_refuses_incomplete_or_optional_platform_matrix(old, new) -> None:
+    source = (ROOT / producer.PRODUCT_CI_WORKFLOW).read_text()
+    before, body = source.split("  windows-platform-contract:\n", 1)
+    matrix, after = body.split("  analytics-windows-contract:\n", 1)
+    assert old in matrix
+    source = (before + "  windows-platform-contract:\n" + matrix.replace(old, new, 1)
+              + "  analytics-windows-contract:\n" + after).encode()
+    policy = (ROOT / producer.PRODUCT_CI_POLICY_PATH).read_bytes()
+    with pytest.raises(producer.ContractError):
+        producer.product_ci_job_policy(source, policy)
+
+
 @pytest.mark.parametrize("version", ["sharded-v1", "sharded-v2", "sharded-v2-pr-cutover"])
 def test_missing_gate_never_downgrades_sharded_source_to_legacy_policy(version) -> None:
     api = _sharded_source_api(version)

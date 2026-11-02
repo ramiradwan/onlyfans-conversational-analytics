@@ -256,7 +256,7 @@ def test_pr_windows_inventory_validation_runs_after_raw_collection_before_execut
     steps = job["steps"]
     names = [step.get("name") for step in steps]
     check = names.index("Validate exhaustive Windows shard inventory")
-    assert "if" not in job and "if" not in steps[check]
+    assert "if" not in job and steps[check]["if"] == "matrix.shard == 1"
     assert names.index("Collect independent legacy Windows selection") < check < names.index("Test Windows platform contract")
     assert steps[check]["run"] == (
         "python tools/test_backend.py validate-windows-manifest "

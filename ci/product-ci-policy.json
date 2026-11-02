@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "policy_version": "sharded-v6-pr-cutover",
+  "policy_version": "sharded-v7-pr-cutover",
   "workflow": ".github/workflows/ci.yml",
   "job_ids": [
     "analytics-integration",
@@ -42,7 +42,9 @@
     "windows-full-regression",
     "windows-full-regression-1",
     "windows-full-regression-2",
-    "windows-platform-contract",
+    "windows-platform-contract-1",
+    "windows-platform-contract-2",
+    "windows-platform-contract-3",
     "windows-tests"
   ],
   "allowed_skipped_jobs": [
