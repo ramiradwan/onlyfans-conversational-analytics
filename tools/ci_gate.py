@@ -47,6 +47,8 @@ class ReportSpec:
     def logical_job(self) -> str:
         if self.job.startswith("windows-full-regression-"):
             return "windows-full-shards"
+        if self.job.startswith("windows-platform-contract-"):
+            return "windows-platform-contract"
         return "analytics-integration" if self.job.startswith("analytics-integration-") else self.job
 
 
@@ -73,14 +75,14 @@ PYTHON313_LOOP_CASES = {
 SPECS = {
     "backend-fast": ReportSpec("backend-fast", "Linux"),
     **{f"analytics-integration-{n}": ReportSpec(f"analytics-integration-{n}", "Linux") for n in range(1, 5)},
-    "windows-platform-contract": ReportSpec("windows-platform-contract", "Windows"),
-    PYTHON313_LOOP_LANE: ReportSpec("windows-platform-contract", "Windows",
+    **{f"windows-platform-contract-{n}": ReportSpec(f"windows-platform-contract-{n}", "Windows") for n in (1, 2, 3)},
+    PYTHON313_LOOP_LANE: ReportSpec("windows-platform-contract-1", "Windows",
                                   selectors=PYTHON313_LOOP_SELECTORS, python="3.13", implementation="CPython"),
     "analytics-windows-contract": ReportSpec("analytics-windows-contract", "Windows"),
     "analytics-scale-qualification": ReportSpec("analytics-scale-qualification", "Windows"),
     **{f"windows-full-regression-{n}": ReportSpec(f"windows-full-regression-{n}", "Windows") for n in (1, 2)},
     "legacy-linux-reference": ReportSpec("backend-fast", "Linux", reference=True),
-    "legacy-windows-reference": ReportSpec("windows-platform-contract", "Windows", reference=True),
+    "legacy-windows-reference": ReportSpec("windows-platform-contract-1", "Windows", reference=True),
     "backend-fast-brain-general": ReportSpec("backend-fast", "Linux", "tier_a_general", "tier_a_general", ("tests/stateful/test_brain_ingestion.py::TestBrainIngestionGeneral",)),
     "backend-fast-brain-deletion": ReportSpec("backend-fast", "Linux", "tier_a_deletion", "tier_a_deletion", ("tests/stateful/test_brain_ingestion.py::TestBrainIngestionDeletion",)),
     "backend-fast-agent-general": ReportSpec("backend-fast", "Linux", "agent_tier_a_general", "agent_tier_a_general", ("tests/stateful/test_agent_delivery.py::TestAgentDeliveryGeneral",)),
@@ -98,10 +100,10 @@ SPECS = {
         )
     )),
     "backend-fast-contract-integrity": ReportSpec("backend-fast", "Linux"),
-    "windows-production-boot": ReportSpec("windows-platform-contract", "Windows"),
-    "windows-persistence-general": ReportSpec("windows-platform-contract", "Windows", "tier_b_general", "tier_b_general", ("tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral",)),
-    "windows-persistence-deletion": ReportSpec("windows-platform-contract", "Windows", "tier_b_deletion", "tier_b_deletion", ("tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion",)),
-    "windows-persistence-smoke": ReportSpec("windows-platform-contract", "Windows", "windows_persistence_smoke", "windows_persistence_smoke", ("tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke",)),
+    "windows-production-boot": ReportSpec("windows-platform-contract-1", "Windows"),
+    "windows-persistence-general": ReportSpec("windows-platform-contract-1", "Windows", "tier_b_general", "tier_b_general", ("tests/stateful/test_brain_persistent_ingestion.py::TestPersistentGeneral",)),
+    "windows-persistence-deletion": ReportSpec("windows-platform-contract-1", "Windows", "tier_b_deletion", "tier_b_deletion", ("tests/stateful/test_brain_persistent_ingestion.py::TestPersistentDeletion",)),
+    "windows-persistence-smoke": ReportSpec("windows-platform-contract-1", "Windows", "windows_persistence_smoke", "windows_persistence_smoke", ("tests/stateful/test_brain_persistent_ingestion.py::TestWindowsProductionPersistenceSmoke",)),
 }
 ACTUAL_JOBS = {spec.job for spec in SPECS.values()} | {
     "web-build-and-test", "desktop-native-contracts", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
@@ -110,6 +112,7 @@ NEEDED_JOBS = {spec.logical_job for spec in SPECS.values()} | {
     "web-build-and-test", "desktop-native-contracts", "fixed-sqlcipher-wheel", "windows-browser-e2e", "windows-full-regression"
 }
 WINDOWS_FULL_LANES = ("windows-full-regression-1", "windows-full-regression-2")
+WINDOWS_PLATFORM_LANES = tuple(f"windows-platform-contract-{n}" for n in (1, 2, 3))
 LEGACY_EXCLUDED = {"slow", "stateful_tier_a", "stateful_tier_b", "stateful_agent_tier_a"}
 SCALE_LANE = "analytics-scale-qualification"
 # These two files retain their existing packaged-runtime qualification boundary.
@@ -386,7 +389,7 @@ def _validate_python313_loop_coverage(reports, inventories, outcomes) -> set[str
             or report.get("partial") is not False or selection.get("keyword") != ""
             or selection.get("marker") != "" or selection.get("targets") != list(PYTHON313_LOOP_SELECTORS)):
         raise GateError("CPython loop counterpart has a narrowed or changed selection")
-    owner = reports["windows-platform-contract"]
+    owner = reports[WINDOWS_PLATFORM_LANES[0]]
     if any(report.get(key) != owner.get(key) for key in
            ("source_commit", "workflow_run_id", "run_attempt", "job_id")):
         raise GateError("CPython loop counterpart must match its current producer execution")
@@ -448,6 +451,27 @@ def _windows_full_owners(reports: dict[str, dict[str, Any]],
     return owners
 
 
+def _windows_platform_owners(reports: dict[str, dict[str, Any]], expected: set[str],
+                             assignments: dict[str, int]) -> dict[str, str]:
+    """Bind the exact existing platform contract to three whole-file owners."""
+    owners: dict[str, str] = {}
+    for lane in WINDOWS_PLATFORM_LANES:
+        report = reports[lane]
+        for node in _unique_strings(report.get("selected"), "selected"):
+            if node in owners:
+                raise GateError("Windows platform contract must have exactly one owner per selected test")
+            owners[node] = lane
+    if set(owners) != expected:
+        raise GateError("Windows platform contract selection parity failed: shard union differs from the existing contract")
+    for node, lane in owners.items():
+        assignment = assignments.get(node.split("::", 1)[0])
+        if type(assignment) is not int or assignment not in (1, 2, 3):
+            raise GateError(f"{node}: Windows platform contract has no valid whole-file shard owner")
+        if lane != f"windows-platform-contract-{assignment}":
+            raise GateError(f"{node}: Windows platform contract owner differs from the checked-in manifest")
+    return owners
+
+
 def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push") -> dict[str, int]:
     if set(reports) != required_report_lanes(event):
         raise GateError("execution report set does not match the CI event")
@@ -494,17 +518,22 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
     shadow_owners = (_windows_full_owners(reports, inventories["Windows"], legacy["Windows"])
                      if event != "pull_request" else {})
 
-    windows_lanes = ["windows-platform-contract", "analytics-windows-contract", "windows-production-boot"]
+    windows_lanes = [*WINDOWS_PLATFORM_LANES, "analytics-windows-contract", "windows-production-boot"]
     windows_union = set().union(*(set(reports[lane]["selected"]) for lane in windows_lanes))
-    windows_rows = inventory(reports["windows-platform-contract"])
-    for lane in ("windows-platform-contract", "analytics-windows-contract"):
+    windows_rows = inventory(reports[WINDOWS_PLATFORM_LANES[0]])
+    contract_lanes = (*WINDOWS_PLATFORM_LANES, "analytics-windows-contract")
+    for lane in contract_lanes:
         if _raw_inventory_signature(inventory(reports[lane])) != _raw_inventory_signature(inventories["Windows"]):
             raise GateError("Windows contract collection differs from independent Windows reference")
     try:
-        contracts = load_backend_manifest(Path(__file__).resolve().parents[1])["windows_contracts"]
+        backend_manifest = load_backend_manifest(Path(__file__).resolve().parents[1])
+        contracts = backend_manifest["windows_contracts"]
+        platform_assignments = backend_manifest["windows_platform_shards"]
+        if not isinstance(platform_assignments, dict):
+            raise ValueError("Windows platform shard assignments must be an object")
     except (ValueError, OSError, KeyError) as exc:
         raise GateError(f"invalid Windows contract manifest: {exc}") from exc
-    contract_rows = [inventory(reports[lane]) for lane in ("windows-platform-contract", "analytics-windows-contract")]
+    contract_rows = [inventory(reports[lane]) for lane in contract_lanes]
     for node in legacy["Windows"]:
         declared = [contract for contract, selectors in contracts.items()
                     if any(_matches(node, entry["selector"]) for entry in selectors)]
@@ -517,15 +546,21 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
                 raise GateError(f"{node}: Windows contract classification differs from the independent manifest")
             if native and rows[node].get("windows_compat") is not True:
                 raise GateError(f"{node}: raw native Windows marker contradicts classifier flags")
+            if expected_contract == "platform" and (
+                type(rows[node].get("windows_platform_shard")) is not int
+                or rows[node]["windows_platform_shard"] != platform_assignments.get(node.split("::", 1)[0])
+            ):
+                raise GateError(f"{node}: Windows platform shard classification differs from the independent manifest")
     required_windows = {node for node in legacy["Windows"]
                         if windows_rows[node].get("windows_compat") is True
                         or {"windows_compat", "windows_production"} & set(inventories["Windows"][node]["markers"])
                         or windows_rows[node].get("windows_contract")
                         or "windows_production" in windows_rows[node]["markers"]
                         or node not in inventories["Linux"]}
-    for lane, contract in (("windows-platform-contract", "platform"), ("analytics-windows-contract", "analytics")):
-        expected = {node for node in legacy["Windows"] if windows_rows[node].get("windows_contract") == contract}
-        _exact_selection(reports[lane], expected, lane)
+    platform_expected = {node for node in legacy["Windows"] if windows_rows[node].get("windows_contract") == "platform"}
+    _windows_platform_owners(reports, platform_expected, platform_assignments)
+    analytics_expected = {node for node in legacy["Windows"] if windows_rows[node].get("windows_contract") == "analytics"}
+    _exact_selection(reports["analytics-windows-contract"], analytics_expected, "analytics-windows-contract")
     if not required_windows <= windows_union:
         raise GateError("mandatory Windows execution is missing: " + ", ".join(sorted(required_windows - windows_union)[:8]))
     if not legacy["Windows"] <= set(linux_owners) | windows_union:
@@ -550,7 +585,7 @@ def validate_coverage(reports: dict[str, dict[str, Any]], *, event: str = "push"
                 if not observed or not allowed or any(reason != allowed for reason in reasons):
                     raise GateError(f"{node}: selected coverage has an unreviewed pull-request skip")
                 if platform == "Windows" and {
-                    lane for lane in lanes if node in outcomes[lane]
+                    SPECS[lane].logical_job for lane in lanes if node in outcomes[lane]
                 } != {PR_WINDOWS_SKIP_LANES.get(node)}:
                     raise GateError(f"{node}: reviewed Windows skip moved out of its approved execution lane")
                 if platform == "Windows" and windows_rows[node].get("windows_contract") != (

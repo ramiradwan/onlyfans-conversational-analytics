@@ -114,6 +114,37 @@ def test_native_desktop_outcomes_remain_immutable_and_attempt_specific() -> None
     assert not retain["with"].get("overwrite")
 
 
+def test_windows_platform_evidence_keeps_each_shard_and_auxiliary_producer_distinct() -> None:
+    job = _workflow_document()["jobs"]["windows-platform-contract"]
+    assert job["name"] == "windows-platform-contract-${{ matrix.shard }}"
+    assert job["strategy"]["matrix"] == {"shard": [1, 2, 3]}
+    assert job["strategy"]["fail-fast"] is False
+    steps = _steps(job)
+    execute = next(step for step in steps if step.get("name") == "Test Windows platform contract")
+    assert execute["run"] == "python tools/test_backend.py --lane windows-platform-contract --shard ${{ matrix.shard }}"
+    assert execute["env"]["CI_TEST_LANE"] == "windows-platform-contract-${{ matrix.shard }}"
+    assert execute["env"]["CI_REPORT_DIR"] == "artifacts/ci-tests/windows-platform-contract-${{ matrix.shard }}"
+    retain = next(step for step in steps if step.get("name") == "Retain backend timing and selection")
+    assert retain["if"] == "always()"
+    assert retain["with"]["name"] == "ci-tests-windows-platform-contract-${{ matrix.shard }}-${{ env.PRODUCT_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}"
+    assert retain["with"]["if-no-files-found"] == "error"
+    assert not retain["with"].get("overwrite")
+    auxiliary_lanes = {
+        "legacy-windows-reference", "windows-production-boot", "windows-python313-loop-contract",
+        "windows-persistence-general", "windows-persistence-deletion", "windows-persistence-smoke",
+    }
+    observed = set()
+    for step in steps:
+        lane = step.get("env", {}).get("CI_TEST_LANE")
+        if lane in auxiliary_lanes:
+            assert step["if"] == "matrix.shard == 1"
+            observed.add(lane)
+    assert observed == auxiliary_lanes
+    for name in ("Preserve persistence evidence filenames", "Record Windows persistence CI source",
+                 "Retain Windows persistence evidence"):
+        assert next(step for step in steps if step.get("name") == name)["if"] == "always() && matrix.shard == 1"
+
+
 def _assert_browser_publication_is_validated(workflow: dict[str, Any]) -> None:
     jobs = workflow["jobs"]
     producer = jobs["browser-e2e-execution"]
