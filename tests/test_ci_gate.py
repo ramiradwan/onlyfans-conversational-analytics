@@ -123,8 +123,6 @@ def _reports():
             "collection_errors": [], "complete": True, "collect_only": spec.reference,
             "exit_code": 0, "wall_seconds": 0.1,
         }
-        if lane in gate.WINDOWS_PLATFORM_LANES:
-            result[lane]["shard"] = int(lane[-1])
         if lane == gate.PYTHON313_LOOP_LANE:
             result[lane].update(python="3.13.6", python_implementation="CPython", partial=False,
                 collected=[copy.deepcopy(rows[node]) for node in sorted(loop_nodes)], deselected=[],
@@ -231,13 +229,10 @@ def test_windows_platform_partition_rejects_missing_duplicate_or_misplaced_cases
         gate.validate_coverage(reports)
 
 
-@pytest.mark.parametrize("lane", gate.WINDOWS_PLATFORM_LANES)
-@pytest.mark.parametrize("shard", [None, True, "1", 0, 4])
-def test_windows_platform_report_requires_exact_integer_shard_identity(lane, shard):
+def test_windows_platform_partition_uses_existing_report_schema_without_top_level_shard():
     reports = _reports()
-    reports[lane]["shard"] = shard
-    with pytest.raises(gate.GateError, match="platform shard identity"):
-        gate.validate_coverage(reports)
+    assert all("shard" not in reports[lane] for lane in gate.WINDOWS_PLATFORM_LANES)
+    gate.validate_coverage(reports)
 
 
 @pytest.mark.parametrize("lane", [*gate.WINDOWS_PLATFORM_LANES, "analytics-windows-contract"])

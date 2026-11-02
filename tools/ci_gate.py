@@ -455,10 +455,8 @@ def _windows_platform_owners(reports: dict[str, dict[str, Any]], expected: set[s
                              assignments: dict[str, int]) -> dict[str, str]:
     """Bind the exact existing platform contract to three whole-file owners."""
     owners: dict[str, str] = {}
-    for number, lane in enumerate(WINDOWS_PLATFORM_LANES, start=1):
+    for lane in WINDOWS_PLATFORM_LANES:
         report = reports[lane]
-        if type(report.get("shard")) is not int or report["shard"] != number:
-            raise GateError(f"{lane}: platform shard identity differs from its producer")
         for node in _unique_strings(report.get("selected"), "selected"):
             if node in owners:
                 raise GateError("Windows platform contract must have exactly one owner per selected test")
