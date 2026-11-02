@@ -420,6 +420,41 @@ for (const fontScale of [1, 2]) test(`inbox pane headers share one height and ti
   } finally { await page.close(); }
 });
 
+for (const [times, now] of Object.entries({ today: FIXED_NOW, 'earlier-year': '2027-01-15T12:05:00.000Z' })) for (const width of [320, 390]) for (const fontScale of [1.25, 2]) test(`inbox rows keep names, times and previews inside narrow panes at ${width} and ${fontScale}x text with ${times} times`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce', timezoneId: 'UTC' });
+  try {
+    await page.addInitScript((scale) => { new MutationObserver(() => { if (document.documentElement && !document.documentElement.style.fontSize) document.documentElement.style.fontSize = (16 * scale) + 'px'; }).observe(document, { childList: true, subtree: true }); }, fontScale);
+    await page.clock.setFixedTime(now);
+    await page.goto(harness.base + '?workspace=inbox&state=populated');
+    const pane = page.locator('[data-reserved-region="chat-list"]');
+    await pane.locator('li').nth(4).waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settle(page);
+    const failures = await pane.evaluate((node) => {
+      const rects = (target) => { const range = document.createRange(); range.selectNodeContents(target); return [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0); };
+      const bounds = node.getBoundingClientRect();
+      const inside = (rect) => rect.left >= bounds.left - 0.5 && rect.right <= bounds.right + 0.5;
+      const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+      const failures = [];
+      if (bounds.left < -0.5 || bounds.right > innerWidth + 0.5) failures.push('pane leaves the viewport');
+      for (const item of node.querySelectorAll('li')) {
+        const [name, preview] = item.querySelectorAll('[data-region-content]');
+        const time = item.querySelector('time');
+        if (!name?.textContent?.trim() || !preview?.textContent?.trim() || !time?.textContent?.trim()) failures.push('row text is missing');
+        const parts = Object.entries({ name: rects(name), time: rects(time), preview: rects(preview) });
+        for (const [label, list] of parts) if (list.some((rect) => !inside(rect))) failures.push(`${label} leaves the pane`);
+        parts.forEach(([first, a], index) => parts.slice(index + 1).forEach(([second, b]) => {
+          if (a.some((p) => b.some((q) => hit(p, q)))) failures.push(`${first} overlaps ${second}`);
+        }));
+      }
+      return failures;
+    });
+    assert.deepEqual(failures, []);
+    const stamps = await pane.locator('time').allTextContents();
+    assert(stamps.every((stamp) => times === 'today' ? /^\d{2}:\d{2}$/.test(stamp) : stamp.includes('2026')));
+  } finally { await page.close(); }
+});
+
 for (const width of [320, 600, 900, 1440]) for (const fontScale of [1, 2]) test(`analytics results fit their region without scrolling at ${width} and ${fontScale}x text`, async () => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
   try {
