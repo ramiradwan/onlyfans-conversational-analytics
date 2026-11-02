@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -15,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.nlp.profiles import BASELINE_RESOURCE_POLICY
 from app.security.signed_objects import encode
-from test_msix_packaging import stage, _write_inert_digests
+from test_msix_packaging import stage, _msix_stage, _write_inert_digests
 from tools import msix_packaging as msix
 from tools.packaging_policy import verify_runtime_files
 
@@ -97,17 +98,38 @@ def archive_payload(working, path, *, preparation_path=msix.NLP_PREPARATION_PATH
         archive.writestr('[Content_Types].xml', b'inert footprint')
 
 
-def test_preparation_input_is_optional_and_sealed(stage, tmp_path):
+@pytest.fixture(scope='module')
+def sealed_preparation(tmp_path_factory):
+    root = tmp_path_factory.mktemp('sealed-preparation')
+    _, profile, _, _, config = inputs(root)
+    working = root / 'configured'
+    msix.prepare_payload(_msix_stage(root), working, profile, nlp_preparation_release=config)
+    _write_inert_digests(working / 'payload/app')
+    msix.seal_payload(working, profile, Path(sys.executable))
+    return working
+
+
+@pytest.fixture
+def copied_preparation(sealed_preparation, tmp_path):
     _, profile, _, _, config = inputs(tmp_path)
+    working = tmp_path / 'configured'
+    shutil.copytree(sealed_preparation, working)
+    receipt_path = working / 'preparation.json'
+    receipt = msix.read_json(receipt_path, maximum=16 * 1024 * 1024)
+    assert msix.sha256(config) == receipt['nlp_preparation']['sha256']
+    receipt['nlp_preparation']['inputs'] = str(config.resolve())
+    receipt_path.write_bytes(msix.canonical_json(receipt))
+    return working, profile, config
+
+
+def test_preparation_input_is_optional_and_sealed(stage, copied_preparation, tmp_path):
+    working, profile, config = copied_preparation
     ordinary = tmp_path / 'ordinary'
     msix.prepare_payload(stage, ordinary, profile)
     assert not (ordinary / 'payload' / msix.NLP_PREPARATION_PATH).exists()
-    working = tmp_path / 'configured'
-    msix.prepare_payload(stage, working, profile, nlp_preparation_release=config)
     target = working / 'payload' / msix.NLP_PREPARATION_PATH
     assert target.read_bytes() == config.read_bytes()
-    _write_inert_digests(working / 'payload/app')
-    inventory = msix.seal_payload(working, profile, Path(sys.executable))
+    inventory = msix.read_json(working / 'inventory.json', maximum=16 * 1024 * 1024)
     record = next(row for row in inventory['files'] if row['path'] == msix.NLP_PREPARATION_PATH)
     assert record['sha256'] == msix.sha256(config)
     assert 'nlp-preparation-release.json' in (working / 'payload/app/sha256sums.txt').read_text()
@@ -117,11 +139,13 @@ def test_preparation_input_is_optional_and_sealed(stage, tmp_path):
 
 
 @pytest.mark.parametrize('change', ['input', 'payload', 'unrequested', 'missing'])
-def test_seal_refuses_changed_or_unrequested_preparation(stage, tmp_path, change):
-    _, profile, _, _, config = inputs(tmp_path)
-    working = tmp_path / 'configured'
-    msix.prepare_payload(stage, working, profile,
-        nlp_preparation_release=None if change == 'unrequested' else config)
+def test_seal_refuses_changed_or_unrequested_preparation(tmp_path, request, change):
+    if change == 'unrequested':
+        _, profile, _, _, config = inputs(tmp_path)
+        working = tmp_path / 'configured'
+        msix.prepare_payload(request.getfixturevalue('stage'), working, profile)
+    else:
+        working, profile, config = request.getfixturevalue('copied_preparation')
     target = working / 'payload' / msix.NLP_PREPARATION_PATH
     if change == 'input':
         config.write_bytes(config.read_bytes() + b' ')
@@ -146,12 +170,8 @@ def test_preparation_cannot_enter_through_runtime_stage(stage, tmp_path, target)
 
 
 @pytest.mark.parametrize('change', ['descriptor', 'engine', 'unknown', 'private_key', 'production', 'store'])
-def test_archive_checks_preparation_semantics_after_inventory_matches(stage, tmp_path, change):
+def test_archive_checks_preparation_semantics_after_inventory_matches(tmp_path, request, change):
     selected, profile, desktop, value, config = inputs(tmp_path)
-    working = tmp_path / 'configured'
-    msix.prepare_payload(stage, working, profile, nlp_preparation_release=config)
-    _write_inert_digests(working / 'payload/app')
-    msix.seal_payload(working, profile, Path(sys.executable))
     if change == 'production':
         selected['purpose'] = 'production'
     elif change == 'store':
@@ -168,6 +188,8 @@ def test_archive_checks_preparation_semantics_after_inventory_matches(stage, tmp
         with pytest.raises(ValueError, match='qualification related package'):
             msix.validate_nlp_preparation(config.read_bytes(), desktop, selected)
         return
+    working = tmp_path / 'configured'
+    shutil.copytree(request.getfixturevalue('sealed_preparation'), working)
     target = working / 'payload' / msix.NLP_PREPARATION_PATH
     target.write_bytes(msix.canonical_json(value))
     inventory_path = working / 'inventory.json'
@@ -191,12 +213,11 @@ def test_prepare_rejects_bad_input_before_output_creation(stage, tmp_path, raw):
     assert not output.exists()
 
 
-def test_archive_alias_cannot_bypass_preparation_validation(stage, tmp_path):
-    selected, profile, _, value, config = inputs(tmp_path)
+def test_archive_alias_cannot_bypass_preparation_validation(sealed_preparation, tmp_path):
+    selected, profile, _, value, _ = inputs(tmp_path)
     working = tmp_path / 'configured'
-    msix.prepare_payload(stage, working, profile, nlp_preparation_release=config)
-    _write_inert_digests(working / 'payload/app')
-    inventory = msix.seal_payload(working, profile, Path(sys.executable))
+    shutil.copytree(sealed_preparation, working)
+    inventory = msix.read_json(working / 'inventory.json', maximum=16 * 1024 * 1024)
     value['desktop_release_sha256'] = '0' * 64
     target = working / 'payload' / msix.NLP_PREPARATION_PATH
     target.write_bytes(msix.canonical_json(value))

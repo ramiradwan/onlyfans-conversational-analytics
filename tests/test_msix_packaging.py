@@ -86,14 +86,18 @@ try {
     return json.loads(result.stdout)
 
 
-@pytest.fixture
-def stage(tmp_path):
+def _msix_stage(tmp_path):
     root = _stage_runtime_tree(tmp_path)
     (root / "release-manifest.json").write_bytes(msix.canonical_json({
         "schema": "ofca-release-manifest/v1", "version": "0.7.5", "architecture": "x64",
         "source_commit": "1" * 40,
     }))
     return root
+
+
+@pytest.fixture
+def stage(tmp_path):
+    return _msix_stage(tmp_path)
 
 
 @pytest.mark.parametrize("mutation", [
@@ -1021,13 +1025,22 @@ def test_verified_direct_family_is_derived_by_windows(tmp_path):
     assert "ofca-msix-identity-probe:windows-read-complete:" not in diagnostic
 
 
-@pytest.mark.parametrize("path", list(msix.INSTALLER_FILES))
-@pytest.mark.parametrize("mutation", ["change", "remove", "extra"])
-def test_installer_presentation_is_sealed_and_independently_verified(stage, tmp_path, path, mutation):
-    working = tmp_path / "msix-output"
-    msix.prepare_payload(stage, working, PROFILE_PATH)
+@pytest.fixture(scope="module")
+def sealed_installer_presentation(tmp_path_factory):
+    root = tmp_path_factory.mktemp("installer-presentation")
+    working = root / "msix-output"
+    msix.prepare_payload(_msix_stage(root), working, PROFILE_PATH)
     _write_inert_digests(working / "payload/app")
     msix.seal_payload(working, PROFILE_PATH, Path(sys.executable))
+    return working
+
+
+@pytest.mark.parametrize("path", list(msix.INSTALLER_FILES))
+@pytest.mark.parametrize("mutation", ["change", "remove", "extra"])
+def test_installer_presentation_is_sealed_and_independently_verified(
+        sealed_installer_presentation, tmp_path, path, mutation):
+    working = tmp_path / "msix-output"
+    shutil.copytree(sealed_installer_presentation, working)
     payload = working / "payload"
     for name, digest in msix.INSTALLER_FILES.items():
         assert msix.sha256(payload / name) == digest
