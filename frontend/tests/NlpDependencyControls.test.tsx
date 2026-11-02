@@ -70,6 +70,7 @@ describe('NlpDependencyControls', () => {
     api.observe.mockReturnValueOnce(pending.promise);
     render(view(api));
     await screen.findByText('Downloading. 2 verified files retained.');
+    await waitFor(() => expect(api.observe).toHaveBeenCalledTimes(1));
     await act(async () => pending.reject(failure));
     expect(screen.queryByText('Downloading. 2 verified files retained.')).toBeNull();
     expect(screen.getByText('Last confirmed progress: 2 verified files. Current state is unknown.')).toBeTruthy();
