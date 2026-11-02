@@ -1054,6 +1054,8 @@ def test_installer_presentation_is_sealed_and_independently_verified(stage, tmp_
         archive.writestr("[Content_Types].xml", b"negative-test-footprint")
     with pytest.raises(ValueError, match="App Installer presentation"):
         msix.verify_archive(package, inventory_path, PROFILE_PATH)
+    if os.name != "nt":
+        return
     result = subprocess.run([
         "pwsh", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "packaging/verify-msix.ps1"),
         "-Package", str(package), "-Inventory", str(inventory_path), "-PackageProfile", str(PROFILE_PATH),
